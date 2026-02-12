@@ -15,10 +15,25 @@ fun ShapeRenderer.drawArrowWithRotation(
     val dy = targetY - startY
     val baseAngle = atan2(dy, dx)  // Угол к цели в радианах
 
-    val totalAngle = baseAngle + (angle + 180) * (PI / 180).toFloat()
+    val totalAngle = baseAngle + angle + PI.toFloat()
 
     val endX = startX + cos(totalAngle) * length
     val endY = startY + sin(totalAngle) * length
+
+    this.line(startX, startY, endX, endY)
+
+    if (!isDrawWithoutTriangle)
+        this.drawTriangleEnd(startX, startY, endX, endY)
+}
+
+fun ShapeRenderer.drawArrowWithRotationAngle(
+    startX: Float, startY: Float,
+    baseAngle: Float,
+    length: Float = 30f,
+    isDrawWithoutTriangle: Boolean = false
+) {
+    val endX = startX + cos(baseAngle) * length
+    val endY = startY + sin(baseAngle) * length
 
     this.line(startX, startY, endX, endY)
 
@@ -31,7 +46,7 @@ fun ShapeRenderer.drawTriangleEnd(
     c1y: Float,
     c2x: Float,
     c2y: Float,
-    arrowSize: Float = 5f
+    arrowSize: Float = 2.5f
 ) {
     // Вектор направления стрелки
     val dx = c2x - c1x
@@ -93,7 +108,7 @@ fun ShapeRenderer.drawTriangleMiddle(
     val perpY = dirX
 
 // Размер стрелки (расстояние от отрезка до углов треугольника)
-    val arrowSize = 5f
+    val arrowSize = 2f
 
 // Координаты углов треугольника
     val tipX = midX + dirX * arrowSize // Вершина стрелки

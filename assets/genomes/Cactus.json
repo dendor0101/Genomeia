@@ -1,0 +1,6943 @@
+{
+"name": "Cactus",
+"genomeStageInstruction": [
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"0": {
+				"divide": {
+					"id": "1",
+					"angle": 1.5707964,
+					"cellType": 0,
+					"indexOfNew": 1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"0": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 0,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"1": {
+				"divide": {
+					"id": "2",
+					"angle": 0,
+					"cellType": 0,
+					"indexOfNew": 2,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"1": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 1,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"0": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 3,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0,
+						"g": 0,
+						"b": 1,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"0": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": 0,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"0": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": 0.2,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"0": {
+				"divide": {
+					"id": "3",
+					"angle": -1.1578838,
+					"cellType": 0,
+					"indexOfNew": 3,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"0": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"1": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 0,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			},
+			"1": {
+				"divide": {
+					"id": "4",
+					"angle": 2.2609844,
+					"cellType": 0,
+					"indexOfNew": 4,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"0": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"1": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 1,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"0": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": 0.02617994,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"4": {
+				"divide": {
+					"id": "5",
+					"angle": 0.6794299,
+					"cellType": 0,
+					"indexOfNew": 5,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"4": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"0": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 4,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			},
+			"3": {
+				"divide": {
+					"id": "6",
+					"angle": 4.4011593,
+					"cellType": 0,
+					"indexOfNew": 6,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"0": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"3": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 3,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"2": {
+				"divide": {
+					"id": "7",
+					"angle": 0.13713695,
+					"cellType": 0,
+					"indexOfNew": 7,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"2": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 2,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"7": {
+				"divide": {
+					"id": "8",
+					"angle": 0.11856729,
+					"cellType": 0,
+					"indexOfNew": 8,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"7": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 7,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"8": {
+				"divide": {
+					"id": "9",
+					"angle": -5.301833E-4,
+					"cellType": 0,
+					"indexOfNew": 9,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"8": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 8,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"9": {
+				"divide": {
+					"id": "10",
+					"angle": -2.3437291E-4,
+					"cellType": 0,
+					"indexOfNew": 10,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"9": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 9,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"10": {
+				"divide": {
+					"id": "11",
+					"angle": -0.28380287,
+					"cellType": 0,
+					"indexOfNew": 11,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"10": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 10,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"9": {
+				"divide": {
+					"id": "12",
+					"angle": 1.8093214,
+					"cellType": 0,
+					"indexOfNew": 12,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"9": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 9,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"11": {
+				"divide": {
+					"id": "14",
+					"angle": -0.07793676,
+					"cellType": 0,
+					"indexOfNew": 14,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"11": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 11,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			},
+			"7": {
+				"divide": {
+					"id": "13",
+					"angle": -1.5593747,
+					"cellType": 0,
+					"indexOfNew": 13,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"7": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 7,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"12": {
+				"divide": {
+					"id": "15",
+					"angle": -0.88212144,
+					"cellType": 0,
+					"indexOfNew": 15,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"12": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 12,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"13": {
+				"divide": {
+					"id": "16",
+					"angle": -0.045131564,
+					"cellType": 0,
+					"indexOfNew": 16,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"13": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 13,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			},
+			"14": {
+				"divide": {
+					"id": "17",
+					"angle": 0.014684053,
+					"cellType": 0,
+					"indexOfNew": 17,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"14": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 14,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"14": {
+				"divide": {
+					"id": "18",
+					"angle": -1.267173,
+					"cellType": 0,
+					"indexOfNew": 18,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"14": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 14,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"18": {
+				"divide": {
+					"id": "19",
+					"angle": 0.81855184,
+					"cellType": 0,
+					"indexOfNew": 19,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"18": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 18,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"17": {
+				"divide": {
+					"id": "20",
+					"angle": -0.29422256,
+					"cellType": 0,
+					"indexOfNew": 20,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"17": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 17,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"4": {
+				"divide": {
+					"id": "21",
+					"angle": -1.8291855,
+					"cellType": 0,
+					"indexOfNew": 21,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"1": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"2": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"4": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 4,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			},
+			"3": {
+				"divide": {
+					"id": "22",
+					"angle": 0.9409119,
+					"cellType": 0,
+					"indexOfNew": 22,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"1": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"2": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"3": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 3,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"22": {
+				"divide": {
+					"id": "24",
+					"angle": -0.17793226,
+					"cellType": 0,
+					"indexOfNew": 24,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"2": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"13": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"22": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"7": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 22,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			},
+			"2": {
+				"divide": {
+					"id": "23",
+					"angle": 1.0059762,
+					"cellType": 0,
+					"indexOfNew": 23,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"2": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"21": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"7": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 2,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"7": {
+				"divide": {
+					"id": "25",
+					"angle": 0.9281405,
+					"cellType": 0,
+					"indexOfNew": 25,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"8": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"23": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"7": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 7,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"8": {
+				"divide": {
+					"id": "27",
+					"angle": 1.1811366,
+					"cellType": 0,
+					"indexOfNew": 27,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"8": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"9": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"25": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"12": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 8,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			},
+			"9": {
+				"divide": {
+					"id": "26",
+					"angle": -2.0347276,
+					"cellType": 0,
+					"indexOfNew": 26,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"8": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"9": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"13": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 9,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			},
+			"13": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"8": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"26": {
+				"divide": {
+					"id": "28",
+					"angle": 2.03716,
+					"cellType": 0,
+					"indexOfNew": 28,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"9": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"26": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"10": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 26,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"10": {
+				"divide": {
+					"id": "29",
+					"angle": 1.3971585,
+					"cellType": 0,
+					"indexOfNew": 29,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"9": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"10": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"11": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"12": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 10,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"11": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"10": null
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"29": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"10": null
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"10": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"11": {
+							"length": 29.99353,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"14": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"10": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"28": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"10": null
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"10": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"9": null
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"28": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"29": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"29": {
+				"divide": {
+					"id": "30",
+					"angle": 0.7632462,
+					"cellType": 0,
+					"indexOfNew": 30,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"11": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"12": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"29": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 29,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"29": {
+				"divide": {
+					"id": "31",
+					"angle": -0.12853843,
+					"cellType": 0,
+					"indexOfNew": 31,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"11": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"28": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"29": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 29,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"15": {
+				"divide": {
+					"id": "33",
+					"angle": -0.6148592,
+					"cellType": 0,
+					"indexOfNew": 33,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"15": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 15,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			},
+			"16": {
+				"divide": {
+					"id": "32",
+					"angle": -0.35539067,
+					"cellType": 0,
+					"indexOfNew": 32,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"16": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 16,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"17": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"30": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						},
+						"11": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"10": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"11": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						},
+						"31": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"20": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"14": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						},
+						"18": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"19": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"14": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						},
+						"10": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"18": {
+				"divide": {
+					"id": "34",
+					"angle": -0.016896222,
+					"cellType": 0,
+					"indexOfNew": 34,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"18": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 18,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"19": {
+				"divide": {
+					"id": "35",
+					"angle": 1.8036731,
+					"cellType": 0,
+					"indexOfNew": 35,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"34": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"18": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"19": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 19,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"18": {
+				"divide": {
+					"id": "36",
+					"angle": 0.8161236,
+					"cellType": 0,
+					"indexOfNew": 36,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"34": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"18": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"20": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 18,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"13": {
+				"divide": {
+					"id": "37",
+					"angle": -1.3978885,
+					"cellType": 0,
+					"indexOfNew": 37,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"16": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"32": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"13": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 13,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"15": {
+				"divide": {
+					"id": "38",
+					"angle": 1.5721786,
+					"cellType": 0,
+					"indexOfNew": 38,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"33": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"12": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"15": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 15,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"19": {
+				"divide": {
+					"id": "39",
+					"angle": 0.39798975,
+					"cellType": 0,
+					"indexOfNew": 39,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"19": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 19,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			},
+			"34": {
+				"divide": {
+					"id": "40",
+					"angle": 0.010092871,
+					"cellType": 0,
+					"indexOfNew": 40,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"34": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 34,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"35": {
+				"divide": {
+					"id": "41",
+					"angle": -0.005864136,
+					"cellType": 0,
+					"indexOfNew": 41,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"40": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"34": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"35": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 35,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			},
+			"36": {
+				"divide": {
+					"id": "42",
+					"angle": -0.9174309,
+					"cellType": 0,
+					"indexOfNew": 42,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"40": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"34": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"36": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 36,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"33": {
+				"divide": {
+					"id": "44",
+					"angle": -0.6173601,
+					"cellType": 0,
+					"indexOfNew": 44,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"33": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 33,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			},
+			"39": {
+				"divide": {
+					"id": "45",
+					"angle": 1.1801803,
+					"cellType": 0,
+					"indexOfNew": 45,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"39": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 39,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			},
+			"32": {
+				"divide": {
+					"id": "43",
+					"angle": -0.055300713,
+					"cellType": 0,
+					"indexOfNew": 43,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"32": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 32,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"39": {
+				"divide": {
+					"id": "46",
+					"angle": 2.2028067,
+					"cellType": 0,
+					"indexOfNew": 46,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"19": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"45": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"39": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 39,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"45": {
+				"divide": {
+					"id": "47",
+					"angle": 0.37851447,
+					"cellType": 0,
+					"indexOfNew": 47,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"45": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 45,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"46": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"35": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"39": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"10": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"37": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"24": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						},
+						"-3137": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"16": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"26": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"15": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"30": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"38": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"27": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"40": {
+				"divide": {
+					"id": "48",
+					"angle": 0.035244226,
+					"cellType": 0,
+					"indexOfNew": 48,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"40": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 40,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"41": {
+				"divide": {
+					"id": "49",
+					"angle": -0.10758237,
+					"cellType": 0,
+					"indexOfNew": 49,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"40": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"48": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"41": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 41,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"40": {
+				"divide": {
+					"id": "50",
+					"angle": 0.8452499,
+					"cellType": 0,
+					"indexOfNew": 50,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"40": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"48": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"42": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 40,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"44": {
+				"divide": {
+					"id": "53",
+					"angle": 0.101165414,
+					"cellType": 0,
+					"indexOfNew": 53,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"44": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 44,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			},
+			"47": {
+				"divide": {
+					"id": "52",
+					"angle": 0.08082956,
+					"cellType": 0,
+					"indexOfNew": 52,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"47": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 47,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			},
+			"43": {
+				"divide": {
+					"id": "51",
+					"angle": -0.3280964,
+					"cellType": 0,
+					"indexOfNew": 51,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"43": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 43,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"44": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 6,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.58,
+						"g": 0,
+						"b": 0.827,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"15": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 5,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.804,
+						"g": 0,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"38": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 5,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.804,
+						"g": 0,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"53": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 7,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 1,
+						"g": 0.647,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"44": {
+				"divide": {
+					"id": "54",
+					"angle": -4.6336565,
+					"cellType": 0,
+					"indexOfNew": 54,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"33": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"44": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"53": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 44,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"54": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 6,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.58,
+						"g": 0,
+						"b": 0.827,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"44": {
+				"divide": {
+					"id": "56",
+					"angle": -1.9262793,
+					"cellType": 0,
+					"indexOfNew": 56,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"33": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"44": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"15": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 44,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			},
+			"33": {
+				"divide": {
+					"id": "55",
+					"angle": -5.14538,
+					"cellType": 0,
+					"indexOfNew": 55,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"33": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"38": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"54": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 33,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"55": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 5,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.804,
+						"g": 0,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"56": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 5,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.804,
+						"g": 0,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"55": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"38": {
+							"length": 29.93367,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 38
+						},
+						"54": {
+							"length": 29.936047,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 55
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"56": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"44": {
+							"length": 30.044521,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 56
+						},
+						"15": {
+							"length": 30.061085,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 15
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"16": {
+				"divide": {
+					"id": "58",
+					"angle": -0.074309826,
+					"cellType": 0,
+					"indexOfNew": 58,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"16": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"32": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 16,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			},
+			"32": {
+				"divide": {
+					"id": "57",
+					"angle": -0.9841666,
+					"cellType": 0,
+					"indexOfNew": 57,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"32": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"37": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 32,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"43": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"57": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"43": {
+				"divide": {
+					"id": "59",
+					"angle": 1.9102163,
+					"cellType": 0,
+					"indexOfNew": 59,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"32": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"58": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"51": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						},
+						"43": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 43,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"45": {
+				"divide": {
+					"id": "60",
+					"angle": -1.2901013,
+					"cellType": 0,
+					"indexOfNew": 60,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"45": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 45,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"45": {
+				"divide": {
+					"id": "61",
+					"angle": 1.420494,
+					"cellType": 0,
+					"indexOfNew": 61,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"45": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 45,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"47": {
+				"divide": {
+					"id": "62",
+					"angle": -1.239578,
+					"cellType": 0,
+					"indexOfNew": 62,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"47": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 47,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"46": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"61": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"60": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"39": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"52": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"45": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						},
+						"61": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"47": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"60": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"62": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"52": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						},
+						"47": null
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"62": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"47": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"57": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 5,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.804,
+						"g": 0,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"58": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 5,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.804,
+						"g": 0,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"59": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 6,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.58,
+						"g": 0,
+						"b": 0.827,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"37": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 5,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.804,
+						"g": 0,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"16": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 5,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.804,
+						"g": 0,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"51": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 7,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 1,
+						"g": 0.647,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"43": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 6,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.58,
+						"g": 0,
+						"b": 0.827,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"57": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"37": {
+							"length": 29.992002,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 37
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"58": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"16": {
+							"length": 29.99771,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 16
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"59": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"58": {
+							"length": 29.995451,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 58
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"43": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"57": {
+							"length": 29.990839,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 57
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"59": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": -0.1,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"43": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": -0.1,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"57": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": -0.1,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"37": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": -0.1,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"16": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": -0.1,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"58": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": -0.1,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"44": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 14,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.678,
+						"g": 0.847,
+						"b": 0.902,
+						"a": 1
+					},
+					"angleDirected": 5.8119464,
+					"startDirectionId": 33,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": 49
+				}
+			},
+			"54": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 14,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.678,
+						"g": 0.847,
+						"b": 0.902,
+						"a": 1
+					},
+					"angleDirected": 5.794493,
+					"startDirectionId": 44,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": 51
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"46": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 5,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.804,
+						"g": 0,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"47": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 14,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.678,
+						"g": 0.847,
+						"b": 0.902,
+						"a": 1
+					},
+					"angleDirected": 5.8119464,
+					"startDirectionId": 45,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": 50
+				}
+			},
+			"39": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 5,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.804,
+						"g": 0,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"60": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 5,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.804,
+						"g": 0,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"61": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 5,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.804,
+						"g": 0,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"52": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 14,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.678,
+						"g": 0.847,
+						"b": 0.902,
+						"a": 1
+					},
+					"angleDirected": 5.7072268,
+					"startDirectionId": 47,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": 53.5
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"60": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"39": {
+							"length": 29.954588,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 39
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"47": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"60": {
+							"length": 29.963696,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 60
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"52": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"61": {
+							"length": 30.028215,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 61
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"46": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"61": {
+							"length": 30.028454,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 46
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"8": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 2,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 1,
+						"g": 1,
+						"b": 1,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"34": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 2,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 1,
+						"g": 1,
+						"b": 1,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"2": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 2,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 1,
+						"g": 1,
+						"b": 1,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"14": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 2,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 1,
+						"g": 1,
+						"b": 1,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"29": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 2,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 1,
+						"g": 1,
+						"b": 1,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"12": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 5,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.804,
+						"g": 0,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"23": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 5,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.804,
+						"g": 0,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"24": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 5,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.804,
+						"g": 0,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"28": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 5,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.804,
+						"g": 0,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"19": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 5,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.804,
+						"g": 0,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"20": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 5,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.804,
+						"g": 0,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"24": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"13": {
+							"length": 29.97254,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 24
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"35": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"19": {
+							"length": 29.878132,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 19
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"25": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"23": {
+							"length": 29.898035,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 23
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"36": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"20": {
+							"length": 30.126366,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 20
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"48": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 4,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"40": {
+							"length": 29.996868,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 40
+						}
+					},
+					"color": {
+						"r": 1,
+						"g": 0.753,
+						"b": 0.796,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": 40,
+					"funActivation": 6,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"26": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"13": {
+							"length": 29.787853,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 13
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"27": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"12": {
+							"length": 30.188862,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 27
+						},
+						"25": {
+							"length": 30.149107,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 25
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"17": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"30": {
+							"length": 30.270971,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 30
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"28": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"26": {
+							"length": 29.70753,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 26
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"19": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"10": {
+							"length": 29.823034,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 10
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"40": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 4,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 1,
+						"g": 0.753,
+						"b": 0.796,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 1,
+					"a": 1,
+					"b": 0,
+					"c": 1,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"30": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"12": {
+							"length": 30.261587,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 12
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"41": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 4,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"40": {
+							"length": 29.966951,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 41
+						},
+						"35": {
+							"length": 29.945158,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 35
+						}
+					},
+					"color": {
+						"r": 1,
+						"g": 0.753,
+						"b": 0.796,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"20": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"17": {
+							"length": 30.220768,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 17
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"31": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"28": {
+							"length": 29.700941,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 28
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"42": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 4,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"36": {
+							"length": 30.049793,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 36
+						},
+						"40": {
+							"length": 30.019268,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 42
+						}
+					},
+					"color": {
+						"r": 1,
+						"g": 0.753,
+						"b": 0.796,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": 0,
+					"a": -1,
+					"b": 0,
+					"c": 0,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"10": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"31": {
+							"length": 29.653765,
+							"isNeuronal": true,
+							"weight": 1,
+							"directedNeuronLink": 31
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"40": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": 0.2,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"40": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": 0.2,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"0": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": 0.5,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"40": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": 1,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"11": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 2,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 1,
+						"g": 1,
+						"b": 1,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"1": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 2,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 1,
+						"g": 1,
+						"b": 1,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"9": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 2,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 1,
+						"g": 1,
+						"b": 1,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"18": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 2,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 1,
+						"g": 1,
+						"b": 1,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"7": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 2,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 1,
+						"g": 1,
+						"b": 1,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"23": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"2": null,
+						"7": null
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"23": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"7": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"13": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 2,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 1,
+						"g": 1,
+						"b": 1,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"25": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 2,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 1,
+						"g": 1,
+						"b": 1,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"13": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 0,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"25": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 0,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"22": {
+				"divide": {
+					"id": "64",
+					"angle": -2.248226,
+					"cellType": 0,
+					"indexOfNew": 64,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"22": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 22,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			},
+			"21": {
+				"divide": {
+					"id": "63",
+					"angle": 2.0918782,
+					"cellType": 0,
+					"indexOfNew": 63,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"21": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 21,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"25": {
+				"divide": {
+					"id": "65",
+					"angle": 0.8730451,
+					"cellType": 0,
+					"indexOfNew": 65,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"25": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 25,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"31": {
+				"divide": {
+					"id": "66",
+					"angle": -0.017863154,
+					"cellType": 0,
+					"indexOfNew": 66,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"31": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 31,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"36": {
+				"divide": {
+					"id": "67",
+					"angle": 0.33820844,
+					"cellType": 0,
+					"indexOfNew": 67,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"36": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 36,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": null
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"24": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"2": null,
+						"7": null
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"46": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 0,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"15": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 0,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"37": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 0,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"16": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 0,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"38": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 0,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"39": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 0,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"24": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"2": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						},
+						"7": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": 1,
+							"directedNeuronLink": null
+						}
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"12": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 0,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"23": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 0,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"24": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 0,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"28": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 0,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"19": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 0,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"20": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 0,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"35": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 3,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0,
+						"g": 0,
+						"b": 1,
+						"a": 1
+					},
+					"angleDirected": 4.834562,
+					"startDirectionId": 19,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"36": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 3,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0,
+						"g": 0,
+						"b": 1,
+						"a": 1
+					},
+					"angleDirected": 0.6195919,
+					"startDirectionId": 18,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"40": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": 0.5,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"40": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": 1.5,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"40": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": 0.5,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"59": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 14,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.678,
+						"g": 0.847,
+						"b": 0.902,
+						"a": 1
+					},
+					"angleDirected": 5.5850534,
+					"startDirectionId": 43,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": 102
+				}
+			},
+			"32": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 7,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 1,
+						"g": 0.647,
+						"b": 0,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"43": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 14,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.678,
+						"g": 0.847,
+						"b": 0.902,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": 32,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": 90.5
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"59": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": 53.5
+				}
+			},
+			"43": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": 56.5
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"43": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 0,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"43": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 14,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.678,
+						"g": 0.847,
+						"b": 0.902,
+						"a": 1
+					},
+					"angleDirected": null,
+					"startDirectionId": 32,
+					"funActivation": 0,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": 62.5
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"59": {
+				"divide": {
+					"id": "68",
+					"angle": -6.347935,
+					"cellType": 0,
+					"indexOfNew": 68,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap",
+						"59": {
+							"length": 30,
+							"isNeuronal": false,
+							"weight": null,
+							"directedNeuronLink": null
+						}
+					},
+					"color": {
+						"r": 0.133,
+						"g": 0.545,
+						"b": 0.133,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": 59,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": 7,
+					"lengthDirected": null
+				},
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": 0,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"43": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": null,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": null,
+					"angleDirected": null,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": 0,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	},
+	{
+		"cellActions": {
+			"class": "java.util.LinkedHashMap",
+			"44": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 6,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.58,
+						"g": 0,
+						"b": 0.827,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			},
+			"54": {
+				"divide": null,
+				"mutate": {
+					"id": "",
+					"angle": 0,
+					"cellType": 6,
+					"indexOfNew": -1,
+					"physicalLink": {
+						"class": "java.util.LinkedHashMap"
+					},
+					"color": {
+						"r": 0.58,
+						"g": 0,
+						"b": 0.827,
+						"a": 1
+					},
+					"angleDirected": 0,
+					"startDirectionId": null,
+					"funActivation": null,
+					"a": null,
+					"b": null,
+					"c": null,
+					"isSum": null,
+					"colorRecognition": null,
+					"lengthDirected": null
+				}
+			}
+		}
+	}
+]
+}

@@ -2,24 +2,31 @@ package io.github.some_example_name.lwjgl3;
 
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application;
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration;
+import io.github.some_example_name.old.screens.MyGame;
 
-import io.github.some_example_name.old.good_one.CellSimulation;
-
-/** Launches the desktop (LWJGL3) application. */
+/**
+ * Launches the desktop (LWJGL3) application.
+ */
 public class Lwjgl3Launcher {
+//    public static void main(String[] args) {
+//        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+//            Logger.logCrash(throwable);
+//            System.exit(1);
+//        });
+//        if (StartupHelper.startNewJvmIfRequired()) return;
+//        createApplication();
+//    }
     public static void main(String[] args) {
-        if (StartupHelper.startNewJvmIfRequired()) return; // This handles macOS support and helps on Windows.
+        if (StartupHelper.startNewJvmIfRequired())
+            return; // This handles macOS support and helps on Windows.
         createApplication();
     }
 
     private static Lwjgl3Application createApplication() {
-        return new Lwjgl3Application(new CellSimulation(), getDefaultConfiguration());
+        return new Lwjgl3Application(new MyGame(new DesktopFileProvider(), null), getDefaultConfiguration());
     }
 
     private static Lwjgl3ApplicationConfiguration getDefaultConfiguration() {
-        // Принудительно используем NVIDIA GPU (если доступен)
-        System.setProperty("prism.forceGPU", "true"); // Для JavaFX (если используется)
-        System.setProperty("org.lwjgl.opengl.Display.allowSoftwareOpenGL", "false");
         Lwjgl3ApplicationConfiguration configuration = new Lwjgl3ApplicationConfiguration();
         configuration.setTitle("Genomeia");
         //// Vsync limits the frames per second to what your hardware can display, and helps eliminate
@@ -31,7 +38,10 @@ public class Lwjgl3Launcher {
         //// If you remove the above line and set Vsync to false, you can get unlimited FPS, which can be
         //// useful for testing performance, but can also be very stressful to some hardware.
         //// You may also need to configure GPU drivers to fully disable Vsync; this can cause screen tearing.
-        configuration.setWindowedMode(960, 960);
+        configuration.setWindowedMode(900, 900);
+//        configuration.setFullscreenMode(Lwjgl3ApplicationConfiguration.getDisplayMode());
+        configuration.setOpenGLEmulation(Lwjgl3ApplicationConfiguration.GLEmulation.GL30, 3, 0);
+//        configuration.setOpenGLEmulation(Lwjgl3ApplicationConfiguration.GLEmulation.GL30, 4, 3);
         //// You can change these files; they are in lwjgl3/src/main/resources/ .
         configuration.setWindowIcon("libgdx128.png", "libgdx64.png", "libgdx32.png", "libgdx16.png");
         return configuration;

@@ -13,7 +13,7 @@ public class IOSLauncher extends IOSApplication.Delegate {
     @Override
     protected IOSApplication createApplication() {
         IOSApplicationConfiguration configuration = new IOSApplicationConfiguration();
-        return new IOSApplication(new CellSimulation(), configuration);
+        return new IOSApplication(new CellSimulation(new IOSFileProvider(), new IOS()), configuration);
     }
 
     public static void main(String[] argv) {

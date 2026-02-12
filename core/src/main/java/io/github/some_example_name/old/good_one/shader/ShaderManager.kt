@@ -1,297 +1,303 @@
 package io.github.some_example_name.old.good_one.shader
 
 import com.badlogic.gdx.Gdx
-import com.badlogic.gdx.graphics.*
-import com.badlogic.gdx.graphics.GL32.GL_TEXTURE_BUFFER
-import com.badlogic.gdx.graphics.glutils.ShaderProgram
+import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.utils.BufferUtils
-import com.badlogic.gdx.utils.GdxRuntimeException
-import io.github.some_example_name.attempts.game.physics.WorldGenerator
-import io.github.some_example_name.old.good_one.editor.GenomeEditorRefactored
-import io.github.some_example_name.old.good_one.ui.Pause
-import io.github.some_example_name.old.good_one.ui.Play
-import io.github.some_example_name.old.good_one.ui.UiProcessor
-import io.github.some_example_name.old.logic.CellManager
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.nio.FloatBuffer
+import io.github.some_example_name.old.good_one.SHADER_TEXTURE_SIZE
+import io.github.some_example_name.old.good_one.SHADER_TEXTURE_SIZE_POW_2
+import io.github.some_example_name.old.good_one.shader.ShaderManagerSampler2D.Companion.CELLS_FLOAT_COUNT
+import io.github.some_example_name.old.good_one.shader.ShaderManagerSampler2D.Companion.LINKS_FLOAT_COUNT
+import io.github.some_example_name.old.screens.GlobalSettings
+import io.github.some_example_name.old.world_logic.CellManager
+import io.github.some_example_name.old.world_logic.GridManager.Companion.CELL_SIZE
+import io.github.some_example_name.old.world_logic.GridManager.Companion.WORLD_CELL_HEIGHT
+import io.github.some_example_name.old.world_logic.GridManager.Companion.WORLD_CELL_WIDTH
+import io.github.some_example_name.old.world_logic.ThreadManager.Companion.THREAD_COUNT
+import io.github.some_example_name.old.world_logic.cells.base.isDirected
+import java.nio.Buffer
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+
+open class ShaderManager {
 
 
-class ShaderManager(
-    val uiProcessor: UiProcessor,
-    val genomeEditor: GenomeEditorRefactored,
-    val cellManager: CellManager
+    /*
+    * ShaderSystem
+    * */
+
+    //Cell
+    val floatArraySize = SHADER_TEXTURE_SIZE * SHADER_TEXTURE_SIZE * 4
+    val intArraySize = SHADER_TEXTURE_SIZE * SHADER_TEXTURE_SIZE * 2
+    val cellsMaxAmount = floatArraySize - floatArraySize % CELLS_FLOAT_COUNT - CELLS_FLOAT_COUNT
+    val drawStrokeCellCounts = IntArray(SHADER_TEXTURE_SIZE) { 0 }
+    val drawIntGrid = IntArray(SHADER_TEXTURE_SIZE * SHADER_TEXTURE_SIZE * 2) { 0 }
+    val bufferFloat = BufferUtils.newFloatBuffer(floatArraySize)
+    val bufferPheromoneFloat = BufferUtils.newFloatBuffer(floatArraySize)
+    val bufferInt = BufferUtils.newIntBuffer(intArraySize) // 2 int на пиксель
+    val bufferFloatEmpty = BufferUtils.newFloatBuffer(floatArraySize)
+    val bufferIntEmpty = BufferUtils.newIntBuffer(intArraySize) // 2 int на пиксель
+
+    val zoomManager = ZoomManager()
+    val linksGrid = LinksDrawGridStructure()
+
+    val executor = Executors.newFixedThreadPool(THREAD_COUNT)
+    val futures = mutableListOf<Future<*>>()
+    var backgroundColor = Color(0.064f, 0.070f, 0.098f, 1f)
+    var drawRays = false
+
+    fun setGridValue(base: Int, total: Int, x: Int, y: Int) {
+        val index = ((y shl SHADER_TEXTURE_SIZE_POW_2) + x) shl 1 // (y * 256 + x) * 2
+        if (index < 0 || index + 1 >= intArraySize) return
+        drawIntGrid[index] = base
+        drawIntGrid[index + 1] = total
+    }
+
+
+
+    val specialCellsMaxSize = 20_000
+    @Volatile
+    var specialCellsId = 0
+    var drawSpecialCells = IntArray(specialCellsMaxSize) { -1 }
+
+}
+
+
+
+private fun CellManager.updateDrawChunk(
+    start: Int,
+    end: Int,
+    startX: Int,
+    endX: Int,
+    startY: Int,
+    cameraX: Int,
+    cameraY: Int,
+    zoom: Float,
+    aspectRatio: Float
 ) {
+    var counterThread = drawStrokeCellCounts[start]
+    for (cy in start + startY..end + startY) {
+        for (cx in startX..endX) {
+            val cellsCount = gridManager.getCellsCount(cx, cy)
+            var linkCountZero = true
+            val batchSize = if (GlobalSettings.DRAW_LINK_SHADER) {
+                val linksCount = linksGrid.getLinksCount(cx, cy)
+                linkCountZero = linksCount == 0
+                cellsCount * CELLS_FLOAT_COUNT + linksCount * LINKS_FLOAT_COUNT
+            } else {
+                linkCountZero = true
+                cellsCount * CELLS_FLOAT_COUNT
+            }
 
-    private var uboId: Int = 0
-    private lateinit var uboBuffer: ByteBuffer
-    private var shader: ShaderProgram
-    private var mesh: Mesh
+            val gridCellIndex = cy * WORLD_CELL_WIDTH + cx
+            val textureCoordIndex = (cy - startY) * WORLD_CELL_WIDTH + cx - startX
+            if (gridCellIndex < gridManager.GRID_SIZE) {
+                bufferPheromoneFloat.put(textureCoordIndex*4, pheromoneR[gridCellIndex])
+                bufferPheromoneFloat.put(textureCoordIndex*4 + 1, pheromoneG[gridCellIndex])
+                bufferPheromoneFloat.put(textureCoordIndex*4 + 2, pheromoneB[gridCellIndex])
+            }
 
-    private var grid: Array<Array<Triple<MutableList<Int>, MutableList<Int>, MutableList<Int>>>>
-    private var screenWidth = 0
-    private var screenHeight = 0
-    private var CELLS_AMOUNT = 0
-    private var CELL_SIZE = 0f
-    private var CELLS_HEIGHT_AMOUNT = 0
-    private var CELLS_WIDTH_AMOUNT = 24 + 2
+            val base = if (cellsCount == 0 && linkCountZero) {
+                val hasNeighbor =
+                    gridManager.getCellsCount(cx + 1, cy - 1) == 0 &&
+                        gridManager.getCellsCount(cx + 1, cy) == 0 &&
+                        gridManager.getCellsCount(cx + 1, cy + 1) == 0 &&
+                        gridManager.getCellsCount(cx - 1, cy - 1) == 0 &&
+                        gridManager.getCellsCount(cx - 1, cy) == 0 &&
+                        gridManager.getCellsCount(cx - 1, cy + 1) == 0 &&
+                        gridManager.getCellsCount(cx, cy + 1) == 0 &&
+                        gridManager.getCellsCount(cx, cy - 1) == 0
+                if (hasNeighbor) 2 else 1
+            } else counterThread
 
+            setGridValue(base, batchSize, cx - cameraX, cy - cameraY)
+            if (base == 2) continue
 
-    init {
-        screenWidth = Gdx.graphics.width
-        screenHeight = Gdx.graphics.height
-        CELL_SIZE = screenWidth / (CELLS_WIDTH_AMOUNT - 2f)
-        CELLS_HEIGHT_AMOUNT = 26//(screenHeight / CELL_SIZE + 2).toInt()
-        CELLS_AMOUNT = CELLS_HEIGHT_AMOUNT * CELLS_WIDTH_AMOUNT
-//        cellManager.zoomManager.shaderCellSize = CELL_SIZE / 40f
+            val cells = gridManager.getCells(cx, cy)
+            for (id in cells) {
+                if (drawRays) {
+                    if (cellType[id] == 6 || cellType[id].isDirected()) {
+                        if (specialCellsId < specialCellsMaxSize - 1) {
+                            drawSpecialCells[specialCellsId++] = id
+                        }
+                    }
+                }
+                if (counterThread < cellsMaxAmount) {
+                    bufferFloat.put(counterThread++, (1f))
+                    bufferFloat.put(
+                        counterThread++,
+                        ((x[id] - zoomManager.screenOffsetX) * zoom) / Gdx.graphics.width
+                    )
+                    bufferFloat.put(
+                        counterThread++,
+                        (((y[id] - zoomManager.screenOffsetY) * zoom) / Gdx.graphics.height)/* * aspectRatio*/
+                    )
+                    bufferFloat.put(counterThread++, (ax[id]))
+                    bufferFloat.put(counterThread++, (ay[id]))
+                    bufferFloat.put(
+                        counterThread++, /*energy[id]*/
+                        (if (cellType[id] != -1) energy[id] else 0f)
+                    )
+                    bufferFloat.put(counterThread++, (colorR[id]))
+                    bufferFloat.put(counterThread++, (colorG[id]))
+                    bufferFloat.put(counterThread++, (colorB[id]))
+                    bufferFloat.put(counterThread++, (0f))
+                }
+            }
 
-        println("$screenWidth $screenHeight $CELL_SIZE $CELLS_WIDTH_AMOUNT $CELLS_HEIGHT_AMOUNT $CELLS_AMOUNT")
-
-        grid = Array(CELLS_HEIGHT_AMOUNT) {
-            Array(CELLS_WIDTH_AMOUNT) {
-                Triple(
-                    mutableListOf(),
-                    mutableListOf(),
-                    mutableListOf()
-                )
+            if (GlobalSettings.DRAW_LINK_SHADER) {
+                val links = linksGrid.getLinks(cx, cy)
+                for (id in links) {
+                    if (counterThread < cellsMaxAmount) {
+                        val c1 = links1[id]
+                        val c2 = links2[id]
+                        bufferFloat.put(counterThread++, (2f))
+                        bufferFloat.put(
+                            counterThread++,
+                            ((x[c1] - zoomManager.screenOffsetX) * zoom) / Gdx.graphics.width
+                        )
+                        bufferFloat.put(
+                            counterThread++,
+                            (((y[c1] - zoomManager.screenOffsetY) * zoom) / Gdx.graphics.height)/* * aspectRatio*/
+                        )
+                        bufferFloat.put(
+                            counterThread++,
+                            ((x[c2] - zoomManager.screenOffsetX) * zoom) / Gdx.graphics.width
+                        )
+                        bufferFloat.put(
+                            counterThread++,
+                            (((y[c2] - zoomManager.screenOffsetY) * zoom) / Gdx.graphics.height)/* * aspectRatio*/
+                        )
+                        bufferFloat.put(counterThread++, (colorR[c1]))
+                        bufferFloat.put(counterThread++, (colorG[c1]))
+                        bufferFloat.put(counterThread++, (colorB[c1]))
+                        bufferFloat.put(counterThread++, (colorR[c2]))
+                        bufferFloat.put(counterThread++, (colorG[c2]))
+                        bufferFloat.put(counterThread++, (colorB[c2]))
+                    }
+                }
             }
         }
+    }
+}
 
-        createUBO()
-        // Создаем шейдерную программу
-        shader = ShaderProgram(vertexShader, fragmentShader)
-        if (!shader.isCompiled) {
-            throw GdxRuntimeException("Shader compilation failed: ${shader.log}")
+private fun CellManager.putLinksToGrid(endCameraX: Float, endCameraY: Float) {
+    val linksAmount = linksLastId + 1
+    val threadAmount = THREAD_COUNT * 4
+    val batchSize = (linksAmount + threadAmount - 1) / threadAmount
+
+    for (i in 0 until threadAmount) {
+        val start = i * batchSize
+        val end = minOf(start + batchSize, linksAmount)
+
+        if (start >= end) break
+
+        futures.add(executor.submit {
+            for (linkId in start until end) {
+                val c1 = links1[linkId]
+                val c2 = links2[linkId]
+                if (y[c1] > endCameraY) continue
+                if (x[c1] > endCameraX) continue
+                if (x[c1] < zoomManager.screenOffsetX) continue
+                if (y[c1] < zoomManager.screenOffsetY) continue
+
+                val dx = x[c1] - x[c2]
+                val dy = y[c1] - y[c2]
+                val dx2 = dx * dx
+                val dy2 = dy * dy
+                if (dx2 + dy2 < 1225) continue
+
+                val cx = (((x[c1] + x[c2]) / 2f) / CELL_SIZE).toInt()
+                val cy = (((y[c1] + y[c2]) / 2f) / CELL_SIZE).toInt()
+                linksGrid.addLink(cx, cy, linkId)
+            }
+        })
+    }
+
+    futures.forEach { it.get() }
+    futures.clear()
+}
+
+fun CellManager.updateDraw() {
+    specialCellsId = 0
+    val aspectRatio = Gdx.graphics.height.toFloat() / Gdx.graphics.width.toFloat()
+    val zoom = zoomManager.zoomScale * zoomManager.shaderCellSize
+
+    val endCameraX = zoomManager.screenOffsetX + Gdx.graphics.width / zoom
+    val endCameraY = zoomManager.screenOffsetY + Gdx.graphics.width / zoom
+    val startX = ((zoomManager.screenOffsetX) / CELL_SIZE).toInt().coerceIn(0, WORLD_CELL_WIDTH)
+    val startY =
+        ((zoomManager.screenOffsetY) / CELL_SIZE).toInt().coerceIn(0, WORLD_CELL_HEIGHT)
+    val endX = ((zoomManager.screenOffsetX + Gdx.graphics.width / zoom) / CELL_SIZE).toInt()
+        .coerceIn(0, WORLD_CELL_WIDTH - 1)
+    val endY = ((zoomManager.screenOffsetY + Gdx.graphics.height / zoom) / CELL_SIZE).toInt()
+        .coerceIn(0, WORLD_CELL_HEIGHT - 1)
+    val cameraX = ((zoomManager.screenOffsetX) / CELL_SIZE).toInt()
+    val cameraY = ((zoomManager.screenOffsetY) / CELL_SIZE).toInt()
+
+    if (GlobalSettings.DRAW_LINK_SHADER)
+        putLinksToGrid(endCameraX, endCameraY)
+
+    val strokeCountsSize = endY - startY
+    if (strokeCountsSize >= SHADER_TEXTURE_SIZE) return
+    for (cy in startY..endY) {
+        for (cx in startX..endX) {
+            val cellIndex = cy * WORLD_CELL_WIDTH + cx
+            val linkIndex = cy * LinksDrawGridStructure.Companion.SCREEN_CELL_WIDTH_LINK + cx
+            if (GlobalSettings.DRAW_LINK_SHADER) {
+                drawStrokeCellCounts[cy - startY] += gridManager.cellCounts[cellIndex] * CELLS_FLOAT_COUNT + linksGrid.linkCounts[linkIndex] * LINKS_FLOAT_COUNT
+            } else {
+                drawStrokeCellCounts[cy - startY] += gridManager.cellCounts[cellIndex] * CELLS_FLOAT_COUNT
+            }
         }
+    }
 
-        // Создаем mesh для отрисовки полноэкранного квадрата
-        mesh = Mesh(true, 4, 6, VertexAttribute.Position())
-        mesh.setVertices(
-            floatArrayOf(
-                -1f, -1f, 0f,  // Левый нижний угол
-                1f, -1f, 0f,   // Правый нижний угол
-                1f, 1f, 0f,    // Правый верхний угол
-                -1f, 1f, 0f    // Левый верхний угол
+    //0.22 мс на сам сбор данных
+    var sum = 0
+    for (i in 0..strokeCountsSize) {
+        val cellsCountInStroke = drawStrokeCellCounts[i]
+        drawStrokeCellCounts[i] = sum
+        sum += cellsCountInStroke
+    }
+
+    val threadAmount = THREAD_COUNT * 4
+    val total = strokeCountsSize + 1
+    val chunkSize = (total + threadAmount - 1) / threadAmount // округление вверх
+    for (threadIndex in 0 until threadAmount) {
+        val start = threadIndex * chunkSize
+        val end = minOf((threadIndex + 1) * chunkSize, total)
+        if (start >= end) break
+        futures.add(executor.submit {
+            updateDrawChunk(
+                start,
+                end,
+                startX,
+                endX,
+                startY,
+                cameraX,
+                cameraY,
+                zoom,
+                aspectRatio
             )
-        )
-        mesh.setIndices(shortArrayOf(0, 1, 2, 2, 3, 0))
+        })
     }
 
-    private val textureWidth = 2048
-    private val textureHeight = 1
-    private val textureId: Int
+    futures.forEach { it.get() }
+    futures.clear()
 
-    private val totalTexels = textureWidth * textureHeight
-    private val floatArray = FloatArray(totalTexels * 4)
-    private val floatBuffer: FloatBuffer
+    (bufferFloat as Buffer).position(0)
 
-    val gridSize = 676
-    val cellsSize = 1000
-    val cellsOffset = gridSize // смещение vec4 u_cells в текстуре
+    (bufferInt as Buffer).clear()
+    bufferInt.put(drawIntGrid)
+    (bufferInt as Buffer).position(0)
 
-    init {
-        floatBuffer = ByteBuffer
-            .allocateDirect(floatArray.size * 4)
-            .order(ByteOrder.nativeOrder())
-            .asFloatBuffer()
-
-        // Создание текстуры
-        textureId = Gdx.gl.glGenTexture()
-        Gdx.gl.glBindTexture(GL20.GL_TEXTURE_2D, textureId)
-        Gdx.gl.glTexImage2D(
-            GL20.GL_TEXTURE_2D,
-            0,
-            GL30.GL_RGBA32F,
-            textureWidth,
-            textureHeight,
-            0,
-            GL20.GL_RGBA,
-            GL20.GL_FLOAT,
-            null
-        )
-        Gdx.gl.glTexParameteri(GL20.GL_TEXTURE_2D, GL20.GL_TEXTURE_MIN_FILTER, GL20.GL_NEAREST)
-        Gdx.gl.glTexParameteri(GL20.GL_TEXTURE_2D, GL20.GL_TEXTURE_MAG_FILTER, GL20.GL_NEAREST)
-    }
-
-
-
-    //Вызывается только при инициализации
-    private fun createUBO() {
-        val maxUboSize = BufferUtils.newIntBuffer(1)
-        Gdx.gl30.glGetIntegerv(GL30.GL_MAX_UNIFORM_BLOCK_SIZE, maxUboSize)
-        val maxSupportedUboSize = maxUboSize[0]
-
-        uboBuffer = ByteBuffer.allocateDirect(maxSupportedUboSize)
-            .order(ByteOrder.nativeOrder())
-
-
-
-        uboId = Gdx.gl.glGenBuffer()
-        Gdx.gl.glBindBuffer(GL30.GL_UNIFORM_BUFFER, uboId)
-        Gdx.gl.glBufferData(GL30.GL_UNIFORM_BUFFER, maxSupportedUboSize, null, GL30.GL_DYNAMIC_DRAW)
-        Gdx.gl30.glBindBufferBase(GL30.GL_UNIFORM_BUFFER, 0, uboId)
-    }
-
-    fun render(cells: List<CellShaderModel>, substances: List<SubShaderModel>, links: List<LinkShaderModel>) {
-        for (i in 0..<CELLS_HEIGHT_AMOUNT) {
-            for (j in 0..<CELLS_WIDTH_AMOUNT) {
-                grid[i][j].apply {
-                    first.clear()
-                    second.clear()
-                    third.clear()
-                }
-            }
+    futures.add(executor.submit {
+        drawIntGrid.fill(2)
+        drawStrokeCellCounts.fill(0)
+        if (GlobalSettings.DRAW_LINK_SHADER) {
+            linksGrid.clear()
         }
+    })
 
-        val editorCells = genomeEditor.cellsCopy.values.toList().map {
-            CellShaderModel(
-                index = 0,
-                x = it.x,
-                y = it.y,
-                ax = 0f,
-                ay = 0f,
-                r = it.colorCore.r,
-                g = it.colorCore.g,
-                b = it.colorCore.b,
-                energy = 3f,
-                cellMode = when {
-                    it.isSelected -> 3f
-                    it.isAdded -> 1f
-                    else -> 0f
-                },
-                cellType = it.cellTypeId.toFloat()
-            )
-        }
-
-        (if (uiProcessor.uiState is Play) cells else editorCells)/*mock*/.forEachIndexed { id, it ->
-            val startX = (it.x / CELL_SIZE).toInt()
-            val startY = (it.y / CELL_SIZE).toInt()
-            grid[startY][startX].first.add(id)
-        }
-        substances.forEachIndexed { id, it ->
-            val startX = (it.x / CELL_SIZE).toInt()
-            val startY = (it.y / CELL_SIZE).toInt()
-            grid[startY][startX].second.add(id)
-        }
-        links.forEachIndexed { id, it ->
-            val startX = (it.x / CELL_SIZE).toInt()
-            val startY = (it.y / CELL_SIZE).toInt()
-            grid[startY][startX].third.add(id)
-        }
-
-        shader.bind()
-        when (uiProcessor.uiState) {
-            is Pause -> {
-                updateUBO(editorCells, substances, links)
-            }
-
-            Play -> {
-                updateUBO(cells, substances, links)
-            }
-        }
-
-        shader.setUniformf("u_screenSize", Gdx.graphics.width.toFloat(), Gdx.graphics.height.toFloat())
-        shader.setUniformf("u_zoom", cellManager.zoomManager.zoomScale)
-        shader.setUniformi("u_gridWidth", CELLS_WIDTH_AMOUNT)
-        shader.setUniformi("u_gridHeight", CELLS_HEIGHT_AMOUNT)
-        shader.setUniformi("u_playMode", if (uiProcessor.uiState is Pause) 1 else 2)
-        mesh.render(shader, GL20.GL_TRIANGLES)
-    }
-
-    //Вызывается каждый кадр
-    private fun updateUBO(
-        cells: List<CellShaderModel>,
-        substances: List<SubShaderModel>,
-        links: List<LinkShaderModel>
-    ) {
-        uboBuffer.clear()
-
-        val intView = uboBuffer.asIntBuffer()
-        var indexCounter = 0
-
-        for (i in 0..<CELLS_HEIGHT_AMOUNT) {
-            for (j in 0..<CELLS_WIDTH_AMOUNT) {
-                grid[i][j].apply {
-                    val cell = grid[i][j]
-                    val batchSize =
-                        cell.first.size * CELLS_FLOAT_COUNT + cell.second.size * SUBS_FLOAT_COUNT + cell.third.size * LINKS_FLOAT_COUNT
-                    intView.put(if (cell.first.isEmpty() && cell.second.isEmpty() && cell.third.isEmpty()) -1 else indexCounter)
-                    intView.put(batchSize)
-                    intView.put(0)//TODO Если заполнить, то можно будет передать x2 данных
-                    intView.put(0)
-                    indexCounter += batchSize
-                }
-            }
-        }
-
-        uboBuffer.position(CELLS_AMOUNT * 16) // Переходим к началу vec2-данных
-        val floatView = uboBuffer.asFloatBuffer()
-
-        for (i in 0..<CELLS_HEIGHT_AMOUNT) {
-            for (j in 0..<CELLS_WIDTH_AMOUNT) {
-                grid[i][j].first.forEach {
-                    val cell = cells[it]
-                    floatView.put(1f)//type (cell, substance or link)
-                    floatView.put(cell.x)
-                    floatView.put(cell.y)
-                    floatView.put(cell.ax)
-                    floatView.put(cell.ay)
-                    floatView.put(cell.r)
-                    floatView.put(cell.g)
-                    floatView.put(cell.b)
-                    floatView.put(cell.energy)
-                    floatView.put(cell.cellMode)//cellMode
-                    floatView.put(0f)//cellType
-                    floatView.put(0f)//angle
-                }
-
-                grid[i][j].third.forEach {
-                    val link = links[it]
-
-                    floatView.put(2f)//type (cell, substance or link)
-                    floatView.put(link.xc1)
-                    floatView.put(link.yc1)
-                    floatView.put(link.xc2)
-                    floatView.put(link.yc2)
-                    floatView.put(link.rc1)
-                    floatView.put(link.gc1)
-                    floatView.put(link.bc1)
-                    floatView.put(link.rc2)
-                    floatView.put(link.gc2)
-                    floatView.put(link.bc2)
-                }
-
-                grid[i][j].second.forEach {
-                    val sub = substances[it]
-                    floatView.put(3f)//type (cell, substance or link)
-                    floatView.put(sub.x)
-                    floatView.put(sub.y)
-                    floatView.put(sub.radius)//radius
-                    floatView.put(sub.r)
-                    floatView.put(sub.g)
-                    floatView.put(sub.b)
-                }
-            }
-        }
-
-        for (i in 1..(indexCounter % 4)) {
-            floatView.put(0f)
-            indexCounter++
-        }
-
-        // 3. Отправляем данные в GPU
-        uboBuffer.position(0) // Возвращаемся в начало буфера
-        uboBuffer.limit(CELLS_AMOUNT * 16 + indexCounter * 4) // Устанавливаем лимит
-
-        Gdx.gl.glBindBuffer(GL31.GL_UNIFORM_BUFFER, uboId)
-        Gdx.gl.glBufferSubData(GL31.GL_UNIFORM_BUFFER, 0, uboBuffer.limit(), uboBuffer)
-        Gdx.gl.glBindBuffer(GL31.GL_UNIFORM_BUFFER, 0)
-    }
-
-    companion object {
-        private const val MAX_FLOATS_AMOUNT = 15700
-        const val CELLS_FLOAT_COUNT = 10
-        const val SUBS_FLOAT_COUNT = 7
-        const val LINKS_FLOAT_COUNT = 11
-    }
+    futures.forEach { it.get() }
+    futures.clear()
 }

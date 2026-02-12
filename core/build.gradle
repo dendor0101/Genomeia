@@ -4,7 +4,11 @@ eclipse.project.name = appName + '-core'
 dependencies {
   api "com.badlogicgames.gdx:gdx:$gdxVersion"
   api "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
+  implementation "it.unimi.dsi:fastutil:8.5.16"
+  implementation "com.kotcrab.vis:vis-ui:1.5.3"
+  implementation "com.badlogicgames.gdx:gdx-freetype:$gdxVersion"
   implementation "com.esotericsoftware:kryo:5.5.0"
+  implementation "games.spooky.gdx:gdx-nativefilechooser:$gdxNativefilechooserVersion"
   if(enableGraalNative == 'true') {
     implementation "io.github.berstanio:gdx-svmhelper-annotations:$graalHelperVersion"
   }

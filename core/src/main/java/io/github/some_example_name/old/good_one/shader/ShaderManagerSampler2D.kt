@@ -1,28 +1,35 @@
 package io.github.some_example_name.old.good_one.shader
 
 import com.badlogic.gdx.Gdx
-import com.badlogic.gdx.graphics.*
+import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.GL20.GL_TEXTURE_2D
-import com.badlogic.gdx.graphics.GL30.*
-import com.badlogic.gdx.graphics.GL31.GL_WRITE_ONLY
+import com.badlogic.gdx.graphics.GL30
+import com.badlogic.gdx.graphics.GL30.GL_FLOAT
+import com.badlogic.gdx.graphics.GL30.GL_INT
+import com.badlogic.gdx.graphics.GL30.GL_RG32I
+import com.badlogic.gdx.graphics.GL30.GL_RGBA
+import com.badlogic.gdx.graphics.GL30.GL_RGBA16F
+import com.badlogic.gdx.graphics.GL30.GL_RGBA32F
+import com.badlogic.gdx.graphics.GL30.GL_RG_INTEGER
+import com.badlogic.gdx.graphics.Mesh
+import com.badlogic.gdx.graphics.Pixmap
+import com.badlogic.gdx.graphics.Texture
+import com.badlogic.gdx.graphics.TextureData
+import com.badlogic.gdx.graphics.VertexAttribute
 import com.badlogic.gdx.graphics.glutils.ShaderProgram
-import com.badlogic.gdx.utils.BufferUtils
 import com.badlogic.gdx.utils.GdxRuntimeException
-import io.github.some_example_name.old.good_one.editor.GenomeEditorRefactored
-import io.github.some_example_name.old.good_one.shader.ShaderManager.Companion.CELLS_FLOAT_COUNT
-import io.github.some_example_name.old.good_one.shader.ShaderManager.Companion.LINKS_FLOAT_COUNT
-import io.github.some_example_name.old.good_one.shader.ShaderManager.Companion.SUBS_FLOAT_COUNT
-import io.github.some_example_name.old.good_one.ui.Pause
-import io.github.some_example_name.old.good_one.ui.Play
-import io.github.some_example_name.old.good_one.ui.UiProcessor
-import io.github.some_example_name.old.logic.CellManager
+import io.github.some_example_name.old.screens.GlobalSettings.MSAA
+import io.github.some_example_name.old.good_one.SHADER_TEXTURE_SIZE
+import io.github.some_example_name.old.good_one.isShowCell
+import io.github.some_example_name.old.world_logic.CellManager
+import io.github.some_example_name.old.world_logic.GridManager.Companion.WORLD_CELL_HEIGHT
+import io.github.some_example_name.old.world_logic.GridManager.Companion.WORLD_CELL_WIDTH
+import io.github.some_example_name.old.world_logic.isPlay
 import java.nio.FloatBuffer
 import java.nio.IntBuffer
 import kotlin.math.ceil
 
 class ShaderManagerSampler2D(
-    val uiProcessor: UiProcessor,
-    val genomeEditor: GenomeEditorRefactored,
     val cellManager: CellManager
 ) {
 
@@ -33,16 +40,19 @@ class ShaderManagerSampler2D(
     var screenHeight = 0
     private var CELL_SIZE = 0f
     private var GRID_SIZE = 0
-    private val intTexture = IntTexture2D_RG32I(256, 256)
-    private val floatTexture = FloatTexture2D(256, 256)
+    private val intTexture = IntTexture2D_RG32I(SHADER_TEXTURE_SIZE, SHADER_TEXTURE_SIZE)
+    private val floatTexture = FloatTexture2D(SHADER_TEXTURE_SIZE, SHADER_TEXTURE_SIZE)
+    private val pheromoneFloatTexture = FloatTexture2D(WORLD_CELL_WIDTH, WORLD_CELL_HEIGHT)
 
     private var prevZoom = cellManager.zoomManager.zoomScale
 
     init {
         updateGrid()
+        val vertFile = Gdx.files.internal("vertexShader.vert").readString()
+        val fragFile = Gdx.files.internal("fragmentShader.frag").readString()
 
-        // Создаем шейдерную программу
-        shader = ShaderProgram(vertexShaderSampler2d, fragmentShaderSampler2d)
+        shader = ShaderProgram(vertFile, fragFile)
+
         if (!shader.isCompiled) {
             throw GdxRuntimeException("Shader compilation failed: ${shader.log}")
         }
@@ -69,7 +79,6 @@ class ShaderManagerSampler2D(
         prevZoom = cellManager.zoomManager.zoomScale
     }
 
-
     fun render() {
         val cameraX = (cellManager.zoomManager.screenOffsetX * cellManager.zoomManager.shaderCellSize * cellManager.zoomManager.zoomScale) % (CELL_SIZE)
         val cameraY = (cellManager.zoomManager.screenOffsetY * cellManager.zoomManager.shaderCellSize * cellManager.zoomManager.zoomScale) % CELL_SIZE
@@ -79,10 +88,14 @@ class ShaderManagerSampler2D(
 
         val aspectRatio = Gdx.graphics.height.toFloat() / Gdx.graphics.width.toFloat()
 
-//        val start = System.nanoTime()
-        floatTexture.update(cellManager.bufferFloat)
-        intTexture.update(cellManager.bufferInt)
-//        val end = System.nanoTime()
+        if ((isShowCell && !isPlay) || isPlay) {
+            floatTexture.update(cellManager.bufferFloat)
+            intTexture.update(cellManager.bufferInt)
+        } else {
+            floatTexture.update(cellManager.bufferFloatEmpty)
+            intTexture.update(cellManager.bufferIntEmpty)
+        }
+        pheromoneFloatTexture.update(cellManager.bufferPheromoneFloat)
 
         shader.bind()
         intTexture.texture.bind(0)
@@ -91,17 +104,16 @@ class ShaderManagerSampler2D(
         floatTexture.texture.bind(1)
         shader.setUniformi("u_floatTexture", 1)
 
+        pheromoneFloatTexture.texture.bind(2)
+        shader.setUniformi("u_pheromoneFloatTexture", 2)
+
         shader.setUniformf("u_screenSize", Gdx.graphics.width.toFloat(), Gdx.graphics.height.toFloat())
-        shader.setUniformf("u_zoom", cellManager.zoomManager.zoomScale)
         shader.setUniformf("u_aspectRatio", aspectRatio)
         shader.setUniformf("u_cellSizepx", CELL_SIZE)
         shader.setUniformf("u_gridOffset", cameraX, cameraY)
-        shader.setUniformi("u_playMode", if (uiProcessor.uiState is Pause) 1 else 2)
-        shader.setUniformf("u_squareZoomMaxRadius", (0.000434f * cellManager.zoomManager.zoomScale * cellManager.zoomManager.zoomScale))
-        shader.setUniformf("u_squareZoomMaxRadius08", (0.000277f * cellManager.zoomManager.zoomScale * cellManager.zoomManager.zoomScale))
-        shader.setUniformf("u_link_r", (0.020833f * cellManager.zoomManager.zoomScale))
+        shader.setUniformf("u_backgroundColor", cellManager.backgroundColor)
+        shader.setUniformi("u_msaa", MSAA)
         mesh.render(shader, GL20.GL_TRIANGLES)
-
 
         Gdx.gl.glActiveTexture(GL20.GL_TEXTURE1)
         Gdx.gl.glBindTexture(GL_TEXTURE_2D, 0)
@@ -111,6 +123,12 @@ class ShaderManagerSampler2D(
 
         Gdx.gl.glUseProgram(0)
 
+    }
+
+    companion object {
+        const val CELLS_FLOAT_COUNT = 10
+        const val SUBS_FLOAT_COUNT = 7
+        const val LINKS_FLOAT_COUNT = 11
     }
 }
 
@@ -128,7 +146,7 @@ class FloatTexture2D(val widthSize: Int, val heightSize: Int) {
             override fun disposePixmap() = false
             override fun consumeCustomData(target: Int) {
                 Gdx.gl.glTexImage2D(
-                    target, 0, GL_RGBA16F, widthSize, heightSize, 0,
+                    target, 0, GL_RGBA32F, widthSize, heightSize, 0,
                     GL_RGBA, GL_FLOAT, null
                 )
             }
@@ -147,11 +165,8 @@ class FloatTexture2D(val widthSize: Int, val heightSize: Int) {
     }
 
     fun update(bufferFloat: FloatBuffer) {
-//        require(data.size == widthSize * heightSize * 4) { "Invalid data size" }
-
 
         texture.bind()
-
 
         Gdx.gl.glPixelStorei(GL20.GL_UNPACK_ALIGNMENT, 1)
         //При некоторых обстаятельствах очень долго выполняется до 16 мс
@@ -161,10 +176,12 @@ class FloatTexture2D(val widthSize: Int, val heightSize: Int) {
             GL_RGBA, GL_FLOAT, bufferFloat
         )
     }
+
+    fun dispose() {
+        texture.dispose()
+    }
 }
 
-
-//TODO тут нужно под мобилу сделать все (float)
 class IntTexture2D_RG32I(val widthSize: Int, val heightSize: Int) {
     val texture: Texture
 
@@ -218,5 +235,9 @@ class IntTexture2D_RG32I(val widthSize: Int, val heightSize: Int) {
             GL30.GL_INT,
             bufferInt
         )
+    }
+
+    fun dispose() {
+        texture.dispose()
     }
 }
