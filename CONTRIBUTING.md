@@ -2,8 +2,8 @@
 
 Warning: the code right now is not very good / pretty messy,
 but if you manage to figure it out, feel free to release mods.
-Mod release rules:
 
+Mod release rules:
 Create a separate branch
 Write your code
 Push it
