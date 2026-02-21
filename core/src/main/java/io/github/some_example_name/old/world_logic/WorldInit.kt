@@ -14,7 +14,7 @@ private fun CellManager.launchWorld(map: Array<BooleanArray>) {
                 addCell(
                     x * WorldEditorScreen.SCALE_FACTOR + WorldEditorScreen.OFFSET + random.nextDouble(-10.0, 10.0).toFloat(),
                     y * WorldEditorScreen.SCALE_FACTOR + WorldEditorScreen.OFFSET + random.nextDouble(-10.0, 10.0).toFloat(),
-                    type = -1
+                    type = 24
                 )
                 if (cellMaxAmount * 0.9 < cellLastId) {
                     resizeCells()
@@ -35,31 +35,31 @@ fun CellManager.worldInit() {
     map?.let {
         launchWorld(map)
     }
-
-    for (i in 1..<WORLD_SIZE_TYPE.size * 2) {
-        addCell(0f, (i * 20).toFloat(), -1)
-        if (cellMaxAmount * 0.9 < cellLastId) {
-            resizeCells()
-        }
-    }
-    for (i in 0..<WORLD_SIZE_TYPE.size * 2) {
-        addCell((i * 20).toFloat(), 0f, -1)
-        if (cellMaxAmount * 0.9 < cellLastId) {
-            resizeCells()
-        }
-    }
-    for (i in 0..<WORLD_SIZE_TYPE.size * 2) {
-        addCell(WORLD_SIZE_TYPE.size * 39.99f, (i * 20).toFloat(), -1)
-        if (cellMaxAmount * 0.9 < cellLastId) {
-            resizeCells()
-        }
-    }
-    for (i in 0..<WORLD_SIZE_TYPE.size * 2) {
-        addCell((i * 20).toFloat(), WORLD_SIZE_TYPE.size * 39.99f, -1)
-        if (cellMaxAmount * 0.9 < cellLastId) {
-            resizeCells()
-        }
-    }
+//
+//    for (i in 1..<WORLD_SIZE_TYPE.size * 2) {
+//        addCell(0f, (i * 20).toFloat(), -1)
+//        if (cellMaxAmount * 0.9 < cellLastId) {
+//            resizeCells()
+//        }
+//    }
+//    for (i in 0..<WORLD_SIZE_TYPE.size * 2) {
+//        addCell((i * 20).toFloat(), 0f, -1)
+//        if (cellMaxAmount * 0.9 < cellLastId) {
+//            resizeCells()
+//        }
+//    }
+//    for (i in 0..<WORLD_SIZE_TYPE.size * 2) {
+//        addCell(WORLD_SIZE_TYPE.size * 39.99f, (i * 20).toFloat(), -1)
+//        if (cellMaxAmount * 0.9 < cellLastId) {
+//            resizeCells()
+//        }
+//    }
+//    for (i in 0..<WORLD_SIZE_TYPE.size * 2) {
+//        addCell((i * 20).toFloat(), WORLD_SIZE_TYPE.size * 39.99f, -1)
+//        if (cellMaxAmount * 0.9 < cellLastId) {
+//            resizeCells()
+//        }
+//    }
 
 //        WALL_AMOUNT = cellLastId + 1
 //        if (map == null) {

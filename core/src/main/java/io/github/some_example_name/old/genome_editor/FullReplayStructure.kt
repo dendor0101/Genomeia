@@ -2,6 +2,7 @@ package io.github.some_example_name.old.genome_editor
 
 import io.github.some_example_name.old.world_logic.CellManager
 import io.github.some_example_name.old.world_logic.CellManager.Companion.MAX_LINK_AMOUNT
+import java.util.BitSet
 
 class FullReplayStructure(
     val cellLastId: Int,
@@ -10,7 +11,7 @@ class FullReplayStructure(
     var id: IntArray,
 //    var organismId: IntArray,
     var parentId: IntArray,
-    var firstChildId: IntArray,
+//    var firstChildId: IntArray,
     var gridId: IntArray,
     var x: FloatArray,
     var y: FloatArray,
@@ -66,8 +67,8 @@ class FullReplayStructure(
     var links1: IntArray,
     var links2: IntArray,
     var linksLength: FloatArray,
-    var isNeuronLink: BooleanArray,
-    var directedNeuronLink: IntArray,
+    var isNeuronLink: BitSet,
+//    var directedNeuronLink: IntArray,
 //    var degreeOfShortening: FloatArray,
 //    var isStickyLink: BooleanArray,
 //    val linkIndexMap: UnorderedIntPairMap,
@@ -75,10 +76,10 @@ class FullReplayStructure(
     val genomeIndex: Int,
     val genomeSize: Int,
     var stage: Int = 0,
-    val dividedTimes: IntArray,
-    val mutatedTimes: IntArray,
+//    val dividedTimes: IntArray,
+//    val mutatedTimes: IntArray,
     var justChangedStage: Boolean = false,
-    var timerToGrowAfterStage: Int = 0
+//    var timerToGrowAfterStage: Int = 0
 )
 
 fun CellManager.restoreFromFullReplayStructure(struct: FullReplayStructure) {
@@ -91,11 +92,11 @@ fun CellManager.restoreFromFullReplayStructure(struct: FullReplayStructure) {
 
     // Cell
 
-    System.arraycopy(struct.id, 0, id, 0, cellSize)
+    System.arraycopy(struct.id, 0, cellGenomeId, 0, cellSize)
 //    System.arraycopy(struct.organismId, 0, organismId, 0, cellSize)
-    organismId.fill(0, 0, cellSize)
-    System.arraycopy(struct.parentId, 0, parentId, 0, cellSize)
-    System.arraycopy(struct.firstChildId, 0, firstChildId, 0, cellSize)
+    organismIndex.fill(0, 0, cellSize)
+    System.arraycopy(struct.parentId, 0, parentIndex, 0, cellSize)
+//    System.arraycopy(struct.firstChildId, 0, firstChildIdTODODELETE, 0, cellSize)
     System.arraycopy(struct.gridId, 0, gridId, 0, cellSize)
     System.arraycopy(struct.x, 0, x, 0, cellSize)
     System.arraycopy(struct.y, 0, y, 0, cellSize)
@@ -152,7 +153,7 @@ fun CellManager.restoreFromFullReplayStructure(struct: FullReplayStructure) {
     System.arraycopy(struct.links2, 0, links2, 0, linkSize)
     System.arraycopy(struct.linksLength, 0, linksNaturalLength, 0, linkSize)
     System.arraycopy(struct.isNeuronLink, 0, isNeuronLink, 0, linkSize)
-    System.arraycopy(struct.directedNeuronLink, 0, directedNeuronLink, 0, linkSize)
+//    System.arraycopy(struct.directedNeuronLink, 0, directedNeuronLink, 0, linkSize)
 //    System.arraycopy(struct.degreeOfShortening, 0, degreeOfShortening, 0, linkSize)
 //    System.arraycopy(struct.isStickyLink, 0, isStickyLink, 0, linkSize)
 }
@@ -171,10 +172,10 @@ fun CellManager.createFullReplayStructure(): FullReplayStructure {
         cellLastId = cellLastId,
         linksLastId = linksLastId,
         // Cell
-        id = id.copyOfRange(0, cellSize),
+        id = cellGenomeId.copyOfRange(0, cellSize),
 //        organismId = organismId.copyOfRange(0, cellSize),
-        parentId = parentId.copyOfRange(0, cellSize),
-        firstChildId = firstChildId.copyOfRange(0, cellSize),
+        parentId = parentIndex.copyOfRange(0, cellSize),
+//        firstChildId = firstChildIdTODODELETE.copyOfRange(0, cellSize),
         gridId = gridId.copyOfRange(0, cellSize),
         x = x.copyOfRange(0, cellSize),
         y = y.copyOfRange(0, cellSize),
@@ -230,17 +231,17 @@ fun CellManager.createFullReplayStructure(): FullReplayStructure {
         links1 = links1.copyOfRange(0, linkSize),
         links2 = links2.copyOfRange(0, linkSize),
         linksLength = linksNaturalLength.copyOfRange(0, linkSize),
-        isNeuronLink = isNeuronLink.copyOfRange(0, linkSize),
-        directedNeuronLink = directedNeuronLink.copyOfRange(0, linkSize),
+        isNeuronLink = isNeuronLink/*.copyOfRange(0, linkSize)*/,
+//        directedNeuronLink = directedNeuronLink.copyOfRange(0, linkSize),
 //        degreeOfShortening = degreeOfShortening.copyOfRange(0, linkSize),
 //        isStickyLink = isStickyLink.copyOfRange(0, linkSize),
 //        linkIndexMap = copiedMap,
         genomeIndex = organism.genomeIndex,
         genomeSize = organism.genomeSize,
         stage = organism.stage,
-        dividedTimes = organism.dividedTimes.copyOf(),
-        mutatedTimes = organism.mutatedTimes.copyOf(),
+//        dividedTimes = organism.dividedTimes.copyOf(),
+//        mutatedTimes = organism.mutatedTimes.copyOf(),
         justChangedStage = organism.justChangedStage,
-        timerToGrowAfterStage = organism.timerToGrowAfterStage,
+//        timerToGrowAfterStage = organism.timerToGrowAfterStage,
     )
 }

@@ -115,7 +115,7 @@ private fun CellManager.updateDrawChunk(
             val cells = gridManager.getCells(cx, cy)
             for (id in cells) {
                 if (drawRays) {
-                    if (cellType[id] == 6 || cellType[id].isDirected()) {
+                    if (cellType[id] == 6 || cellType[id].isDirected() || cellType[id] == 0) {
                         if (specialCellsId < specialCellsMaxSize - 1) {
                             drawSpecialCells[specialCellsId++] = id
                         }
@@ -193,6 +193,7 @@ private fun CellManager.putLinksToGrid(endCameraX: Float, endCameraY: Float) {
 
         futures.add(executor.submit {
             for (linkId in start until end) {
+                if (!isAliveLink[linkId]) continue
                 val c1 = links1[linkId]
                 val c2 = links2[linkId]
                 if (y[c1] > endCameraY) continue

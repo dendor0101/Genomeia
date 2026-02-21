@@ -37,14 +37,14 @@ class GenomeEditorGrowthProcessor(genomeName: String?) {
 
     init {
         cellManager.addCell(START_EDITOR_CELL_X, START_EDITOR_CELL_Y, 18, false, genomeIndex = 0)
-        cellManager.id[0] = 0
+        cellManager.cellGenomeId[0] = 0
     }
 
     fun clearAll() {
         cellManager.gridManager.clearAll()
         cellManager.clear()
         cellManager.linkIndexMap.clear()
-        cellManager.getOrganism(0).linkIdMap.clear()
+//        cellManager.getOrganism(0).linkIdMap.clear()
         cellManager.organismManager.organisms.clear()
     }
 
@@ -100,7 +100,7 @@ class GenomeEditorGrowthProcessor(genomeName: String?) {
 
         cellManager.genomeManager.genomes[0] = genomeForPhysics
         cellManager.addCell(START_EDITOR_CELL_X, START_EDITOR_CELL_Y, 18, false, genomeIndex = 0)
-        cellManager.id[0] = 0
+        cellManager.cellGenomeId[0] = 0
     }
 
     private fun initFromStage(stageCounter: Int, stagesAmount: Int): Int {
@@ -119,26 +119,27 @@ class GenomeEditorGrowthProcessor(genomeName: String?) {
 
         organism.stage = stageCounter
         organism.justChangedStage = true
-        organism.timerToGrowAfterStage = 5
-
+//        organism.timerToGrowAfterStage =
 
         for (i in 0..currentFullReplay.linksLastId) {
             val links1 = cellManager.links1[i]
             val links2 = cellManager.links2[i]
             cellManager.linkIndexMap.put(links1, links2, i)
 
-            cellManager.getOrganism(0).linkIdMap.put(
-                cellManager.id[links1],
-                cellManager.id[links2],
-                i
-            )
+//            cellManager.getOrganism(0).linkIdMap.put(
+//                cellManager.cellGenomeId[links1],
+//                cellManager.cellGenomeId[links2],
+//                i
+//            )
         }
 
         //TODO поярдок растановки id в сетке может влиять на результат в дальнейшем
         for (i in 0..currentFullReplay.cellLastId) {
             val xGrid = (currentFullReplay.x[i] / CELL_SIZE).toInt()
             val yGrid = (currentFullReplay.y[i] / CELL_SIZE).toInt()
-            cellManager.gridManager.addCell(xGrid, yGrid, i)
+            cellManager.gridManager.addCell(xGrid, yGrid, i) {
+
+            }
         }
 
         return startTick
@@ -200,7 +201,7 @@ class GenomeEditorGrowthProcessor(genomeName: String?) {
     }
 
     fun CellManager.processCellGenomeEditor(
-        cellId: Int,
+        cellIndex: Int,
 //        gridX: Int,
 //        gridY: Int,
 //        threadId: Int
@@ -209,10 +210,18 @@ class GenomeEditorGrowthProcessor(genomeName: String?) {
 //        processCellFriction(cellId)
 //        vx[cellId] *= 0f
 //        vy[cellId] *= 0f
-        energy[cellId] += 1.5f
-        if (energy[cellId] > cellsSettings[cellType[cellId] + 1].maxEnergy) energy[cellId] = cellsSettings[cellType[cellId] + 1].maxEnergy
-        mutateCell(cellId, 0)
-        divideCell(cellId, 0)
+        energy[cellIndex] += 1.5f
+        if (energy[cellIndex] > cellsSettings[cellType[cellIndex] + 1].maxEnergy) energy[cellIndex] = cellsSettings[cellType[cellIndex] + 1].maxEnergy
+        val organism = organismManager.organisms[organismIndex[cellIndex]]
+        if (!organism.alreadyGrownUp) {
+            TODO("тут думать надо")
+            if (organism.justChangedStage) {
+                isDividedInThisStage[cellIndex] = false
+                isMutateInThisStage[cellIndex] = false
+            }
+            mutateCell(cellIndex, 0/*, organism*/)
+            divideCell(cellIndex, 0/*, organism*/)
+        }
 //        processCellAngel(cellId)
     }
 

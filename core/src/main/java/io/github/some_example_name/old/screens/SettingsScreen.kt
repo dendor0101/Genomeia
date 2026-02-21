@@ -195,7 +195,7 @@ object GlobalSettings {
     var DRAW_LINK_SHADER = true
     var HYDRO_ENABLED = false
     var HYDRO_VISUALIZATION = false
-    var MUSIC_VOLUME = 50
+    var MUSIC_VOLUME = 0
     var SOUND_VOLUME = 50
 
     var WORLD_SIZE_TYPE = WorldSize.XL

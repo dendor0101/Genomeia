@@ -82,7 +82,7 @@ class PlayGround(
             font.data.setScale(UI_SCALE)
             font.draw(
                 spriteBatch,
-                "FPS: ${Gdx.graphics.framesPerSecond}\n" + "UPS: ${ups}\n" + "Update Time: ${updateTimeRounded}ms\n" + "Cells: ${cellManager.cellLastId + 1 - 1535} Links ${cellManager.linksLastId + 1}\n" + "NeuronImpulseInput ${cellManager.neuronImpulseInput[cellManager.grabbedCell]}\n" + "NeuronImpulseOutput ${cellManager.neuronImpulseOutput[cellManager.grabbedCell]}\n",
+                "FPS: ${Gdx.graphics.framesPerSecond}\n" + "UPS: ${ups}\n" + "Update Time: ${updateTimeRounded}ms\n" + "Cells: ${cellManager.cellLastId/* - 1535*/ - cellManager.deadCellsStackAmount} Links ${cellManager.linksLastId - cellManager.deadLinksStackAmount}\n" + "NeuronImpulseInput ${cellManager.neuronImpulseInput[cellManager.grabbedCell]}\n" + "NeuronImpulseOutput ${cellManager.neuronImpulseOutput[cellManager.grabbedCell]}\n",
                 30f,
                 120f
             )
@@ -93,7 +93,7 @@ class PlayGround(
             font.data.setScale(UI_SCALE)
             font.draw(
                 spriteBatch,
-                "FPS: ${Gdx.graphics.framesPerSecond}\n"  + "UPS: ${ups}\n" + "Update Time: ${updateTimeRounded}ms\n" + "Cells: ${cellManager.cellLastId + 1 - 1535} Links ${cellManager.linksLastId + 1}\n",
+                "FPS: ${Gdx.graphics.framesPerSecond}\n"  + "UPS: ${ups}\n" + "Update Time: ${updateTimeRounded}ms\n" + "Cells: ${cellManager.cellLastId/* - 1535*/ - cellManager.deadCellsStackAmount} Links ${cellManager.linksLastId - cellManager.deadLinksStackAmount}\n",
                 30f,
                 120f
             )
@@ -132,6 +132,42 @@ class PlayGround(
 
         renderer.begin(ShapeRenderer.ShapeType.Line)
 
+//        synchronized(cellManager) {
+//            for (i in 0..cellManager.linksLastId) {
+//                if (cellManager.isAliveLink[i]) {
+//                    renderer.color = if (cellManager.isNeuronLink[i]) Color.CYAN else Color.OLIVE
+//                    if (!cellManager.isAliveCell[cellManager.links1[i]]) {
+//                        renderer.color = Color.RED
+//                    }
+//                    if (!cellManager.isAliveCell[cellManager.links2[i]]) {
+//                        renderer.color = Color.RED
+//                    }
+//                    val signalToCellIndex =
+//                        if (cellManager.isLink1NeuralDirected[i]) cellManager.links1[i] else cellManager.links2[i]
+//                    val signalFromCellIndex =
+//                        if (cellManager.isLink1NeuralDirected[i]) cellManager.links2[i] else cellManager.links1[i]
+//
+//                    if (cellManager.isNeuronLink[i]) {
+//                        renderer.drawTriangleMiddle(
+//                            (cellManager.x[signalFromCellIndex] - xOffset) * zoom,
+//                            (cellManager.y[signalFromCellIndex] - yOffset) * zoom,
+//                            (cellManager.x[signalToCellIndex] - xOffset) * zoom,
+//                            (cellManager.y[signalToCellIndex] - yOffset) * zoom,
+//                            5f
+//                        )
+//                    }
+//
+//                    renderer.line(
+//                        (cellManager.x[cellManager.links1[i]] - xOffset) * zoom,
+//                        (cellManager.y[cellManager.links1[i]] - yOffset) * zoom,
+//                        (cellManager.x[cellManager.links2[i]] - xOffset) * zoom,
+//                        (cellManager.y[cellManager.links2[i]] - yOffset) * zoom
+//                    )
+//                }
+//            }
+//        }
+
+
         if (drawRays) {
             for (i in 0..<cellManager.specialCellsId) {
                 val cellId = cellManager.drawSpecialCells[i]
@@ -150,18 +186,18 @@ class PlayGround(
                         renderer.drawArrowWithRotationAngle(
                             startX = (cellManager.x[cellId] - xOffset) * zoom,
                             startY = (cellManager.y[cellId] - yOffset) * zoom,
-                            baseAngle = cellManager.angle[cellId] + cellManager.angleDiff[cellId],
+                            baseAngle = cellManager.angle[cellId],
                             length = cellManager.visibilityRange[cellId] * zoom,
                             isDrawWithoutTriangle = true,
                         )
                     }
 
-                    3, 9, 15, 21 -> {
+                    3, 9, 15, 21, 0 -> {
                         renderer.color = Color.CYAN
                         renderer.drawArrowWithRotationAngle(
                             startX = (cellManager.x[cellId] - xOffset) * zoom,
                             startY = (cellManager.y[cellId] - yOffset) * zoom,
-                            baseAngle = cellManager.angle[cellId] + cellManager.angleDiff[cellId],
+                            baseAngle = cellManager.angle[cellId],// + cellManager.angleDiff[cellId],
                             length = 30f * zoom
                         )
                     }

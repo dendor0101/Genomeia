@@ -21,11 +21,11 @@ import io.github.some_example_name.old.screens.MyGame
 import io.github.some_example_name.old.screens.applyCustomFontMedium
 import io.github.some_example_name.old.screens.setupTitleSize
 import io.github.some_example_name.old.world_logic.cells.base.cellsType
+import io.github.some_example_name.old.world_logic.cells.base.formulaType
 import io.github.some_example_name.old.world_logic.cells.base.getCellColor
 import io.github.some_example_name.old.world_logic.cells.base.isDirected
 import io.github.some_example_name.old.world_logic.cells.base.isEye
 import io.github.some_example_name.old.world_logic.cells.base.isNeural
-import io.github.some_example_name.old.world_logic.cells.formulaType
 
 
 class MutateActionDialog(

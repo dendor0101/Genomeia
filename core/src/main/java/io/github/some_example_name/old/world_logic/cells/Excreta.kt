@@ -14,7 +14,7 @@ class Excreta: Cell(), Directed {
         //TODO гадить под себя // shit under oneself
         fun specificToThisType(cm: CellManager, id: Int, threadId: Int) {
             if(cm.energy[id] < cm.globalSettings.amountOfFoodEnergy) return
-            val angleRad = cm.angle[id] + cm.angleDiff[id]
+            val angleRad = cm.angle[id]
             val cosA = cos(angleRad)
             val sinA = sin(angleRad)
 

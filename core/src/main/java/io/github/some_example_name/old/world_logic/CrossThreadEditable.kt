@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.world_logic
 
+import io.github.some_example_name.old.genome.CellAction
 import io.github.some_example_name.old.good_one.shader.ShaderManager
 import io.github.some_example_name.old.world_logic.CellManager.Companion.MAX_LINK_AMOUNT
 import io.github.some_example_name.old.world_logic.ThreadManager.Companion.THREAD_COUNT
@@ -9,7 +10,7 @@ import io.github.some_example_name.old.organisms.AddLink
 import io.github.some_example_name.old.organisms.Organism
 import io.github.some_example_name.old.substances.SubstanceAdd
 import io.github.some_example_name.old.world_logic.GridManager.Companion.GRID_SIZE
-import io.github.some_example_name.old.world_logic.ThreadManager.Companion.TOTAL_CHUNKS
+import java.util.BitSet
 
 open class CrossThreadEditable(
     cellsStartMaxAmount: Int,
@@ -33,11 +34,19 @@ open class CrossThreadEditable(
     @Volatile
     var linksLastId = -1
 
+    var deadCellsStackAmount = -1
+    var deadCellsStack = IntArray(250_000) { -1 }
+
+    var deadLinksStackAmount = -1
+    var deadLinksStack = IntArray(250_000) { -1 }
+
     //Cell
-    var id = IntArray(cellMaxAmount) { -1 }
-    var organismId = IntArray(cellMaxAmount) { -1 }
-    var parentId = IntArray(cellMaxAmount) { -1 }
-    var firstChildId = IntArray(cellMaxAmount) { -1 }
+    var isAliveCell = BitSet(cellMaxAmount)
+    var cellGeneration = IntArray(cellMaxAmount)
+    var cellGenomeId = IntArray(cellMaxAmount) { -1 }
+    var cellActions: Array<CellAction?> = arrayOfNulls(cellMaxAmount)
+    var organismIndex = IntArray(cellMaxAmount) { -1 }
+    var parentIndex = IntArray(cellMaxAmount) { -1 }
     var gridId = IntArray(cellMaxAmount) { -1 }
     var x = FloatArray(cellMaxAmount) //Рисовать
     var y = FloatArray(cellMaxAmount) //Рисовать
@@ -56,14 +65,12 @@ open class CrossThreadEditable(
     var neuronImpulseInput = FloatArray(cellMaxAmount)
     var neuronImpulseOutput = FloatArray(cellMaxAmount)
     var dragCoefficient = FloatArray(cellMaxAmount) { 0.93f }
-    var isAliveWithoutEnergy =
-        IntArray(cellMaxAmount) { 200 }//TODO перевести в ByteArray возможно будет более оптимизированная проверка
+    var isAliveWithoutEnergy = IntArray(cellMaxAmount) { 200 }//TODO перевести в ByteArray возможно будет более оптимизированная проверка
     var isNeuronTransportable = BooleanArray(cellMaxAmount) { false }// TODO: Refer to cell type rather than cell
     var effectOnContact = BooleanArray(cellMaxAmount) { false }// TODO: Refer to cell type rather than cell
-    var isDividedInThisStage = BooleanArray(cellMaxAmount) { false }
-    var isMutateInThisStage = BooleanArray(cellMaxAmount) { false }
-    var cellType =
-        IntArray(cellMaxAmount) //TODO перевести в ByteArray возможно будет более оптимизированная проверка
+    var isDividedInThisStage = BooleanArray(cellMaxAmount) { true }
+    var isMutateInThisStage = BooleanArray(cellMaxAmount) { true }
+    var cellType = IntArray(cellMaxAmount) //TODO перевести в ByteArray возможно будет более оптимизированная проверка
     var energy = FloatArray(cellMaxAmount) //Рисовать
     var tickRestriction = // TODO: Replace with something like time % 4
         IntArray(cellMaxAmount) //TODO перевести в ByteArray возможно будет более оптимизированная проверка
@@ -91,11 +98,13 @@ open class CrossThreadEditable(
     var speed = FloatArray(cellMaxAmount)
 
     //Links
+    var isAliveLink = BitSet(linksMaxAmount)
+    var linkGeneration = IntArray(linksMaxAmount)
     var links1 = IntArray(linksMaxAmount) { -1 }
     var links2 = IntArray(linksMaxAmount) { -1 }
     var linksNaturalLength = FloatArray(linksMaxAmount) { -10f }
-    var isNeuronLink = BooleanArray(linksMaxAmount) { false }
-    var directedNeuronLink = IntArray(linksMaxAmount) { -1 }
+    var isNeuronLink = BitSet(linksMaxAmount)
+    var isLink1NeuralDirected = BitSet(linksMaxAmount)
     var degreeOfShortening = FloatArray(linksMaxAmount) { 1f }
     var isStickyLink = BooleanArray(linksMaxAmount) { false }
     val linkIndexMap = UnorderedIntPairMap(if (!isGenomeEditor) 1_000_000 else 300)//TODO заменить на fastutil если это имеет смысл
@@ -143,10 +152,10 @@ open class CrossThreadEditable(
     val threadCount = if (!isGenomeEditor) THREAD_COUNT else 1
 
     val deletedCellSizes = IntArray(threadCount) { -1 }
-    val deleteCellLists = Array(threadCount) { IntArray(301) { -1 } }
+    val deleteCellLists = Array(threadCount) { IntArray(1301) { -1 } }
 
     val deletedLinkSizes = IntArray(threadCount) { -1 }
-    val deleteLinkLists = Array(threadCount) { IntArray(300) { -1 } }
+    val deleteLinkLists = Array(threadCount) { IntArray(1300) { -1 } }
     fun addToDeleteList(threadId: Int, linkId: Int) {
         deletedLinkSizes[threadId] += 1
         deleteLinkLists[threadId][deletedLinkSizes[threadId]] = linkId
@@ -190,11 +199,18 @@ open class CrossThreadEditable(
         cellLastId = -1
         linksLastId = -1
 
+        deadCellsStack.fill(-1, 0, (deadCellsStackAmount + 1).coerceAtLeast(0))
+        deadCellsStackAmount = -1
+        deadLinksStack.fill(-1, 0, (deadLinksStackAmount + 1).coerceAtLeast(0))
+        deadLinksStackAmount = -1
+
         // Reset cell-related arrays (0 to cellLastId + 1)
-        id.fill(-1, 0, cellBound)
-        organismId.fill(-1, 0, cellBound)
-        parentId.fill(-1, 0, cellBound)
-        firstChildId.fill(-1, 0, cellBound)
+        cellGeneration.fill(0, 0, cellBound)
+        isAliveCell.clear()
+        cellGenomeId.fill(-1, 0, cellBound)
+        cellActions.fill(null, 0, cellBound)
+        organismIndex.fill(-1, 0, cellBound)
+        parentIndex.fill(-1, 0, cellBound)
         gridId.fill(-1, 0, cellBound)
         x.fill(0f, 0, cellBound)
         y.fill(0f, 0, cellBound)
@@ -216,8 +232,8 @@ open class CrossThreadEditable(
         isAliveWithoutEnergy.fill(200, 0, cellBound)
         isNeuronTransportable.fill(true, 0, cellBound)
         effectOnContact.fill(false, 0, cellBound)
-        isDividedInThisStage.fill(false, 0, cellBound)
-        isMutateInThisStage.fill(false, 0, cellBound)
+        isDividedInThisStage.fill(true, 0, cellBound)
+        isMutateInThisStage.fill(true, 0, cellBound)
         cellType.fill(0, 0, cellBound)
         energy.fill(0f, 0, cellBound)
         tickRestriction.fill(0, 0, cellBound)
@@ -244,11 +260,13 @@ open class CrossThreadEditable(
         speed.fill(0f, 0, cellBound)
 
         // Reset link-related arrays (0 to linksLastId + 1)
+        linkGeneration.fill(0, 0, linkBound)
+        isAliveLink.clear()
         links1.fill(-1, 0, linkBound)
         links2.fill(-1, 0, linkBound)
         linksNaturalLength.fill(-10f, 0, linkBound)
-        isNeuronLink.fill(false, 0, linkBound)
-        directedNeuronLink.fill(-1, 0, linkBound)
+        isNeuronLink.clear()
+        isLink1NeuralDirected.clear()
         degreeOfShortening.fill(1f, 0, linkBound)
         isStickyLink.fill(false, 0, linkBound)
 
@@ -264,24 +282,34 @@ open class CrossThreadEditable(
 
         // Resize cell arrays
         run {
-            val old = id
-            id = IntArray(cellMaxAmount) { -1 }
-            System.arraycopy(old, 0, id, 0, oldMax)
+            val old = cellGeneration
+            cellGeneration = IntArray(cellMaxAmount)
+            System.arraycopy(old, 0, cellGeneration, 0, oldMax)
         }
         run {
-            val old = organismId
-            organismId = IntArray(cellMaxAmount) { -1 }
-            System.arraycopy(old, 0, organismId, 0, oldMax)
+            val old = isAliveCell
+            isAliveCell = BitSet(cellMaxAmount)
+            isAliveCell.or(old)
         }
         run {
-            val old = parentId
-            parentId = IntArray(cellMaxAmount) { -1 }
-            System.arraycopy(old, 0, parentId, 0, oldMax)
+            val old = cellGenomeId
+            cellGenomeId = IntArray(cellMaxAmount) { -1 }
+            System.arraycopy(old, 0, cellGenomeId, 0, oldMax)
         }
         run {
-            val old = firstChildId
-            firstChildId = IntArray(cellMaxAmount) { -1 }
-            System.arraycopy(old, 0, firstChildId, 0, oldMax)
+            val old = cellActions
+            cellActions = arrayOfNulls(cellMaxAmount)
+            System.arraycopy(old, 0, cellActions, 0, oldMax)
+        }
+        run {
+            val old = organismIndex
+            organismIndex = IntArray(cellMaxAmount) { -1 }
+            System.arraycopy(old, 0, organismIndex, 0, oldMax)
+        }
+        run {
+            val old = parentIndex
+            parentIndex = IntArray(cellMaxAmount) { -1 }
+            System.arraycopy(old, 0, parentIndex, 0, oldMax)
         }
         run {
             val old = gridId
@@ -390,12 +418,12 @@ open class CrossThreadEditable(
         }
         run {
             val old = isDividedInThisStage
-            isDividedInThisStage = BooleanArray(cellMaxAmount) { false }
+            isDividedInThisStage = BooleanArray(cellMaxAmount) { true }
             System.arraycopy(old, 0, isDividedInThisStage, 0, oldMax)
         }
         run {
             val old = isMutateInThisStage
-            isMutateInThisStage = BooleanArray(cellMaxAmount) { false }
+            isMutateInThisStage = BooleanArray(cellMaxAmount) { true }
             System.arraycopy(old, 0, isMutateInThisStage, 0, oldMax)
         }
         run {
@@ -490,6 +518,16 @@ open class CrossThreadEditable(
 
         // Resize link arrays
         run {
+            val old = isAliveLink
+            isAliveLink = BitSet(linksMaxAmount)
+            isAliveLink.or(old)
+        }
+        run {
+            val old = linkGeneration
+            linkGeneration = IntArray(linksMaxAmount)
+            System.arraycopy(old, 0, linkGeneration, 0, oldMax)
+        }
+        run {
             val old = links1
             links1 = IntArray(linksMaxAmount) { -1 }
             System.arraycopy(old, 0, links1, 0, oldMax)
@@ -506,13 +544,13 @@ open class CrossThreadEditable(
         }
         run {
             val old = isNeuronLink
-            isNeuronLink = BooleanArray(linksMaxAmount) { false }
-            System.arraycopy(old, 0, isNeuronLink, 0, oldMax)
+            isNeuronLink = BitSet(linksMaxAmount)
+            isNeuronLink.or(old)
         }
         run {
-            val old = directedNeuronLink
-            directedNeuronLink = IntArray(linksMaxAmount) { -1 }
-            System.arraycopy(old, 0, directedNeuronLink, 0, oldMax)
+            val old = isLink1NeuralDirected
+            isLink1NeuralDirected = BitSet(linksMaxAmount)
+            isLink1NeuralDirected.or(old)
         }
         run {
             val old = degreeOfShortening

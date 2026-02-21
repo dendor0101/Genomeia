@@ -29,6 +29,7 @@ import io.github.some_example_name.old.good_one.shader.updateDraw
 import io.github.some_example_name.old.platform_flag.FileProvider
 import io.github.some_example_name.old.screens.MenuScreen
 import io.github.some_example_name.old.world_logic.cells.currentGenomeIndex
+import io.github.some_example_name.old.world_logic.feedAllCell
 import io.github.some_example_name.old.world_logic.isPlay
 import java.io.File
 
@@ -248,6 +249,7 @@ class CellSimulation(
         pauseSimToggle.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 isPlay = !pauseSimToggle.isChecked
+                feedAllCell = true
             }
         })
 
@@ -316,7 +318,10 @@ class CellSimulation(
 
         shaderManager.render()
 
-        playGround.handlePlay()
+        //TODO избавиться от synchronized, заменив на двойной буфер
+        synchronized(cellManager) {
+            playGround.handlePlay()
+        }
         renderer.projectionMatrix = camera.combined
         playGround.update(renderer)
 

@@ -19,7 +19,8 @@ class Chameleon : Cell() {
                 if (!cm.isNeuronLink[linkId]) continue
                 val c1 = cm.links1[linkId]
                 val c2 = cm.links2[linkId]
-                if (cm.directedNeuronLink[linkId] == cm.id[id]) {
+                val neuralDirectedIndex = if (cm.isLink1NeuralDirected[linkId]) c1 else c2
+                if (neuralDirectedIndex == id) {
                     counter++
                     val impulse = activation(cm, id,
                         if (c1 != id) {

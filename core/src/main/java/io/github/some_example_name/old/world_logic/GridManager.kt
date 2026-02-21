@@ -22,13 +22,17 @@ class GridManager (var gridCellWidthSize: Int = WORLD_CELL_WIDTH, var gridCellHe
     val globalSettings = readSettings()
 
     // Добавить элемент в ячейку (x, y) // Add an element to cell (x, y)
-    fun addCell(x: Int, y: Int, value: Int): Int {
-        if (x < 0 || x >= gridCellWidthSize || y < 0 || y >= gridCellHeightSize) return -1
+    inline fun addCell(x: Int, y: Int, value: Int, killCell: () -> Unit): Int {
+        if (x < 0 || x >= gridCellWidthSize || y < 0 || y >= gridCellHeightSize) {
+            killCell.invoke()
+            return -1
+        }
         val cellIndex = y * gridCellWidthSize + x
         val currentCount = cellCounts[cellIndex]
 
         if (currentCount >= MAX_AMOUNT_OF_CELLS) {
             println("MAX_AMOUNT_OF_CELLS")
+            killCell.invoke()
             return -1 // Ячейка заполнена
         }
 

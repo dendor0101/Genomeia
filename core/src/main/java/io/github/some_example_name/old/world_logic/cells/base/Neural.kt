@@ -43,6 +43,21 @@ interface Neural {
 //    }
 }
 
+
+val formulaType = arrayOf(
+    "y = ax + b",
+    "y = c * sin(ax + b)",
+    "y = c * cos(ax + b)",
+    "y = 1 / (1 + e^(-(ax + b))) + c ",
+    "y = b, x <= a; y = c, x > a",
+    "y = b, x < a; y = c, x >= a",
+    "y = t",
+    "y = impulse(a), x>=1",
+    "y = x, x is in (a, b) else y = c",
+    "y = x^(a)",
+    "y = remember(x), 0, 1"
+)
+
 fun activation(cm: CellManager, id: Int, x: Float) = when (cm.activationFuncType[id]) {
     0 -> cm.a[id] * x + cm.b[id]
     1 -> cm.c[id] * sin(cm.a[id] * x + cm.b[id])

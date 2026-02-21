@@ -5,17 +5,17 @@ import kotlin.collections.forEach
 
 // Командный буфер с двойной очередью
 class UserCommandBuffer {
-    private val bufferA = mutableListOf<GameCommand>()
-    private val bufferB = mutableListOf<GameCommand>()
+    private val bufferA = mutableListOf<PlayerCommand>()
+    private val bufferB = mutableListOf<PlayerCommand>()
 
     var writeBuffer = bufferA
     var readBuffer = bufferB
 
-    fun push(cmd: GameCommand) {
+    fun push(cmd: PlayerCommand) {
         writeBuffer.add(cmd)
     }
 
-    inline fun swapAndConsume(consumer: (GameCommand) -> Unit) {
+    inline fun swapAndConsume(consumer: (PlayerCommand) -> Unit) {
         // Меняем местами очереди
         val tmp = writeBuffer
         writeBuffer = readBuffer

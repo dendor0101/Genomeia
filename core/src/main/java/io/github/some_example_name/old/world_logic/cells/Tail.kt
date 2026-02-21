@@ -3,7 +3,6 @@ package io.github.some_example_name.old.world_logic.cells
 import io.github.some_example_name.old.world_logic.cells.base.Cell
 import io.github.some_example_name.old.world_logic.cells.base.Directed
 import io.github.some_example_name.old.world_logic.cells.base.Neural
-import io.github.some_example_name.old.world_logic.cells.base.activation
 import io.github.some_example_name.old.world_logic.CellManager
 import kotlin.math.PI
 import kotlin.math.cos
@@ -21,7 +20,7 @@ class Tail: Cell(), Neural, Directed {
 
                 if (cm.speed[id] <= 0.013f) return
 
-                val angleRad = cm.angle[id] + PI.toFloat() + cm.angleDiff[id]
+                val angleRad = cm.angle[id] + PI.toFloat()
                 val cosA = cos(angleRad)
                 val sinA = sin(angleRad)
 

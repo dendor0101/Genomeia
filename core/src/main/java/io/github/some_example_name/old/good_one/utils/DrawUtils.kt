@@ -82,7 +82,8 @@ fun ShapeRenderer.drawTriangleMiddle(
     c1x: Float,
     c1y: Float,
     c2x: Float,
-    c2y: Float
+    c2y: Float,
+    arrowSize: Float = 2f
 ) {
     // Координаты начала и конца отрезка
     val x1 = c1x
@@ -107,8 +108,6 @@ fun ShapeRenderer.drawTriangleMiddle(
     val perpX = -dirY
     val perpY = dirX
 
-// Размер стрелки (расстояние от отрезка до углов треугольника)
-    val arrowSize = 2f
 
 // Координаты углов треугольника
     val tipX = midX + dirX * arrowSize // Вершина стрелки

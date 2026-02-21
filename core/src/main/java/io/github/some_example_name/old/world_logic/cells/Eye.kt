@@ -6,8 +6,9 @@ import io.github.some_example_name.old.world_logic.cells.base.Neural
 import io.github.some_example_name.old.world_logic.cells.base.activation
 import io.github.some_example_name.old.good_one.utils.invSqrt
 import io.github.some_example_name.old.world_logic.CellManager
+import io.github.some_example_name.old.world_logic.GridManager
 import io.github.some_example_name.old.world_logic.ThreadManager.Companion.THREAD_COUNT
-import io.github.some_example_name.old.substances.SubstanceManager.Companion.MAX_SUB_CELL_COUNT
+import java.util.BitSet
 import kotlin.math.*
 
 class Eye : Cell(), Neural, Directed {
@@ -17,7 +18,7 @@ class Eye : Cell(), Neural, Directed {
             if (cm.tickRestriction[id] == 4) {
                 cm.tickRestriction[id] = 0
                 if (cm.energy[id] > 0) {
-                    val angleRad = cm.angle[id] + cm.angleDiff[id]
+                    val angleRad = cm.angle[id]
 
                     // Рассчитываем направление движения
                     val directionX = cos(angleRad)
@@ -31,6 +32,7 @@ class Eye : Cell(), Neural, Directed {
                         y1 = cm.y[id] + directionY * 21f,
                         x2 = cm.x[id] + directionX * visonDist,
                         y2 = cm.y[id] + directionY * visonDist,
+                        pixelSize = GridManager.CELL_SIZE,
                         cm = cm,
                         threadId = threadId
                     )
@@ -83,19 +85,17 @@ fun drawThickLineGridTraversalCell(
     y1: Float,
     x2: Float,
     y2: Float,
-    pixelSize: Float = 40f,
+    pixelSize: Float = GridManager.CELL_SIZE,
     cm: CellManager,
     threadId: Int
 ): Triple<Int, Pair<Float, Float>, Float>? {
-    visitedGrid[threadId].clear()
+    visitedBits[threadId].clear()
 
     // Перевод координат в индексы ячеек // Converting coordinates to cell indices
     var gx = floor(x1 / pixelSize).toInt()
     var gy = floor(y1 / pixelSize).toInt()
     val gxEnd = floor(x2 / pixelSize).toInt()
     val gyEnd = floor(y2 / pixelSize).toInt()
-    visitedGrid[threadId].offsetX = min(gx, gxEnd) - 1
-    visitedGrid[threadId].offsetY = min(gy, gyEnd) - 1
 
     val dx = x2 - x1
     val dy = y2 - y1
@@ -116,17 +116,23 @@ fun drawThickLineGridTraversalCell(
     val normX = -dy / dirLength
     val normY = dx / dirLength
     var objectsCount = 0
+    val gridWidth = cm.gridManager.gridCellWidthSize
+    val gridHeight = cm.gridManager.gridCellHeightSize
 
     while (true) {
+        if (gx < 0 || gx >= gridWidth || gy < 0 || gy >= gridHeight) break
+
         // Центр и 2 соседние ячейки по нормали для толщины = 3
         // Center and 2 adjacent cells along the normal for thickness = 3
         checkedObjectListId[threadId].fill(-1)
-        checkedObjectListId[threadId].fill(-1)
+        objectsCount = 0
         for (i in -1..1) {
             val nx = gx + round(normX * i).toInt()
             val ny = gy + round(normY * i).toInt()
-            if (!visitedGrid[threadId].isVisited(nx, ny)) {
-                visitedGrid[threadId].markVisited(nx, ny)
+            if (nx < 0 || nx >= gridWidth || ny < 0 || ny >= gridHeight) continue
+            val pack = nx * gridHeight + ny
+            if (!visitedBits[threadId].get(pack)) {
+                visitedBits[threadId].set(pack)
                 val items = cm.gridManager.getCells(nx, ny)
                 if (items.isNotEmpty()) {
                     for (index in items) {
@@ -140,7 +146,7 @@ fun drawThickLineGridTraversalCell(
                                 r = 20f
                             )
                         ) {
-                            if (objectsCount < 10) {
+                            if (objectsCount < checkedObjectListId[threadId].size) {
                                 checkedObjectListId[threadId][objectsCount] = index
                                 objectsCount++
                             }
@@ -251,24 +257,5 @@ fun isSegmentIntersectingCircle(
 }
 
 
-val visitedGrid = Array(THREAD_COUNT) { VisitedGrid() }
-val checkedObjectListId =  Array(THREAD_COUNT) { IntArray(10) { -1 } }
-
-class VisitedGrid(val size: Int = 150) {
-    private val grid = BooleanArray(size * size) // Одномерный массив 400 элементов // One-dimensional array of 400 elements
-    var offsetX = 0
-    var offsetY = 0
-
-    fun markVisited(x: Int, y: Int) {
-        grid[(y - offsetY) * size + (x - offsetX)] = true
-    }
-
-    fun isVisited(x: Int, y: Int): Boolean {
-        return grid[(y - offsetY) * size + (x - offsetX)]
-    }
-
-    fun clear() {
-        grid.fill(false) // Быстрая очистка // Quick cleaning
-    }
-}
-
+val visitedBits = Array(THREAD_COUNT) { BitSet(GridManager.GRID_SIZE) }
+val checkedObjectListId =  Array(THREAD_COUNT) { IntArray(16) { -1 } }  // Увеличен размер для безопасности

@@ -16,7 +16,7 @@ class Compass : Cell(), Neural, Directed {
             if (cm.tickRestriction[id] == 7) {
                 cm.tickRestriction[id] = 0
                 if (cm.energy[id] > 0) {
-                    val angleRad = cm.angle[id] + cm.angleDiff[id]
+                    val angleRad = cm.angle[id]
                     cm.neuronImpulseOutput[id] = activation(cm, id, sin(angleRad))
 
                     cm.energy[id] -= cm.cellsSettings[cm.cellType[id] + 1].energyActionCost

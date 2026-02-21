@@ -17,7 +17,7 @@ class Producer: Cell(), Neural {
             if(cm.energy[id] < cm.cellsSettings[cm.cellType[id] + 1].maxEnergy || impulse < 1) return
 
             if (cm.tickRestriction[id] <= 0) {
-                val organism = cm.organismManager.organisms[cm.organismId[id]]
+                val organism = cm.organismManager.organisms[cm.organismIndex[id]]
                 val genome = cm.genomeManager.genomes[organism.genomeIndex]
                 var counter = 0
                 genome.genomeStageInstruction.forEach {
@@ -42,9 +42,9 @@ class Producer: Cell(), Neural {
                     action = action,
                     parentX = cm.x[id],
                     parentY = cm.y[id],
-                    parentAngle = cm.angle[id] + cm.angleDiff[id],
-                    parentId = cm.id[id],
-                    parentOrganismId = cm.organismId[id],
+                    parentAngle = cm.angle[id],
+                    parentId = cm.cellGenomeId[id],
+                    parentOrganismId = cm.organismIndex[id],
                     parentIndex = id
                 )
             )

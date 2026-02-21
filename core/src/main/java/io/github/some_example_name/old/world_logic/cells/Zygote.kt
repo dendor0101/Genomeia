@@ -12,28 +12,21 @@ class Zygote {
     companion object {
         fun specificWhenSpawned(cm: CellManager, id: Int, genomeIndex: Int, threadId: Int) {
             if (!cm.isGenomeEditor) {
-                cm.id[id] = 0
+                cm.cellGenomeId[id] = 0
             }
-            cm.organismId[id] = cm.organismManager.organisms.size
-            //TODO временно пока не понятно что за баг // It's not clear yet what the bug is.
-            val safeGenomeIndex = if (cm.genomeManager.genomes.size == 1) 0 else genomeIndex
-            val currentGenome = cm.genomeManager.genomes[safeGenomeIndex]
-
-            var linkCounter = 0
-            currentGenome.genomeStageInstruction.forEach {
-                it.cellActions.forEach {  action ->
-                    action.value.mutate?.physicalLink?.forEach { (_, value) -> if (value != null) linkCounter ++ }
-                    action.value.divide?.physicalLink?.forEach { (_, value) -> if (value != null) linkCounter ++ }
-                }
-            }
+            cm.organismIndex[id] = cm.organismManager.organisms.size
+            val currentGenome = cm.genomeManager.genomes[genomeIndex]
 
             val newOrganism = Organism(
-                genomeIndex = safeGenomeIndex,
+                genomeIndex = genomeIndex,
                 genomeSize = currentGenome.genomeStageInstruction.size,
                 stage = 0,
-                dividedTimes = currentGenome.dividedTimes.copyOf(),
-                mutatedTimes = currentGenome.mutatedTimes.copyOf(),
-                linkIdMap = UnorderedIntPairMap(linkCounter)
+                dividedTimes = currentGenome.dividedTimes[0],
+                mutatedTimes = currentGenome.mutatedTimes[0],
+                justChangedStage = true,
+                alreadyGrownUp = false,
+                divideAmountThisStage = currentGenome.dividedTimes[0],
+                mutateAmountThisStage = currentGenome.mutatedTimes[0]
             )
             if (threadId != -1) {
                 cm.addOrganisms[threadId].add(newOrganism)

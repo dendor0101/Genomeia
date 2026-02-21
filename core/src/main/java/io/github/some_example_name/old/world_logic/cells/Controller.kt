@@ -19,7 +19,7 @@ class Controller: Cell() {
             if (cm.tickRestriction[id] == 2) {
                 cm.tickRestriction[id] = 0
 
-                val keyIndex = controllerIndexesLol[cm.id[id]] ?: return
+                val keyIndex = controllerIndexesLol[cm.cellGenomeId[id]] ?: return
                 if (keyIndex) {
                     cm.neuronImpulseOutput[id] = activation(cm, id, 1f)
                 } else {

@@ -29,7 +29,6 @@ import io.github.some_example_name.old.genome.Action
 import io.github.some_example_name.old.good_one.encodeColorToBits
 import io.github.some_example_name.old.good_one.getColorFromBits
 import io.github.some_example_name.old.world_logic.cells.base.cellsType
-import io.github.some_example_name.old.world_logic.cells.formulaType
 import kotlin.math.PI
 import kotlin.math.roundToInt
 import com.kotcrab.vis.ui.widget.VisTextButton
@@ -37,6 +36,7 @@ import io.github.some_example_name.old.genome_editor.dialog.color.ColorPicker
 import io.github.some_example_name.old.screens.MyGame
 import io.github.some_example_name.old.screens.applyCustomFont
 import io.github.some_example_name.old.screens.applyCustomFontMedium
+import io.github.some_example_name.old.world_logic.cells.base.formulaType
 
 fun actionButton(
     text: String,

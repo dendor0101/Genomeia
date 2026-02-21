@@ -44,16 +44,3 @@ class Neuron : Cell(), Neural {
     }
 }
 
-val formulaType = arrayOf(
-    "y = ax + b",
-    "y = c * sin(ax + b)",
-    "y = c * cos(ax + b)",
-    "y = 1 / (1 + e^(-(ax + b))) + c ",
-    "y = b, x <= a; y = c, x > a",
-    "y = b, x < a; y = c, x >= a",
-    "y = t",
-    "y = impulse(a), x>=1",
-    "y = x, x is in (a, b) else y = c",
-    "y = x^(a)",
-    "y = remember(x), 0, 1"
-)

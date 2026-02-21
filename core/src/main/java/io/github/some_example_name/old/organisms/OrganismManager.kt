@@ -1,17 +1,12 @@
 package io.github.some_example_name.old.organisms
 
 import io.github.some_example_name.old.genome.Action
-import io.github.some_example_name.old.genome.GenomeStage
-import io.github.some_example_name.old.good_one.utils.primitive_hash_map.UnorderedIntPairMap
+
+//TODO It would probably be more logical to call this entity an organ, since one whole organism can consist of many such entities
 
 class OrganismManager {
     val organisms = mutableListOf<Organism>()
 }
-
-class DecrementMutationCounter(
-    val organismId: Int,
-    val stage: Int
-)
 
 class AddCell(
     val action: Action,
@@ -24,26 +19,31 @@ class AddCell(
 )
 
 class AddLink(
-    val cellId: Int,
-    val otherCellId: Int,
+    val cellIndex: Int,
+    val otherCellIndex: Int,
     val linksLength: Float,
     val degreeOfShortening: Float,
     val isStickyLink: Boolean,
     val isNeuronLink: Boolean,
-    val directedNeuronLink: Int
+    val isLink1NeuralDirected: Boolean,
+//    val directedNeuronLink: Int
 )
 
+//TODO 100% Implement it using a structure of arrays
 class Organism(
     var genomeIndex: Int,
     var genomeSize: Int,
     var stage: Int = 0,
-    var dividedTimes: IntArray,
-    var mutatedTimes: IntArray,
-    var justChangedStage: Boolean = false,
-    var timerToGrowAfterStage: Int = 0,
-    val linkIdMap: UnorderedIntPairMap
+    var dividedTimes: Int = 0,
+    var mutatedTimes: Int = 0,
+    var alreadyGrownUp: Boolean = false,
+    var divideCounterThisStage: Int = 0,
+    var mutateCounterThisStage: Int = 0,
+    var divideAmountThisStage: Int = 0,
+    var mutateAmountThisStage: Int = 0,
+    var justChangedStage: Boolean = true
 ) {
     override fun toString(): String {
-        return "Organism(genomeIndex=$genomeIndex, genomeSize=$genomeSize, stage=$stage, dividedTimes=${dividedTimes.contentToString()}, mutatedTimes=${mutatedTimes.contentToString()}, justChangedStage=$justChangedStage, timerToGrowAfterStage=$timerToGrowAfterStage)"
+        return "Organism(genomeIndex=$genomeIndex, genomeSize=$genomeSize, stage=$stage, dividedTimes=${dividedTimes}, mutatedTimes=${mutatedTimes}, justChangedStage=$justChangedStage)"
     }
 }

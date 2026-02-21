@@ -4,14 +4,11 @@ import io.github.some_example_name.old.genome.GenomeManager
 import io.github.some_example_name.old.good_one.utils.distanceTo
 import io.github.some_example_name.old.good_one.utils.invSqrt
 import io.github.some_example_name.old.world_logic.GridManager.Companion.CELL_SIZE
-import io.github.some_example_name.old.world_logic.ThreadManager.Companion.THREAD_COUNT
-import io.github.some_example_name.old.world_logic.commands.GameCommand
+import io.github.some_example_name.old.world_logic.ThreadManager.Companion.THREAD_COUNT import io.github.some_example_name.old.world_logic.commands.PlayerCommand
 import io.github.some_example_name.old.world_logic.commands.UserCommandBuffer
 import io.github.some_example_name.old.world_logic.genomic_transformations.addCell
 import io.github.some_example_name.old.world_logic.genomic_transformations.divideCell
 import io.github.some_example_name.old.world_logic.genomic_transformations.mutateCell
-import io.github.some_example_name.old.world_logic.process_soa.CellDeletionBuffer
-import io.github.some_example_name.old.world_logic.process_soa.LinkDeletionBuffer
 import io.github.some_example_name.old.organisms.Organism
 import io.github.some_example_name.old.organisms.OrganismManager
 import io.github.some_example_name.old.screens.GlobalSettings.HYDRODYNAMIC_DRAG
@@ -24,9 +21,15 @@ import io.github.some_example_name.old.world_logic.cells.base.activation
 import io.github.some_example_name.old.world_logic.cells.base.createCellType
 import io.github.some_example_name.old.world_logic.cells.base.doSpecific
 import io.github.some_example_name.old.world_logic.cells.currentGenomeIndex
+import io.github.some_example_name.old.world_logic.commands.WorldCommandBuffer
+import io.github.some_example_name.old.world_logic.commands.WorldCommandType
+import io.github.some_example_name.old.world_logic.process_soa.deleteCell
+import io.github.some_example_name.old.world_logic.process_soa.deleteLink
 import java.lang.Float.max
 import kotlin.BooleanArray
 import kotlin.math.atan2
+
+var feedAllCell = false
 
 //TODO разнести этот класс на сущности, которые потом отдельно будет проще переделывать, физика графика и тд
 //TODO: split this class into entities that will be easier to rework separately later, physics graphics, etc.
@@ -39,16 +42,6 @@ class CellManager(
     val subManager: SubstancePlug = SubstanceManager(),
     genomeName: String? = null,
 ) : CrossThreadEditable(cellsStartMaxAmount, linksStartMaxAmount, isGenomeEditor) {
-    val deletionLinksBuffer = if (!isGenomeEditor) {
-        LinkDeletionBuffer(THREAD_COUNT, 300, this)
-    } else {
-        LinkDeletionBuffer(1, 300, this)
-    }
-    val deletionCellsBuffer = if (!isGenomeEditor) {
-        CellDeletionBuffer(THREAD_COUNT, 300, this)
-    } else {
-        CellDeletionBuffer(1, 300, this)
-    }
 
     val threadManager: ThreadManagerPlug = if (!isGenomeEditor) {
         ThreadManager(gridManager, this)
@@ -60,7 +53,8 @@ class CellManager(
 
     fun getOrganism(index: Int) = organismManager.organisms[index]
 
-    val commandBuffer = UserCommandBuffer()
+    val userCommandBuffer = UserCommandBuffer()
+    val worldCommandBuffer = Array(THREAD_COUNT) { WorldCommandBuffer() }
     var grabbedXLocal = 0f
     var grabbedYLocal = 0f
     var grabbedCellLocal = -1
@@ -71,17 +65,6 @@ class CellManager(
     val globalSettings = readSettings()
     private val rateOfEnergyTransferInLinks = globalSettings.rateOfEnergyTransferInLinks
     val cellsSettings: List<CellSettings> = globalSettings.cellsSettings.values.toList()
-//    val shaderBuffer = if (!isGenomeEditor) {
-//        Array(THREAD_COUNT) { ShaderBuffer(20_000) }
-//    } else {
-//        Array(0) { ShaderBuffer(0) }
-//    }
-//
-//    val shaderBufferCounter = if (!isGenomeEditor) {
-//        IntArray(THREAD_COUNT)
-//    } else {
-//        IntArray(0)
-//    }
 
     init {
         if (!isGenomeEditor) {
@@ -152,22 +135,23 @@ class CellManager(
         if (cellType[cellId] == -1) return
         if (x[cellId] < CELL_RADIUS) {
             x[cellId] = CELL_RADIUS
-            vx[cellId] = 0f
+            vx[cellId] *= -0.8f
         } else if (x[cellId] > gridManager.WORLD_WIDTH_MINUS_CELL_RADIUS) {
             x[cellId] = gridManager.WORLD_WIDTH_MINUS_CELL_RADIUS
-            vx[cellId] = 0f
+            vx[cellId] *= -0.8f
         } else if (y[cellId] < CELL_RADIUS) {
             y[cellId] = CELL_RADIUS
-            vy[cellId] = 0f
+            vy[cellId] *= -0.8f
         } else if (y[cellId] > gridManager.WORLD_HEIGHT_MINUS_CELL_RADIUS) {
             y[cellId] = gridManager.WORLD_HEIGHT_MINUS_CELL_RADIUS
-            vy[cellId] = 0f
+            vy[cellId] *= -0.8f
         }
     }
 
     private fun processCellEnergy(cellId: Int, threadId: Int) {
         if (energy[cellId] <= 0f) isAliveWithoutEnergy[cellId] -= 1
-        if (energy[cellId] > 0) isAliveWithoutEnergy[cellId] = globalSettings.theNumberOfTicksHungryCellDies
+        if (energy[cellId] > 0) isAliveWithoutEnergy[cellId] =
+            globalSettings.theNumberOfTicksHungryCellDies
         if (isAliveWithoutEnergy[cellId] < 0) {
             killCell(cellId, threadId)
             return
@@ -181,15 +165,17 @@ class CellManager(
 
     private fun processCellFrictionSimpler(cellId: Int) {
         if (cellType[cellId] == 10) {
-            vx[cellId] *= 1f-dragCoefficient[cellId]
-            vy[cellId] *= 1f-dragCoefficient[cellId]
+            vx[cellId] *= 1f - dragCoefficient[cellId]
+            vy[cellId] *= 1f - dragCoefficient[cellId]
         } else {
             // Much more simplified version of the hydrodynamic drag equation
             // Drag is inversely proportional to the number of links a cell has
             // So cells on the surface of the organism have less drag than cells on the inside
-            val amount = linksAmount[cellId]+1
-            vx[cellId] *= 1f-(1f-dragCoefficient[cellId])/amount
-            vy[cellId] *= 1f-(1f-dragCoefficient[cellId])/amount
+            val amount = linksAmount[cellId] + 1
+            vx[cellId] *= 1f - (1f - dragCoefficient[cellId]) / amount
+            vy[cellId] *= 1f - (1f - dragCoefficient[cellId]) / amount
+            //TODO move 0.005f to substrate settings
+            vy[cellId] -= 0.005f
         }
     }
 
@@ -205,8 +191,8 @@ class CellManager(
             return
         }
         // Initialise the sum totals
-        var vectorSumX = 0f;
-        var vectorSumY = 0f;
+        var vectorSumX = 0f
+        var vectorSumY = 0f
         for (i in 0 until amount) {
             val idx = base + i
             val linkId = links[idx]
@@ -223,49 +209,27 @@ class CellManager(
         vectorSumX += x[cellId]
         vectorSumY += y[cellId]
         // The friction proportional to alignment with the surface normal
-        val frictionMultiplier = max(vx[cellId]*vectorSumX + vy[cellId]*vectorSumY, 0f)
+        val frictionMultiplier = max(vx[cellId] * vectorSumX + vy[cellId] * vectorSumY, 0f)
         // Alternatively, we could project the friction force onto the surface normal like a more accurate hydrofoil
 
-        vx[cellId] *= 1f-(1f-dragCoefficient[cellId])*frictionMultiplier*0.05f
-        vy[cellId] *= 1f-(1f-dragCoefficient[cellId])*frictionMultiplier*0.05f
+        vx[cellId] *= 1f - (1f - dragCoefficient[cellId]) * frictionMultiplier * 0.05f
+        vy[cellId] *= 1f - (1f - dragCoefficient[cellId]) * frictionMultiplier * 0.05f
     }
 
+    //TODO Calculate the angle only relative to the parent cell, and only for the cells where it’s necessary, or only at the moment of division
     private fun processCellAngle(cellId: Int) {
-        val organism = getOrganism(organismId[cellId])
-        //Самая первая клетка // The very first cell
-        if (parentId[cellId] == -1) {
-            if (firstChildId[cellId] != -1) {
-                val linkId = organism.linkIdMap.get(id[cellId], firstChildId[cellId])
-                if (linkId == -1) return // TODO сделать, что бы у клетки менялся firstChildId и parentId при отрыви связи
-                // TODO: make sure that the cell's firstChildId and parentId change when the connection is broken
-                val c1 = links1[linkId]
-                val c2 = links2[linkId]
-                val childCellId = if (cellId != c2) c2 else c1
-
-                val dx = x[childCellId] - x[cellId]
-                val dy = y[childCellId] - y[cellId]
-                val angleToChild = atan2(dy, dx)
-
-                angle[cellId] = angleToChild// + angleDiff[cellId]
-            }
-        } else { //Клетка с родителем и ребенком, промежуточная // Cell with parent and child, intermediate
-            val linkId = organism.linkIdMap.get(id[cellId], parentId[cellId])
-            if (linkId == -1) return // TODO сделать, что бы у клетки менялся firstChildId и parentId при отрыви связи
-            // TODO: make sure that the cell's firstChildId and parentId change when the connection is broken
+        if (parentIndex[cellId] != -1) {
+            val linkId = linkIndexMap.get(cellId, parentIndex[cellId])
+            if (linkId == -1) return //TODO потетсить всякие варинаты без этой защиты
             val c1 = links1[linkId]
             val c2 = links2[linkId]
-            val parentCellId = if (cellId != c2) c2 else c1
+            val childCellIndex = if (cellId != c2) c2 else c1
 
-            //TODO десь падает с ошибкой -1
-            //TODO crashes here with error -1
-            if (parentCellId == -1) {
-                /*throw Exception*/println("Error with angle parentCellId: $parentCellId cellId $cellId genome name: ${genomeManager.genomes[organismManager.organisms[organismId[cellId]].genomeIndex].name}")
-                return
-            }
-            val dx = x[parentCellId] - x[cellId]
-            val dy = y[parentCellId] - y[cellId]
-            val angleToParent = atan2(dy, dx)
-            angle[cellId] = angleToParent + 3.141592f// + angleDiff[cellId]
+            val dx = x[cellId] - x[childCellIndex]
+            val dy = y[cellId] - y[childCellIndex]
+            val angleToChild = atan2(dy, dx)
+
+            angle[cellId] = angleToChild + angleDiff[cellId]
         }
     }
 
@@ -274,47 +238,77 @@ class CellManager(
     }
 
     fun processCell(
-        cellId: Int,
+        cellIndex: Int,
         gridX: Int,
         gridY: Int,
         threadId: Int,
         isOdd: Boolean,
         isVisibleOnScreen: Boolean = true
     ) {
-//        processWorldBorders(cellId, threadId)
-//        processPhysics(cellId, gridX, gridY, threadId)
-        processCellEnergy(cellId, threadId)
+        if (!isAliveCell[cellIndex]) return
+        processCellEnergy(cellIndex, threadId)
 
-//        if (isVisibleOnScreen) {
-//            val buf = shaderBuffer[threadId]
-//            buf.x[shaderBufferCounter[threadId]] = x[cellId]
-//            buf.y[shaderBufferCounter[threadId]] = y[cellId]
-//            buf.colorRGBA[shaderBufferCounter[threadId]] = 1234123
-//            shaderBufferCounter[threadId]++
-//        }
-
-        if (cellType[cellId] != -1) {
+        if (cellType[cellIndex] != 24) {
             if (HYDRODYNAMIC_DRAG)
-                processCellFriction(cellId)
+                processCellFriction(cellIndex)
             else
-                processCellFrictionSimpler(cellId)
+                processCellFrictionSimpler(cellIndex)
         }
-        if (isNeuronTransportable[cellId]) {
-            neuronImpulseOutput[cellId] = activation(this, cellId, neuronImpulseInput[cellId])
+        if (isNeuronTransportable[cellIndex]) {
+            //TODO Add a flag to perform impulse calculations only for cells through which a neural impulse passes
+            neuronImpulseOutput[cellIndex] =
+                activation(this, cellIndex, neuronImpulseInput[cellIndex])
         }
-        doSpecific(cellType[cellId], cellId, threadId) // This can override neuronImpulseOutput
-        resetNeuralImpulseInput(cellId)
+        doSpecific(
+            cellType[cellIndex],
+            cellIndex,
+            threadId
+        ) // This can override neuronImpulseOutput
+        resetNeuralImpulseInput(cellIndex)
 
-        if (cellType[cellId] != -1) {
-            mutateCell(cellId, threadId)
-            divideCell(cellId, threadId)
-            processCellAngle(cellId)
+        if (cellType[cellIndex] != 24) {
+            val organism = organismManager.organisms[organismIndex[cellIndex]]
+            if (!organism.alreadyGrownUp) {
+                if (organism.justChangedStage) {
+                    val currentStage = genomeManager.genomes[organism.genomeIndex]
+                        .genomeStageInstruction[organism.stage]
+                    val action = currentStage.cellActions[cellGenomeId[cellIndex]]
+                    val isDivideNotNull = action?.divide != null
+                    val isMutateNotNull = action?.mutate != null
+
+                    cellActions[cellIndex] = action
+
+                    isDividedInThisStage[cellIndex] = !isDivideNotNull
+                    isMutateInThisStage[cellIndex] = !isMutateNotNull
+
+                    if (isDivideNotNull) {
+                        //TODO Make a more accurate energy calculation
+                        energyNecessaryToDivide[cellIndex] = 2.5f
+                        worldCommandBuffer[threadId].push(
+                            type = WorldCommandType.DIVIDE_ALIVE_CELL_ACTION_COUNTER,
+                            intArrayOf(organismIndex[cellIndex])
+                        )
+                    }
+
+                    if (isMutateNotNull) {
+                        //TODO Make a more accurate energy calculation
+                        energyNecessaryToMutate[cellIndex] = 1.2f
+                        worldCommandBuffer[threadId].push(
+                            type = WorldCommandType.MUTATE_ALIVE_CELL_ACTION_COUNTER,
+                            intArrayOf(organismIndex[cellIndex])
+                        )
+                    }
+                }
+                mutateCell(cellIndex, threadId)
+                divideCell(cellIndex, threadId)
+            }
+            processCellAngle(cellIndex)
 
             if (isOdd) {
-                oddChunkPositionStack[threadId][oddCounter[threadId]] = cellId
+                oddChunkPositionStack[threadId][oddCounter[threadId]] = cellIndex
                 oddCounter[threadId]++
             } else {
-                evenChunkPositionStack[threadId][evenCounter[threadId]] = cellId
+                evenChunkPositionStack[threadId][evenCounter[threadId]] = cellIndex
                 evenCounter[threadId]++
             }
         }
@@ -346,7 +340,8 @@ class CellManager(
         val dy = y[linkCell1] - y[linkCell2]
 
         //transport energy
-        val energyTransportRate = rateOfEnergyTransferInLinks // made this a variable instead of a magic number
+        val energyTransportRate =
+            rateOfEnergyTransferInLinks // made this a variable instead of a magic number
         if (energy[linkCell1] / cellsSettings[cellType[linkCell1] + 1].maxEnergy < energy[linkCell2] / cellsSettings[cellType[linkCell2] + 1].maxEnergy) {
             energy[linkCell1] += energyTransportRate
             energy[linkCell2] -= energyTransportRate
@@ -355,43 +350,45 @@ class CellManager(
             energy[linkCell2] += energyTransportRate
         }
 
-        //transport neuronImpulse
-        if (isNeuronLink[linkId] && directedNeuronLink[linkId] != -1) {
-            if (this.id[linkCell1] == directedNeuronLink[linkId]) { // linkCell1 is the receiver
-                //if (isNeuronTransportable[linkCell1]) {
-                    if (isSum[linkCell1]) {
-                        neuronImpulseInput[linkCell1] += neuronImpulseOutput[linkCell2]
-                    } else {
-                        neuronImpulseInput[linkCell1] *= neuronImpulseOutput[linkCell2]
-                    }
-                //}
-            } else if (this.id[linkCell2] == directedNeuronLink[linkId]) { // linkCell2 is the receiver
-                //if (isNeuronTransportable[linkCell2]) {
-                    if (isSum[linkCell2]) {
-                        neuronImpulseInput[linkCell2] += neuronImpulseOutput[linkCell1]
-                    } else {
-                        neuronImpulseInput[linkCell2] *= neuronImpulseOutput[linkCell1]
-                    }
-                //}
+        if (isNeuronLink[linkId]) {
+            val signalToCellIndex = if (isLink1NeuralDirected[linkId]) linkCell1 else linkCell2
+            val signalFromCellIndex = if (isLink1NeuralDirected[linkId]) linkCell2 else linkCell1
+            if (isSum[signalToCellIndex]) {
+                neuronImpulseInput[signalToCellIndex] += neuronImpulseOutput[signalFromCellIndex]
+            } else {
+                neuronImpulseInput[signalToCellIndex] *= neuronImpulseOutput[signalFromCellIndex]
             }
         }
+
         if (isStickyLink[linkId] && !isNeuronLink[linkId]) {
-            if (cellType[linkCell1] == 11 && activation(this, linkCell2, neuronImpulseOutput[linkCell2]) >= 1) {
+            if (cellType[linkCell1] == 11 && activation(
+                    this,
+                    linkCell2,
+                    neuronImpulseOutput[linkCell2]
+                ) >= 1
+            ) {
                 deletedLinkSizes[threadId] += 1
                 deleteLinkLists[threadId][deletedLinkSizes[threadId]] = linkId
-            } else if (cellType[linkCell2] == 11 && activation(this, linkCell2, neuronImpulseOutput[linkCell2]) >= 1) {
+            } else if (cellType[linkCell2] == 11 && activation(
+                    this,
+                    linkCell2,
+                    neuronImpulseOutput[linkCell2]
+                ) >= 1
+            ) {
                 deletedLinkSizes[threadId] += 1
                 deleteLinkLists[threadId][deletedLinkSizes[threadId]] = linkId
             }
         }
 
         val distanceSquared = dx * dx + dy * dy
+        //TODO 25_600 move to substrate settings
         if (distanceSquared > 25_600) {
             addToDeleteList(threadId, linkId)
             return
         }
         // TODO: for physical accuracy this should be changed to a harmonic mean
-        val stiffness = (cellsSettings[cellType[linkCell1] + 1].linkStiffness + cellsSettings[cellType[linkCell2] + 1].linkStiffness) / 2
+        val stiffness =
+            (cellsSettings[cellType[linkCell1] + 1].linkStiffness + cellsSettings[cellType[linkCell2] + 1].linkStiffness) / 2
         if (distanceSquared <= 0) return
         val dist = 1.0f / invSqrt(distanceSquared)
 
@@ -405,7 +402,7 @@ class CellManager(
         val dvy = vy[linkCell1] - vy[linkCell2]
 
         val dampeningConstant = 0.3f
-        val dampeningForce = dampeningConstant*(dvx * dirX + dvy * dirY)
+        val dampeningForce = dampeningConstant * (dvx * dirX + dvy * dirY)
 
         val fx = (force + dampeningForce) * dirX
         val fy = (force + dampeningForce) * dirY
@@ -460,7 +457,8 @@ class CellManager(
             }
 
             // Квадратичная зависимость силы
-            val cellStrengthAverage = (cellsSettings[cellType[cellAId] + 1].cellStiffness + cellsSettings[cellType[cellBId] + 1].cellStiffness) / 2f
+            val cellStrengthAverage =
+                (cellsSettings[cellType[cellAId] + 1].cellStiffness + cellsSettings[cellType[cellBId] + 1].cellStiffness) / 2f
             val force = cellStrengthAverage - cellStrengthAverage * distanceSquared / radiusSquared
             // Нормализация вектора расстояния
             val normX = dx / distance
@@ -498,7 +496,7 @@ class CellManager(
             try {
                 if (cellType[grabbedCell] == -1) {
                     grabbedCell = -1
-                    commandBuffer.push(GameCommand.MovePlayer(px, py, grabbedCell))
+                    userCommandBuffer.push(PlayerCommand.DragCell(px, py, grabbedCell))
                     return false
                 }
             } catch (e: Exception) {
@@ -510,39 +508,48 @@ class CellManager(
             }
 
 
-            commandBuffer.push(GameCommand.MovePlayer(px, py, grabbedCell))
+            userCommandBuffer.push(PlayerCommand.DragCell(px, py, grabbedCell))
         } else return false
         return true
     }
 
     fun moveTo(px: Float, py: Float) {
-        commandBuffer.push(GameCommand.MovePlayer(px, py, grabbedCell))
+        userCommandBuffer.push(PlayerCommand.DragCell(px, py, grabbedCell))
     }
 
     fun addCell(px: Float, py: Float, type: Int, isWall: Boolean = true, genomeIndex: Int = -1) {
-        cellLastId++
-        createCellType(type, cellLastId, true, genomeIndex)
+        val addCellIndex =
+            if (deadCellsStackAmount >= 0) deadCellsStack[deadCellsStackAmount--]
+            else ++cellLastId
+
+
+        isAliveCell[addCellIndex] = true
+        cellGeneration[addCellIndex]++
+
+        createCellType(type, addCellIndex, true, genomeIndex)
         if (!isWall) {
-            energy[cellLastId] = 0.1f
-            id[cellLastId] = 0
+            energy[addCellIndex] = 0.1f
+            cellGenomeId[addCellIndex] = 0
         } else {
-            id[cellLastId] = -1
+            cellGenomeId[addCellIndex] = -1
         }
-        x[cellLastId] = px
-        y[cellLastId] = py
-        cellType[cellLastId] = type
-        gridId[cellLastId] = gridManager.addCell(
-            (x[cellLastId] / CELL_SIZE).toInt(),
-            (y[cellLastId] / CELL_SIZE).toInt(),
-            cellLastId
-        )
+        x[addCellIndex] = px
+        y[addCellIndex] = py
+        cellType[addCellIndex] = type
+        gridId[addCellIndex] = gridManager.addCell(
+            (x[addCellIndex] / CELL_SIZE).toInt(),
+            (y[addCellIndex] / CELL_SIZE).toInt(),
+            addCellIndex
+        ) {
+            killCell(addCellIndex, 0)
+        }
     }
 
     fun onMouseClick(x: Float, y: Float) {
-        commandBuffer.push(GameCommand.Spawn(x, y))
+        userCommandBuffer.push(PlayerCommand.SpawnCell(x, y))
     }
 
-    fun moveToCell(i: Int) {
+    fun moveToCell(i: Int, threadId: Int) {
         val oldX = (x[i] / CELL_SIZE).toInt()
         val oldY = (y[i] / CELL_SIZE).toInt()
         x[i] += vx[i]
@@ -558,7 +565,9 @@ class CellManager(
         val newY = (y[i] / CELL_SIZE).toInt()
         if (newX != oldX || newY != oldY) {
             gridManager.removeCell(oldX, oldY, i)
-            gridId[i] = gridManager.addCell(newX, newY, i)
+            gridId[i] = gridManager.addCell(newX, newY, i) {
+                killCell(i, threadId)
+            }
         }
     }
 
@@ -574,38 +583,20 @@ class CellManager(
             dispose()
         }
 
+        if (feedAllCell) {
+            for (i in 0..cellLastId + 1) {
+                if (isAliveCell[i])
+                    energy[i] = cellsSettings[cellType[i] + 1].maxEnergy
+            }
+            feedAllCell = false
+        }
+
         /*
         * Зануление счетчиков буфера для шейдера
         * Zeroing out buffer counters for shader
         * */
 //        shaderBufferCounter.fill(0)
 
-        /*
-        * Обработка команд от User
-        * Processing commands from User
-        * */
-        commandBuffer.swapAndConsume { cmd ->
-            when (cmd) {
-                is GameCommand.Spawn -> {
-                    addCell(cmd.x, cmd.y, 18, false, genomeIndex = currentGenomeIndex)
-                }
-
-                is GameCommand.MovePlayer -> {
-                    grabbedXLocal = cmd.dx
-                    grabbedYLocal = cmd.dy
-                    grabbedCellLocal = cmd.cellId
-                }
-                else -> {
-
-                }
-            }
-        }
-
-        if (grabbedCellLocal != -1) {
-            val grabDrag = 0.5f // To reduce oscillations
-            vx[grabbedCellLocal] = vx[grabbedCellLocal]*grabDrag + (grabbedXLocal - x[grabbedCellLocal]) * 0.02f
-            vy[grabbedCellLocal] = vy[grabbedCellLocal]*grabDrag + (grabbedYLocal - y[grabbedCellLocal]) * 0.02f
-        }
 
         /*
         * Растоновка позиций в сетке
@@ -614,7 +605,7 @@ class CellManager(
         for (chunk in 0..<THREAD_COUNT) {
             threadManager.futures.add(executor.submit {
                 for (i in 0..<oddCounter[chunk]) {
-                    moveToCell(oddChunkPositionStack[chunk][i])
+                    moveToCell(oddChunkPositionStack[chunk][i], chunk)
                 }
             })
         }
@@ -624,7 +615,7 @@ class CellManager(
         for (chunk in 0..<THREAD_COUNT) {
             threadManager.futures.add(executor.submit {
                 for (i in 0..<evenCounter[chunk]) {
-                    moveToCell(evenChunkPositionStack[chunk][i])
+                    moveToCell(evenChunkPositionStack[chunk][i], chunk)
                 }
             })
         }
@@ -640,12 +631,71 @@ class CellManager(
         * */
         performWorldCommands()
 
+        for (threadId in 0 until threadCount) {
+            worldCommandBuffer[threadId].consume { type, ints, floats, booleans ->
+                when (type) {
+                    WorldCommandType.DIVIDE_ALIVE_CELL_ACTION_COUNTER -> {
+                        val organismIndex = ints[0]
+                        val organism = organismManager.organisms[organismIndex]
+                        organism.divideCounterThisStage++
+                    }
+
+                    WorldCommandType.MUTATE_ALIVE_CELL_ACTION_COUNTER -> {
+                        val organismIndex = ints[0]
+                        val organism = organismManager.organisms[organismIndex]
+                        organism.mutateCounterThisStage++
+                    }
+//                    WorldCommandType.ADD_CELL -> {
+//                        // Восстановите AddCell из примитивов и вызовите addCell(...)
+//                        val parentId = ints[0]
+//                        val parentOrganismId = ints[1]
+//                        // ... и т.д.
+//                        // Здесь ваша логика добавления клетки
+//                    }
+//                    WorldCommandType.ADD_LINK -> { /* Аналогично */ }
+                    // И т.д. для всех типов
+                    else -> {}
+                }
+            }
+        }
+
         /*
         * Переход на следющую стадию генома в каждом организме
         * Transition to the next stage of the genome in each organism
         * */
-        organismManager.organisms.forEach {
-            performOrganismNextStage(it)
+        organismManager.organisms.forEachIndexed { index, it ->
+            performOrganismNextStage(it, index)
+        }
+
+
+        /*
+        * Обработка команд от User
+        * Processing commands from User
+        * */
+        userCommandBuffer.swapAndConsume { cmd ->
+            when (cmd) {
+                is PlayerCommand.SpawnCell -> {
+                    addCell(cmd.x, cmd.y, 18, false, genomeIndex = currentGenomeIndex)
+                }
+
+                is PlayerCommand.DragCell -> {
+                    grabbedXLocal = cmd.dx
+                    grabbedYLocal = cmd.dy
+                    grabbedCellLocal = cmd.cellId
+                }
+
+                else -> {
+
+                }
+            }
+        }
+
+        if (grabbedCellLocal != -1) {
+            val grabDrag = 0.5f // To reduce oscillations
+            vx[grabbedCellLocal] =
+                vx[grabbedCellLocal] * grabDrag + (grabbedXLocal - x[grabbedCellLocal]) * 0.02f
+            vy[grabbedCellLocal] =
+                vy[grabbedCellLocal] * grabDrag + (grabbedYLocal - y[grabbedCellLocal]) * 0.02f
         }
 
         //Полное дерьмо, переделать
@@ -664,16 +714,26 @@ class CellManager(
         }
     }
 
-    fun performOrganismNextStage(it: Organism): Boolean? {
+    fun performOrganismNextStage(it: Organism, index: Int = 0): Boolean? {
+        if (it.alreadyGrownUp) return null
         it.justChangedStage = false
-        it.timerToGrowAfterStage--
-        if (it.dividedTimes[it.stage] <= 0 && it.mutatedTimes[it.stage] <= 0) {
+        if (it.dividedTimes == it.divideAmountThisStage - it.divideCounterThisStage
+            && it.mutatedTimes == it.mutateAmountThisStage - it.mutateCounterThisStage
+        ) {
             if (it.genomeSize > it.stage + 1) {
                 it.stage++
+                val currentGenome = genomeManager.genomes[it.genomeIndex]
                 it.justChangedStage = true
-                it.timerToGrowAfterStage = 5
+                it.divideCounterThisStage = 0
+                it.mutateCounterThisStage = 0
+                it.divideAmountThisStage = currentGenome.dividedTimes[it.stage]
+                it.mutateAmountThisStage = currentGenome.mutatedTimes[it.stage]
+                it.dividedTimes = currentGenome.dividedTimes[it.stage]
+                it.mutatedTimes = currentGenome.mutatedTimes[it.stage]
                 return true
             } else {
+                println("organism grown $index")
+                it.alreadyGrownUp = true
                 return null
             }
         }
@@ -687,34 +747,28 @@ class CellManager(
         * */
         addLinks.forEach {
             it.forEach { link ->
-                linksLastId++
-                linksNaturalLength[linksLastId] = link.linksLength
-                degreeOfShortening[linksLastId] = link.degreeOfShortening
-                isStickyLink[linksLastId] = link.isStickyLink
-                isNeuronLink[linksLastId] = link.isNeuronLink
-                directedNeuronLink[linksLastId] = link.directedNeuronLink
-                links1[linksLastId] = link.cellId
-                links2[linksLastId] = link.otherCellId
-                linkIndexMap.put(link.cellId, link.otherCellId, linksLastId)
-                getOrganism(organismId[link.cellId]).linkIdMap.put(
-                    id[link.cellId],
-                    id[link.otherCellId],
-                    linksLastId
-                )
-                addLink(link.cellId, linksLastId)
-                addLink(link.otherCellId, linksLastId)
+
+                val addLinkId =
+                    if (deadLinksStackAmount >= 0) deadLinksStack[deadLinksStackAmount--]
+                    else ++linksLastId
+
+                isAliveLink[addLinkId] = true
+                linkGeneration[addLinkId]++
+
+                linksNaturalLength[addLinkId] = link.linksLength
+                degreeOfShortening[addLinkId] = link.degreeOfShortening
+                isStickyLink[addLinkId] = link.isStickyLink
+                isNeuronLink[addLinkId] = link.isNeuronLink
+                isLink1NeuralDirected[addLinkId] = link.isLink1NeuralDirected
+
+                links1[addLinkId] = link.cellIndex
+                links2[addLinkId] = link.otherCellIndex
+                linkIndexMap.put(link.cellIndex, link.otherCellIndex, addLinkId)
+                addLink(link.cellIndex, addLinkId)
+                addLink(link.otherCellIndex, addLinkId)
             }
             it.clear()
         }
-
-        /*
-        * Удаление клеток и связок
-        * Removal of cells and ligaments
-        * */
-        deletionLinksBuffer.collect(deleteLinkLists, deletedLinkSizes)
-        deletionLinksBuffer.flush()
-        deletionCellsBuffer.collect(deleteCellLists, deletedCellSizes)
-        deletionCellsBuffer.flush()
 
         /*
         * Добавление клеток
@@ -723,11 +777,42 @@ class CellManager(
         addCells.forEach {
             it.forEach { addCell ->
                 val organism = organismManager.organisms[addCell.parentOrganismId]
-                organism.dividedTimes[organism.stage]--
+                organism.dividedTimes--
                 addCell(addCell)
             }
             it.clear()
         }
+
+        /*
+        * Удаление клеток и связок
+        * Removal of cells and ligaments
+        * */
+
+        for (i in 0 until threadCount) {
+            val deleteLink = deleteLinkLists[i]
+            for (j in 0..deletedLinkSizes[i]) {
+                val deleteLinkIndex = deleteLink[j]
+                if (grabbedCellLocal == deleteLinkIndex) {
+                    grabbedCellLocal = -1
+                }
+                if (grabbedCell == deleteLinkIndex) {
+                    grabbedCell = -1
+                }
+                deleteLink(deleteLinkIndex)
+            }
+            deletedLinkSizes[i] = -1
+        }
+
+
+        for (i in 0 until threadCount) {
+            val deleteCell = deleteCellLists[i]
+            for (j in 0..deletedCellSizes[i]) {
+                val deleteCellIndex = deleteCell[j]
+                deleteCell(deleteCellIndex)
+            }
+            deletedCellSizes[i] = -1
+        }
+
 
         /*
         * Добавление еды
@@ -758,7 +843,7 @@ class CellManager(
         decrementMutationCounter.forEach {
             it.forEach { organismId ->
                 val organism = organismManager.organisms[organismId]
-                organism.mutatedTimes[organism.stage]--
+                organism.mutatedTimes--
             }
             it.clear()
         }
@@ -774,9 +859,6 @@ class CellManager(
         gridManager.clearAll()
         clear()
         linkIndexMap.clear()
-        organismManager.organisms.forEach {
-            it.linkIdMap.clear()
-        }
         organismManager.organisms.clear()
         subManager.clear()
     }

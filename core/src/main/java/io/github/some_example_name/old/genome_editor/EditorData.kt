@@ -179,7 +179,7 @@ fun toEditorLinks(
     val editorLinks = mutableListOf<EditorLinks>()
     for (index in 0 .. replayTick.linksLastId) {
         val isNeuralTo2 = if (replayTick.isNeuronLink[index]) {
-            val indexDirected = replayTick.directedNeuronLink[index]
+            val indexDirected = TODO()//replayTick.directedNeuronLink[index]
             when (indexDirected) {
                 replayTick.id[replayTick.links1[index]] -> false
                 replayTick.id[replayTick.links2[index]] -> true

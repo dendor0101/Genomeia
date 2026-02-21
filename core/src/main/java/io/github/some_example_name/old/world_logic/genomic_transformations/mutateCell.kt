@@ -7,26 +7,17 @@ import io.github.some_example_name.old.world_logic.CellManager
 import io.github.some_example_name.old.world_logic.CellManager.Companion.MAX_LINK_AMOUNT
 import io.github.some_example_name.old.world_logic.GridManager.Companion.CELL_SIZE
 import io.github.some_example_name.old.organisms.AddLink
-import kotlin.collections.component1
-import kotlin.collections.component2
 import kotlin.collections.forEach
 import kotlin.collections.set
 
 fun CellManager.mutateCell(index: Int, threadId: Int) {
 
-    val organism = organismManager.organisms[organismId[index]]
-    if (organism.justChangedStage) {
-        isMutateInThisStage[index] = false
-    }
     if (!isMutateInThisStage[index] && energy[index] >= energyNecessaryToMutate[index]) {
         isMutateInThisStage[index] = true
-        //Разобраться с этим, но это видимо пока только зацикливанием нужно будет
-        // We need to figure this out, but for now it will probably only be possible to loop it.
-        if (organism.genomeIndex == -1) return
-        val currentStage = genomeManager.genomes[organism.genomeIndex].genomeStageInstruction[organism.stage]
-        val action = currentStage.cellActions[id[index]]?.mutate ?: return
 
-        decrementMutationCounter[threadId].add(organismId[index])
+        val action = cellActions[index]?.mutate ?: return
+
+        decrementMutationCounter[threadId].add(organismIndex[index])
 
         action.color?.let {
             colorR[index] = it.r
@@ -46,10 +37,10 @@ fun CellManager.mutateCell(index: Int, threadId: Int) {
         var isFromMuscleToAnother = false
         action.cellType?.let {
             if (cellType[index] == 16 && it != 16) {
-                controllerIndexesLol.remove(id[index])
+                controllerIndexesLol.remove(cellGenomeId[index])
             }
             if (cellType[index] != 16 && it == 16) {
-                controllerIndexesLol[id[index]] = false
+                controllerIndexesLol[cellGenomeId[index]] = false
             }
             isFromMuscleToAnother = cellType[index] == 5 && it != 5
             cellType[index] = it
@@ -68,44 +59,56 @@ fun CellManager.mutateCell(index: Int, threadId: Int) {
         }
 
         if (action.physicalLink.isNotEmpty()) {
+            //TODO With the new command system, take this out into multithreading
             val gridX = (x[index] / CELL_SIZE).toInt()
             val gridY = (y[index] / CELL_SIZE).toInt()
+            val closestCells = collectCells(gridX, gridY)
+            val idToIndexAssociation = closestCells.filter { organismIndex[it] == organismIndex[index] && it != index}
+                .associateBy { cellGenomeId[it] }
 
-
-            val cells = collectCells(gridX, gridY)
-
-            val mapIndexLinkId =
-                cells.filter { organismId[it] == organismId[index] && it != index}.associateBy { id[it] }
-
-            action.physicalLink.forEach { (linkToConnectWith, linkData) ->
-                val linkedCellId = mapIndexLinkId[linkToConnectWith]
-                if (linkedCellId != null) {
-                    val linkId = linkIndexMap.get(index, linkedCellId)
+            action.physicalLink.forEach { (cellGenomeIdToConnectWith, linkData) ->
+                val linkedCellIndex = idToIndexAssociation[cellGenomeIdToConnectWith]
+                if (linkedCellIndex != null) {
+                    val linkId = linkIndexMap.get(index, linkedCellIndex)
                     if (linkData != null) {
                         if (linkId == -1) {
-                            if (linksAmount[index] < MAX_LINK_AMOUNT && linksAmount[linkedCellId] < MAX_LINK_AMOUNT && linkData.length != null) {
+                            if (linksAmount[index] < MAX_LINK_AMOUNT && linksAmount[linkedCellIndex] < MAX_LINK_AMOUNT && linkData.length != null) {
+                                if (linkData.isNeuronal && linkData.directedNeuronLink != cellGenomeId[index]
+                                    && linkData.directedNeuronLink != cellGenomeIdToConnectWith) {
+                                    throw Exception("Incorrect logic in the neural-link")
+                                }
+
                                 addLinks[threadId].add(
                                     AddLink(
-                                        cellId = index,
-                                        otherCellId = linkedCellId,
+                                        cellIndex = index,
+                                        otherCellIndex = linkedCellIndex,
                                         linksLength = if (isEqualLinks) 30f else linkData.length,
                                         degreeOfShortening = 1f,
                                         isStickyLink = false,
                                         isNeuronLink = linkData.isNeuronal,
-                                        directedNeuronLink = linkData.directedNeuronLink ?: -1,
+                                        isLink1NeuralDirected = linkData.directedNeuronLink == cellGenomeId[index]
                                     )
                                 )
                             }
                         } else {
-                            if (!linkData.isNeuronal && directedNeuronLink[linkId] != -1) {
-                                neuronImpulseInput[directedNeuronLink[linkId]] = 0f
+                            if (!linkData.isNeuronal) {
+                                val cellIndex = if (isLink1NeuralDirected[linkId]) links1[linkId] else links2[linkId]
+                                neuronImpulseInput[cellIndex] = 0f
+                                neuronImpulseOutput[cellIndex] = 0f
+                            } else {
+                                val cellLink1Index = links1[linkId]
+                                val cellLink2Index = links2[linkId]
+                                val cellLink1Id = cellGenomeId[cellLink1Index]
+                                val cellLink2Id = cellGenomeId[cellLink2Index]
+
+                                isLink1NeuralDirected[linkId] = linkData.directedNeuronLink == cellLink1Id
+
+                                if (linkData.directedNeuronLink != cellLink1Id && linkData.directedNeuronLink != cellLink2Id) {
+                                    throw Exception("Incorrect logic in the neural-link ${linkData.directedNeuronLink} ${cellGenomeId[index]} ${cellGenomeIdToConnectWith}")
+                                }
                             }
 
                             isNeuronLink[linkId] = linkData.isNeuronal
-
-                            if (linkData.isNeuronal) {
-                                directedNeuronLink[linkId] = linkData.directedNeuronLink ?: -1
-                            }
                         }
                     } else {
                         if (linkId != -1) {
