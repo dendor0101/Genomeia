@@ -13,7 +13,7 @@ class Tail: Cell(
 
     override fun doOnTick(index: Int, threadId: Int) = with(cellEntity) {
         if (energy[index] > 0) {
-            var impulse = getNeuronImpulseOutput(index)
+            var impulse = neuronImpulseOutput[index]
             if (impulse < 0f) impulse = 0f
             if (impulse > 1f) impulse = 1f
 //            if (speed[index] < impulse) speed[index] += 0.012f else if (speed[index] > impulse) speed[index] -= 0.012f

@@ -1,24 +1,19 @@
 package io.github.some_example_name.old.systems.physics
 
-import com.badlogic.gdx.graphics.Color
-import com.badlogic.gdx.math.MathUtils
-import io.github.some_example_name.old.commands.CommandsManager
-import io.github.some_example_name.old.commands.WorldCommandType
+import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.core.DIContainer.halfChunkHeight
 import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.core.utils.invSqrt
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.SimEntity
-import kotlin.math.cos
-import kotlin.math.sin
 import kotlin.math.sqrt
 
 class ParticlePhysicsSystem(
     val entity: ParticleEntity,
     val gridManager: GridManager,
     val substrateSettings: SubstrateSettings,
-    val commandsManager: CommandsManager,
+    val worldCommandsManager: WorldCommandsManager,
     val simEntity: SimEntity,
     val linkEntity: LinkEntity
 ) {
@@ -46,13 +41,21 @@ class ParticlePhysicsSystem(
         threadId: Int,
         isOdd: Boolean
     ) {
-        if (isOdd) {
-            commandsManager.oddChunkPositionStack[threadId][commandsManager.oddCounter[threadId]] = cellIndex
-            commandsManager.oddCounter[threadId]++
-        } else {
-            commandsManager.evenChunkPositionStack[threadId][commandsManager.evenCounter[threadId]] = cellIndex
-            commandsManager.evenCounter[threadId]++
+        val stacks = if (isOdd) worldCommandsManager.oddChunkPositionStack
+        else worldCommandsManager.evenChunkPositionStack
+        val counters = if (isOdd) worldCommandsManager.oddCounter
+        else worldCommandsManager.evenCounter
+
+        val index = counters[threadId]
+        var arr = stacks[threadId]
+
+        if (index >= arr.size) {
+            arr = arr.copyOf(arr.size + (arr.size shr 1))
+            stacks[threadId] = arr
         }
+
+        arr[index] = cellIndex
+        counters[threadId] = index + 1
     }
 
     private fun processNeighborsCellsCollision(cellId: Int, gridX: Int, gridY: Int, threadId: Int) {
@@ -81,7 +84,7 @@ class ParticlePhysicsSystem(
 
     private fun repulse(cellAId: Int, cellBId: Int, isSameCell: Boolean = false, threadId: Int) = with(entity) {
         if (linkEntity.linkIndexMap.get(cellAId, cellBId) != -1) return@with
-        //TODO check if cellAId and cellBId linked then return
+
         val dx = x[cellAId] - x[cellBId]
         val dy = y[cellAId] - y[cellBId]
         val dx2 = dx * dx
@@ -96,13 +99,6 @@ class ParticlePhysicsSystem(
         if (distanceSquared < radiusSquared) {
             val distance = 1.0f / invSqrt(distanceSquared)
             if (effectOnContact[cellAId] || effectOnContact[cellBId]) TODO("implement onContact call")
-
-            commandsManager.worldCommandBuffer[threadId].push(
-                type = WorldCommandType.ADD_LINK,
-                booleans = booleanArrayOf(false, false, false),
-                floats = floatArrayOf(distance, 1f),
-                ints = intArrayOf(cellAId, cellBId)
-            )
 
             // Квадратичная зависимость силы
             val cellStrengthAverage = (cellStiffness[cellAId] + cellStiffness[cellBId]) / 2f
@@ -145,8 +141,8 @@ class ParticlePhysicsSystem(
 
         processCellFrictionOld(particleIndex)
 
-        vx[particleIndex] -= 0.04f * sin((500f - particleIndex) * simEntity.timeSimulation)
-        vy[particleIndex] -= 0.04f * cos((500f - particleIndex) * simEntity.timeSimulation)
+//        vx[particleIndex] -= 0.04f * sin((500f - particleIndex) * simEntity.timeSimulation)
+//        vy[particleIndex] -= 0.04f * cos((500f - particleIndex) * simEntity.timeSimulation)
 
         val vxv = vx[particleIndex]
         val vyv = vy[particleIndex]

@@ -11,7 +11,7 @@ import java.io.File
 data class GlobalSimulationSettings(
     val amountOfSolarEnergy: Float = 0.06f,
     val viscosityOfTheEnvironment: Float = 0.03f,
-    val tailMaxSpeedCoefficient: Float = 1.0f,
+    val tailMaxSpeedCoefficient: Float = 0.025f,
     val producerRestoreTimeTickCoefficient: Float = 4f,
     val amountOfFoodEnergy: Float = 4f,
     val rateOfEnergyTransferInLinks: Float = 0.03f,
@@ -27,151 +27,151 @@ data class GlobalSimulationSettings(
 fun defaultCellSettingsMap() = mapOf(
     "Leaf" to CellSettings(
         maxEnergy = 5f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.025f,
         energyActionCost = 0f
     ),
     "Fat" to CellSettings(
         maxEnergy = 10f,
-        cellStiffness = 0.5f,
+        cellStiffness = 0.01f,
         linkStiffness = 0.0125f,
         energyActionCost = 0f
     ),
     "Bone" to CellSettings(
         maxEnergy = 3f,
-        cellStiffness = 4f,
+        cellStiffness = 0.04f,
         linkStiffness = 0.4f,
         energyActionCost = 0f
     ),
     "Tail" to CellSettings(
         maxEnergy = 5f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.025f,
         energyActionCost = 5.0E-4f
     ),
     "Neuron" to CellSettings(
         maxEnergy = 5f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.025f,
         energyActionCost = 3.0E-4f
     ),
     "Muscle" to CellSettings(
         maxEnergy = 5f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.025f,
         energyActionCost = 5.0E-4f
     ),
     "Sensor" to CellSettings(
         maxEnergy = 5f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.025f,
         energyActionCost = 3.0E-4f
     ),
     "Sucker" to CellSettings(
         maxEnergy = 8f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.025f,
         energyActionCost = 0f
     ),
     "AccelerationSensor" to CellSettings(
         maxEnergy = 5f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.025f,
         energyActionCost = 1.0E-4f
     ),
     "Excreta" to CellSettings(
         maxEnergy = 5f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.025f,
         energyActionCost = 0f
     ),
     "SkinCell" to CellSettings(
         maxEnergy = 5f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.025f,
         energyActionCost = 1.0E-4f
     ),
     "Sticky" to CellSettings(
         maxEnergy = 5f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.025f,
         energyActionCost = 0f
     ),
     "Pumper" to CellSettings(
         maxEnergy = 5f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.025f,
         energyActionCost = 0f
     ),
     "Chameleon" to CellSettings(
         maxEnergy = 5f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.025f,
         energyActionCost = 1.0E-4f
     ),
     "Eye" to CellSettings(
         maxEnergy = 5f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.025f,
         energyActionCost = 5.0E-4f
     ),
     "Compass" to CellSettings(
         maxEnergy = 5f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.025f,
         energyActionCost = 3.0E-4f
     ),
     "Controller" to CellSettings(
         maxEnergy = 5f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.025f,
         energyActionCost = 1.0E-4f
     ),
     "TouchTrigger" to CellSettings(
         maxEnergy = 5f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.025f,
         energyActionCost = 3.0E-4f
     ),
     "Zygote" to CellSettings(
         maxEnergy = 10f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.0125f,
         energyActionCost = 0f
     ),
     "Producer" to CellSettings(
         maxEnergy = 10f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.0125f,
         energyActionCost = 0f
     ),
     "Breakaway" to CellSettings(
         maxEnergy = 3f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.025f,
         energyActionCost = 3.0E-4f
     ),
     "Vascular" to CellSettings(
         maxEnergy = 3f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.0125f,
         energyActionCost = 0f
     ),
     "PheromoneEmitter" to CellSettings(
         maxEnergy = 5f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.0125f,
         energyActionCost = 0f
     ),
     "PheromoneSensor" to CellSettings(
         maxEnergy = 5f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.025f,
         energyActionCost = 0f
     ),
     "Punisher" to CellSettings(
         maxEnergy = 5f,
-        cellStiffness = 2f,
+        cellStiffness = 0.02f,
         linkStiffness = 0.0125f,
         energyActionCost = 0f
     )
@@ -179,7 +179,7 @@ fun defaultCellSettingsMap() = mapOf(
 
 data class CellSettings(
     val maxEnergy: Float = 5f,
-    val cellStiffness: Float = 2.0f,
+    val cellStiffness: Float = 0.2f,
     val linkStiffness: Float = 0.025f,
     val energyActionCost: Float = 0.0005f,
 )

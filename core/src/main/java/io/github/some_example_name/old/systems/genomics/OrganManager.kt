@@ -14,10 +14,10 @@ class OrganManager(
     * Переход на следющую стадию генома в каждом организме
     * Transition to the next stage of the genome in each organism
     * */
-    fun performOrgansNextStage(): Boolean? {
+    fun performOrgansNextStage() {
         with(organEntity) {
             for (index in 0..organEntity.lastId) {
-                if (alreadyGrownUp[index]) return null
+                if (alreadyGrownUp[index]) continue
                 justChangedStage[index] = false
                 if (dividedTimes[index] == divideAmountThisStage[index] - divideCounterThisStage[index]
                     && mutatedTimes[index] == mutateAmountThisStage[index] - mutateCounterThisStage[index]
@@ -32,17 +32,14 @@ class OrganManager(
                         mutateAmountThisStage[index] = currentGenome.mutatedTimes[stage[index]]
                         dividedTimes[index] = currentGenome.dividedTimes[stage[index]]
                         mutatedTimes[index] = currentGenome.mutatedTimes[stage[index]]
-                        return true
                     } else {
                         println("organism grown $index")
                         //TODO Delete grown organs
                         alreadyGrownUp[index] = true
-                        return null
                     }
                 }
             }
         }
-        return false
     }
 
     fun cellDeleted(cellIndex: Int) {

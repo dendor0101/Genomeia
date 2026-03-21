@@ -1,23 +1,22 @@
 package io.github.some_example_name.old.systems.physics
 
-import io.github.some_example_name.old.commands.CommandsManager
+import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.commands.WorldCommandType
-import io.github.some_example_name.old.core.DIContainer.cellsSettings
-import io.github.some_example_name.old.core.DIContainer.energyTransportRate
 import io.github.some_example_name.old.core.DIContainer.linkMaxLength2
 import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.core.utils.invSqrt
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
-import io.github.some_example_name.old.entities.NeuralEntity
 import io.github.some_example_name.old.entities.ParticleEntity
+import io.github.some_example_name.old.systems.genomics.CellSystem
 
 class LinkPhysicsSystem(
     val linkEntity: LinkEntity,
     val particleEntity: ParticleEntity,
     val substrateSettings: SubstrateSettings,
     val cellEntity: CellEntity,
-    val commandsManager: CommandsManager
+    val cellSystem: CellSystem,
+    val worldCommandsManager: WorldCommandsManager
 ) {
 
     fun iterateLinks() {
@@ -25,31 +24,6 @@ class LinkPhysicsSystem(
         for (linkId in 0..linkEntity.lastId) {
             if (linkEntity.isAlive[linkId])
                 processLink(linkId, threadId = 0)
-        }
-    }
-
-    private fun transportEnergy(linkCell1: Int, linkCell2: Int) = with(cellEntity) {
-        val cell1maxEnergy = cellsSettings[cellType[linkCell1].toInt()].maxEnergy
-        val cell2maxEnergy = cellsSettings[cellType[linkCell2].toInt()].maxEnergy
-        if (energy[linkCell1] / cell1maxEnergy < energy[linkCell2] / cell2maxEnergy) {
-            energy[linkCell1] += energyTransportRate
-            energy[linkCell2] -= energyTransportRate
-        } else if (energy[linkCell1] / cell1maxEnergy != energy[linkCell2] / cell2maxEnergy) {
-            energy[linkCell1] -= energyTransportRate
-            energy[linkCell2] += energyTransportRate
-        }
-    }
-
-    private fun transportNeuroSignal(linkId: Int, linkCell1: Int, linkCell2: Int) = with(cellEntity) {
-        if (linkEntity.isNeuronLink[linkId]) {
-            val signalToCellIndex = if (linkEntity.isLink1NeuralDirected[linkId]) linkCell1 else linkCell2
-            val signalFromCellIndex = if (linkEntity.isLink1NeuralDirected[linkId]) linkCell2 else linkCell1
-            val neuronImpulseInputSum = getNeuronImpulseInput(signalToCellIndex)
-            if (getIsSum(signalToCellIndex)) {
-                setNeuronImpulseInput(signalToCellIndex, neuronImpulseInputSum + getNeuronImpulseOutput(signalFromCellIndex))
-            } else {
-                setNeuronImpulseInput(signalToCellIndex, neuronImpulseInputSum * getNeuronImpulseOutput(signalFromCellIndex))
-            }
         }
     }
 
@@ -61,13 +35,13 @@ class LinkPhysicsSystem(
             val dx = x[linkCell1] - x[linkCell2]
             val dy = y[linkCell1] - y[linkCell2]
 
-//            transportEnergy(linkCell1, linkCell2)
-//            transportNeuroSignal(linkId, linkCell1, linkCell2)
+            cellSystem.transportEnergy(linkCell1, linkCell2)
+            cellSystem.transportNeuralSignal(linkIndex, linkCell1, linkCell2)
 
             val distanceSquared = dx * dx + dy * dy
 
             if (distanceSquared > linkMaxLength2) {
-                commandsManager.worldCommandBuffer[threadId].push(
+                worldCommandsManager.worldCommandBuffer[threadId].push(
                     type = WorldCommandType.DELETE_LINK,
                     ints = intArrayOf(linkIndex)
                 )
@@ -76,7 +50,7 @@ class LinkPhysicsSystem(
             // TODO: for physical accuracy this should be changed to a harmonic mean
             val stiffness = (cellStiffness[linkCell1] + cellStiffness[linkCell2]) / 2
 
-            if (distanceSquared <= 0) throw Exception("distanceSquared <= 0, distanceSquared = $distanceSquared")
+            if (distanceSquared < 0) throw Exception("distanceSquared < 0, distanceSquared = $distanceSquared")
             val dist = 1.0f / invSqrt(distanceSquared)
 
             val force = (dist - linksNaturalLength[linkIndex] * degreeOfShortening[linkIndex]) * stiffness

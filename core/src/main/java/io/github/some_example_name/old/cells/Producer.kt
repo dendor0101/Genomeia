@@ -1,6 +1,5 @@
 package io.github.some_example_name.old.cells
 
-import io.github.some_example_name.old.commands.AddCell
 import io.github.some_example_name.old.core.utils.redColors
 import io.github.some_example_name.old.systems.genomics.genome.Action
 import io.github.some_example_name.old.systems.simulation.SimulationSystem
@@ -11,15 +10,15 @@ import kotlin.text.compareTo
 
 class Producer: Cell(
     defaultColor = redColors[4],
-    cellTypeId = 19,
+    cellTypeId = 18,
     isDirected = true,
     isNeural = true
 ) {
 
     override fun doOnTick(index: Int, threadId: Int) = with(cellEntity) {
-        val impulse = getNeuronImpulseOutput(index)
+        val impulse = neuronImpulseOutput[index]
 
-        setNeuronImpulseOutput(index, 0f)
+        neuronImpulseOutput[index] = 0f
         if(energy[index] < substrateSettings.cellsSettings[cellType[index].toInt()].maxEnergy || impulse < 1) return
 
         //TODO Make the impulse increase smoothly from 0 to 1, and have the producer divide at the moment when the impulse equals 1
@@ -56,7 +55,7 @@ class Producer: Cell(
 //                parentIndex = index
 //            )
 //        )
-        setNeuronImpulseOutput(index, 1f)
+        neuronImpulseOutput[index] = 1f
         energy[index] -= energy[index]
     }
 }

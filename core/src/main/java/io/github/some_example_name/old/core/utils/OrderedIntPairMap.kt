@@ -1,107 +1,42 @@
 package io.github.some_example_name.old.core.utils
 
-class OrderedIntPairMap(initialCapacity: Int = 1_000_000) {
-    private var keysA = IntArray(initialCapacity) { EMPTY }
-    private var keysB = IntArray(initialCapacity) { EMPTY }
-    private var values = IntArray(initialCapacity)
-    private var size = 0
-    private val loadFactor = 0.75f
-    private val threshold get() = (keysA.size * loadFactor).toInt()
+import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap
 
-    companion object {
-        private const val EMPTY = Int.MIN_VALUE
-        private const val DELETED = Int.MIN_VALUE + 1
-
-        private fun orderedPairHash(a: Int, b: Int): Int {
-            val aLong = a.toLong() and 0xFFFFFFFF
-            val bLong = b.toLong() and 0xFFFFFFFF
-            val paired = (aLong + bLong) * (aLong + bLong + 1) / 2 + bLong // Cantor pairing with order
-            return (paired xor (paired shr 32)).toInt()
-        }
-
-        private fun indexFor(hash: Int, capacity: Int): Int {
-            return (hash and 0x7FFFFFFF) % capacity
-        }
-    }
-
-    fun put(a: Int, b: Int, value: Int) {
-        if (size >= threshold) resize()
-
-        val key = orderedPairHash(a, b)
-        var idx = indexFor(key, keysA.size)
-
-        while (keysA[idx] != EMPTY && keysA[idx] != DELETED &&
-            !(keysA[idx] == a && keysB[idx] == b)) {
-            idx = (idx + 1) % keysA.size
-        }
-
-        if (keysA[idx] != a || keysB[idx] != b) size++
-        keysA[idx] = a
-        keysB[idx] = b
-        values[idx] = value
-    }
-
-    fun get(a: Int, b: Int): Int {
-        val key = orderedPairHash(a, b)
-        var idx = indexFor(key, keysA.size)
-
-        while (keysA[idx] != EMPTY) {
-            if (keysA[idx] == a && keysB[idx] == b) return values[idx]
-            idx = (idx + 1) % keysA.size
-        }
-        return -1
-    }
-
-    fun remove(a: Int, b: Int): Boolean {
-        val key = orderedPairHash(a, b)
-        var idx = indexFor(key, keysA.size)
-
-        while (keysA[idx] != EMPTY) {
-            if (keysA[idx] == a && keysB[idx] == b) {
-                keysA[idx] = DELETED
-                keysB[idx] = DELETED
-                size--
-                return true
-            }
-            idx = (idx + 1) % keysA.size
-        }
-        return false
+class OrderedIntPairMap(initialCapacity: Int = 30) {
+    private val map: Long2IntOpenHashMap = Long2IntOpenHashMap(initialCapacity).apply {
+        defaultReturnValue(-1)
     }
 
     fun clear() {
-        keysA.fill(EMPTY)
-        keysB.fill(EMPTY)
-        values.fill(0)
-        size = 0
+        map.clear()
     }
 
-    private fun resize() {
-        val oldKeysA = keysA
-        val oldKeysB = keysB
-        val oldValues = values
-        val newCapacity = oldKeysA.size * 2
+    fun put(a: Int, b: Int, value: Int) {
+        val key = (a.toLong() shl 32) or (b.toLong() and 0xFFFFFFFFL)
+        map.put(key, value)
+    }
 
-        keysA = IntArray(newCapacity) { EMPTY }
-        keysB = IntArray(newCapacity) { EMPTY }
-        values = IntArray(newCapacity)
-        size = 0
+    fun get(a: Int, b: Int): Int {
+        val key = (a.toLong() shl 32) or (b.toLong() and 0xFFFFFFFFL)
+        return map.get(key)
+    }
 
-        for (i in oldKeysA.indices) {
-            val keyA = oldKeysA[i]
-            val keyB = oldKeysB[i]
-            if (keyA != EMPTY && keyA != DELETED) {
-                val keyHash = orderedPairHash(keyA, keyB)
-                var idx = indexFor(keyHash, newCapacity)
+    fun remove(a: Int, b: Int): Boolean {
+        val key = (a.toLong() shl 32) or (b.toLong() and 0xFFFFFFFFL)
+        val oldValue = map.remove(key)
+        return oldValue != map.defaultReturnValue()
+    }
 
-                while (keysA[idx] != EMPTY) {
-                    idx = (idx + 1) % newCapacity
-                }
+    fun getOrNull(a: Int, b: Int): Int? {
+        val value = get(a, b)
+        return if (value != -1) value else null
+    }
 
-                keysA[idx] = keyA
-                keysB[idx] = keyB
-                values[idx] = oldValues[i]
-                size++
-            }
-        }
+    fun contains(a: Int, b: Int): Boolean =
+        get(a, b) != -1
+
+    fun putIfAbsent(a: Int, b: Int, value: Int): Boolean {
+        val key = (a.toLong() shl 32) or (b.toLong() and 0xFFFFFFFFL)
+        return map.putIfAbsent(key, value) == map.defaultReturnValue()
     }
 }

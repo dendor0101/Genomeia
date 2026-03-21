@@ -32,7 +32,7 @@ class SimulationScreen(
     private val simEntity = DIContainer.simEntity
     private val simulationSystem = DIContainer.simulationSystem
     private val renderSystem = DIContainer.renderSystem
-    private val commandsManager = DIContainer.commandsManager
+    private val userCommandManager = DIContainer.userCommandManager
 
     var isTouchedAfterPlay = false
     private lateinit var camera: OrthographicCamera
@@ -204,7 +204,7 @@ class SimulationScreen(
 
     override fun longPress(x: Float, y: Float) = false
     override fun fling(dx: Float, dy: Float, button: Int): Boolean {
-        commandsManager.userCommandBuffer.push(PlayerCommand.DragCell(dx, dy, 0))
+        userCommandManager.push(PlayerCommand.DragCell(dx, dy, 0))
         return true
     }
     override fun panStop(x: Float, y: Float, pointer: Int, button: Int): Boolean {
@@ -213,7 +213,7 @@ class SimulationScreen(
 
     override fun touchDown(x: Float, y: Float, pointer: Int, button: Int): Boolean {
         val world = screenToWorld(x, y)
-        commandsManager.userCommandBuffer.push(PlayerCommand.SpawnCell(world.first, world.second))
+        userCommandManager.push(PlayerCommand.SpawnCell(world.first, world.second))
         return true
     }
 

@@ -6,7 +6,7 @@ import io.github.some_example_name.old.core.utils.invSqrt
 
 class TouchTrigger: Cell(
     defaultColor = genomeEditorColor[6],
-    cellTypeId = 17,
+    cellTypeId = 16,
     isNeural = true
 ) {
 

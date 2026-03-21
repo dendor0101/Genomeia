@@ -6,7 +6,7 @@ import kotlin.math.sin
 
 class Excreta: Cell(
     defaultColor = brownColors.first(),
-    cellTypeId = 9,
+    cellTypeId = 8,
     isDirected = true,
     isNeural = true
 ) {

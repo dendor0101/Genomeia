@@ -47,7 +47,6 @@ class GenomeManager(
                 genomeForEditor = jsonGenomes[simEntity.currentGenomeIndex].jsonToDomain(true)
             } else {
                 val genome = genomeJsonReader.readGenomeFromFolder("user_genomes", genomeName, false)
-                println(genomeName)
                 genomes.add(genome?.jsonToDomain() ?: newGenome)
                 genomeForEditor = genome?.jsonToDomain(true) ?: newGenome
             }
@@ -61,8 +60,6 @@ class GenomeManager(
                 genomeForEditor = newGenome
             }
         }
-
-        println(genomes.size)
     }
 
 }

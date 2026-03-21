@@ -2,8 +2,10 @@ package io.github.some_example_name.old.systems.render
 
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Camera
+import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Matrix4
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
@@ -22,9 +24,11 @@ class RenderSystem(
 ) {
 
     val fontMatrix = Matrix4()
+    private lateinit var shapeRenderer: ShapeRenderer
 
     fun create() {
         shaderManager.create()
+        shapeRenderer = ShapeRenderer()
     }
 
     fun drawShader(camera: Camera) {
@@ -34,6 +38,25 @@ class RenderSystem(
             cameraProjection = camera.combined,
             isNewFrame = isNewFrame
         )
+
+//        // начинаем рисование линий
+//        shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
+//
+//        // цвет линии
+//        shapeRenderer.color = Color.WHITE
+//
+//
+//        shapeRenderer.projectionMatrix = camera.combined
+//
+//        for (linkId in 0..linkEntity.lastId) {
+//            if (linkEntity.isAlive[linkId]) {
+//                val c1 = linkEntity.links1[linkId]
+//                val c2 = linkEntity.links2[linkId]
+//                shapeRenderer.line(cellEntity.getX(c1), cellEntity.getY(c1), cellEntity.getX(c2), cellEntity.getY(c2))
+//            }
+//        }
+//
+//        shapeRenderer.end()
     }
     fun drawTextSimInfo(spriteBatch: SpriteBatch, font: BitmapFont) {
         //TODO тут кстати тоже нужна синхронизация, хоть и не так критично
@@ -56,8 +79,8 @@ class RenderSystem(
                     Cells: ${cellEntity.lastId - cellEntity.deadStack.size + 1}
                     Particles: ${particleEntity.lastId - particleEntity.deadStack.size + 1}
                     Links ${linkEntity.lastId - linkEntity.deadStack.size + 1}
-                    NeuronImpulseInput ${if (simEntity.grabbedCell != -1) cellEntity.getNeuronImpulseInput(simEntity.grabbedCell) else "0.0"}
-                    NeuronImpulseOutput ${if (simEntity.grabbedCell != -1) cellEntity.getNeuronImpulseOutput(simEntity.grabbedCell) else "0.0"}
+                    NeuronImpulseInput ${if (simEntity.grabbedCell != -1) cellEntity.neuronImpulseInput[simEntity.grabbedCell] else "0.0"}
+                    NeuronImpulseOutput ${if (simEntity.grabbedCell != -1) cellEntity.neuronImpulseOutput[simEntity.grabbedCell] else "0.0"}
                 """.trimIndent(),
             30f,
             140f

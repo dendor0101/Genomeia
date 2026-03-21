@@ -5,7 +5,8 @@ import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.utils.I18NBundle
 import com.badlogic.gdx.utils.Json
 import io.github.some_example_name.old.cells.base.CellBuilder
-import io.github.some_example_name.old.commands.CommandsManager
+import io.github.some_example_name.old.commands.UserCommandManager
+import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.EyeEntity
 import io.github.some_example_name.old.entities.LinkEntity
@@ -15,7 +16,9 @@ import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.entities.PheromoneEntity
 import io.github.some_example_name.old.entities.SimEntity
 import io.github.some_example_name.old.entities.SubstancesEntity
-import io.github.some_example_name.old.systems.genomics.CellManager
+import io.github.some_example_name.old.systems.genomics.CellSystem
+import io.github.some_example_name.old.systems.genomics.DivideManager
+import io.github.some_example_name.old.systems.genomics.MutateManager
 import io.github.some_example_name.old.systems.genomics.OrganManager
 import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.genomics.genome.GenomeJsonReader
@@ -33,8 +36,8 @@ import kotlin.getValue
 
 object DIContainer {
 
-    var gridWith = 3440
-    var gridHeight = 1440
+    var gridWith = 256
+    var gridHeight = 256
     var halfChunkHeight = 4 // Also max particle speed
     var chunkHeight = halfChunkHeight * 2
     var gridSize = gridWith * gridHeight
@@ -44,7 +47,7 @@ object DIContainer {
     val substrateSettings = SubstrateSettings()
 
     var energyTransportRate = substrateSettings.data.rateOfEnergyTransferInLinks
-    var linkMaxLength2 = substrateSettings.data.linkMaxLength
+    var linkMaxLength2 = substrateSettings.data.linkMaxLength * substrateSettings.data.linkMaxLength
     var cellsSettings = substrateSettings.cellsSettings
 
     init {
@@ -67,7 +70,6 @@ object DIContainer {
         gridWidth = gridWith,
         gridHeight = gridHeight
     )
-    val commandsManager = CommandsManager()
     val organEntity = OrganEntity(
         organStartMaxAmount = 400
     )
@@ -106,29 +108,36 @@ object DIContainer {
         genomeJsonReader = genomeJsonReader,
         simEntity = simEntity,
         isGenomeEditor = false,
-        genomeName = "TODO"
+        genomeName = null
     )
     val organManager = OrganManager(
         organEntity = organEntity,
         genomeManager = genomeManager,
         cellEntity = cellEntity
     )
+
+    val worldCommandsManager = WorldCommandsManager(
+        gridManager = gridManager,
+        organManager = organManager,
+        organEntity = organEntity,
+        cellEntity = cellEntity,
+        linkEntity = linkEntity,
+        particleEntity = particleEntity,
+        substrateSettings = substrateSettings,
+        genomeManager = genomeManager,
+        simEntity = simEntity,
+        cellList = cellList
+    )
+
     val particlePhysicsSystem = ParticlePhysicsSystem(
         entity = particleEntity,
         gridManager = gridManager,
         substrateSettings = substrateSettings,
-        commandsManager = commandsManager,
+        worldCommandsManager = worldCommandsManager,
         simEntity = simEntity,
         linkEntity = linkEntity
     )
 
-    val linkPhysicsSystem = LinkPhysicsSystem(
-        linkEntity = linkEntity,
-        substrateSettings = substrateSettings,
-        particleEntity = particleEntity,
-        cellEntity = cellEntity,
-        commandsManager = commandsManager
-    )
     val threadManager = ThreadManager(
         simEntity = simEntity
     )
@@ -155,20 +164,50 @@ object DIContainer {
         particleEntity = particleEntity
     )
 
-    val cellManager = CellManager(
+    val divideManager = DivideManager(
+        cellEntity = cellEntity,
+        worldCommandsManager = worldCommandsManager,
+        gridManager = gridManager
+    )
+
+    val mutateManager = MutateManager(
+        cellEntity = cellEntity,
+        linkEntity = linkEntity,
+        worldCommandsManager = worldCommandsManager,
+        gridManager = gridManager
+    )
+
+    val cellSystem = CellSystem(
         cellEntity = cellEntity,
         linkEntity = linkEntity,
         organEntity = organEntity,
         genomeManager = genomeManager,
-        commandsManager = commandsManager,
-        cellList = cellList,
-        gridManager = gridManager
+        worldCommandsManager = worldCommandsManager,
+        gridManager = gridManager,
+        divideManager = divideManager,
+        mutateManager = mutateManager
+    )
+
+    val linkPhysicsSystem = LinkPhysicsSystem(
+        linkEntity = linkEntity,
+        substrateSettings = substrateSettings,
+        particleEntity = particleEntity,
+        cellEntity = cellEntity,
+        cellSystem = cellSystem,
+        worldCommandsManager = worldCommandsManager
+    )
+
+    val userCommandManager = UserCommandManager(
+        organEntity = organEntity,
+        cellEntity = cellEntity,
+        genomeManager = genomeManager,
+        cellList = cellList
     )
 
     val simulationSystem by lazy {
         SimulationSystem(
             gridManager = gridManager,
-            commandsManager = commandsManager,
+            worldCommandsManager = worldCommandsManager,
             organManager = organManager,
             organEntity = organEntity,
             cellEntity = cellEntity,
@@ -183,7 +222,8 @@ object DIContainer {
             linkPhysicsSystem = linkPhysicsSystem,
             simEntity = simEntity,
             tripleBufferManager = tripleBufferManager,
-            cellManager = cellManager
+            cellSystem = cellSystem,
+            userCommandManager = userCommandManager
         )
     }
 }

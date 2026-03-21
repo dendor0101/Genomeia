@@ -9,8 +9,6 @@ class NeuralEntity(
     val cellList: List<Cell>
 ): Entity(neuralStartMaxAmount) {
 
-    var neuronImpulseInput = FloatArray(maxAmount)
-    var neuronImpulseOutput = FloatArray(maxAmount)
     var isNeuronTransportable = BitSet(maxAmount)
     var activationFuncType = ByteArray(maxAmount)
     var a = FloatArray(maxAmount) { 1f }
@@ -30,8 +28,6 @@ class NeuralEntity(
     ): Int {
         val neuralIndex = add()
 
-        this.neuronImpulseInput[neuralIndex] = 0f
-        this.neuronImpulseOutput[neuralIndex] = 0f
         this.isNeuronTransportable[neuralIndex] = cellList[cellType].isNeuronTransportable
         this.activationFuncType[neuralIndex] = activationFuncType
         this.a[neuralIndex] = a
@@ -46,8 +42,6 @@ class NeuralEntity(
     fun deleteNeural(neuralIndex: Int) {
         delete(neuralIndex)
 
-        neuronImpulseInput[neuralIndex] = 0f
-        neuronImpulseOutput[neuralIndex] = 0f
         isNeuronTransportable[neuralIndex] = true
         activationFuncType[neuralIndex] = 0
         a[neuralIndex] = 1f
@@ -67,8 +61,6 @@ class NeuralEntity(
     }
 
     override fun onClear(bound: Int) {
-        neuronImpulseInput.fill(0f, 0, bound)
-        neuronImpulseOutput.fill(0f, 0, bound)
         isNeuronTransportable.clear()
         activationFuncType.fill(0, 0, bound)
         a.fill(1f, 0, bound)
@@ -80,16 +72,6 @@ class NeuralEntity(
     }
 
     override fun onResize(oldMax: Int) {
-        run {
-            val old = neuronImpulseInput
-            neuronImpulseInput = FloatArray(maxAmount)
-            System.arraycopy(old, 0, neuronImpulseInput, 0, oldMax)
-        }
-        run {
-            val old = neuronImpulseOutput
-            neuronImpulseOutput = FloatArray(maxAmount)
-            System.arraycopy(old, 0, neuronImpulseOutput, 0, oldMax)
-        }
         run {
             val old = isNeuronTransportable
             isNeuronTransportable = BitSet(maxAmount)
@@ -128,7 +110,7 @@ class NeuralEntity(
         run {
             val old = isSum
             isSum = BitSet(maxAmount)
-            System.arraycopy(old, 0, isSum, 0, oldMax)
+            isSum.or(old)
         }
     }
 }

@@ -6,7 +6,7 @@ import kotlin.math.*
 
 class Compass : Cell(
     defaultColor = blueColors[6],
-    cellTypeId = 15,
+    cellTypeId = 14,
     isDirected = true,
     isNeural = true
 ) {
@@ -15,7 +15,7 @@ class Compass : Cell(
         // TODO: redesign to send a signal to the cell whose connection is closer to the center
         if (simEntity.tickCounter % 7 == 0) {
             val angleRad = angle[index]
-            cellEntity.setNeuronImpulseOutput(index, activation(index, sin(angleRad)))
+            cellEntity.neuronImpulseOutput[index] = activation(index, sin(angleRad))
 
             energy[index] -= substrateSettings.cellsSettings[cellType[index].toInt()].energyActionCost
         }

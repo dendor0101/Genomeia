@@ -7,12 +7,12 @@ import kotlin.collections.get
 
 class Sticky: Cell(
     defaultColor = pinkColors[3],
-    cellTypeId = 11,
+    cellTypeId = 10,
     isNeural = true
 ) {
 
     override fun onContact(index: Int, indexCollided: Int, threadId: Int) = with(cellEntity) {
-        if (cellType[index].toInt() == 11 && activation(index, getNeuronImpulseInput(index)) < 1f) {
+        if (cellType[index].toInt() == 11 && activation(index, neuronImpulseInput[index]) < 1f) {
 //            addStickyLink(id, collidedId, distance, threadId)
 //            addLinks[threadId].add(
 //                AddLink(
@@ -25,7 +25,7 @@ class Sticky: Cell(
 //                    isLink1NeuralDirected = false
 //                )
 //            )
-            commandsManager.addLinks
+//            commandsManager.addLinks
             return
         }
     }

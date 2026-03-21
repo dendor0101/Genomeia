@@ -1,6 +1,7 @@
 package io.github.some_example_name.old.cells.base
 
 import io.github.some_example_name.old.cells.Cell
+import io.github.some_example_name.old.core.DIContainer.cellEntity
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.pow
@@ -21,7 +22,7 @@ val formulaType = arrayOf(
     "y = remember(x), 0, 1"
 )
 
-fun Cell.activation(id: Int, x: Float) = with(cellEntity) {
+fun activation(id: Int, x: Float) = with(cellEntity) {
     when (getActivationFuncType(id)) {
         0 -> getA(id) * x + getB(id)
         1 -> getC(id) * sin(getA(id) * x + getB(id))

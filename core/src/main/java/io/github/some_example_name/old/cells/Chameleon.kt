@@ -6,7 +6,7 @@ import io.github.some_example_name.old.core.utils.whiteColors
 
 class Chameleon : Cell(
     defaultColor = whiteColors[0],
-    cellTypeId = 13,
+    cellTypeId = 12,
     isNeural = true
 ) {
 

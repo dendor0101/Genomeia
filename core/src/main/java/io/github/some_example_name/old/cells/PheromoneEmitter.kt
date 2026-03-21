@@ -4,12 +4,12 @@ import io.github.some_example_name.old.core.utils.blueColors
 
 class PheromoneEmitter : Cell(
     defaultColor = blueColors[3],
-    cellTypeId = 22,
+    cellTypeId = 21,
     isNeural = true
 ) {
 
     override fun doOnTick(index: Int, threadId: Int) = with(cellEntity) {
-        val impulse = getNeuronImpulseOutput(index)
+        val impulse = neuronImpulseOutput[index]
         val gridId = getGridId(index)
 
         //TODO do checks

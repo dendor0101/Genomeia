@@ -4,7 +4,7 @@ import io.github.some_example_name.old.core.utils.redColors
 
 class Punisher : Cell(
     defaultColor = redColors[0],
-    cellTypeId = 24
+    cellTypeId = 23
 ) {
 
     override fun onContact(index: Int, indexCollided: Int, threadId: Int) = with(cellEntity) {

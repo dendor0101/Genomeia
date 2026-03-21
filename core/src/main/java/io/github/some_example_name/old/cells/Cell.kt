@@ -18,16 +18,16 @@ sealed class Cell(
     val description = descriptionBundle?.let { DIContainer.bundle.get(descriptionBundle) } ?: ""
 
 
-    val cellEntity = DIContainer.cellEntity
-    val linkEntity = DIContainer.linkEntity
-    val simEntity = DIContainer.simEntity
-    val substrateSettings = DIContainer.substrateSettings
-    val commandsManager = DIContainer.commandsManager
-    val organEntity = DIContainer.organEntity
-    val genomeManager = DIContainer.genomeManager
-    val pheromoneEntity = DIContainer.pheromoneEntity
+    val cellEntity get() = DIContainer.cellEntity
+    val linkEntity get() = DIContainer.linkEntity
+    val simEntity get() = DIContainer.simEntity
+    val substrateSettings get() = DIContainer.substrateSettings
+    val commandsManager get() = DIContainer.worldCommandsManager
+    val organEntity get() = DIContainer.organEntity
+    val genomeManager get() = DIContainer.genomeManager
+    val pheromoneEntity get() = DIContainer.pheromoneEntity
 
-    open fun onStart(index: Int, parentGenomeIndex: Int, threadId: Int) {
+    open fun onStart(index: Int, threadId: Int) {
 
     }
 

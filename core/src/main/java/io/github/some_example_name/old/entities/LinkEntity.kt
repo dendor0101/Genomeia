@@ -46,8 +46,8 @@ class LinkEntity (
 
         if (isNeuronLink[linkIndex]) {
             val cellIndex = if (isLink1NeuralDirected[linkIndex]) cellA else cellB
-            cellEntity.setNeuronImpulseInput(cellIndex, 0f)
-            cellEntity.setNeuronImpulseOutput(cellIndex, 0f)
+            cellEntity.neuronImpulseInput[cellIndex] = 0f
+            cellEntity.neuronImpulseOutput[cellIndex] = 0f
         }
 
         links1[linkIndex] = -1

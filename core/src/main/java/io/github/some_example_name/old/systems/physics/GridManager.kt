@@ -17,9 +17,10 @@ class GridManager (
     private fun getHalfChunkId(gridIndex: Int) = gridIndex / halfChunkSize
 
     fun addParticle(x: Int, y: Int, value: Int): Int {
-//        if (x < 0 || x >= gridCellWidthSize || y < 0 || y >= gridCellHeightSize) {
-//            throw Exception("Out of grid bounds")
-//        }
+        if (x < 0 || x >= gridWidth || y < 0 || y >= gridHeight) {
+            //TODO Запретить спавн клетки за границей сетки
+            throw Exception("Out of grid bounds")
+        }
         val cellIndex = y * gridWidth + x
         if (particleCounts[cellIndex] >= MAX_AMOUNT_OF_PARTICLES) {
             val threadId = getHalfChunkId(cellIndex)

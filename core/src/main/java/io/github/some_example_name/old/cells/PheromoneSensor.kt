@@ -5,7 +5,7 @@ import io.github.some_example_name.old.core.utils.blueColors
 
 class PheromoneSensor : Cell(
     defaultColor = blueColors[2],
-    cellTypeId = 23,
+    cellTypeId = 22,
     isNeural = true
 ) {
 
@@ -24,7 +24,7 @@ class PheromoneSensor : Cell(
 //            g * pheromoneEntity.pheromoneG[gridId] +
 //            b * pheromoneEntity.pheromoneB[gridId]
 
-        setNeuronImpulseOutput(index, activation(index, impulse))
+        neuronImpulseOutput[index] = activation(index, impulse)
 
         energy[index] -= 0.0001f
     }

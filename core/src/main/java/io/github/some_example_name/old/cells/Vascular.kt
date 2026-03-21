@@ -10,7 +10,7 @@ import kotlin.math.sqrt
 
 class Vascular : Cell(
     defaultColor = yellowColors[3],
-    cellTypeId = 21,
+    cellTypeId = 20,
     isDirected = true,
     isNeural = true
 ) {

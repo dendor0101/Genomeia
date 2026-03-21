@@ -17,7 +17,7 @@ class Sensor: Cell(
             var senseValue = 0f//subManager.sensor(getX(index), getY(index))
             if (senseValue.isNaN()) throw Exception("TODO потом убрать")
             if (senseValue > 1f) senseValue = 1f
-            setNeuronImpulseOutput(index, activation(index, senseValue))
+            neuronImpulseOutput[index] = activation(index, senseValue)
         }
     }
 

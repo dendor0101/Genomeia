@@ -11,6 +11,11 @@ enum class WorldCommandType(val intParamsCount: Int, val floatParamsCount: Int, 
         floatParamsCount = 2,
         booleanParamsCount = 3
     ),
+    ADD_LINK_BY_ID(
+        intParamsCount = 3,
+        floatParamsCount = 1,
+        booleanParamsCount = 2
+    ),
     ADD_SUBSTANCE(
         intParamsCount = 0,
         floatParamsCount = 4,
@@ -21,10 +26,15 @@ enum class WorldCommandType(val intParamsCount: Int, val floatParamsCount: Int, 
         floatParamsCount = 4,
         booleanParamsCount = 0
     ),
-    ADD_ORGANISM(
-        intParamsCount = 3 + 10 + 10,
+    ADD_ORGAN(
+        intParamsCount = 5,
         floatParamsCount = 0,
-        booleanParamsCount = 3
+        booleanParamsCount = 0
+    ),
+    DELETE_ORGAN(
+        intParamsCount = 1,
+        floatParamsCount = 0,
+        booleanParamsCount = 0
     ),
     DECREMENT_DIVIDE_COUNTER( // organismIndex
         intParamsCount = 1,
@@ -68,6 +78,26 @@ enum class WorldCommandType(val intParamsCount: Int, val floatParamsCount: Int, 
     MUTATE_ALIVE_CELL_ACTION_COUNTER( // organismIndex: Int
         intParamsCount = 1,
         floatParamsCount = 0,
+        booleanParamsCount = 0
+    ),
+    DELETE_NEURAL(
+        intParamsCount = 1,
+        floatParamsCount = 0,
+        booleanParamsCount = 0
+    ),
+    ADD_NEURAL(
+        intParamsCount = 3,
+        floatParamsCount = 3,
+        booleanParamsCount = 1
+    ),
+    DELETE_EYE(
+        intParamsCount = 1,
+        floatParamsCount = 0,
+        booleanParamsCount = 0
+    ),
+    ADD_EYE(
+        intParamsCount = 2,
+        floatParamsCount = 1,
         booleanParamsCount = 0
     );
 

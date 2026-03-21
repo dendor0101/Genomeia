@@ -133,7 +133,7 @@ private fun ActionJsonRead.toDomain(): Action {
 
 private fun LinkDataJsonRead.toDomain(): LinkData {
     return LinkData(
-        length = length ?: 10f,
+        length = (length ?: 10f) / 40f,
         isNeuronal = directedNeuronLink != null,
         weight = weight,
         directedNeuronLink = directedNeuronLink

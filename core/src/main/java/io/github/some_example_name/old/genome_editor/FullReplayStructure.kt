@@ -1,6 +1,5 @@
 package io.github.some_example_name.old.genome_editor
 
-import io.github.some_example_name.old.systems.simulation.SimulationSystem
 import java.util.BitSet
 
 class FullReplayStructure(
