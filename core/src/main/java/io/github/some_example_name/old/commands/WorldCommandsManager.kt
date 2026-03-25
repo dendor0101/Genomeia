@@ -53,7 +53,9 @@ class WorldCommandsManager(
                             x = floats[0],
                             y = floats[1],
                             radius = floats[2],
-                            color = ints[0]
+                            color = ints[0],
+                            isCell = false,
+                            holderEntityIndex = -1
                         )
                     }
                     WorldCommandType.ADD_LINK -> {
@@ -72,6 +74,7 @@ class WorldCommandsManager(
                         )
                     }
                     WorldCommandType.DELETE_LINK -> {
+                        println("DELETE_LINK")
                         linkEntity.deleteLink(linkIndex = ints[0])
                     }
                     WorldCommandType.ADD_CELL -> {
@@ -126,6 +129,7 @@ class WorldCommandsManager(
                         organEntity.mutatedTimes[ints[0]]--
                     }
                     WorldCommandType.DELETE_CELL -> {
+                        println("DELETE_CELL")
                         val cellIndex = ints[0]
                         organManager.cellDeleted(cellIndex)
                         cellEntity.deleteCell(cellIndex)

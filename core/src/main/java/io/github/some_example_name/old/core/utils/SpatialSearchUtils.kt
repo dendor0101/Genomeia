@@ -3,7 +3,7 @@ package io.github.some_example_name.old.core.utils
 import io.github.some_example_name.old.systems.physics.GridManager
 
 
-fun GridManager.collectCells(gridX: Int, gridY: Int, radius: Int = 3): IntArray {
+fun GridManager.collectParticles(gridX: Int, gridY: Int, radius: Int = 3): IntArray {
     val list = ArrayList<Int>()
     for (dy in -radius..radius) {
         for (dx in -radius..radius) {

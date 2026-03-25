@@ -10,7 +10,11 @@ abstract class Entity(startMaxAmount: Int) {
     var deadStack = IntArrayList(startMaxAmount)
 
     var isAlive = BitSet(maxAmount)
-    var generation = IntArray(maxAmount)
+    private var generation = IntArray(maxAmount)
+    fun getGeneration(index: Int) = generation[index]
+
+    var aliveList = IntArrayList(startMaxAmount)
+    private var positionInAlive = IntArray(maxAmount) { -1 }
 
     protected fun add(): Int {
         val cellIndex = if (!deadStack.isEmpty()) {
@@ -18,8 +22,14 @@ abstract class Entity(startMaxAmount: Int) {
         } else {
             ++lastId
         }
+
         isAlive[cellIndex] = true
         generation[cellIndex]++
+
+        val pos = aliveList.size
+        aliveList.add(cellIndex)
+        positionInAlive[cellIndex] = pos
+
         if (maxAmount - 2 < lastId) {
             resize()
         }
@@ -27,9 +37,23 @@ abstract class Entity(startMaxAmount: Int) {
     }
 
     protected fun delete(index: Int) {
-        if (!isAlive[index]) throw Exception("Already dead")
+        if (!isAlive[index]) throw IllegalStateException("Entity $index is already dead")
+
         isAlive[index] = false
         deadStack.add(index)
+
+        val pos = positionInAlive[index]
+        if (pos >= 0) {
+            val lastPos = aliveList.size - 1
+            val lastEntity = aliveList.getInt(lastPos)
+
+            aliveList.set(pos, lastEntity)
+            positionInAlive[lastEntity] = pos
+
+            aliveList.removeInt(lastPos)
+
+            positionInAlive[index] = -1
+        }
     }
 
     fun clear() {
@@ -38,6 +62,9 @@ abstract class Entity(startMaxAmount: Int) {
         deadStack.clear()
         generation.fill(0, 0, cellBound)
         isAlive.clear()
+
+        aliveList.clear()
+        positionInAlive.fill(-1, 0, cellBound)
 
         onClear(cellBound)
     }
@@ -55,6 +82,14 @@ abstract class Entity(startMaxAmount: Int) {
             isAlive = BitSet(maxAmount)
             isAlive.or(old)
         }
+        run {
+            val old = positionInAlive
+            positionInAlive = IntArray(maxAmount) { -1 }
+            System.arraycopy(old, 0, positionInAlive, 0, oldMax)
+        }
+
+        aliveList.ensureCapacity(maxAmount)
+
         onResize(oldMax)
     }
 

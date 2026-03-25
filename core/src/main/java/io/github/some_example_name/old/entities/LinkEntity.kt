@@ -1,7 +1,8 @@
 package io.github.some_example_name.old.entities
 
 import io.github.some_example_name.old.core.utils.UnorderedIntPairMap
-import java.util.BitSet
+import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem.Companion.MAX_LINK_AMOUNT
+import kotlin.math.atan2
 
 class LinkEntity (
     linksStartMaxAmount: Int,
@@ -10,8 +11,8 @@ class LinkEntity (
     var links1 = IntArray(maxAmount) { -1 }
     var links2 = IntArray(maxAmount) { -1 }
     var linksNaturalLength = FloatArray(maxAmount) { -10f }
-    var isNeuronLink = BitSet(maxAmount)
-    var isLink1NeuralDirected = BitSet(maxAmount)
+    var isNeuronLink = BooleanArray(maxAmount)
+    var isLink1NeuralDirected = BooleanArray(maxAmount)
     var degreeOfShortening = FloatArray(maxAmount) { 1f }
     var isStickyLink = BooleanArray(maxAmount) { false }
     val linkIndexMap = UnorderedIntPairMap(1_000_000)
@@ -35,6 +36,8 @@ class LinkEntity (
         this.degreeOfShortening[addLinkId] = degreeOfShortening
         this.isStickyLink[addLinkId] = isStickyLink
         linkIndexMap.put(cellIndex, otherCellIndex, addLinkId)
+        cellEntity.addLink(cellIndex, addLinkId)
+        cellEntity.addLink(otherCellIndex, addLinkId)
     }
 
     fun deleteLink(linkIndex: Int) {
@@ -43,6 +46,8 @@ class LinkEntity (
         val cellA = links1[linkIndex]
         val cellB = links2[linkIndex]
         linkIndexMap.remove(cellA, cellB)
+        cellEntity.deleteLinkedCellLink(cellA, linkIndex)
+        cellEntity.deleteLinkedCellLink(cellB, linkIndex)
 
         if (isNeuronLink[linkIndex]) {
             val cellIndex = if (isLink1NeuralDirected[linkIndex]) cellA else cellB
@@ -60,42 +65,36 @@ class LinkEntity (
         isStickyLink[linkIndex] = false
 
         if (cellEntity.parentIndex[cellA] == cellB) {
-            //TODO придумать как переназначать parentIndex при отрывании связи, потому что у клетки сейчас нет списка связок для итерирования
-            cellEntity.parentIndex[cellA] = -1
-            /*
-
-    private fun reinitParentIndex(cellId: Int) {
-        cellEntity.parentIndex[cellId] = -1
-        TODO()
-//        TODO придумать как переназначать parentIndex при отрывании связи, потому что у клетки сейчас нет списка связок для итерирования
-//        val base = cellId * MAX_LINK_AMOUNT
-//        val amount = linksAmount[cellId]
-//        if (amount == 0) {
-//            parentIndex[cellId] = -1
-//            return
-//        } else {
-//            val idx = base + 0
-//            val linkId = links[idx]
-//            val c1 = links1[linkId]
-//            val c2 = links2[linkId]
-//            val otherCellId = if (c1 != cellId) c1 else if (c2 != cellId) c2 else {
-//                parentIndex[cellId] = -1
-//                return
-//            }
-//
-//            val dx = x[cellId] - x[otherCellId]
-//            val dy = y[cellId] - y[otherCellId]
-//            val angleToChild = atan2(dy, dx)
-//
-//            parentIndex[cellId] = otherCellId
-//            angleDiff[cellId] = angle[cellId] - angleToChild
-//        }
-    }
-*/
+            reinitParentIndex(cellA)
         }
 
         if (cellEntity.parentIndex[cellB] == cellA) {
-            cellEntity.parentIndex[cellB] = -1
+            reinitParentIndex(cellB)
+        }
+    }
+
+    private fun reinitParentIndex(cellId: Int) = with(cellEntity) {
+        val base = cellId * MAX_LINK_AMOUNT
+        val amount = linksAmount[cellId]
+        if (amount == 0) {
+            parentIndex[cellId] = -1
+            return
+        } else {
+            val idx = base + 0
+            val linkId = links[idx]
+            val c1 = links1[linkId]
+            val c2 = links2[linkId]
+            val otherCellId = if (c1 != cellId) c1 else if (c2 != cellId) c2 else {
+                parentIndex[cellId] = -1
+                return
+            }
+
+            val dx = getX(cellId) - getX(otherCellId)
+            val dy = getY(cellId) - getY(otherCellId)
+            val angleToChild = atan2(dy, dx)
+
+            parentIndex[cellId] = otherCellId
+            angleDiff[cellId] = angle[cellId] - angleToChild
         }
     }
 
@@ -111,8 +110,8 @@ class LinkEntity (
         links1.fill(-1, 0, bound)
         links2.fill(-1, 0, bound)
         linksNaturalLength.fill(-10f, 0, bound)
-        isNeuronLink.clear()
-        isLink1NeuralDirected.clear()
+        isNeuronLink.fill(false, 0, bound)
+        isLink1NeuralDirected.fill(false, 0, bound)
         degreeOfShortening.fill(1f, 0, bound)
         isStickyLink.fill(false, 0, bound)
         linkIndexMap.clear()
@@ -136,13 +135,13 @@ class LinkEntity (
         }
         run {
             val old = isNeuronLink
-            isNeuronLink = BitSet(maxAmount)
-            isNeuronLink.or(old)
+            isNeuronLink = BooleanArray(maxAmount)
+            System.arraycopy(old, 0, isNeuronLink, 0, oldMax)
         }
         run {
             val old = isLink1NeuralDirected
-            isLink1NeuralDirected = BitSet(maxAmount)
-            isLink1NeuralDirected.or(old)
+            isLink1NeuralDirected = BooleanArray(maxAmount)
+            System.arraycopy(old, 0, isLink1NeuralDirected, 0, oldMax)
         }
         run {
             val old = degreeOfShortening

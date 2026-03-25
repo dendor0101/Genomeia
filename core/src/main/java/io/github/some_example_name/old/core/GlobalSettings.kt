@@ -20,7 +20,7 @@ data class GlobalSimulationSettings(
     val rateOfPheromoneDegradation: Float = 1.6e-4f,
     val theNumberOfTicksHungryCellDies: Int = 200,
     val gravity: Float = 0.0f,
-    val linkMaxLength: Float = 3f,
+    val linkMaxLength: Float = 4f,
     val cellsSettings: Map<String, CellSettings> = defaultCellSettingsMap()
 )
 

@@ -1,18 +1,19 @@
 package io.github.some_example_name.old.systems.genomics
 
-import com.badlogic.gdx.graphics.Color
 import io.github.some_example_name.old.cells.Eye
 import io.github.some_example_name.old.cells.Muscle
 import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.commands.WorldCommandsManager
-import io.github.some_example_name.old.core.utils.collectCells
+import io.github.some_example_name.old.core.utils.collectParticles
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
+import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.systems.physics.GridManager
 
 class MutateManager(
     val cellEntity: CellEntity,
     val linkEntity: LinkEntity,
+    val particleEntity: ParticleEntity,
     val worldCommandsManager: WorldCommandsManager,
     val gridManager: GridManager
 ) {
@@ -101,10 +102,12 @@ class MutateManager(
             if (action.physicalLink.isNotEmpty()) {
                 val gridX = getX(index).toInt()
                 val gridY = getY(index).toInt()
-                val closestCells = gridManager.collectCells(gridX, gridY)
-                val idToIndexAssociation =
-                    closestCells.filter { organIndex[it] == organIndex[index] && it != index }
-                        .associateBy { cellGenomeId[it] }
+                val closestCells = gridManager.collectParticles(gridX, gridY)
+                val idToIndexAssociation = closestCells
+                    .filter { particleEntity.isCell[it] }
+                    .map { particleEntity.holderEntityIndex[it] }
+                    .filter { organIndex[it] == organIndex[index] && it != index }
+                    .associateBy { cellGenomeId[it] }
 
                 action.physicalLink.forEach { (cellGenomeIdToConnectWith, linkData) ->
                     val linkedCellIndex = idToIndexAssociation[cellGenomeIdToConnectWith]

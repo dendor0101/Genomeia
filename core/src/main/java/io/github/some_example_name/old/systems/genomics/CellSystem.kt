@@ -4,11 +4,13 @@ import io.github.some_example_name.old.cells.base.activation
 import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.core.DIContainer.energyTransportRate
+import io.github.some_example_name.old.core.DIContainer.threadCount
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.physics.GridManager
+import io.github.some_example_name.old.systems.simulation.ThreadManager
 import kotlin.math.atan2
 
 class CellSystem(
@@ -19,14 +21,33 @@ class CellSystem(
     val worldCommandsManager: WorldCommandsManager,
     val gridManager: GridManager,
     val divideManager: DivideManager,
-    val mutateManager: MutateManager
+    val mutateManager: MutateManager,
+    val threadManager: ThreadManager
 ) {
 
-    fun iterateCell() {
-        //TODO process parallel
-        for (cellIndex in 0..cellEntity.lastId) {
-            processCell(cellIndex, threadId = 0)
+    fun iterateCell() = with(cellEntity) {
+        val size = aliveList.size
+
+        if (size == 0) return
+
+        val chunkSize = (size + threadCount - 1) / threadCount
+
+        for (threadId in 0 until threadCount) {
+            val start = threadId * chunkSize
+            val end = minOf(start + chunkSize, size)
+
+            if (start >= end) break
+
+            val future = threadManager.executor.submit {
+                for (i in start until end) {
+                    val cellIndex = aliveList.getInt(i)
+                    processCell(cellIndex, threadId)
+                }
+            }
+            threadManager.futures.add(future)
         }
+        threadManager.futures.forEach { it.get() }
+        threadManager.futures.clear()
     }
 
     private fun processCell(cellIndex: Int, threadId: Int) = with(cellEntity) {

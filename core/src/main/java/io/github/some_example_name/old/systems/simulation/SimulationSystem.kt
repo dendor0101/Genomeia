@@ -63,7 +63,6 @@ class SimulationSystem(
         processParticleCollision()
         linkPhysicsSystem.iterateLinks()
         cellSystem.iterateCell()
-        //TODO Process substance
 
         arrangementOfPositionsInTheGrid()
         tripleBufferManager.updateAndCommitProducer()

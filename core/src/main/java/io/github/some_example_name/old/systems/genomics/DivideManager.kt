@@ -4,13 +4,16 @@ import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.math.MathUtils
 import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.commands.WorldCommandsManager
-import io.github.some_example_name.old.core.utils.collectCells
+import io.github.some_example_name.old.core.DIContainer
+import io.github.some_example_name.old.core.utils.collectParticles
 import io.github.some_example_name.old.entities.CellEntity
+import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.systems.physics.GridManager
 import kotlin.math.PI
 
 class DivideManager(
     val cellEntity: CellEntity,
+    val particleEntity: ParticleEntity,
     val worldCommandsManager: WorldCommandsManager,
     val gridManager: GridManager
 ) {
@@ -24,8 +27,22 @@ class DivideManager(
             val parentLinkLength = action.physicalLink[cellGenomeId[index]]?.length ?: 0.025f
             val genomeAngle = action.angle ?: throw Exception("Forgot angle")
             val divideAngle = genomeAngle + angle[index]
-            val x: Float = getX(index) + MathUtils.cos(divideAngle) * parentLinkLength
-            val y: Float = getY(index) + MathUtils.sin(divideAngle) * parentLinkLength
+            var x: Float = getX(index) + MathUtils.cos(divideAngle) * parentLinkLength
+            var y: Float = getY(index) + MathUtils.sin(divideAngle) * parentLinkLength
+
+            if (x < 0) {
+                x = 0.1f
+            }
+            if (x > DIContainer.gridManager.gridWidth) {
+                x = DIContainer.gridManager.gridWidth - 0.1f
+            }
+            if (y < 0) {
+                y = 0.1f
+            }
+            if (y > DIContainer.gridManager.gridHeight) {
+                y = DIContainer.gridManager.gridHeight - 0.1f
+            }
+
             val cellGenomeId: Int = action.id
             val parentOrganIndex: Int = organIndex[index]
             run {
@@ -67,9 +84,11 @@ class DivideManager(
             if (action.physicalLink.isNotEmpty()) {
                 val gridX = x.toInt()
                 val gridY = y.toInt()
-                val closestCells = gridManager.collectCells(gridX, gridY)
-                val idToIndexAssociation =
-                    closestCells.filter { organIndex[it] == organIndex[index] }
+                val closestCells = gridManager.collectParticles(gridX, gridY)
+                val idToIndexAssociation = closestCells
+                        .filter { particleEntity.isCell[it] }
+                        .map { particleEntity.holderEntityIndex[it] }
+                        .filter { organIndex[it] == organIndex[index]}
                         .associateBy { this.cellGenomeId[it] }
 
                 action.physicalLink.forEach { (cellGenomeIdToConnectWith, linkData) ->

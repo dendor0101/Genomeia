@@ -107,6 +107,7 @@ class GridManager (
 
     fun clearAll() {
         particleCounts.fill(0)
+        mapMoreThenMax.forEach { it.clear() }
     }
 
     companion object {

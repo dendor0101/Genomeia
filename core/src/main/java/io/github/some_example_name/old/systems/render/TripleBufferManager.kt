@@ -59,11 +59,12 @@ class TripleBufferManager(
 
         writeBuffer.clear()
         with(particleEntity) {
-            for (i in 0..lastId) {
-                writeBuffer.putFloat(x[i])
-                writeBuffer.putFloat(y[i])
-                writeBuffer.putFloat(radius[i])
-                writeBuffer.putInt(color[i])
+            for (i in 0..<aliveList.size) {
+                val aliveParticleIndex = aliveList.getInt(i)
+                writeBuffer.putFloat(x[aliveParticleIndex])
+                writeBuffer.putFloat(y[aliveParticleIndex])
+                writeBuffer.putFloat(radius[aliveParticleIndex])
+                writeBuffer.putInt(color[aliveParticleIndex])
             }
         }
         writeBuffer.flip()

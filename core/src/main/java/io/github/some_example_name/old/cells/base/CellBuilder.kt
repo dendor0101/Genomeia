@@ -36,6 +36,7 @@ class CellBuilder {
         PheromoneEmitter(),
         PheromoneSensor(),
         Punisher(),
+        Mike()
     ).sortedBy { it.cellTypeId }
 
 }

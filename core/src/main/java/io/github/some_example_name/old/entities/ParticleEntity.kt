@@ -21,6 +21,8 @@ class ParticleEntity(
     var dragCoefficient = FloatArray(maxAmount) { 0.003f }
     var effectOnContact = BitSet(maxAmount)
     var cellStiffness = FloatArray(maxAmount) { 0.5f }
+    var isCell = BooleanArray(maxAmount) { false }
+    var holderEntityIndex = IntArray(maxAmount) { -1 }
 
     fun addParticle(
         x: Float,
@@ -31,7 +33,9 @@ class ParticleEntity(
         vy: Float = 0f,
         dragCoefficient: Float = 0.03f,
         effectOnContact: Boolean = false,
-        cellStiffness: Float = 0.02f
+        cellStiffness: Float = 0.02f,
+        isCell: Boolean,
+        holderEntityIndex: Int
     ): Int {
         val particleIndex = add()
 
@@ -46,6 +50,8 @@ class ParticleEntity(
         this.dragCoefficient[particleIndex] = dragCoefficient
         this.effectOnContact[particleIndex] = effectOnContact
         this.cellStiffness[particleIndex] = cellStiffness
+        this.isCell[particleIndex] = isCell
+        this.holderEntityIndex[particleIndex] = holderEntityIndex
         return particleIndex
     }
 
@@ -64,6 +70,8 @@ class ParticleEntity(
         dragCoefficient[particleIndex] = 0.93f
         effectOnContact[particleIndex] = false
         cellStiffness[particleIndex] = 0.5f
+        isCell[particleIndex] = false
+        holderEntityIndex[particleIndex] = -1
     }
 
     override fun onCopy() {
@@ -86,6 +94,8 @@ class ParticleEntity(
         dragCoefficient.fill(0.03f, 0, bound)
         effectOnContact.clear()
         cellStiffness.fill(0f, 0, bound)
+        isCell.fill(false, 0, bound)
+        holderEntityIndex.fill(-1, 0, bound)
     }
 
     override fun onResize(oldMax: Int) {
@@ -143,6 +153,16 @@ class ParticleEntity(
             val old = cellStiffness
             cellStiffness = FloatArray(maxAmount)
             System.arraycopy(old, 0, cellStiffness, 0, oldMax)
+        }
+        run {
+            val old = isCell
+            isCell = BooleanArray(maxAmount)
+            System.arraycopy(old, 0, isCell, 0, oldMax)
+        }
+        run {
+            val old = holderEntityIndex
+            holderEntityIndex = IntArray(maxAmount)
+            System.arraycopy(old, 0, holderEntityIndex, 0, oldMax)
         }
     }
 }

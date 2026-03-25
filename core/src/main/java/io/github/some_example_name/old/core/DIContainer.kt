@@ -53,6 +53,8 @@ object DIContainer {
     init {
         val heightMultiplier = chunkHeight * 2
         if (gridHeight % heightMultiplier != 0) throw Exception("gridHeight should be a multiple of (halfChunkHeight * 2 * 2)")
+        println("thread count: $threadCount")
+        println("thread count: $heightMultiplier")
     }
 
     private val cellBuilder = CellBuilder()
@@ -167,6 +169,7 @@ object DIContainer {
     val divideManager = DivideManager(
         cellEntity = cellEntity,
         worldCommandsManager = worldCommandsManager,
+        particleEntity = particleEntity,
         gridManager = gridManager
     )
 
@@ -174,6 +177,7 @@ object DIContainer {
         cellEntity = cellEntity,
         linkEntity = linkEntity,
         worldCommandsManager = worldCommandsManager,
+        particleEntity = particleEntity,
         gridManager = gridManager
     )
 
@@ -185,7 +189,8 @@ object DIContainer {
         worldCommandsManager = worldCommandsManager,
         gridManager = gridManager,
         divideManager = divideManager,
-        mutateManager = mutateManager
+        mutateManager = mutateManager,
+        threadManager = threadManager
     )
 
     val linkPhysicsSystem = LinkPhysicsSystem(
@@ -193,8 +198,8 @@ object DIContainer {
         substrateSettings = substrateSettings,
         particleEntity = particleEntity,
         cellEntity = cellEntity,
-        cellSystem = cellSystem,
-        worldCommandsManager = worldCommandsManager
+        worldCommandsManager = worldCommandsManager,
+        cellSystem = cellSystem
     )
 
     val userCommandManager = UserCommandManager(

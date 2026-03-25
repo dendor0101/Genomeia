@@ -60,48 +60,51 @@ class ParticlePhysicsSystem(
 
     private fun processNeighborsCellsCollision(cellId: Int, gridX: Int, gridY: Int, threadId: Int) {
         gridManager.getParticles(gridX - 1, gridY + 1).also { ids ->
-            for (id in ids) repulse(cellId, id, false, threadId)
+            for (id in ids) repulse(cellId, id, threadId)
         }
         gridManager.getParticles(gridX, gridY + 1).also { ids ->
-            for (id in ids) repulse(cellId, id, false, threadId)
+            for (id in ids) repulse(cellId, id, threadId)
         }
         gridManager.getParticles(gridX + 1, gridY + 1).also { ids ->
-            for (id in ids) repulse(cellId, id, false, threadId)
+            for (id in ids) repulse(cellId, id, threadId)
         }
 
         gridManager.getParticles(gridX + 1, gridY).also { ids ->
-            for (id in ids) repulse(cellId, id, false, threadId)
+            for (id in ids) repulse(cellId, id, threadId)
         }
     }
 
     private fun processCollisionsInTheSameCell(cells: IntArray, threadId: Int) {
         for (i in cells.indices) {
             for (j in i + 1 until cells.size) {
-                repulse(cells[i], cells[j], true, threadId)
+                repulse(cells[i], cells[j], threadId)
             }
         }
     }
 
-    private fun repulse(cellAId: Int, cellBId: Int, isSameCell: Boolean = false, threadId: Int) = with(entity) {
-        if (linkEntity.linkIndexMap.get(cellAId, cellBId) != -1) return@with
+    private fun repulse(particleAId: Int, particleBId: Int, threadId: Int) = with(entity) {
+        if (isCell[particleAId] && isCell[particleBId]) {
+            //TODO можно всетаки и не cellIndex класть в linkIndexMap, а particleIndex
+            if (linkEntity.linkIndexMap.get(holderEntityIndex[particleAId], holderEntityIndex[particleBId]) != -1) return@with
+        }
 
-        val dx = x[cellAId] - x[cellBId]
-        val dy = y[cellAId] - y[cellBId]
+        val dx = x[particleAId] - x[particleBId]
+        val dy = y[particleAId] - y[particleBId]
         val dx2 = dx * dx
         if (dx2 > MAX_RADIUS_SQUARED) return
         val dy2 = dy * dy
         if (dy2 > MAX_RADIUS_SQUARED) return
 
-        val particleRadius = radius[cellAId] + radius[cellBId]
+        val particleRadius = radius[particleAId] + radius[particleBId]
         val radiusSquared = particleRadius * particleRadius
 
         val distanceSquared = dx2 + dy2
         if (distanceSquared < radiusSquared) {
             val distance = 1.0f / invSqrt(distanceSquared)
-            if (effectOnContact[cellAId] || effectOnContact[cellBId]) TODO("implement onContact call")
+            if (effectOnContact[particleAId] || effectOnContact[particleBId]) TODO("implement onContact call")
 
             // Квадратичная зависимость силы
-            val cellStrengthAverage = (cellStiffness[cellAId] + cellStiffness[cellBId]) / 2f
+            val cellStrengthAverage = (cellStiffness[particleAId] + cellStiffness[particleBId]) / 2f
             val force = cellStrengthAverage - cellStrengthAverage * distanceSquared / radiusSquared
             // Нормализация вектора расстояния
             val normX = dx / distance
@@ -109,10 +112,10 @@ class ParticlePhysicsSystem(
             val vectorX = normX * force
             val vectorY = normY * force
 
-            vx[cellAId] += vectorX
-            vy[cellAId] += vectorY
-            vx[cellBId] -= vectorX
-            vy[cellBId] -= vectorY
+            vx[particleAId] += vectorX
+            vy[particleAId] += vectorY
+            vx[particleBId] -= vectorX
+            vy[particleBId] -= vectorY
         }
     }
 

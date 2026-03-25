@@ -6,8 +6,7 @@ import io.github.some_example_name.old.cells.Eye
 import io.github.some_example_name.old.core.DIContainer.cellsSettings
 import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.systems.genomics.genome.CellAction
-import java.util.BitSet
-import kotlin.collections.set
+import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem.Companion.MAX_LINK_AMOUNT
 
 class CellEntity(
     cellsStartMaxAmount: Int,
@@ -18,7 +17,7 @@ class CellEntity(
     private val neuralEntity: NeuralEntity,
     private val eyeEntity: EyeEntity
 ) : Entity(cellsStartMaxAmount) {
-    private var particleIndex = IntArray(maxAmount) { -1 }
+    var particleIndex = IntArray(maxAmount) { -1 }
     fun getX(index: Int) = particleEntity.x[particleIndex[index]]
     fun getY(index: Int) = particleEntity.y[particleIndex[index]]
     fun setX(index: Int, value: Float) { particleEntity.x[particleIndex[index]] = value }
@@ -29,7 +28,6 @@ class CellEntity(
     fun setVy(index: Int, value: Float) { particleEntity.vy[particleIndex[index]] = value }
     fun getDragCoefficient(index: Int) = particleEntity.dragCoefficient[particleIndex[index]]
     fun setDragCoefficient(index: Int, value: Float) { particleEntity.dragCoefficient[particleIndex[index]] = value }
-    //effectOnContact
     fun getEffectOnContact(index: Int) = particleEntity.effectOnContact[particleIndex[index]]
     fun setEffectOnContact(index: Int, value: Boolean) { particleEntity.effectOnContact[particleIndex[index]] = value }
     fun getRadius(index: Int) = particleEntity.radius[particleIndex[index]]
@@ -47,8 +45,8 @@ class CellEntity(
     var angleDiff = FloatArray(maxAmount)
     var energyNecessaryToDivide = FloatArray(maxAmount) { 2f }
     var energyNecessaryToMutate = FloatArray(maxAmount) { 1f }
-    var isDividedInThisStage = BitSet(maxAmount)
-    var isMutateInThisStage = BitSet(maxAmount)
+    var isDividedInThisStage = BooleanArray(maxAmount)
+    var isMutateInThisStage = BooleanArray(maxAmount)
     var cellType = ByteArray(maxAmount)
     var energy = FloatArray(maxAmount)
     var maxEnergy = FloatArray(maxAmount)
@@ -116,6 +114,37 @@ class CellEntity(
         specialTypeIndex[index] = eyeEntity.addEye(colorDifferentiation.toByte(), visibilityRange)
     }
 
+    var linksAmount = IntArray(maxAmount)
+    var links = IntArray(maxAmount * MAX_LINK_AMOUNT) { -1 }
+
+    fun addLink(cellId: Int, linkId: Int) {
+        val base = cellId * MAX_LINK_AMOUNT
+        if (cellId < 0) return
+        val amount = linksAmount[cellId]
+        if (amount >= MAX_LINK_AMOUNT) {
+            links[base + MAX_LINK_AMOUNT - 1] = linkId
+        } else {
+            links[base + amount] = linkId
+            linksAmount[cellId] += 1
+        }
+    }
+
+    fun deleteLinkedCellLink(cellId: Int, linkId: Int) {
+        val base = cellId * MAX_LINK_AMOUNT
+        val amount = linksAmount[cellId]
+        if (amount == 0) return
+
+        for (i in 0 until amount) {
+            val idx = base + i
+            if (links[idx] == linkId) {
+                links[idx] = links[base + amount - 1]
+                links[base + amount - 1] = -1
+                linksAmount[cellId] -= 1
+                return
+            }
+        }
+    }
+
     fun addCell(
         x: Float,
         y: Float,
@@ -144,7 +173,9 @@ class CellEntity(
             radius = radius,
             dragCoefficient = substrateSettings.data.viscosityOfTheEnvironment,
             effectOnContact = cellList[cellType].effectOnContact,
-            cellStiffness = cellsSettings[cellType].cellStiffness
+            cellStiffness = cellsSettings[cellType].cellStiffness,
+            isCell = true,
+            holderEntityIndex = cellIndex
         )
         this.cellGenomeId[cellIndex] = cellGenomeId
         cellActions[cellIndex] = null
@@ -161,6 +192,7 @@ class CellEntity(
         maxEnergy[cellIndex] = cellsSettings[cellType].maxEnergy
         neuronImpulseInput[cellIndex] = 0f
         neuronImpulseOutput[cellIndex] = 0f
+        linksAmount[cellIndex] = 0
 
         neuralIndex[cellIndex] = if (cellList[cellType].isNeural) {
             isNeural[cellIndex] = true
@@ -202,6 +234,17 @@ class CellEntity(
         isNeural[cellIndex] = false
         neuronImpulseInput[cellIndex] = 0f
         neuronImpulseOutput[cellIndex] = 0f
+//      TODO это пофиксило проблему, но как будто это лишнее, нужно перепроверить
+//        while (linksAmount[cellIndex] > 0) {
+//            val base = cellIndex * MAX_LINK_AMOUNT
+//            val linkId = links[base + 0]
+//            if (linkId != -1) {
+//                deleteLink(linkId)
+//            }
+//        }
+        linksAmount[cellIndex] = 0
+        val base = cellIndex * MAX_LINK_AMOUNT
+        links.fill(-1, base, base + MAX_LINK_AMOUNT)
 
         if (neuralIndex[cellIndex] != -1) {
             neuralEntity.deleteNeural(neuralIndex[cellIndex])
@@ -236,8 +279,8 @@ class CellEntity(
         angleDiff.fill(0f, 0, bound)
         energyNecessaryToDivide.fill(2f, 0, bound)
         energyNecessaryToMutate.fill(1f, 0, bound)
-        isDividedInThisStage.clear()
-        isMutateInThisStage.clear()
+        isDividedInThisStage.fill(false, 0, bound)
+        isMutateInThisStage.fill(false, 0, bound)
         cellType.fill(0, 0, bound)
         energy.fill(0f, 0, bound)
         maxEnergy.fill(0f, 0, bound)
@@ -246,6 +289,8 @@ class CellEntity(
         neuronImpulseOutput.fill(0f, 0, bound)
         neuralIndex.fill(0, 0, bound)
         specialTypeIndex.fill(0, 0, bound)
+        linksAmount.fill(0, 0, bound)
+        links.fill(-1, 0, bound * MAX_LINK_AMOUNT)
     }
 
     override fun onResize(oldMax: Int) {
@@ -296,13 +341,13 @@ class CellEntity(
         }
         run {
             val old = isDividedInThisStage
-            isDividedInThisStage = BitSet(maxAmount)
-            isDividedInThisStage.or(old)
+            isDividedInThisStage = BooleanArray(maxAmount)
+            System.arraycopy(old, 0, isDividedInThisStage, 0, oldMax)
         }
         run {
             val old = isMutateInThisStage
-            isMutateInThisStage = BitSet(maxAmount)
-            isMutateInThisStage.or(old)
+            isMutateInThisStage = BooleanArray(maxAmount)
+            System.arraycopy(old, 0, isMutateInThisStage, 0, oldMax)
         }
         run {
             val old = cellType
@@ -343,6 +388,18 @@ class CellEntity(
             val old = specialTypeIndex
             specialTypeIndex = IntArray(maxAmount)
             System.arraycopy(old, 0, specialTypeIndex, 0, oldMax)
+        }
+        run {
+            val old = linksAmount
+            linksAmount = IntArray(maxAmount)
+            System.arraycopy(old, 0, linksAmount, 0, oldMax)
+        }
+        run {
+            val oldLinks = links
+            links = IntArray(maxAmount * MAX_LINK_AMOUNT) { -1 }
+            for (i in 0 until oldMax) {
+                System.arraycopy(oldLinks, i * MAX_LINK_AMOUNT, links, i * MAX_LINK_AMOUNT, MAX_LINK_AMOUNT)
+            }
         }
     }
 }

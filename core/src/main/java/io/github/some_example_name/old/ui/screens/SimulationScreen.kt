@@ -213,7 +213,16 @@ class SimulationScreen(
 
     override fun touchDown(x: Float, y: Float, pointer: Int, button: Int): Boolean {
         val world = screenToWorld(x, y)
-        userCommandManager.push(PlayerCommand.SpawnCell(world.first, world.second))
+
+        when (button) {
+            Input.Buttons.LEFT -> {
+                userCommandManager.push(PlayerCommand.SpawnCell(world.first, world.second))
+            }
+            Input.Buttons.RIGHT -> {
+                userCommandManager.push(PlayerCommand.SpawnParticles(world.first, world.second))
+            }
+        }
+
         return true
     }
 
