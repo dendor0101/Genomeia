@@ -1,9 +1,9 @@
 package io.github.some_example_name.old.genome_editor
 
 import com.badlogic.gdx.graphics.Color
-import io.github.some_example_name.old.genome.Action
-import io.github.some_example_name.old.genome.GenomeStage
-import io.github.some_example_name.old.good_one.utils.primitive_hash_map.UnorderedIntPairMap
+import io.github.some_example_name.old.systems.genomics.genome.Action
+import io.github.some_example_name.old.systems.genomics.genome.GenomeStage
+import io.github.some_example_name.old.core.utils.UnorderedIntPairMap
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
 
 
@@ -179,7 +179,7 @@ fun toEditorLinks(
     val editorLinks = mutableListOf<EditorLinks>()
     for (index in 0 .. replayTick.linksLastId) {
         val isNeuralTo2 = if (replayTick.isNeuronLink[index]) {
-            val indexDirected = replayTick.directedNeuronLink[index]
+            val indexDirected = TODO()//replayTick.directedNeuronLink[index]
             when (indexDirected) {
                 replayTick.id[replayTick.links1[index]] -> false
                 replayTick.id[replayTick.links2[index]] -> true

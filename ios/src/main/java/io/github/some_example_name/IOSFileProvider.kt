@@ -1,6 +1,6 @@
 package io.github.some_example_name
 
-import io.github.some_example_name.old.platform_flag.FileProvider
+import io.github.some_example_name.old.core.FileProvider
 import java.io.File
 
 class IOSFileProvider: FileProvider {

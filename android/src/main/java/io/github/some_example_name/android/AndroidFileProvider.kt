@@ -7,7 +7,7 @@ import com.badlogic.gdx.files.FileHandle
 import games.spooky.gdx.nativefilechooser.NativeFileChooser
 import games.spooky.gdx.nativefilechooser.NativeFileChooserCallback
 import games.spooky.gdx.nativefilechooser.NativeFileChooserConfiguration
-import io.github.some_example_name.old.platform_flag.FileProvider
+import io.github.some_example_name.old.core.FileProvider
 import java.io.File
 import java.io.FilenameFilter
 

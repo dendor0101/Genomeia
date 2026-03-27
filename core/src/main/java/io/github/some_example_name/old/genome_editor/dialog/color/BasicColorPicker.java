@@ -19,10 +19,8 @@ import com.kotcrab.vis.ui.widget.VisTable;
 import com.kotcrab.vis.ui.widget.VisTextField;
 import com.kotcrab.vis.ui.widget.VisTextField.TextFieldFilter;
 import com.kotcrab.vis.ui.widget.VisValidatableTextField;
-import com.kotcrab.vis.ui.widget.color.ColorPicker;
 import com.kotcrab.vis.ui.widget.color.ColorPickerListener;
 import com.kotcrab.vis.ui.widget.color.ColorPickerWidgetStyle;
-import com.kotcrab.vis.ui.widget.color.ExtendedColorPicker;
 import com.kotcrab.vis.ui.widget.color.internal.AlphaImage;
 import com.kotcrab.vis.ui.widget.color.internal.Palette;
 import com.kotcrab.vis.ui.widget.color.internal.PickerCommons;
@@ -30,10 +28,10 @@ import com.kotcrab.vis.ui.widget.color.internal.VerticalChannelBar;
 
 import static com.kotcrab.vis.ui.widget.color.internal.ColorPickerText.HEX;
 
-import static io.github.some_example_name.old.screens.MainGameKt.applyCustomFont;
-import static io.github.some_example_name.old.screens.MainGameKt.applyCustomFontMedium;
+import static io.github.some_example_name.old.ui.screens.MainGameKt.applyCustomFont;
+import static io.github.some_example_name.old.ui.screens.MainGameKt.applyCustomFontMedium;
 
-import io.github.some_example_name.old.screens.MyGame;
+import io.github.some_example_name.old.ui.screens.MyGame;
 
 // Assuming MyGame is defined elsewhere; import if necessary
 // import your.package.MyGame;

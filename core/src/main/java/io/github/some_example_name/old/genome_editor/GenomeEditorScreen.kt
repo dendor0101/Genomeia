@@ -1,60 +1,7 @@
 package io.github.some_example_name.old.genome_editor
 
-import com.badlogic.gdx.Application
-import com.badlogic.gdx.Gdx
-import com.badlogic.gdx.Input
-import com.badlogic.gdx.InputAdapter
-import com.badlogic.gdx.InputMultiplexer
-import com.badlogic.gdx.Screen
-import com.badlogic.gdx.graphics.Color
-import com.badlogic.gdx.graphics.OrthographicCamera
-import com.badlogic.gdx.graphics.glutils.ShapeRenderer
-import com.badlogic.gdx.input.GestureDetector
-import com.badlogic.gdx.math.MathUtils
-import com.badlogic.gdx.math.Vector2
-import com.badlogic.gdx.math.Vector3
-import com.badlogic.gdx.scenes.scene2d.InputEvent
-import com.badlogic.gdx.scenes.scene2d.Stage
-import com.badlogic.gdx.scenes.scene2d.ui.Table
-import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
-import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
-import com.badlogic.gdx.utils.Align
-import com.badlogic.gdx.utils.I18NBundle
-import com.badlogic.gdx.utils.Timer
-import com.badlogic.gdx.utils.viewport.ScreenViewport
-import com.kotcrab.vis.ui.widget.VisLabel
-import com.kotcrab.vis.ui.widget.VisSlider
-import com.kotcrab.vis.ui.widget.VisTextButton
-import io.github.some_example_name.old.genome.Action
-import io.github.some_example_name.old.genome.json.GenomeJsonReader
-import io.github.some_example_name.old.genome.json.write.domainToJson
-import io.github.some_example_name.old.genome_editor.GenomeEditorGrowthProcessor.Companion.START_EDITOR_CELL_X
-import io.github.some_example_name.old.genome_editor.GenomeEditorGrowthProcessor.Companion.START_EDITOR_CELL_Y
-import io.github.some_example_name.old.genome_editor.commands.AddNeuralLinkCommand
-import io.github.some_example_name.old.genome_editor.commands.ChangeDivideCommand
-import io.github.some_example_name.old.genome_editor.commands.DivideCellCommand
-import io.github.some_example_name.old.genome_editor.commands.MutateCellCommand
-import io.github.some_example_name.old.genome_editor.commands.RemoveCellCommand
-import io.github.some_example_name.old.genome_editor.commands.getAllCloseNeighboursEditor
-import io.github.some_example_name.old.genome_editor.commands.moveCell
-import io.github.some_example_name.old.genome_editor.commands.tryToDivideCell
-import io.github.some_example_name.old.genome_editor.dialog.ChangeRemoveActionDialog
-import io.github.some_example_name.old.genome_editor.dialog.DivideActionDialog
-import io.github.some_example_name.old.genome_editor.dialog.MutateActionDialog
-import io.github.some_example_name.old.genome_editor.dialog.MutateOrDivideDialog
-import io.github.some_example_name.old.good_one.CellSimulation
-import io.github.some_example_name.old.good_one.pikSounds
-import io.github.some_example_name.old.good_one.utils.drawArrowWithRotationAngle
-import io.github.some_example_name.old.good_one.utils.drawTriangleMiddle
-import io.github.some_example_name.old.platform_flag.FileProvider
-import io.github.some_example_name.old.screens.GlobalSettings
-import io.github.some_example_name.old.screens.MenuScreen
-import io.github.some_example_name.old.screens.MyGame
-import io.github.some_example_name.old.screens.applyCustomFont
-import io.github.some_example_name.old.screens.applyCustomFontMedium
-import io.github.some_example_name.old.shader_instancing.InstancingTextureShaderManager
-import io.github.some_example_name.old.world_logic.GridManager.Companion.CELL_SIZE
-import kotlin.Float
+//import io.github.some_example_name.old.genome_editor.GenomeEditorGrowthProcessor.Companion.START_EDITOR_CELL_X
+//import io.github.some_example_name.old.genome_editor.GenomeEditorGrowthProcessor.Companion.START_EDITOR_CELL_Y
 
 data class GenomeEditorData(
     var currentTick: Int,
@@ -71,7 +18,7 @@ enum class LastActionType {
 
 var timeForProcessingActionStart = System.nanoTime()
 var timeForProcessingActionResult = 0f
-
+/*
 class GenomeEditorScreen(
     val multiPlatformFileProvider: FileProvider,
     val game: MyGame,
@@ -167,7 +114,7 @@ class GenomeEditorScreen(
             genome = genome,
             onSaveAndTest = { genomeNameForTest ->
                 game.screen.dispose()
-                game.screen = CellSimulation(
+                game.screen = SimulationScreen(
                     multiPlatformFileProvider = multiPlatformFileProvider,
                     game = game,
                     bundle = bundle,
@@ -909,7 +856,6 @@ class GenomeEditorScreen(
     ) {
         timeForProcessingActionStart = System.nanoTime()
         if (newDividedCellPosition == null) return
-        pikSounds.random().play(GlobalSettings.SOUND_VOLUME / 100f)
         val isLastTick = editor.state.currentTick == editor.replay.size - 1
 
         val genomeStageInstruction = editor.growthProcessor.currentGenome.genomeStageInstruction
@@ -1068,3 +1014,4 @@ class GenomeEditorScreen(
         initialZoom = 0f
     }
 }
+*/

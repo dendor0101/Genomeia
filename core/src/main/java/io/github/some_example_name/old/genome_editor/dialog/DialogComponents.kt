@@ -8,15 +8,12 @@ import com.badlogic.gdx.scenes.scene2d.ui.ButtonGroup
 import com.badlogic.gdx.scenes.scene2d.ui.ScrollPane
 import com.badlogic.gdx.scenes.scene2d.ui.Slider
 import com.badlogic.gdx.scenes.scene2d.ui.Table
-import com.badlogic.gdx.scenes.scene2d.ui.TextButton
-import com.badlogic.gdx.scenes.scene2d.utils.ActorGestureListener
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener.ChangeEvent
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.Array
 import com.badlogic.gdx.utils.I18NBundle
-import com.kotcrab.vis.ui.VisUI
 import com.kotcrab.vis.ui.util.FloatDigitsOnlyFilter
 import com.kotcrab.vis.ui.util.IntDigitsOnlyFilter
 import com.kotcrab.vis.ui.widget.VisCheckBox
@@ -25,18 +22,43 @@ import com.kotcrab.vis.ui.widget.VisSelectBox
 import com.kotcrab.vis.ui.widget.VisSlider
 import com.kotcrab.vis.ui.widget.VisTable
 import com.kotcrab.vis.ui.widget.VisTextField
-import io.github.some_example_name.old.genome.Action
-import io.github.some_example_name.old.good_one.encodeColorToBits
-import io.github.some_example_name.old.good_one.getColorFromBits
-import io.github.some_example_name.old.world_logic.cells.base.cellsType
-import io.github.some_example_name.old.world_logic.cells.formulaType
+import io.github.some_example_name.old.systems.genomics.genome.Action
 import kotlin.math.PI
 import kotlin.math.roundToInt
 import com.kotcrab.vis.ui.widget.VisTextButton
+import io.github.some_example_name.old.cells.base.formulaType
 import io.github.some_example_name.old.genome_editor.dialog.color.ColorPicker
-import io.github.some_example_name.old.screens.MyGame
-import io.github.some_example_name.old.screens.applyCustomFont
-import io.github.some_example_name.old.screens.applyCustomFontMedium
+import io.github.some_example_name.old.ui.screens.MyGame
+import io.github.some_example_name.old.ui.screens.applyCustomFont
+import io.github.some_example_name.old.ui.screens.applyCustomFontMedium
+
+val cellsType = arrayOf(
+    "Leaf",
+    "Fat",
+    "Bone",
+    "Tail",
+    "Neuron",
+    "Muscle",
+    "Sensor",
+    "Sucker",
+    "AccelerationSensor",
+    "Excreta",
+    "SkinCell",
+    "Sticky",
+    "Pumper",
+    "Chameleon",
+    "Eye",
+    "Compass",
+    "Controller",
+    "TouchTrigger",
+    "Zygote",
+    "Producer",
+    "Breakaway",
+    "Vascular",
+    "PheromoneEmitter",
+    "PheromoneSensor",
+    "Punisher",
+)
 
 fun actionButton(
     text: String,

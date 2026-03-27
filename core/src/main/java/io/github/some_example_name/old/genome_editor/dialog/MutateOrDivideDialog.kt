@@ -2,12 +2,10 @@ package io.github.some_example_name.old.genome_editor.dialog
 
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.utils.I18NBundle
-import com.kotcrab.vis.ui.VisUI
 import com.kotcrab.vis.ui.widget.VisDialog
 import io.github.some_example_name.old.genome_editor.EditorCell
-import io.github.some_example_name.old.screens.MyGame
-import io.github.some_example_name.old.screens.applyCustomFont
-import io.github.some_example_name.old.screens.setupTitleSize
+import io.github.some_example_name.old.ui.screens.MyGame
+import io.github.some_example_name.old.ui.dialogs.setupTitleSize
 
 class MutateOrDivideDialog(
     val clickedCell: EditorCell,

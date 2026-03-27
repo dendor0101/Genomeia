@@ -9,13 +9,13 @@ import com.badlogic.gdx.utils.I18NBundle
 import com.kotcrab.vis.ui.widget.VisDialog
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisTextField
-import io.github.some_example_name.old.genome.json.GenomeJsonReader
-import io.github.some_example_name.old.genome.json.write.CreatureJsonWrite
+import io.github.some_example_name.old.systems.genomics.genome.GenomeJsonReader
+import io.github.some_example_name.old.systems.genomics.genome.CreatureJsonWrite
 import io.github.some_example_name.old.genome_editor.dialog.actionButton
-import io.github.some_example_name.old.screens.MyGame
-import io.github.some_example_name.old.screens.applyCustomFont
-import io.github.some_example_name.old.screens.applyCustomFontMedium
-import io.github.some_example_name.old.screens.setupTitleSize
+import io.github.some_example_name.old.ui.screens.MyGame
+import io.github.some_example_name.old.ui.screens.applyCustomFont
+import io.github.some_example_name.old.ui.screens.applyCustomFontMedium
+import io.github.some_example_name.old.ui.dialogs.setupTitleSize
 
 class SaveGenomeDialog(
     val genomeJsonReader: GenomeJsonReader,

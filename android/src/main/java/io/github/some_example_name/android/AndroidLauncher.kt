@@ -1,37 +1,24 @@
 package io.github.some_example_name.android
 
-import android.app.AlertDialog
-import android.content.Context
-import android.content.Intent
-import android.graphics.Color
-import android.graphics.Rect
-import android.net.Uri
 import android.os.Bundle
-import android.text.InputType
-import android.util.Log
-import android.view.Gravity
-import android.view.View
-import android.view.inputmethod.EditorInfo
-import android.view.inputmethod.InputMethodManager
-import android.widget.Button
-import android.widget.EditText
-import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import android.widget.Toast
-import androidx.core.content.FileProvider
 import com.badlogic.gdx.backends.android.AndroidApplication
 import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration
-import games.spooky.gdx.nativefilechooser.android.AndroidFileChooser
-import io.github.some_example_name.old.screens.KeyBoardListener
-import io.github.some_example_name.old.screens.MyGame
-import java.io.File
-import java.io.FileOutputStream
-import java.io.FileWriter
-import java.io.PrintWriter
-import java.io.StringWriter
+import io.github.some_example_name.old.good_one.MainGame
 
+class AndroidLauncher : AndroidApplication() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        val config = AndroidApplicationConfiguration().apply {
+            useImmersiveMode = true
+            useGL30 = true // Enable GLES 3.0+
+        }
+
+        initialize(MainGame { ShaderRenderer() }, config)
+    }
+}
+
+/*
 
 class AndroidLauncher : AndroidApplication(), KeyBoardListener {
 
@@ -41,51 +28,41 @@ class AndroidLauncher : AndroidApplication(), KeyBoardListener {
         lateinit var editText: EditText
     }
 
-//    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-//        super.onActivityResult(requestCode, resultCode, data)
-//        if (requestCode == FILE_PICK_CODE && resultCode == RESULT_OK) {
-//            data?.data?.let { uri ->
-//                copyImportedFile(uri)
-//            }
-//        }
-//    }
-
-//    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-//        super.onActivityResult(requestCode, resultCode, data)
-//        fileProvider.handleActivityResult(requestCode, resultCode, data)
-//    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Set the handler before anything else
+        // Crash handler должен быть первым
         Thread.setDefaultUncaughtExceptionHandler(CrashHandler(this))
 
         super.onCreate(savedInstanceState)
 
-        val config = AndroidApplicationConfiguration()
-        config.useImmersiveMode = true
-        config.useGL30 = true
+        val config = AndroidApplicationConfiguration().apply {
+            useImmersiveMode = true
+            useGL30 = true          // ← Это включает OpenGL ES 3.2 на поддерживаемых устройствах
+
+        }
+
+        val buf = IntArray(1)
+        GLES32.glGenBuffers(1, buf, 0)
 
         val fileProvider = AndroidFileProvider(this, AndroidFileChooser(this))
-        val gameView = initializeForView(MyGame(fileProvider), config)
+        val gameView = initializeForView(CircleInstancingSSBO(*/
+/*fileProvider*//*
+), config)
 
         val rootLayout = FrameLayout(this)
         rootLayout.addView(gameView)
-        // создаём layout для ввода
+
+        // ====================== UI ДЛЯ ВВОДА ЧИСЕЛ ======================
         editText = EditText(this).apply {
             hint = "Введите число"
             setBackgroundColor(Color.WHITE)
             setTextColor(Color.BLACK)
             textSize = 20f
-
-            // при нажатии кнопки "Готово" на клавиатуре
             imeOptions = EditorInfo.IME_ACTION_DONE
             setOnEditorActionListener { _, actionId, _ ->
                 if (actionId == EditorInfo.IME_ACTION_DONE) {
                     applyInput()
                     true
-                } else {
-                    false
-                }
+                } else false
             }
         }
 
@@ -110,7 +87,7 @@ class AndroidLauncher : AndroidApplication(), KeyBoardListener {
 
         setContentView(rootLayout)
 
-        // смещение при открытии клавиатуры
+        // Смещение при открытии клавиатуры
         rootLayout.viewTreeObserver.addOnGlobalLayoutListener {
             val r = Rect()
             rootLayout.getWindowVisibleDisplayFrame(r)
@@ -118,14 +95,27 @@ class AndroidLauncher : AndroidApplication(), KeyBoardListener {
             val keypadHeight = screenHeight - r.bottom
             inputLayout.translationY = if (keypadHeight > screenHeight * 0.15) -keypadHeight.toFloat() else 0f
         }
+
+        // === ПРОВЕРКА ВЕРСИИ GLES (после инициализации) ===
+        rootLayout.post {
+            val version = Gdx.graphics.glVersion
+            val isGLES32 = version.isVersionEqualToOrHigher(3, 2)
+            val msg = "✅ OpenGL ES ${version.majorVersion}.${version.minorVersion}\n" +
+                "SSBO + Compute Shaders: ${if (isGLES32) "РАБОТАЮТ" else "НЕДОСТУПНЫ (только GLES 3.0+)"}"
+
+            Gdx.app.log("Genomeia GLES", msg)
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+        }
     }
 
+    // ====================== KeyBoardListener ======================
     override fun showNativeInput(default: String, callback: (Float) -> Unit) {
         runOnUiThread {
             editText.setText(default)
-            editText.setSelection(editText.text.length) // Доработка 2: Курсор в конец строки
-            editText.inputType =
-                InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
+            editText.setSelection(editText.text.length)
+            editText.inputType = InputType.TYPE_CLASS_NUMBER or
+                InputType.TYPE_NUMBER_FLAG_DECIMAL or
+                InputType.TYPE_NUMBER_FLAG_SIGNED
             editText.requestFocus()
             inputCallback = callback
             inputLayout.visibility = View.VISIBLE
@@ -155,39 +145,32 @@ class AndroidLauncher : AndroidApplication(), KeyBoardListener {
                 }
             }
             Toast.makeText(this, "Файл импортирован как gen3.bin", Toast.LENGTH_SHORT).show()
-            println("Imported genome to ${targetFile.absolutePath}")
         } catch (e: Exception) {
             Log.e("AndroidLauncher", "Import failed: ${e.message}")
             Toast.makeText(this, "Ошибка импорта: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
+    // ====================== Crash Handler ======================
     private class CrashHandler(private val context: AndroidLauncher) : Thread.UncaughtExceptionHandler {
         override fun uncaughtException(thread: Thread, throwable: Throwable) {
-            // Capture stack trace
             val sw = StringWriter()
             val pw = PrintWriter(sw)
             throwable.printStackTrace(pw)
             val stackTrace = sw.toString()
 
-            // Log for debugging
             Log.e("CrashHandler", stackTrace)
 
-            // Save to file - ensure directory exists
             val crashDir = context.getExternalFilesDir(null)
-            if (crashDir != null && !crashDir.exists()) {
-                crashDir.mkdirs()
-            }
+            crashDir?.mkdirs()
             val crashFile = File(crashDir, "crash_log_android.txt")
+
             try {
-                FileWriter(crashFile).use { writer ->
-                    writer.write(stackTrace)
-                }
+                FileWriter(crashFile).use { it.write(stackTrace) }
             } catch (e: Exception) {
                 Log.e("CrashHandler", "Failed to write crash log", e)
             }
 
-            // Show dialog on UI thread
             context.runOnUiThread {
                 val scrollView = ScrollView(context)
                 val textView = TextView(context).apply {
@@ -204,33 +187,26 @@ class AndroidLauncher : AndroidApplication(), KeyBoardListener {
                     .setView(scrollView)
                     .setPositiveButton("Share") { dialog, _ ->
                         try {
-                            if (crashFile.exists()) {
-                                val uri: Uri = FileProvider.getUriForFile(
-                                    context,
-                                    "${context.packageName}.provider",
-                                    crashFile
-                                )
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_STREAM, uri)
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
-                                context.startActivity(Intent.createChooser(shareIntent, "Send the crash log"))
-                            } else {
-                                Toast.makeText(context, "Log file not found", Toast.LENGTH_SHORT).show()
+                            val uri = FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.provider",
+                                crashFile
+                            )
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
+                            context.startActivity(Intent.createChooser(shareIntent, "Send the crash log"))
                         } catch (e: Exception) {
-                            Log.e("CrashHandler", "Share failed", e)
-                            Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "Share failed: ${e.message}", Toast.LENGTH_LONG).show()
                         }
-                        dialog.dismiss()  // Always dismiss to exit
+                        dialog.dismiss()
                     }
-                    .setNegativeButton("Close") { dialog, _ ->
-                        dialog.dismiss()  // Dismiss to trigger exit
-                    }
+                    .setNegativeButton("Close") { dialog, _ -> dialog.dismiss() }
                     .setOnDismissListener {
                         context.finish()
-                        android.os.Process.killProcess(android.os.Process.myPid())  // Cleaner exit
+                        android.os.Process.killProcess(android.os.Process.myPid())
                     }
                     .setCancelable(false)
                     .show()
@@ -238,6 +214,4 @@ class AndroidLauncher : AndroidApplication(), KeyBoardListener {
         }
     }
 }
-
-
-
+*/

@@ -1,22 +1,21 @@
 package io.github.some_example_name.old.genome_editor
 
-import io.github.some_example_name.old.genome.Genome
-import io.github.some_example_name.old.substances.SubstancePlugImpl
-import io.github.some_example_name.old.world_logic.CellManager
-import io.github.some_example_name.old.world_logic.GridManager
-import io.github.some_example_name.old.world_logic.genomic_transformations.divideCell
-import io.github.some_example_name.old.world_logic.genomic_transformations.mutateCell
-import io.github.some_example_name.old.world_logic.GridManager.Companion.CELL_SIZE
+import io.github.some_example_name.old.systems.genomics.genome.Genome
+import io.github.some_example_name.old.systems.simulation.SimulationSystem
+import io.github.some_example_name.old.systems.physics.GridManager
+//import io.github.some_example_name.old.systems.genomics.genomic_transformations.divideCell
+//import io.github.some_example_name.old.systems.genomics.genomic_transformations.mutateCell
 import kotlin.collections.component1
 import kotlin.collections.component2
 import kotlin.collections.iterator
 import kotlin.system.measureNanoTime
+/*
 
 const val TIME_SIMULATION = 15000
 
 class GenomeEditorGrowthProcessor(genomeName: String?) {
 
-    private var cellManager = CellManager(
+    private var simulationSystem = SimulationSystem(
         map = null,
         cellsStartMaxAmount = 20000,
         linksStartMaxAmount = 35000,
@@ -29,23 +28,23 @@ class GenomeEditorGrowthProcessor(genomeName: String?) {
     private val genomeReplay = mutableListOf<GenomeStageReplayStructure>()
     private var stagesTimeTick = IntArray(0)
     val simulationFullReplay = mutableListOf<FullReplayStructure>()
-    var currentGenome = cellManager.genomeManager.genomeForEditor
+    var currentGenome = simulationSystem.genomeManager.genomeForEditor
     var maxCellId = 0
 
     fun getStage(stageIndex: Int) = currentGenome.genomeStageInstruction[stageIndex]
-    val gridManager = cellManager.gridManager
+    val gridManager = simulationSystem.gridManager
 
     init {
-        cellManager.addCell(START_EDITOR_CELL_X, START_EDITOR_CELL_Y, 18, false, genomeIndex = 0)
-        cellManager.id[0] = 0
+        simulationSystem.addCell(START_EDITOR_CELL_X, START_EDITOR_CELL_Y, 18, false, genomeIndex = 0)
+        simulationSystem.cellGenomeId[0] = 0
     }
 
     fun clearAll() {
-        cellManager.gridManager.clearAll()
-        cellManager.clear()
-        cellManager.linkIndexMap.clear()
-        cellManager.getOrganism(0).linkIdMap.clear()
-        cellManager.organismManager.organisms.clear()
+        simulationSystem.gridManager.clearAll()
+        simulationSystem.clear()
+        simulationSystem.linkIndexMap.clear()
+//        cellManager.getOrganism(0).linkIdMap.clear()
+        simulationSystem.organismManager.organisms.clear()
     }
 
     fun newGenome() {
@@ -98,9 +97,9 @@ class GenomeEditorGrowthProcessor(genomeName: String?) {
             }
         }
 
-        cellManager.genomeManager.genomes[0] = genomeForPhysics
-        cellManager.addCell(START_EDITOR_CELL_X, START_EDITOR_CELL_Y, 18, false, genomeIndex = 0)
-        cellManager.id[0] = 0
+        simulationSystem.genomeManager.genomes[0] = genomeForPhysics
+        simulationSystem.addCell(START_EDITOR_CELL_X, START_EDITOR_CELL_Y, 18, false, genomeIndex = 0)
+        simulationSystem.cellGenomeId[0] = 0
     }
 
     private fun initFromStage(stageCounter: Int, stagesAmount: Int): Int {
@@ -114,31 +113,33 @@ class GenomeEditorGrowthProcessor(genomeName: String?) {
 
         simulationFullReplay.subList(stageCounter + 1, simulationFullReplay.size).clear()
 
-        val organism = cellManager.getOrganism(0)
-        cellManager.restoreFromFullReplayStructure(currentFullReplay)
+        val organism = simulationSystem.getOrganism(0)
+        //TODO Решить что делать с полным репелеем
+//        simulationSystem.restoreFromFullReplayStructure(currentFullReplay)
 
         organism.stage = stageCounter
         organism.justChangedStage = true
-        organism.timerToGrowAfterStage = 5
-
+//        organism.timerToGrowAfterStage =
 
         for (i in 0..currentFullReplay.linksLastId) {
-            val links1 = cellManager.links1[i]
-            val links2 = cellManager.links2[i]
-            cellManager.linkIndexMap.put(links1, links2, i)
+            val links1 = simulationSystem.links1[i]
+            val links2 = simulationSystem.links2[i]
+            simulationSystem.linkIndexMap.put(links1, links2, i)
 
-            cellManager.getOrganism(0).linkIdMap.put(
-                cellManager.id[links1],
-                cellManager.id[links2],
-                i
-            )
+//            cellManager.getOrganism(0).linkIdMap.put(
+//                cellManager.cellGenomeId[links1],
+//                cellManager.cellGenomeId[links2],
+//                i
+//            )
         }
 
         //TODO поярдок растановки id в сетке может влиять на результат в дальнейшем
         for (i in 0..currentFullReplay.cellLastId) {
             val xGrid = (currentFullReplay.x[i] / CELL_SIZE).toInt()
             val yGrid = (currentFullReplay.y[i] / CELL_SIZE).toInt()
-            cellManager.gridManager.addCell(xGrid, yGrid, i)
+            simulationSystem.gridManager.addCell(xGrid, yGrid, i) {
+
+            }
         }
 
         return startTick
@@ -153,11 +154,11 @@ class GenomeEditorGrowthProcessor(genomeName: String?) {
             simulationFullReplay.clear()
             genomeReplay.clear()
             stagesTimeTick = IntArray(stagesAmount + 1)
-            simulationFullReplay.add(cellManager.createFullReplayStructure())
+            simulationFullReplay.add(simulationSystem.createFullReplayStructure())
             stageCounter++
         } else {
             startTick = initFromStage(stageCounter, stagesAmount)
-            if (stageCounter == cellManager.getOrganism(0).genomeSize) return Pair(
+            if (stageCounter == simulationSystem.getOrganism(0).genomeSize) return Pair(
                 genomeReplay,
                 stagesTimeTick
             )
@@ -168,28 +169,28 @@ class GenomeEditorGrowthProcessor(genomeName: String?) {
         val nanoTime = measureNanoTime {
             for (tick in startTick..TIME_SIMULATION) {
 
-                for (cellId in 0..cellManager.cellLastId) {
-                    cellManager.processCellGenomeEditor(cellId)
+                for (cellId in 0..simulationSystem.cellLastId) {
+                    simulationSystem.processCellGenomeEditor(cellId)
                 }
 
-                val stageResult = cellManager.updateAfterCycleGenomeEditor()
+                val stageResult = simulationSystem.updateAfterCycleGenomeEditor()
 
                 //Сохранение реплея каждого тика
-                val realCellAmount = cellManager.cellLastId + 1
+                val realCellAmount = simulationSystem.cellLastId + 1
                 genomeReplay.add(
                     GenomeStageReplayStructure(
-                        cellManager.energy.copyOfRange(0, realCellAmount),
+                        simulationSystem.energy.copyOfRange(0, realCellAmount),
                         realCellAmount,
                     )
                 )
 
                 if (stageResult == true) {
                     stagesTimeTick[stageCounter] = tick
-                    simulationFullReplay.add(cellManager.createFullReplayStructure())
+                    simulationFullReplay.add(simulationSystem.createFullReplayStructure())
                     stageCounter ++
                 } else if (stageResult == null) {
                     stagesTimeTick[stageCounter] = tick
-                    simulationFullReplay.add(cellManager.createFullReplayStructure())
+                    simulationFullReplay.add(simulationSystem.createFullReplayStructure())
                     break
                 }
             }
@@ -199,8 +200,8 @@ class GenomeEditorGrowthProcessor(genomeName: String?) {
         return Pair(genomeReplay, stagesTimeTick)
     }
 
-    fun CellManager.processCellGenomeEditor(
-        cellId: Int,
+    fun SimulationSystem.processCellGenomeEditor(
+        cellIndex: Int,
 //        gridX: Int,
 //        gridY: Int,
 //        threadId: Int
@@ -209,30 +210,48 @@ class GenomeEditorGrowthProcessor(genomeName: String?) {
 //        processCellFriction(cellId)
 //        vx[cellId] *= 0f
 //        vy[cellId] *= 0f
-        energy[cellId] += 1.5f
-        if (energy[cellId] > cellsSettings[cellType[cellId] + 1].maxEnergy) energy[cellId] = cellsSettings[cellType[cellId] + 1].maxEnergy
-        mutateCell(cellId, 0)
-        divideCell(cellId, 0)
+        energy[cellIndex] += 1.5f
+        if (energy[cellIndex] > cellsSettings[cellType[cellIndex]].maxEnergy) energy[cellIndex] = cellsSettings[cellType[cellIndex]].maxEnergy
+        val organism = organismManager.organisms[organismIndex[cellIndex]]
+        if (!organism.alreadyGrownUp) {
+            TODO("тут думать надо")
+            if (organism.justChangedStage) {
+                isDividedInThisStage[cellIndex] = false
+                isMutateInThisStage[cellIndex] = false
+            }
+            mutateCell(cellIndex, 0*/
+/*, organism*//*
+)
+            divideCell(cellIndex, 0*/
+/*, organism*//*
+)
+        }
 //        processCellAngel(cellId)
     }
 
-    fun CellManager.updateAfterCycleGenomeEditor(): Boolean? {
-        /*
+    fun SimulationSystem.updateAfterCycleGenomeEditor(): Boolean? {
+        */
+/*
         * Растоновка позиций
-        * */
+        * *//*
+
 //        for (i in 0..cellLastId) {
 //            moveToCell(i)
 //        }
 
-        /*
+        */
+/*
         * Выполнение команд от мира
-        * */
+        * *//*
+
         performWorldCommands()
 
-        /*
+        */
+/*
         * Переход на следющую стадию генома
-        * */
-        return performOrganismNextStage(cellManager.organismManager.organisms.first())
+        * *//*
+
+        return performOrganismNextStage(simulationSystem.organismManager.organisms.first())
     }
 
     fun dispose() {
@@ -244,3 +263,4 @@ class GenomeEditorGrowthProcessor(genomeName: String?) {
         const val START_EDITOR_CELL_Y = 2520f
     }
 }
+*/

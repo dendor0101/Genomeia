@@ -1,6 +1,6 @@
 package io.github.some_example_name.old.genome_editor.commands
 
-import io.github.some_example_name.old.genome.GenomeStage
+import io.github.some_example_name.old.systems.genomics.genome.GenomeStage
 import io.github.some_example_name.old.genome_editor.Command
 import io.github.some_example_name.old.genome_editor.EditorCell
 

@@ -1,7 +1,7 @@
 package io.github.some_example_name.old.genome_editor
 
-import io.github.some_example_name.old.genome_editor.GenomeEditorGrowthProcessor.Companion.START_EDITOR_CELL_X
-import io.github.some_example_name.old.genome_editor.GenomeEditorGrowthProcessor.Companion.START_EDITOR_CELL_Y
+//import io.github.some_example_name.old.genome_editor.GenomeEditorGrowthProcessor.Companion.START_EDITOR_CELL_X
+//import io.github.some_example_name.old.genome_editor.GenomeEditorGrowthProcessor.Companion.START_EDITOR_CELL_Y
 import kotlin.math.*
 
 data class Point(val x: Float, val y: Float)
@@ -17,8 +17,8 @@ fun findNewOptimalCellPosition(x: Float, y: Float, xs: List<Float>, ys: List<Flo
         throw IllegalArgumentException("xs and ys must have the same size")
     }
     val others = xs.indices.map { Point(xs[it], ys[it]) }
-    val dx = START_EDITOR_CELL_X - x
-    val dy = START_EDITOR_CELL_Y - y
+    val dx: Float = TODO()// = START_EDITOR_CELL_X - x
+    val dy: Float = TODO()// = START_EDITOR_CELL_Y - y
     val d = sqrt(dx.pow(2) + dy.pow(2))
 
     // Try ideal point first if d > 0
@@ -55,7 +55,7 @@ fun findNewOptimalCellPosition(x: Float, y: Float, xs: List<Float>, ys: List<Flo
             val py = y + r * sin(a)
             val isValid = others.all { dist(px, py, it.x, it.y) >= MIN_DISTANCE_TO_OTHERS }
             if (isValid) {
-                val distToTarget = dist(px, py, START_EDITOR_CELL_X, START_EDITOR_CELL_Y)
+                val distToTarget = dist(px, py, /*START_EDITOR_CELL_X*/TODO(), /*START_EDITOR_CELL_Y*/TODO())
                 if (distToTarget < minDistToTarget) {
                     minDistToTarget = distToTarget
                     bestX = px

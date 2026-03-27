@@ -1,8 +1,8 @@
 package io.github.some_example_name.lwjgl3
 
 import com.badlogic.gdx.files.FileHandle
-import io.github.some_example_name.old.platform_flag.FileProvider
-import io.github.some_example_name.old.world_logic.CellManager
+import io.github.some_example_name.old.core.FileProvider
+import io.github.some_example_name.old.systems.simulation.SimulationSystem
 import java.io.File
 
 class DesktopFileProvider : FileProvider {
@@ -25,7 +25,7 @@ class DesktopFileProvider : FileProvider {
 
     private fun getJarDir(): File {
         return try {
-            val path: String = CellManager::class.java.protectionDomain.codeSource.location
+            val path: String = SimulationSystem::class.java.protectionDomain.codeSource.location
                 .toURI().path
             val jarFile = File(path)
             if (jarFile.isDirectory) jarFile else jarFile.parentFile

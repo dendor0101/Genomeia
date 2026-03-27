@@ -1,14 +1,13 @@
 package io.github.some_example_name.old.genome_editor.commands
 
-import io.github.some_example_name.old.genome.GenomeStage
-import io.github.some_example_name.old.genome.LinkData
+import io.github.some_example_name.old.systems.genomics.genome.GenomeStage
+import io.github.some_example_name.old.systems.genomics.genome.LinkData
 import io.github.some_example_name.old.genome_editor.Command
 import io.github.some_example_name.old.genome_editor.CommandManager
 import io.github.some_example_name.old.genome_editor.EditorCell
 import io.github.some_example_name.old.genome_editor.GenomeEditorManager
-import io.github.some_example_name.old.good_one.utils.distanceTo
-import io.github.some_example_name.old.world_logic.GridManager
-import io.github.some_example_name.old.world_logic.GridManager.Companion.CELL_SIZE
+import io.github.some_example_name.old.core.utils.distanceTo
+import io.github.some_example_name.old.systems.physics.GridManager
 import kotlin.math.atan2
 import kotlin.math.sqrt
 
@@ -19,12 +18,12 @@ fun getAllCloseNeighboursEditor(
     editorCells: List<EditorCell>,
     grabbedCellIndex: Int?
 ): List<Int> {
-    val gridGrabbedX = (grabbedX / CELL_SIZE).toInt()
-    val gridGrabbedY = (grabbedY / CELL_SIZE).toInt()
+    val gridGrabbedX = grabbedX.toInt()
+    val gridGrabbedY = grabbedY.toInt()
     val allCells = mutableListOf<Int>()
     for (i in -1..1) {
         for (j in -1..1) {
-            allCells.addAll(gridManager.getCells(gridGrabbedX + i, gridGrabbedY + j).toList())
+            allCells.addAll(gridManager.getParticles(gridGrabbedX + i, gridGrabbedY + j).toList())
         }
     }
     val filteredByDistance = allCells.filter {
@@ -33,7 +32,7 @@ fun getAllCloseNeighboursEditor(
             grabbedY,
             editorCells[it].x,
             editorCells[it].y
-        ) <= CELL_SIZE
+        ) <= 1f//CELL_SIZE TODO
     }
 
     return if (grabbedCellIndex != null) filteredByDistance.filterNot { it == grabbedCellIndex } else filteredByDistance

@@ -1,14 +1,13 @@
 package io.github.some_example_name.old.genome_editor.commands
 
-import io.github.some_example_name.old.genome.Action
-import io.github.some_example_name.old.genome.CellAction
-import io.github.some_example_name.old.genome.GenomeStage
-import io.github.some_example_name.old.genome.LinkData
+import io.github.some_example_name.old.systems.genomics.genome.Action
+import io.github.some_example_name.old.systems.genomics.genome.CellAction
+import io.github.some_example_name.old.systems.genomics.genome.GenomeStage
+import io.github.some_example_name.old.systems.genomics.genome.LinkData
 import io.github.some_example_name.old.genome_editor.Command
 import io.github.some_example_name.old.genome_editor.EditorCell
 import io.github.some_example_name.old.genome_editor.findNewOptimalCellPosition
-import io.github.some_example_name.old.world_logic.GridManager
-import io.github.some_example_name.old.world_logic.GridManager.Companion.CELL_SIZE
+import io.github.some_example_name.old.systems.physics.GridManager
 import kotlin.math.atan2
 import kotlin.math.sqrt
 
@@ -18,8 +17,8 @@ fun getAll2LayersNeighboursEditor(
     gridManager: GridManager,
     clickedCellIndex: Int
 ): List<Int> {
-    val gridGrabbedX = (clickedX / CELL_SIZE).toInt()
-    val gridGrabbedY = (clickedY / CELL_SIZE).toInt()
+    val gridGrabbedX = clickedX.toInt()
+    val gridGrabbedY = clickedY.toInt()
     val allCells = mutableListOf<Int>()
     for (i in -2..2) {
         for (j in -2..2) {
@@ -27,7 +26,7 @@ fun getAll2LayersNeighboursEditor(
             if (i == -2 && j == 2) continue
             if (i == 2 && j == -2) continue
             if (i == -2 && j == -2) continue
-            allCells.addAll(gridManager.getCells(gridGrabbedX + i, gridGrabbedY + j).toList())
+            allCells.addAll(gridManager.getParticles(gridGrabbedX + i, gridGrabbedY + j).toList())
         }
     }
     return allCells.filter { it != clickedCellIndex }
