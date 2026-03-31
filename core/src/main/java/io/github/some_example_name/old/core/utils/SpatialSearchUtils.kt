@@ -1,10 +1,10 @@
 package io.github.some_example_name.old.core.utils
 
 import io.github.some_example_name.old.systems.physics.GridManager
-
+import it.unimi.dsi.fastutil.ints.IntArrayList
 
 fun GridManager.collectParticles(gridX: Int, gridY: Int, radius: Int = 3): IntArray {
-    val list = ArrayList<Int>()
+    val list = IntArrayList()
     for (dy in -radius..radius) {
         for (dx in -radius..radius) {
             val arr = getParticles(gridX + dx, gridY + dy)

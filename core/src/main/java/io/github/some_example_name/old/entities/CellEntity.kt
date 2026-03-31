@@ -7,11 +7,12 @@ import io.github.some_example_name.old.core.DIContainer.cellsSettings
 import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.systems.genomics.genome.CellAction
 import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem.Companion.MAX_LINK_AMOUNT
+import io.github.some_example_name.old.systems.simulation.SimulationData
 
 class CellEntity(
     cellsStartMaxAmount: Int,
     private val particleEntity: ParticleEntity,
-    val simEntity: SimEntity,
+    val simulationData: SimulationData,
     val substrateSettings: SubstrateSettings,
     val cellList: List<Cell>,
     private val neuralEntity: NeuralEntity,
@@ -34,8 +35,8 @@ class CellEntity(
     fun seRadius(index: Int, value: Float) { particleEntity.radius[particleIndex[index]] = value }
     fun getGridId(index: Int) = particleEntity.gridId[particleIndex[index]]
     fun seGridId(index: Int, value: Int) { particleEntity.gridId[particleIndex[index]] = value }
-    fun getSimTime(index: Int) = simEntity.timeSimulation
-    fun getColor(index: Int) = particleEntity.color
+    fun getSimTime(index: Int) = simulationData.timeSimulation
+    fun getColor(index: Int) = particleEntity.color[particleIndex[index]]
     fun setColor(index: Int, value: Int) { particleEntity.color[particleIndex[index]] = value }
     var cellGenomeId = IntArray(maxAmount) { -1 }
     var cellActions: Array<CellAction?> = arrayOfNulls(maxAmount)
@@ -109,7 +110,7 @@ class CellEntity(
     fun addEye(
         index: Int,
         colorDifferentiation: Int = 7,
-        visibilityRange: Float = 170f,
+        visibilityRange: Float = 4.25f,
     ) {
         specialTypeIndex[index] = eyeEntity.addEye(colorDifferentiation.toByte(), visibilityRange)
     }
@@ -157,7 +158,7 @@ class CellEntity(
         angle: Float = 0f,
         angleDiff: Float = 0f,
         colorDifferentiation: Int = 7,
-        visibilityRange: Float = 170f,
+        visibilityRange: Float = 4.25f,
         a: Float = 1f,
         b: Float = 0f,
         c: Float = 0f,
@@ -234,14 +235,6 @@ class CellEntity(
         isNeural[cellIndex] = false
         neuronImpulseInput[cellIndex] = 0f
         neuronImpulseOutput[cellIndex] = 0f
-//      TODO это пофиксило проблему, но как будто это лишнее, нужно перепроверить
-//        while (linksAmount[cellIndex] > 0) {
-//            val base = cellIndex * MAX_LINK_AMOUNT
-//            val linkId = links[base + 0]
-//            if (linkId != -1) {
-//                deleteLink(linkId)
-//            }
-//        }
         linksAmount[cellIndex] = 0
         val base = cellIndex * MAX_LINK_AMOUNT
         links.fill(-1, base, base + MAX_LINK_AMOUNT)

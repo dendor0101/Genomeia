@@ -208,7 +208,7 @@ class ChangeRemoveActionDialog(
             !fromCellType.isEye() && toCellType.isEye() -> {
                 divide = divide.copy(
                     colorRecognition = 7,
-                    lengthDirected = 170f
+                    lengthDirected = 4.25f
                 )
             }
         }

@@ -1,36 +1,36 @@
 package io.github.some_example_name.old.cells
 
+import com.badlogic.gdx.graphics.Color
+import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.core.utils.brownColors
 import kotlin.math.cos
 import kotlin.math.sin
 
-class Excreta: Cell(
+class Excreta(cellTypeId: Int): Cell(
     defaultColor = brownColors.first(),
-    cellTypeId = 8,
-    isDirected = true,
-    isNeural = true
+    cellTypeId = cellTypeId,
+    isDirected = true
 ) {
 
-    override fun doOnTick(index: Int, threadId: Int) = with(cellEntity) {
-        if(energy[index] < substrateSettings.data.amountOfFoodEnergy) return
-        val angleRad = angle[index]
-        val cosA = cos(angleRad)
-        val sinA = sin(angleRad)
+    override fun doOnTick(cellIndex: Int, threadId: Int) = with(cellEntity) {
+        if(energy[cellIndex] < substrateSettings.data.amountOfFoodEnergy) return
+        val angleRad = angle[cellIndex]
+        val directionX = cos(angleRad) * 0.05f
+        val directionY = sin(angleRad) * 0.05f
 
-        // Рассчитываем направление движения // We calculate the direction of movement
-        val directionX = cosA * 3f
-        val directionY = sinA * 3f
-        if (directionX.isNaN() || directionY.isNaN()) throw Exception("TODO потом убрать  then remove")
+        val x = getX(cellIndex) + directionX
+        val y = getY(cellIndex) + directionY
+        val radius = 0.1f
+        val color = Color.WHITE.toIntBits()
+        val subType = 0
 
-//          TODO сделать добавление sub particle
-//        SubstanceAdd(
-//            cm.x[index],
-//            cm.y[index],
-//            directionX * 9 - (Random.nextFloat() - 0.5f) * 3f,
-//            directionY * 9 - (Random.nextFloat() - 0.5f) * 3f
-//        )
+        worldCommandsManager.worldCommandBuffer[threadId].push(
+            type = WorldCommandType.ADD_SUBSTANCE,
+            ints = intArrayOf(color, subType),
+            floats = floatArrayOf(x, y, radius)
+        )
 
-        energy[index] -= substrateSettings.data.amountOfFoodEnergy
+        energy[cellIndex] -= substrateSettings.data.amountOfFoodEnergy
     }
 
 }

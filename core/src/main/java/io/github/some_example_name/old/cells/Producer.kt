@@ -1,61 +1,65 @@
 package io.github.some_example_name.old.cells
 
+import com.badlogic.gdx.math.MathUtils
+import io.github.some_example_name.old.commands.WorldCommandType
+import io.github.some_example_name.old.core.DIContainer.zygote
 import io.github.some_example_name.old.core.utils.redColors
-import io.github.some_example_name.old.systems.genomics.genome.Action
-import io.github.some_example_name.old.systems.simulation.SimulationSystem
-import kotlin.collections.get
-import kotlin.collections.set
-import kotlin.compareTo
-import kotlin.text.compareTo
 
-class Producer: Cell(
+class Producer(cellTypeId: Int): Cell(
     defaultColor = redColors[4],
-    cellTypeId = 18,
+    cellTypeId = cellTypeId,
     isDirected = true,
     isNeural = true
 ) {
 
-    override fun doOnTick(index: Int, threadId: Int) = with(cellEntity) {
-        val impulse = neuronImpulseOutput[index]
+    override fun doOnTick(cellIndex: Int, threadId: Int) = with(cellEntity) {
+        val impulse = neuronImpulseOutput[cellIndex]
 
-        neuronImpulseOutput[index] = 0f
-        if(energy[index] < substrateSettings.cellsSettings[cellType[index].toInt()].maxEnergy || impulse < 1) return
+        neuronImpulseOutput[cellIndex] = 0f
+        if(energy[cellIndex] < substrateSettings.cellsSettings[cellType[cellIndex].toInt()].maxEnergy || impulse < 1) return
 
         //TODO Make the impulse increase smoothly from 0 to 1, and have the producer divide at the moment when the impulse equals 1
-//        if (cm.tickRestriction[index] <= 0) {
-//            val organism = cm.organismManager.organisms[cm.organismIndex[index]]
-//            val genome = cm.genomeManager.genomes[organism.genomeIndex]
-//            var counter = 0
-//            genome.genomeStageInstruction.forEach {
-//                counter += it.cellActions.size
-//            }
-//            cm.tickRestriction[index] = (counter * cm.globalSettings.producerRestoreTimeTickCoefficient).toInt()
-//        } else {
-//            cm.tickRestriction[index] --
-//        }
-//
-//        if (cm.tickRestriction[index] != 1) return
+        val organIndex = organIndex[cellIndex]
+        val genomeIndex = organEntity.genomeIndex[organIndex] // TODO сделать выбор sub-genome
+        val genome = genomeManager.genomes[genomeIndex]
+        var counter = 0
+        genome.genomeStageInstruction.forEach {
+            counter += it.cellActions.size
+        }
 
-        //TODO add command to add zygote cell
-//        val action = Action(
-//            id = 0,
-//            angle = 0f,
-//            cellType = 18,
-//            color = getCellColor(18)
-//        )
-//
-//        cm.addCells[threadId].add(
-//            AddCell(
-//                action = action,
-//                parentX = cm.x[index],
-//                parentY = cm.y[index],
-//                parentAngle = cm.angle[index],
-//                parentId = cm.cellGenomeId[index],
-//                parentOrganismId = cm.organismIndex[index],
-//                parentIndex = index
-//            )
-//        )
-        neuronImpulseOutput[index] = 1f
-        energy[index] -= energy[index]
+        val color: Int = zygote.defaultColor.toIntBits()
+        val radius: Float = 0.5f
+        val cellType: Int = zygote.cellTypeId
+        val parentIndex: Int = cellIndex
+        val angle: Float = angle[cellIndex]
+        val angleDiff: Float = 0f
+        val colorDifferentiation: Int = 7
+        val visibilityRange: Float = 4.25f
+        val a: Float = 1f
+        val b: Float = 0f
+        val c: Float = 0f
+        val isSum: Boolean = true
+        val activationFuncType: Int = 0
+        val divideAngle = this.angleDiff[cellIndex] + this.angle[cellIndex]
+        val x = getX(cellIndex) + MathUtils.cos(divideAngle) * 0.05f
+        val y = getY(cellIndex) + MathUtils.sin(divideAngle) * 0.05f
+
+        worldCommandsManager.worldCommandBuffer[threadId].push(
+            type = WorldCommandType.ADD_CELL,
+            booleans = booleanArrayOf(isSum),
+            floats = floatArrayOf(x, y, radius, angle, angleDiff, visibilityRange, a, b, c),
+            ints = intArrayOf(
+                color,
+                0,
+                cellType,
+                organIndex,
+                parentIndex,
+                colorDifferentiation,
+                activationFuncType
+            )
+        )
+
+        neuronImpulseOutput[cellIndex] = 1f
+        energy[cellIndex] -= energy[cellIndex]
     }
 }

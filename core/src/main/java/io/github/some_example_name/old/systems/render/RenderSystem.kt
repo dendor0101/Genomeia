@@ -1,22 +1,22 @@
 package io.github.some_example_name.old.systems.render
 
 import com.badlogic.gdx.Gdx
-import com.badlogic.gdx.graphics.Camera
 import com.badlogic.gdx.graphics.Color
+import com.badlogic.gdx.graphics.OrthographicCamera
 import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Matrix4
+import com.badlogic.gdx.utils.BufferUtils
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
-import io.github.some_example_name.old.entities.NeuralEntity
 import io.github.some_example_name.old.entities.ParticleEntity
-import io.github.some_example_name.old.entities.SimEntity
+import io.github.some_example_name.old.systems.simulation.SimulationData
 import kotlin.math.round
 
 class RenderSystem(
     val tripleBufferManager: TripleBufferManager,
-    val simEntity: SimEntity,
+    val simulationData: SimulationData,
     val cellEntity: CellEntity,
     val linkEntity: LinkEntity,
     val particleEntity: ParticleEntity,
@@ -31,23 +31,53 @@ class RenderSystem(
         shapeRenderer = ShapeRenderer()
     }
 
-    fun drawShader(camera: Camera) {
-        val (currentRead, isNewFrame) = tripleBufferManager.getAndSwapConsumer()
+    @Volatile
+    var isClear = 3
+    val circlesBuffer = BufferUtils.newByteBuffer(250_000 * 16)
+    var maxCircleCount = 0
+
+    fun drawShader(camera: OrthographicCamera) {
+//        val (currentRead, isNewFrame) = tripleBufferManager.getAndSwapConsumer()
+        circlesBuffer.clear()
+        synchronized(particleEntity) {
+            with(particleEntity) {
+                if (isClear == 0) {
+                    if (maxCircleCount < aliveList.size) maxCircleCount = aliveList.size
+                    for (i in 0..<aliveList.size) {
+                        val idx = aliveList.getInt(i)
+                        circlesBuffer.putFloat(x[idx])
+                        circlesBuffer.putFloat(y[idx])
+                        circlesBuffer.putFloat(radius[idx])
+                        circlesBuffer.putInt(color[idx])
+                    }
+                } else {
+                    isClear--
+                    for (i in 0..<maxCircleCount) {
+                        circlesBuffer.putFloat(0f)
+                        circlesBuffer.putFloat(0f)
+                        circlesBuffer.putFloat(0f)
+                        circlesBuffer.putInt(0)
+                    }
+                    println("clear")
+                }
+            }
+        }
+        circlesBuffer.flip()
+
         shaderManager.render(
-            currentRead = currentRead,
+            currentRead = circlesBuffer,
             cameraProjection = camera.combined,
-            isNewFrame = isNewFrame
+            isNewFrame = true,
+            isClear = false
         )
 
-//        // начинаем рисование линий
-//        shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
-//
-//        // цвет линии
-//        shapeRenderer.color = Color.WHITE
-//
-//
-//        shapeRenderer.projectionMatrix = camera.combined
-//
+        //TODO сделать буфер
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
+
+        shapeRenderer.color = Color.GOLD
+
+        shapeRenderer.projectionMatrix = camera.combined
+
 //        for (linkId in 0..linkEntity.lastId) {
 //            if (linkEntity.isAlive[linkId]) {
 //
@@ -59,11 +89,37 @@ class RenderSystem(
 //
 //                val c1 = linkEntity.links1[linkId]
 //                val c2 = linkEntity.links2[linkId]
-//                shapeRenderer.line(cellEntity.getX(c1), cellEntity.getY(c1), cellEntity.getX(c2), cellEntity.getY(c2))
+//                if (cellEntity.isAlive[c1] && cellEntity.isAlive[c2]) {
+//                    shapeRenderer.line(
+//                        cellEntity.getX(c1),
+//                        cellEntity.getY(c1),
+//                        cellEntity.getX(c2),
+//                        cellEntity.getY(c2)
+//                    )
+//                }
 //            }
 //        }
-//
-//        shapeRenderer.end()
+
+        if (simulationData.grabbedCellIndex != -1) {
+            shapeRenderer.circle(
+                cellEntity.getX(simulationData.grabbedCellIndex),
+                cellEntity.getY(simulationData.grabbedCellIndex),
+                0.55f
+            )
+
+            val targetX = cellEntity.getX(simulationData.grabbedCellIndex)
+            val targetY = cellEntity.getY(simulationData.grabbedCellIndex)
+
+            val lerpSpeed = 1f // скорость
+            val delta = Gdx.graphics.deltaTime
+
+            camera.position.x += (targetX - camera.position.x) * lerpSpeed * delta
+            camera.position.y += (targetY - camera.position.y) * lerpSpeed * delta
+
+            camera.update()
+        }
+
+        shapeRenderer.end()
     }
     fun drawTextSimInfo(spriteBatch: SpriteBatch, font: BitmapFont) {
         //TODO тут кстати тоже нужна синхронизация, хоть и не так критично
@@ -81,13 +137,13 @@ class RenderSystem(
             spriteBatch,
             """
                     FPS: ${Gdx.graphics.framesPerSecond}
-                    UPS: ${simEntity.ups}
-                    Update Time: ${round(1e5f / simEntity.ups) / 100f} ms
+                    UPS: ${simulationData.ups}
+                    Update Time: ${round(1e5f / simulationData.ups) / 100f} ms
                     Cells: ${cellEntity.lastId - cellEntity.deadStack.size + 1}
                     Particles: ${particleEntity.lastId - particleEntity.deadStack.size + 1}
                     Links ${linkEntity.lastId - linkEntity.deadStack.size + 1}
-                    NeuronImpulseInput ${if (simEntity.grabbedCell != -1) cellEntity.neuronImpulseInput[simEntity.grabbedCell] else "0.0"}
-                    NeuronImpulseOutput ${if (simEntity.grabbedCell != -1) cellEntity.neuronImpulseOutput[simEntity.grabbedCell] else "0.0"}
+                    NeuronImpulseInput ${if (simulationData.grabbedCellIndex != -1) cellEntity.neuronImpulseInput[simulationData.grabbedCellIndex] else "0.0"}
+                    NeuronImpulseOutput ${if (simulationData.grabbedCellIndex != -1) cellEntity.neuronImpulseOutput[simulationData.grabbedCellIndex] else "0.0"}
                 """.trimIndent(),
             30f,
             140f
@@ -100,3 +156,14 @@ class RenderSystem(
 
     }
 }
+
+data class RenderSpecificDataBuffer(
+    val ups: Int,
+    val cellsAmount: Int,
+    val particleAmount: Int,
+    val linksAmount: Int,
+    val neuronImpulseInput: Int?,
+    val neuronImpulseOutput: Int?,
+    val grabbedCellX: Float?,
+    val grabbedCellY: Float?
+)

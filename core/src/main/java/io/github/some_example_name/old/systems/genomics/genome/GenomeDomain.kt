@@ -3,12 +3,12 @@ package io.github.some_example_name.old.systems.genomics.genome
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.utils.Json
 import com.badlogic.gdx.utils.JsonWriter
-import io.github.some_example_name.old.entities.SimEntity
+import io.github.some_example_name.old.systems.simulation.SimulationData
 
 
 class GenomeManager(
     val genomeJsonReader: GenomeJsonReader = GenomeJsonReader(),
-    val simEntity: SimEntity,
+    val simulationData: SimulationData,
     val isGenomeEditor: Boolean,
     val genomeName: String?
 ) {
@@ -44,7 +44,7 @@ class GenomeManager(
                 val jsonGenomes =
                     jsonGenomesAssets + genomeJsonReader.readAllGenomesFromFolder("user_genomes")
                 genomes.addAll(jsonGenomes.map { it.jsonToDomain() })
-                genomeForEditor = jsonGenomes[simEntity.currentGenomeIndex].jsonToDomain(true)
+                genomeForEditor = jsonGenomes[simulationData.currentGenomeIndex].jsonToDomain(true)
             } else {
                 val genome = genomeJsonReader.readGenomeFromFolder("user_genomes", genomeName, false)
                 genomes.add(genome?.jsonToDomain() ?: newGenome)

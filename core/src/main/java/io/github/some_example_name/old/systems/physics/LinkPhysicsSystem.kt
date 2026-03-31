@@ -56,18 +56,23 @@ class LinkPhysicsSystem(
                 val linkIndex = links[idx]
                 val c1 = links1[linkIndex]
                 val c2 = links2[linkIndex]
-                val otherCellId = if (c1 != cellIndex) c1 else if (c2 != cellIndex) c2 else continue
+                if (!cellEntity.isAlive[c1] || !cellEntity.isAlive[c2]) {
+                    throw Exception("link $linkIndex exist, but some cell is deleted ($c1 $c2)")
+//                    continue
+                }
+
+                val otherCellIndex = if (c1 != cellIndex) c1 else if (c2 != cellIndex) c2 else continue
                 val gridCellAId = getGridId(cellIndex)
-                val gridCellBId = getGridId(otherCellId)
+                val gridCellBId = getGridId(otherCellIndex)
                 if (gridCellAId < gridCellBId) {
                     processLink(linkIndex, threadId)
                 } else if (gridCellAId == gridCellBId) {
                     val yCellA = getY(cellIndex)
-                    val yCellB = getY(otherCellId)
+                    val yCellB = getY(otherCellIndex)
                     if (yCellA < yCellB) {
                         processLink(linkIndex, threadId)
                     } else if (yCellA == yCellB) {
-                        if (getX(cellIndex) < getX(otherCellId)) {
+                        if (getX(cellIndex) < getX(otherCellIndex)) {
                             processLink(linkIndex, threadId)
                         }
                     }

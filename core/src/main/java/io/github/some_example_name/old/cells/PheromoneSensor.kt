@@ -3,18 +3,19 @@ package io.github.some_example_name.old.cells
 import io.github.some_example_name.old.cells.base.activation
 import io.github.some_example_name.old.core.utils.blueColors
 
-class PheromoneSensor : Cell(
+class PheromoneSensor(cellTypeId: Int) : Cell(
     defaultColor = blueColors[2],
-    cellTypeId = 22,
-    isNeural = true
+    cellTypeId = cellTypeId,
+    isNeural = true,
+    isNeuronTransportable = false
 ) {
 
-    override fun doOnTick(index: Int, threadId: Int) = with(cellEntity) {
-        val gridId = getGridId(index)
+    override fun doOnTick(cellIndex: Int, threadId: Int) = with(cellEntity) {
+        val gridId = getGridId(cellIndex)
 
         //TODO PheromoneManager
         //TODO map color
-        val intColor = getColor(index)
+        val intColor = getColor(cellIndex)
         val r = 0
         val g = 0
         val b = 0
@@ -24,9 +25,9 @@ class PheromoneSensor : Cell(
 //            g * pheromoneEntity.pheromoneG[gridId] +
 //            b * pheromoneEntity.pheromoneB[gridId]
 
-        neuronImpulseOutput[index] = activation(index, impulse)
+        neuronImpulseOutput[cellIndex] = activation(cellIndex, impulse)
 
-        energy[index] -= 0.0001f
+        energy[cellIndex] -= 0.0001f
     }
 
 }

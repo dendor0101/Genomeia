@@ -19,7 +19,7 @@ class ParticleEntity(
     var mass = FloatArray(maxAmount)
     var color = IntArray(maxAmount)
     var dragCoefficient = FloatArray(maxAmount) { 0.003f }
-    var effectOnContact = BitSet(maxAmount)
+    var effectOnContact = BooleanArray(maxAmount)
     var cellStiffness = FloatArray(maxAmount) { 0.5f }
     var isCell = BooleanArray(maxAmount) { false }
     var holderEntityIndex = IntArray(maxAmount) { -1 }
@@ -92,7 +92,7 @@ class ParticleEntity(
         mass.fill(0f, 0, bound)
         color.fill(0, 0, bound)
         dragCoefficient.fill(0.03f, 0, bound)
-        effectOnContact.clear()
+        effectOnContact.fill(false, 0, bound)
         cellStiffness.fill(0f, 0, bound)
         isCell.fill(false, 0, bound)
         holderEntityIndex.fill(-1, 0, bound)
@@ -146,8 +146,8 @@ class ParticleEntity(
         }
         run {
             val old = effectOnContact
-            effectOnContact = BitSet(maxAmount)
-            effectOnContact.or(old)
+            effectOnContact = BooleanArray(maxAmount)
+            System.arraycopy(old, 0, effectOnContact, 0, oldMax)
         }
         run {
             val old = cellStiffness

@@ -353,7 +353,7 @@ class MutateActionDialog(
             !fromCellType.isEye() && toCellType.isEye() -> {
                 mutation = mutation?.copy(
                     colorRecognition = 7,
-                    lengthDirected = 170f
+                    lengthDirected = 4.25f
                 )
             }
         }

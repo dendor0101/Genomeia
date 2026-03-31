@@ -1,19 +1,23 @@
 package io.github.some_example_name.old.cells
 
+import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.core.utils.pinkColors
 
 // Dies when it receives an impulse
 // Will be made obsolete by apoptosis
-class Breakaway: Cell(
+class Breakaway(cellTypeId: Int): Cell(
     defaultColor = pinkColors[1],
-    cellTypeId = 19,
+    cellTypeId = cellTypeId,
     isNeural = true
 ) {
 
-    override fun doOnTick(index: Int, threadId: Int) {
-        val impulse = cellEntity.neuronImpulseOutput[index]
+    override fun doOnTick(cellIndex: Int, threadId: Int) {
+        val impulse = cellEntity.neuronImpulseOutput[cellIndex]
         if (impulse > 0) {
-            //killCell(index, threadId)TODO add command to kill cell
+            worldCommandsManager.worldCommandBuffer[threadId].push(
+                type = WorldCommandType.DELETE_CELL,
+                ints = intArrayOf(cellIndex)
+            )
         }
     }
 }

@@ -8,15 +8,16 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-class Vascular : Cell(
+class Vascular(cellTypeId: Int) : Cell(
     defaultColor = yellowColors[3],
-    cellTypeId = 20,
+    cellTypeId = cellTypeId,
     isDirected = true,
     isNeural = true
 ) {
 
-    override fun doOnTick(index: Int, threadId: Int) {
-        TODO("I deleted speed")
+    override fun doOnTick(cellIndex: Int, threadId: Int) {
+        //TODO Deleted speed
+        //TODO add VascularEntity with speed
     }
 
 //    companion object {

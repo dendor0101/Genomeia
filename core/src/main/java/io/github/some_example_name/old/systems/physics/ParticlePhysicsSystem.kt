@@ -1,12 +1,14 @@
 package io.github.some_example_name.old.systems.physics
 
+import io.github.some_example_name.old.cells.Cell
 import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.core.DIContainer.halfChunkHeight
 import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.core.utils.invSqrt
+import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
-import io.github.some_example_name.old.entities.SimEntity
+import io.github.some_example_name.old.systems.simulation.SimulationData
 import kotlin.math.sqrt
 
 class ParticlePhysicsSystem(
@@ -14,8 +16,10 @@ class ParticlePhysicsSystem(
     val gridManager: GridManager,
     val substrateSettings: SubstrateSettings,
     val worldCommandsManager: WorldCommandsManager,
-    val simEntity: SimEntity,
-    val linkEntity: LinkEntity
+    val simulationData: SimulationData,
+    val cellEntity: CellEntity,
+    val linkEntity: LinkEntity,
+    val cellList: List<Cell>
 ) {
 
     val halfChunkHeight2 = halfChunkHeight * halfChunkHeight
@@ -83,8 +87,9 @@ class ParticlePhysicsSystem(
     }
 
     private fun repulse(particleAId: Int, particleBId: Int, threadId: Int) = with(entity) {
-        if (isCell[particleAId] && isCell[particleBId]) {
-            //TODO можно всетаки и не cellIndex класть в linkIndexMap, а particleIndex
+        val isParticleAIsCell = isCell[particleAId]
+        val isParticleBIsCell = isCell[particleBId]
+        if (isParticleAIsCell && isParticleBIsCell) {
             if (linkEntity.linkIndexMap.get(holderEntityIndex[particleAId], holderEntityIndex[particleBId]) != -1) return@with
         }
 
@@ -101,7 +106,30 @@ class ParticlePhysicsSystem(
         val distanceSquared = dx2 + dy2
         if (distanceSquared < radiusSquared) {
             val distance = 1.0f / invSqrt(distanceSquared)
-            if (effectOnContact[particleAId] || effectOnContact[particleBId]) TODO("implement onContact call")
+            if (isParticleAIsCell) {
+                if (effectOnContact[particleAId]) {
+                    val cellAIndex = holderEntityIndex[particleAId]
+                    val cellType = cellEntity.cellType[cellAIndex].toInt()
+                    cellList[cellType].onContact(
+                        cellIndex = cellAIndex,
+                        particleIndexCollided = particleBId,
+                        distance = distance,
+                        threadId = threadId
+                    )
+                }
+            }
+            if (isParticleBIsCell) {
+                if (effectOnContact[particleBId]) {
+                    val cellBIndex = holderEntityIndex[particleBId]
+                    val cellType = cellEntity.cellType[cellBIndex].toInt()
+                    cellList[cellType].onContact(
+                        cellIndex = cellBIndex,
+                        particleIndexCollided = particleAId,
+                        distance = distance,
+                        threadId = threadId
+                    )
+                }
+            }
 
             // Квадратичная зависимость силы
             val cellStrengthAverage = (cellStiffness[particleAId] + cellStiffness[particleBId]) / 2f

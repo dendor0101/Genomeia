@@ -18,28 +18,36 @@ sealed class Cell(
     val description = descriptionBundle?.let { DIContainer.bundle.get(descriptionBundle) } ?: ""
 
 
+    val particleEntity get() = DIContainer.particleEntity
     val cellEntity get() = DIContainer.cellEntity
     val linkEntity get() = DIContainer.linkEntity
-    val simEntity get() = DIContainer.simEntity
+    val simEntity get() = DIContainer.simulationData
     val substrateSettings get() = DIContainer.substrateSettings
-    val commandsManager get() = DIContainer.worldCommandsManager
+    val worldCommandsManager get() = DIContainer.worldCommandsManager
     val organEntity get() = DIContainer.organEntity
     val genomeManager get() = DIContainer.genomeManager
     val pheromoneEntity get() = DIContainer.pheromoneEntity
 
-    open fun onStart(index: Int, threadId: Int) {
+    val gridManager get() = DIContainer.gridManager
+    val organManager get() = DIContainer.organManager
+
+    open fun onStart(cellIndex: Int, threadId: Int) {
 
     }
 
-    open fun doOnTick(index: Int, threadId: Int) {
+    open fun doOnTick(cellIndex: Int, threadId: Int) {
 
     }
 
-    open fun onContact(index: Int, indexCollided: Int, threadId: Int) {
+    open fun onContact(cellIndex: Int, particleIndexCollided: Int, distance: Float, threadId: Int) {
 
     }
 
-    open fun onDie(index: Int, threadId: Int) {
+    open fun onDie(cellIndex: Int) {
+
+    }
+
+    open fun onLinkDeleted(cellIndex: Int, linkIndex: Int, threadId: Int) {
 
     }
 

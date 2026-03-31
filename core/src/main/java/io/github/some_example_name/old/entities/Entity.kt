@@ -9,7 +9,7 @@ abstract class Entity(startMaxAmount: Int) {
 
     var deadStack = IntArrayList(startMaxAmount)
 
-    var isAlive = BitSet(maxAmount)
+    var isAlive = BooleanArray(maxAmount)
     private var generation = IntArray(maxAmount)
     fun getGeneration(index: Int) = generation[index]
 
@@ -61,7 +61,7 @@ abstract class Entity(startMaxAmount: Int) {
         lastId = -1
         deadStack.clear()
         generation.fill(0, 0, cellBound)
-        isAlive.clear()
+        isAlive.fill(false, 0, cellBound)
 
         aliveList.clear()
         positionInAlive.fill(-1, 0, cellBound)
@@ -79,8 +79,8 @@ abstract class Entity(startMaxAmount: Int) {
         }
         run {
             val old = isAlive
-            isAlive = BitSet(maxAmount)
-            isAlive.or(old)
+            isAlive = BooleanArray(maxAmount)
+            System.arraycopy(old, 0, isAlive, 0, oldMax)
         }
         run {
             val old = positionInAlive

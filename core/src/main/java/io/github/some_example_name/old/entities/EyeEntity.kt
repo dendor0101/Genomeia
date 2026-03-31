@@ -5,7 +5,7 @@ class EyeEntity(
 ): Entity(eyeStartMaxAmount) {
 
     var colorDifferentiation = ByteArray(maxAmount) { 7 }
-    var visibilityRange = FloatArray(maxAmount) { 170f }
+    var visibilityRange = FloatArray(maxAmount) { 4.25f }
 
     fun addEye(
         colorDifferentiation: Byte,
@@ -20,7 +20,7 @@ class EyeEntity(
     fun deleteEye(eyeIndex: Int) {
         delete(eyeIndex)
         colorDifferentiation[eyeIndex] = 7
-        visibilityRange[eyeIndex] = 170f
+        visibilityRange[eyeIndex] = 4.25f
     }
 
     override fun onCopy() {
@@ -33,7 +33,7 @@ class EyeEntity(
 
     override fun onClear(bound: Int) {
         colorDifferentiation.fill(7, 0, bound)
-        visibilityRange.fill(170f, 0, bound)
+        visibilityRange.fill(4.25f, 0, bound)
     }
 
     override fun onResize(oldMax: Int) {
@@ -44,7 +44,7 @@ class EyeEntity(
         }
         run {
             val old = visibilityRange
-            visibilityRange = FloatArray(maxAmount) { 170f }
+            visibilityRange = FloatArray(maxAmount) { 4.25f }
             System.arraycopy(old, 0, visibilityRange, 0, oldMax)
         }
     }

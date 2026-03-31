@@ -68,7 +68,7 @@ class MutateManager(
                     worldCommandsManager.worldCommandBuffer[threadId].push(
                         type = WorldCommandType.ADD_EYE,
                         ints = intArrayOf(index, action.colorRecognition ?: 7),
-                        floats = floatArrayOf(action.lengthDirected ?: 170f)
+                        floats = floatArrayOf(action.lengthDirected ?: 4.25f)
                     )
                 }
                 cellType[index] = it.toByte()
@@ -178,7 +178,7 @@ class MutateManager(
                 }
             }
 
-            energy[index] -= energyNecessaryToMutate[index]
+            energy[index] -= energyNecessaryToMutate[index] - 0.7f
         }
     }
 

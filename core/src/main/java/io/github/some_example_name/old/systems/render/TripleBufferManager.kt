@@ -3,88 +3,87 @@ package io.github.some_example_name.old.systems.render
 import io.github.some_example_name.old.entities.ParticleEntity
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicInteger
 
 class TripleBufferManager(
     val particleEntity: ParticleEntity
 ) {
 
     companion object {
-        const val INITIAL_CAPACITY = 50_000          // стартовый размер (в частицах)
-        // Максимум убираем — буфер теперь полностью динамический.
-        // При необходимости можно добавить позже.
+        const val INITIAL_CAPACITY = 50_000
     }
 
-    // Два буфера, но теперь они могут «перерождаться» в больший размер
-    private var bufferA: ByteBuffer = allocateBuffer(INITIAL_CAPACITY)
-    private var bufferB: ByteBuffer = allocateBuffer(INITIAL_CAPACITY)
+    private val buffers = arrayOf(
+        allocateBuffer(INITIAL_CAPACITY).apply { clear(); flip() },  // ← remaining = 0
+        allocateBuffer(INITIAL_CAPACITY).apply { clear(); flip() },
+        allocateBuffer(INITIAL_CAPACITY).apply { clear(); flip() }
+    )
 
-    private val latestBuffer = AtomicReference(bufferA)   // буфер, который видит рендер
-    private var writeBuffer: ByteBuffer = bufferB         // куда пишет симуляция
+    private val latestIndex = AtomicInteger(0)
+    private var producerIndex = 1
+    private var lastReturnedIndex = -1
 
-    private var lastReturnedBuffer: ByteBuffer? = null    // для правильного isNewFrame (только в render thread)
+    private fun allocateBuffer(numParticles: Int): ByteBuffer =
+        ByteBuffer.allocateDirect(numParticles * 16).order(ByteOrder.nativeOrder())
 
-    /**
-     * Создаёт прямой ByteBuffer нужного размера (16 байт на частицу).
-     */
-    private fun allocateBuffer(numParticles: Int): ByteBuffer {
-        return ByteBuffer.allocateDirect(numParticles * 16).order(ByteOrder.nativeOrder())
-    }
-
-    /**
-     * Увеличивает writeBuffer, если текущей ёмкости не хватает.
-     * Рост — ×1.2 каждый раз, пока не хватит (экспоненциальный рост при резком увеличении частиц).
-     */
     private fun ensureCapacityForWrite(neededParticles: Int) {
-        val currentCapacity = writeBuffer.capacity() / 16
+        val buf = buffers[producerIndex]
+        val currentCapacity = buf.capacity() / 16
         if (neededParticles <= currentCapacity) return
 
-        // Вычисляем новый размер с ростом 1.2×
         var newCapacity = currentCapacity.toDouble()
         do {
             newCapacity *= 1.5
         } while (newCapacity < neededParticles)
 
         val finalCapacity = newCapacity.toInt().coerceAtLeast(neededParticles)
-
-        // Заменяем writeBuffer на новый больший буфер
-        writeBuffer = allocateBuffer(finalCapacity)
+        buffers[producerIndex] = allocateBuffer(finalCapacity)
     }
 
-    private fun putBufferData() {
+    private fun putBufferData(clear: Boolean) {
         val needed = particleEntity.lastId + 1
-
-        // ← Здесь происходит вся динамика размера
         ensureCapacityForWrite(needed)
 
-        writeBuffer.clear()
+        val target = buffers[producerIndex]
+        target.clear()
+
         with(particleEntity) {
-            for (i in 0..<aliveList.size) {
-                val aliveParticleIndex = aliveList.getInt(i)
-                writeBuffer.putFloat(x[aliveParticleIndex])
-                writeBuffer.putFloat(y[aliveParticleIndex])
-                writeBuffer.putFloat(radius[aliveParticleIndex])
-                writeBuffer.putInt(color[aliveParticleIndex])
+            if (!clear) {
+                for (i in 0..<aliveList.size) {
+                    val idx = aliveList.getInt(i)
+                    target.putFloat(x[idx])
+                    target.putFloat(y[idx])
+                    target.putFloat(radius[idx])
+                    target.putInt(color[idx])
+                }
+            } else {
+                val currentCapacity = buffers[producerIndex].capacity() / 16
+                for (i in 0..<currentCapacity) {
+                    target.putFloat(0f)
+                    target.putFloat(0f)
+                    target.putFloat(0.5f)
+                    target.putInt(0)
+                }
             }
         }
-        writeBuffer.flip()
+        target.flip()
     }
 
-    fun updateAndCommitProducer() {
-        putBufferData()
+    fun updateAndCommitProducer(clear: Boolean) {
+        putBufferData(clear)
 
-        // Публикуем новый буфер и забираем старый для следующей записи
-        val old = latestBuffer.getAndSet(writeBuffer)
-        writeBuffer = old
+        val oldLatestIndex = latestIndex.getAndSet(producerIndex)
+        // Теперь producerIndex = третий буфер (ни latest, ни тот, который может читать render)
+        producerIndex = 3 - producerIndex - oldLatestIndex
     }
 
-    // Вызывается каждый кадр рендера
     fun getAndSwapConsumer(): Pair<ByteBuffer, Boolean> {
-        val currentLatest = latestBuffer.get()
+        val currentLatestIndex = latestIndex.get()
+        val currentLatest = buffers[currentLatestIndex]
 
-        val isNewFrame = currentLatest !== lastReturnedBuffer
+        val isNewFrame = currentLatestIndex != lastReturnedIndex
         if (isNewFrame) {
-            lastReturnedBuffer = currentLatest
+            lastReturnedIndex = currentLatestIndex
         }
 
         currentLatest.rewind()

@@ -10,11 +10,12 @@ import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
-import io.github.some_example_name.old.entities.SimEntity
+import io.github.some_example_name.old.systems.simulation.SimulationData
+import io.github.some_example_name.old.entities.SubstancesEntity
 import io.github.some_example_name.old.systems.genomics.OrganManager
 import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.physics.GridManager
-
+import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem.Companion.MAX_LINK_AMOUNT
 
 class WorldCommandsManager(
     val gridManager: GridManager,
@@ -25,8 +26,9 @@ class WorldCommandsManager(
     val particleEntity: ParticleEntity,
     val substrateSettings: SubstrateSettings,
     val genomeManager: GenomeManager,
-    val simEntity: SimEntity,
-    val cellList: List<Cell>
+    val simulationData: SimulationData,
+    val cellList: List<Cell>,
+    val substancesEntity: SubstancesEntity
 ) {
     val worldCommandBuffer = Array(threadCount) { WorldCommandBuffer() }
     val worldCommandEndBuffer = Array(threadCount) { WorldCommandBuffer(100) }
@@ -63,18 +65,23 @@ class WorldCommandsManager(
                             lastAddedCellIndexBuffer[threadId]
                         } else ints[0]
 
-                        linkEntity.addLink(
-                            cellIndex = cellIndex,
-                            otherCellIndex = ints[1],
-                            linksLength = floats[0],
-                            degreeOfShortening = floats[1],
-                            isStickyLink = booleans[0],
-                            isNeuronLink = booleans[1],
-                            isLink1NeuralDirected = booleans[2]
-                        )
+                        val otherCellIndex = ints[1]
+
+                        if (cellEntity.linksAmount[cellIndex] < MAX_LINK_AMOUNT
+                            && cellEntity.linksAmount[otherCellIndex] < MAX_LINK_AMOUNT) {
+                            linkEntity.addLink(
+                                cellIndex = cellIndex,
+                                otherCellIndex = otherCellIndex,
+                                linksLength = floats[0],
+                                degreeOfShortening = floats[1],
+                                isStickyLink = booleans[0],
+                                isNeuronLink = booleans[1],
+                                isLink1NeuralDirected = booleans[2]
+                            )
+                        }
                     }
                     WorldCommandType.DELETE_LINK -> {
-                        println("DELETE_LINK")
+                        println("DELETE_LINK ${ints[0]}")
                         linkEntity.deleteLink(linkIndex = ints[0])
                     }
                     WorldCommandType.ADD_CELL -> {
@@ -129,10 +136,27 @@ class WorldCommandsManager(
                         organEntity.mutatedTimes[ints[0]]--
                     }
                     WorldCommandType.DELETE_CELL -> {
-                        println("DELETE_CELL")
                         val cellIndex = ints[0]
+                        println("DELETE_CELL $cellIndex")
+                        substancesEntity.addSubstance(
+                            x = cellEntity.getX(cellIndex),
+                            y = cellEntity.getY(cellIndex),
+                            color = Color.WHITE.toIntBits(),
+                            radius = 0.1f,
+                            subType = 0,
+                        )
                         organManager.cellDeleted(cellIndex)
+
+                        while (cellEntity.linksAmount[cellIndex] > 0) {
+                            val base = cellIndex * MAX_LINK_AMOUNT
+                            val linkIndex = cellEntity.links[base]
+                            if (linkIndex != -1) {
+                                linkEntity.deleteLink(linkIndex)
+                            }
+                        }
+
                         cellEntity.deleteCell(cellIndex)
+                        cellList[cellEntity.cellType[cellIndex].toInt()].onDie(cellIndex)
                     }
                     WorldCommandType.DELETE_NEURAL -> {
                         cellEntity.deleteNeural(ints[0])
@@ -170,6 +194,20 @@ class WorldCommandsManager(
                     WorldCommandType.DELETE_ORGAN -> {
                         //TODO DELETE_ORGAN
                         //TODO подумать все ли нормально будет с organIndexCellIdMapIndex
+                    }
+                    WorldCommandType.ADD_SUBSTANCE -> {
+                        substancesEntity.addSubstance(
+                            x = floats[0],
+                            y = floats[1],
+                            color = ints[0],
+                            radius = floats[2],
+                            subType = ints[1].toByte(),
+                        )
+                    }
+                    WorldCommandType.DELETE_SUBSTANCE -> {
+                        substancesEntity.deleteSubstance(
+                            subIndex = ints[0],
+                        )
                     }
                     else -> {}
                 }

@@ -64,7 +64,7 @@ class CellSystem(
             neuronImpulseOutput[cellIndex] = neuronImpulseInput[cellIndex]
         }
 
-        cellList[cellType[cellIndex].toInt()].doOnTick(index = cellIndex, threadId = threadId)
+        cellList[cellType[cellIndex].toInt()].doOnTick(cellIndex = cellIndex, threadId = threadId)
 
         if (isNeural) {
             neuronImpulseInput[cellIndex] = if (getIsSum(cellIndex)) 0f else 1f
@@ -72,15 +72,15 @@ class CellSystem(
             neuronImpulseInput[cellIndex] = 0f
         }
 
-        genomicTransformations(cellIndex, threadId)
-        processCellAngle(cellIndex)
-
-        if (energy[cellIndex] <= 0f) {
+        if (energy[cellIndex] < 0f) {
             worldCommandsManager.worldCommandBuffer[threadId].push(
                 type = WorldCommandType.DELETE_CELL,
                 ints = intArrayOf(cellIndex)
             )
         }
+
+        genomicTransformations(cellIndex, threadId)
+        processCellAngle(cellIndex)
     }
 
     //TODO возможно это можно через сами линки обрабатывать
@@ -117,7 +117,7 @@ class CellSystem(
 
                 if (isDivideNotNull) {
                     //TODO Make a more accurate energy calculation
-                    energyNecessaryToDivide[cellIndex] = 2.5f
+                    energyNecessaryToDivide[cellIndex] = 3.0f
                     worldCommandsManager.worldCommandBuffer[threadId].push(
                         type = WorldCommandType.DIVIDE_ALIVE_CELL_ACTION_COUNTER,
                         intArrayOf(organIndex)
@@ -126,7 +126,7 @@ class CellSystem(
 
                 if (isMutateNotNull) {
                     //TODO Make a more accurate energy calculation
-                    energyNecessaryToMutate[cellIndex] = 1.2f
+                    energyNecessaryToMutate[cellIndex] = 2.0f
                     worldCommandsManager.worldCommandBuffer[threadId].push(
                         type = WorldCommandType.MUTATE_ALIVE_CELL_ACTION_COUNTER,
                         intArrayOf(organIndex)

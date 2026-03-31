@@ -14,7 +14,7 @@ import io.github.some_example_name.old.entities.NeuralEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.entities.PheromoneEntity
-import io.github.some_example_name.old.entities.SimEntity
+import io.github.some_example_name.old.systems.simulation.SimulationData
 import io.github.some_example_name.old.entities.SubstancesEntity
 import io.github.some_example_name.old.systems.genomics.CellSystem
 import io.github.some_example_name.old.systems.genomics.DivideManager
@@ -57,8 +57,13 @@ object DIContainer {
         println("thread count: $heightMultiplier")
     }
 
+    val gridManager = GridManager(
+        gridWidth = gridWith,
+        gridHeight = gridHeight
+    )
     private val cellBuilder = CellBuilder()
     val cellList = cellBuilder.instances
+    val zygote = cellBuilder.zygote
 
     val json by lazy { Json() }
     val bundle: I18NBundle by lazy {
@@ -68,14 +73,10 @@ object DIContainer {
         )
     }
 
-    val gridManager = GridManager(
-        gridWidth = gridWith,
-        gridHeight = gridHeight
-    )
     val organEntity = OrganEntity(
         organStartMaxAmount = 400
     )
-    val simEntity = SimEntity()
+    val simulationData = SimulationData()
     val particleEntity = ParticleEntity(
         particlesStartMaxAmount = 120_000,
         gridManager = gridManager
@@ -91,7 +92,7 @@ object DIContainer {
     val cellEntity = CellEntity(
         cellsStartMaxAmount = 10_000,
         particleEntity = particleEntity,
-        simEntity = simEntity,
+        simulationData = simulationData,
         substrateSettings = substrateSettings,
         cellList = cellList,
         neuralEntity = neuralEntity,
@@ -104,11 +105,15 @@ object DIContainer {
     val pheromoneEntity = PheromoneEntity(
         gridManager = gridManager
     )
-    val substancesEntity = SubstancesEntity()
+    val substancesEntity = SubstancesEntity(
+        startMaxAmount = 5_000,
+        particleEntity = particleEntity,
+        substrateSettings = substrateSettings
+    )
     val genomeJsonReader = GenomeJsonReader()
     val genomeManager = GenomeManager(
         genomeJsonReader = genomeJsonReader,
-        simEntity = simEntity,
+        simulationData = simulationData,
         isGenomeEditor = false,
         genomeName = null
     )
@@ -127,8 +132,9 @@ object DIContainer {
         particleEntity = particleEntity,
         substrateSettings = substrateSettings,
         genomeManager = genomeManager,
-        simEntity = simEntity,
-        cellList = cellList
+        simulationData = simulationData,
+        cellList = cellList,
+        substancesEntity = substancesEntity
     )
 
     val particlePhysicsSystem = ParticlePhysicsSystem(
@@ -136,12 +142,14 @@ object DIContainer {
         gridManager = gridManager,
         substrateSettings = substrateSettings,
         worldCommandsManager = worldCommandsManager,
-        simEntity = simEntity,
-        linkEntity = linkEntity
+        simulationData = simulationData,
+        linkEntity = linkEntity,
+        cellList = cellList,
+        cellEntity = cellEntity
     )
 
     val threadManager = ThreadManager(
-        simEntity = simEntity
+        simulationData = simulationData
     )
 
     val tripleBufferManager = TripleBufferManager(
@@ -159,7 +167,7 @@ object DIContainer {
 
     val renderSystem = RenderSystem(
         tripleBufferManager = tripleBufferManager,
-        simEntity = simEntity,
+        simulationData = simulationData,
         cellEntity = cellEntity,
         linkEntity = linkEntity,
         shaderManager = shaderManager,
@@ -206,7 +214,11 @@ object DIContainer {
         organEntity = organEntity,
         cellEntity = cellEntity,
         genomeManager = genomeManager,
-        cellList = cellList
+        cellList = cellList,
+        simulationData = simulationData,
+        gridManager = gridManager,
+        particleEntity = particleEntity,
+        zygote = zygote
     )
 
     val simulationSystem by lazy {
@@ -225,10 +237,12 @@ object DIContainer {
             genomeManager = genomeManager,
             particlePhysicsSystem = particlePhysicsSystem,
             linkPhysicsSystem = linkPhysicsSystem,
-            simEntity = simEntity,
+            simulationData = simulationData,
             tripleBufferManager = tripleBufferManager,
             cellSystem = cellSystem,
-            userCommandManager = userCommandManager
+            userCommandManager = userCommandManager,
+            shaderManager = shaderManager,
+            renderSystem = renderSystem
         )
     }
 }

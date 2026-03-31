@@ -53,7 +53,7 @@ class DivideManager(
                 val angle: Float = divideAngle
                 val angleDiff: Float = action.angleDirected ?: 0f
                 val colorDifferentiation: Int = action.colorRecognition ?: 7
-                val visibilityRange: Float = action.lengthDirected ?: 170f
+                val visibilityRange: Float = action.lengthDirected ?: 4.25f
                 val a: Float = action.a ?: 1f
                 val b: Float = action.b ?: 0f
                 val c: Float = action.c ?: 0f
@@ -138,7 +138,7 @@ class DivideManager(
                 angleDiff[index] = angle[index] + PI.toFloat() - (action.angle ?: return)
             }
 
-            energy[index] -= energyNecessaryToDivide[index]
+            energy[index] -= energyNecessaryToDivide[index] - 0.7f
         }
     }
 

@@ -3,22 +3,23 @@ package io.github.some_example_name.old.cells
 import io.github.some_example_name.old.cells.base.activation
 import io.github.some_example_name.old.core.utils.skyBlueColors
 
-class Controller: Cell(
+class Controller(cellTypeId: Int): Cell(
     defaultColor = skyBlueColors.last(),
-    cellTypeId = 15,
-    isNeural = true
+    cellTypeId = cellTypeId,
+    isNeural = true,
+    isNeuronTransportable = false
 ) {
     //TODO PC: WASD ↑←↓→ 1234567890 (SPACE)
     //TODO smartphone: ↑←↓→ XYAB
 
-    override fun doOnTick(index: Int, threadId: Int) = with(cellEntity) {
+    override fun doOnTick(cellIndex: Int, threadId: Int) = with(cellEntity) {
         //TODO сделать назначение клавиш на пк и добавление кнопок на телефонах
-        val keyIndex = simEntity.controllerIndexesLol[cellGenomeId[index]] ?: return
+        val keyIndex = simulationData.controllerIndexesLol[cellGenomeId[cellIndex]] ?: return
         if (keyIndex) {
-            neuronImpulseOutput[index] = activation(index, 1f)
+            neuronImpulseOutput[cellIndex] = activation(cellIndex, 1f)
         } else {
-            neuronImpulseOutput[index] = 0f
+            neuronImpulseOutput[cellIndex] = 0f
         }
-        energy[index] -= substrateSettings.cellsSettings[cellType[index].toInt()].energyActionCost
+        energy[cellIndex] -= substrateSettings.cellsSettings[cellType[cellIndex].toInt()].energyActionCost
     }
 }

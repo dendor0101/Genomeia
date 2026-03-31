@@ -4,14 +4,13 @@ import io.github.some_example_name.old.core.DIContainer.chunkSize
 import io.github.some_example_name.old.core.DIContainer.gridSize
 import io.github.some_example_name.old.core.DIContainer.threadCount
 import io.github.some_example_name.old.core.DIContainer.totalChunks
-import io.github.some_example_name.old.entities.SimEntity
 import io.github.some_example_name.old.systems.simulation.SimulationSystem.Companion.DELTA_SIM_TICK_TIME
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 
 class ThreadManager(
-    val simEntity: SimEntity
+    val simulationData: SimulationData
 ) {
 
     val executor = Executors.newFixedThreadPool(threadCount)
@@ -45,13 +44,13 @@ class ThreadManager(
 
         try {
             while (isRunning) {
-                if (simEntity.isPlay) {
+                if (simulationData.isPlay) {
                     val currentTime = System.nanoTime()
                     var frameTime = (currentTime - lastTime) / 1_000_000_000.0
                     lastTime = currentTime
 
                     // Сброс при выходе из maxSpeed // Reset when exiting maxSpeed
-                    if (wasMaxSpeed && !simEntity.maxSpeed) {
+                    if (wasMaxSpeed && !simulationData.maxSpeed) {
                         accumulator = 0.0
                         frameTime = 0.0
                         wasMaxSpeed = false
@@ -60,7 +59,7 @@ class ThreadManager(
                     val clampedFrameTime = minOf(frameTime, 0.25)
                     accumulator += clampedFrameTime
 
-                    if (simEntity.maxSpeed) {
+                    if (simulationData.maxSpeed) {
                         wasMaxSpeed = true
                         onUpdateTick.invoke()
                         updatesThisSecond++
@@ -94,7 +93,7 @@ class ThreadManager(
                     // === UPS вывод каждые 1 сек === UPS output every 1 sec ===
                     val now = System.nanoTime()
                     if ((now - lastUpsTime) >= 1_000_000_000L) {
-                        simEntity.ups = updatesThisSecond
+                        simulationData.ups = updatesThisSecond
                         updatesThisSecond = 0
                         lastUpsTime = now
                     }

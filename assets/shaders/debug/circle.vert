@@ -1,25 +1,57 @@
 #version 320 es
 precision highp float;
+
 layout(location = 0) in vec2 a_position;
 
 struct Circle {
     vec2 pos;
     float size;
-    uint color; // packed RGBA
+    uint color;
 };
 
-layout(std430, binding = 0) buffer Circles {
-    Circle circles[];
+layout(std430, binding = 0) buffer CirclesA {
+    Circle circlesA[];
 };
 
-out vec2 v_texCoord;
-out vec4 v_color;
+layout(std430, binding = 1) buffer CirclesB {
+    Circle circlesB[];
+};
+
 uniform mat4 u_projTrans;
+uniform uint u_currentBuffer;
+
+out vec2 ex_Quad;
+flat out vec2 ex_Centroid;
+flat out vec2 ex_Velocity;
+flat out vec3 ex_Color;
+flat out float ex_R;
+flat out float ex_R_2;
+
 void main() {
-    int instID = gl_InstanceID;
-    Circle c = circles[instID];
-    vec2 offsetPos = a_position * c.size + c.pos;
-    v_texCoord = a_position * 0.5 + 0.5;
-    v_color = unpackUnorm4x8(c.color);
-    gl_Position = u_projTrans * vec4(offsetPos, 0.0, 1.0);
+    int id = gl_InstanceID;
+
+    Circle curr;
+    Circle prev;
+
+    if (u_currentBuffer == 0u) {
+        curr = circlesA[id];
+        prev = circlesB[id];
+    } else {
+        curr = circlesB[id];
+        prev = circlesA[id];
+    }
+
+    vec2 velocity = curr.pos - prev.pos;
+
+    vec2 worldPos = a_position * curr.size + curr.pos;
+
+    ex_Quad = worldPos;
+    ex_Centroid = curr.pos;
+    ex_Velocity = velocity;
+    ex_Color = unpackUnorm4x8(curr.color).rgb;
+
+    ex_R = curr.size;
+    ex_R_2 = curr.size * curr.size;
+
+    gl_Position = u_projTrans * vec4(worldPos, 0.0, 1.0);
 }

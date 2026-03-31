@@ -9,7 +9,6 @@ import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.entities.PheromoneEntity
-import io.github.some_example_name.old.entities.SimEntity
 import io.github.some_example_name.old.entities.SubstancesEntity
 import io.github.some_example_name.old.systems.genomics.CellSystem
 import io.github.some_example_name.old.systems.genomics.OrganManager
@@ -17,6 +16,8 @@ import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.physics.GridManager
 import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem
 import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem
+import io.github.some_example_name.old.systems.render.RenderSystem
+import io.github.some_example_name.old.systems.render.ShaderManager
 import io.github.some_example_name.old.systems.render.TripleBufferManager
 
 class SimulationSystem(
@@ -34,10 +35,12 @@ class SimulationSystem(
     val genomeManager: GenomeManager,
     val particlePhysicsSystem: ParticlePhysicsSystem,
     val linkPhysicsSystem: LinkPhysicsSystem,
-    val simEntity: SimEntity,
+    val simulationData: SimulationData,
     val tripleBufferManager: TripleBufferManager,
     val cellSystem: CellSystem,
-    val userCommandManager: UserCommandManager
+    val userCommandManager: UserCommandManager,
+    val shaderManager: ShaderManager,
+    val renderSystem: RenderSystem
 ) {
 
     val simulationThread = Thread { threadManager.runUpdateLoop { updateTick() } }
@@ -50,25 +53,28 @@ class SimulationSystem(
     }
 
     fun updateTick() {
-        if (simEntity.isFinish) {
+        if (simulationData.isFinish) {
             dispose()
         }
-        if (simEntity.isRestart) {
+        if (simulationData.isRestart) {
             restartSim()
         }
 
-        simEntity.tickCounter++
-        simEntity.timeSimulation += DELTA_SIM_TICK_TIME
+        simulationData.tickCounter++
+        simulationData.timeSimulation += DELTA_SIM_TICK_TIME
 
         processParticleCollision()
         linkPhysicsSystem.iterateLinks()
         cellSystem.iterateCell()
 
-        arrangementOfPositionsInTheGrid()
-        tripleBufferManager.updateAndCommitProducer()
+        synchronized(particleEntity) {
+            arrangementOfPositionsInTheGrid()
+        }
+
         worldCommandsManager.executingCommandsFromTheWorld()
         organManager.performOrgansNextStage()
         userCommandManager.processingCommandsFromUser()
+//        tripleBufferManager.updateAndCommitProducer(false)
     }
 
     fun processParticleCollision() {
@@ -122,13 +128,14 @@ class SimulationSystem(
         organEntity.clear()
         particleEntity.clear()
         substancesEntity.clear()
-        simEntity.clear()
+        simulationData.clear()
         organManager.clear()
+        renderSystem.isClear = 3
     }
 
     private fun restartSim() {
         dispose()
-        simEntity.isRestart = false
+        simulationData.isRestart = false
     }
 
     companion object {

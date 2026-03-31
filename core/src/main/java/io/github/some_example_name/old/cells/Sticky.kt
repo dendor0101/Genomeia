@@ -1,54 +1,66 @@
 package io.github.some_example_name.old.cells
 
 import io.github.some_example_name.old.cells.base.activation
+import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.core.utils.pinkColors
-import io.github.some_example_name.old.systems.simulation.SimulationSystem
-import kotlin.collections.get
+import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem.Companion.MAX_LINK_AMOUNT
 
-class Sticky: Cell(
+class Sticky(cellTypeId: Int) : Cell(
     defaultColor = pinkColors[3],
-    cellTypeId = 10,
-    isNeural = true
+    cellTypeId = cellTypeId,
+    isNeural = true,
+    effectOnContact = true
 ) {
 
-    override fun onContact(index: Int, indexCollided: Int, threadId: Int) = with(cellEntity) {
-        if (cellType[index].toInt() == 11 && activation(index, neuronImpulseInput[index]) < 1f) {
-//            addStickyLink(id, collidedId, distance, threadId)
-//            addLinks[threadId].add(
-//                AddLink(
-//                    cellIndex = cellId,
-//                    otherCellIndex = otherCellId,
-//                    linksLength = distance,
-//                    degreeOfShortening = 1f,
-//                    isStickyLink = true,
-//                    isNeuronLink = false,
-//                    isLink1NeuralDirected = false
-//                )
-//            )
-//            commandsManager.addLinks
+    //TODO при -1 сброс всех StickyLink, при 0 ничего нового не добавляется и не удаляется, а при 1 создаются новые линки
+
+    override fun onContact(
+        cellIndex: Int,
+        particleIndexCollided: Int,
+        distance: Float,
+        threadId: Int
+    ) = with(cellEntity) {
+        if (activation(cellIndex, neuronImpulseInput[cellIndex]) < 1f) {
+
+            val cellIndex: Int = cellIndex
+            val otherCellIndex: Int = particleEntity.holderEntityIndex[particleIndexCollided]
+            val linksLength: Float = distance
+            val degreeOfShortening: Float = 1f
+            val isStickyLink = true
+            val isNeuronLink = false
+            val isLink1NeuralDirected = false
+
+            worldCommandsManager.worldCommandBuffer[threadId].push(
+                type = WorldCommandType.ADD_LINK,
+                booleans = booleanArrayOf(
+                    isStickyLink,
+                    isNeuronLink,
+                    isLink1NeuralDirected
+                ),
+                floats = floatArrayOf(linksLength, degreeOfShortening),
+                ints = intArrayOf(cellIndex, otherCellIndex)
+            )
             return
         }
     }
 
-    override fun doOnTick(index: Int, threadId: Int) {
-//        TODO
-//    if (isStickyLink[linkId] && !isNeuronLink[linkId]) {
-//        if (cellType[linkCell1] == 11 && activation(
-//                this,
-//                linkCell2,
-//                neuronImpulseOutput[linkCell2]
-//            ) >= 1
-//        ) {
-//            addToDeleteList(threadId, linkId)
-//        } else if (cellType[linkCell2] == 11 && activation(
-//                this,
-//                linkCell2,
-//                neuronImpulseOutput[linkCell2]
-//            ) >= 1
-//        ) {
-//            addToDeleteList(threadId, linkId)
-//        }
-//    }
+    override fun doOnTick(cellIndex: Int, threadId: Int) = with(cellEntity) {
+        if (neuronImpulseOutput[cellIndex] >= 1) {
+            val base = cellIndex * MAX_LINK_AMOUNT
+            val amount = linksAmount[cellIndex]
+            if (amount == 0) return
+
+            for (i in 0 until amount) {
+                val idx = base + i
+                val linkIndex = links[idx]
+                if (linkEntity.isStickyLink[linkIndex]) {
+                    worldCommandsManager.worldCommandBuffer[threadId].push(
+                        type = WorldCommandType.DELETE_LINK,
+                        ints = intArrayOf(linkIndex)
+                    )
+                }
+            }
+        }
     }
 
 }

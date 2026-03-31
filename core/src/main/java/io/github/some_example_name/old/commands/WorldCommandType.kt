@@ -17,8 +17,13 @@ enum class WorldCommandType(val intParamsCount: Int, val floatParamsCount: Int, 
         booleanParamsCount = 2
     ),
     ADD_SUBSTANCE(
-        intParamsCount = 0,
-        floatParamsCount = 4,
+        intParamsCount = 2, //color, subType
+        floatParamsCount = 3, //x, y, radius
+        booleanParamsCount = 0
+    ),
+    DELETE_SUBSTANCE(
+        intParamsCount = 1,
+        floatParamsCount = 0,
         booleanParamsCount = 0
     ),
     ADD_PARTICLE(
