@@ -22,7 +22,7 @@ enum class WorldCommandType(val intParamsCount: Int, val floatParamsCount: Int, 
         booleanParamsCount = 0
     ),
     DELETE_SUBSTANCE(
-        intParamsCount = 1,
+        intParamsCount = 2,
         floatParamsCount = 0,
         booleanParamsCount = 0
     ),
@@ -37,7 +37,7 @@ enum class WorldCommandType(val intParamsCount: Int, val floatParamsCount: Int, 
         booleanParamsCount = 0
     ),
     DELETE_ORGAN(
-        intParamsCount = 1,
+        intParamsCount = 2,
         floatParamsCount = 0,
         booleanParamsCount = 0
     ),
@@ -51,18 +51,18 @@ enum class WorldCommandType(val intParamsCount: Int, val floatParamsCount: Int, 
         floatParamsCount = 0,
         booleanParamsCount = 0
     ),
-    DELETE_CELL( // cellIndex
-        intParamsCount = 1,
+    DELETE_CELL( // cellIndex, entityGeneration
+        intParamsCount = 2,
         floatParamsCount = 0,
         booleanParamsCount = 0
     ),
     DELETE_LINK( // linkIndex
-        intParamsCount = 1,
+        intParamsCount = 2,
         floatParamsCount = 0,
         booleanParamsCount = 0
     ),
     DELETE_PARTICLE( // particleIndex
-        intParamsCount = 1,
+        intParamsCount = 2,
         floatParamsCount = 0,
         booleanParamsCount = 0
     ),
@@ -86,7 +86,7 @@ enum class WorldCommandType(val intParamsCount: Int, val floatParamsCount: Int, 
         booleanParamsCount = 0
     ),
     DELETE_NEURAL(
-        intParamsCount = 1,
+        intParamsCount = 2,
         floatParamsCount = 0,
         booleanParamsCount = 0
     ),
@@ -96,13 +96,23 @@ enum class WorldCommandType(val intParamsCount: Int, val floatParamsCount: Int, 
         booleanParamsCount = 1
     ),
     DELETE_EYE(
-        intParamsCount = 1,
+        intParamsCount = 2,
         floatParamsCount = 0,
         booleanParamsCount = 0
     ),
     ADD_EYE(
         intParamsCount = 2,
         floatParamsCount = 1,
+        booleanParamsCount = 0
+    ),
+    DELETE_TAIL(
+        intParamsCount = 2,
+        floatParamsCount = 0,
+        booleanParamsCount = 0
+    ),
+    ADD_TAIL(
+        intParamsCount = 1,
+        floatParamsCount = 0,
         booleanParamsCount = 0
     );
 

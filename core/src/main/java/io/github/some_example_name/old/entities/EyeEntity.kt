@@ -24,28 +24,20 @@ class EyeEntity(
     }
 
     override fun onCopy() {
-        TODO("Not yet implemented")
+
     }
 
     override fun onPaste() {
-        TODO("Not yet implemented")
+
     }
 
     override fun onClear(bound: Int) {
-        colorDifferentiation.fill(7, 0, bound)
-        visibilityRange.fill(4.25f, 0, bound)
+        colorDifferentiation.clear(7)
+        visibilityRange.clear(4.25f)
     }
 
     override fun onResize(oldMax: Int) {
-        run {
-            val old = colorDifferentiation
-            colorDifferentiation = ByteArray(maxAmount) { 7 }
-            System.arraycopy(old, 0, colorDifferentiation, 0, oldMax)
-        }
-        run {
-            val old = visibilityRange
-            visibilityRange = FloatArray(maxAmount) { 4.25f }
-            System.arraycopy(old, 0, visibilityRange, 0, oldMax)
-        }
+        colorDifferentiation = colorDifferentiation.resize(7)
+        visibilityRange = visibilityRange.resize(4.25f)
     }
 }

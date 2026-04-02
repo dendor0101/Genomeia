@@ -18,7 +18,7 @@ class Sucker(cellTypeId: Int) : Cell(
 
                 worldCommandsManager.worldCommandBuffer[threadId].push(
                     type = WorldCommandType.DELETE_SUBSTANCE,
-                    ints = intArrayOf(collidedSubIndex)
+                    ints = intArrayOf(collidedSubIndex, substancesEntity.getGeneration(collidedSubIndex))
                 )
 
                 cellEntity.energy[cellIndex] += substrateSettings.data.amountOfFoodEnergy

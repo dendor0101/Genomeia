@@ -21,7 +21,7 @@ class Excreta(cellTypeId: Int): Cell(
         val x = getX(cellIndex) + directionX
         val y = getY(cellIndex) + directionY
         val radius = 0.1f
-        val color = Color.WHITE.toIntBits()
+        val color = getColor(cellIndex)//Color.WHITE.toIntBits()
         val subType = 0
 
         worldCommandsManager.worldCommandBuffer[threadId].push(

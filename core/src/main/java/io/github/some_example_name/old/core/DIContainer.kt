@@ -4,7 +4,7 @@ import com.badlogic.gdx.Application
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.utils.I18NBundle
 import com.badlogic.gdx.utils.Json
-import io.github.some_example_name.old.cells.base.CellBuilder
+import io.github.some_example_name.old.cells.base.CellListBuilder
 import io.github.some_example_name.old.commands.UserCommandManager
 import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.entities.CellEntity
@@ -14,8 +14,11 @@ import io.github.some_example_name.old.entities.NeuralEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.entities.PheromoneEntity
+import io.github.some_example_name.old.entities.SpecialEntity
+import io.github.some_example_name.old.entities.SpecialModDataEntity
 import io.github.some_example_name.old.systems.simulation.SimulationData
 import io.github.some_example_name.old.entities.SubstancesEntity
+import io.github.some_example_name.old.entities.TailEntity
 import io.github.some_example_name.old.systems.genomics.CellSystem
 import io.github.some_example_name.old.systems.genomics.DivideManager
 import io.github.some_example_name.old.systems.genomics.MutateManager
@@ -36,8 +39,8 @@ import kotlin.getValue
 
 object DIContainer {
 
-    var gridWith = 256
-    var gridHeight = 256
+    var gridWith = 128
+    var gridHeight = 128
     var halfChunkHeight = 4 // Also max particle speed
     var chunkHeight = halfChunkHeight * 2
     var gridSize = gridWith * gridHeight
@@ -61,9 +64,9 @@ object DIContainer {
         gridWidth = gridWith,
         gridHeight = gridHeight
     )
-    private val cellBuilder = CellBuilder()
-    val cellList = cellBuilder.instances
-    val zygote = cellBuilder.zygote
+    private val cellListBuilder = CellListBuilder()
+    val cellList = cellListBuilder.instances
+    val zygote = cellListBuilder.zygote
 
     val json by lazy { Json() }
     val bundle: I18NBundle by lazy {
@@ -73,22 +76,34 @@ object DIContainer {
         )
     }
 
+
+    val tailEntity = TailEntity(
+        tailStartMaxAmount = 1_000
+    )
     val organEntity = OrganEntity(
         organStartMaxAmount = 400
     )
     val simulationData = SimulationData()
     val particleEntity = ParticleEntity(
-        particlesStartMaxAmount = 120_000,
+        particlesStartMaxAmount = 30_000,
         gridManager = gridManager
     )
     private val neuralEntity = NeuralEntity(
-        neuralStartMaxAmount = 30_000,
+        neuralStartMaxAmount = 10_000,
         cellList = cellList
     )
     private val eyeEntity = EyeEntity(
         eyeStartMaxAmount = 3_000
     )
-
+    val specialModDataEntity = SpecialModDataEntity(
+        specialModDataStartMaxAmount = 100
+    )
+    val specialEntity = SpecialEntity(
+        cellsStartMaxAmount = 10_000,
+        eyeEntity = eyeEntity,
+        tailEntity = tailEntity,
+        specialModDataEntity = specialModDataEntity
+    )
     val cellEntity = CellEntity(
         cellsStartMaxAmount = 10_000,
         particleEntity = particleEntity,
@@ -96,7 +111,7 @@ object DIContainer {
         substrateSettings = substrateSettings,
         cellList = cellList,
         neuralEntity = neuralEntity,
-        eyeEntity = eyeEntity
+        specialEntity = specialEntity
     )
     val linkEntity = LinkEntity(
         20_000,
@@ -110,6 +125,21 @@ object DIContainer {
         particleEntity = particleEntity,
         substrateSettings = substrateSettings
     )
+
+    val entityList = listOf(
+        tailEntity,
+        organEntity,
+        particleEntity,
+        neuralEntity,
+        eyeEntity,
+        specialModDataEntity,
+        specialEntity,
+        cellEntity,
+        linkEntity,
+//        pheromoneEntity,
+        substancesEntity
+    )
+
     val genomeJsonReader = GenomeJsonReader()
     val genomeManager = GenomeManager(
         genomeJsonReader = genomeJsonReader,
@@ -134,7 +164,8 @@ object DIContainer {
         genomeManager = genomeManager,
         simulationData = simulationData,
         cellList = cellList,
-        substancesEntity = substancesEntity
+        substancesEntity = substancesEntity,
+        specialEntity = specialEntity
     )
 
     val particlePhysicsSystem = ParticlePhysicsSystem(
@@ -145,7 +176,8 @@ object DIContainer {
         simulationData = simulationData,
         linkEntity = linkEntity,
         cellList = cellList,
-        cellEntity = cellEntity
+        cellEntity = cellEntity,
+        substancesEntity = substancesEntity
     )
 
     val threadManager = ThreadManager(
@@ -186,7 +218,9 @@ object DIContainer {
         linkEntity = linkEntity,
         worldCommandsManager = worldCommandsManager,
         particleEntity = particleEntity,
-        gridManager = gridManager
+        gridManager = gridManager,
+        neuralEntity = neuralEntity,
+        specialEntity = specialEntity
     )
 
     val cellSystem = CellSystem(
@@ -242,7 +276,8 @@ object DIContainer {
             cellSystem = cellSystem,
             userCommandManager = userCommandManager,
             shaderManager = shaderManager,
-            renderSystem = renderSystem
+            renderSystem = renderSystem,
+            entityList = entityList
         )
     }
 }

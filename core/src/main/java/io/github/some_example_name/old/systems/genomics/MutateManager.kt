@@ -1,13 +1,17 @@
 package io.github.some_example_name.old.systems.genomics
 
+import com.badlogic.gdx.utils.Disposable
 import io.github.some_example_name.old.cells.Eye
 import io.github.some_example_name.old.cells.Muscle
+import io.github.some_example_name.old.cells.Tail
 import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.core.utils.collectParticles
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
+import io.github.some_example_name.old.entities.NeuralEntity
 import io.github.some_example_name.old.entities.ParticleEntity
+import io.github.some_example_name.old.entities.SpecialEntity
 import io.github.some_example_name.old.systems.physics.GridManager
 
 class MutateManager(
@@ -15,8 +19,10 @@ class MutateManager(
     val linkEntity: LinkEntity,
     val particleEntity: ParticleEntity,
     val worldCommandsManager: WorldCommandsManager,
-    val gridManager: GridManager
-) {
+    val gridManager: GridManager,
+    val neuralEntity: NeuralEntity,
+    val specialEntity: SpecialEntity
+): Disposable {
 
     fun mutateCell(index: Int, threadId: Int) = with(cellEntity) {
         if (!isMutateInThisStage[index] && energy[index] >= energyNecessaryToMutate[index]) {
@@ -41,7 +47,7 @@ class MutateManager(
                 if (lastCell.isNeural && !newCell.isNeural) {
                     worldCommandsManager.worldCommandBuffer[threadId].push(
                         type = WorldCommandType.DELETE_NEURAL,
-                        ints = intArrayOf(index)
+                        ints = intArrayOf(index, getNeuralGeneration(index))
                     )
                 }
                 if (!lastCell.isNeural && newCell.isNeural) {
@@ -61,7 +67,7 @@ class MutateManager(
                 if (lastCell is Eye && newCell !is Eye) {
                     worldCommandsManager.worldCommandBuffer[threadId].push(
                         type = WorldCommandType.DELETE_EYE,
-                        ints = intArrayOf(index)
+                        ints = intArrayOf(index, specialEntity.getEyeGeneration(index))
                     )
                 }
                 if (lastCell !is Eye && newCell is Eye) {
@@ -69,6 +75,18 @@ class MutateManager(
                         type = WorldCommandType.ADD_EYE,
                         ints = intArrayOf(index, action.colorRecognition ?: 7),
                         floats = floatArrayOf(action.lengthDirected ?: 4.25f)
+                    )
+                }
+                if (lastCell is Tail && newCell !is Tail) {
+                    worldCommandsManager.worldCommandBuffer[threadId].push(
+                        type = WorldCommandType.DELETE_TAIL,
+                        ints = intArrayOf(index, specialEntity.getTailGeneration(index))
+                    )
+                }
+                if (lastCell !is Tail && newCell is Tail) {
+                    worldCommandsManager.worldCommandBuffer[threadId].push(
+                        type = WorldCommandType.ADD_TAIL,
+                        ints = intArrayOf(index)
                     )
                 }
                 cellType[index] = it.toByte()
@@ -95,8 +113,8 @@ class MutateManager(
             action.angleDirected?.let { angleDiff[index] = it }
 
             if (lastCell is Eye && newCell is Eye) {
-                action.colorRecognition?.let { setColorDifferentiation(index, it.toByte()) }
-                action.lengthDirected?.let { setVisibilityRange(index, it) }
+                action.colorRecognition?.let { specialEntity.setColorDifferentiation(index, it.toByte()) }
+                action.lengthDirected?.let { specialEntity.setVisibilityRange(index, it) }
             }
 
             if (action.physicalLink.isNotEmpty()) {
@@ -130,6 +148,7 @@ class MutateManager(
                                     val isNeuronLink: Boolean = linkData.isNeuronal
                                     val isLink1NeuralDirected: Boolean = linkData.directedNeuronLink == cellGenomeId[index]
 
+                                    if (otherCellIndex == -1) throw Exception("otherCellIndex == -1 in Mutate")
                                     worldCommandsManager.worldCommandBuffer[threadId].push(
                                         type = WorldCommandType.ADD_LINK,
                                         booleans = booleanArrayOf(
@@ -170,7 +189,7 @@ class MutateManager(
                             if (linkIndex != -1) {
                                 worldCommandsManager.worldCommandBuffer[threadId].push(
                                     type = WorldCommandType.DELETE_LINK,
-                                    ints = intArrayOf(linkIndex)
+                                    ints = intArrayOf(linkIndex, linkEntity.getGeneration(linkIndex))
                                 )
                             }
                         }
@@ -180,6 +199,10 @@ class MutateManager(
 
             energy[index] -= energyNecessaryToMutate[index] - 0.7f
         }
+    }
+
+    override fun dispose() {
+
     }
 
 }

@@ -16,7 +16,7 @@ class Breakaway(cellTypeId: Int): Cell(
         if (impulse > 0) {
             worldCommandsManager.worldCommandBuffer[threadId].push(
                 type = WorldCommandType.DELETE_CELL,
-                ints = intArrayOf(cellIndex)
+                ints = intArrayOf(cellIndex, cellEntity.getGeneration(cellIndex))
             )
         }
     }

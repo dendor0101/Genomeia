@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.systems.genomics
 
+import com.badlogic.gdx.utils.Disposable
 import io.github.some_example_name.old.cells.base.activation
 import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.commands.WorldCommandType
@@ -23,7 +24,7 @@ class CellSystem(
     val divideManager: DivideManager,
     val mutateManager: MutateManager,
     val threadManager: ThreadManager
-) {
+): Disposable {
 
     fun iterateCell() = with(cellEntity) {
         val size = aliveList.size
@@ -75,7 +76,7 @@ class CellSystem(
         if (energy[cellIndex] < 0f) {
             worldCommandsManager.worldCommandBuffer[threadId].push(
                 type = WorldCommandType.DELETE_CELL,
-                ints = intArrayOf(cellIndex)
+                ints = intArrayOf(cellIndex, getGeneration(cellIndex))
             )
         }
 
@@ -169,6 +170,10 @@ class CellSystem(
                 neuronImpulseInput[signalToCellIndex] = neuronImpulseInputSum + neuronImpulseOutput
             }
         }
+    }
+
+    override fun dispose() {
+
     }
 
 }

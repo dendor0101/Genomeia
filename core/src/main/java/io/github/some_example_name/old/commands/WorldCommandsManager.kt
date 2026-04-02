@@ -1,6 +1,5 @@
 package io.github.some_example_name.old.commands
 
-import com.badlogic.gdx.graphics.Color
 import io.github.some_example_name.old.cells.Cell
 import io.github.some_example_name.old.cells.Zygote
 import io.github.some_example_name.old.core.DIContainer.threadCount
@@ -10,12 +9,14 @@ import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
+import io.github.some_example_name.old.entities.SpecialEntity
 import io.github.some_example_name.old.systems.simulation.SimulationData
 import io.github.some_example_name.old.entities.SubstancesEntity
 import io.github.some_example_name.old.systems.genomics.OrganManager
 import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.physics.GridManager
 import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem.Companion.MAX_LINK_AMOUNT
+import kotlin.random.Random
 
 class WorldCommandsManager(
     val gridManager: GridManager,
@@ -23,6 +24,7 @@ class WorldCommandsManager(
     val organEntity: OrganEntity,
     val cellEntity: CellEntity,
     val linkEntity: LinkEntity,
+    val specialEntity: SpecialEntity,
     val particleEntity: ParticleEntity,
     val substrateSettings: SubstrateSettings,
     val genomeManager: GenomeManager,
@@ -82,7 +84,7 @@ class WorldCommandsManager(
                     }
                     WorldCommandType.DELETE_LINK -> {
                         println("DELETE_LINK ${ints[0]}")
-                        linkEntity.deleteLink(linkIndex = ints[0])
+                        linkEntity.deleteLink(linkIndex = ints[0], linkGeneration = ints[1])
                     }
                     WorldCommandType.ADD_CELL -> {
                         val cellType = ints[2]
@@ -137,39 +139,38 @@ class WorldCommandsManager(
                     }
                     WorldCommandType.DELETE_CELL -> {
                         val cellIndex = ints[0]
+                        val cellGeneration = ints[1]
                         println("DELETE_CELL $cellIndex")
-                        substancesEntity.addSubstance(
-                            x = cellEntity.getX(cellIndex),
-                            y = cellEntity.getY(cellIndex),
-                            color = Color.WHITE.toIntBits(),
-                            radius = 0.1f,
-                            subType = 0,
-                        )
-                        organManager.cellDeleted(cellIndex)
+                        if (cellEntity.isAlive[cellIndex] && cellEntity.getGeneration(cellIndex) == cellGeneration) {
+                            val r = Random.nextInt(255)
+                            val g = Random.nextInt(255)
+                            val b = Random.nextInt(255)
+                            val a = 255
 
-                        while (cellEntity.linksAmount[cellIndex] > 0) {
-                            val base = cellIndex * MAX_LINK_AMOUNT
-                            val linkIndex = cellEntity.links[base]
-                            if (linkIndex != -1) {
-                                linkEntity.deleteLink(linkIndex)
+                            val color = (a shl 24) or (r shl 16) or (g shl 8) or b
+                            substancesEntity.addSubstance(
+                                x = cellEntity.getX(cellIndex),
+                                y = cellEntity.getY(cellIndex),
+                                color = color,
+                                radius = 0.1f,
+                                subType = 0,
+                            )
+                            organManager.cellDeleted(cellIndex)
+
+                            while (cellEntity.linksAmount[cellIndex] > 0) {
+                                val base = cellIndex * MAX_LINK_AMOUNT
+                                val linkIndex = cellEntity.links[base]
+                                if (linkIndex != -1) {
+                                    linkEntity.deleteLink(linkIndex)
+                                }
                             }
-                        }
 
-                        cellEntity.deleteCell(cellIndex)
-                        cellList[cellEntity.cellType[cellIndex].toInt()].onDie(cellIndex)
+                            cellEntity.deleteCell(cellIndex)
+                            cellList[cellEntity.cellType[cellIndex].toInt()].onDie(cellIndex)
+                        }
                     }
                     WorldCommandType.DELETE_NEURAL -> {
-                        cellEntity.deleteNeural(ints[0])
-                    }
-                    WorldCommandType.DELETE_EYE -> {
-                        cellEntity.deleteEye(ints[0])
-                    }
-                    WorldCommandType.ADD_EYE -> {
-                        cellEntity.addEye(
-                            index = ints[0],
-                            colorDifferentiation = ints[1],
-                            visibilityRange = floats[0]
-                        )
+                        cellEntity.deleteNeural(cellIndex = ints[0], neuralGeneration = ints[1])
                     }
                     WorldCommandType.ADD_NEURAL -> {
                         cellEntity.addNeural(
@@ -182,6 +183,22 @@ class WorldCommandsManager(
                             activationFuncType = ints[2].toByte()
                         )
                     }
+                    WorldCommandType.DELETE_EYE -> {
+                        specialEntity.deleteEye(cellIndex = ints[0], eyeGeneration = ints[1])
+                    }
+                    WorldCommandType.ADD_EYE -> {
+                        specialEntity.addEye(
+                            index = ints[0],
+                            colorDifferentiation = ints[1],
+                            visibilityRange = floats[0]
+                        )
+                    }
+                    WorldCommandType.DELETE_TAIL -> {
+                        specialEntity.deleteTail(cellIndex = ints[0], tailGeneration = ints[1])
+                    }
+                    WorldCommandType.ADD_TAIL -> {
+                        specialEntity.addTail(index = ints[0])
+                    }
                     WorldCommandType.ADD_ORGAN -> {
                         val organStartCellOrganIndex = ints[0]
                         cellEntity.organIndex[organStartCellOrganIndex] = organEntity.addOrgan(
@@ -192,6 +209,8 @@ class WorldCommandsManager(
                         )
                     }
                     WorldCommandType.DELETE_ORGAN -> {
+                        val organIndex = ints[0]
+                        val organGeneration = ints[1]
                         //TODO DELETE_ORGAN
                         //TODO подумать все ли нормально будет с organIndexCellIdMapIndex
                     }
@@ -205,9 +224,7 @@ class WorldCommandsManager(
                         )
                     }
                     WorldCommandType.DELETE_SUBSTANCE -> {
-                        substancesEntity.deleteSubstance(
-                            subIndex = ints[0],
-                        )
+                        substancesEntity.deleteSubstance(subIndex = ints[0], subGeneration = ints[1])
                     }
                     else -> {}
                 }

@@ -5,6 +5,7 @@ import io.github.some_example_name.old.commands.UserCommandManager
 import io.github.some_example_name.old.core.DIContainer.threadCount
 import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.entities.CellEntity
+import io.github.some_example_name.old.entities.Entity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
@@ -40,7 +41,8 @@ class SimulationSystem(
     val cellSystem: CellSystem,
     val userCommandManager: UserCommandManager,
     val shaderManager: ShaderManager,
-    val renderSystem: RenderSystem
+    val renderSystem: RenderSystem,
+    val entityList: List<Entity>
 ) {
 
     val simulationThread = Thread { threadManager.runUpdateLoop { updateTick() } }
@@ -123,11 +125,7 @@ class SimulationSystem(
 
     fun dispose() {
         gridManager.clearAll()
-        cellEntity.clear()
-        linkEntity.clear()
-        organEntity.clear()
-        particleEntity.clear()
-        substancesEntity.clear()
+        entityList.forEach { it.clear() }
         simulationData.clear()
         organManager.clear()
         renderSystem.isClear = 3

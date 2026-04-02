@@ -16,23 +16,24 @@ class Tail(cellTypeId: Int): Cell(
             var impulse = neuronImpulseOutput[cellIndex]
             if (impulse < 0f) impulse = 0f
             if (impulse > 1f) impulse = 1f
-//            if (speed[index] < impulse) speed[index] += 0.012f else if (speed[index] > impulse) speed[index] -= 0.012f
-//            if (speed[index] <= 0.013f) return
-            val angleRad = angle[cellIndex] + PI.toFloat()
-            val cosA = cos(angleRad)
-            val sinA = sin(angleRad)
 
-            // Рассчитываем направление движения
-            // We calculate the direction of movement
-            val directionX = cosA
-            val directionY = sinA
-            if (directionX.isNaN() || directionY.isNaN()) throw Exception("TODO потом убрать // remove later")
+            val speed = with(specialEntity) {
+                val speed = getSpeed(cellIndex)
+                if (getSpeed(cellIndex) < impulse) {
+                    setSpeed(cellIndex, speed + 0.012f)
+                } else if (getSpeed(cellIndex) > impulse) {
+                    setSpeed(cellIndex, speed - 0.012f)
+                }
+                if (getSpeed(cellIndex) <= 0.013f) return
+                getSpeed(cellIndex)
+            }
+            val angleRad = angle[cellIndex] + PI.toFloat()
 
             val tailMaxSpeedCoefficient = substrateSettings.data.tailMaxSpeedCoefficient
             val vx = getVx(cellIndex)
             val vy = getVy(cellIndex)
-            setVx(cellIndex, vx + directionX / 2/* * cm.speed[index]*/ * tailMaxSpeedCoefficient)
-            setVy(cellIndex, vy + directionY / 2/* * cm.speed[index]*/ * tailMaxSpeedCoefficient)
+            setVx(cellIndex, vx + cos(angleRad) / 2 * speed * tailMaxSpeedCoefficient)
+            setVy(cellIndex, vy + sin(angleRad) / 2 * speed * tailMaxSpeedCoefficient)
             energy[cellIndex] -= substrateSettings.cellsSettings[cellType[cellIndex].toInt()].energyActionCost
         }
     }

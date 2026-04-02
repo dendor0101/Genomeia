@@ -12,6 +12,7 @@ class Punisher(cellTypeId: Int) : Cell(
     override fun onContact(cellIndex: Int, particleIndexCollided: Int, distance: Float, threadId: Int) = with(cellEntity) {
         if (particleEntity.isCell[particleIndexCollided]) {
             val collidedCellIndex = particleEntity.holderEntityIndex[particleIndexCollided]
+            val cell = cellList[cellType[collidedCellIndex].toInt()]
             if (organIndex[cellIndex] != organIndex[collidedCellIndex] &&
                 cellType[collidedCellIndex].toInt() != -1 &&
                 cellType[collidedCellIndex].toInt() != 2 &&
@@ -23,7 +24,7 @@ class Punisher(cellTypeId: Int) : Cell(
 
                     worldCommandsManager.worldCommandBuffer[threadId].push(
                         type = WorldCommandType.DELETE_CELL,
-                        ints = intArrayOf(collidedCellIndex)
+                        ints = intArrayOf(collidedCellIndex, getGeneration(collidedCellIndex))
                     )
                 }
             }

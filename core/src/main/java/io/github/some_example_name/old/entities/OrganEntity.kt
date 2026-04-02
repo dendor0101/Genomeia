@@ -57,82 +57,38 @@ class OrganEntity(
     }
 
     override fun onCopy() {
-        TODO("Not yet implemented")
+
     }
 
     override fun onPaste() {
-        TODO("Not yet implemented")
+
     }
 
     override fun onClear(bound: Int) {
-        genomeIndex.fill(-1, 0, bound)
-        genomeSize.fill(0, 0, bound)
-        stage.fill(0, 0, bound)
-        dividedTimes.fill(0, 0, bound)
-        mutatedTimes.fill(0, 0, bound)
+        genomeIndex.clear(-1)
+        genomeSize.clear()
+        stage.clear()
+        dividedTimes.clear()
+        mutatedTimes.clear()
         alreadyGrownUp.clear()
-        divideCounterThisStage.fill(0, 0, bound)
-        mutateCounterThisStage.fill(0, 0, bound)
-        divideAmountThisStage.fill(0, 0, bound)
-        mutateAmountThisStage.fill(0, 0, bound)
+        divideCounterThisStage.clear()
+        mutateCounterThisStage.clear()
+        divideAmountThisStage.clear()
+        mutateAmountThisStage.clear()
         justChangedStage.clear()
     }
 
     override fun onResize(oldMax: Int) {
-        run {
-            val old = genomeIndex
-            genomeIndex = IntArray(maxAmount)
-            System.arraycopy(old, 0, genomeIndex, 0, oldMax)
-        }
-        run {
-            val old = genomeSize
-            genomeSize = IntArray(maxAmount)
-            System.arraycopy(old, 0, genomeSize, 0, oldMax)
-        }
-        run {
-            val old = stage
-            stage = IntArray(maxAmount)
-            System.arraycopy(old, 0, stage, 0, oldMax)
-        }
-        run {
-            val old = dividedTimes
-            dividedTimes = IntArray(maxAmount)
-            System.arraycopy(old, 0, dividedTimes, 0, oldMax)
-        }
-        run {
-            val old = mutatedTimes
-            mutatedTimes = IntArray(maxAmount)
-            System.arraycopy(old, 0, mutatedTimes, 0, oldMax)
-        }
-        run {
-            val old = alreadyGrownUp
-            alreadyGrownUp = BitSet(maxAmount)
-            alreadyGrownUp.or(old)
-        }
-        run {
-            val old = divideCounterThisStage
-            divideCounterThisStage = IntArray(maxAmount)
-            System.arraycopy(old, 0, divideCounterThisStage, 0, oldMax)
-        }
-        run {
-            val old = mutateCounterThisStage
-            mutateCounterThisStage = IntArray(maxAmount)
-            System.arraycopy(old, 0, mutateCounterThisStage, 0, oldMax)
-        }
-        run {
-            val old = divideAmountThisStage
-            divideAmountThisStage = IntArray(maxAmount)
-            System.arraycopy(old, 0, divideAmountThisStage, 0, oldMax)
-        }
-        run {
-            val old = mutateAmountThisStage
-            mutateAmountThisStage = IntArray(maxAmount)
-            System.arraycopy(old, 0, mutateAmountThisStage, 0, oldMax)
-        }
-        run {
-            val old = justChangedStage
-            justChangedStage = BitSet(maxAmount)
-            justChangedStage.or(old)
-        }
+        genomeIndex = genomeIndex.resize(-1)
+        genomeSize = genomeSize.resize()
+        stage = stage.resize()
+        dividedTimes = dividedTimes.resize()
+        mutatedTimes = mutatedTimes.resize()
+        alreadyGrownUp = alreadyGrownUp.resize()
+        divideCounterThisStage = divideCounterThisStage.resize()
+        mutateCounterThisStage = mutateCounterThisStage.resize()
+        divideAmountThisStage = divideAmountThisStage.resize()
+        mutateAmountThisStage = mutateAmountThisStage.resize()
+        justChangedStage = justChangedStage.resize()
     }
 }

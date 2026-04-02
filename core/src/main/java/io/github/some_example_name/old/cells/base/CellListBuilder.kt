@@ -1,9 +1,8 @@
 package io.github.some_example_name.old.cells.base
 
-import io.github.some_example_name.old.cells.Cell
 import io.github.some_example_name.old.cells.*
 
-class CellBuilder {
+class CellListBuilder {
 
 //    val instances = Cell::class.sealedSubclasses.mapNotNull { subclass ->
 //        subclass.constructors

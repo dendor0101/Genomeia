@@ -4,6 +4,7 @@ import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.GL31
 import com.badlogic.gdx.graphics.Mesh
+import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.VertexAttribute
 import com.badlogic.gdx.graphics.VertexAttributes
 import com.badlogic.gdx.graphics.glutils.ShaderProgram
@@ -19,8 +20,10 @@ class ShaderManagerLibgdxApi : ShaderManager {
 
     private lateinit var shader: ShaderProgram
     private lateinit var mesh: Mesh
+    private lateinit var texture: Texture  // ← НОВАЯ ТЕКСТУРА (256×256 PNG с альфа-каналом)
 
     override fun create() {
+        // Загружаем шейдеры (файлы будут обновлены ниже)
         val vertexShader = Gdx.files.internal("shaders/debug/circle.vert").readString()
         val fragmentShader = Gdx.files.internal("shaders/debug/circle.frag").readString()
         shader = ShaderProgram(vertexShader, fragmentShader)
@@ -38,8 +41,17 @@ class ShaderManagerLibgdxApi : ShaderManager {
         )
         mesh = Mesh(false, 4, 0, attributes).apply { setVertices(vertices) }
 
+        // Загружаем вашу текстуру (положите texture.png в assets/)
+        texture = Texture(Gdx.files.internal("muscle.png"))// = Texture(Gdx.files.internal("texture.png"), true) // true = generateMipMaps
+//        texture.setFilter(Texture.TextureFilter.MipMapLinearLinear, Texture.TextureFilter.Linear)
+//        texture.setWrap(Texture.TextureWrap.Repeat, Texture.TextureWrap.Repeat)
+        // Можно настроить фильтр, если нужно (для шума часто NEAREST)
+        // texture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest)
+
         create2SSBO()
     }
+
+    // ... create2SSBO(), resize() и dispose() без изменений ...
 
     private fun create2SSBO() {
         val ssboBuffer = BufferUtils.newIntBuffer(2)
@@ -51,7 +63,7 @@ class ShaderManagerLibgdxApi : ShaderManager {
             ssboCapacities[i] = INITIAL_CAPACITY * 16
             Gdx.gl31.glBindBuffer(GL31.GL_SHADER_STORAGE_BUFFER, ssbos[i])
             Gdx.gl31.glBufferData(GL31.GL_SHADER_STORAGE_BUFFER, INITIAL_CAPACITY * 16, null, GL20.GL_DYNAMIC_DRAW)
-            Gdx.gl31.glBindBufferBase(GL31.GL_SHADER_STORAGE_BUFFER, i, ssbos[i]) // binding 0 и 1
+            Gdx.gl31.glBindBufferBase(GL31.GL_SHADER_STORAGE_BUFFER, i, ssbos[i])
         }
 
         Gdx.gl31.glBindBuffer(GL31.GL_SHADER_STORAGE_BUFFER, 0)
@@ -88,7 +100,6 @@ class ShaderManagerLibgdxApi : ShaderManager {
             val writeIndex = 1 - currentReadIndex
 
             if (dataSize > 0) {
-                // ← только здесь работаем с SSBO
                 resize(dataSize, writeIndex, ssbos[writeIndex])
 
                 Gdx.gl31.glBindBuffer(GL31.GL_SHADER_STORAGE_BUFFER, ssbos[writeIndex])
@@ -99,26 +110,34 @@ class ShaderManagerLibgdxApi : ShaderManager {
             currentReadIndex = writeIndex
         }
 
-        // Обычный рендер
-        Gdx.gl.glDisable(GL20.GL_BLEND)
+        // ====================== ВАЖНЫЕ ИСПРАВЛЕНИЯ ======================
+        Gdx.gl.glDisable(GL20.GL_BLEND)           // ← ОТКЛЮЧАЕМ blending (не нужно при alpha=1)
+
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST)
         Gdx.gl.glDepthFunc(GL20.GL_LESS)
         Gdx.gl.glDepthMask(true)
-        Gdx.gl.glClear(GL20.GL_DEPTH_BUFFER_BIT)
+        Gdx.gl.glClear(GL20.GL_DEPTH_BUFFER_BIT)  // обязательно каждый кадр
 
         shader.bind()
         shader.setUniformMatrix("u_projTrans", cameraProjection)
         shader.setUniformi("u_currentBuffer", currentReadIndex)
+        shader.setUniformi("u_texture", 0)
+        shader.setUniformf("u_textureScale", 1.0f)
+
+        Gdx.gl.glActiveTexture(GL20.GL_TEXTURE0)
+        texture.bind()
+
         mesh.bind(shader)
-
         Gdx.gl31.glDrawArraysInstanced(GL20.GL_TRIANGLE_STRIP, 0, 4, numInstances)
-
         mesh.unbind(shader)
+
+        Gdx.gl.glUseProgram(0)
     }
 
     override fun dispose() {
         shader.dispose()
         mesh.dispose()
+        texture.dispose()          // ← не забываем освободить текстуру
 
         val deleteBuffer = BufferUtils.newIntBuffer(2).apply {
             put(ssbos[0])

@@ -30,7 +30,7 @@ class Eye(cellTypeId: Int): Cell(
                 val directionX = cos(angleRad)
                 val directionY = sin(angleRad)
 
-                val visonDist = getVisibilityRange(cellIndex)
+                val visonDist = specialEntity.getVisibilityRange(cellIndex)
 
                 val particle = drawThickLineGridTraversalCell(
                     x1 = getX(cellIndex) + directionX * 0.51f,
@@ -41,7 +41,7 @@ class Eye(cellTypeId: Int): Cell(
                     threadId = threadId
                 )
 
-                val visibleColor = getColorDifferentiation(cellIndex).toInt()
+                val visibleColor = specialEntity.getColorDifferentiation(cellIndex).toInt()
 
                 val impulse = if (particle != null) {
                     val index = particle.first

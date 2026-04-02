@@ -83,86 +83,34 @@ class ParticleEntity(
     }
 
     override fun onClear(bound: Int) {
-        gridId.fill(-1, 0, bound)
-        x.fill(0f, 0, bound)
-        y.fill(0f, 0, bound)
-        vx.fill(0f, 0, bound)
-        vy.fill(0f, 0, bound)
-        radius.fill(PARTICLE_MAX_RADIUS, 0, bound)
-        mass.fill(0f, 0, bound)
-        color.fill(0, 0, bound)
-        dragCoefficient.fill(0.03f, 0, bound)
-        effectOnContact.fill(false, 0, bound)
-        cellStiffness.fill(0f, 0, bound)
-        isCell.fill(false, 0, bound)
-        holderEntityIndex.fill(-1, 0, bound)
+        gridId.clear(-1)
+        x.clear()
+        y.clear()
+        vx.clear()
+        vy.clear()
+        radius.clear(PARTICLE_MAX_RADIUS)
+        mass.clear()
+        color.clear()
+        dragCoefficient.clear(0.03f)
+        effectOnContact.clear(false)
+        cellStiffness.clear()
+        isCell.clear(false)
+        holderEntityIndex.clear(-1)
     }
 
     override fun onResize(oldMax: Int) {
-        run {
-            val old = gridId
-            gridId = IntArray(maxAmount) { -1 }
-            System.arraycopy(old, 0, gridId, 0, oldMax)
-        }
-        run {
-            val old = x
-            x = FloatArray(maxAmount)
-            System.arraycopy(old, 0, x, 0, oldMax)
-        }
-        run {
-            val old = y
-            y = FloatArray(maxAmount)
-            System.arraycopy(old, 0, y, 0, oldMax)
-        }
-        run {
-            val old = vx
-            vx = FloatArray(maxAmount)
-            System.arraycopy(old, 0, vx, 0, oldMax)
-        }
-        run {
-            val old = vy
-            vy = FloatArray(maxAmount)
-            System.arraycopy(old, 0, vy, 0, oldMax)
-        }
-        run {
-            val old = radius
-            radius = FloatArray(maxAmount)
-            System.arraycopy(old, 0, radius, 0, oldMax)
-        }
-        run {
-            val old = mass
-            mass = FloatArray(maxAmount)
-            System.arraycopy(old, 0, mass, 0, oldMax)
-        }
-        run {
-            val old = color
-            color = IntArray(maxAmount)
-            System.arraycopy(old, 0, color, 0, oldMax)
-        }
-        run {
-            val old = dragCoefficient
-            dragCoefficient = FloatArray(maxAmount) { 0.03f }
-            System.arraycopy(old, 0, dragCoefficient, 0, oldMax)
-        }
-        run {
-            val old = effectOnContact
-            effectOnContact = BooleanArray(maxAmount)
-            System.arraycopy(old, 0, effectOnContact, 0, oldMax)
-        }
-        run {
-            val old = cellStiffness
-            cellStiffness = FloatArray(maxAmount)
-            System.arraycopy(old, 0, cellStiffness, 0, oldMax)
-        }
-        run {
-            val old = isCell
-            isCell = BooleanArray(maxAmount)
-            System.arraycopy(old, 0, isCell, 0, oldMax)
-        }
-        run {
-            val old = holderEntityIndex
-            holderEntityIndex = IntArray(maxAmount)
-            System.arraycopy(old, 0, holderEntityIndex, 0, oldMax)
-        }
+        gridId = gridId.resize(-1)
+        x = x.resize()
+        y = y.resize()
+        vx = vx.resize()
+        vy = vy.resize()
+        radius = radius.resize(PARTICLE_MAX_RADIUS)
+        mass = mass.resize()
+        color = color.resize()
+        dragCoefficient = dragCoefficient.resize(0.03f)
+        effectOnContact = effectOnContact.resize(false)
+        cellStiffness = cellStiffness.resize()
+        isCell = isCell.resize(false)
+        holderEntityIndex = holderEntityIndex.resize(-1)
     }
 }

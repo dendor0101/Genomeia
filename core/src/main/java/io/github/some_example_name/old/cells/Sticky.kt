@@ -21,9 +21,12 @@ class Sticky(cellTypeId: Int) : Cell(
         threadId: Int
     ) = with(cellEntity) {
         if (activation(cellIndex, neuronImpulseInput[cellIndex]) < 1f) {
+            if (particleEntity.isAlive[particleIndexCollided]) return@with
 
             val cellIndex: Int = cellIndex
             val otherCellIndex: Int = particleEntity.holderEntityIndex[particleIndexCollided]
+
+            if (cellList[cellType[otherCellIndex].toInt()] is Punisher) return@with
             val linksLength: Float = distance
             val degreeOfShortening: Float = 1f
             val isStickyLink = true
@@ -56,7 +59,7 @@ class Sticky(cellTypeId: Int) : Cell(
                 if (linkEntity.isStickyLink[linkIndex]) {
                     worldCommandsManager.worldCommandBuffer[threadId].push(
                         type = WorldCommandType.DELETE_LINK,
-                        ints = intArrayOf(linkIndex)
+                        ints = intArrayOf(linkIndex, linkEntity.getGeneration(linkIndex))
                     )
                 }
             }

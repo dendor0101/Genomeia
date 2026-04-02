@@ -4,10 +4,10 @@ import io.github.some_example_name.old.core.utils.UnorderedIntPairMap
 import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem.Companion.MAX_LINK_AMOUNT
 import kotlin.math.atan2
 
-class LinkEntity (
+class LinkEntity(
     linksStartMaxAmount: Int,
     val cellEntity: CellEntity
-): Entity(linksStartMaxAmount) {
+) : Entity(linksStartMaxAmount) {
     var links1 = IntArray(maxAmount) { -1 }
     var links2 = IntArray(maxAmount) { -1 }
     var linksNaturalLength = FloatArray(maxAmount) { -10f }
@@ -40,36 +40,39 @@ class LinkEntity (
         cellEntity.addLink(otherCellIndex, addLinkId)
     }
 
-    fun deleteLink(linkIndex: Int) {
-        delete(linkIndex)
+    fun deleteLink(linkIndex: Int, linkGeneration: Int? = null) {
+        if (isAlive[linkIndex] && (linkGeneration == null
+                || getGeneration(linkIndex) == linkGeneration)) {
+            delete(linkIndex)
 
-        val cellA = links1[linkIndex]
-        val cellB = links2[linkIndex]
-        linkIndexMap.remove(cellA, cellB)
-        cellEntity.deleteLinkedCellLink(cellA, linkIndex)
-        cellEntity.deleteLinkedCellLink(cellB, linkIndex)
+            val cellA = links1[linkIndex]
+            val cellB = links2[linkIndex]
+            linkIndexMap.remove(cellA, cellB)
+            cellEntity.deleteLinkedCellLink(cellA, linkIndex)
+            cellEntity.deleteLinkedCellLink(cellB, linkIndex)
 
-        if (isNeuronLink[linkIndex]) {
-            val cellIndex = if (isLink1NeuralDirected[linkIndex]) cellA else cellB
-            cellEntity.neuronImpulseInput[cellIndex] = 0f
-            cellEntity.neuronImpulseOutput[cellIndex] = 0f
-        }
+            if (isNeuronLink[linkIndex]) {
+                val cellIndex = if (isLink1NeuralDirected[linkIndex]) cellA else cellB
+                cellEntity.neuronImpulseInput[cellIndex] = 0f
+                cellEntity.neuronImpulseOutput[cellIndex] = 0f
+            }
 
-        links1[linkIndex] = -1
-        links2[linkIndex] = -1
+            links1[linkIndex] = -1
+            links2[linkIndex] = -1
 
-        linksNaturalLength[linkIndex] = -10f
-        isNeuronLink[linkIndex] = false
-        isLink1NeuralDirected[linkIndex] = false
-        degreeOfShortening[linkIndex] = 1f
-        isStickyLink[linkIndex] = false
+            linksNaturalLength[linkIndex] = -10f
+            isNeuronLink[linkIndex] = false
+            isLink1NeuralDirected[linkIndex] = false
+            degreeOfShortening[linkIndex] = 1f
+            isStickyLink[linkIndex] = false
 
-        if (cellEntity.parentIndex[cellA] == cellB) {
-            reinitParentIndex(cellA)
-        }
+            if (cellEntity.parentIndex[cellA] == cellB) {
+                reinitParentIndex(cellA)
+            }
 
-        if (cellEntity.parentIndex[cellB] == cellA) {
-            reinitParentIndex(cellB)
+            if (cellEntity.parentIndex[cellB] == cellA) {
+                reinitParentIndex(cellB)
+            }
         }
     }
 
@@ -107,51 +110,23 @@ class LinkEntity (
     }
 
     override fun onClear(bound: Int) {
-        links1.fill(-1, 0, bound)
-        links2.fill(-1, 0, bound)
-        linksNaturalLength.fill(-10f, 0, bound)
-        isNeuronLink.fill(false, 0, bound)
-        isLink1NeuralDirected.fill(false, 0, bound)
-        degreeOfShortening.fill(1f, 0, bound)
-        isStickyLink.fill(false, 0, bound)
+        links1.clear(-1)
+        links2.clear(-1)
+        linksNaturalLength.clear(-10f)
+        isNeuronLink.clear(false)
+        isLink1NeuralDirected.clear(false)
+        degreeOfShortening.clear(1f)
+        isStickyLink.clear(false)
         linkIndexMap.clear()
     }
 
     override fun onResize(oldMax: Int) {
-        run {
-            val old = links1
-            links1 = IntArray(maxAmount) { -1 }
-            System.arraycopy(old, 0, links1, 0, oldMax)
-        }
-        run {
-            val old = links2
-            links2 = IntArray(maxAmount) { -1 }
-            System.arraycopy(old, 0, links2, 0, oldMax)
-        }
-        run {
-            val old = linksNaturalLength
-            linksNaturalLength = FloatArray(maxAmount) { -10f }
-            System.arraycopy(old, 0, linksNaturalLength, 0, oldMax)
-        }
-        run {
-            val old = isNeuronLink
-            isNeuronLink = BooleanArray(maxAmount)
-            System.arraycopy(old, 0, isNeuronLink, 0, oldMax)
-        }
-        run {
-            val old = isLink1NeuralDirected
-            isLink1NeuralDirected = BooleanArray(maxAmount)
-            System.arraycopy(old, 0, isLink1NeuralDirected, 0, oldMax)
-        }
-        run {
-            val old = degreeOfShortening
-            degreeOfShortening = FloatArray(maxAmount) { 1f }
-            System.arraycopy(old, 0, degreeOfShortening, 0, oldMax)
-        }
-        run {
-            val old = isStickyLink
-            isStickyLink = BooleanArray(maxAmount) { false }
-            System.arraycopy(old, 0, isStickyLink, 0, oldMax)
-        }
+        links1 = links1.resize(-1)
+        links2 = links2.resize(-1)
+        linksNaturalLength = linksNaturalLength.resize(-10f)
+        isNeuronLink = isNeuronLink.resize(false)
+        isLink1NeuralDirected = isLink1NeuralDirected.resize(false)
+        degreeOfShortening = degreeOfShortening.resize(1f)
+        isStickyLink = isStickyLink.resize(false)
     }
 }

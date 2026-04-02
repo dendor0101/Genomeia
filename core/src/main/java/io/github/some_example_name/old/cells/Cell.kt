@@ -2,6 +2,7 @@ package io.github.some_example_name.old.cells
 
 import com.badlogic.gdx.graphics.Color
 import io.github.some_example_name.old.core.DIContainer
+import kotlin.reflect.KClass
 
 sealed class Cell(
     val defaultColor: Color,
@@ -12,16 +13,20 @@ sealed class Cell(
     val isNeuronTransportable: Boolean = true,
     val effectOnContact: Boolean = false,
     val isCollidable: Boolean = true,
-    val descriptionBundle: String? = null
+    val descriptionBundle: String? = null,
+    val specialData: KClass<out SpecialModData> = Plug::class,
 ) {
     val name: String = this::class.simpleName ?: "UnknownCell"
     val description = descriptionBundle?.let { DIContainer.bundle.get(descriptionBundle) } ?: ""
+    val doesItHasSpecialModData = specialData != Plug::class
 
 
     val particleEntity get() = DIContainer.particleEntity
     val cellEntity get() = DIContainer.cellEntity
     val linkEntity get() = DIContainer.linkEntity
     val simEntity get() = DIContainer.simulationData
+    val substancesEntity get() = DIContainer.substancesEntity
+    val specialEntity get() = DIContainer.specialEntity
     val substrateSettings get() = DIContainer.substrateSettings
     val worldCommandsManager get() = DIContainer.worldCommandsManager
     val organEntity get() = DIContainer.organEntity
@@ -52,3 +57,7 @@ sealed class Cell(
     }
 
 }
+
+interface SpecialModData
+
+object Plug: SpecialModData

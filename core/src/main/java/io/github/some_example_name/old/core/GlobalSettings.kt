@@ -11,7 +11,7 @@ import java.io.File
 data class GlobalSimulationSettings(
     val amountOfSolarEnergy: Float = 0.06f,
     val viscosityOfTheEnvironment: Float = 0.03f,
-    val tailMaxSpeedCoefficient: Float = 0.025f,
+    val tailMaxSpeedCoefficient: Float = 0.00625f,
     val producerRestoreTimeTickCoefficient: Float = 4f,
     val amountOfFoodEnergy: Float = 4f,
     val rateOfEnergyTransferInLinks: Float = 0.03f,

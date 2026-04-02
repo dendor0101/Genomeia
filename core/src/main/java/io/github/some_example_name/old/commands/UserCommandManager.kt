@@ -1,6 +1,7 @@
 package io.github.some_example_name.old.commands
 
 import com.badlogic.gdx.math.MathUtils
+import com.badlogic.gdx.utils.Disposable
 import io.github.some_example_name.old.cells.Cell
 import io.github.some_example_name.old.cells.Zygote
 import io.github.some_example_name.old.core.DIContainer.threadCount
@@ -26,7 +27,7 @@ class UserCommandManager(
     val gridManager: GridManager,
     val particleEntity: ParticleEntity,
     val zygote: Zygote
-) {
+): Disposable {
     private val bufferA = mutableListOf<PlayerCommand>()
     private val bufferB = mutableListOf<PlayerCommand>()
 
@@ -87,6 +88,7 @@ class UserCommandManager(
                                     radius = 0.5f,
                                     cellType = zygote.cellTypeId,
                                     organIndex = organIndex,
+                                    angle = Random.nextFloat() * 3.1415f
                                 )
                             }
                         } else {
@@ -132,5 +134,9 @@ class UserCommandManager(
                 }
             }
         }
+    }
+
+    override fun dispose() {
+
     }
 }

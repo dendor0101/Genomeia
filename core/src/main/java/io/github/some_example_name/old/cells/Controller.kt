@@ -7,7 +7,8 @@ class Controller(cellTypeId: Int): Cell(
     defaultColor = skyBlueColors.last(),
     cellTypeId = cellTypeId,
     isNeural = true,
-    isNeuronTransportable = false
+    isNeuronTransportable = false,
+    specialData = ControllerData::class
 ) {
     //TODO PC: WASD ↑←↓→ 1234567890 (SPACE)
     //TODO smartphone: ↑←↓→ XYAB
@@ -23,3 +24,8 @@ class Controller(cellTypeId: Int): Cell(
         energy[cellIndex] -= substrateSettings.cellsSettings[cellType[cellIndex].toInt()].energyActionCost
     }
 }
+
+@JvmInline
+value class ControllerData(
+    val attachedKey: Char
+): SpecialModData

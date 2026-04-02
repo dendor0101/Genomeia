@@ -53,64 +53,32 @@ class NeuralEntity(
     }
 
     override fun onCopy() {
-        TODO("Not yet implemented")
+
     }
 
     override fun onPaste() {
-        TODO("Not yet implemented")
+
     }
 
     override fun onClear(bound: Int) {
         isNeuronTransportable.clear()
-        activationFuncType.fill(0, 0, bound)
-        a.fill(1f, 0, bound)
-        b.fill(0f, 0, bound)
-        c.fill(0f, 0, bound)
-        dTime.fill(-1f, 0, bound)
-        remember.fill(0f, 0, bound)
+        activationFuncType.clear()
+        a.clear(1f)
+        b.clear()
+        c.clear()
+        dTime.clear(-1f)
+        remember.clear()
         isSum.clear()
     }
 
     override fun onResize(oldMax: Int) {
-        run {
-            val old = isNeuronTransportable
-            isNeuronTransportable = BitSet(maxAmount)
-            isNeuronTransportable.or(old)
-        }
-        run {
-            val old = activationFuncType
-            activationFuncType = ByteArray(maxAmount)
-            System.arraycopy(old, 0, activationFuncType, 0, oldMax)
-        }
-        run {
-            val old = a
-            a = FloatArray(maxAmount) { 1f }
-            System.arraycopy(old, 0, a, 0, oldMax)
-        }
-        run {
-            val old = b
-            b = FloatArray(maxAmount)
-            System.arraycopy(old, 0, b, 0, oldMax)
-        }
-        run {
-            val old = c
-            c = FloatArray(maxAmount)
-            System.arraycopy(old, 0, c, 0, oldMax)
-        }
-        run {
-            val old = dTime
-            dTime = FloatArray(maxAmount) { -1f }
-            System.arraycopy(old, 0, dTime, 0, oldMax)
-        }
-        run {
-            val old = remember
-            remember = FloatArray(maxAmount)
-            System.arraycopy(old, 0, remember, 0, oldMax)
-        }
-        run {
-            val old = isSum
-            isSum = BitSet(maxAmount)
-            isSum.or(old)
-        }
+        isNeuronTransportable = isNeuronTransportable.resize()
+        activationFuncType = activationFuncType.resize()
+        a = a.resize(1f)
+        b = b.resize()
+        c = c.resize()
+        dTime = dTime.resize(-1f)
+        remember = remember.resize()
+        isSum = isSum.resize()
     }
 }

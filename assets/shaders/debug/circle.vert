@@ -9,13 +9,8 @@ struct Circle {
     uint color;
 };
 
-layout(std430, binding = 0) buffer CirclesA {
-    Circle circlesA[];
-};
-
-layout(std430, binding = 1) buffer CirclesB {
-    Circle circlesB[];
-};
+layout(std430, binding = 0) buffer CirclesA { Circle circlesA[]; };
+layout(std430, binding = 1) buffer CirclesB { Circle circlesB[]; };
 
 uniform mat4 u_projTrans;
 uniform uint u_currentBuffer;
@@ -26,20 +21,13 @@ flat out vec2 ex_Velocity;
 flat out vec3 ex_Color;
 flat out float ex_R;
 flat out float ex_R_2;
+out vec2 ex_UV;                    // локальные UV для текстуры
 
 void main() {
     int id = gl_InstanceID;
 
-    Circle curr;
-    Circle prev;
-
-    if (u_currentBuffer == 0u) {
-        curr = circlesA[id];
-        prev = circlesB[id];
-    } else {
-        curr = circlesB[id];
-        prev = circlesA[id];
-    }
+    Circle curr = (u_currentBuffer == 0u) ? circlesA[id] : circlesB[id];
+    Circle prev = (u_currentBuffer == 0u) ? circlesB[id] : circlesA[id];
 
     vec2 velocity = curr.pos - prev.pos;
 
@@ -52,6 +40,8 @@ void main() {
 
     ex_R = curr.size;
     ex_R_2 = curr.size * curr.size;
+
+    ex_UV = a_position * 0.5 + 0.5;   // -1..1 → 0..1
 
     gl_Position = u_projTrans * vec4(worldPos, 0.0, 1.0);
 }

@@ -1,6 +1,7 @@
 package io.github.some_example_name.old.systems.physics
 
 import io.github.some_example_name.old.cells.Cell
+import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.core.DIContainer.halfChunkHeight
 import io.github.some_example_name.old.core.SubstrateSettings
@@ -8,6 +9,7 @@ import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.core.utils.invSqrt
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
+import io.github.some_example_name.old.entities.SubstancesEntity
 import io.github.some_example_name.old.systems.simulation.SimulationData
 import kotlin.math.sqrt
 
@@ -19,7 +21,8 @@ class ParticlePhysicsSystem(
     val simulationData: SimulationData,
     val cellEntity: CellEntity,
     val linkEntity: LinkEntity,
-    val cellList: List<Cell>
+    val cellList: List<Cell>,
+    val substancesEntity: SubstancesEntity
 ) {
 
     val halfChunkHeight2 = halfChunkHeight * halfChunkHeight
@@ -130,6 +133,37 @@ class ParticlePhysicsSystem(
                     )
                 }
             }
+
+
+            if (!isParticleAIsCell && !isParticleBIsCell) {
+                val subAIndex = holderEntityIndex[particleAId]
+                val subBIndex = holderEntityIndex[particleBId]
+                if (subAIndex != -1 && subBIndex != -1) {
+                    //TODO вынести в SubManager, добавить притягивание, проверять типы, соединять вещества при более близком контакте, сохранять общий импуль
+                    val radius =  1.0f / invSqrt(radius[particleAId] * radius[particleAId] + radius[particleBId] * radius[particleBId])
+                    if (radius <= PARTICLE_MAX_RADIUS) {
+                        val color = (color[particleAId] + color[particleBId]) / 2
+                        val x = (x[particleAId] + x[particleBId]) / 2
+                        val y = (y[particleAId] + y[particleBId]) / 2
+
+                        worldCommandsManager.worldCommandBuffer[threadId].push(
+                            type = WorldCommandType.ADD_SUBSTANCE,
+                            ints = intArrayOf(color, 0),
+                            floats = floatArrayOf(x, y, radius)
+                        )
+
+                        worldCommandsManager.worldCommandBuffer[threadId].push(
+                            type = WorldCommandType.DELETE_SUBSTANCE,
+                            ints = intArrayOf(subAIndex, substancesEntity.getGeneration(subAIndex))
+                        )
+                        worldCommandsManager.worldCommandBuffer[threadId].push(
+                            type = WorldCommandType.DELETE_SUBSTANCE,
+                            ints = intArrayOf(subBIndex, substancesEntity.getGeneration(subBIndex))
+                        )
+                    }
+                }
+            }
+
 
             // Квадратичная зависимость силы
             val cellStrengthAverage = (cellStiffness[particleAId] + cellStiffness[particleBId]) / 2f

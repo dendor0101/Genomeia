@@ -16,28 +16,30 @@ class CellEntity(
     val substrateSettings: SubstrateSettings,
     val cellList: List<Cell>,
     private val neuralEntity: NeuralEntity,
-    private val eyeEntity: EyeEntity
+    private val specialEntity: SpecialEntity
 ) : Entity(cellsStartMaxAmount) {
-    var particleIndex = IntArray(maxAmount) { -1 }
-    fun getX(index: Int) = particleEntity.x[particleIndex[index]]
-    fun getY(index: Int) = particleEntity.y[particleIndex[index]]
-    fun setX(index: Int, value: Float) { particleEntity.x[particleIndex[index]] = value }
-    fun setY(index: Int, value: Float) { particleEntity.y[particleIndex[index]] = value }
-    fun getVx(index: Int) = particleEntity.vx[particleIndex[index]]
-    fun getVy(index: Int) = particleEntity.vy[particleIndex[index]]
-    fun setVx(index: Int, value: Float) { particleEntity.vx[particleIndex[index]] = value }
-    fun setVy(index: Int, value: Float) { particleEntity.vy[particleIndex[index]] = value }
-    fun getDragCoefficient(index: Int) = particleEntity.dragCoefficient[particleIndex[index]]
-    fun setDragCoefficient(index: Int, value: Float) { particleEntity.dragCoefficient[particleIndex[index]] = value }
-    fun getEffectOnContact(index: Int) = particleEntity.effectOnContact[particleIndex[index]]
-    fun setEffectOnContact(index: Int, value: Boolean) { particleEntity.effectOnContact[particleIndex[index]] = value }
-    fun getRadius(index: Int) = particleEntity.radius[particleIndex[index]]
-    fun seRadius(index: Int, value: Float) { particleEntity.radius[particleIndex[index]] = value }
-    fun getGridId(index: Int) = particleEntity.gridId[particleIndex[index]]
-    fun seGridId(index: Int, value: Int) { particleEntity.gridId[particleIndex[index]] = value }
+    //Particle entity
+    private var particleIndexes = IntArray(maxAmount) { -1 }
+    fun getParticleIndex(index: Int) = particleIndexes[index]
+    fun getX(index: Int) = particleEntity.x[particleIndexes[index]]
+    fun getY(index: Int) = particleEntity.y[particleIndexes[index]]
+    fun setX(index: Int, value: Float) { particleEntity.x[particleIndexes[index]] = value }
+    fun setY(index: Int, value: Float) { particleEntity.y[particleIndexes[index]] = value }
+    fun getVx(index: Int) = particleEntity.vx[particleIndexes[index]]
+    fun getVy(index: Int) = particleEntity.vy[particleIndexes[index]]
+    fun setVx(index: Int, value: Float) { particleEntity.vx[particleIndexes[index]] = value }
+    fun setVy(index: Int, value: Float) { particleEntity.vy[particleIndexes[index]] = value }
+    fun getDragCoefficient(index: Int) = particleEntity.dragCoefficient[particleIndexes[index]]
+    fun setDragCoefficient(index: Int, value: Float) { particleEntity.dragCoefficient[particleIndexes[index]] = value }
+    fun getEffectOnContact(index: Int) = particleEntity.effectOnContact[particleIndexes[index]]
+    fun setEffectOnContact(index: Int, value: Boolean) { particleEntity.effectOnContact[particleIndexes[index]] = value }
+    fun getRadius(index: Int) = particleEntity.radius[particleIndexes[index]]
+    fun seRadius(index: Int, value: Float) { particleEntity.radius[particleIndexes[index]] = value }
+    fun getGridId(index: Int) = particleEntity.gridId[particleIndexes[index]]
+    fun seGridId(index: Int, value: Int) { particleEntity.gridId[particleIndexes[index]] = value }
     fun getSimTime(index: Int) = simulationData.timeSimulation
-    fun getColor(index: Int) = particleEntity.color[particleIndex[index]]
-    fun setColor(index: Int, value: Int) { particleEntity.color[particleIndex[index]] = value }
+    fun getColor(index: Int) = particleEntity.color[particleIndexes[index]]
+    fun setColor(index: Int, value: Int) { particleEntity.color[particleIndexes[index]] = value }
     var cellGenomeId = IntArray(maxAmount) { -1 }
     var cellActions: Array<CellAction?> = arrayOfNulls(maxAmount)
     var organIndex = IntArray(maxAmount) { -1 }
@@ -55,30 +57,34 @@ class CellEntity(
     var neuronImpulseInput = FloatArray(maxAmount)
     var neuronImpulseOutput = FloatArray(maxAmount)
 
-    private var neuralIndex = IntArray(maxAmount) { -1 }
-    fun getIsNeuronTransportable(index: Int) = neuralEntity.isNeuronTransportable[neuralIndex[index]]
-    fun setIsNeuronTransportable(index: Int, value: Boolean) { neuralEntity.isNeuronTransportable.set(neuralIndex[index], value) }
-    fun getActivationFuncType(index: Int) = neuralEntity.activationFuncType[neuralIndex[index]].toInt()
-    fun setActivationFuncType(index: Int, value: Byte) { neuralEntity.activationFuncType[neuralIndex[index]] = value }
-    fun getA(index: Int) = neuralEntity.a[neuralIndex[index]]
-    fun setA(index: Int, value: Float) { neuralEntity.a[neuralIndex[index]] = value }
-    fun getB(index: Int) = neuralEntity.b[neuralIndex[index]]
-    fun setB(index: Int, value: Float) { neuralEntity.b[neuralIndex[index]] = value }
-    fun getC(index: Int) = neuralEntity.c[neuralIndex[index]]
-    fun setC(index: Int, value: Float) { neuralEntity.c[neuralIndex[index]] = value }
-    fun getDTime(index: Int) = neuralEntity.dTime[neuralIndex[index]]
-    fun setDTime(index: Int, value: Float) { neuralEntity.dTime[neuralIndex[index]] = value}
-    fun getRemember(index: Int) = neuralEntity.remember[neuralIndex[index]]
-    fun setRemember(index: Int, value: Float) { neuralEntity.remember[neuralIndex[index]] = value }
-    fun getIsSum(index: Int) = neuralEntity.isSum[neuralIndex[index]]
-    fun setIsSum(index: Int, value: Boolean) {neuralEntity.isSum.set(neuralIndex[index], value)}
+    //Neural entity
+    private var neuralIndexes = IntArray(maxAmount) { -1 }
+    fun getNeuralGeneration(index: Int) = neuralEntity.getGeneration(neuralIndexes[index])
+    fun getIsNeuronTransportable(index: Int) = neuralEntity.isNeuronTransportable[neuralIndexes[index]]
+    fun setIsNeuronTransportable(index: Int, value: Boolean) { neuralEntity.isNeuronTransportable.set(neuralIndexes[index], value) }
+    fun getActivationFuncType(index: Int) = neuralEntity.activationFuncType[neuralIndexes[index]].toInt()
+    fun setActivationFuncType(index: Int, value: Byte) { neuralEntity.activationFuncType[neuralIndexes[index]] = value }
+    fun getA(index: Int) = neuralEntity.a[neuralIndexes[index]]
+    fun setA(index: Int, value: Float) { neuralEntity.a[neuralIndexes[index]] = value }
+    fun getB(index: Int) = neuralEntity.b[neuralIndexes[index]]
+    fun setB(index: Int, value: Float) { neuralEntity.b[neuralIndexes[index]] = value }
+    fun getC(index: Int) = neuralEntity.c[neuralIndexes[index]]
+    fun setC(index: Int, value: Float) { neuralEntity.c[neuralIndexes[index]] = value }
+    fun getDTime(index: Int) = neuralEntity.dTime[neuralIndexes[index]]
+    fun setDTime(index: Int, value: Float) { neuralEntity.dTime[neuralIndexes[index]] = value}
+    fun getRemember(index: Int) = neuralEntity.remember[neuralIndexes[index]]
+    fun setRemember(index: Int, value: Float) { neuralEntity.remember[neuralIndexes[index]] = value }
+    fun getIsSum(index: Int) = neuralEntity.isSum[neuralIndexes[index]]
+    fun setIsSum(index: Int, value: Boolean) {neuralEntity.isSum.set(neuralIndexes[index], value)}
 
-    fun deleteNeural(index: Int) {
-        neuralEntity.deleteNeural(neuralIndex[index])
-        isNeural[index] = false
-        neuralIndex[index] -= -1
-        neuronImpulseInput[index] = 0f
-        neuronImpulseOutput[index] = 0f
+    fun deleteNeural(cellIndex: Int, neuralGeneration: Int? = null) {
+        val neuralIndex = neuralIndexes[cellIndex]
+        if (neuralIndex == -1) return
+        if (neuralEntity.isAlive[neuralIndex] && (neuralGeneration == null
+                || neuralEntity.getGeneration(neuralIndex) == neuralGeneration)) {
+            neuralEntity.deleteNeural(neuralIndex)
+            neuralIndexes[cellIndex] -= -1
+        }
     }
 
     fun addNeural(
@@ -92,29 +98,12 @@ class CellEntity(
     ) {
         neuronImpulseInput[index] = 0f
         neuronImpulseOutput[index] = 0f
-        neuralIndex[index] = neuralEntity.addNeural(cellType, a, b, c, isSum, activationFuncType)
         isNeural[index] = true
+        neuralIndexes[index] = neuralEntity.addNeural(cellType, a, b, c, isSum, activationFuncType)
     }
 
-    private var specialTypeIndex = IntArray(maxAmount) { -1 }
-    fun getColorDifferentiation(index: Int) = eyeEntity.colorDifferentiation[specialTypeIndex[index]]
-    fun setColorDifferentiation(index: Int, value: Byte) { eyeEntity.colorDifferentiation[specialTypeIndex[index]] = value }
-    fun getVisibilityRange(index: Int) = eyeEntity.visibilityRange[specialTypeIndex[index]]
-    fun setVisibilityRange(index: Int, value: Float) { eyeEntity.visibilityRange[specialTypeIndex[index]] = value }
 
-    fun deleteEye(index: Int) {
-        eyeEntity.deleteEye(specialTypeIndex[index])
-        specialTypeIndex[index] -= -1
-    }
-
-    fun addEye(
-        index: Int,
-        colorDifferentiation: Int = 7,
-        visibilityRange: Float = 4.25f,
-    ) {
-        specialTypeIndex[index] = eyeEntity.addEye(colorDifferentiation.toByte(), visibilityRange)
-    }
-
+    //Link
     var linksAmount = IntArray(maxAmount)
     var links = IntArray(maxAmount * MAX_LINK_AMOUNT) { -1 }
 
@@ -163,11 +152,12 @@ class CellEntity(
         b: Float = 0f,
         c: Float = 0f,
         isSum: Boolean = true,
-        activationFuncType: Byte = 7
+        activationFuncType: Byte = 7,
+        speed: Float = 0f
     ): Int {
         val cellIndex = add()
 
-        particleIndex[cellIndex] = particleEntity.addParticle(
+        particleIndexes[cellIndex] = particleEntity.addParticle(
             x = x,
             y = y,
             color = color,
@@ -191,32 +181,41 @@ class CellEntity(
         this.cellType[cellIndex] = cellType.toByte()
         energy[cellIndex] = 0f
         maxEnergy[cellIndex] = cellsSettings[cellType].maxEnergy
-        neuronImpulseInput[cellIndex] = 0f
-        neuronImpulseOutput[cellIndex] = 0f
         linksAmount[cellIndex] = 0
+        val cell = cellList[cellType]
 
-        neuralIndex[cellIndex] = if (cellList[cellType].isNeural) {
-            isNeural[cellIndex] = true
-            neuralEntity.addNeural(cellType, a, b, c, isSum, activationFuncType)
+        if (cell.isNeural) {
+            addNeural(cellIndex, cellType, a, b, c, isSum, activationFuncType)
         } else {
+            neuronImpulseInput[cellIndex] = 0f
+            neuronImpulseOutput[cellIndex] = 0f
             isNeural[cellIndex] = false
-            -1
+            neuralIndexes[cellIndex] = -1
         }
 
-        specialTypeIndex[cellIndex] = if (cellList[cellType] is Eye) {
-            eyeEntity.addEye(colorDifferentiation.toByte(), visibilityRange)
-        } else if (cellList[cellType] is Controller) {
-            //TODO addController
-            -1
-        } else -1
+        specialEntity.addSpecial(
+            cell = cell,
+            colorDifferentiation = colorDifferentiation,
+            visibilityRange = visibilityRange,
+            speed = speed
+        )
+
+//        if (cellList[cellType] is Eye) {
+//            addEye(cellIndex, colorDifferentiation, visibilityRange)
+//        } else if (cellList[cellType] is Controller) {
+//            //TODO addController
+//            specialTypeIndexes[cellIndex] = -1
+//        } else {
+//            specialTypeIndexes[cellIndex] = -1
+//        }
         return cellIndex
     }
 
     fun deleteCell(cellIndex: Int) {
         delete(cellIndex)
 
-        particleEntity.deleteParticle(particleIndex[cellIndex])
-        particleIndex[cellIndex] = -1
+        particleEntity.deleteParticle(particleIndexes[cellIndex])
+        particleIndexes[cellIndex] = -1
 
         cellGenomeId[cellIndex] = -1
         cellActions[cellIndex] = null
@@ -229,6 +228,7 @@ class CellEntity(
         isDividedInThisStage[cellIndex] = true
         isMutateInThisStage[cellIndex] = true
         val cellType = cellType[cellIndex]
+        val cell = cellList[cellType.toInt()]
         this.cellType[cellIndex] = 0
         energy[cellIndex] = 0f
         maxEnergy[cellIndex] = 0f
@@ -239,154 +239,75 @@ class CellEntity(
         val base = cellIndex * MAX_LINK_AMOUNT
         links.fill(-1, base, base + MAX_LINK_AMOUNT)
 
-        if (neuralIndex[cellIndex] != -1) {
-            neuralEntity.deleteNeural(neuralIndex[cellIndex])
-            neuralIndex[cellIndex] = -1
-        }
+        deleteNeural(cellIndex = cellIndex)
 
-        if (specialTypeIndex[cellIndex] != -1) {
-            if (cellList[cellType.toInt()] is Eye) {
-                eyeEntity.deleteEye(specialTypeIndex[cellIndex])
-            } else if (cellList[cellType.toInt()] is Controller) {
-                //TODO deleteController
-            }
-            specialTypeIndex[cellIndex] = -1
-        }
+        specialEntity.delete(cell = cell, cellIndex = cellIndex)
+
+//        if (specialTypeIndexes[cellIndex] != -1) {
+//            if (cellList[cellType.toInt()] is Eye) {
+//                deleteEye(cellIndex)
+//            } else if (cellList[cellType.toInt()] is Controller) {
+//                //TODO deleteController
+//            }
+//            specialTypeIndexes[cellIndex] = -1
+//        }
     }
 
     override fun onCopy() {
-        TODO("Not yet implemented")
+
     }
 
     override fun onPaste() {
-        TODO("Not yet implemented")
+
     }
 
     override fun onClear(bound: Int) {
-        particleIndex.fill(-1, 0, bound)
-        cellGenomeId.fill(-1, 0, bound)
+        particleIndexes.clear(-1)
+        cellGenomeId.clear(-1)
         cellActions.fill(null, 0, bound)
-        organIndex.fill(-1, 0, bound)
-        parentIndex.fill(-1, 0, bound)
-        angle.fill(0f, 0, bound)
-        angleDiff.fill(0f, 0, bound)
-        energyNecessaryToDivide.fill(2f, 0, bound)
-        energyNecessaryToMutate.fill(1f, 0, bound)
-        isDividedInThisStage.fill(false, 0, bound)
-        isMutateInThisStage.fill(false, 0, bound)
-        cellType.fill(0, 0, bound)
-        energy.fill(0f, 0, bound)
-        maxEnergy.fill(0f, 0, bound)
-        isNeural.fill(false, 0, bound)
-        neuronImpulseInput.fill(0f, 0, bound)
-        neuronImpulseOutput.fill(0f, 0, bound)
-        neuralIndex.fill(0, 0, bound)
-        specialTypeIndex.fill(0, 0, bound)
-        linksAmount.fill(0, 0, bound)
+        organIndex.clear(-1)
+        parentIndex.clear(-1)
+        angle.clear()
+        angleDiff.clear()
+        energyNecessaryToDivide.clear(2f)
+        energyNecessaryToMutate.clear(1f)
+        isDividedInThisStage.clear(false)
+        isMutateInThisStage.clear(false)
+        cellType.clear()
+        energy.clear()
+        maxEnergy.clear()
+        isNeural.clear(false)
+        neuronImpulseInput.clear()
+        neuronImpulseOutput.clear()
+        neuralIndexes.clear()
+        linksAmount.clear()
         links.fill(-1, 0, bound * MAX_LINK_AMOUNT)
     }
 
     override fun onResize(oldMax: Int) {
-        run {
-            val old = particleIndex
-            particleIndex = IntArray(maxAmount) { -1 }
-            System.arraycopy(old, 0, particleIndex, 0, oldMax)
-        }
-        run {
-            val old = cellGenomeId
-            cellGenomeId = IntArray(maxAmount) { -1 }
-            System.arraycopy(old, 0, cellGenomeId, 0, oldMax)
-        }
+        particleIndexes = particleIndexes.resize(-1)
+        cellGenomeId = cellGenomeId.resize(-1)
         run {
             val old = cellActions
             cellActions = arrayOfNulls(maxAmount)
             System.arraycopy(old, 0, cellActions, 0, oldMax)
         }
-        run {
-            val old = organIndex
-            organIndex = IntArray(maxAmount) { -1 }
-            System.arraycopy(old, 0, organIndex, 0, oldMax)
-        }
-        run {
-            val old = parentIndex
-            parentIndex = IntArray(maxAmount) { -1 }
-            System.arraycopy(old, 0, parentIndex, 0, oldMax)
-        }
-        run {
-            val old = angle
-            angle = FloatArray(maxAmount)
-            System.arraycopy(old, 0, angle, 0, oldMax)
-        }
-        run {
-            val old = angleDiff
-            angleDiff = FloatArray(maxAmount)
-            System.arraycopy(old, 0, angleDiff, 0, oldMax)
-        }
-        run {
-            val old = energyNecessaryToDivide
-            energyNecessaryToDivide = FloatArray(maxAmount) { 2f }
-            System.arraycopy(old, 0, energyNecessaryToDivide, 0, oldMax)
-        }
-        run {
-            val old = energyNecessaryToMutate
-            energyNecessaryToMutate = FloatArray(maxAmount) { 1f }
-            System.arraycopy(old, 0, energyNecessaryToMutate, 0, oldMax)
-        }
-        run {
-            val old = isDividedInThisStage
-            isDividedInThisStage = BooleanArray(maxAmount)
-            System.arraycopy(old, 0, isDividedInThisStage, 0, oldMax)
-        }
-        run {
-            val old = isMutateInThisStage
-            isMutateInThisStage = BooleanArray(maxAmount)
-            System.arraycopy(old, 0, isMutateInThisStage, 0, oldMax)
-        }
-        run {
-            val old = cellType
-            cellType = ByteArray(maxAmount)
-            System.arraycopy(old, 0, cellType, 0, oldMax)
-        }
-        run {
-            val old = energy
-            energy = FloatArray(maxAmount)
-            System.arraycopy(old, 0, energy, 0, oldMax)
-        }
-        run {
-            val old = maxEnergy
-            maxEnergy = FloatArray(maxAmount)
-            System.arraycopy(old, 0, maxEnergy, 0, oldMax)
-        }
-        run {
-            val old = isNeural
-            isNeural = BooleanArray(maxAmount)
-            System.arraycopy(old, 0, isNeural, 0, oldMax)
-        }
-        run {
-            val old = neuronImpulseInput
-            neuronImpulseInput = FloatArray(maxAmount)
-            System.arraycopy(old, 0, neuronImpulseInput, 0, oldMax)
-        }
-        run {
-            val old = neuronImpulseOutput
-            neuronImpulseOutput = FloatArray(maxAmount)
-            System.arraycopy(old, 0, neuronImpulseOutput, 0, oldMax)
-        }
-        run {
-            val old = neuralIndex
-            neuralIndex = IntArray(maxAmount)
-            System.arraycopy(old, 0, neuralIndex, 0, oldMax)
-        }
-        run {
-            val old = specialTypeIndex
-            specialTypeIndex = IntArray(maxAmount)
-            System.arraycopy(old, 0, specialTypeIndex, 0, oldMax)
-        }
-        run {
-            val old = linksAmount
-            linksAmount = IntArray(maxAmount)
-            System.arraycopy(old, 0, linksAmount, 0, oldMax)
-        }
+        organIndex = organIndex.resize(-1)
+        parentIndex = parentIndex.resize(-1)
+        angle = angle.resize()
+        angleDiff = angleDiff.resize()
+        energyNecessaryToDivide = energyNecessaryToDivide.resize(2f)
+        energyNecessaryToMutate = energyNecessaryToMutate.resize(1f)
+        isDividedInThisStage = isDividedInThisStage.resize(false)
+        isMutateInThisStage = isMutateInThisStage.resize(false)
+        cellType = cellType.resize()
+        energy = energy.resize()
+        maxEnergy = maxEnergy.resize()
+        isNeural = isNeural.resize(false)
+        neuronImpulseInput = neuronImpulseInput.resize()
+        neuronImpulseOutput = neuronImpulseOutput.resize()
+        neuralIndexes = neuralIndexes.resize()
+        linksAmount = linksAmount.resize()
         run {
             val oldLinks = links
             links = IntArray(maxAmount * MAX_LINK_AMOUNT) { -1 }

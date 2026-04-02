@@ -46,7 +46,7 @@ class SubstancesEntity(
             radius = radius,
             dragCoefficient = substrateSettings.data.viscosityOfTheEnvironment,
             effectOnContact = false,
-            cellStiffness = 0.2f,
+            cellStiffness = 0.05f,
             isCell = false,
             holderEntityIndex = subIndex
         )
@@ -56,11 +56,13 @@ class SubstancesEntity(
         return subIndex
     }
 
-    fun deleteSubstance(subIndex: Int) {
-        delete(subIndex)
-        particleEntity.deleteParticle(particleIndex[subIndex])
-        particleIndex[subIndex] = -1
-        substanceType[subIndex] = -1
+    fun deleteSubstance(subIndex: Int, subGeneration: Int) {
+        if (isAlive[subIndex] && getGeneration(subIndex) == subGeneration) {
+            delete(subIndex)
+            particleEntity.deleteParticle(particleIndex[subIndex])
+            particleIndex[subIndex] = -1
+            substanceType[subIndex] = -1
+        }
     }
 
     override fun onCopy() {
@@ -72,21 +74,13 @@ class SubstancesEntity(
     }
 
     override fun onClear(bound: Int) {
-        particleIndex.fill(-1, 0, bound)
-        substanceType.fill(-1, 0, bound)
+        particleIndex.clear(-1)
+        substanceType.clear(-1)
     }
 
     override fun onResize(oldMax: Int) {
-        run {
-            val old = particleIndex
-            particleIndex = IntArray(maxAmount) { -1 }
-            System.arraycopy(old, 0, particleIndex, 0, oldMax)
-        }
-        run {
-            val old = substanceType
-            substanceType = ByteArray(maxAmount) { -1 }
-            System.arraycopy(old, 0, substanceType, 0, oldMax)
-        }
+        particleIndex = particleIndex.resize(-1)
+        substanceType = substanceType.resize(-1)
     }
 
 }
