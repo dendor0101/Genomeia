@@ -12,10 +12,11 @@ import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.viewport.ScreenViewport
 import com.kotcrab.vis.ui.widget.VisLabel
-import io.github.some_example_name.old.core.DIContainer
+import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.systems.genomics.genome.GenomeJsonReader
 import io.github.some_example_name.old.ui.dialogs.GenomeListDialog
 import io.github.some_example_name.old.core.FileProvider
+import io.github.some_example_name.old.editor.ui.GenomeEditorScreen
 
 class MenuScreen(
     private val game: MyGame,
@@ -23,7 +24,6 @@ class MenuScreen(
 ) : Screen {
 
     private val stage = Stage(ScreenViewport())
-    private val bundle = DIContainer.bundle
 
     val genomeJsonReader: GenomeJsonReader = GenomeJsonReader()
     var onResize: (() -> Unit)? = null
@@ -85,20 +85,14 @@ class MenuScreen(
                             select = bundle.get("button.select"),
                             import = bundle.get("button.import"),
                             onNew = {
-//                                game.screen = GenomeEditorScreen(
-//                                    multiPlatformFileProvider = multiPlatformFileProvider,
-//                                    game = game,
-//                                    genomeName = null,
-//                                    bundle = bundle
-//                                )
+                                game.screen = GenomeEditorScreen(
+                                    game = game
+                                )
                             },
                             onNext = { genomeName ->
-//                                game.screen = GenomeEditorScreen(
-//                                    multiPlatformFileProvider = multiPlatformFileProvider,
-//                                    game = game,
-//                                    genomeName = "$genomeName.json",
-//                                    bundle = bundle
-//                                )
+                                game.screen = GenomeEditorScreen(
+                                    game = game
+                                )
                             },
                             onRestart = {
 

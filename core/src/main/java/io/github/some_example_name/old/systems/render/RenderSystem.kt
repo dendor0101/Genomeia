@@ -7,110 +7,193 @@ import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Matrix4
-import com.badlogic.gdx.utils.BufferUtils
+import com.badlogic.gdx.math.Vector3
+import io.github.some_example_name.old.core.DIContext
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.ParticleEntity
-import io.github.some_example_name.old.systems.simulation.SimulationData
-import kotlin.math.round
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 class RenderSystem(
-    val tripleBufferManager: TripleBufferManager,
-    val simulationData: SimulationData,
     val cellEntity: CellEntity,
     val linkEntity: LinkEntity,
     val particleEntity: ParticleEntity,
-    val shaderManager: ShaderManager
+    val shaderManager: ShaderManager,
+    val renderBufferManager: RenderBufferManager,
+    val diContext: DIContext
 ) {
 
-    val fontMatrix = Matrix4()
+    private lateinit var fontMatrix: Matrix4
+    private lateinit var spriteBatch: SpriteBatch
+    private lateinit var font: BitmapFont
     private lateinit var shapeRenderer: ShapeRenderer
+    private lateinit var camera: OrthographicCamera
 
-    fun create() {
+    private var zoom = 0f
+    private var cameraX = 0f
+    private var cameraY = 0f
+    private var blurLevel = 0f
+
+    fun create(
+        fontMatrix: Matrix4,
+        spriteBatch: SpriteBatch,
+        font: BitmapFont,
+        shapeRenderer: ShapeRenderer,
+        camera: OrthographicCamera
+    ) {
         shaderManager.create()
-        shapeRenderer = ShapeRenderer()
+        this.fontMatrix = fontMatrix
+        this.spriteBatch = spriteBatch
+        this.font = font
+        this.shapeRenderer = shapeRenderer
+        this.camera = camera
+    }
+
+    fun moveCamera(dx: Float, dy: Float) {
+        camera.position.x += dx
+        camera.position.y += dy
+        camera.update()
     }
 
     @Volatile
     var isClear = 3
-    val circlesBuffer = BufferUtils.newByteBuffer(250_000 * 16)
-    var maxCircleCount = 0
+    private var buffer = allocateBuffer(INITIAL_PARTICLE_CAPACITY)
 
-    fun drawShader(camera: OrthographicCamera) {
-//        val (currentRead, isNewFrame) = tripleBufferManager.getAndSwapConsumer()
-        circlesBuffer.clear()
-        synchronized(particleEntity) {
-            with(particleEntity) {
-                if (isClear == 0) {
-                    if (maxCircleCount < aliveList.size) maxCircleCount = aliveList.size
-                    for (i in 0..<aliveList.size) {
-                        val idx = aliveList.getInt(i)
-                        circlesBuffer.putFloat(x[idx])
-                        circlesBuffer.putFloat(y[idx])
-                        circlesBuffer.putFloat(radius[idx])
-                        circlesBuffer.putInt(color[idx])
-                    }
-                } else {
-                    isClear--
-                    for (i in 0..<maxCircleCount) {
-                        circlesBuffer.putFloat(0f)
-                        circlesBuffer.putFloat(0f)
-                        circlesBuffer.putFloat(0f)
-                        circlesBuffer.putInt(0)
-                    }
-                    println("clear")
+    fun resize(width: Int, height: Int) {
+        shaderManager.resize(width, height)
+    }
+
+    fun render() {
+        if (zoom != camera.zoom || cameraX != camera.position.x || cameraY != camera.position.y) {
+            blurLevel = 4.0f
+            cameraX = camera.position.x
+            cameraY = camera.position.y
+            zoom = camera.zoom
+        }
+        ensureCapacityForWrite(particleEntity.aliveList.size)
+        drawShader()
+        synchronized(renderBufferManager.renderSpecificBufferData) {
+            moveCameraAndDrawSelected()
+            drawTextSimInfo()
+        }
+        if (blurLevel > 0) {
+            blurLevel -= 0.09f
+        }
+    }
+
+    private fun allocateBuffer(numParticles: Int): ByteBuffer {
+        return ByteBuffer
+            .allocateDirect(numParticles * PARTICLE_STRUCT_SIZE)
+            .order(ByteOrder.nativeOrder())
+    }
+
+    private fun ensureCapacityForWrite(neededParticles: Int) {
+        val currentCapacity = buffer.capacity() / PARTICLE_STRUCT_SIZE
+        if (neededParticles + 10 <= currentCapacity) return
+
+        var newCapacity = currentCapacity.toDouble()
+        do { newCapacity *= 1.5 } while (newCapacity < neededParticles)
+
+        val finalCapacity = newCapacity.toInt().coerceAtLeast(neededParticles)
+        buffer = allocateBuffer(finalCapacity)
+    }
+
+    private fun drawShader() {
+        buffer.clear()
+        synchronized(renderBufferManager.renderCellBufferData) {
+            with(renderBufferManager.renderCellBufferData) {
+                for (i in 0..<renderCellBufferSize) {
+                    buffer.putFloat(x[i])
+                    buffer.putFloat(y[i])
+                    buffer.putInt(color[i])
+                    buffer.putInt(packed1[i])
+                    buffer.putInt(packed2[i])
+                    buffer.putInt(0)
+                }
+                repeat(10) {
+                    buffer.putFloat(-100f)
+                    buffer.putFloat(-100f)
+                    buffer.putInt(0)
+                    buffer.putInt(0)
+                    buffer.putInt(0)
+                    buffer.putInt(0)
                 }
             }
         }
-        circlesBuffer.flip()
+        buffer.flip()
 
+        val screenCoords = Vector3(Gdx.input.x.toFloat(), Gdx.input.y.toFloat(), 0f)
+        camera.unproject(screenCoords)
+
+        val worldX = camera.position.x
+        val worldY = camera.position.y
         shaderManager.render(
-            currentRead = circlesBuffer,
+            currentRead = buffer,
             cameraProjection = camera.combined,
             isNewFrame = true,
-            isClear = false
+            isClear = false,
+            worldX = worldX,
+            worldY = worldY,
+            blurAmount = blurLevel,
+            zoom = camera.zoom
         )
 
-        //TODO сделать буфер
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
-
-        shapeRenderer.color = Color.GOLD
-
-        shapeRenderer.projectionMatrix = camera.combined
-
-//        for (linkId in 0..linkEntity.lastId) {
-//            if (linkEntity.isAlive[linkId]) {
 //
-//                if (linkEntity.isNeuronLink[linkId]) {
-//                    shapeRenderer.color = Color.CYAN
-//                } else {
-//                    shapeRenderer.color = Color.WHITE
-//                }
+        Gdx.gl.glLineWidth(1f)
+        shapeRenderer.color = Color.WHITE
+        shapeRenderer.rect(
+            0f,
+            0f,
+            diContext.gridWith.toFloat(),
+            diContext.gridHeight.toFloat()
+        )
+//        shapeRenderer.color = Color.GREEN
 //
-//                val c1 = linkEntity.links1[linkId]
-//                val c2 = linkEntity.links2[linkId]
-//                if (cellEntity.isAlive[c1] && cellEntity.isAlive[c2]) {
-//                    shapeRenderer.line(
-//                        cellEntity.getX(c1),
-//                        cellEntity.getY(c1),
-//                        cellEntity.getX(c2),
-//                        cellEntity.getY(c2)
-//                    )
+//        synchronized(renderBufferManager.renderCellBufferData) {
+//            synchronized(renderBufferManager.renderLinkBufferData) {
+//                with(renderBufferManager.renderLinkBufferData) {
+//                    for (linkId in 0..<renderLinkAmount) {
+//                        val cellAIndex = cellA[linkId]
+//                        val cellBIndex = cellB[linkId]
+//
+//                        shapeRenderer.line(
+//                            renderBufferManager.renderCellBufferData.x[cellAIndex],
+//                            renderBufferManager.renderCellBufferData.y[cellAIndex],
+//                            renderBufferManager.renderCellBufferData.x[cellBIndex],
+//                            renderBufferManager.renderCellBufferData.y[cellBIndex],
+//                        )
+//                    }
 //                }
 //            }
 //        }
+        shapeRenderer.end()
+    }
 
-        if (simulationData.grabbedCellIndex != -1) {
-            shapeRenderer.circle(
-                cellEntity.getX(simulationData.grabbedCellIndex),
-                cellEntity.getY(simulationData.grabbedCellIndex),
-                0.55f
-            )
+    private fun moveCameraAndDrawSelected() = with(renderBufferManager) {
+        if (renderSpecificBufferData.isCellSelected) {
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
 
-            val targetX = cellEntity.getX(simulationData.grabbedCellIndex)
-            val targetY = cellEntity.getY(simulationData.grabbedCellIndex)
+            shapeRenderer.color = Color.GOLD
+            Gdx.gl.glLineWidth(5f)
 
-            val lerpSpeed = 1f // скорость
+            with(renderBufferManager) {
+                if (renderSpecificBufferData.isCellSelected) {
+                    shapeRenderer.circle(
+                        renderSpecificBufferData.grabbedCellX ?: 0f,
+                        renderSpecificBufferData.grabbedCellY ?: 0f,
+                        0.55f
+                    )
+                }
+            }
+
+            shapeRenderer.end()
+
+            val targetX = renderSpecificBufferData.grabbedCellX ?: return
+            val targetY = renderSpecificBufferData.grabbedCellY ?: return
+
+            val lerpSpeed = 1f
             val delta = Gdx.graphics.deltaTime
 
             camera.position.x += (targetX - camera.position.x) * lerpSpeed * delta
@@ -118,35 +201,25 @@ class RenderSystem(
 
             camera.update()
         }
-
-        shapeRenderer.end()
     }
-    fun drawTextSimInfo(spriteBatch: SpriteBatch, font: BitmapFont) {
-        //TODO тут кстати тоже нужна синхронизация, хоть и не так критично
 
-        val uiProjection = fontMatrix.setToOrtho2D(
-            0f,
-            0f,
-            Gdx.graphics.width.toFloat(),
-            Gdx.graphics.height.toFloat()
-        )
-        spriteBatch.projectionMatrix = uiProjection
-
+    private fun drawTextSimInfo() = with(renderBufferManager) {
         spriteBatch.begin()
         font.draw(
             spriteBatch,
             """
                     FPS: ${Gdx.graphics.framesPerSecond}
-                    UPS: ${simulationData.ups}
-                    Update Time: ${round(1e5f / simulationData.ups) / 100f} ms
-                    Cells: ${cellEntity.lastId - cellEntity.deadStack.size + 1}
-                    Particles: ${particleEntity.lastId - particleEntity.deadStack.size + 1}
-                    Links ${linkEntity.lastId - linkEntity.deadStack.size + 1}
-                    NeuronImpulseInput ${if (simulationData.grabbedCellIndex != -1) cellEntity.neuronImpulseInput[simulationData.grabbedCellIndex] else "0.0"}
-                    NeuronImpulseOutput ${if (simulationData.grabbedCellIndex != -1) cellEntity.neuronImpulseOutput[simulationData.grabbedCellIndex] else "0.0"}
+                    UPS: ${renderSpecificBufferData.ups}
+                    Update Time: ${renderSpecificBufferData.updateTime} ms
+                    Cells: ${renderSpecificBufferData.cellsAmount}
+                    Particles: ${renderSpecificBufferData.particleAmount}
+                    Links ${renderSpecificBufferData.linksAmount}
+                    NeuronImpulseInput ${renderSpecificBufferData.neuronImpulseInput}
+                    NeuronImpulseOutput ${renderSpecificBufferData.neuronImpulseOutput}
+                    Cell type ${renderSpecificBufferData.cellName}
                 """.trimIndent(),
             30f,
-            140f
+            180f
         )
         font.data.setScale(1f)
         spriteBatch.end()
@@ -155,15 +228,11 @@ class RenderSystem(
     fun dispose() {
 
     }
-}
 
-data class RenderSpecificDataBuffer(
-    val ups: Int,
-    val cellsAmount: Int,
-    val particleAmount: Int,
-    val linksAmount: Int,
-    val neuronImpulseInput: Int?,
-    val neuronImpulseOutput: Int?,
-    val grabbedCellX: Float?,
-    val grabbedCellY: Float?
-)
+    companion object {
+        const val INITIAL_PARTICLE_CAPACITY = 30_000
+        const val BYTE_SIZE = 4
+        const val PARTICLE_PROPERTIES_AMOUNT = 5
+        const val PARTICLE_STRUCT_SIZE = 24
+    }
+}

@@ -3,9 +3,9 @@ package io.github.some_example_name.old.systems.physics
 import com.badlogic.gdx.utils.Disposable
 import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.commands.WorldCommandType
-import io.github.some_example_name.old.core.DIContainer.linkMaxLength2
-import io.github.some_example_name.old.core.DIContainer.threadCount
-import io.github.some_example_name.old.core.DIContainer.threadManager
+import io.github.some_example_name.old.core.DISimulationContainer.linkMaxLength2
+import io.github.some_example_name.old.core.DISimulationContainer.threadCount
+import io.github.some_example_name.old.core.DISimulationContainer.threadManager
 import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.core.utils.invSqrt
 import io.github.some_example_name.old.entities.CellEntity

@@ -20,7 +20,6 @@ class MutateManager(
     val particleEntity: ParticleEntity,
     val worldCommandsManager: WorldCommandsManager,
     val gridManager: GridManager,
-    val neuralEntity: NeuralEntity,
     val specialEntity: SpecialEntity
 ): Disposable {
 

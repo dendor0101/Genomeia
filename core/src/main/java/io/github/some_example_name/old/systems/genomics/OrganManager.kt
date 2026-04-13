@@ -7,7 +7,7 @@ import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 class OrganManager(
     private val organEntity: OrganEntity,
     private val genomeManager: GenomeManager,
-    private val cellEntity: CellEntity
+    private val cellEntity: CellEntity,
 ) {
 
     /*

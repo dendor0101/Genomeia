@@ -2,8 +2,9 @@ package io.github.some_example_name.old.cells
 
 import com.badlogic.gdx.math.MathUtils
 import io.github.some_example_name.old.commands.WorldCommandType
-import io.github.some_example_name.old.core.DIContainer.zygote
+import io.github.some_example_name.old.core.DISimulationContainer.zygote
 import io.github.some_example_name.old.core.utils.redColors
+import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem.Companion.PARTICLE_MAX_RADIUS
 
 class Producer(cellTypeId: Int): Cell(
     defaultColor = redColors[4],
@@ -28,7 +29,7 @@ class Producer(cellTypeId: Int): Cell(
         }
 
         val color: Int = zygote.defaultColor.toIntBits()
-        val radius: Float = 0.5f
+        val radius: Float = PARTICLE_MAX_RADIUS
         val cellType: Int = zygote.cellTypeId
         val parentIndex: Int = cellIndex
         val angle: Float = angle[cellIndex]

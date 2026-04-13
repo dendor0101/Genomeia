@@ -4,11 +4,12 @@ import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.math.MathUtils
 import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.commands.WorldCommandsManager
-import io.github.some_example_name.old.core.DIContainer
+import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.utils.collectParticles
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.systems.physics.GridManager
+import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem.Companion.PARTICLE_MAX_RADIUS
 import kotlin.math.PI
 
 class DivideManager(
@@ -33,21 +34,21 @@ class DivideManager(
             if (x < 0) {
                 x = 0.1f
             }
-            if (x > DIContainer.gridManager.gridWidth) {
-                x = DIContainer.gridManager.gridWidth - 0.1f
+            if (x > DISimulationContainer.gridManager.gridWidth) {
+                x = DISimulationContainer.gridManager.gridWidth - 0.1f
             }
             if (y < 0) {
                 y = 0.1f
             }
-            if (y > DIContainer.gridManager.gridHeight) {
-                y = DIContainer.gridManager.gridHeight - 0.1f
+            if (y > DISimulationContainer.gridManager.gridHeight) {
+                y = DISimulationContainer.gridManager.gridHeight - 0.1f
             }
 
             val cellGenomeId: Int = action.id
             val parentOrganIndex: Int = organIndex[index]
             run {
                 val color: Int = (action.color ?: Color.WHITE).toIntBits()
-                val radius: Float = 0.5f
+                val radius: Float = PARTICLE_MAX_RADIUS
                 val cellType: Int = action.cellType ?: throw Exception("Forgot cellType")
                 val parentIndex: Int = index
                 val angle: Float = divideAngle

@@ -3,7 +3,7 @@ package io.github.some_example_name.old.systems.physics
 import io.github.some_example_name.old.cells.Cell
 import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.commands.WorldCommandsManager
-import io.github.some_example_name.old.core.DIContainer.halfChunkHeight
+import io.github.some_example_name.old.core.DISimulationContainer.halfChunkHeight
 import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.core.utils.invSqrt

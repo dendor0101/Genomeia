@@ -1,9 +1,9 @@
 package io.github.some_example_name.old.systems.simulation
 
-import io.github.some_example_name.old.core.DIContainer.chunkSize
-import io.github.some_example_name.old.core.DIContainer.gridSize
-import io.github.some_example_name.old.core.DIContainer.threadCount
-import io.github.some_example_name.old.core.DIContainer.totalChunks
+import io.github.some_example_name.old.core.DISimulationContainer.chunkSize
+import io.github.some_example_name.old.core.DISimulationContainer.gridSize
+import io.github.some_example_name.old.core.DISimulationContainer.threadCount
+import io.github.some_example_name.old.core.DISimulationContainer.totalChunks
 import io.github.some_example_name.old.systems.simulation.SimulationSystem.Companion.DELTA_SIM_TICK_TIME
 import java.util.concurrent.Executors
 import java.util.concurrent.Future

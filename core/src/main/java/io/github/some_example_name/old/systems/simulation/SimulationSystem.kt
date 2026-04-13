@@ -2,7 +2,7 @@ package io.github.some_example_name.old.systems.simulation
 
 import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.commands.UserCommandManager
-import io.github.some_example_name.old.core.DIContainer.threadCount
+import io.github.some_example_name.old.core.DISimulationContainer.threadCount
 import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.Entity
@@ -17,9 +17,9 @@ import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.physics.GridManager
 import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem
 import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem
+import io.github.some_example_name.old.systems.render.RenderBufferManager
 import io.github.some_example_name.old.systems.render.RenderSystem
 import io.github.some_example_name.old.systems.render.ShaderManager
-import io.github.some_example_name.old.systems.render.TripleBufferManager
 
 class SimulationSystem(
     val gridManager: GridManager,
@@ -37,12 +37,12 @@ class SimulationSystem(
     val particlePhysicsSystem: ParticlePhysicsSystem,
     val linkPhysicsSystem: LinkPhysicsSystem,
     val simulationData: SimulationData,
-    val tripleBufferManager: TripleBufferManager,
     val cellSystem: CellSystem,
     val userCommandManager: UserCommandManager,
     val shaderManager: ShaderManager,
     val renderSystem: RenderSystem,
-    val entityList: List<Entity>
+    val entityList: List<Entity>,
+    val renderBufferManager: RenderBufferManager
 ) {
 
     val simulationThread = Thread { threadManager.runUpdateLoop { updateTick() } }
@@ -69,14 +69,13 @@ class SimulationSystem(
         linkPhysicsSystem.iterateLinks()
         cellSystem.iterateCell()
 
-        synchronized(particleEntity) {
-            arrangementOfPositionsInTheGrid()
-        }
+        arrangementOfPositionsInTheGrid()
 
         worldCommandsManager.executingCommandsFromTheWorld()
         organManager.performOrgansNextStage()
         userCommandManager.processingCommandsFromUser()
-//        tripleBufferManager.updateAndCommitProducer(false)
+
+        renderBufferManager.updateBuffer()
     }
 
     fun processParticleCollision() {

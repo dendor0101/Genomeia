@@ -4,8 +4,10 @@ import com.badlogic.gdx.*
 import com.badlogic.gdx.graphics.*
 import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.input.GestureDetector
 import com.badlogic.gdx.math.MathUtils
+import com.badlogic.gdx.math.Matrix4
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.scenes.scene2d.InputEvent
@@ -17,8 +19,9 @@ import com.badlogic.gdx.utils.viewport.ScreenViewport
 import com.kotcrab.vis.ui.widget.VisTextButton
 import com.kotcrab.vis.ui.widget.VisTextButton.VisTextButtonStyle
 import io.github.some_example_name.old.commands.PlayerCommand
-import io.github.some_example_name.old.core.DIContainer
+import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.FileProvider
+import io.github.some_example_name.old.systems.render.usePostProcess
 import io.github.some_example_name.old.ui.dialogs.GenomeListDialog
 
 class SimulationScreen(
@@ -29,16 +32,18 @@ class SimulationScreen(
     val genomeName: String?
 ) : Screen, GestureDetector.GestureListener {
 
-    private val simEntity = DIContainer.simulationData
-    private val simulationSystem = DIContainer.simulationSystem
-    private val renderSystem = DIContainer.renderSystem
-    private val userCommandManager = DIContainer.userCommandManager
+    private val simEntity = DISimulationContainer.simulationData
+    private val simulationSystem = DISimulationContainer.simulationSystem
+    private val renderSystem = DISimulationContainer.renderSystem
+    private val userCommandManager = DISimulationContainer.userCommandManager
 
     private lateinit var camera: OrthographicCamera
     private lateinit var spriteBatch: SpriteBatch
     private lateinit var font: BitmapFont
     private lateinit var stage: Stage
     private lateinit var root: Table
+    private lateinit var fontMatrix: Matrix4
+    private lateinit var shapeRenderer: ShapeRenderer
 
     private var currentScreenWidth = 0
     private var currentScreenHeight = 0
@@ -52,7 +57,8 @@ class SimulationScreen(
     override fun show() {
         spriteBatch = SpriteBatch()
         stage = Stage(ScreenViewport())
-
+        fontMatrix = Matrix4()
+        shapeRenderer = ShapeRenderer()
 
         val screenPos = Vector3()
         val worldBefore = Vector3()
@@ -113,9 +119,14 @@ class SimulationScreen(
         currentScreenWidth = Gdx.graphics.width
         currentScreenHeight = Gdx.graphics.height
 
-        renderSystem.create()
+        renderSystem.create(
+            fontMatrix = fontMatrix,
+            spriteBatch = spriteBatch,
+            font = font,
+            shapeRenderer = shapeRenderer,
+            camera = camera
+        )
 
-//        camera.rotate(-90f)
         camera.zoom = 0.08f
         camera.translate(-430f, -430f)
         camera.update()
@@ -123,7 +134,11 @@ class SimulationScreen(
 
 
     override fun render(delta: Float) {
-        Gdx.gl.glClearColor(0.50f, 0.62f, 0.64f, 1f)
+        if (usePostProcess) {
+            Gdx.gl.glClearColor(0.0f, 0.0f, 0.0f, 1f)
+        } else {
+            Gdx.gl.glClearColor(1.0f * 0.7f, 0.969f * 0.7f, 0.855f * 0.7f, 1.0f)
+        }
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
 
         if (Gdx.input.isKeyPressed(Input.Keys.SPACE)) {
@@ -134,8 +149,9 @@ class SimulationScreen(
             camera.update()
         }
 
-        renderSystem.drawShader(camera)
-        renderSystem.drawTextSimInfo(spriteBatch, font)
+        shapeRenderer.projectionMatrix = camera.combined
+
+        renderSystem.render()
 
         stage.act(Gdx.graphics.deltaTime)
         stage.draw()
@@ -151,6 +167,15 @@ class SimulationScreen(
         camera.update()
 
         font.data.setScale(Gdx.graphics.density)
+
+        renderSystem.resize(width, height)
+        val uiProjection = fontMatrix.setToOrtho2D(
+            0f,
+            0f,
+            Gdx.graphics.width.toFloat(),
+            Gdx.graphics.height.toFloat()
+        )
+        spriteBatch.projectionMatrix = uiProjection
 
         currentScreenWidth = width
         currentScreenHeight = height
@@ -169,6 +194,19 @@ class SimulationScreen(
     override fun hide() { }
 
     override fun pan(x: Float, y: Float, deltaX: Float, deltaY: Float): Boolean {
+        if (userCommandManager.grabbedParticleIndex != -1) {
+            val world = screenToWorld(x, y)
+            userCommandManager.push(
+                PlayerCommand.Drag(
+                    world.first,
+                    world.second,
+                    -deltaX * camera.zoom,
+                    deltaY * camera.zoom
+                )
+            )
+        } else {
+            renderSystem.moveCamera(-deltaX * camera.zoom, deltaY * camera.zoom)
+        }
         return true
     }
 
@@ -184,7 +222,20 @@ class SimulationScreen(
 
     override fun zoom(initialDistance: Float, distance: Float) = false
 
-    override fun tap(x: Float, y: Float, count: Int, button: Int) = true
+    override fun tap(x: Float, y: Float, count: Int, button: Int): Boolean {
+        val world = screenToWorld(x, y)
+
+        when (button) {
+            Input.Buttons.LEFT -> {
+                userCommandManager.push(PlayerCommand.Tap(world.first, world.second, isLeftButton = true))
+            }
+            Input.Buttons.RIGHT -> {
+                userCommandManager.push(PlayerCommand.Tap(world.first, world.second, isLeftButton = false))
+            }
+        }
+
+        return true
+    }
 
     private fun screenToWorld(screenX: Float, screenY: Float): Pair<Float, Float> {
         val screenPos = Vector3(screenX, screenY, 0f)
@@ -194,7 +245,7 @@ class SimulationScreen(
 
     override fun longPress(x: Float, y: Float) = false
     override fun fling(dx: Float, dy: Float, button: Int): Boolean {
-        userCommandManager.push(PlayerCommand.Drag(dx, dy))
+        userCommandManager.push(PlayerCommand.StopDrag)
         return true
     }
     override fun panStop(x: Float, y: Float, pointer: Int, button: Int): Boolean {
@@ -252,7 +303,7 @@ class SimulationScreen(
         val restartSimulationButton = VisTextButton(bundle.get("button.restart"))
 //        val chooseColorButton = VisTextButton(bundle.get("button.chooseColor"))
         val drawRaysToggle = VisTextButton(bundle.get("button.drawRays"), "toggle")
-//        drawRaysToggle.isChecked = playGround.drawRays
+        drawRaysToggle.isChecked = usePostProcess
 //        chooseColorButton.addListener(object : ClickListener() {
 //            override fun clicked(event: InputEvent, x: Float, y: Float) {
 //                // Открываем палитру цветов
@@ -318,6 +369,7 @@ class SimulationScreen(
 
         drawRaysToggle.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                usePostProcess = drawRaysToggle.isChecked
 //                playGround.drawRays = drawRaysToggle.isChecked
 //                simulationSystem.simEntity.drawRays = drawRaysToggle.isChecked
             }

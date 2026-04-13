@@ -22,6 +22,10 @@ import com.kotcrab.vis.ui.widget.VisTextButton
 import com.kotcrab.vis.ui.widget.VisTextButton.VisTextButtonStyle
 import com.kotcrab.vis.ui.widget.VisTextField
 import com.kotcrab.vis.ui.widget.VisValidatableTextField
+import io.github.some_example_name.old.core.DI
+import io.github.some_example_name.old.core.DIGameGlobalContainer
+import io.github.some_example_name.old.core.DIGenomeEditorContainer
+import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.ui.screens.GlobalSettings.MSAA
 import io.github.some_example_name.old.ui.screens.GlobalSettings.MUSIC_VOLUME
 import io.github.some_example_name.old.ui.screens.GlobalSettings.UI_SCALE
@@ -55,6 +59,9 @@ class MyGame(val multiPlatformFileProvider: FileProvider, val openKeyBoardListen
 
     override fun create() {
         VisUI.load()  // Загружаем дефолтный VisUI
+        DIGameGlobalContainer.fileProvider = multiPlatformFileProvider
+        DISimulationContainer
+        DIGenomeEditorContainer
 
         // Генерация шрифта с большим размером (адаптировано под DPI)
         val generator = FreeTypeFontGenerator(Gdx.files.internal("fonts/Roboto-Regular.ttf"))

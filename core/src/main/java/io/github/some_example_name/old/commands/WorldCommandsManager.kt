@@ -2,7 +2,7 @@ package io.github.some_example_name.old.commands
 
 import io.github.some_example_name.old.cells.Cell
 import io.github.some_example_name.old.cells.Zygote
-import io.github.some_example_name.old.core.DIContainer.threadCount
+import io.github.some_example_name.old.core.DISimulationContainer.threadCount
 import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.core.utils.OrderedIntPairMap
 import io.github.some_example_name.old.entities.CellEntity
@@ -30,7 +30,8 @@ class WorldCommandsManager(
     val genomeManager: GenomeManager,
     val simulationData: SimulationData,
     val cellList: List<Cell>,
-    val substancesEntity: SubstancesEntity
+    val substancesEntity: SubstancesEntity,
+    threadCount: Int
 ) {
     val worldCommandBuffer = Array(threadCount) { WorldCommandBuffer() }
     val worldCommandEndBuffer = Array(threadCount) { WorldCommandBuffer(100) }

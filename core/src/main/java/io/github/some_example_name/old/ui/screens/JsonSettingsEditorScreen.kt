@@ -141,6 +141,7 @@ class JsonEditorScreen(
             return prettyJson.replace("\t", "    ") + addSpaseForKeyboard()
         } catch (e: Exception) {
             errorLabel.setText("Error: Invalid JSON - ${e.message}")
+            println(e.message)
             return jsonString.replace("\t", "    ") + addSpaseForKeyboard()
         }
     }

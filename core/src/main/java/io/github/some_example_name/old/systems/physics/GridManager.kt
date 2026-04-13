@@ -1,6 +1,6 @@
 package io.github.some_example_name.old.systems.physics
-import io.github.some_example_name.old.core.DIContainer.chunkSize
-import io.github.some_example_name.old.core.DIContainer.totalChunks
+import io.github.some_example_name.old.core.DISimulationContainer.chunkSize
+import io.github.some_example_name.old.core.DISimulationContainer.totalChunks
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 import it.unimi.dsi.fastutil.ints.IntArrayList
 
@@ -22,6 +22,24 @@ class GridManager (
             throw Exception("Out of grid bounds")
         }
         val cellIndex = y * gridWidth + x
+        if (particleCounts[cellIndex] >= MAX_AMOUNT_OF_PARTICLES) {
+            val threadId = getHalfChunkId(cellIndex)
+            var list = mapMoreThenMax[threadId].get(cellIndex)
+            if (list == null) {
+                list = IntArrayList()
+                mapMoreThenMax[threadId].put(cellIndex, list)
+            }
+            list.add(value)
+        } else {
+            val gridIndex = cellIndex * MAX_AMOUNT_OF_PARTICLES + particleCounts[cellIndex]
+            grid[gridIndex] = value
+        }
+
+        particleCounts[cellIndex]++
+        return cellIndex
+    }
+
+    fun addCell(cellIndex: Int, value: Int): Int {
         if (particleCounts[cellIndex] >= MAX_AMOUNT_OF_PARTICLES) {
             val threadId = getHalfChunkId(cellIndex)
             var list = mapMoreThenMax[threadId].get(cellIndex)

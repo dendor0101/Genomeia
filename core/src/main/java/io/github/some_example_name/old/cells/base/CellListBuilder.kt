@@ -1,14 +1,16 @@
 package io.github.some_example_name.old.cells.base
 
 import io.github.some_example_name.old.cells.*
+import io.github.some_example_name.old.core.DIContext
+import io.github.some_example_name.old.core.DISimulationContainer.threadCount
+import java.util.BitSet
 
-class CellListBuilder {
+class CellListBuilder(
+    val context: DIContext
+) {
 
-//    val instances = Cell::class.sealedSubclasses.mapNotNull { subclass ->
-//        subclass.constructors
-//            .firstOrNull { it.parameters.isEmpty() }
-//            ?.call()
-//    }.sortedBy { it.cellTypeId }
+    val visitedBits = Array(threadCount) { BitSet(context.gridManager.gridSize) }
+
     val zygote = Zygote(18)
 
     val instances = listOf(
@@ -26,7 +28,7 @@ class CellListBuilder {
         Sticky(11),
         Pumper(12),
         Chameleon(13),
-        Eye(14),
+        Eye(14, visitedBits),
         Compass(15),
         Controller(16),
         TouchTrigger(17),
@@ -38,5 +40,11 @@ class CellListBuilder {
         PheromoneSensor(23),
         Punisher(24)
     ).sortedBy { it.cellTypeId }
+
+    init {
+        instances.forEach {
+            it.context = context
+        }
+    }
 
 }

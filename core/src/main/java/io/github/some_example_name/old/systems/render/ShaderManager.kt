@@ -5,6 +5,17 @@ import java.nio.ByteBuffer
 
 interface ShaderManager {
     fun create()
-    fun render(currentRead: ByteBuffer, cameraProjection: Matrix4, isNewFrame: Boolean, isClear: Boolean)
+    fun render(
+        currentRead: ByteBuffer,
+        cameraProjection: Matrix4,
+        isNewFrame: Boolean,
+        isClear: Boolean,
+        worldX: Float,
+        worldY: Float,
+        blurAmount: Float,
+        zoom: Float
+    )
     fun dispose()
+
+    fun resize(width: Int, height: Int)
 }

@@ -1,6 +1,6 @@
 package io.github.some_example_name.old.cells.base
 
-import io.github.some_example_name.old.core.DIContainer.cellEntity
+import io.github.some_example_name.old.core.DISimulationContainer.cellEntity
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.pow

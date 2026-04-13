@@ -14,7 +14,7 @@ class SimulationData {
     var isPlay = true
     var maxSpeed = false
     var ups = 60
-    var grabbedCellIndex = -1
+    var selectedCellIndex = -1
 
     //TODO подумать как сделать лучше
     val controllerIndexesLol = TreeMap<Int, Boolean>()

@@ -4,8 +4,8 @@ import com.badlogic.gdx.utils.Disposable
 import io.github.some_example_name.old.cells.base.activation
 import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.commands.WorldCommandType
-import io.github.some_example_name.old.core.DIContainer.energyTransportRate
-import io.github.some_example_name.old.core.DIContainer.threadCount
+import io.github.some_example_name.old.core.DISimulationContainer.energyTransportRate
+import io.github.some_example_name.old.core.DISimulationContainer.threadCount
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
@@ -23,10 +23,11 @@ class CellSystem(
     val gridManager: GridManager,
     val divideManager: DivideManager,
     val mutateManager: MutateManager,
-    val threadManager: ThreadManager
+    val threadManager: ThreadManager?
 ): Disposable {
 
     fun iterateCell() = with(cellEntity) {
+        if (threadManager == null) return@with
         val size = aliveList.size
 
         if (size == 0) return
@@ -101,7 +102,7 @@ class CellSystem(
         }
     }
 
-    private fun genomicTransformations(cellIndex: Int, threadId: Int) = with(cellEntity) {
+    fun genomicTransformations(cellIndex: Int, threadId: Int = 0) = with(cellEntity) {
         val organIndex = organIndex[cellIndex]
         if (!organEntity.alreadyGrownUp[organIndex]) {
             if (organEntity.justChangedStage[organIndex]) {

@@ -15,7 +15,7 @@ abstract class Entity(startMaxAmount: Int) {
     fun isAliveAndSameGen(index: Int, gen: Int) = isAlive[index] && generation[index] == gen
 
     var aliveList = IntArrayList(startMaxAmount)
-    private var positionInAlive = IntArray(maxAmount) { -1 }
+    var positionInAlive = IntArray(maxAmount) { -1 }
     private var cellBoundBeforeClear = 0
     private var oldMaxBeforeResize = 0
 

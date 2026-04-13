@@ -1,7 +1,7 @@
 package io.github.some_example_name.old.cells
 
 import io.github.some_example_name.old.cells.base.activation
-import io.github.some_example_name.old.core.DIContainer.threadCount
+import io.github.some_example_name.old.core.DISimulationContainer.threadCount
 import io.github.some_example_name.old.core.utils.invSqrt
 import io.github.some_example_name.old.core.utils.skyBlueColors
 import java.util.BitSet
@@ -13,7 +13,7 @@ import kotlin.math.round
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-class Eye(cellTypeId: Int): Cell(
+class Eye(cellTypeId: Int, val visitedBits: Array<BitSet>): Cell(
     defaultColor = skyBlueColors[2],
     cellTypeId = cellTypeId,
     isNeural = true,
@@ -265,7 +265,6 @@ class Eye(cellTypeId: Int): Cell(
     }
 
 
-    private val visitedBits = Array(threadCount) { BitSet(gridManager.gridSize) }
     private val checkedObjectListId =  Array(threadCount) { IntArray(16) { -1 } }  // Увеличен размер для безопасности
 
 }
