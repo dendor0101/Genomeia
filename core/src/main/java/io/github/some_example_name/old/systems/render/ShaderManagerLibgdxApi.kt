@@ -19,7 +19,7 @@ import java.nio.ByteBuffer
 import kotlin.math.sin
 
 
-var usePostProcess = true
+var usePostProcess = false
 
 class ShaderManagerLibgdxApi : ShaderManager {
     private val ssbos = IntArray(2)
@@ -37,7 +37,7 @@ class ShaderManagerLibgdxApi : ShaderManager {
     private lateinit var fbo: FrameBuffer
     private lateinit var blurShader: ShaderProgram
 
-    private lateinit var linesTexture: Texture
+//    private lateinit var linesTexture: Texture
 
     private lateinit var blurFbo: FrameBuffer
 
@@ -209,9 +209,9 @@ class ShaderManagerLibgdxApi : ShaderManager {
         createBlurShader()    // ← НОВОЕ
         createSobelShader()
 
-        linesTexture = Texture(Gdx.files.internal("shaders/parallax/p2.jpg"))
-        linesTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
-        linesTexture.setWrap(Texture.TextureWrap.Repeat, Texture.TextureWrap.Repeat)
+//        linesTexture = Texture(Gdx.files.internal("shaders/parallax/p2.jpg"))
+//        linesTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
+//        linesTexture.setWrap(Texture.TextureWrap.Repeat, Texture.TextureWrap.Repeat)
 
         create2SSBO()
     }
@@ -337,16 +337,20 @@ class ShaderManagerLibgdxApi : ShaderManager {
             sobelShader.bind()
             sobelShader.setUniformi("u_texture", 0)
             sobelShader.setUniformf("u_resolution", fbo.width.toFloat(), fbo.height.toFloat())
-            sobelShader.setUniformi("u_linesTexture", 1)
-            sobelShader.setUniformf("u_cameraPos", worldX, worldY)
-            sobelShader.setUniformMatrix("u_invProj", invProjMatrix)
-            sobelShader.setUniformf("u_parallaxStrength", 0.018f)
+//            val zoomX10 = zoom * 10f
+//            val sobel = if (zoomX10 < 0.12) 0.12f else if (zoomX10 > 0.24) 0.24f else zoomX10
+            sobelShader.setUniformf("u_zoom", 0.12f)
+//            println(zoomX10)
+
+//            sobelShader.setUniformf("u_cameraPos", worldX, worldY)
+//            sobelShader.setUniformMatrix("u_invProj", invProjMatrix)
+//            sobelShader.setUniformf("u_parallaxStrength", 0.018f)
 
             Gdx.gl.glActiveTexture(GL20.GL_TEXTURE0)
             fbo.colorBufferTexture.bind()
 
-            Gdx.gl.glActiveTexture(GL20.GL_TEXTURE1)   // ← для lines
-            linesTexture.bind()
+//            Gdx.gl.glActiveTexture(GL20.GL_TEXTURE1)   // ← для lines
+//            linesTexture.bind()
 
             mesh.bind(sobelShader)
             Gdx.gl.glDrawArrays(GL20.GL_TRIANGLE_STRIP, 0, 4)
@@ -381,7 +385,7 @@ class ShaderManagerLibgdxApi : ShaderManager {
         if (::fbo.isInitialized) fbo.dispose()
         blurShader.dispose()
         if (::blurFbo.isInitialized) blurFbo.dispose()
-        if (::linesTexture.isInitialized) linesTexture.dispose()
+//        if (::linesTexture.isInitialized) linesTexture.dispose()
 
         if (textureArray != 0) {
             val deleteBuf = BufferUtils.newIntBuffer(1).apply {

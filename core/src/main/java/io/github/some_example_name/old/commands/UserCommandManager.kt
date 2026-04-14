@@ -61,110 +61,123 @@ class UserCommandManager(
     fun processingCommandsFromUser() {
         var isAlreadyDragged = false
         swapAndConsume { cmd ->
-            when (cmd) {
-                PlayerCommand.StopDrag -> {
-                    grabbedParticleIndex = -1
-                    simulationData.selectedCellIndex = -1
-                }
-                is PlayerCommand.TouchDown -> {
-                    val neighborsCellIndexes = gridManager.collectParticles(cmd.x.toInt(), cmd.y.toInt(), radius = 1)
-                    grabbedParticleIndex = neighborsCellIndexes
-                        .minByOrNull {
-                            distanceTo(cmd.x, cmd.y, particleEntity.x[it], particleEntity.y[it])
-                        }?.takeIf {
-                            distanceTo(cmd.x, cmd.y, particleEntity.x[it], particleEntity.y[it]) < particleEntity.radius[it]
-                        } ?: -1
-
-                    tapX = cmd.x
-                    tapY = cmd.y
-                    simulationData.selectedCellIndex = -1
-                }
-
-                is PlayerCommand.Drag -> {
-                    if (grabbedParticleIndex != -1) {
-                        isAlreadyDragged = true
-                        val grabDrag = 0.5f // To reduce oscillations
-
-                        with(particleEntity) {
-                            vx[grabbedParticleIndex] = vx[grabbedParticleIndex] * grabDrag + (cmd.x - x[grabbedParticleIndex]) * 0.02f
-                            vy[grabbedParticleIndex] = vy[grabbedParticleIndex] * grabDrag + (cmd.y - y[grabbedParticleIndex]) * 0.02f
-                        }
+            try {
+                when (cmd) {
+                    PlayerCommand.StopDrag -> {
+                        grabbedParticleIndex = -1
+                        simulationData.selectedCellIndex = -1
+                    }
+                    is PlayerCommand.TouchDown -> {
+                        val neighborsCellIndexes = gridManager.collectParticles(cmd.x.toInt(), cmd.y.toInt(), radius = 1)
+                        grabbedParticleIndex = neighborsCellIndexes
+                            .minByOrNull {
+                                distanceTo(cmd.x, cmd.y, particleEntity.x[it], particleEntity.y[it])
+                            }?.takeIf {
+                                distanceTo(cmd.x, cmd.y, particleEntity.x[it], particleEntity.y[it]) < particleEntity.radius[it]
+                            } ?: -1
 
                         tapX = cmd.x
                         tapY = cmd.y
                         simulationData.selectedCellIndex = -1
                     }
-                }
 
-                is PlayerCommand.Tap -> {
-                    val neighborsCellIndexes = gridManager.collectParticles(cmd.x.toInt(), cmd.y.toInt(), radius = 1)
-                    val grabbedParticleIndex = neighborsCellIndexes
-                        .minByOrNull {
-                            distanceTo(cmd.x, cmd.y, particleEntity.x[it], particleEntity.y[it])
-                        }?.takeIf {
-                            distanceTo(cmd.x, cmd.y, particleEntity.x[it], particleEntity.y[it]) < particleEntity.radius[it]
-                        } ?: -1
+                    is PlayerCommand.Drag -> {
+                        if (grabbedParticleIndex != -1) {
+                            isAlreadyDragged = true
+                            val grabDrag = 0.5f // To reduce oscillations
 
-                    simulationData.selectedCellIndex = if (grabbedParticleIndex != -1) {
-                        if (particleEntity.isCell[grabbedParticleIndex]) {
-                            particleEntity.holderEntityIndex[grabbedParticleIndex]
-                        } else -1
-                    } else -1
-
-                    if (simulationData.selectedCellIndex == -1) {
-                        if (cmd.isLeftButton) {
-                            if (cmd.x > 0 && cmd.x < gridManager.gridWidth && cmd.y > 0 && cmd.y < gridManager.gridHeight) {
-                                val genomeIndex = simulationData.currentGenomeIndex
-                                val genome = genomeManager.genomes[genomeIndex]
-                                val organIndex = organEntity.addOrgan(
-                                    genomeIndex = genomeIndex,
-                                    genomeSize = genome.genomeStageInstruction.size,
-                                    dividedTimes = genome.dividedTimes[0],
-                                    mutatedTimes = genome.mutatedTimes[0]
-                                )
-                                cellEntity.addCell(
-                                    x = cmd.x,
-                                    y = cmd.y,
-                                    color = zygote.defaultColor.toIntBits(),
-                                    radius = PARTICLE_MAX_RADIUS,
-                                    cellType = zygote.cellTypeId,
-                                    organIndex = organIndex,
-                                    angle = Random.nextFloat() * 3.1415f
-                                )
+                            with(particleEntity) {
+                                vx[grabbedParticleIndex] = vx[grabbedParticleIndex] * grabDrag + (cmd.x - x[grabbedParticleIndex]) * 0.02f
+                                vy[grabbedParticleIndex] = vy[grabbedParticleIndex] * grabDrag + (cmd.y - y[grabbedParticleIndex]) * 0.02f
                             }
-                        } else {
-                            val radius = 170.0f
 
-                            repeat(15_000) {
-                                val angle = MathUtils.random(0f, MathUtils.PI2)
+                            tapX = cmd.x
+                            tapY = cmd.y
+                            simulationData.selectedCellIndex = -1
+                        }
+                    }
 
-                                val r = radius * sqrt(MathUtils.random())
+                    is PlayerCommand.Tap -> {
+                        val neighborsCellIndexes = gridManager.collectParticles(cmd.x.toInt(), cmd.y.toInt(), radius = 1)
+                        val grabbedParticleIndex = neighborsCellIndexes
+                            .minByOrNull {
+                                distanceTo(cmd.x, cmd.y, particleEntity.x[it], particleEntity.y[it])
+                            }?.takeIf {
+                                distanceTo(cmd.x, cmd.y, particleEntity.x[it], particleEntity.y[it]) < particleEntity.radius[it]
+                            } ?: -1
 
-                                val x = cmd.x + MathUtils.cos(angle) * r
-                                val y = cmd.y + MathUtils.sin(angle) * r
+                        simulationData.selectedCellIndex = if (grabbedParticleIndex != -1) {
+                            if (particleEntity.isCell[grabbedParticleIndex]) {
+                                particleEntity.holderEntityIndex[grabbedParticleIndex]
+                            } else -1
+                        } else -1
 
-                                if (x > 0 && x < gridManager.gridWidth && y > 0 && y < gridManager.gridHeight) {
-                                    val r = Random.nextInt(255)
-                                    val g = Random.nextInt(255)
-                                    val b = Random.nextInt(255)
-                                    val a = 255
-
-                                    val color = (a shl 24) or (r shl 16) or (g shl 8) or b
-                                    val radius = Random.nextFloat() * (0.5f - 0.1f) + 0.1f
-
-                                    worldCommandsManager.worldCommandBuffer[Random.nextInt(
-                                        0,
-                                        threadCount
-                                    )].push(
-                                        type = WorldCommandType.ADD_PARTICLE,
-                                        floats = floatArrayOf(x, y, radius),
-                                        ints = intArrayOf(color)
+                        if (simulationData.selectedCellIndex == -1) {
+                            if (cmd.isLeftButton) {
+                                if (cmd.x > 0 && cmd.x < gridManager.gridWidth && cmd.y > 0 && cmd.y < gridManager.gridHeight) {
+                                    val genomeIndex = simulationData.currentGenomeIndex
+                                    val genome = genomeManager.genomes[genomeIndex]
+                                    val organIndex = organEntity.addOrgan(
+                                        genomeIndex = genomeIndex,
+                                        genomeSize = genome.genomeStageInstruction.size,
+                                        dividedTimes = genome.dividedTimes[0],
+                                        mutatedTimes = genome.mutatedTimes[0]
                                     )
+                                    cellEntity.addCell(
+                                        x = cmd.x,
+                                        y = cmd.y,
+                                        color = zygote.defaultColor.toIntBits(),
+                                        radius = PARTICLE_MAX_RADIUS,
+                                        cellType = zygote.cellTypeId,
+                                        organIndex = organIndex,
+                                        angle = Random.nextFloat() * 3.1415f
+                                    )
+                                }
+                            } else {
+                                val radius = 10.0f
+
+                                repeat(300) {
+                                    val angle = MathUtils.random(0f, MathUtils.PI2)
+
+                                    val r = radius * sqrt(MathUtils.random())
+
+                                    val x = cmd.x + MathUtils.cos(angle) * r
+                                    val y = cmd.y + MathUtils.sin(angle) * r
+
+                                    if (x > 0 && x < gridManager.gridWidth && y > 0 && y < gridManager.gridHeight) {
+
+                                        val neighborsCellIndexes = gridManager.collectParticles(x.toInt(), y.toInt(), radius = 1)
+                                        val neighborIndex = neighborsCellIndexes.firstOrNull {
+                                            distanceTo(x, y, particleEntity.x[it], particleEntity.y[it]) < particleEntity.radius[it]
+                                        }
+
+                                        if (neighborIndex == null) {
+                                            val r = Random.nextInt(255)
+                                            val g = Random.nextInt(255)
+                                            val b = Random.nextInt(255)
+                                            val a = 255
+
+                                            val color = (a shl 24) or (r shl 16) or (g shl 8) or b
+                                            val radius = Random.nextFloat() * (0.5f - 0.1f) + 0.1f
+
+                                            worldCommandsManager.worldCommandBuffer[Random.nextInt(
+                                                0,
+                                                threadCount
+                                            )].push(
+                                                type = WorldCommandType.ADD_SUBSTANCE,
+                                                floats = floatArrayOf(x, y, radius),
+                                                ints = intArrayOf(color, 0)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
+            } catch (e: Exception) {
+                println(e)
+                throw e
             }
         }
 

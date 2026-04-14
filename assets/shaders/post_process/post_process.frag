@@ -3,11 +3,12 @@ precision highp float;
 
 varying vec2 v_texCoord;
 uniform sampler2D u_texture;
-uniform sampler2D u_linesTexture;     // ← НОВОЕ
+//uniform sampler2D u_linesTexture;     // ← НОВОЕ
 uniform vec2 u_resolution;
-uniform vec2 u_cameraPos;             // ← НОВОЕ (worldX, worldY)
-uniform mat4 u_invProj;
-uniform float u_parallaxStrength;     // ← НОВОЕ (сила параллакса)
+//uniform vec2 u_cameraPos;             // ← НОВОЕ (worldX, worldY)
+//uniform mat4 u_invProj;
+//uniform float u_parallaxStrength;     // ← НОВОЕ (сила параллакса)
+uniform float u_zoom;
 
 void main() {
 
@@ -26,28 +27,28 @@ void main() {
     float gy = p10 - p01;
 
     float edge = length(vec2(gx, gy));
-    edge = /*1.0 - */smoothstep(0.0, 0.12, edge);
+    edge = smoothstep(0.0, u_zoom, edge);
 
     vec4 background = vec4(1.0, 0.969, 0.855, 1.0);
 
     // ==================== PARALLAX LINES (ТЕПЕРЬ В МИРОВЫХ КООРДИНАТАХ) ====================
-    vec2 ndc = v_texCoord * 2.0 - 1.0;
-
-    // Преобразуем NDC → мировые координаты через инверсную матрицу камеры
-    vec4 clipPos = vec4(ndc, 0.0, 1.0);
-    vec4 worldHom = u_invProj * clipPos;
-    vec2 worldPos = worldHom.xy;                     // для ortho w = 1
-
-    // Параллакс: background двигается медленнее основной сцены
-    vec2 samplePos = worldPos - u_cameraPos * (1.0 - u_parallaxStrength);
-
-    float tileWorldSize = 240.0;                     // ← НАСТРАИВАЙ: больше = крупнее тайлы, меньше видно одновременно
-    vec2 linesUV = samplePos / tileWorldSize;
-
-    vec4 linesSample = texture2D(u_linesTexture, linesUV);
-
-    float linesFactor = 1.0 - linesSample.r; // чёрный=1, белый=0
-    vec4 finalBackground = background * linesFactor;
+//    vec2 ndc = v_texCoord * 2.0 - 1.0;
+//
+//    // Преобразуем NDC → мировые координаты через инверсную матрицу камеры
+//    vec4 clipPos = vec4(ndc, 0.0, 1.0);
+//    vec4 worldHom = u_invProj * clipPos;
+//    vec2 worldPos = worldHom.xy;                     // для ortho w = 1
+//
+//    // Параллакс: background двигается медленнее основной сцены
+//    vec2 samplePos = worldPos - u_cameraPos * (1.0 - u_parallaxStrength);
+//
+//    float tileWorldSize = 240.0;                     // ← НАСТРАИВАЙ: больше = крупнее тайлы, меньше видно одновременно
+//    vec2 linesUV = samplePos / tileWorldSize;
+//
+//    vec4 linesSample = texture2D(u_linesTexture, linesUV);
+//
+//    float linesFactor = 1.0 - linesSample.r; // чёрный=1, белый=0
+    vec4 finalBackground = background/* * linesFactor*/;
     // =================================================================================
 
     vec4 textureMixBackground = mix(finalBackground, texture, 0.1875);
@@ -83,5 +84,5 @@ void main() {
 
     vec4 plugColor = pastelColor * vignette * 0.000001;
 
-    gl_FragColor = pastelColor * vignette/*colorA + plugColor*/;
+    gl_FragColor = pastelColor * vignette/*vec4(edge) + plugColor*/;
 }

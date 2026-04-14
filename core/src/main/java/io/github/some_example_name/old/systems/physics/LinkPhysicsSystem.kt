@@ -106,7 +106,9 @@ class LinkPhysicsSystem(
                     return
                 }
                 // TODO: for physical accuracy this should be changed to a harmonic mean
-                val stiffness = (cellStiffness[linkParticleA] + cellStiffness[linkParticleB]) / 2
+                val stiffnessA = cellStiffness[linkParticleA]
+                val stiffnessB = cellStiffness[linkParticleB]
+                val stiffness = 2 * stiffnessA * stiffnessB / (stiffnessA + stiffnessB)
 
                 if (distanceSquared < 0) throw Exception("distanceSquared < 0, distanceSquared = $distanceSquared")
                 val dist = 1.0f / invSqrt(distanceSquared)

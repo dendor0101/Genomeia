@@ -134,39 +134,85 @@ class ParticlePhysicsSystem(
                 }
             }
 
-
             if (!isParticleAIsCell && !isParticleBIsCell) {
                 val subAIndex = holderEntityIndex[particleAId]
                 val subBIndex = holderEntityIndex[particleBId]
                 if (subAIndex != -1 && subBIndex != -1) {
                     //TODO вынести в SubManager, добавить притягивание, проверять типы, соединять вещества при более близком контакте, сохранять общий импуль
-                    val radius =  1.0f / invSqrt(radius[particleAId] * radius[particleAId] + radius[particleBId] * radius[particleBId])
-                    if (radius <= PARTICLE_MAX_RADIUS) {
-                        val color = (color[particleAId] + color[particleBId]) / 2
-                        val x = (x[particleAId] + x[particleBId]) / 2
-                        val y = (y[particleAId] + y[particleBId]) / 2
+                    val rA2 = radius[particleAId] * radius[particleAId]
+                    val rB2 = radius[particleBId] * radius[particleBId]
+                    val radiusSumSquared = rA2 + rB2
+                    if (radiusSumSquared < PARTICLE_MAX_RADIUS_SQUARED) {
 
-                        worldCommandsManager.worldCommandBuffer[threadId].push(
-                            type = WorldCommandType.ADD_SUBSTANCE,
-                            ints = intArrayOf(color, 0),
-                            floats = floatArrayOf(x, y, radius)
-                        )
+                        val maxRadius = maxOf(radius[particleAId], radius[particleBId])
+                        if (distance < maxRadius) {
+                            val radius = 1.0f / invSqrt(radiusSumSquared)
+                            val deleteIndex = if (this.radius[particleAId] < this.radius[particleBId]) {
+                                this.radius[particleBId] = radius
+                                subAIndex
+                            } else {
+                                this.radius[particleAId] = radius
+                                subBIndex
+                            }
 
-                        worldCommandsManager.worldCommandBuffer[threadId].push(
-                            type = WorldCommandType.DELETE_SUBSTANCE,
-                            ints = intArrayOf(subAIndex, substancesEntity.getGeneration(subAIndex))
-                        )
-                        worldCommandsManager.worldCommandBuffer[threadId].push(
-                            type = WorldCommandType.DELETE_SUBSTANCE,
-                            ints = intArrayOf(subBIndex, substancesEntity.getGeneration(subBIndex))
-                        )
+                            worldCommandsManager.worldCommandBuffer[threadId].push(
+                                type = WorldCommandType.DELETE_SUBSTANCE,
+                                ints = intArrayOf(
+                                    deleteIndex,
+                                    substancesEntity.getGeneration(deleteIndex)
+                                )
+                            )
+                        } else {
+                            val force = 0.02f * rA2 * rB2 / distanceSquared
+                            val dirX = dx / distance
+                            val dirY = dy / distance
+                            val fx = force * dirX
+                            val fy = force * dirY
+                            vx[particleBId] += fx
+                            vy[particleBId] += fy
+                            vx[particleAId] -= fx
+                            vy[particleAId] -= fy
+                        }
+                    } else {
+
+                        val stiffness = 0.009f
+
+                        if (distanceSquared < 0) throw Exception("distanceSquared < 0, distanceSquared = $distanceSquared")
+
+                        val force = (distance - 0.35f) * stiffness
+
+                        val dirX = dx / distance
+                        val dirY = dy / distance
+
+                        // Spring dampening
+                        val dvx = vx[particleAId] - vx[particleBId]
+                        val dvy = vy[particleAId] - vy[particleBId]
+
+                        val dampeningConstant = 0.3f
+                        val dampeningForce = dampeningConstant * (dvx * dirX + dvy * dirY)
+
+                        val cellStrengthAverage = 0.01f
+                        val forceRepulsion = cellStrengthAverage - cellStrengthAverage * distanceSquared / radiusSquared
+
+                        val fx = (force + dampeningForce - forceRepulsion) * dirX
+                        val fy = (force + dampeningForce - forceRepulsion) * dirY
+
+                        vx[particleBId] += fx
+                        vy[particleBId] += fy
+                        vx[particleAId] -= fx
+                        vy[particleAId] -= fy
                     }
+
+                    return@with
                 }
             }
 
 
             // Квадратичная зависимость силы
-            val cellStrengthAverage = (cellStiffness[particleAId] + cellStiffness[particleBId]) / 2f
+            val stiffnessA = cellStiffness[particleAId]
+            val stiffnessB = cellStiffness[particleBId]
+            val cellStrengthAverage = 2 * stiffnessA * stiffnessB / (stiffnessA + stiffnessB)
+
             val force = cellStrengthAverage - cellStrengthAverage * distanceSquared / radiusSquared
             // Нормализация вектора расстояния
             val normX = dx / distance
@@ -206,8 +252,8 @@ class ParticlePhysicsSystem(
 
         processCellFrictionOld(particleIndex)
 
-//        vx[particleIndex] -= 0.04f * sin((500f - particleIndex) * simEntity.timeSimulation)
-//        vy[particleIndex] -= 0.04f * cos((500f - particleIndex) * simEntity.timeSimulation)
+//        vx[particleIndex] -= 0.04f * sin((500f - particleIndex) * simulationData.timeSimulation)
+//        vy[particleIndex] -= 0.04f * cos((500f - particleIndex) * simulationData.timeSimulation)
 
         val vxv = vx[particleIndex]
         val vyv = vy[particleIndex]
@@ -238,6 +284,7 @@ class ParticlePhysicsSystem(
 
     companion object {
         const val PARTICLE_MAX_RADIUS = 0.5f
+        const val PARTICLE_MAX_RADIUS_SQUARED = 0.25f
         const val MAX_RADIUS_SQUARED = 4
     }
 }
