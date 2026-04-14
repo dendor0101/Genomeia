@@ -2,14 +2,13 @@ package io.github.some_example_name.old.entities
 
 import io.github.some_example_name.old.cells.Cell
 import java.util.BitSet
-import kotlin.collections.fill
 
 class NeuralEntity(
     neuralStartMaxAmount: Int,
     val cellList: List<Cell>
 ): Entity(neuralStartMaxAmount) {
 
-    var isNeuronTransportable = BitSet(maxAmount)
+    var isNeuronTransportable = BooleanArray(maxAmount)
     var activationFuncType = ByteArray(maxAmount)
     var a = FloatArray(maxAmount) { 1f }
     var b = FloatArray(maxAmount)
@@ -61,7 +60,7 @@ class NeuralEntity(
     }
 
     override fun onClear(bound: Int) {
-        isNeuronTransportable.clear()
+        isNeuronTransportable.clear(true)
         activationFuncType.clear()
         a.clear(1f)
         b.clear()
@@ -72,7 +71,7 @@ class NeuralEntity(
     }
 
     override fun onResize(oldMax: Int) {
-        isNeuronTransportable = isNeuronTransportable.resize()
+        isNeuronTransportable = isNeuronTransportable.resize(true)
         activationFuncType = activationFuncType.resize()
         a = a.resize(1f)
         b = b.resize()

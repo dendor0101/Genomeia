@@ -3,7 +3,6 @@ package io.github.some_example_name.old.cells
 import com.badlogic.gdx.graphics.Color
 import io.github.some_example_name.old.core.DIContext
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
-import io.github.some_example_name.old.core.DISimulationContainer
 import kotlin.reflect.KClass
 
 sealed class Cell(

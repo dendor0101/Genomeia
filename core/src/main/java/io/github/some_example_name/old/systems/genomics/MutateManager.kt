@@ -24,6 +24,7 @@ class MutateManager(
 ): Disposable {
 
     fun mutateCell(index: Int, threadId: Int) = with(cellEntity) {
+        //TODO очень легко запутсаться и потерять какие-то значения при мутации, нужно либо перепроверить, либо менять все параметры разом
         if (!isMutateInThisStage[index] && energy[index] >= energyNecessaryToMutate[index]) {
             isMutateInThisStage[index] = true
 
@@ -91,6 +92,7 @@ class MutateManager(
                 cellType[index] = it.toByte()
                 setDragCoefficient(index, substrateSettings.data.viscosityOfTheEnvironment)
                 setEffectOnContact(index, newCell.effectOnContact)
+                isNeural[index] = newCell.isNeural
 
                 newCell.onStart(index, threadId)
             }
@@ -107,6 +109,7 @@ class MutateManager(
                 action.b?.let { setB(index, it) }
                 action.c?.let { setC(index, it) }
                 action.isSum?.let { setIsSum(index, it) }
+                setIsNeuronTransportable(index, newCell.isNeuronTransportable)
             }
 
             action.angleDirected?.let { angleDiff[index] = it }

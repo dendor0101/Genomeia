@@ -128,6 +128,7 @@ class SimulationSystem(
         simulationData.clear()
         organManager.clear()
         renderSystem.isClear = 3
+        simulationData.selectedCellIndex = -1
     }
 
     private fun restartSim() {

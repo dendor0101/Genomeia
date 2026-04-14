@@ -9,6 +9,7 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Matrix4
 import com.badlogic.gdx.math.Vector3
 import io.github.some_example_name.old.core.DIContext
+import io.github.some_example_name.old.core.utils.drawTriangleMiddle
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.ParticleEntity
@@ -66,10 +67,12 @@ class RenderSystem(
 
     fun render() {
         if (zoom != camera.zoom || cameraX != camera.position.x || cameraY != camera.position.y) {
-            blurLevel = 4.0f
-            cameraX = camera.position.x
-            cameraY = camera.position.y
-            zoom = camera.zoom
+            if (!renderBufferManager.renderSpecificBufferData.isCellSelected) {
+                blurLevel = 4.0f
+                cameraX = camera.position.x
+                cameraY = camera.position.y
+                zoom = camera.zoom
+            }
         }
         ensureCapacityForWrite(particleEntity.aliveList.size)
         drawShader()
@@ -141,7 +144,7 @@ class RenderSystem(
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
 //
-        Gdx.gl.glLineWidth(1f)
+        Gdx.gl.glLineWidth(2f)
         shapeRenderer.color = Color.WHITE
         shapeRenderer.rect(
             0f,
@@ -149,25 +152,49 @@ class RenderSystem(
             diContext.gridWith.toFloat(),
             diContext.gridHeight.toFloat()
         )
-//        shapeRenderer.color = Color.GREEN
-//
-//        synchronized(renderBufferManager.renderCellBufferData) {
-//            synchronized(renderBufferManager.renderLinkBufferData) {
-//                with(renderBufferManager.renderLinkBufferData) {
-//                    for (linkId in 0..<renderLinkAmount) {
-//                        val cellAIndex = cellA[linkId]
-//                        val cellBIndex = cellB[linkId]
-//
-//                        shapeRenderer.line(
-//                            renderBufferManager.renderCellBufferData.x[cellAIndex],
-//                            renderBufferManager.renderCellBufferData.y[cellAIndex],
-//                            renderBufferManager.renderCellBufferData.x[cellBIndex],
-//                            renderBufferManager.renderCellBufferData.y[cellBIndex],
-//                        )
-//                    }
-//                }
-//            }
-//        }
+
+        if (!usePostProcess) {
+            shapeRenderer.color = Color.GREEN
+
+            synchronized(renderBufferManager.renderCellBufferData) {
+                synchronized(renderBufferManager.renderLinkBufferData) {
+                    with(renderBufferManager.renderLinkBufferData) {
+                        for (linkId in 0..<renderLinkAmount) {
+
+                            val cellAIndex = cellA[linkId]
+                            val cellBIndex = cellB[linkId]
+                            shapeRenderer.color =
+                                if (isNeuralDirected[linkId].toInt() != -1) Color.CYAN else Color.GREEN
+
+                            if ((isNeuralDirected[linkId].toInt() == 0)) {
+                                shapeRenderer.drawTriangleMiddle(
+                                    renderBufferManager.renderCellBufferData.x[cellAIndex],
+                                    renderBufferManager.renderCellBufferData.y[cellAIndex],
+                                    renderBufferManager.renderCellBufferData.x[cellBIndex],
+                                    renderBufferManager.renderCellBufferData.y[cellBIndex],
+                                    arrowSize = 0.1f
+                                )
+                            } else if ((isNeuralDirected[linkId].toInt() == 1)) {
+                                shapeRenderer.drawTriangleMiddle(
+                                    renderBufferManager.renderCellBufferData.x[cellBIndex],
+                                    renderBufferManager.renderCellBufferData.y[cellBIndex],
+                                    renderBufferManager.renderCellBufferData.x[cellAIndex],
+                                    renderBufferManager.renderCellBufferData.y[cellAIndex],
+                                    arrowSize = 0.1f
+                                )
+                            }
+
+                            shapeRenderer.line(
+                                renderBufferManager.renderCellBufferData.x[cellAIndex],
+                                renderBufferManager.renderCellBufferData.y[cellAIndex],
+                                renderBufferManager.renderCellBufferData.x[cellBIndex],
+                                renderBufferManager.renderCellBufferData.y[cellBIndex],
+                            )
+                        }
+                    }
+                }
+            }
+        }
         shapeRenderer.end()
     }
 
@@ -217,9 +244,10 @@ class RenderSystem(
                     NeuronImpulseInput ${renderSpecificBufferData.neuronImpulseInput}
                     NeuronImpulseOutput ${renderSpecificBufferData.neuronImpulseOutput}
                     Cell type ${renderSpecificBufferData.cellName}
+                    Selected cell index ${renderSpecificBufferData.selectedCellIndex}
                 """.trimIndent(),
             30f,
-            180f
+            200f
         )
         font.data.setScale(1f)
         spriteBatch.end()

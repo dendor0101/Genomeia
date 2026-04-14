@@ -30,7 +30,7 @@ class TouchTrigger(cellTypeId: Int): Cell(
             sumStretchingDistance += stretchingDistance
         }
 
-        val impulse = (sumStretchingDistance / linksAmount[cellIndex]) / 80
+        val impulse = (sumStretchingDistance / linksAmount[cellIndex]) * 0.5f
 
         neuronImpulseOutput[cellIndex] = activation(cellIndex, impulse)
 

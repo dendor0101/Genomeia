@@ -1,6 +1,7 @@
 package io.github.some_example_name.old.systems.render
 
 import io.github.some_example_name.old.cells.Cell
+import io.github.some_example_name.old.cells.base.formulaType
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.ParticleEntity
@@ -70,16 +71,26 @@ class RenderBufferManager(
             }
         }
 
-        synchronized(renderLinkBufferData) {
-            with(linkEntity) {
-                for (bufIndex in 0..<aliveList.size) {
-                    val i = aliveList.getInt(bufIndex)
-                    val particleAIndex = cellEntity.getParticleIndex(links1[i])
-                    val particleBIndex = cellEntity.getParticleIndex(links2[i])
-                    renderLinkBufferData.cellA[bufIndex] = particleEntity.positionInAlive[particleAIndex]
-                    renderLinkBufferData.cellB[bufIndex] = particleEntity.positionInAlive[particleBIndex]
+        if (!usePostProcess) {
+            synchronized(renderLinkBufferData) {
+                with(linkEntity) {
+                    for (bufIndex in 0..<aliveList.size) {
+                        val i = aliveList.getInt(bufIndex)
+                        val particleAIndex = cellEntity.getParticleIndex(links1[i])
+                        val particleBIndex = cellEntity.getParticleIndex(links2[i])
+                        renderLinkBufferData.cellA[bufIndex] =
+                            particleEntity.positionInAlive[particleAIndex]
+                        renderLinkBufferData.cellB[bufIndex] =
+                            particleEntity.positionInAlive[particleBIndex]
+
+                        renderLinkBufferData.isNeuralDirected[bufIndex] = if (isNeuronLink[i]) {
+                            if (isLink1NeuralDirected[i]) 1 else 0
+                        } else {
+                            -1
+                        }
+                    }
+                    renderLinkBufferData.renderLinkAmount = aliveList.size
                 }
-                renderLinkBufferData.renderLinkAmount = aliveList.size
             }
         }
 
@@ -90,16 +101,18 @@ class RenderBufferManager(
                 cellsAmount = cellEntity.lastId - cellEntity.deadStack.size + 1
                 particleAmount = particleEntity.lastId - particleEntity.deadStack.size + 1
                 linksAmount = linkEntity.lastId - linkEntity.deadStack.size + 1
-                if (simulationData.selectedCellIndex != -1) {
+                val cellIndex = simulationData.selectedCellIndex
+                if (cellIndex != -1) {
+                    selectedCellIndex = cellIndex
                     neuronImpulseInput =
-                        cellEntity.neuronImpulseInput[simulationData.selectedCellIndex]
+                        cellEntity.neuronImpulseInput[cellIndex]
                     neuronImpulseOutput =
-                        cellEntity.neuronImpulseOutput[simulationData.selectedCellIndex]
+                        cellEntity.neuronImpulseOutput[cellIndex]
                     isCellSelected = true
-                    grabbedCellX = cellEntity.getX(simulationData.selectedCellIndex)
-                    grabbedCellY = cellEntity.getY(simulationData.selectedCellIndex)
-                    val cellType = cellEntity.cellType[simulationData.selectedCellIndex].toInt()
-                    cellName = cellList[cellType].name
+                    grabbedCellX = cellEntity.getX(cellIndex)
+                    grabbedCellY = cellEntity.getY(cellIndex)
+                    val cellType = cellEntity.cellType[cellIndex].toInt()
+                    cellName = cellList[cellType].name + if (cellEntity.isNeural[cellIndex]) "${formulaType[cellEntity.getActivationFuncType(cellIndex)]} ${cellEntity.getA(cellIndex)} ${cellEntity.getB(cellIndex)} ${cellEntity.getC(cellIndex)}" else ""
                 } else {
                     neuronImpulseInput = null
                     neuronImpulseOutput = null
@@ -126,6 +139,7 @@ class RenderLinkBufferData(maxAmountLink: Int) {
     var renderLinkAmount = 0
     var cellA = IntArray(maxAmountLink)
     var cellB = IntArray(maxAmountLink)
+    var isNeuralDirected = ByteArray(maxAmountLink)
 }
 
 data class RenderSpecificBufferData(
@@ -139,5 +153,6 @@ data class RenderSpecificBufferData(
     var isCellSelected: Boolean = false,
     var grabbedCellX: Float? = null,
     var grabbedCellY: Float? = null,
-    var cellName: String? = null
+    var cellName: String? = null,
+    var selectedCellIndex: Int = -1
 )

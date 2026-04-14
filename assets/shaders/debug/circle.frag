@@ -17,6 +17,7 @@ out vec4 fragColor;
 
 uniform sampler2DArray u_textureArray;
 uniform float u_textureScale;
+uniform float u_colorScale;
 
 void main() {
     vec2 diff = ex_Quad - ex_Centroid;
@@ -46,7 +47,7 @@ void main() {
     vec4 texColor = texture(u_textureArray, vec3(distortedUV, float(ex_cellType)));
 
     // === СМЕШИВАНИЕ С ЦВЕТОМ КЛЕТКИ ===
-    vec3 finalColor = mix(texColor.rgb, ex_Color, 0.00001);
+    vec3 finalColor = mix(texColor.rgb, ex_Color, u_colorScale);
 
     fragColor = vec4(finalColor, 1.0);
 

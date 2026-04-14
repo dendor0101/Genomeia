@@ -158,17 +158,16 @@ class CellSystem(
             val signalToCellIndex = if (directed) linkCell1 else linkCell2
             val signalFromCellIndex = if (directed) linkCell2 else linkCell1
 
-            val neuronImpulseInputSum = neuronImpulseInput[signalToCellIndex]
             val neuronImpulseOutput = neuronImpulseOutput[signalFromCellIndex]
 
             if (isNeural[signalToCellIndex]) {
                 if (getIsSum(signalToCellIndex)) {
-                    neuronImpulseInput[signalToCellIndex] = neuronImpulseInputSum + neuronImpulseOutput
+                    neuronImpulseInput[signalToCellIndex] += neuronImpulseOutput
                 } else {
-                    neuronImpulseInput[signalToCellIndex] = neuronImpulseInputSum * neuronImpulseOutput
+                    neuronImpulseInput[signalToCellIndex] *= neuronImpulseOutput
                 }
             } else {
-                neuronImpulseInput[signalToCellIndex] = neuronImpulseInputSum + neuronImpulseOutput
+                neuronImpulseInput[signalToCellIndex] += neuronImpulseOutput
             }
         }
     }

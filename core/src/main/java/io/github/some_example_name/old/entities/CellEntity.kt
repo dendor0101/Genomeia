@@ -59,7 +59,7 @@ class CellEntity(
     private var neuralIndexes = IntArray(maxAmount) { -1 }
     fun getNeuralGeneration(index: Int) = neuralEntity.getGeneration(neuralIndexes[index])
     fun getIsNeuronTransportable(index: Int) = neuralEntity.isNeuronTransportable[neuralIndexes[index]]
-    fun setIsNeuronTransportable(index: Int, value: Boolean) { neuralEntity.isNeuronTransportable.set(neuralIndexes[index], value) }
+    fun setIsNeuronTransportable(index: Int, value: Boolean) { neuralEntity.isNeuronTransportable[neuralIndexes[index]] = value }
     fun getActivationFuncType(index: Int) = neuralEntity.activationFuncType[neuralIndexes[index]].toInt()
     fun setActivationFuncType(index: Int, value: Byte) { neuralEntity.activationFuncType[neuralIndexes[index]] = value }
     fun getA(index: Int) = neuralEntity.a[neuralIndexes[index]]

@@ -59,7 +59,6 @@ class LinkPhysicsSystem(
                 val c2 = links2[linkIndex]
                 if (!cellEntity.isAlive[c1] || !cellEntity.isAlive[c2]) {
                     throw Exception("link $linkIndex exist, but some cell is deleted ($c1 $c2)")
-//                    continue
                 }
 
                 val otherCellIndex = if (c1 != cellIndex) c1 else if (c2 != cellIndex) c2 else continue
