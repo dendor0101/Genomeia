@@ -2,7 +2,6 @@ package io.github.some_example_name.old.commands
 
 import io.github.some_example_name.old.cells.Cell
 import io.github.some_example_name.old.cells.Zygote
-import io.github.some_example_name.old.core.DISimulationContainer.threadCount
 import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.core.utils.OrderedIntPairMap
 import io.github.some_example_name.old.entities.CellEntity
@@ -34,7 +33,9 @@ class WorldCommandsManager(
     threadCount: Int
 ) {
     val worldCommandBuffer = Array(threadCount) { WorldCommandBuffer() }
-    val worldCommandEndBuffer = Array(threadCount) { WorldCommandBuffer(100) }
+    val worldCommandSecondBuffer = Array(threadCount) { WorldCommandBuffer(100) }
+    private val worldCommandLastBuffer = WorldCommandBuffer(100)
+
     private val lastAddedCellIndexBuffer = IntArray(threadCount) { -1 }
     private val organIndexCellIdMapIndex = OrderedIntPairMap()
 
@@ -84,52 +85,45 @@ class WorldCommandsManager(
                         }
                     }
                     WorldCommandType.DELETE_LINK -> {
-                        println("DELETE_LINK ${ints[0]}")
+//                        println("DELETE_LINK ${ints[0]}")
                         linkEntity.deleteLink(linkIndex = ints[0], linkGeneration = ints[1])
                     }
                     WorldCommandType.ADD_CELL -> {
                         val cellType = ints[2]
                         val newCell = cellList[cellType]
-                        val cellGenomeId = ints[1]
-                        val parentOrganIndex = ints[3]
-                        val organIndex = if (newCell is Zygote) {
-                            val genomeIndex = organEntity.genomeIndex[parentOrganIndex]
-                            val genome = genomeManager.genomes[genomeIndex]
-                            organEntity.addOrgan(
-                                genomeIndex = genomeIndex,
-                                genomeSize = genome.genomeStageInstruction.size,
-                                dividedTimes = genome.dividedTimes[0],
-                                mutatedTimes = genome.mutatedTimes[0]
-                            )
-                        } else {
-                            parentOrganIndex
-                        }
-
-                        val cellIndex = cellEntity.addCell(
-                            x = floats[0],
-                            y = floats[1],
-                            color = ints[0],
-                            radius = floats[2],
-                            cellGenomeId = cellGenomeId,
-                            cellType = cellType,
-                            organIndex = organIndex,
-                            parentIndex = ints[4],
-                            angle = floats[3],
-                            angleDiff = floats[4],
-                            colorDifferentiation = ints[5],
-                            visibilityRange = floats[5],
-                            a = floats[6],
-                            b = floats[7],
-                            c = floats[8],
-                            isSum = booleans[0],
-                            activationFuncType = ints[6].toByte()
-                        )
-                        lastAddedCellIndexBuffer[threadId] = cellIndex
-                        organIndexCellIdMapIndex.put(organIndex, cellGenomeId, cellIndex)
                         if (newCell !is Zygote) {
+                            val cellGenomeId = ints[1]
+                            val parentOrganIndex = ints[3]
+
+                            val cellIndex = cellEntity.addCell(
+                                x = floats[0],
+                                y = floats[1],
+                                color = ints[0],
+                                radius = floats[2],
+                                cellGenomeId = cellGenomeId,
+                                cellType = cellType,
+                                organIndex = parentOrganIndex,
+                                parentIndex = ints[4],
+                                angle = floats[3],
+                                angleDiff = floats[4],
+                                colorDifferentiation = ints[5],
+                                visibilityRange = floats[5],
+                                a = floats[6],
+                                b = floats[7],
+                                c = floats[8],
+                                isSum = booleans[0],
+                                activationFuncType = ints[6].toByte()
+                            )
+                            lastAddedCellIndexBuffer[threadId] = cellIndex
+                            organIndexCellIdMapIndex.put(parentOrganIndex, cellGenomeId, cellIndex)
                             newCell.onStart(cellIndex, 0)
                         } else {
-                            cellEntity.energy[cellIndex] = 4.3f
+                            worldCommandLastBuffer.push(
+                                type = WorldCommandType.ADD_CELL,
+                                booleans = booleans,
+                                floats = floats,
+                                ints = ints
+                            )
                         }
                     }
                     WorldCommandType.DECREMENT_DIVIDE_COUNTER -> {
@@ -141,7 +135,7 @@ class WorldCommandsManager(
                     WorldCommandType.DELETE_CELL -> {
                         val cellIndex = ints[0]
                         val cellGeneration = ints[1]
-                        println("DELETE_CELL $cellIndex")
+//                        println("DELETE_CELL $cellIndex")
                         if (cellEntity.isAlive[cellIndex] && cellEntity.getGeneration(cellIndex) == cellGeneration) {
                             val r = Random.nextInt(255)
                             val g = Random.nextInt(255)
@@ -232,7 +226,7 @@ class WorldCommandsManager(
             }
         }
 
-        worldCommandEndBuffer.forEachIndexed { threadId, worldCommandBuffer ->
+        worldCommandSecondBuffer.forEachIndexed { threadId, worldCommandBuffer ->
             worldCommandBuffer.consume { type, ints, floats, booleans ->
                 when (type) {
                     WorldCommandType.ADD_LINK_BY_ID -> {
@@ -265,5 +259,45 @@ class WorldCommandsManager(
         }
 
         organIndexCellIdMapIndex.clear()
+    }
+
+    fun executingLastCommandsFromTheWorld() {
+        worldCommandLastBuffer.consume { type, ints, floats, booleans ->
+            when (type) {
+                WorldCommandType.ADD_CELL -> {
+                    val parentOrganIndex = ints[3]
+                    val genomeIndex = organEntity.genomeIndex[parentOrganIndex]
+                    val genome = genomeManager.genomes[genomeIndex]
+                    val organIndex = organEntity.addOrgan(
+                        genomeIndex = genomeIndex,
+                        genomeSize = genome.genomeStageInstruction.size,
+                        dividedTimes = genome.dividedTimes[0],
+                        mutatedTimes = genome.mutatedTimes[0]
+                    )
+
+                    val cellIndex = cellEntity.addCell(
+                        x = floats[0],
+                        y = floats[1],
+                        color = ints[0],
+                        radius = floats[2],
+                        cellGenomeId = ints[1],
+                        cellType = ints[2],
+                        organIndex = organIndex,
+                        parentIndex = ints[4],
+                        angle = floats[3],
+                        angleDiff = floats[4],
+                        colorDifferentiation = ints[5],
+                        visibilityRange = floats[5],
+                        a = floats[6],
+                        b = floats[7],
+                        c = floats[8],
+                        isSum = booleans[0],
+                        activationFuncType = ints[6].toByte()
+                    )
+                    cellEntity.energy[cellIndex] = 4.3f
+                }
+                else -> {}
+            }
+        }
     }
 }

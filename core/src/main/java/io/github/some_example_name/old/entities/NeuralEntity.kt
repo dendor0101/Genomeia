@@ -1,7 +1,6 @@
 package io.github.some_example_name.old.entities
 
 import io.github.some_example_name.old.cells.Cell
-import java.util.BitSet
 
 class NeuralEntity(
     neuralStartMaxAmount: Int,
@@ -15,7 +14,7 @@ class NeuralEntity(
     var c = FloatArray(maxAmount)
     var dTime = FloatArray(maxAmount) { -1f }
     var remember = FloatArray(maxAmount)
-    var isSum = BitSet(maxAmount)
+    var isSum = BooleanArray(maxAmount)
 
     fun addNeural(
         cellType: Int,
@@ -67,7 +66,7 @@ class NeuralEntity(
         c.clear()
         dTime.clear(-1f)
         remember.clear()
-        isSum.clear()
+        isSum.clear(true)
     }
 
     override fun onResize(oldMax: Int) {
@@ -78,6 +77,6 @@ class NeuralEntity(
         c = c.resize()
         dTime = dTime.resize(-1f)
         remember = remember.resize()
-        isSum = isSum.resize()
+        isSum = isSum.resize(true)
     }
 }

@@ -252,8 +252,16 @@ class ShaderManagerLibgdxApi : ShaderManager {
     // Новый resize для экрана (вызывай при изменении размера окна/камеры)
     // Если у тебя уже есть метод resize(width, height) — просто добавь в него строку с FBO
     override fun resize(width: Int, height: Int) {
+        val safeW = width.coerceAtLeast(1)
+        val safeH = height.coerceAtLeast(1)
+
         if (::fbo.isInitialized) fbo.dispose()
-        fbo = FrameBuffer(Pixmap.Format.RGBA8888, width / 2, height / 2, true)
+        fbo = FrameBuffer(
+            Pixmap.Format.RGBA8888,
+            (safeW / 2).coerceAtLeast(1),
+            (safeH / 2).coerceAtLeast(1),
+            true
+        )
 
         if (::blurFbo.isInitialized) blurFbo.dispose()
         val bw = (width /*/ 2*/).coerceAtLeast(1)

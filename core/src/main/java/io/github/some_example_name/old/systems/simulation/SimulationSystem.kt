@@ -74,6 +74,7 @@ class SimulationSystem(
         worldCommandsManager.executingCommandsFromTheWorld()
         organManager.performOrgansNextStage()
         userCommandManager.processingCommandsFromUser()
+        worldCommandsManager.executingLastCommandsFromTheWorld()
 
         renderBufferManager.updateBuffer()
     }

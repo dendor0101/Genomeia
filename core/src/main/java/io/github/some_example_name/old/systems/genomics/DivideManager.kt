@@ -124,7 +124,7 @@ class DivideManager(
                             val cellId: Int = cellGenomeId
                             val otherCellId: Int = cellGenomeIdToConnectWith
 
-                            worldCommandsManager.worldCommandEndBuffer[threadId].push(
+                            worldCommandsManager.worldCommandSecondBuffer[threadId].push(
                                 type = WorldCommandType.ADD_LINK_BY_ID,
                                 booleans = booleanArrayOf(isNeuronLink, isLink1NeuralDirected),
                                 floats = floatArrayOf(linksLength),

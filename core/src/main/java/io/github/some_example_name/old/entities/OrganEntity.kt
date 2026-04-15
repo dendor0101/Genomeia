@@ -1,6 +1,5 @@
 package io.github.some_example_name.old.entities
 
-import java.util.BitSet
 
 class OrganEntity(
     organStartMaxAmount: Int
@@ -11,12 +10,12 @@ class OrganEntity(
     var stage = IntArray(maxAmount)
     var dividedTimes = IntArray(maxAmount)
     var mutatedTimes = IntArray(maxAmount)
-    var alreadyGrownUp = BitSet(maxAmount)
+    var alreadyGrownUp = BooleanArray(maxAmount)
     var divideCounterThisStage = IntArray(maxAmount)
     var mutateCounterThisStage = IntArray(maxAmount)
     var divideAmountThisStage = IntArray(maxAmount)
     var mutateAmountThisStage = IntArray(maxAmount)
-    var justChangedStage = BitSet(maxAmount)
+    var justChangedStage = BooleanArray(maxAmount)
 
     fun addOrgan(
         genomeIndex: Int,
@@ -70,12 +69,12 @@ class OrganEntity(
         stage.clear()
         dividedTimes.clear()
         mutatedTimes.clear()
-        alreadyGrownUp.clear()
+        alreadyGrownUp.clear(false)
         divideCounterThisStage.clear()
         mutateCounterThisStage.clear()
         divideAmountThisStage.clear()
         mutateAmountThisStage.clear()
-        justChangedStage.clear()
+        justChangedStage.clear(true)
     }
 
     override fun onResize(oldMax: Int) {
@@ -84,11 +83,11 @@ class OrganEntity(
         stage = stage.resize()
         dividedTimes = dividedTimes.resize()
         mutatedTimes = mutatedTimes.resize()
-        alreadyGrownUp = alreadyGrownUp.resize()
+        alreadyGrownUp = alreadyGrownUp.resize(false)
         divideCounterThisStage = divideCounterThisStage.resize()
         mutateCounterThisStage = mutateCounterThisStage.resize()
         divideAmountThisStage = divideAmountThisStage.resize()
         mutateAmountThisStage = mutateAmountThisStage.resize()
-        justChangedStage = justChangedStage.resize()
+        justChangedStage = justChangedStage.resize(true)
     }
 }

@@ -1,7 +1,6 @@
 package io.github.some_example_name.old.entities
 
 import it.unimi.dsi.fastutil.ints.IntArrayList
-import java.util.BitSet
 
 abstract class Entity(startMaxAmount: Int) {
     protected var maxAmount = startMaxAmount
@@ -158,13 +157,6 @@ abstract class Entity(startMaxAmount: Int) {
             ByteArray(maxAmount) { defaultValue }
 
         System.arraycopy(old, 0, newArray, 0, oldMaxBeforeResize)
-        return newArray
-    }
-
-    protected fun BitSet.resize(): BitSet {
-        val old = this
-        val newArray = BitSet(maxAmount)
-        newArray.or(old)
         return newArray
     }
 }
