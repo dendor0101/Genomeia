@@ -5,6 +5,7 @@ import io.github.some_example_name.old.cells.base.formulaType
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.ParticleEntity
+import io.github.some_example_name.old.entities.SpecialEntity
 import io.github.some_example_name.old.systems.simulation.SimulationData
 import kotlin.math.round
 
@@ -13,7 +14,8 @@ class RenderBufferManager(
     val cellEntity: CellEntity,
     val particleEntity: ParticleEntity,
     val linkEntity: LinkEntity,
-    val cellList: List<Cell>
+    val cellList: List<Cell>,
+    val specialEntity: SpecialEntity
 ) {
 
     val renderSpecificBufferData = RenderSpecificBufferData()
@@ -59,12 +61,22 @@ class RenderBufferManager(
 
                         // packed2 остаётся без изменений
                         renderCellBufferData.packed2[bufIndex] = bEnergy or (bCell shl 8)
+
+                        if (!usePostProcess) {
+                            renderCellBufferData.directedAngle[bufIndex] = cellEntity.angle[cellIndex]
+                            renderCellBufferData.directedLength[bufIndex] = if (cellEntity.cellType[cellIndex] == 14.toByte()) specialEntity.getVisibilityRange(cellIndex) else 0f
+                        }
                     } else {
                         val bRadius = (((radius[i] - 0.1f) / 0.4f) * 255f + 0.5f).toInt().coerceIn(0, 255)
                         val bCell = (cellList.size + 1).coerceIn(0, 255)
 
                         renderCellBufferData.packed1[bufIndex] = 0 or (bRadius shl 24)
                         renderCellBufferData.packed2[bufIndex] = 0 or (bCell shl 8)
+
+                        if (!usePostProcess) {
+                            renderCellBufferData.directedAngle[bufIndex] = 0f
+                            renderCellBufferData.directedLength[bufIndex] = 0f
+                        }
                     }
                 }
                 renderCellBufferData.renderCellBufferSize = aliveList.size
@@ -133,6 +145,8 @@ class RenderCellBufferData(maxAmountParticle: Int) {
     var color = IntArray(maxAmountParticle)
     var packed1 = IntArray(maxAmountParticle)
     var packed2 = IntArray(maxAmountParticle)
+    var directedAngle = FloatArray(maxAmountParticle)
+    var directedLength = FloatArray(maxAmountParticle)
 }
 
 class RenderLinkBufferData(maxAmountLink: Int) {

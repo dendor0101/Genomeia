@@ -15,6 +15,8 @@ import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.cos
+import kotlin.math.sin
 
 class RenderSystem(
     val cellEntity: CellEntity,
@@ -154,6 +156,22 @@ class RenderSystem(
         )
 
         if (!usePostProcess) {
+            synchronized(renderBufferManager.renderCellBufferData) {
+                with(renderBufferManager.renderCellBufferData) {
+                    shapeRenderer.color = Color.WHITE
+                    for (i in 0..<renderCellBufferSize) {
+                        if (directedLength[i] > 0) {
+                            shapeRenderer.line(
+                                x[i],
+                                y[i],
+                                x[i] + directedLength[i] * cos(directedAngle[i]),
+                                y[i] + directedLength[i] * sin(directedAngle[i])
+                            )
+                        }
+                    }
+                }
+            }
+
             shapeRenderer.color = Color.GREEN
 
             synchronized(renderBufferManager.renderCellBufferData) {

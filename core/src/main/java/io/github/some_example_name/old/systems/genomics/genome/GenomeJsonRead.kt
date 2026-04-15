@@ -127,7 +127,7 @@ private fun ActionJsonRead.toDomain(): Action {
         c = c,
         isSum = isSum,
         colorRecognition = colorRecognition,
-        lengthDirected = lengthDirected
+        lengthDirected = lengthDirected?.div(40f)
     )
 }
 

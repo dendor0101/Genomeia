@@ -180,7 +180,8 @@ object DISimulationContainer:  DIContext, Disposable {
         cellEntity = cellEntity,
         particleEntity = particleEntity,
         linkEntity = linkEntity,
-        cellList = cellList
+        cellList = cellList,
+        specialEntity = specialEntity
     )
 
     val renderSystem = RenderSystem(
