@@ -9,7 +9,7 @@ class SimulationData {
     var timeSimulation = 0f
 
     //Пока вынес все глобальные переменные сюда, но кажется это все не совсем к месту
-    var currentGenomeIndex = 0
+    var currentGenomeIndex = 32
 
     var isPlay = true
     var maxSpeed = false

@@ -21,12 +21,21 @@ class Producer(cellTypeId: Int): Cell(
 
         //TODO Make the impulse increase smoothly from 0 to 1, and have the producer divide at the moment when the impulse equals 1
         val organIndex = organIndex[cellIndex]
-        val genomeIndex = organEntity.genomeIndex[organIndex] // TODO сделать выбор sub-genome
-        val genome = genomeManager.genomes[genomeIndex]
-        var counter = 0
-        genome.genomeStageInstruction.forEach {
-            counter += it.cellActions.size
+        val time = specialEntity.getReproductionRestriction(cellIndex)
+
+        if (time <= 0) {
+            val genomeIndex = organEntity.genomeIndex[organIndex] // TODO сделать выбор sub-genome
+            val genome = genomeManager.genomes[genomeIndex]
+            var counter = 0
+            genome.genomeStageInstruction.forEach {
+                counter += it.cellActions.size
+            }
+            specialEntity.setReproductionRestriction(cellIndex, counter * substrateSettings.data.producerRestoreTimeTickCoefficient.toInt())
+        } else {
+            specialEntity.setReproductionRestriction(cellIndex, time - 1)
         }
+
+        if (specialEntity.getReproductionRestriction(cellIndex) != 1) return
 
         val color: Int = zygote.defaultColor.toIntBits()
         val radius: Float = PARTICLE_MAX_RADIUS

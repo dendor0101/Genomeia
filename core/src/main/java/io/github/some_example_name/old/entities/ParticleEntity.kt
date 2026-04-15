@@ -18,6 +18,7 @@ class ParticleEntity(
     var color = IntArray(maxAmount)
     var dragCoefficient = FloatArray(maxAmount) { 0.003f }
     var effectOnContact = BooleanArray(maxAmount)
+    var isCollidable = BooleanArray(maxAmount)
     var cellStiffness = FloatArray(maxAmount) { 0.5f }
     var isCell = BooleanArray(maxAmount) { false }
     var holderEntityIndex = IntArray(maxAmount) { -1 }
@@ -31,6 +32,7 @@ class ParticleEntity(
         vy: Float = 0f,
         dragCoefficient: Float = 0.03f,
         effectOnContact: Boolean = false,
+        isCollidable: Boolean = true,
         cellStiffness: Float = 0.02f,
         isCell: Boolean,
         holderEntityIndex: Int
@@ -47,6 +49,7 @@ class ParticleEntity(
         this.color[particleIndex] = color
         this.dragCoefficient[particleIndex] = dragCoefficient
         this.effectOnContact[particleIndex] = effectOnContact
+        this.isCollidable[particleIndex] = isCollidable
         this.cellStiffness[particleIndex] = cellStiffness
         this.isCell[particleIndex] = isCell
         this.holderEntityIndex[particleIndex] = holderEntityIndex
@@ -67,6 +70,7 @@ class ParticleEntity(
         color[particleIndex] = 0
         dragCoefficient[particleIndex] = 0.93f
         effectOnContact[particleIndex] = false
+        isCollidable[particleIndex] = true
         cellStiffness[particleIndex] = 0.5f
         isCell[particleIndex] = false
         holderEntityIndex[particleIndex] = -1
@@ -91,6 +95,7 @@ class ParticleEntity(
         color.clear()
         dragCoefficient.clear(0.03f)
         effectOnContact.clear(false)
+        isCollidable.clear(true)
         cellStiffness.clear()
         isCell.clear(false)
         holderEntityIndex.clear(-1)
@@ -107,6 +112,7 @@ class ParticleEntity(
         color = color.resize()
         dragCoefficient = dragCoefficient.resize(0.03f)
         effectOnContact = effectOnContact.resize(false)
+        isCollidable = isCollidable.resize(true)
         cellStiffness = cellStiffness.resize()
         isCell = isCell.resize(false)
         holderEntityIndex = holderEntityIndex.resize(-1)

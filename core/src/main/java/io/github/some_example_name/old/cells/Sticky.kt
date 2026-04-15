@@ -20,9 +20,9 @@ class Sticky(cellTypeId: Int) : Cell(
         distance: Float,
         threadId: Int
     ) = with(cellEntity) {
-        if (activation(cellIndex, neuronImpulseInput[cellIndex]) < 1f) {
-            if (particleEntity.isAlive[particleIndexCollided]) return@with
+        if (!particleEntity.isCell[particleIndexCollided]) return@with
 
+        if (activation(cellIndex, neuronImpulseInput[cellIndex]) < 1f) {
             val cellIndex: Int = cellIndex
             val otherCellIndex: Int = particleEntity.holderEntityIndex[particleIndexCollided]
 

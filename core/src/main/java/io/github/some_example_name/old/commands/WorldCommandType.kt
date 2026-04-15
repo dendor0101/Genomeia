@@ -114,6 +114,16 @@ enum class WorldCommandType(val intParamsCount: Int, val floatParamsCount: Int, 
         intParamsCount = 1,
         floatParamsCount = 0,
         booleanParamsCount = 0
+    ),
+    DELETE_PRODUCER(
+        intParamsCount = 2,
+        floatParamsCount = 0,
+        booleanParamsCount = 0
+    ),
+    ADD_PRODUCER(
+        intParamsCount = 1,
+        floatParamsCount = 0,
+        booleanParamsCount = 0
     );
 
     companion object {

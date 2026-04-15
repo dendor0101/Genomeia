@@ -86,7 +86,7 @@ class RenderBufferManager(
                         renderLinkBufferData.isNeuralDirected[bufIndex] = if (isNeuronLink[i]) {
                             if (isLink1NeuralDirected[i]) 1 else 0
                         } else {
-                            -1
+                            if (isStickyLink[i]) 3 else -1
                         }
                     }
                     renderLinkBufferData.renderLinkAmount = aliveList.size

@@ -31,6 +31,10 @@ class CellEntity(
     fun setDragCoefficient(index: Int, value: Float) { particleEntity.dragCoefficient[particleIndexes[index]] = value }
     fun getEffectOnContact(index: Int) = particleEntity.effectOnContact[particleIndexes[index]]
     fun setEffectOnContact(index: Int, value: Boolean) { particleEntity.effectOnContact[particleIndexes[index]] = value }
+    fun getIsCollidable(index: Int) = particleEntity.isCollidable[particleIndexes[index]]
+    fun setIsCollidable(index: Int, value: Boolean) { particleEntity.isCollidable[particleIndexes[index]] = value }
+    fun getCellStiffness(index: Int) = particleEntity.cellStiffness[particleIndexes[index]]
+    fun setCellStiffness(index: Int, value: Float) { particleEntity.cellStiffness[particleIndexes[index]] = value }
     fun getRadius(index: Int) = particleEntity.radius[particleIndexes[index]]
     fun seRadius(index: Int, value: Float) { particleEntity.radius[particleIndexes[index]] = value }
     fun getGridId(index: Int) = particleEntity.gridId[particleIndexes[index]]
@@ -162,6 +166,7 @@ class CellEntity(
             radius = radius,
             dragCoefficient = substrateSettings.data.viscosityOfTheEnvironment,
             effectOnContact = cellList[cellType].effectOnContact,
+            isCollidable = cellList[cellType].isCollidable,
             cellStiffness = cellsSettings[cellType].cellStiffness,
             isCell = true,
             holderEntityIndex = cellIndex

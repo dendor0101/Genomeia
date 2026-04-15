@@ -4,13 +4,15 @@ import io.github.some_example_name.old.cells.Cell
 import io.github.some_example_name.old.cells.Controller
 import io.github.some_example_name.old.cells.ControllerData
 import io.github.some_example_name.old.cells.Eye
+import io.github.some_example_name.old.cells.Producer
 import io.github.some_example_name.old.cells.Tail
 
 class SpecialEntity(
     cellsStartMaxAmount: Int,
     private val eyeEntity: EyeEntity,
     private val tailEntity: TailEntity,
-    private val specialModDataEntity: SpecialModDataEntity
+    private val specialModDataEntity: SpecialModDataEntity,
+    private val producerEntity: ProducerEntity
 ): Entity(cellsStartMaxAmount) {
 
     //Special type entities
@@ -63,6 +65,29 @@ class SpecialEntity(
         specialTypeIndexes[index] = eyeEntity.addEye(colorDifferentiation.toByte(), visibilityRange)
     }
 
+
+    //Special Producer
+    fun getProducerGeneration(index: Int) = producerEntity.getGeneration(specialTypeIndexes[index])
+    fun getReproductionRestriction(index: Int) = producerEntity.reproductionRestriction[specialTypeIndexes[index]]
+    fun setReproductionRestriction(index: Int, value: Int) { producerEntity.reproductionRestriction[specialTypeIndexes[index]] = value }
+
+    fun deleteProducer(cellIndex: Int, producerGeneration: Int? = null) {
+        val producerIndex = specialTypeIndexes[cellIndex]
+        if (producerIndex == -1) return
+        if (producerEntity.isAlive[producerIndex] && (producerGeneration == null
+                || producerEntity.getGeneration(producerIndex) == producerGeneration)) {
+            producerEntity.deleteProducer(producerIndex)
+            specialTypeIndexes[cellIndex] -= -1
+        }
+    }
+
+    fun addProducer(
+        index: Int
+    ) {
+        specialTypeIndexes[index] = producerEntity.addProducer()
+    }
+
+
     fun addSpecial(
         cell: Cell,
         colorDifferentiation: Int = 7,
@@ -76,6 +101,9 @@ class SpecialEntity(
             }
             is Eye -> {
                 addEye(cellIndex, colorDifferentiation, visibilityRange)
+            }
+            is Producer -> {
+                addProducer(cellIndex)
             }
             else -> {
                 specialTypeIndexes[cellIndex] = -1
@@ -100,6 +128,9 @@ class SpecialEntity(
             }
             is Eye -> {
                 deleteEye(cellIndex)
+            }
+            is Producer -> {
+                deleteProducer(cellIndex)
             }
             else -> {}
         }

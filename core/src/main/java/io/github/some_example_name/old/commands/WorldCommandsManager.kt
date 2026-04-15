@@ -194,6 +194,12 @@ class WorldCommandsManager(
                     WorldCommandType.ADD_TAIL -> {
                         specialEntity.addTail(index = ints[0])
                     }
+                    WorldCommandType.DELETE_PRODUCER -> {
+                        specialEntity.deleteProducer(cellIndex = ints[0], producerGeneration = ints[1])
+                    }
+                    WorldCommandType.ADD_PRODUCER -> {
+                        specialEntity.addProducer(index = ints[0])
+                    }
                     WorldCommandType.ADD_ORGAN -> {
                         val organStartCellOrganIndex = ints[0]
                         cellEntity.organIndex[organStartCellOrganIndex] = organEntity.addOrgan(

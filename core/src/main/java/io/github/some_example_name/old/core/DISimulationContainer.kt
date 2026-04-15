@@ -13,6 +13,7 @@ import io.github.some_example_name.old.entities.NeuralEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.entities.PheromoneEntity
+import io.github.some_example_name.old.entities.ProducerEntity
 import io.github.some_example_name.old.entities.SpecialEntity
 import io.github.some_example_name.old.entities.SpecialModDataEntity
 import io.github.some_example_name.old.systems.simulation.SimulationData
@@ -81,6 +82,9 @@ object DISimulationContainer:  DIContext, Disposable {
     private val eyeEntity = EyeEntity(
         eyeStartMaxAmount = 3_000
     )
+    private val producerEntity = ProducerEntity(
+        producerStartMaxAmount = 100
+    )
     val specialModDataEntity = SpecialModDataEntity(
         specialModDataStartMaxAmount = 100
     )
@@ -88,7 +92,8 @@ object DISimulationContainer:  DIContext, Disposable {
         cellsStartMaxAmount = 10_000,
         eyeEntity = eyeEntity,
         tailEntity = tailEntity,
-        specialModDataEntity = specialModDataEntity
+        specialModDataEntity = specialModDataEntity,
+        producerEntity = producerEntity
     )
     override val cellEntity = CellEntity(
         cellsStartMaxAmount = 10_000,

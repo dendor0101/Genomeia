@@ -33,7 +33,7 @@ class OrganManager(
                         dividedTimes[index] = currentGenome.dividedTimes[stage[index]]
                         mutatedTimes[index] = currentGenome.mutatedTimes[stage[index]]
                     } else {
-                        println("organism grown $index")
+//                        println("organism grown $index")
                         //TODO Delete grown organs
                         alreadyGrownUp[index] = true
                     }

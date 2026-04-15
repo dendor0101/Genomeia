@@ -21,6 +21,7 @@ import io.github.some_example_name.old.entities.SubstancesEntity
 import io.github.some_example_name.old.entities.TailEntity
 import io.github.some_example_name.old.editor.entities.ReplayEntity
 import io.github.some_example_name.old.entities.PheromoneEntity
+import io.github.some_example_name.old.entities.ProducerEntity
 import io.github.some_example_name.old.systems.genomics.CellSystem
 import io.github.some_example_name.old.systems.genomics.DivideManager
 import io.github.some_example_name.old.systems.genomics.MutateManager
@@ -67,7 +68,10 @@ object DIGenomeEditorContainer: DIContext, Disposable {
         cellList = cellList
     )
     private val eyeEntity = EyeEntity(
-        eyeStartMaxAmount = 3
+        eyeStartMaxAmount = 15
+    )
+    private val producerEntity = ProducerEntity(
+        producerStartMaxAmount = 3
     )
     val specialModDataEntity = SpecialModDataEntity(
         specialModDataStartMaxAmount = 100
@@ -77,13 +81,12 @@ object DIGenomeEditorContainer: DIContext, Disposable {
         tailStartMaxAmount = 5
     )
 
-
-
     override val specialEntity = SpecialEntity(
         cellsStartMaxAmount = 10,
         eyeEntity = eyeEntity,
         tailEntity = tailEntity,
-        specialModDataEntity = specialModDataEntity
+        specialModDataEntity = specialModDataEntity,
+        producerEntity = producerEntity
     )
 
     override val cellEntity = CellEntity(
@@ -104,8 +107,8 @@ object DIGenomeEditorContainer: DIContext, Disposable {
         startMaxAmount = 1,
         particleEntity = particleEntity,
         substrateSettings = substrateSettings
-    )//Заглушка
-    override val pheromoneEntity = PheromoneEntity(gridManager)//Заглушка
+    )
+    override val pheromoneEntity = PheromoneEntity(gridManager)
 
     override val organManager = OrganManager(
         organEntity = organEntity,

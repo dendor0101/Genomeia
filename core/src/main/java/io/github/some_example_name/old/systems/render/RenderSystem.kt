@@ -163,8 +163,12 @@ class RenderSystem(
 
                             val cellAIndex = cellA[linkId]
                             val cellBIndex = cellB[linkId]
-                            shapeRenderer.color =
-                                if (isNeuralDirected[linkId].toInt() != -1) Color.CYAN else Color.GREEN
+                            shapeRenderer.color = when (isNeuralDirected[linkId].toInt()) {
+                                0,1 -> Color.CYAN
+                                -1 -> Color.GREEN
+                                3 -> Color.PURPLE
+                                else -> Color.RED
+                            }
 
                             if ((isNeuralDirected[linkId].toInt() == 0)) {
                                 shapeRenderer.drawTriangleMiddle(

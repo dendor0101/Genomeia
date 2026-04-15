@@ -138,7 +138,7 @@ class ParticlePhysicsSystem(
                 val subAIndex = holderEntityIndex[particleAId]
                 val subBIndex = holderEntityIndex[particleBId]
                 if (subAIndex != -1 && subBIndex != -1) {
-                    //TODO вынести в SubManager, добавить притягивание, проверять типы, соединять вещества при более близком контакте, сохранять общий импуль
+                    //TODO вынести в SubManager
                     val rA2 = radius[particleAId] * radius[particleAId]
                     val rB2 = radius[particleBId] * radius[particleBId]
                     val radiusSumSquared = rA2 + rB2
@@ -207,23 +207,24 @@ class ParticlePhysicsSystem(
                 }
             }
 
+            if (isCollidable[particleAId] && isCollidable[particleBId]) {
+                // Квадратичная зависимость силы
+                val stiffnessA = cellStiffness[particleAId]
+                val stiffnessB = cellStiffness[particleBId]
+                val cellStrengthAverage = 2 * stiffnessA * stiffnessB / (stiffnessA + stiffnessB)
 
-            // Квадратичная зависимость силы
-            val stiffnessA = cellStiffness[particleAId]
-            val stiffnessB = cellStiffness[particleBId]
-            val cellStrengthAverage = 2 * stiffnessA * stiffnessB / (stiffnessA + stiffnessB)
+                val force = cellStrengthAverage - cellStrengthAverage * distanceSquared / radiusSquared
+                // Нормализация вектора расстояния
+                val normX = dx / distance
+                val normY = dy / distance
+                val vectorX = normX * force
+                val vectorY = normY * force
 
-            val force = cellStrengthAverage - cellStrengthAverage * distanceSquared / radiusSquared
-            // Нормализация вектора расстояния
-            val normX = dx / distance
-            val normY = dy / distance
-            val vectorX = normX * force
-            val vectorY = normY * force
-
-            vx[particleAId] += vectorX
-            vy[particleAId] += vectorY
-            vx[particleBId] -= vectorX
-            vy[particleBId] -= vectorY
+                vx[particleAId] += vectorX
+                vy[particleAId] += vectorY
+                vx[particleBId] -= vectorX
+                vy[particleBId] -= vectorY
+            }
         }
     }
 
