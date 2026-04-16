@@ -94,7 +94,14 @@ class LinkPhysicsSystem(
 
                 cellSystem.transportEnergy(linkCellA, linkCellB)
                 cellSystem.transportNeuralSignal(linkIndex, linkCellA, linkCellB)
-
+                val parentCellA = parentIndex[linkCellA]
+                val parentCellB = parentIndex[linkCellB]
+                if (linkCellA == parentCellB) {
+                    cellSystem.processCellAngle(linkCellB, linkCellA)
+                }
+                if (linkCellB == parentCellA) {
+                    cellSystem.processCellAngle(linkCellA, linkCellB)
+                }
                 val distanceSquared = dx * dx + dy * dy
 
                 if (distanceSquared > linkMaxLength2) {

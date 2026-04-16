@@ -17,10 +17,10 @@ import io.github.some_example_name.old.systems.physics.GridManager
 import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem.Companion.PARTICLE_MAX_RADIUS
 import io.github.some_example_name.old.systems.render.RenderSystem
 import kotlin.collections.forEach
-import kotlin.collections.get
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
-import kotlin.times
 
 class UserCommandManager(
     val organEntity: OrganEntity,
@@ -123,6 +123,7 @@ class UserCommandManager(
                                         dividedTimes = genome.dividedTimes[0],
                                         mutatedTimes = genome.mutatedTimes[0]
                                     )
+                                    val randomAngle = Random.nextFloat() * 3.1415f
                                     cellEntity.addCell(
                                         x = cmd.x,
                                         y = cmd.y,
@@ -130,7 +131,8 @@ class UserCommandManager(
                                         radius = PARTICLE_MAX_RADIUS,
                                         cellType = zygote.cellTypeId,
                                         organIndex = organIndex,
-                                        angle = Random.nextFloat() * 3.1415f
+                                        angleCos = cos(randomAngle),
+                                        angleSin = sin(randomAngle)
                                     )
                                 }
                             } else {

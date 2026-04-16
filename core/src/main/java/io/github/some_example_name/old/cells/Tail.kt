@@ -1,9 +1,6 @@
 package io.github.some_example_name.old.cells
 
 import io.github.some_example_name.old.core.utils.blueColors
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
 
 class Tail(cellTypeId: Int): Cell(
     defaultColor = blueColors.first(),
@@ -27,13 +24,12 @@ class Tail(cellTypeId: Int): Cell(
                 if (getSpeed(cellIndex) <= 0.013f) return
                 getSpeed(cellIndex)
             }
-            val angleRad = angle[cellIndex] + PI.toFloat()
 
             val tailMaxSpeedCoefficient = substrateSettings.data.tailMaxSpeedCoefficient
             val vx = getVx(cellIndex)
             val vy = getVy(cellIndex)
-            setVx(cellIndex, vx + cos(angleRad) / 2 * speed * tailMaxSpeedCoefficient)
-            setVy(cellIndex, vy + sin(angleRad) / 2 * speed * tailMaxSpeedCoefficient)
+            setVx(cellIndex, vx - angleCos[cellIndex] * 0.5f * speed * tailMaxSpeedCoefficient)
+            setVy(cellIndex, vy - angleSin[cellIndex] * 0.5f * speed * tailMaxSpeedCoefficient)
             energy[cellIndex] -= substrateSettings.cellsSettings[cellType[cellIndex].toInt()].energyActionCost
         }
     }

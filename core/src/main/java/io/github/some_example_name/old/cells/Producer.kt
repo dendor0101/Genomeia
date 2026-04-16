@@ -1,6 +1,5 @@
 package io.github.some_example_name.old.cells
 
-import com.badlogic.gdx.math.MathUtils
 import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.core.DISimulationContainer.zygote
 import io.github.some_example_name.old.core.utils.redColors
@@ -41,8 +40,10 @@ class Producer(cellTypeId: Int): Cell(
         val radius: Float = PARTICLE_MAX_RADIUS
         val cellType: Int = zygote.cellTypeId
         val parentIndex: Int = cellIndex
-        val angle: Float = angle[cellIndex]
-        val angleDiff: Float = 0f
+        val angleCos = angleCos[cellIndex]
+        val angleSin = angleSin[cellIndex]
+        val angleDiffCosDefault: Float = 1f
+        val angleDiffSinDefault: Float = 0f
         val colorDifferentiation: Int = 7
         val visibilityRange: Float = 4.25f
         val a: Float = 1f
@@ -50,14 +51,16 @@ class Producer(cellTypeId: Int): Cell(
         val c: Float = 0f
         val isSum: Boolean = true
         val activationFuncType: Int = 0
-        val divideAngle = this.angleDiff[cellIndex] + this.angle[cellIndex]
-        val x = getX(cellIndex) + MathUtils.cos(divideAngle) * 0.05f
-        val y = getY(cellIndex) + MathUtils.sin(divideAngle) * 0.05f
+        val finalCos = angleCos * angleDiffCos[cellIndex] - angleSin * angleDiffSin[cellIndex]
+        val finalSin = angleSin * angleDiffCos[cellIndex] + angleCos * angleDiffSin[cellIndex]
+
+        val x = getX(cellIndex) + finalCos * 0.05f
+        val y = getY(cellIndex) + finalSin * 0.05f
 
         worldCommandsManager.worldCommandBuffer[threadId].push(
             type = WorldCommandType.ADD_CELL,
             booleans = booleanArrayOf(isSum),
-            floats = floatArrayOf(x, y, radius, angle, angleDiff, visibilityRange, a, b, c),
+            floats = floatArrayOf(x, y, radius, angleCos, angleSin, angleDiffCosDefault, angleDiffSinDefault, visibilityRange, a, b, c),
             ints = intArrayOf(
                 color,
                 0,

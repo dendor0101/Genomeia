@@ -6,6 +6,7 @@ import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.core.DISimulationContainer.energyTransportRate
 import io.github.some_example_name.old.core.DISimulationContainer.threadCount
+import io.github.some_example_name.old.core.utils.invSqrt
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
@@ -82,24 +83,21 @@ class CellSystem(
         }
 
         genomicTransformations(cellIndex, threadId)
-        processCellAngle(cellIndex)
     }
 
-    //TODO возможно это можно через сами линки обрабатывать
-    private fun processCellAngle(cellIndex: Int) = with(cellEntity) {
-        if (parentIndex[cellIndex] != -1) {
-            val linkId = linkEntity.linkIndexMap.get(cellIndex, parentIndex[cellIndex])
-            if (linkId == -1) return //TODO потетсить всякие варинаты без этой защиты
-            val c1 = linkEntity.links1[linkId]
-            val c2 = linkEntity.links2[linkId]
-            val childCellIndex = if (cellIndex != c2) c2 else c1
+    fun processCellAngle(cellIndex: Int, parentCellIndex: Int) = with(cellEntity) {
+        val dx = getX(cellIndex) - getX(parentCellIndex)
+        val dy = getY(cellIndex) - getY(parentCellIndex)
 
-            val dx = getX(cellIndex) - getX(childCellIndex)
-            val dy = getY(cellIndex) - getY(childCellIndex)
-            val angleToChild = atan2(dy, dx)
+        val len = 1f / invSqrt(dx * dx + dy * dy)
+        val toChildCos = dx / len
+        val toChildSin = dy / len
 
-            angle[cellIndex] = angleToChild + angleDiff[cellIndex]
-        }
+        val cd = angleDiffCos[cellIndex]
+        val sd = angleDiffSin[cellIndex]
+
+        angleCos[cellIndex] = toChildCos * cd - toChildSin * sd
+        angleSin[cellIndex] = toChildSin * cd + toChildCos * sd
     }
 
     fun genomicTransformations(cellIndex: Int, threadId: Int = 0) = with(cellEntity) {

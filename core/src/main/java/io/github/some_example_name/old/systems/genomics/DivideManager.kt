@@ -1,7 +1,6 @@
 package io.github.some_example_name.old.systems.genomics
 
 import com.badlogic.gdx.graphics.Color
-import com.badlogic.gdx.math.MathUtils
 import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.core.DISimulationContainer
@@ -10,7 +9,8 @@ import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.systems.physics.GridManager
 import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem.Companion.PARTICLE_MAX_RADIUS
-import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 class DivideManager(
     val cellEntity: CellEntity,
@@ -27,9 +27,12 @@ class DivideManager(
 
             val parentLinkLength = action.physicalLink[cellGenomeId[index]]?.length ?: 0.025f
             val genomeAngle = action.angle ?: throw Exception("Forgot angle")
-            val divideAngle = genomeAngle + angle[index]
-            var x: Float = getX(index) + MathUtils.cos(divideAngle) * parentLinkLength
-            var y: Float = getY(index) + MathUtils.sin(divideAngle) * parentLinkLength
+            val divideAngleCos = cos(genomeAngle)
+            val divideAngleSin = sin(genomeAngle)
+            val finalCos = angleCos[index] * divideAngleCos - angleSin[index] * divideAngleSin
+            val finalSin = angleSin[index] * divideAngleCos + angleCos[index] * divideAngleSin
+            var x = getX(index) + finalCos * parentLinkLength
+            var y = getY(index) + finalSin * parentLinkLength
 
             if (x < 0) {
                 x = 0.1f
@@ -51,8 +54,12 @@ class DivideManager(
                 val radius: Float = PARTICLE_MAX_RADIUS
                 val cellType: Int = action.cellType ?: throw Exception("Forgot cellType")
                 val parentIndex: Int = index
-                val angle: Float = divideAngle
+                val angleCos: Float = divideAngleCos
+                val angleSin: Float = divideAngleSin
                 val angleDiff: Float = action.angleDirected ?: 0f
+                val angleDiffCos: Float = cos(angleDiff)
+                val angleDiffSin: Float = sin(angleDiff)
+
                 val colorDifferentiation: Int = action.colorRecognition ?: 7
                 val visibilityRange: Float = action.lengthDirected ?: 4.25f
                 val a: Float = action.a ?: 1f
@@ -64,7 +71,7 @@ class DivideManager(
                 worldCommandsManager.worldCommandBuffer[threadId].push(
                     type = WorldCommandType.ADD_CELL,
                     booleans = booleanArrayOf(isSum),
-                    floats = floatArrayOf(x, y, radius, angle, angleDiff, visibilityRange, a, b, c),
+                    floats = floatArrayOf(x, y, radius, angleCos, angleSin, angleDiffCos, angleDiffSin, visibilityRange, a, b, c),
                     ints = intArrayOf(
                         color,
                         cellGenomeId,
@@ -133,10 +140,6 @@ class DivideManager(
                         }
                     }
                 }
-            }
-
-            if (parentIndex[index] == -1) {
-                angleDiff[index] = angle[index] + PI.toFloat() - (action.angle ?: return)
             }
 
             energy[index] -= energyNecessaryToDivide[index] - 0.7f

@@ -1,10 +1,7 @@
 package io.github.some_example_name.old.cells
 
-import com.badlogic.gdx.graphics.Color
 import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.core.utils.brownColors
-import kotlin.math.cos
-import kotlin.math.sin
 
 class Excreta(cellTypeId: Int): Cell(
     defaultColor = brownColors.first(),
@@ -14,9 +11,9 @@ class Excreta(cellTypeId: Int): Cell(
 
     override fun doOnTick(cellIndex: Int, threadId: Int) = with(cellEntity) {
         if(energy[cellIndex] < substrateSettings.data.amountOfFoodEnergy) return
-        val angleRad = angle[cellIndex]
-        val directionX = cos(angleRad) * 0.05f
-        val directionY = sin(angleRad) * 0.05f
+
+        val directionX = angleCos[cellIndex] * 0.05f
+        val directionY = angleSin[cellIndex] * 0.05f
 
         val x = getX(cellIndex) + directionX
         val y = getY(cellIndex) + directionY

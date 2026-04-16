@@ -94,6 +94,7 @@ class WorldCommandsManager(
                         if (newCell !is Zygote) {
                             val cellGenomeId = ints[1]
                             val parentOrganIndex = ints[3]
+                            val parentIndex = ints[4]
 
                             val cellIndex = cellEntity.addCell(
                                 x = floats[0],
@@ -103,17 +104,26 @@ class WorldCommandsManager(
                                 cellGenomeId = cellGenomeId,
                                 cellType = cellType,
                                 organIndex = parentOrganIndex,
-                                parentIndex = ints[4],
-                                angle = floats[3],
-                                angleDiff = floats[4],
+                                parentIndex = parentIndex,
+                                angleCos = floats[3],
+                                angleSin = floats[4],
+                                angleDiffCos = floats[5],
+                                angleDiffSin = floats[6],
                                 colorDifferentiation = ints[5],
-                                visibilityRange = floats[5],
-                                a = floats[6],
-                                b = floats[7],
-                                c = floats[8],
+                                visibilityRange = floats[7],
+                                a = floats[8],
+                                b = floats[9],
+                                c = floats[10],
                                 isSum = booleans[0],
                                 activationFuncType = ints[6].toByte()
                             )
+
+                            if (cellEntity.parentIndex[parentIndex] == -1) {
+                                cellEntity.parentIndex[parentIndex] = cellIndex
+                                cellEntity.angleDiffCos[parentIndex] = -1f
+                                cellEntity.angleDiffSin[parentIndex] = 0f
+                            }
+
                             lastAddedCellIndexBuffer[threadId] = cellIndex
                             organIndexCellIdMapIndex.put(parentOrganIndex, cellGenomeId, cellIndex)
                             newCell.onStart(cellIndex, 0)
@@ -290,13 +300,15 @@ class WorldCommandsManager(
                         cellType = ints[2],
                         organIndex = organIndex,
                         parentIndex = ints[4],
-                        angle = floats[3],
-                        angleDiff = floats[4],
+                        angleCos = floats[3],
+                        angleSin = floats[4],
+                        angleDiffCos = floats[5],
+                        angleDiffSin = floats[6],
                         colorDifferentiation = ints[5],
-                        visibilityRange = floats[5],
-                        a = floats[6],
-                        b = floats[7],
-                        c = floats[8],
+                        visibilityRange = floats[7],
+                        a = floats[8],
+                        b = floats[9],
+                        c = floats[10],
                         isSum = booleans[0],
                         activationFuncType = ints[6].toByte()
                     )

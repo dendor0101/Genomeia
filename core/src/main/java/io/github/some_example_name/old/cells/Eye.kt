@@ -24,11 +24,10 @@ class Eye(cellTypeId: Int, val visitedBits: Array<BitSet>): Cell(
         //TODO у глаза будет другая система с диапозоном
         if (simulationData.tickCounter % 4 == 0) {
             if (energy[cellIndex] > 0) {
-                val angleRad = angle[cellIndex]
 
                 // Рассчитываем направление движения
-                val directionX = cos(angleRad)
-                val directionY = sin(angleRad)
+                val directionX = angleCos[cellIndex]
+                val directionY = angleSin[cellIndex]
 
                 val visonDist = specialEntity.getVisibilityRange(cellIndex)
 

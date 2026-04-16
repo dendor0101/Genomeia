@@ -10,7 +10,8 @@ flat in float ex_R;
 flat in float ex_R_2;
 flat in float ex_Energy;
 in vec2 ex_UV;
-flat in float ex_Angle;
+flat in float ex_AngleCos;
+flat in float ex_AngleSin;
 flat in int ex_cellType;
 
 out vec4 fragColor;
@@ -34,8 +35,8 @@ void main() {
     vec2 center = vec2(0.5);
     vec2 offset = ex_UV - center;
 
-    float ca = cos(ex_Angle);
-    float sa = sin(ex_Angle);
+    float ca = ex_AngleCos;
+    float sa = ex_AngleSin;
 
     vec2 rotatedOffset = vec2(ca * offset.x - sa * offset.y, sa * offset.x + ca * offset.y);
     vec2 rotatedUV = center + rotatedOffset;

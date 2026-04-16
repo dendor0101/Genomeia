@@ -45,8 +45,7 @@ class EditorSimulationSystem(
             color = zygote.defaultColor.toIntBits(),
             radius = PARTICLE_MAX_RADIUS,
             cellType = zygote.cellTypeId,
-            organIndex = organIndex,
-            angle = 0f
+            organIndex = organIndex
         )
 
         replayEntity.replayCellsCounterInTick.clear()

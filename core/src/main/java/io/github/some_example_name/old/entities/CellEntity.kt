@@ -46,8 +46,10 @@ class CellEntity(
     var cellActions: Array<CellAction?> = arrayOfNulls(maxAmount)
     var organIndex = IntArray(maxAmount) { -1 }
     var parentIndex = IntArray(maxAmount) { -1 }
-    var angle = FloatArray(maxAmount)
-    var angleDiff = FloatArray(maxAmount)
+    var angleCos = FloatArray(maxAmount)
+    var angleSin = FloatArray(maxAmount)
+    var angleDiffCos = FloatArray(maxAmount)
+    var angleDiffSin = FloatArray(maxAmount)
     var energyNecessaryToDivide = FloatArray(maxAmount) { 2f }
     var energyNecessaryToMutate = FloatArray(maxAmount) { 1f }
     var isDividedInThisStage = BooleanArray(maxAmount)
@@ -146,8 +148,10 @@ class CellEntity(
         cellType: Int,
         organIndex: Int,
         parentIndex: Int = -1,
-        angle: Float = 0f,
-        angleDiff: Float = 0f,
+        angleCos: Float = 1f,
+        angleSin: Float = 0f,
+        angleDiffCos: Float = 1f,
+        angleDiffSin: Float = 0f,
         colorDifferentiation: Int = 7,
         visibilityRange: Float = 4.25f,
         a: Float = 1f,
@@ -175,8 +179,10 @@ class CellEntity(
         cellActions[cellIndex] = null
         this.organIndex[cellIndex] = organIndex
         this.parentIndex[cellIndex] = parentIndex
-        this.angle[cellIndex] = angle
-        this.angleDiff[cellIndex] = angleDiff
+        this.angleCos[cellIndex] = angleCos
+        this.angleSin[cellIndex] = angleSin
+        this.angleDiffCos[cellIndex] = angleDiffCos
+        this.angleDiffSin[cellIndex] = angleDiffSin
         energyNecessaryToDivide[cellIndex] = 2f
         energyNecessaryToMutate[cellIndex] = 1f
         isDividedInThisStage[cellIndex] = false
@@ -224,8 +230,10 @@ class CellEntity(
         cellActions[cellIndex] = null
         organIndex[cellIndex] = -1
         parentIndex[cellIndex] = -1
-        angle[cellIndex] = 0f
-        angleDiff[cellIndex] = 0f
+        this.angleCos[cellIndex] = 1f
+        this.angleSin[cellIndex] = 0f
+        this.angleDiffCos[cellIndex] = 1f
+        this.angleDiffSin[cellIndex] = 0f
         energyNecessaryToDivide[cellIndex] = 2f
         energyNecessaryToMutate[cellIndex] = 1f
         isDividedInThisStage[cellIndex] = true
@@ -270,8 +278,10 @@ class CellEntity(
         cellActions.fill(null, 0, bound)
         organIndex.clear(-1)
         parentIndex.clear(-1)
-        angle.clear()
-        angleDiff.clear()
+        angleCos.clear(1f)
+        angleSin.clear()
+        angleDiffCos.clear(1f)
+        angleDiffSin.clear()
         energyNecessaryToDivide.clear(2f)
         energyNecessaryToMutate.clear(1f)
         isDividedInThisStage.clear(false)
@@ -297,8 +307,10 @@ class CellEntity(
         }
         organIndex = organIndex.resize(-1)
         parentIndex = parentIndex.resize(-1)
-        angle = angle.resize()
-        angleDiff = angleDiff.resize()
+        angleCos = angleCos.resize(1f)
+        angleSin = angleSin.resize()
+        angleDiffCos = angleDiffCos.resize(1f)
+        angleDiffSin = angleDiffSin.resize()
         energyNecessaryToDivide = energyNecessaryToDivide.resize(2f)
         energyNecessaryToMutate = energyNecessaryToMutate.resize(1f)
         isDividedInThisStage = isDividedInThisStage.resize(false)

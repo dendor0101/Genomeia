@@ -15,8 +15,7 @@ class Compass(cellTypeId: Int) : Cell(
     override fun doOnTick(cellIndex: Int, threadId: Int) = with(cellEntity) {
         // TODO: redesign to send a signal to the cell whose connection is closer to the center
         if (simulationData.tickCounter % 7 == 0) {
-            val angleRad = angle[cellIndex]
-            cellEntity.neuronImpulseOutput[cellIndex] = activation(cellIndex, sin(angleRad))
+            cellEntity.neuronImpulseOutput[cellIndex] = activation(cellIndex, angleSin[cellIndex])
 
             energy[cellIndex] -= substrateSettings.cellsSettings[cellType[cellIndex].toInt()].energyActionCost
         }

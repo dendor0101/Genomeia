@@ -14,6 +14,8 @@ import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.entities.SpecialEntity
 import io.github.some_example_name.old.systems.physics.GridManager
+import kotlin.math.cos
+import kotlin.math.sin
 
 class MutateManager(
     val cellEntity: CellEntity,
@@ -127,7 +129,10 @@ class MutateManager(
                 setIsNeuronTransportable(index, newCell.isNeuronTransportable)
             }
 
-            action.angleDirected?.let { angleDiff[index] = it }
+            action.angleDirected?.let {
+                angleDiffCos[index] = cos(it)
+                angleDiffSin[index] = sin(it)
+            }
 
             if (lastCell is Eye && newCell is Eye) {
                 action.colorRecognition?.let { specialEntity.setColorDifferentiation(index, it.toByte()) }

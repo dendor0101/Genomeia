@@ -2,6 +2,7 @@ package io.github.some_example_name.old.systems.render
 
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Color
+import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.OrthographicCamera
 import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
@@ -80,6 +81,11 @@ class RenderSystem(
         drawShader()
         synchronized(renderBufferManager.renderSpecificBufferData) {
             moveCameraAndDrawSelected()
+
+            Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)      // обязательно!
+            Gdx.gl.glDepthMask(false)                 // чтобы UI не портил depth buffer
+            Gdx.gl.glEnable(GL20.GL_BLEND)            // на всякий случай (stage любит blend)
+
             drawTextSimInfo()
         }
         if (blurLevel > 0) {
@@ -160,12 +166,12 @@ class RenderSystem(
                 with(renderBufferManager.renderCellBufferData) {
                     shapeRenderer.color = Color.WHITE
                     for (i in 0..<renderCellBufferSize) {
-                        if (directedLength[i] > 0) {
+                        if (directedAngleCos[i] != 0f || directedAngleSin[i] != 0f) {
                             shapeRenderer.line(
                                 x[i],
                                 y[i],
-                                x[i] + directedLength[i] * cos(directedAngle[i]),
-                                y[i] + directedLength[i] * sin(directedAngle[i])
+                                x[i] + directedAngleCos[i],
+                                y[i] + directedAngleSin[i]
                             )
                         }
                     }

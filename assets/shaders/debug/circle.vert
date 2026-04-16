@@ -23,9 +23,14 @@ flat out vec3 ex_Color;
 flat out float ex_R;
 flat out float ex_R_2;
 out vec2 ex_UV;                    // локальные UV для текстуры
-flat out float ex_Angle;           // ← добавлено: угол поворота текстуры
+flat out float ex_AngleCos;           // ← добавлено: угол поворота текстуры
+flat out float ex_AngleSin;
 flat out float ex_Energy;
 flat out int ex_cellType;
+
+float hash(float n) {
+    return fract(sin(n) * 43758.5453123);
+}
 
 void main() {
     int id = gl_InstanceID;
@@ -38,22 +43,13 @@ void main() {
     vec4 v1 = unpackUnorm4x8(curr.packed1);
     vec4 v2 = unpackUnorm4x8(curr.packed2);
 
-    float lowByte  = v1.x * 255.0;
-    float highByte = v1.y * 255.0;
-    float angle16  = lowByte + highByte * 256.0;
+    float cosA = v1.x * 2.0 - 1.0;
+    float sinA = v1.y * 2.0 - 1.0;
 
-    float angleNorm = angle16 / 65535.0;
-
-    // Восстанавливаем оригинальный диапазон -PI … +PI
-    float angle = angleNorm * -2.0 * 3.14159265 - 3.14159265;
-
-    // ax и ay теперь:
-    // ax = v1.y  ← будет содержать highByte/255 (если ax тебе потом понадобится — скажи, переложим)
-    // ay = v1.z  ← остаётся 0
     float ax = v1.y;
     float ay = v1.z;
 
-    ex_R     = 0.1 + v1.w * 0.4;                 // radius на месте
+    ex_R     = 0.1 + v1.w * 0.4;
     float energy   = v2.x * 10.0 * 0.0;
     int   cellType = int(round(v2.y * 255.0));
 
@@ -68,7 +64,16 @@ void main() {
     ex_UV = a_position * 0.5 + 0.5;   // -1..1 → 0..1
     ex_cellType = cellType;
 
-    ex_Angle = angle + sin(float(id)) * 3.0;        // ← добавлено: передаём угол в радианах
+    float noiseAngle = (hash(float(id)) - 0.5) * 3.0;
+    float ca = cos(noiseAngle);
+    float sa = sin(noiseAngle);
+    float mirroredCos = cosA;
+    float mirroredSin = -sinA;
+    float nx = mirroredCos * ca - mirroredSin * sa;
+    float ny = mirroredSin * ca + mirroredCos * sa;
+
+    ex_AngleCos = nx;
+    ex_AngleSin = ny;
 
     gl_Position = u_projTrans * vec4(worldPos, 0.0, 1.0);
 }

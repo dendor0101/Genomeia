@@ -22,6 +22,10 @@ class RenderBufferManager(
     val renderCellBufferData = RenderCellBufferData(2500_000)
     val renderLinkBufferData = RenderLinkBufferData(2500_000)
 
+    //TODO resize
+    //TODO parallel updateBuffer
+    //TODO Triple buffer
+
     fun updateBuffer() {
         synchronized(renderCellBufferData) {
             with(particleEntity) {
@@ -44,9 +48,15 @@ class RenderBufferManager(
 //                        renderCellBufferData.packed2[bufIndex] = bEnergy or (bCell shl 8)
 
 
-                        val angle = cellEntity.angle[cellIndex]
-                        val angleNorm = (angle + Math.PI.toFloat()) / (2f * Math.PI.toFloat())
-                        val bAngle16 = (angleNorm * 65535f + 0.5f).toInt().coerceIn(0, 65535)
+                        val cd = cellEntity.angleDiffCos[cellIndex]
+                        val sd = cellEntity.angleDiffSin[cellIndex]
+
+                        val cos = cellEntity.angleCos[cellIndex] * cd + cellEntity.angleSin[cellIndex] * sd
+                        val sin = cellEntity.angleSin[cellIndex] * cd - cellEntity.angleCos[cellIndex] * sd
+
+                        // нормализация [-1;1] → [0;255]
+                        val cosByte = ((cos * 0.5f + 0.5f) * 255f + 0.5f).toInt().coerceIn(0, 255)
+                        val sinByte = ((sin * 0.5f + 0.5f) * 255f + 0.5f).toInt().coerceIn(0, 255)
 
                         // bAx и bAy больше не нужны — они были 0
                         val bRadius = (((radius[i] - 0.1f) / 0.4f) * 255f + 0.5f).toInt().coerceIn(0, 255)
@@ -57,14 +67,21 @@ class RenderBufferManager(
                         //   биты  0-15  → угол 16 бит
                         //   биты 16-23  → 0 (бывший bAy)
                         //   биты 24-31  → radius (остаётся на своём месте)
-                        renderCellBufferData.packed1[bufIndex] = bAngle16 or (bRadius shl 24)
+                        renderCellBufferData.packed1[bufIndex] = /*bAngle16*/(cosByte) or (sinByte shl 8) or (bRadius shl 24)
 
                         // packed2 остаётся без изменений
                         renderCellBufferData.packed2[bufIndex] = bEnergy or (bCell shl 8)
 
                         if (!usePostProcess) {
-                            renderCellBufferData.directedAngle[bufIndex] = cellEntity.angle[cellIndex]
-                            renderCellBufferData.directedLength[bufIndex] = if (cellEntity.cellType[cellIndex] == 14.toByte()) specialEntity.getVisibilityRange(cellIndex) else 0f
+
+                            val length = when (cellEntity.cellType[cellIndex].toInt()) {
+                                14 -> specialEntity.getVisibilityRange(cellIndex)
+                                3 -> 1f
+                                else -> 0f
+                            }
+
+                            renderCellBufferData.directedAngleCos[bufIndex] = cellEntity.angleCos[cellIndex] * length
+                            renderCellBufferData.directedAngleSin[bufIndex] = cellEntity.angleSin[cellIndex] * length
                         }
                     } else {
                         val bRadius = (((radius[i] - 0.1f) / 0.4f) * 255f + 0.5f).toInt().coerceIn(0, 255)
@@ -74,8 +91,8 @@ class RenderBufferManager(
                         renderCellBufferData.packed2[bufIndex] = 0 or (bCell shl 8)
 
                         if (!usePostProcess) {
-                            renderCellBufferData.directedAngle[bufIndex] = 0f
-                            renderCellBufferData.directedLength[bufIndex] = 0f
+                            renderCellBufferData.directedAngleCos[bufIndex] = 0f
+                            renderCellBufferData.directedAngleSin[bufIndex] = 0f
                         }
                     }
                 }
@@ -145,8 +162,8 @@ class RenderCellBufferData(maxAmountParticle: Int) {
     var color = IntArray(maxAmountParticle)
     var packed1 = IntArray(maxAmountParticle)
     var packed2 = IntArray(maxAmountParticle)
-    var directedAngle = FloatArray(maxAmountParticle)
-    var directedLength = FloatArray(maxAmountParticle)
+    var directedAngleCos = FloatArray(maxAmountParticle)
+    var directedAngleSin = FloatArray(maxAmountParticle)
 }
 
 class RenderLinkBufferData(maxAmountLink: Int) {

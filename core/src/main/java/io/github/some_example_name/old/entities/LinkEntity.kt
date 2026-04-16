@@ -2,7 +2,7 @@ package io.github.some_example_name.old.entities
 
 import io.github.some_example_name.old.core.utils.UnorderedIntPairMap
 import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem.Companion.MAX_LINK_AMOUNT
-import kotlin.math.atan2
+import kotlin.math.sqrt
 
 class LinkEntity(
     linksStartMaxAmount: Int,
@@ -94,10 +94,14 @@ class LinkEntity(
 
             val dx = getX(cellId) - getX(otherCellId)
             val dy = getY(cellId) - getY(otherCellId)
-            val angleToChild = atan2(dy, dx)
+            val len = sqrt(dx * dx + dy * dy)
+            val dirCos = dx / len
+            val dirSin = dy / len
 
             parentIndex[cellId] = otherCellId
-            angleDiff[cellId] = angle[cellId] - angleToChild
+
+            angleDiffCos[cellId] = angleCos[cellId] * dirCos + angleSin[cellId] * dirSin
+            angleDiffSin[cellId] = angleSin[cellId] * dirCos - angleCos[cellId] * dirSin
         }
     }
 
