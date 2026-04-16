@@ -30,7 +30,8 @@ class WorldCommandsManager(
     val simulationData: SimulationData,
     val cellList: List<Cell>,
     val substancesEntity: SubstancesEntity,
-    threadCount: Int
+    threadCount: Int,
+    val userCommandManager: UserCommandManager? = null
 ) {
     val worldCommandBuffer = Array(threadCount) { WorldCommandBuffer() }
     val worldCommandSecondBuffer = Array(threadCount) { WorldCommandBuffer(100) }
@@ -145,6 +146,10 @@ class WorldCommandsManager(
                     WorldCommandType.DELETE_CELL -> {
                         val cellIndex = ints[0]
                         val cellGeneration = ints[1]
+                        if (cellEntity.getParticleIndex(cellIndex) == userCommandManager?.grabbedParticleIndex) {
+                            userCommandManager.grabbedParticleIndex = -1
+                            userCommandManager.isDragging = false
+                        }
 //                        println("DELETE_CELL $cellIndex")
                         if (cellEntity.isAlive[cellIndex] && cellEntity.getGeneration(cellIndex) == cellGeneration) {
                             val r = Random.nextInt(255)

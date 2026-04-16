@@ -42,6 +42,7 @@ class UserCommandManager(
     var grabbedParticleIndex = -1
     var tapX = 0f
     var tapY = 0f
+    var isDragging = false
 
     fun push(cmd: PlayerCommand) {
         writeBuffer.add(cmd)
@@ -66,6 +67,7 @@ class UserCommandManager(
                     PlayerCommand.StopDrag -> {
                         grabbedParticleIndex = -1
                         simulationData.selectedCellIndex = -1
+                        isDragging = false
                     }
                     is PlayerCommand.TouchDown -> {
                         val neighborsCellIndexes = gridManager.collectParticles(cmd.x.toInt(), cmd.y.toInt(), radius = 1)
@@ -73,6 +75,7 @@ class UserCommandManager(
                             .minByOrNull {
                                 distanceTo(cmd.x, cmd.y, particleEntity.x[it], particleEntity.y[it])
                             }?.takeIf {
+                                isDragging = false
                                 distanceTo(cmd.x, cmd.y, particleEntity.x[it], particleEntity.y[it]) < particleEntity.radius[it]
                             } ?: -1
 
@@ -90,6 +93,7 @@ class UserCommandManager(
                                 vx[grabbedParticleIndex] = vx[grabbedParticleIndex] * grabDrag + (cmd.x - x[grabbedParticleIndex]) * 0.02f
                                 vy[grabbedParticleIndex] = vy[grabbedParticleIndex] * grabDrag + (cmd.y - y[grabbedParticleIndex]) * 0.02f
                             }
+                            isDragging = true
 
                             tapX = cmd.x
                             tapY = cmd.y
@@ -108,6 +112,7 @@ class UserCommandManager(
 
                         simulationData.selectedCellIndex = if (grabbedParticleIndex != -1) {
                             if (particleEntity.isCell[grabbedParticleIndex]) {
+                                isDragging = false
                                 particleEntity.holderEntityIndex[grabbedParticleIndex]
                             } else -1
                         } else -1
@@ -137,7 +142,6 @@ class UserCommandManager(
                                 }
                             } else {
                                 val radius = 10.0f
-
                                 repeat(300) {
                                     val angle = MathUtils.random(0f, MathUtils.PI2)
 
@@ -184,7 +188,7 @@ class UserCommandManager(
         }
 
 
-        if (grabbedParticleIndex != -1 && !isAlreadyDragged) {
+        if (grabbedParticleIndex != -1 && !isAlreadyDragged && isDragging) {
             val grabDrag = 0.5f // To reduce oscillations
 
             with(particleEntity) {

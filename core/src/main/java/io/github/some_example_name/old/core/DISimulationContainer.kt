@@ -143,38 +143,6 @@ object DISimulationContainer:  DIContext, Disposable {
         cellEntity = cellEntity
     )
 
-    override val worldCommandsManager = WorldCommandsManager(
-        gridManager = gridManager,
-        organManager = organManager,
-        organEntity = organEntity,
-        cellEntity = cellEntity,
-        linkEntity = linkEntity,
-        particleEntity = particleEntity,
-        substrateSettings = substrateSettings,
-        genomeManager = genomeManager,
-        simulationData = simulationData,
-        cellList = cellList,
-        substancesEntity = substancesEntity,
-        specialEntity = specialEntity,
-        threadCount = threadCount
-    )
-
-    val particlePhysicsSystem = ParticlePhysicsSystem(
-        entity = particleEntity,
-        gridManager = gridManager,
-        substrateSettings = substrateSettings,
-        worldCommandsManager = worldCommandsManager,
-        simulationData = simulationData,
-        linkEntity = linkEntity,
-        cellList = cellList,
-        cellEntity = cellEntity,
-        substancesEntity = substancesEntity
-    )
-
-    val threadManager = ThreadManager(
-        simulationData = simulationData
-    )
-
     val renderBufferManager = RenderBufferManager(
         simulationData = simulationData,
         cellEntity = cellEntity,
@@ -191,6 +159,51 @@ object DISimulationContainer:  DIContext, Disposable {
         particleEntity = particleEntity,
         renderBufferManager = renderBufferManager,
         diContext = this
+    )
+
+    val userCommandManager = UserCommandManager(
+        organEntity = organEntity,
+        cellEntity = cellEntity,
+        genomeManager = genomeManager,
+        cellList = cellList,
+        simulationData = simulationData,
+        gridManager = gridManager,
+        particleEntity = particleEntity,
+        zygote = zygote,
+        renderSystem = renderSystem
+    )
+
+    override val worldCommandsManager = WorldCommandsManager(
+        gridManager = gridManager,
+        organManager = organManager,
+        organEntity = organEntity,
+        cellEntity = cellEntity,
+        linkEntity = linkEntity,
+        particleEntity = particleEntity,
+        substrateSettings = substrateSettings,
+        genomeManager = genomeManager,
+        simulationData = simulationData,
+        cellList = cellList,
+        substancesEntity = substancesEntity,
+        specialEntity = specialEntity,
+        threadCount = threadCount,
+        userCommandManager = userCommandManager
+    )
+
+    val particlePhysicsSystem = ParticlePhysicsSystem(
+        entity = particleEntity,
+        gridManager = gridManager,
+        substrateSettings = substrateSettings,
+        worldCommandsManager = worldCommandsManager,
+        simulationData = simulationData,
+        linkEntity = linkEntity,
+        cellList = cellList,
+        cellEntity = cellEntity,
+        substancesEntity = substancesEntity
+    )
+
+    val threadManager = ThreadManager(
+        simulationData = simulationData
     )
 
     val divideManager = DivideManager(
@@ -230,17 +243,6 @@ object DISimulationContainer:  DIContext, Disposable {
         cellSystem = cellSystem
     )
 
-    val userCommandManager = UserCommandManager(
-        organEntity = organEntity,
-        cellEntity = cellEntity,
-        genomeManager = genomeManager,
-        cellList = cellList,
-        simulationData = simulationData,
-        gridManager = gridManager,
-        particleEntity = particleEntity,
-        zygote = zygote,
-        renderSystem = renderSystem
-    )
 
     val simulationSystem by lazy {
         SimulationSystem(

@@ -11,14 +11,14 @@ struct Circle {
 };
 
 layout(std430, binding = 0) buffer CirclesA { Circle circlesA[]; };
-layout(std430, binding = 1) buffer CirclesB { Circle circlesB[]; };
+//layout(std430, binding = 1) buffer CirclesB { Circle circlesB[]; };
 
 uniform mat4 u_projTrans;
-uniform uint u_currentBuffer;
+//uniform uint u_currentBuffer;
 
 out vec2 ex_Quad;
 flat out vec2 ex_Centroid;
-flat out vec2 ex_Velocity;
+//flat out vec2 ex_Velocity;
 flat out vec3 ex_Color;
 flat out float ex_R;
 flat out float ex_R_2;
@@ -35,10 +35,10 @@ float hash(float n) {
 void main() {
     int id = gl_InstanceID;
 
-    Circle curr = (u_currentBuffer == 0u) ? circlesA[id] : circlesB[id];
-    Circle prev = (u_currentBuffer == 0u) ? circlesB[id] : circlesA[id];
+    Circle curr = circlesA[id];//(u_currentBuffer == 0u) ? circlesA[id] : circlesB[id];
+//    Circle prev = (u_currentBuffer == 0u) ? circlesB[id] : circlesA[id];
 
-    vec2 velocity = curr.pos - prev.pos;
+//    vec2 velocity = curr.pos - prev.pos;
 
     vec4 v1 = unpackUnorm4x8(curr.packed1);
     vec4 v2 = unpackUnorm4x8(curr.packed2);
@@ -57,7 +57,7 @@ void main() {
 
     ex_Quad = worldPos;
     ex_Centroid = curr.pos;
-    ex_Velocity = velocity;
+//    ex_Velocity = velocity;
     ex_Color = unpackUnorm4x8(curr.color).rgb;
     ex_R_2 = ex_R * ex_R;
     ex_Energy = energy * energy * 0.0005;

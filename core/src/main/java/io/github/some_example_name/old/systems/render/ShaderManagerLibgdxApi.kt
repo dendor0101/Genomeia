@@ -22,9 +22,10 @@ import kotlin.math.sin
 var usePostProcess = false
 
 class ShaderManagerLibgdxApi : ShaderManager {
-    private val ssbos = IntArray(2)
+    //TODO вернуть 2 SSBO для интерполяции
+    private val ssbos = IntArray(/*2*/1)
     private var currentReadIndex = 0
-    private val ssboCapacities = IntArray(2)
+    private val ssboCapacities = IntArray(/*2*/1)
 
     private lateinit var shader: ShaderProgram
     private lateinit var mesh: Mesh
@@ -217,12 +218,12 @@ class ShaderManagerLibgdxApi : ShaderManager {
     }
 
     private fun create2SSBO() {
-        val ssboBuffer = BufferUtils.newIntBuffer(2)
-        Gdx.gl31.glGenBuffers(2, ssboBuffer)
+        val ssboBuffer = BufferUtils.newIntBuffer(/*2*/1)
+        Gdx.gl31.glGenBuffers(/*2*/1, ssboBuffer)
         ssbos[0] = ssboBuffer.get(0)
-        ssbos[1] = ssboBuffer.get(1)
+//        ssbos[1] = ssboBuffer.get(1)
 
-        for (i in 0..1) {
+        for (i in 0../*1*/0) {
             ssboCapacities[i] = INITIAL_PARTICLE_CAPACITY * PARTICLE_STRUCT_SIZE
             Gdx.gl31.glBindBuffer(GL31.GL_SHADER_STORAGE_BUFFER, ssbos[i])
             Gdx.gl31.glBufferData(GL31.GL_SHADER_STORAGE_BUFFER, INITIAL_PARTICLE_CAPACITY * PARTICLE_STRUCT_SIZE, null, GL20.GL_DYNAMIC_DRAW)
@@ -292,7 +293,7 @@ class ShaderManagerLibgdxApi : ShaderManager {
         val numInstances = dataSize / PARTICLE_STRUCT_SIZE
 
         if (isNewFrame) {
-            val writeIndex = 1 - currentReadIndex
+            val writeIndex = 0//1 - currentReadIndex
 
             if (dataSize > 0) {
                 resize(dataSize, writeIndex, ssbos[writeIndex])
@@ -317,7 +318,7 @@ class ShaderManagerLibgdxApi : ShaderManager {
 
         shader.bind()
         shader.setUniformMatrix("u_projTrans", cameraProjection)
-        shader.setUniformi("u_currentBuffer", currentReadIndex)
+//        shader.setUniformi("u_currentBuffer", currentReadIndex)
         shader.setUniformf("u_textureScale", 1.0f)
         shader.setUniformf("u_colorScale", if (usePostProcess) 0f else 0.5f)
         shader.setUniformi("u_textureArray", 0)

@@ -133,10 +133,8 @@ class RenderBufferManager(
                 val cellIndex = simulationData.selectedCellIndex
                 if (cellIndex != -1) {
                     selectedCellIndex = cellIndex
-                    neuronImpulseInput =
-                        cellEntity.neuronImpulseInput[cellIndex]
-                    neuronImpulseOutput =
-                        cellEntity.neuronImpulseOutput[cellIndex]
+                    neuronImpulseInput = cellEntity.neuronImpulseInput[cellIndex]
+                    neuronImpulseOutput = cellEntity.neuronImpulseOutput[cellIndex]
                     isCellSelected = true
                     grabbedCellX = cellEntity.getX(cellIndex)
                     grabbedCellY = cellEntity.getY(cellIndex)

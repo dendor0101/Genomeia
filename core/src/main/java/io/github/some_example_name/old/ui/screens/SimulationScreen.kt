@@ -194,6 +194,7 @@ class SimulationScreen(
     override fun hide() { }
 
     override fun pan(x: Float, y: Float, deltaX: Float, deltaY: Float): Boolean {
+        //TODO есть подозрения что это вызывает краш cuncurent изменений
         if (userCommandManager.grabbedParticleIndex != -1) {
             val world = screenToWorld(x, y)
             userCommandManager.push(

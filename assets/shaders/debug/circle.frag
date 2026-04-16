@@ -4,7 +4,7 @@ precision highp sampler2DArray;
 
 in vec2 ex_Quad;
 flat in vec2 ex_Centroid;
-flat in vec2 ex_Velocity;
+//flat in vec2 ex_Velocity;
 flat in vec3 ex_Color;
 flat in float ex_R;
 flat in float ex_R_2;
