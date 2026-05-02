@@ -40,7 +40,8 @@ class CellListBuilder(
         Vascular(21),
         PheromoneEmitter(22),
         PheromoneSensor(23),
-        Punisher(24)
+        Punisher(24),
+        Magnet(25)
     ).sortedBy { it.cellTypeId }
 
     override fun resize() {
