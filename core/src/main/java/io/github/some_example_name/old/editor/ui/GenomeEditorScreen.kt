@@ -241,7 +241,7 @@ class GenomeEditorScreen(
         button: Int
     ): Boolean {
         // Проверяем, не находится ли тап над UI элементами stage
-        val hitTest = stage.hit(x, y)
+        val hitTest = stage.hit(x, y, true)
         if (hitTest != null && hitTest.isTouchable) {
             // Если тап над UI элементом, не обрабатываем его как жест
             return false
