@@ -12,30 +12,26 @@ target/
 .mypy_cache/
 .pytest_cache/
 __pycache__/
-node_modules/
-venv/
-.venv/
+coverage/
+htmlcov/
+*.coverage
 
-# Logs and temp files
-*.log
-*.tmp
+# Editors
+.vscode/
+.idea/
 *.swp
+*.swo
+*.tmp
 
 # Environment
 .env
 .env.local
 *.env.*
 
-# Editors
-.vscode/
-.idea/
+# Logs
+*.log
 
-# Coverage reports
-coverage/
-htmlcov/
-.coverage
-
-# OS generated files
+# System
 .DS_Store
 Thumbs.db
 ```

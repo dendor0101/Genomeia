@@ -222,7 +222,7 @@ fun MyGame.applyCustomFont(selectBox: VisSelectBox<String>) {
     newStyle.font = customFont  // Применяем большой шрифт для выбранного элемента
     newStyle.listStyle.font = customFont  // Применяем большой шрифт для элементов списка (dropdown)
     selectBox.style = newStyle  // Устанавливаем стиль обратно
-    selectBox.invalidateHierarchy()  // Пересчитываем layout, чтобы учесть изменения размера
+    selectBox.invalidate()  // Пересчитываем layout, чтобы учесть изменения размера
 }
 
 fun MyGame.applyCustomFont(button: VisTextField) {
