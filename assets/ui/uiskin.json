@@ -1,0 +1,454 @@
+{
+com.badlogic.gdx.graphics.g2d.BitmapFont: {
+  default: {
+    file: fonts/Roboto-Regular.ttf
+    size: 16
+  }
+  button: {
+    file: fonts/Roboto-Regular.ttf
+    size: 18
+  }
+  title: {
+    file: fonts/Roboto-Regular.ttf
+    size: 32
+  }
+  subtitle: {
+    file: fonts/Roboto-Regular.ttf
+    size: 20
+  }
+}
+
+com.badlogic.gdx.graphics.Color: {
+  primary: { r: 0.2; g: 0.6; b: 0.9; a: 1 }
+  primary-dark: { r: 0.15; g: 0.45; b: 0.7; a: 1 }
+  primary-light: { r: 0.4; g: 0.7; b: 0.95; a: 1 }
+  accent: { r: 0.95; g: 0.4; b: 0.5; a: 1 }
+  background: { r: 0.12; g: 0.12; b: 0.18; a: 1 }
+  background-light: { r: 0.18; g: 0.18; b: 0.24; a: 1 }
+  panel: { r: 0.15; g: 0.15; b: 0.2; a: 0.95 }
+  text: { r: 0.95; g: 0.95; b: 0.95; a: 1 }
+  text-disabled: { r: 0.6; g: 0.6; b: 0.6; a: 1 }
+  success: { r: 0.3; g: 0.8; b: 0.4; a: 1 }
+  warning: { r: 0.95; g: 0.7; b: 0.2; a: 1 }
+  error: { r: 0.9; g: 0.2; b: 0.2; a: 1 }
+  white: { r: 1; g: 1; b: 1; a: 1 }
+  black: { r: 0; g: 0; b: 0; a: 1 }
+  transparent: { r: 0; g: 0; b: 0; a: 0 }
+}
+
+com.badlogic.gdx.scenes.scene2d.ui.Skin$TintedDrawable: {
+  bg-primary: { name: white; color: primary }
+  bg-primary-dark: { name: white; color: primary-dark }
+  bg-primary-light: { name: white; color: primary-light }
+  bg-accent: { name: white; color: accent }
+  bg-background: { name: white; color: background }
+  bg-background-light: { name: white; color: background-light }
+  bg-panel: { name: white; color: panel }
+  bg-success: { name: white; color: success }
+  bg-warning: { name: white; color: warning }
+  bg-error: { name: white; color: error }
+}
+
+com.badlogic.gdx.scenes.scene2d.ui.Button$ButtonStyle: {
+  default: { up: bg-primary; down: bg-primary-dark; over: bg-primary-light }
+  toggle: { up: bg-background-light; down: bg-primary; checked: bg-primary; over: bg-primary-light }
+  accent: { up: bg-accent; down: bg-primary-dark; over: bg-primary-light }
+  flat: { up: bg-transparent; down: bg-primary; over: bg-background-light }
+}
+
+com.badlogic.gdx.scenes.scene2d.ui.TextButton$TextButtonStyle: {
+  default: { up: bg-primary; down: bg-primary-dark; over: bg-primary-light; font: button; fontColor: white }
+  toggle: { up: bg-background-light; down: bg-primary; checked: bg-primary; font: button; fontColor: white }
+  accent: { up: bg-accent; down: bg-primary-dark; over: bg-primary-light; font: button; fontColor: white }
+  flat: { up: bg-transparent; down: bg-primary; over: bg-background-light; font: button; fontColor: text }
+  border: { up: bg-transparent; down: bg-primary; over: bg-background-light; font: button; fontColor: primary; downFontColor: white }
+}
+
+com.badlogic.gdx.scenes.scene2d.ui.ScrollPane$ScrollPaneStyle: {
+  default: { background: bg-panel; hScrollKnob: bg-primary; vScrollKnob: bg-primary }
+  transparent: { hScrollKnob: bg-primary; vScrollKnob: bg-primary }
+}
+
+com.badlogic.gdx.scenes.scene2d.ui.SelectBox$SelectBoxStyle: {
+  default: {
+    font: button
+    fontColor: text
+    background: bg-background-light
+    scrollStyle: default
+    listStyle: { font: button; fontColor: text; background: bg-panel; selection: bg-primary }
+    backgroundOpen: bg-primary
+  }
+}
+
+com.badlogic.gdx.scenes.scene2d.ui.List$ListStyle: {
+  default: { font: button; fontColorSelected: white; fontColorUnselected: text; selection: bg-primary; background: bg-panel }
+  without-background: { font: button; fontColorSelected: white; fontColorUnselected: text; selection: bg-primary }
+}
+
+com.badlogic.gdx.scenes.scene2d.ui.SplitPane$SplitPaneStyle: {
+  default-horizontal: { handle: bg-primary }
+  default-vertical: { handle: bg-primary }
+}
+
+com.badlogic.gdx.scenes.scene2d.ui.Slider$SliderStyle: {
+  default-horizontal: { background: bg-background-light; knob: bg-primary; knobOver: bg-primary-light; knobDown: bg-primary-dark }
+  default-vertical: { background: bg-background-light; knob: bg-primary; knobOver: bg-primary-light; knobDown: bg-primary-dark }
+  accent-horizontal: { background: bg-background-light; knob: bg-accent; knobOver: bg-primary-light; knobDown: bg-primary-dark }
+  accent-vertical: { background: bg-background-light; knob: bg-accent; knobOver: bg-primary-light; knobDown: bg-primary-dark }
+}
+
+com.badlogic.gdx.scenes.scene2d.ui.Label$LabelStyle: {
+  default: { font: default; fontColor: text }
+  title: { font: title; fontColor: primary }
+  subtitle: { font: subtitle; fontColor: text }
+  small: { font: default; fontColor: text-disabled }
+  error: { font: default; fontColor: error }
+  success: { font: default; fontColor: success }
+  warning: { font: default; fontColor: warning }
+}
+
+com.badlogic.gdx.scenes.scene2d.ui.TextField$TextFieldStyle: {
+  default: {
+    font: button
+    fontColor: text
+    tintColor: primary
+    background: bg-background-light
+    focusedBackground: bg-primary
+    disabledBackground: bg-background
+    messageFont: default
+    messageFontColor: text-disabled
+    cursor: white
+    selection: bg-primary-light
+  }
+}
+
+com.badlogic.gdx.scenes.scene2d.ui.CheckBox$CheckBoxStyle: {
+  default: {
+    checkboxOn: bg-primary
+    checkboxOff: bg-background-light
+    checkboxOver: bg-primary-light
+    checkboxDown: bg-primary-dark
+    font: button
+    fontColor: text
+    disabledFontColor: text-disabled
+  }
+  radio: {
+    checkboxOn: bg-accent
+    checkboxOff: bg-background-light
+    checkboxOver: bg-primary-light
+    checkboxDown: bg-primary-dark
+    font: button
+    fontColor: text
+    disabledFontColor: text-disabled
+  }
+}
+
+com.badlogic.gdx.scenes.scene2d.ui.ProgressBar$ProgressBarStyle: {
+  default-horizontal: { background: bg-background-light; knobBefore: bg-primary; knobAfter: bg-background-light }
+  default-vertical: { background: bg-background-light; knobBefore: bg-primary; knobAfter: bg-background-light }
+  loading: { background: bg-background-light; knobBefore: bg-accent; knobAfter: bg-background-light }
+}
+
+com.badlogic.gdx.scenes.scene2d.ui.Window$WindowStyle: {
+  default: {
+    titleFont: subtitle
+    titleFontColor: primary
+    background: bg-panel
+    stageBackground: bg-background
+  }
+  dialog: {
+    titleFont: subtitle
+    titleFontColor: text
+    background: bg-panel
+    stageBackground: bg-background
+  }
+}
+
+com.badlogic.gdx.scenes.scene2d.ui.Tooltip$TooltipStyle: {
+  default: { label: default; background: bg-panel }
+}
+
+com.badlogic.gdx.scenes.scene2d.ui.Touchpad$TouchpadStyle: {
+  default: { background: bg-panel; knob: bg-primary }
+}
+
+com.badlogic.gdx.scenes.scene2d.ui.Tree$TreeStyle: {
+  default: { plus: bg-primary; minus: bg-accent; selection: bg-primary-light; over: bg-background-light }
+}
+
+com.kotcrab.vis.ui.widget.VisTextButton$VisTextButtonStyle: {
+  default: { up: bg-primary; down: bg-primary-dark; over: bg-primary-light; font: button; fontColor: white; pressedOffsetY: -2; pressedOffsetX: 2 }
+  menu: { up: bg-background-light; down: bg-primary; over: bg-primary-light; font: button; fontColor: text; downFontColor: white; pressedOffsetY: -1; pressedOffsetX: 1 }
+  editor: { up: bg-primary; down: bg-primary-dark; over: bg-primary-light; font: button; fontColor: white; pressedOffsetY: -2; pressedOffsetX: 2 }
+}
+
+com.kotcrab.vis.ui.widget.VisImageButton$VisImageButtonStyle: {
+  default: { up: bg-primary; down: bg-primary-dark; over: bg-primary-light; imageUpScale: 0.9 }
+  close: { up: bg-error; down: bg-primary-dark; over: bg-accent }
+  menu: { up: bg-background-light; down: bg-primary; over: bg-primary-light }
+}
+
+com.kotcrab.vis.ui.widget.VisCheckBox$VisCheckBoxStyle: {
+  default: {
+    tickOn: white
+    tickOff: transparent
+    tickDisabled: text-disabled
+    backgroundOn: bg-primary
+    backgroundOff: bg-background-light
+    backgroundOver: bg-primary-light
+    backgroundDown: bg-primary-dark
+    backgroundDisabled: bg-background
+    font: button
+    fontColor: text
+    disabledFontColor: text-disabled
+    pressedOffsetY: -1
+    pressedOffsetX: 1
+  }
+  radio: {
+    tickOn: white
+    tickOff: transparent
+    tickDisabled: text-disabled
+    backgroundOn: bg-accent
+    backgroundOff: bg-background-light
+    backgroundOver: bg-primary-light
+    backgroundDown: bg-primary-dark
+    backgroundDisabled: bg-background
+    font: button
+    fontColor: text
+    disabledFontColor: text-disabled
+    pressedOffsetY: -1
+    pressedOffsetX: 1
+  }
+}
+
+com.kotcrab.vis.ui.widget.VisRadioButton$VisRadioButtonStyle: {
+  default: {
+    tickOn: white
+    tickOff: transparent
+    backgroundOn: bg-accent
+    backgroundOff: bg-background-light
+    backgroundOver: bg-primary-light
+    backgroundDown: bg-primary-dark
+    font: button
+    fontColor: text
+    pressedOffsetY: -1
+    pressedOffsetX: 1
+  }
+}
+
+com.kotcrab.vis.ui.widget.VisTextField$VisTextFieldStyle: {
+  default: {
+    font: button
+    fontColor: text
+    tintColor: primary
+    background: bg-background-light
+    focusedBackground: bg-primary
+    disabledBackground: bg-background
+    messageFont: default
+    messageFontColor: text-disabled
+    cursor: white
+    selection: bg-primary-light
+    errorBackground: bg-error
+    errorBorder: bg-error
+  }
+  spinner: {
+    font: button
+    fontColor: text
+    tintColor: primary
+    background: bg-background-light
+    focusedBackground: bg-primary
+    disabledBackground: bg-background
+    messageFont: default
+    messageFontColor: text-disabled
+    cursor: white
+    selection: bg-primary-light
+    up: bg-background-light
+    down: bg-background-light
+  }
+}
+
+com.kotcrab.vis.ui.widget.VisValidatableTextField$VisValidatableTextFieldStyle: {
+  default: {
+    font: button
+    fontColor: text
+    tintColor: primary
+    background: bg-background-light
+    focusedBackground: bg-primary
+    disabledBackground: bg-background
+    messageFont: default
+    messageFontColor: text-disabled
+    cursor: white
+    selection: bg-primary-light
+    errorBackground: bg-error
+    errorBorder: bg-error
+  }
+}
+
+com.kotcrab.vis.ui.widget.VisSelectBox$VisSelectBoxStyle: {
+  default: {
+    font: button
+    fontColor: text
+    background: bg-background-light
+    scrollStyle: default
+    listStyle: { font: button; fontColor: text; background: bg-panel; selection: bg-primary }
+    backgroundOpen: bg-primary
+    backgroundOver: bg-primary-light
+    backgroundDown: bg-primary-dark
+  }
+}
+
+com.kotcrab.vis.ui.widget.spinner.Spinner$SpinnerStyle: {
+  default: {
+    textField: spinner
+    buttonUp: bg-background-light
+    buttonDown: bg-background-light
+  }
+}
+
+com.kotcrab.vis.ui.widget.MultiSplitPane$MultiSplitPaneStyle: {
+  default: { handle: bg-primary; handleOver: bg-primary-light }
+}
+
+com.kotcrab.vis.ui.widget.Separator$SeparatorStyle: {
+  default: { color: background-light; thickness: 2 }
+  line: { color: primary; thickness: 1 }
+}
+
+com.kotcrab.vis.ui.widget.VisImageTextButton$VisImageTextButtonStyle: {
+  default: { up: bg-primary; down: bg-primary-dark; over: bg-primary-light; font: button; fontColor: white; pressedOffsetY: -2; pressedOffsetX: 2 }
+  menu: { up: bg-background-light; down: bg-primary; over: bg-primary-light; font: button; fontColor: text; downFontColor: white }
+}
+
+com.kotcrab.vis.ui.widget.tabbedpane.TabbedPane$TabbedPaneStyle: {
+  default: {
+    background: bg-panel
+    tabBarSeparator: bg-primary
+    tab: { up: bg-background-light; over: bg-primary-light; checked: bg-primary; checkedOver: bg-primary-light; font: button; fontColor: text; checkedFontColor: white }
+    scrollLeftButton: bg-background-light
+    scrollRightButton: bg-background-light
+  }
+}
+
+com.kotcrab.vis.ui.widget.tabbedpane.Tab$TabStyle: {
+  default: { up: bg-background-light; over: bg-primary-light; checked: bg-primary; checkedOver: bg-primary-light; font: button; fontColor: text; checkedFontColor: white }
+}
+
+com.kotcrab.vis.ui.widget.LinkLabel$LinkLabelStyle: {
+  default: { font: button; fontColor: primary; underlineColor: primary }
+}
+
+com.kotcrab.vis.ui.widget.BusyBar$BusyBarStyle: {
+  default: { segments: 8; segmentDelay: 0.15; barColor: primary; backgroundColor: background-light }
+}
+
+com.kotcrab.vis.ui.widget.menu.MenuBar$MenuBarStyle: {
+  default: { background: bg-panel }
+}
+
+com.kotcrab.vis.ui.widget.menu.Menu$MenuStyle: {
+  default: {
+    background: bg-panel
+    padBottom: 4
+    padTop: 4
+    padLeft: 4
+    padRight: 4
+    openSubMenuMode: MOUSE_OVER
+  }
+}
+
+com.kotcrab.vis.ui.widget.menu.MenuItem$MenuItemStyle: {
+  default: {
+    down: bg-primary
+    over: bg-primary-light
+    disabled: bg-background
+    subMenu: bg-primary
+    font: button
+    fontColor: text
+    disabledFontColor: text-disabled
+    checkedFontColor: primary
+    boxOn: bg-primary
+    boxOff: bg-background-light
+    boxOver: bg-primary-light
+    boxDown: bg-primary-dark
+  }
+}
+
+com.kotcrab.vis.ui.widget.PopupMenu$PopupMenuStyle: {
+  default: {
+    background: bg-panel
+    padBottom: 4
+    padTop: 4
+    padLeft: 4
+    padRight: 4
+  }
+}
+
+com.kotcrab.vis.ui.widget.HighlightTextArea$HighlightTextAreaStyle: {
+  default: {
+    font: button
+    fontColor: text
+    tintColor: primary
+    background: bg-background-light
+    focusedBackground: bg-primary
+    disabledBackground: bg-background
+    messageFont: default
+    messageFontColor: text-disabled
+    cursor: white
+    selection: bg-primary-light
+    highlight: bg-accent
+  }
+}
+
+com.kotcrab.vis.ui.widget.color.BasicColorPicker$BasicColorPickerStyle: {
+  default: {
+    background: bg-panel
+    titleFont: subtitle
+    titleFontColor: text
+  }
+}
+
+com.kotcrab.vis.ui.widget.color.ExtendedColorPicker$ExtendedColorPickerStyle: {
+  default: {
+    background: bg-panel
+    titleFont: subtitle
+    titleFontColor: text
+  }
+}
+
+com.kotcrab.vis.ui.widget.file.FileChooser$FileChooserStyle: {
+  default: {
+    popupMenu: default
+    menuBar: default
+    header: bg-background-light
+    headerSplit: bg-primary
+    selectedRow: bg-primary-light
+    oddRow: bg-background-light
+    evenRow: bg-panel
+    storagePane: bg-panel
+    favorites: bg-background-light
+    splitter: bg-primary
+  }
+}
+
+com.kotcrab.vis.ui.widget.toast.Toast$ToastStyle: {
+  default: {
+    background: bg-panel
+    titleFont: subtitle
+    titleFontColor: text
+    closeButton: close
+  }
+}
+
+com.kotcrab.vis.ui.widget.Note$NoteStyle: {
+  info: { background: bg-primary; font: button; fontColor: white }
+  warn: { background: bg-warning; font: button; fontColor: black }
+  error: { background: bg-error; font: button; fontColor: white }
+}
+
+com.kotcrab.vis.ui.util.form.SimpleFormValidator$FormValidatorStyle: {
+  default: {
+    validLabelColor: text
+    invalidLabelColor: error
+    errorLabelColor: error
+  }
+}

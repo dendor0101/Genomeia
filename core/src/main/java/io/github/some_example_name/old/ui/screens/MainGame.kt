@@ -62,13 +62,23 @@ class MyGame(
     lateinit var largeFont: BitmapFont  // Кастомный большой шрифт для передачи в экраны
     lateinit var mediumFont: BitmapFont  // Кастомный большой шрифт для передачи в экраны
     lateinit var smallFont: BitmapFont  // Кастомный большой шрифт для передачи в экраны
+    
+    lateinit var skin: com.badlogic.gdx.scenes.scene2d.ui.Skin  // Кастомный скин для UI
 
     init {
         androidRendererFactory = rendererFactory
     }
 
     override fun create() {
-        VisUI.load()  // Загружаем дефолтный VisUI
+        // Загружаем кастомный скин VisUI с адаптивным дизайном
+        val skinFile = Gdx.files.internal("ui/uiskin.json")
+        if (skinFile.exists()) {
+            VisUI.load(skinFile)
+            skin = VisUI.getSkin()
+        } else {
+            VisUI.load()  // Fallback на дефолтный скин
+            skin = VisUI.getSkin()
+        }
         DIGameGlobalContainer.fileProvider = multiPlatformFileProvider
         DISimulationContainer
         DIGenomeEditorContainer
