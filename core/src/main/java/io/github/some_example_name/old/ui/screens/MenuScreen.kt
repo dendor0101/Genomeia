@@ -30,55 +30,52 @@ class MenuScreen(
 
     init {
         val density = Gdx.graphics.density
-        val screenWidth = Gdx.graphics.width
-        val screenHeight = Gdx.graphics.height
-        
-        // Адаптивные размеры в зависимости от экрана
-        val isSmallScreen = screenWidth < 600 || screenHeight < 400
-        val buttonWidth = if (isSmallScreen) 280f * density else 350f * density
-        val buttonHeight = if (isSmallScreen) 45f * density else 55f * density
-        val titleSize = if (isSmallScreen) 36f * density else 48f * density
-        
         val table = VisTable()
         TableUtils.setSpacingDefaults(table)
-        table.columnDefaults(0).pad(15f * density)
+//        table.defaults().minWidth(400f)  // Увеличьте для места под большой текст
+        table.columnDefaults(0).pad(10f * density)  // Больше отступов
         table.setFillParent(true)
-        table.background = game.skin.getDrawable("bg-background")
 
-        // Заголовок с градиентным эффектом
-        val genomeia = VisLabel(bundle.get("title.genomeia"), "title")
+        val genomeia = VisLabel(bundle.get("title.genomeia"))
+        game.applyCustomFont(genomeia)
         genomeia.setAlignment(Align.center)
-        genomeia.setFontScale(titleSize / genomeia.prefHeight)
-        table.add(genomeia).fillX().padBottom(20f * density).row()
+        table.add(genomeia).fillX().padBottom(10f).row()
 
-        // Пустой спейсер для визуального разделения
-        table.add().height(15f * density).row()
-
-        // Кнопка "Пустой мир"
-        val emptyButton = VisTextButton(bundle.get("button.empty"), "default")
+        val emptyButton = VisTextButton(bundle.get("button.empty"))
+        emptyButton.pad(4f)
         game.applyCustomFont(emptyButton)
-        table.add(emptyButton).width(buttonWidth).height(buttonHeight).row()
+        table.add(emptyButton).fillX().height(30f * density).row()
         emptyButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent, x: Float, y: Float) {
                 val oldScreen = game.screen
                 game.screen =
-                    SimulationScreen(multiPlatformFileProvider, game, null, bundle, null)
+                    SimulationScreen(multiPlatformFileProvider, game, null, bundle, null) // Передаем map
                 oldScreen.dispose()
+//                game.screen = WorldEditorScreen(
+//                    multiPlatformFileProvider = multiPlatformFileProvider,
+//                    game = game,
+//                    bundle = bundle
+//                )
             }
         })
 
-        table.add().height(10f * density).row()
-
-        // Кнопка "Редактор генома"
-        val genomeEditorButton = VisTextButton(bundle.get("button.editor"), "default")
+//        currentGenomeIndex = 0
+        val genomeEditorButton = VisTextButton(bundle.get("button.editor"))
+        genomeEditorButton.pad(4f)
         game.applyCustomFont(genomeEditorButton)
-        table.add(genomeEditorButton).width(buttonWidth).height(buttonHeight).row()
+        table.add(genomeEditorButton).fillX().height(30f * density).row()
         genomeEditorButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent, x: Float, y: Float) {
                 val genomes = genomeJsonReader.getGenomeFileNamesFromFolder("user_genomes")
 
                 when (genomes.size) {
-                    0 -> {}
+                    0 -> {/*game.screen = GenomeEditorScreen(
+                        multiPlatformFileProvider = multiPlatformFileProvider,
+                        game = game,
+                        genomeName = null,
+                        bundle = bundle
+                    )*/
+                    }
                     else -> {
                         GenomeListDialog(
                             genomesList = genomes,
@@ -100,7 +97,9 @@ class MenuScreen(
                                     genomeName = genomeName
                                 )
                             },
-                            onRestart = {},
+                            onRestart = {
+
+                            },
                             game = game,
                             onResize = { handler ->
                                 onResize = if (handler == {}) null else handler
@@ -112,36 +111,30 @@ class MenuScreen(
             }
         })
 
-        table.add().height(10f * density).row()
-
-        // Кнопка "Настройки"
-        val optionsButton = VisTextButton(bundle.get("button.options"), "default")
+        val optionsButton = VisTextButton(bundle.get("button.options"))
+        optionsButton.pad(4f)
         game.applyCustomFont(optionsButton)
-        table.add(optionsButton).width(buttonWidth).height(buttonHeight).row()
+        table.add(optionsButton).fillX().height(30f * density).row()
         optionsButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent, x: Float, y: Float) {
                 game.screen = SettingsScreen(game, multiPlatformFileProvider, bundle = bundle)
             }
         })
 
-        table.add().height(10f * density).row()
-
-        // Кнопка "Настройки субстрата"
-        val substrateSettingsButton = VisTextButton(bundle.get("button.substrateSettings"), "default")
+        val substrateSettingsButton = VisTextButton(bundle.get("button.substrateSettings"))
+        substrateSettingsButton.pad(4f)
         game.applyCustomFont(substrateSettingsButton)
-        table.add(substrateSettingsButton).width(buttonWidth).height(buttonHeight).row()
+        table.add(substrateSettingsButton).fillX().height(30f * density).row()
         substrateSettingsButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent, x: Float, y: Float) {
                 game.screen = JsonEditorScreen(game, multiPlatformFileProvider, bundle = bundle)
             }
         })
 
-        table.add().height(20f * density).row()
-
-        // Кнопка "Выход"
-        val exitButton = VisTextButton(bundle.get("button.exit"), "accent")
+        val exitButton = VisTextButton(bundle.get("button.exit"))
+        emptyButton.pad(4f)
         game.applyCustomFont(exitButton)
-        table.add(exitButton).width(buttonWidth).height(buttonHeight).row()
+        table.add(exitButton).fillX().height(30f * density).row()
         exitButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent, x: Float, y: Float) {
                 Gdx.app.exit()
@@ -156,7 +149,7 @@ class MenuScreen(
     }
 
     override fun render(delta: Float) {
-        Gdx.gl.glClearColor(0.12f, 0.12f, 0.18f, 1f)  // Используем цвет фона из скина
+        Gdx.gl.glClearColor(0f, 0f, 0f, 1f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
         stage.act(delta)
         stage.draw()
