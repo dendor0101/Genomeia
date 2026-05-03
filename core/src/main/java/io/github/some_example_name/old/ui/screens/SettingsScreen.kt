@@ -7,6 +7,7 @@ import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.scenes.scene2d.Event
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.utils.viewport.ScreenViewport
+import com.badlogic.gdx.utils.viewport.ScrollViewport
 import com.kotcrab.vis.ui.VisUI
 import com.kotcrab.vis.ui.widget.VisCheckBox
 import com.kotcrab.vis.ui.widget.VisCheckBox.VisCheckBoxStyle
@@ -30,18 +31,14 @@ class SettingsScreen(
 ) : Screen {
 
     private lateinit var stage: Stage
+    private lateinit var scrollViewport: ScrollViewport
+    private lateinit var scrollTable: VisTable
 
     override fun show() {
-        stage = Stage(ScreenViewport())
-        stage.root.setOrigin(stage.width / 2f, stage.height / 2f)
-        Gdx.input.inputProcessor = stage
-
-        val table = VisTable()
-        table.setFillParent(true)
-        table.defaults().pad(10f)
-        stage.addActor(table)
-
-        val density = Gdx.graphics.density  // Получаем density один раз
+        scrollTable = VisTable()
+        scrollTable.defaults().pad(10f)
+        
+        val density = Gdx.graphics.density
 
         // Локальный стиль для чекбоксов (копия дефолтного)
         val checkBoxStyle = VisCheckBoxStyle(VisUI.getSkin().get("default", VisCheckBoxStyle::class.java))
@@ -61,7 +58,7 @@ class SettingsScreen(
         // === MSAA слайдер ===
         val msaaLabel = VisLabel("${bundle.get("label.msaa")}: ${GlobalSettings.MSAA}")
         game.applyCustomFontMedium(msaaLabel)
-        val msaaSlider = VisSlider(1f, 8f, 1f, false/*, sliderStyle*/).apply {
+        val msaaSlider = VisSlider(1f, 8f, 1f, false).apply {
             value = GlobalSettings.MSAA.toFloat()
             addListener { e ->
                 if (valueChanged(e)) {
@@ -70,12 +67,11 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidate()  // Обновляем layout после изменений
         }
-        table.add(msaaLabel).left()
-        table.row()
-        table.add(msaaSlider).fillX()
-        table.row()
+        scrollTable.add(msaaLabel).left()
+        scrollTable.row()
+        scrollTable.add(msaaSlider).fillX()
+        scrollTable.row()
 
         val drawLinks = VisCheckBox(bundle.get("checkbox.draw_links"), checkBoxStyle).apply {
             isChecked = GlobalSettings.DRAW_LINK_SHADER
@@ -84,8 +80,8 @@ class SettingsScreen(
                 false
             }
         }
-        table.add(drawLinks).left()
-        table.row()
+        scrollTable.add(drawLinks).left()
+        scrollTable.row()
 
         val saveDivision = VisCheckBox(bundle.get("checkbox.safe_division_mode"), checkBoxStyle).apply {
             game.applyCustomFont(this)
@@ -95,8 +91,8 @@ class SettingsScreen(
                 false
             }
         }
-        table.add(saveDivision).left()
-        table.row()
+        scrollTable.add(saveDivision).left()
+        scrollTable.row()
 
         val hydroDragBox = VisCheckBox(bundle.get("checkbox.hydroDrag"), checkBoxStyle).apply {
             game.applyCustomFont(this)
@@ -106,14 +102,14 @@ class SettingsScreen(
                 false
             }
         }
-        table.add(hydroDragBox).left()
-        table.row()
+        scrollTable.add(hydroDragBox).left()
+        scrollTable.row()
 
 
         // === Громкость музыки ===
         val musicLabel = VisLabel("${bundle.get("label.music_volume")}: ${GlobalSettings.MUSIC_VOLUME}")
         game.applyCustomFontMedium(musicLabel)
-        val musicSlider = VisSlider(0f, 100f, 1f, false/*, sliderStyle*/).apply {
+        val musicSlider = VisSlider(0f, 100f, 1f, false).apply {
             value = GlobalSettings.MUSIC_VOLUME.toFloat()
             addListener { e ->
                 if (valueChanged(e)) {
@@ -123,17 +119,16 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidate()
         }
-        table.add(musicLabel).left()
-        table.row()
-        table.add(musicSlider).fillX()
-        table.row()
+        scrollTable.add(musicLabel).left()
+        scrollTable.row()
+        scrollTable.add(musicSlider).fillX()
+        scrollTable.row()
 
         // === Громкость звуков ===
         val soundLabel = VisLabel("${bundle.get("label.sound_volume")}: ${GlobalSettings.SOUND_VOLUME}")
         game.applyCustomFontMedium(soundLabel)
-        val soundSlider = VisSlider(0f, 100f, 1f, false/*, sliderStyle*/).apply {
+        val soundSlider = VisSlider(0f, 100f, 1f, false).apply {
             value = GlobalSettings.SOUND_VOLUME.toFloat()
             addListener { e ->
                 if (valueChanged(e)) {
@@ -142,12 +137,11 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidate()
         }
-        table.add(soundLabel).left()
-        table.row()
-        table.add(soundSlider).fillX()
-        table.row()
+        scrollTable.add(soundLabel).left()
+        scrollTable.row()
+        scrollTable.add(soundSlider).fillX()
+        scrollTable.row()
 
         val gridWidthLabel = VisLabel("World width: $GRID_WIDTH")
         game.applyCustomFontMedium(gridWidthLabel)
@@ -160,12 +154,11 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidate()
         }
-        table.add(gridWidthLabel).left()
-        table.row()
-        table.add(gridWidthSlider).fillX()
-        table.row()
+        scrollTable.add(gridWidthLabel).left()
+        scrollTable.row()
+        scrollTable.add(gridWidthSlider).fillX()
+        scrollTable.row()
 
         val gridHeightLabel = VisLabel("World height: $GRID_HEIGHT")
         game.applyCustomFontMedium(gridHeightLabel)
@@ -178,12 +171,11 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidate()
         }
-        table.add(gridHeightLabel).left()
-        table.row()
-        table.add(gridHeightSlider).fillX()
-        table.row()
+        scrollTable.add(gridHeightLabel).left()
+        scrollTable.row()
+        scrollTable.add(gridHeightSlider).fillX()
+        scrollTable.row()
 
         // === Scale slider ===
         val scaleLabel = VisLabel("${bundle.get("label.scale")}: ${GlobalSettings.UI_SCALE}")
@@ -206,12 +198,11 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidate()
         }
-        table.add(scaleLabel).left()
-        table.row()
-        table.add(scaleSlider).fillX()
-        table.row()
+        scrollTable.add(scaleLabel).left()
+        scrollTable.row()
+        scrollTable.add(scaleSlider).fillX()
+        scrollTable.row()
 
         // === Background Color ===
         val bgColorLabel = VisLabel("${bundle.get("label.background_color")}: RGB(${GlobalSettings.BACKGROUND_COLOR_R}, ${GlobalSettings.BACKGROUND_COLOR_G}, ${GlobalSettings.BACKGROUND_COLOR_B})")
@@ -225,7 +216,6 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidate()
         }
         val bgColorSliderG = VisSlider(0f, 1f, 0.01f, false).apply {
             value = GlobalSettings.BACKGROUND_COLOR_G
@@ -236,7 +226,6 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidate()
         }
         val bgColorSliderB = VisSlider(0f, 1f, 0.01f, false).apply {
             value = GlobalSettings.BACKGROUND_COLOR_B
@@ -247,17 +236,16 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidate()
         }
-        table.add(VisLabel("R")).left()
-        table.add(bgColorSliderR).fillX()
-        table.row()
-        table.add(VisLabel("G")).left()
-        table.add(bgColorSliderG).fillX()
-        table.row()
-        table.add(VisLabel("B")).left()
-        table.add(bgColorSliderB).fillX()
-        table.row()
+        scrollTable.add(VisLabel("R")).left()
+        scrollTable.add(bgColorSliderR).fillX()
+        scrollTable.row()
+        scrollTable.add(VisLabel("G")).left()
+        scrollTable.add(bgColorSliderG).fillX()
+        scrollTable.row()
+        scrollTable.add(VisLabel("B")).left()
+        scrollTable.add(bgColorSliderB).fillX()
+        scrollTable.row()
 
         // === Vignette Radius ===
         val vignetteRadiusLabel = VisLabel("${bundle.get("label.vignette_radius")}: ${GlobalSettings.VIGNETTE_RADIUS}")
@@ -271,12 +259,11 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidate()
         }
-        table.add(vignetteRadiusLabel).left()
-        table.row()
-        table.add(vignetteRadiusSlider).fillX()
-        table.row()
+        scrollTable.add(vignetteRadiusLabel).left()
+        scrollTable.row()
+        scrollTable.add(vignetteRadiusSlider).fillX()
+        scrollTable.row()
 
         // === Vignette Softness ===
         val vignetteSoftnessLabel = VisLabel("${bundle.get("label.vignette_softness")}: ${GlobalSettings.VIGNETTE_SOFTNESS}")
@@ -290,12 +277,11 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidate()
         }
-        table.add(vignetteSoftnessLabel).left()
-        table.row()
-        table.add(vignetteSoftnessSlider).fillX()
-        table.row()
+        scrollTable.add(vignetteSoftnessLabel).left()
+        scrollTable.row()
+        scrollTable.add(vignetteSoftnessSlider).fillX()
+        scrollTable.row()
 
         // === Кнопка назад ===
         val backButton = VisTextButton(bundle.get("button.back")).apply {
@@ -307,9 +293,24 @@ class SettingsScreen(
                 false
             }
         }
-        table.add(backButton).colspan(2).center().padTop(30f)
+        scrollTable.add(backButton).colspan(2).center().padTop(30f)
             .width(180f * density)   // ширина
             .height(40f * density)   // высота
+
+        stage = Stage(ScreenViewport())
+        stage.root.setOrigin(stage.width / 2f, stage.height / 2f)
+        Gdx.input.inputProcessor = stage
+
+        val table = VisTable()
+        table.setFillParent(true)
+        table.defaults().pad(10f)
+        stage.addActor(table)
+        
+        // Создаем ScrollViewport для прокрутки
+        scrollViewport = ScrollViewport(stage.viewport)
+        scrollViewport.actor = scrollTable
+        
+        table.add(scrollViewport).fill().expand()
     }
 
     override fun render(delta: Float) {
@@ -323,6 +324,7 @@ class SettingsScreen(
     override fun resize(width: Int, height: Int) {
         if (width == 0 || height == 0) return
         stage.viewport.update(width, height, true)
+        scrollViewport.update(width, height, true)
         applyUIScale()
     }
     
