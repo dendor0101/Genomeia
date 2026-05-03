@@ -86,7 +86,6 @@ class GenomeEditorScreen(
         virtualWidth = Gdx.graphics.width.toFloat()
         virtualHeight = Gdx.graphics.height.toFloat()
         val multiplexer = InputMultiplexer()
-        multiplexer.addProcessor(stage)
         multiplexer.addProcessor(
             GestureDetector(
                 10f,
@@ -95,6 +94,7 @@ class GenomeEditorScreen(
                 Float.MAX_VALUE,
                 this
             ))
+        multiplexer.addProcessor(stage)
         multiplexer.addProcessor(object : InputAdapter() {
             override fun scrolled(amountX: Float, amountY: Float): Boolean {
                 val mouseX = Gdx.input.x.toFloat()
