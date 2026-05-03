@@ -6,12 +6,12 @@ import com.badlogic.gdx.Screen
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.scenes.scene2d.Event
 import com.badlogic.gdx.scenes.scene2d.Stage
-import com.badlogic.gdx.utils.viewport.ScreenViewport
-import com.badlogic.gdx.utils.viewport.ScrollViewport
+import com.badlogic.gdx.scenes.scene2d.ui.ScrollPane
 import com.kotcrab.vis.ui.VisUI
 import com.kotcrab.vis.ui.widget.VisCheckBox
 import com.kotcrab.vis.ui.widget.VisCheckBox.VisCheckBoxStyle
 import com.kotcrab.vis.ui.widget.VisLabel
+import com.kotcrab.vis.ui.widget.VisScrollPane
 import com.kotcrab.vis.ui.widget.VisSlider
 import com.kotcrab.vis.ui.widget.VisTable
 import com.kotcrab.vis.ui.widget.VisTextButton
@@ -31,7 +31,7 @@ class SettingsScreen(
 ) : Screen {
 
     private lateinit var stage: Stage
-    private lateinit var scrollViewport: ScrollViewport
+    private lateinit var scrollPane: VisScrollPane
     private lateinit var scrollTable: VisTable
 
     override fun show() {
@@ -306,11 +306,11 @@ class SettingsScreen(
         table.defaults().pad(10f)
         stage.addActor(table)
         
-        // Создаем ScrollViewport для прокрутки
-        scrollViewport = ScrollViewport(stage.viewport)
-        scrollViewport.actor = scrollTable
+        // Создаем VisScrollPane для прокрутки
+        scrollPane = VisScrollPane(scrollTable)
+        scrollPane.setScrollingDisabled(false, false)
         
-        table.add(scrollViewport).fill().expand()
+        table.add(scrollPane).fill().expand()
     }
 
     override fun render(delta: Float) {
@@ -324,7 +324,6 @@ class SettingsScreen(
     override fun resize(width: Int, height: Int) {
         if (width == 0 || height == 0) return
         stage.viewport.update(width, height, true)
-        scrollViewport.update(width, height, true)
         applyUIScale()
     }
     
