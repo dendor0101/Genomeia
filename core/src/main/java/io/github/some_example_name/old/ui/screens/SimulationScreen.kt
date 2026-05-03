@@ -139,6 +139,8 @@ class SimulationScreen(
         camera.position.x = gridWidth / 2f
         camera.position.y = gridHeight / 2f
         camera.update()
+        
+        applyUIScale()
     }
 
 
@@ -199,6 +201,14 @@ class SimulationScreen(
         currentScreenHeight = height
         rebuildMenu()
         onResize?.invoke()
+    }
+    
+    fun applyUIScale() {
+        val scale = GlobalSettings.UI_SCALE
+        font.data.setScale(Gdx.graphics.density * scale)
+        stage.root.scaleX = scale
+        stage.root.scaleY = scale
+        stage.root.invalidateHierarchy()
     }
 
     override fun pause() {

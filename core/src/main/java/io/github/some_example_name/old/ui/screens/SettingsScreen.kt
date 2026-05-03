@@ -186,14 +186,23 @@ class SettingsScreen(
         table.row()
 
         // === Scale slider ===
-        val scaleLabel = VisLabel("${bundle.get("label.scale")}: ${GlobalSettings.SCALE}")
+        val scaleLabel = VisLabel("${bundle.get("label.scale")}: ${GlobalSettings.UI_SCALE}")
         game.applyCustomFontMedium(scaleLabel)
         val scaleSlider = VisSlider(0.1f, 3.0f, 0.1f, false).apply {
-            value = GlobalSettings.SCALE
+            value = GlobalSettings.UI_SCALE
             addListener { e ->
                 if (valueChanged(e)) {
-                    GlobalSettings.SCALE = value
-                    scaleLabel.setText("${bundle.get("label.scale")}: ${GlobalSettings.SCALE}")
+                    GlobalSettings.UI_SCALE = value
+                    scaleLabel.setText("${bundle.get("label.scale")}: ${GlobalSettings.UI_SCALE}")
+                    // Применяем масштаб к текущему экрану, если это SimulationScreen
+                    val currentScreen = game.screen
+                    if (currentScreen is SimulationScreen) {
+                        currentScreen.applyUIScale()
+                    } else if (currentScreen is MenuScreen) {
+                        currentScreen.applyUIScale()
+                    } else if (currentScreen is SettingsScreen) {
+                        currentScreen.applyUIScale()
+                    }
                 }
                 false
             }
@@ -312,8 +321,16 @@ class SettingsScreen(
     }
 
     override fun resize(width: Int, height: Int) {
+        if (width == 0 || height == 0) return
         stage.viewport.update(width, height, true)
-        stage.root.setOrigin(stage.width / 2f, stage.height / 2f)
+        applyUIScale()
+    }
+    
+    fun applyUIScale() {
+        val scale = GlobalSettings.UI_SCALE
+        stage.root.scaleX = scale
+        stage.root.scaleY = scale
+        stage.root.invalidateHierarchy()
     }
 
     override fun pause() {}
