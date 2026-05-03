@@ -208,7 +208,6 @@ class SimulationScreen(
         font.data.setScale(Gdx.graphics.density * scale)
         stage.root.scaleX = scale
         stage.root.scaleY = scale
-        stage.root.invalidate()
     }
 
     override fun pause() {
