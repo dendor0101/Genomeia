@@ -70,7 +70,7 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidateHierarchy()  // Обновляем layout после изменений
+            invalidate()  // Обновляем layout после изменений
         }
         table.add(msaaLabel).left()
         table.row()
@@ -123,7 +123,7 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidateHierarchy()
+            invalidate()
         }
         table.add(musicLabel).left()
         table.row()
@@ -142,7 +142,7 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidateHierarchy()
+            invalidate()
         }
         table.add(soundLabel).left()
         table.row()
@@ -160,7 +160,7 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidateHierarchy()
+            invalidate()
         }
         table.add(gridWidthLabel).left()
         table.row()
@@ -178,7 +178,7 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidateHierarchy()
+            invalidate()
         }
         table.add(gridHeightLabel).left()
         table.row()
@@ -206,7 +206,7 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidateHierarchy()
+            invalidate()
         }
         table.add(scaleLabel).left()
         table.row()
@@ -225,7 +225,7 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidateHierarchy()
+            invalidate()
         }
         val bgColorSliderG = VisSlider(0f, 1f, 0.01f, false).apply {
             value = GlobalSettings.BACKGROUND_COLOR_G
@@ -236,7 +236,7 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidateHierarchy()
+            invalidate()
         }
         val bgColorSliderB = VisSlider(0f, 1f, 0.01f, false).apply {
             value = GlobalSettings.BACKGROUND_COLOR_B
@@ -247,7 +247,7 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidateHierarchy()
+            invalidate()
         }
         table.add(VisLabel("R")).left()
         table.add(bgColorSliderR).fillX()
@@ -271,7 +271,7 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidateHierarchy()
+            invalidate()
         }
         table.add(vignetteRadiusLabel).left()
         table.row()
@@ -290,7 +290,7 @@ class SettingsScreen(
                 }
                 false
             }
-            invalidateHierarchy()
+            invalidate()
         }
         table.add(vignetteSoftnessLabel).left()
         table.row()
@@ -330,7 +330,7 @@ class SettingsScreen(
         val scale = GlobalSettings.UI_SCALE
         stage.root.scaleX = scale
         stage.root.scaleY = scale
-        stage.root.invalidateHierarchy()
+        stage.root.invalidate()
     }
 
     override fun pause() {}

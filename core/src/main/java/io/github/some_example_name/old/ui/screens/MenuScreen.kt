@@ -166,7 +166,7 @@ class MenuScreen(
         val scale = GlobalSettings.UI_SCALE
         stage.root.scaleX = scale
         stage.root.scaleY = scale
-        stage.root.invalidateHierarchy()
+        stage.root.invalidate()
     }
 
     override fun pause() {}
