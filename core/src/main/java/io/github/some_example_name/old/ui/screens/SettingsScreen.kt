@@ -185,6 +185,109 @@ class SettingsScreen(
         table.add(gridHeightSlider).fillX()
         table.row()
 
+        // === Scale slider ===
+        val scaleLabel = VisLabel("${bundle.get("label.scale")}: ${GlobalSettings.SCALE}")
+        game.applyCustomFontMedium(scaleLabel)
+        val scaleSlider = VisSlider(0.1f, 3.0f, 0.1f, false).apply {
+            value = GlobalSettings.SCALE
+            addListener { e ->
+                if (valueChanged(e)) {
+                    GlobalSettings.SCALE = value
+                    scaleLabel.setText("${bundle.get("label.scale")}: ${GlobalSettings.SCALE}")
+                }
+                false
+            }
+            invalidateHierarchy()
+        }
+        table.add(scaleLabel).left()
+        table.row()
+        table.add(scaleSlider).fillX()
+        table.row()
+
+        // === Background Color ===
+        val bgColorLabel = VisLabel("${bundle.get("label.background_color")}: RGB(${GlobalSettings.BACKGROUND_COLOR_R}, ${GlobalSettings.BACKGROUND_COLOR_G}, ${GlobalSettings.BACKGROUND_COLOR_B})")
+        game.applyCustomFontMedium(bgColorLabel)
+        val bgColorSliderR = VisSlider(0f, 1f, 0.01f, false).apply {
+            value = GlobalSettings.BACKGROUND_COLOR_R
+            addListener { e ->
+                if (valueChanged(e)) {
+                    GlobalSettings.BACKGROUND_COLOR_R = value
+                    bgColorLabel.setText("${bundle.get("label.background_color")}: RGB(${GlobalSettings.BACKGROUND_COLOR_R}, ${GlobalSettings.BACKGROUND_COLOR_G}, ${GlobalSettings.BACKGROUND_COLOR_B})")
+                }
+                false
+            }
+            invalidateHierarchy()
+        }
+        val bgColorSliderG = VisSlider(0f, 1f, 0.01f, false).apply {
+            value = GlobalSettings.BACKGROUND_COLOR_G
+            addListener { e ->
+                if (valueChanged(e)) {
+                    GlobalSettings.BACKGROUND_COLOR_G = value
+                    bgColorLabel.setText("${bundle.get("label.background_color")}: RGB(${GlobalSettings.BACKGROUND_COLOR_R}, ${GlobalSettings.BACKGROUND_COLOR_G}, ${GlobalSettings.BACKGROUND_COLOR_B})")
+                }
+                false
+            }
+            invalidateHierarchy()
+        }
+        val bgColorSliderB = VisSlider(0f, 1f, 0.01f, false).apply {
+            value = GlobalSettings.BACKGROUND_COLOR_B
+            addListener { e ->
+                if (valueChanged(e)) {
+                    GlobalSettings.BACKGROUND_COLOR_B = value
+                    bgColorLabel.setText("${bundle.get("label.background_color")}: RGB(${GlobalSettings.BACKGROUND_COLOR_R}, ${GlobalSettings.BACKGROUND_COLOR_G}, ${GlobalSettings.BACKGROUND_COLOR_B})")
+                }
+                false
+            }
+            invalidateHierarchy()
+        }
+        table.add(VisLabel("R")).left()
+        table.add(bgColorSliderR).fillX()
+        table.row()
+        table.add(VisLabel("G")).left()
+        table.add(bgColorSliderG).fillX()
+        table.row()
+        table.add(VisLabel("B")).left()
+        table.add(bgColorSliderB).fillX()
+        table.row()
+
+        // === Vignette Radius ===
+        val vignetteRadiusLabel = VisLabel("${bundle.get("label.vignette_radius")}: ${GlobalSettings.VIGNETTE_RADIUS}")
+        game.applyCustomFontMedium(vignetteRadiusLabel)
+        val vignetteRadiusSlider = VisSlider(0.0f, 1.5f, 0.01f, false).apply {
+            value = GlobalSettings.VIGNETTE_RADIUS
+            addListener { e ->
+                if (valueChanged(e)) {
+                    GlobalSettings.VIGNETTE_RADIUS = value
+                    vignetteRadiusLabel.setText("${bundle.get("label.vignette_radius")}: ${GlobalSettings.VIGNETTE_RADIUS}")
+                }
+                false
+            }
+            invalidateHierarchy()
+        }
+        table.add(vignetteRadiusLabel).left()
+        table.row()
+        table.add(vignetteRadiusSlider).fillX()
+        table.row()
+
+        // === Vignette Softness ===
+        val vignetteSoftnessLabel = VisLabel("${bundle.get("label.vignette_softness")}: ${GlobalSettings.VIGNETTE_SOFTNESS}")
+        game.applyCustomFontMedium(vignetteSoftnessLabel)
+        val vignetteSoftnessSlider = VisSlider(0.0f, 1.5f, 0.01f, false).apply {
+            value = GlobalSettings.VIGNETTE_SOFTNESS
+            addListener { e ->
+                if (valueChanged(e)) {
+                    GlobalSettings.VIGNETTE_SOFTNESS = value
+                    vignetteSoftnessLabel.setText("${bundle.get("label.vignette_softness")}: ${GlobalSettings.VIGNETTE_SOFTNESS}")
+                }
+                false
+            }
+            invalidateHierarchy()
+        }
+        table.add(vignetteSoftnessLabel).left()
+        table.row()
+        table.add(vignetteSoftnessSlider).fillX()
+        table.row()
+
         // === Кнопка назад ===
         val backButton = VisTextButton(bundle.get("button.back")).apply {
             game.applyCustomFont(this)
@@ -248,4 +351,16 @@ object GlobalSettings {
 //    var MAX_ZOOM = WORLD_SIZE_TYPE.maxZoom
 
     var UI_SCALE = 1f
+    
+    // Scale slider setting
+    var SCALE = 1.0f
+    
+    // Background color (RGB values 0-1)
+    var BACKGROUND_COLOR_R = 1.0f
+    var BACKGROUND_COLOR_G = 0.969f
+    var BACKGROUND_COLOR_B = 0.855f
+    
+    // Vignette settings
+    var VIGNETTE_RADIUS = 0.9f
+    var VIGNETTE_SOFTNESS = 0.8f
 }

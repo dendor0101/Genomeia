@@ -9,6 +9,9 @@ uniform vec2 u_resolution;
 //uniform mat4 u_invProj;
 //uniform float u_parallaxStrength;
 uniform float u_zoom;
+uniform vec3 u_backgroundColor;
+uniform float u_vignetteRadius;
+uniform float u_vignetteSoftness;
 
 out vec4 fragColor;
 
@@ -31,7 +34,7 @@ void main() {
     float edge = length(vec2(gx, gy));
     edge = smoothstep(0.0, u_zoom, edge);
 
-    vec4 background = vec4(1.0, 0.969, 0.855, 1.0);
+    vec4 background = vec4(u_backgroundColor, 1.0);
 
     // ==================== PARALLAX LINES (ТЕПЕРЬ В МИРОВЫХ КООРДИНАТАХ) ====================
     // (your commented code left unchanged, just updated texture call for consistency)
@@ -79,9 +82,7 @@ void main() {
     float dist = length(pos);
     float maxDist = length(vec2(aspect, 1.0));
     float normDist = dist / maxDist;
-    float radius = 0.9;
-    float softness = 0.8;
-    float vignette = smoothstep(radius, radius - softness, normDist);
+    float vignette = smoothstep(u_vignetteRadius, u_vignetteRadius - u_vignetteSoftness, normDist);
 
 //    vec4 plugColor = pastelColor * vignette * 0.000001;
 
