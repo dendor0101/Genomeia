@@ -158,7 +158,15 @@ class MenuScreen(
     override fun resize(width: Int, height: Int) {
         if (width == 0 || height == 0) return  // Avoid divide-by-zero on minimize
         stage.viewport.update(width, height, true)
+        applyUIScale()
         onResize?.invoke()
+    }
+    
+    fun applyUIScale() {
+        val scale = GlobalSettings.UI_SCALE
+        stage.root.scaleX = scale
+        stage.root.scaleY = scale
+        stage.root.invalidateHierarchy()
     }
 
     override fun pause() {}
