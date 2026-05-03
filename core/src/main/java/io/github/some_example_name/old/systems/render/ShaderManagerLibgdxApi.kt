@@ -365,6 +365,13 @@ class ShaderManagerLibgdxApi : ShaderManager {
             val zoomX10 = zoom * 10f
             val sobel = if (zoomX10 < 0.16) 0.16f else if (zoomX10 > 0.24) 0.24f else zoomX10
             sobelShader.setUniformf("u_zoom", sobel)
+            // Pass background color and vignette settings from GlobalSettings
+            sobelShader.setUniformf("u_backgroundColor", 
+                io.github.some_example_name.old.ui.screens.GlobalSettings.BACKGROUND_COLOR_R,
+                io.github.some_example_name.old.ui.screens.GlobalSettings.BACKGROUND_COLOR_G,
+                io.github.some_example_name.old.ui.screens.GlobalSettings.BACKGROUND_COLOR_B)
+            sobelShader.setUniformf("u_vignetteRadius", io.github.some_example_name.old.ui.screens.GlobalSettings.VIGNETTE_RADIUS)
+            sobelShader.setUniformf("u_vignetteSoftness", io.github.some_example_name.old.ui.screens.GlobalSettings.VIGNETTE_SOFTNESS)
 //            println(zoomX10)
 
 //            sobelShader.setUniformf("u_cameraPos", worldX, worldY)
