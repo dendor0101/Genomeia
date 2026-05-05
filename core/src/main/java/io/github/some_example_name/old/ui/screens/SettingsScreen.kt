@@ -18,9 +18,6 @@ import com.kotcrab.vis.ui.widget.VisTable
 import com.kotcrab.vis.ui.widget.VisTextButton
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.utils.I18NBundle
-import com.badlogic.gdx.graphics.Color
-import com.badlogic.gdx.scenes.scene2d.ui.Image
-import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
 import io.github.some_example_name.old.core.DISimulationContainer.gridHeight
 import io.github.some_example_name.old.core.DISimulationContainer.gridWidth
 import io.github.some_example_name.old.core.DISimulationContainer.heightMultiplier
@@ -211,20 +208,12 @@ class SettingsScreen(
         // === Background Color ===
         val bgColorLabel = VisLabel("${bundle.get("label.background_color")}: RGB(${GlobalSettings.BACKGROUND_COLOR_R}, ${GlobalSettings.BACKGROUND_COLOR_G}, ${GlobalSettings.BACKGROUND_COLOR_B})")
         game.applyCustomFontMedium(bgColorLabel)
-        
-        // Создаем Image для предпросмотра цвета
-        val colorPreview = Image().apply {
-            setColor(Color(GlobalSettings.BACKGROUND_COLOR_R, GlobalSettings.BACKGROUND_COLOR_G, GlobalSettings.BACKGROUND_COLOR_B, 1f))
-            setSize(30f * density, 30f * density)
-        }
-        
         val bgColorSliderR = VisSlider(0f, 1f, 0.01f, false).apply {
             value = GlobalSettings.BACKGROUND_COLOR_R
             addListener { e ->
                 if (valueChanged(e)) {
                     GlobalSettings.BACKGROUND_COLOR_R = value
                     bgColorLabel.setText("${bundle.get("label.background_color")}: RGB(${GlobalSettings.BACKGROUND_COLOR_R}, ${GlobalSettings.BACKGROUND_COLOR_G}, ${GlobalSettings.BACKGROUND_COLOR_B})")
-                    colorPreview.setColor(Color(GlobalSettings.BACKGROUND_COLOR_R, GlobalSettings.BACKGROUND_COLOR_G, GlobalSettings.BACKGROUND_COLOR_B, 1f))
                 }
                 false
             }
@@ -235,7 +224,6 @@ class SettingsScreen(
                 if (valueChanged(e)) {
                     GlobalSettings.BACKGROUND_COLOR_G = value
                     bgColorLabel.setText("${bundle.get("label.background_color")}: RGB(${GlobalSettings.BACKGROUND_COLOR_R}, ${GlobalSettings.BACKGROUND_COLOR_G}, ${GlobalSettings.BACKGROUND_COLOR_B})")
-                    colorPreview.setColor(Color(GlobalSettings.BACKGROUND_COLOR_R, GlobalSettings.BACKGROUND_COLOR_G, GlobalSettings.BACKGROUND_COLOR_B, 1f))
                 }
                 false
             }
@@ -246,16 +234,10 @@ class SettingsScreen(
                 if (valueChanged(e)) {
                     GlobalSettings.BACKGROUND_COLOR_B = value
                     bgColorLabel.setText("${bundle.get("label.background_color")}: RGB(${GlobalSettings.BACKGROUND_COLOR_R}, ${GlobalSettings.BACKGROUND_COLOR_G}, ${GlobalSettings.BACKGROUND_COLOR_B})")
-                    colorPreview.setColor(Color(GlobalSettings.BACKGROUND_COLOR_R, GlobalSettings.BACKGROUND_COLOR_G, GlobalSettings.BACKGROUND_COLOR_B, 1f))
                 }
                 false
             }
         }
-        
-        // Добавляем метку и предпросмотр цвета в одну строку
-        scrollTable.add(bgColorLabel).left()
-        scrollTable.add(colorPreview).padLeft(10f)
-        scrollTable.row()
         scrollTable.add(VisLabel("R")).left()
         scrollTable.add(bgColorSliderR).fillX()
         scrollTable.row()
