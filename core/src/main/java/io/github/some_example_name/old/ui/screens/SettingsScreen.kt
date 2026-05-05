@@ -252,21 +252,18 @@ class SettingsScreen(
             }
         }
         
-        // Добавляем метку
+        // Добавляем метку и предпросмотр цвета в одну строку
         scrollTable.add(bgColorLabel).left()
+        scrollTable.add(colorPreview).padLeft(10f)
         scrollTable.row()
-        // Добавляем слайдеры и предпросмотр цвета справа от них
         scrollTable.add(VisLabel("R")).left()
         scrollTable.add(bgColorSliderR).fillX()
-        scrollTable.add(colorPreview).padLeft(10f)
         scrollTable.row()
         scrollTable.add(VisLabel("G")).left()
         scrollTable.add(bgColorSliderG).fillX()
-        scrollTable.add() // пустая ячейка для выравнивания
         scrollTable.row()
         scrollTable.add(VisLabel("B")).left()
         scrollTable.add(bgColorSliderB).fillX()
-        scrollTable.add() // пустая ячейка для выравнивания
         scrollTable.row()
 
         // === Vignette Radius ===
