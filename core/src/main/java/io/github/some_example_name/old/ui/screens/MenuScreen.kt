@@ -119,6 +119,16 @@ class MenuScreen(
             }
         })
 
+        val tutorialButton = VisTextButton(bundle.get("button.tutorial"))
+        tutorialButton.pad(4f)
+        game.applyCustomFont(tutorialButton)
+        table.add(tutorialButton).fillX().height(30f*density).row()
+        tutorialButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent, x: Float, y: Float) {
+                game.screen = TutorialScreen(game, multiPlatformFileProvider, bundle = bundle)
+            }
+        })
+
         val substrateSettingsButton = VisTextButton(bundle.get("button.substrateSettings"))
         substrateSettingsButton.pad(4f)
         game.applyCustomFont(substrateSettingsButton)
