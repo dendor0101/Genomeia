@@ -15,7 +15,6 @@ class Punisher(cellTypeId: Int) : Cell(
             val cell = cellList[cellType[collidedCellIndex].toInt()]
             if (organIndex[cellIndex] != organIndex[collidedCellIndex] &&
                 cellType[collidedCellIndex].toInt() != -1 &&
-                cellType[collidedCellIndex].toInt() != 2 &&
                 cellType[collidedCellIndex].toInt() != 24
             ) {
                 val maxEnergy = substrateSettings.cellsSettings[cellType[cellIndex].toInt()].maxEnergy
