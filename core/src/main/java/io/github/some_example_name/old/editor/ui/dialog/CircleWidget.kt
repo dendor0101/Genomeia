@@ -26,8 +26,8 @@ class CircleWidget(initialColor: Color, private val smallCircleRadius: Float, in
             #define ATTR attribute
             #define VAR_OUT varying
             #else
-            #define ATTR attribute
-            #define VAR_OUT varying
+            #define ATTR in
+            #define VAR_OUT out
             #endif
 
             ATTR vec4 a_position;
@@ -52,8 +52,9 @@ class CircleWidget(initialColor: Color, private val smallCircleRadius: Float, in
             #define VAR_IN varying
             #define FRAG_COLOR gl_FragColor
             #else
-            #define VAR_IN varying
-            #define FRAG_COLOR gl_FragColor
+            #define VAR_IN in
+            #define FRAG_COLOR fragColor
+            out vec4 fragColor;
             #endif
 
             VAR_IN vec4 v_color;
@@ -154,8 +155,10 @@ class CircleWidget(initialColor: Color, private val smallCircleRadius: Float, in
         var fragmentCode = FRAGMENT_SHADER
 
         if (Gdx.app.type == Application.ApplicationType.Desktop) {
-            vertexCode = "#version 120\n$vertexCode"
-            fragmentCode = "#version 120\n$fragmentCode"
+            // Desktop runs a core-profile context (required on macOS; Win/Linux use GL32 core too),
+            // so request #version 150 — the #else macro branches above emit core in/out + fragColor.
+            vertexCode = "#version 150\n$vertexCode"
+            fragmentCode = "#version 150\n$fragmentCode"
         }
 
         // Disable pedantic mode

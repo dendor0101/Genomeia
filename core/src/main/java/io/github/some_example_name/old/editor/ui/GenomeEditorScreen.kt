@@ -16,6 +16,7 @@ import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.utils.viewport.ScreenViewport
+import io.github.some_example_name.old.systems.render.CoreDesktopShaders
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.symmetryManager
@@ -52,7 +53,7 @@ class GenomeEditorScreen(
     private lateinit var camera: OrthographicCamera
     private var virtualWidth = 0f
     private var virtualHeight = 0f
-    private val stage = Stage(ScreenViewport())
+    private val stage = CoreDesktopShaders.newStage(ScreenViewport())
     lateinit var shape: ShapeRenderer
     private var orientation = 0f
 
@@ -81,7 +82,7 @@ class GenomeEditorScreen(
         camera = OrthographicCamera().apply {
             setToOrtho(false, Gdx.graphics.width.toFloat(), Gdx.graphics.height.toFloat())
         }
-        shape = ShapeRenderer()
+        shape = CoreDesktopShaders.newShapeRenderer()
 
         //TODO через команду
         editorLogicSystem.restartSimulation()

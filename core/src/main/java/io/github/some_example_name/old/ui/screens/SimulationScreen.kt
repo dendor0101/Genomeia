@@ -25,6 +25,7 @@ import io.github.some_example_name.old.core.DISimulationContainer.gridHeight
 import io.github.some_example_name.old.core.DISimulationContainer.gridWidth
 import io.github.some_example_name.old.core.FileProvider
 import io.github.some_example_name.old.editor.ui.GenomeEditorScreen
+import io.github.some_example_name.old.systems.render.CoreDesktopShaders
 import io.github.some_example_name.old.systems.render.usePostProcess
 import io.github.some_example_name.old.ui.dialogs.GenomeListDialog
 import io.github.some_example_name.old.ui.dialogs.SpeedUpDialog
@@ -66,10 +67,10 @@ class SimulationScreen(
 
 
     override fun show() {
-        spriteBatch = SpriteBatch()
-        stage = Stage(ScreenViewport())
+        spriteBatch = CoreDesktopShaders.newBatch()
+        stage = CoreDesktopShaders.newStage(ScreenViewport())
         fontMatrix = Matrix4()
-        shapeRenderer = ShapeRenderer()
+        shapeRenderer = CoreDesktopShaders.newShapeRenderer()
 
         val screenPos = Vector3()
         val worldBefore = Vector3()

@@ -22,6 +22,7 @@ import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.FileProvider
 import io.github.some_example_name.old.editor.ui.GenomeEditorScreen
 import io.github.some_example_name.old.systems.genomics.genome.GenomeJsonReader
+import io.github.some_example_name.old.systems.render.CoreDesktopShaders
 import io.github.some_example_name.old.ui.dialogs.GenomeListDialog
 
 class MenuScreen(
@@ -29,9 +30,9 @@ class MenuScreen(
     val multiPlatformFileProvider: FileProvider
 ) : Screen {
 
-    private val stage = Stage(ScreenViewport())
-    private val batch = SpriteBatch()
-    private val shape = ShapeRenderer()
+    private val stage = CoreDesktopShaders.newStage(ScreenViewport())
+    private val batch = CoreDesktopShaders.newBatch()
+    private val shape = CoreDesktopShaders.newShapeRenderer()
     private val cam   = OrthographicCamera()
 
     private val video: VideoPlayer? = runCatching {

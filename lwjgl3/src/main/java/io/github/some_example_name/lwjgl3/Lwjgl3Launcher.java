@@ -75,10 +75,25 @@ public class Lwjgl3Launcher {
         //// You may also need to configure GPU drivers to fully disable Vsync; this can cause screen tearing.
 //        configuration.useVsync(false);
 //        configuration.setForegroundFPS(60);
-        configuration.setWindowedMode(1300, 1300);
 //        configuration.setFullscreenMode(Lwjgl3ApplicationConfiguration.getDisplayMode());
-        configuration.setOpenGLEmulation(Lwjgl3ApplicationConfiguration.GLEmulation.GL32, 3, 2);
-//        configuration.setOpenGLEmulation(Lwjgl3ApplicationConfiguration.GLEmulation.GL30, 4, 3);
+
+        // OpenGL context selection — must stay cross-platform (Windows / Linux / macOS / Android).
+        //
+        // GL32 emulation gives a desktop core-profile context and a non-null Gdx.gl31, which the GPU
+        // particle/pheromone renderers (ShaderManagerLibgdxApi) need for OpenGL 4.3 SSBOs. That works on
+        // Windows/Linux, where drivers are lenient about libGDX's GLES2-style default shaders.
+        //
+        // macOS is different: every 3.2+ context is a strict core-profile context, and macOS caps OpenGL
+        // at 4.1 (no SSBOs at all). Under GL32 emulation libGDX's default SpriteBatch/Scene2D shader
+        // (attribute/varying, no #version) fails to compile there, crashing the app at the menu screen.
+        // So on macOS we fall back to GL20 emulation: the default shaders compile and the menu/editor run.
+        // See ShaderManager selection in DIGameGlobalContainer for the macOS render-path caveat.
+        boolean isMac = System.getProperty("os.name", "").toLowerCase().contains("mac");
+        if (isMac) {
+            configuration.setOpenGLEmulation(Lwjgl3ApplicationConfiguration.GLEmulation.GL30, 3, 2);
+        } else {
+            configuration.setOpenGLEmulation(Lwjgl3ApplicationConfiguration.GLEmulation.GL32, 3, 2);
+        }
         //// You can change these files; they are in lwjgl3/src/main/resources/ .
         configuration.setWindowIcon("libgdx128.png", "libgdx64.png", "libgdx32.png", "libgdx16.png");
         return configuration;

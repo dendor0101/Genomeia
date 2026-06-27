@@ -14,6 +14,7 @@ import com.badlogic.gdx.utils.JsonWriter
 import com.badlogic.gdx.utils.Scaling
 import com.badlogic.gdx.utils.Timer
 import com.badlogic.gdx.utils.viewport.ScreenViewport
+import io.github.some_example_name.old.systems.render.CoreDesktopShaders
 import com.kotcrab.vis.ui.VisUI
 import com.kotcrab.vis.ui.util.TableUtils
 import com.kotcrab.vis.ui.widget.*
@@ -84,7 +85,7 @@ class EcoSystemScreenCellsSettings(
 
         fileHandle = substrateSettings.getFileHandle()
 
-        stage = Stage(ScreenViewport())
+        stage = CoreDesktopShaders.newStage(ScreenViewport())
         Gdx.input.inputProcessor = stage
 
         val table = VisTable()

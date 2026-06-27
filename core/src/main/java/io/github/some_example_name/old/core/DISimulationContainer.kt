@@ -36,6 +36,7 @@ import io.github.some_example_name.old.systems.genomics.MutateManager
 import io.github.some_example_name.old.systems.genomics.OrganManager
 import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.pheromone.PheromoneShaderManager
+import io.github.some_example_name.old.systems.pheromone.PheromoneShaderManagerDesktopVbo
 import io.github.some_example_name.old.systems.pheromone.PheromoneShaderManagerLibgdx
 import io.github.some_example_name.old.systems.physics.GridManager
 import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem
@@ -208,7 +209,7 @@ object DISimulationContainer:  DIContext, Disposable {
 
     var androidPheromoneRenderer: PheromoneShaderManager? = androidPheromoneRendererFactory?.invoke()
     val pheromoneShaderManager: PheromoneShaderManager = when (Gdx.app.type) {
-        Application.ApplicationType.Desktop -> PheromoneShaderManagerLibgdx()
+        Application.ApplicationType.Desktop -> if (isMac()) PheromoneShaderManagerDesktopVbo() else PheromoneShaderManagerLibgdx()
         Application.ApplicationType.Android -> androidPheromoneRenderer!!
         Application.ApplicationType.HeadlessDesktop -> TODO()
         Application.ApplicationType.Applet -> TODO()

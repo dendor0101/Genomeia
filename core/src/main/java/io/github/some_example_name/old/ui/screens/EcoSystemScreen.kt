@@ -12,6 +12,7 @@ import com.badlogic.gdx.scenes.scene2d.utils.Drawable
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
 import com.badlogic.gdx.utils.I18NBundle
 import com.badlogic.gdx.utils.viewport.ScreenViewport
+import io.github.some_example_name.old.systems.render.CoreDesktopShaders
 import com.kotcrab.vis.ui.util.TableUtils
 import com.kotcrab.vis.ui.widget.VisImageButton
 import com.kotcrab.vis.ui.widget.VisTable
@@ -29,7 +30,7 @@ class EcoSystemScreen(
     private lateinit var stage: Stage
 
     override fun show() {
-        stage = Stage(ScreenViewport())
+        stage = CoreDesktopShaders.newStage(ScreenViewport())
         Gdx.input.inputProcessor = stage
 
         val table = VisTable()
