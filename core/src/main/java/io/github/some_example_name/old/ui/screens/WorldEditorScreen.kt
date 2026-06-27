@@ -16,6 +16,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.*
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.utils.I18NBundle
 import com.badlogic.gdx.utils.viewport.ScreenViewport
+import io.github.some_example_name.old.systems.render.CoreDesktopShaders
 import com.badlogic.gdx.utils.viewport.Viewport
 import com.kotcrab.vis.ui.widget.VisCheckBox
 import com.kotcrab.vis.ui.widget.VisDialog
@@ -49,7 +50,7 @@ class WorldEditorScreen(
     }
 
     // Графика
-    private val batch = SpriteBatch()
+    private val batch = CoreDesktopShaders.newBatch()
     private lateinit var canvasTexture: Texture
     private lateinit var canvasPixmap: Pixmap
     private val whitePixel = createWhitePixelTexture()
@@ -105,7 +106,7 @@ class WorldEditorScreen(
     private lateinit var clearButton: VisTextButton
 
     override fun show() {
-        stage = Stage(ScreenViewport())
+        stage = CoreDesktopShaders.newStage(ScreenViewport())
 
         setupCanvas()
         createNewWorld() // Инициализируем карту при старте

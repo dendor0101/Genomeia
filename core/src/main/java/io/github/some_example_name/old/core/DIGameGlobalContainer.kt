@@ -8,9 +8,12 @@ import com.badlogic.gdx.utils.Json
 import io.github.some_example_name.old.systems.genomics.Morphogenesis
 import io.github.some_example_name.old.systems.genomics.genome.GenomeJsonReader
 import io.github.some_example_name.old.systems.render.ShaderManager
+import io.github.some_example_name.old.systems.render.ShaderManagerDesktopVbo
 import io.github.some_example_name.old.systems.render.ShaderManagerLibgdxApi
 import io.github.some_example_name.old.ui.screens.androidRendererFactory
 import java.util.Locale
+
+internal fun isMac() = System.getProperty("os.name", "").lowercase().contains("mac")
 
 object DIGameGlobalContainer {
 
@@ -28,7 +31,7 @@ object DIGameGlobalContainer {
     val genomeJsonReader = GenomeJsonReader()
 
     val shaderManager: ShaderManager = when (Gdx.app.type) {
-        Application.ApplicationType.Desktop -> ShaderManagerLibgdxApi()
+        Application.ApplicationType.Desktop -> if (isMac()) ShaderManagerDesktopVbo() else ShaderManagerLibgdxApi()
         Application.ApplicationType.Android -> androidRenderer!!
         Application.ApplicationType.HeadlessDesktop -> TODO()
         Application.ApplicationType.Applet -> TODO()

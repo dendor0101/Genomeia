@@ -10,6 +10,7 @@ import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.utils.*
 import com.badlogic.gdx.utils.viewport.ScreenViewport
+import io.github.some_example_name.old.systems.render.CoreDesktopShaders
 import com.kotcrab.vis.ui.util.TableUtils
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisTable
@@ -48,7 +49,7 @@ class EcoSystemScreenGlobalSettings(
 
         fileHandle = substrateSettings.getFileHandle()
 
-        stage = Stage(ScreenViewport())
+        stage = CoreDesktopShaders.newStage(ScreenViewport())
         Gdx.input.inputProcessor = stage
 
         val table = VisTable()

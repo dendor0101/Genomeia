@@ -8,6 +8,7 @@ import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.scenes.scene2d.Event
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.utils.viewport.ScreenViewport
+import io.github.some_example_name.old.systems.render.CoreDesktopShaders
 import com.kotcrab.vis.ui.VisUI
 import com.kotcrab.vis.ui.widget.VisCheckBox
 import com.kotcrab.vis.ui.widget.VisCheckBox.VisCheckBoxStyle
@@ -38,7 +39,7 @@ class SettingsScreen(
     private val extraTextures = mutableListOf<Texture>()
 
     override fun show() {
-        stage = Stage(ScreenViewport())
+        stage = CoreDesktopShaders.newStage(ScreenViewport())
         stage.root.setOrigin(stage.width / 2f, stage.height / 2f)
         Gdx.input.inputProcessor = stage
 
