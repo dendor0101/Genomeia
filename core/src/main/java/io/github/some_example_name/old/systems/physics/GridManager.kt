@@ -20,85 +20,101 @@ class GridManager (
 
     fun addParticle(x: Int, y: Int, value: Int): Int {
         if (x < 0 || x >= gridWidth || y < 0 || y >= gridHeight) {
-            //TODO Запретить спавн клетки за границей сетки
             throw Exception("Out of grid bounds")
         }
         val cellIndex = y * gridWidth + x
-        if (particleCounts[cellIndex] >= maxAmountOfParticles) {
-            val threadId = getHalfChunkId(cellIndex)
-            var list = mapMoreThenMax[threadId].get(cellIndex)
-            if (list == null) {
-                list = IntArrayList()
-                mapMoreThenMax[threadId].put(cellIndex, list)
+        val threadId = getHalfChunkId(cellIndex)
+        synchronized(mapMoreThenMax[threadId]) {
+            if (particleCounts[cellIndex] >= maxAmountOfParticles) {
+                var list = mapMoreThenMax[threadId].get(cellIndex)
+                if (list == null) {
+                    list = IntArrayList()
+                    mapMoreThenMax[threadId].put(cellIndex, list)
+                }
+                list.add(value)
+            } else {
+                val gridIndex = cellIndex * maxAmountOfParticles + particleCounts[cellIndex]
+                grid[gridIndex] = value
             }
-            list.add(value)
-        } else {
-            val gridIndex = cellIndex * maxAmountOfParticles + particleCounts[cellIndex]
-            grid[gridIndex] = value
+            particleCounts[cellIndex]++
+            return cellIndex
         }
-
-        particleCounts[cellIndex]++
-        return cellIndex
     }
 
     fun addCell(cellIndex: Int, value: Int): Int {
-        if (particleCounts[cellIndex] >= maxAmountOfParticles) {
-            val threadId = getHalfChunkId(cellIndex)
-            var list = mapMoreThenMax[threadId].get(cellIndex)
-            if (list == null) {
-                list = IntArrayList()
-                mapMoreThenMax[threadId].put(cellIndex, list)
+        val threadId = getHalfChunkId(cellIndex)
+        synchronized(mapMoreThenMax[threadId]) {
+            if (particleCounts[cellIndex] >= maxAmountOfParticles) {
+                var list = mapMoreThenMax[threadId].get(cellIndex)
+                if (list == null) {
+                    list = IntArrayList()
+                    mapMoreThenMax[threadId].put(cellIndex, list)
+                }
+                list.add(value)
+            } else {
+                val gridIndex = cellIndex * maxAmountOfParticles + particleCounts[cellIndex]
+                grid[gridIndex] = value
             }
-            list.add(value)
-        } else {
-            val gridIndex = cellIndex * maxAmountOfParticles + particleCounts[cellIndex]
-            grid[gridIndex] = value
+            particleCounts[cellIndex]++
+            return cellIndex
         }
-
-        particleCounts[cellIndex]++
-        return cellIndex
     }
 
     fun removeParticle(cellIndex: Int, value: Int): Boolean {
-//        if (x < 0 || x >= gridCellWidthSize || y < 0 || y >= gridCellHeightSize) {
-//            throw Exception("Out of grid bounds")
-//        }
-//        val cellIndex = y * gridWidth + x
-        val start = cellIndex * maxAmountOfParticles
-        if (particleCounts[cellIndex] <= maxAmountOfParticles) {
-            val end = start + particleCounts[cellIndex] - 1
-            for (i in start..end) {
-                if (grid[i] == value) {
-                    grid[i] = grid[end]
-                    grid[end] = -1
-                    particleCounts[cellIndex]--
-                    return true
+        val threadId = getHalfChunkId(cellIndex)
+        synchronized(mapMoreThenMax[threadId]) {
+            val start = cellIndex * maxAmountOfParticles
+            if (particleCounts[cellIndex] <= maxAmountOfParticles) {
+                val end = start + particleCounts[cellIndex] - 1
+                for (i in start..end) {
+                    if (grid[i] == value) {
+                        grid[i] = grid[end]
+                        grid[end] = -1
+                        particleCounts[cellIndex]--
+                        return true
+                    }
                 }
-            }
-        } else {
-            val end = start + maxAmountOfParticles - 1
-            val threadId = getHalfChunkId(cellIndex)
-            val list = mapMoreThenMax[threadId].get(cellIndex)
-            for (i in start..end) {
-                if (grid[i] == value) {
-                    grid[i] = list?.removeInt(list.size - 1) ?: throw Exception("List is null or empty but particleCounts > MAX_AMOUNT_OF_PARTICLES")
+            } else {
+                val end = start + maxAmountOfParticles - 1
+                val list = mapMoreThenMax[threadId].get(cellIndex)
+                for (i in start..end) {
+                    if (grid[i] == value) {
+                        grid[i] = list?.removeInt(list.size - 1) ?: throw Exception("List is null or empty but particleCounts > MAX_AMOUNT_OF_PARTICLES")
+                        if (list.isEmpty()) {
+                            mapMoreThenMax[threadId].remove(cellIndex)
+                        }
+                        particleCounts[cellIndex]--
+                        return true
+                    }
+                }
+                if (list?.rem(value) ?: false) {
+                    particleCounts[cellIndex]--
                     if (list.isEmpty()) {
                         mapMoreThenMax[threadId].remove(cellIndex)
                     }
-                    particleCounts[cellIndex]--
                     return true
+                } else throw Exception("Couldn't delete list but particleCounts > MAX_AMOUNT_OF_PARTICLES")
+            }
+            return false
+        }
+    }
+    //TODO local every thread IntArray for return to avoid allocation
+    fun getParticlesIndex(cellIndex: Int): IntArray {
+        val threadId = getHalfChunkId(cellIndex)
+        synchronized(mapMoreThenMax[threadId]) {
+            val start = cellIndex * maxAmountOfParticles
+            return if (particleCounts[cellIndex] <= maxAmountOfParticles) {
+                grid.copyOfRange(start, start + particleCounts[cellIndex])
+            } else {
+                val extraList = mapMoreThenMax[threadId].get(cellIndex)
+                    ?: throw Exception("List is null or empty but particleCounts > MAX_AMOUNT_OF_PARTICLES")
+                val extraSize = extraList.size
+                IntArray(particleCounts[cellIndex]).apply {
+                    if (extraSize > 0) System.arraycopy(extraList.elements(), 0, this, 0, extraSize)
+                    System.arraycopy(grid, start, this, extraSize, maxAmountOfParticles)
                 }
             }
-            if (list?.rem(value) ?: false) {
-                particleCounts[cellIndex]--
-                if (list.isEmpty()) {
-                    mapMoreThenMax[threadId].remove(cellIndex)//TODO swap remove without copy array
-                }
-            } else throw Exception("Couldn't delete list but particleCounts > MAX_AMOUNT_OF_PARTICLES")
-            return true
         }
-
-        return false
     }
 
     fun getParticles(x: Int, y: Int): IntArray {
@@ -107,22 +123,6 @@ class GridManager (
         }
         val cellIndex = y * gridWidth + x
         return getParticlesIndex(cellIndex)
-    }
-
-    //TODO local every thread IntArray for return to avoid allocation
-    fun getParticlesIndex(cellIndex: Int): IntArray {
-        val start = cellIndex * maxAmountOfParticles
-        return if (particleCounts[cellIndex] <= maxAmountOfParticles) {
-            grid.copyOfRange(start, start + particleCounts[cellIndex])
-        } else {
-            val threadId = getHalfChunkId(cellIndex)
-            val extraList = mapMoreThenMax[threadId].get(cellIndex) ?: throw Exception("List is null or empty but particleCounts > MAX_AMOUNT_OF_PARTICLES")
-            val extraSize = extraList.size
-            IntArray(particleCounts[cellIndex]).apply {
-                if (extraSize > 0) System.arraycopy(extraList.elements(), 0, this, 0, extraSize)
-                System.arraycopy(grid, start, this, extraSize, maxAmountOfParticles)
-            }
-        }
     }
 
     fun clearAll() {

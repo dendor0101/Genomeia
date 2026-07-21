@@ -5,6 +5,7 @@ import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.NinePatch
+import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable
 import com.badlogic.gdx.utils.Disposable
 import com.kotcrab.vis.ui.VisUI
@@ -29,6 +30,8 @@ import io.github.some_example_name.old.entities.SpecialModDataEntity
 import io.github.some_example_name.old.systems.simulation.SimulationData
 import io.github.some_example_name.old.entities.SubstancesEntity
 import io.github.some_example_name.old.entities.TailEntity
+import io.github.some_example_name.old.systems.debug.LogReplay
+import io.github.some_example_name.old.systems.debug.LogSaver
 import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.old.systems.genomics.CellSystem
 import io.github.some_example_name.old.systems.genomics.DivideManager
@@ -55,7 +58,7 @@ object DISimulationContainer:  DIContext, Disposable {
 
     override var gridWidth = 128
     override var gridHeight = 128
-    const val HALF_CHUNK_HEIGHT = 4 // Also max particle speed
+    const val HALF_CHUNK_HEIGHT = 4//32//4 // Also max particle speed
     var chunkHeight = HALF_CHUNK_HEIGHT * 2
     var heightMultiplier = chunkHeight * 2
     var gridSize = gridWidth * gridHeight
@@ -68,16 +71,18 @@ object DISimulationContainer:  DIContext, Disposable {
     var cellsSettings = substrateSettings.cellsSettings
     var roundStyle: VisTextButton.VisTextButtonStyle
     var roundStyleToggle: VisTextButton.VisTextButtonStyle
-
+    var logSaver: LogSaver = LogSaver()
+    var logReplay: LogReplay = LogReplay()
+    val seed: Long = MathUtils.random(0L, 1000L)
 
     init {
+        MathUtils.random.setSeed(seed)
+
         if (gridHeight % heightMultiplier != 0) throw Exception("gridHeight should be a multiple of (halfChunkHeight * 2 * 2)")
         println("thread count: $threadCount")
         println("thread count: $heightMultiplier")
         val patch = NinePatch(Texture(Gdx.files.internal("button.png")), 20, 20, 20, 20)
 
-        //разрабочтик привет, я тут тебе пару подсказок оставлю
-        //общие стили
         val roundUp = NinePatchDrawable(patch).tint(Color(0.44f, 0.40f, 0.40f, 1f))
         val roundDown = NinePatchDrawable(patch).tint(Color(0.2f,0.2f,0.2f,1f))
         val roundOver = NinePatchDrawable(patch).tint(Color(0f, 0.9f, 1f, 1f))
@@ -248,7 +253,10 @@ object DISimulationContainer:  DIContext, Disposable {
         gridManager = gridManager,
         particleEntity = particleEntity,
         zygote = zygote
-    )
+    ).also {
+        it.random.setSeed(seed)
+        println("seed seted on manager: ${seed}")
+    }
 
     override val worldCommandsManager = WorldCommandsManager(
         gridManager = gridManager,
@@ -364,6 +372,7 @@ object DISimulationContainer:  DIContext, Disposable {
 
     override fun dispose() {
         TODO("Not yet implemented")
+        logSaver.close()
     }
 
     fun resizeWorld() {

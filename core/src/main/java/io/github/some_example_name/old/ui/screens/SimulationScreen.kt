@@ -137,6 +137,8 @@ class SimulationScreen(
 
         DISimulationContainer.simulationSystem.initWorld(map)
 
+        DISimulationContainer.logSaver.initLog()
+
         camera.zoom = 0.08f
         camera.position.x = gridWidth / 2f
         camera.position.y = gridHeight / 2f
@@ -373,15 +375,17 @@ class SimulationScreen(
         val controllerKeysToggle = makeStyledButton("Controller Keys", game, extraTextures, toggle = true)
         controllerKeysToggle.isChecked = simulationSystem.simulationData.showControllerKeys
 
+        val logReplay = makeStyledButton("log Replay", game, extraTextures)
+
         val buttons = if (genomeName == null) {
             listOf(
                 menuButton, putOrganismToggle, selectGenomeButton, speedUpSimToggle,
-                pauseSimToggle, restartSimulationButton, drawRaysToggle, controllerKeysToggle
+                pauseSimToggle, restartSimulationButton, drawRaysToggle, controllerKeysToggle, logReplay
             )
         } else {
             listOf(
                 menuButton, putOrganismToggle, speedUpSimToggle, pauseSimToggle,
-                restartSimulationButton, drawRaysToggle, controllerKeysToggle
+                restartSimulationButton, drawRaysToggle, controllerKeysToggle, logReplay
             )
         }
 
@@ -708,6 +712,12 @@ class SimulationScreen(
                 else {
                     game.screen = GenomeEditorScreen(game, genomeName.replace(".json", ""))
                 }
+            }
+        })
+
+        logReplay.addListener(object: ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                DISimulationContainer.logReplay.play()
             }
         })
 

@@ -13,6 +13,8 @@ import io.github.some_example_name.old.entities.SubstancesEntity
 import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.old.systems.simulation.SimulationData
 import io.github.some_example_name.old.ui.screens.GlobalSettings.GRAVITATION
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 class ParticlePhysicsSystem(
@@ -29,6 +31,8 @@ class ParticlePhysicsSystem(
 ) {
 
     val halfChunkHeight2 = HALF_CHUNK_HEIGHT * HALF_CHUNK_HEIGHT
+
+    var tickStart = 0
 
     fun processGridChunkPhysics(start: Int, end: Int, threadId: Int, isOdd: Boolean) {
         for (i in start until end) {
@@ -263,6 +267,9 @@ class ParticlePhysicsSystem(
         //-= 0.04f * sin((500f - particleIndex) * simulationData.timeSimulation)
 //        vx[particleIndex] -= GRAVITATION //* cos((500f - particleIndex) * simulationData.timeSimulation)
 
+//        vx[particleIndex] -= 0.04f * sin((500f-particleIndex)*simulationData.tickCounter*0.16f)
+//        vy[particleIndex] -= 0.04f * cos((500f-particleIndex)*simulationData.tickCounter*0.16f) уже не нужно физика детрменирована юху!
+
         val vxv = vx[particleIndex]
         val vyv = vy[particleIndex]
 
@@ -289,6 +296,13 @@ class ParticlePhysicsSystem(
             gridManager.removeParticle(gridCellIndex, particleIndex)
             gridId[particleIndex] = gridManager.addParticle(newX, newY, particleIndex)
         }
+
+//        println(simulationData.tickCounter-tickStart)
+//        println(tickStart)
+//
+//        if (simulationData.tickCounter == 1000 && tickStart != 0) {
+//            simulationData.isPlay = false
+//        }
     }
 
     private fun processCellFrictionOld(cellId: Int) = with(entity) {

@@ -7,6 +7,7 @@ import io.github.some_example_name.old.cells.ControllerData
 import io.github.some_example_name.old.cells.SpecialModData
 import io.github.some_example_name.old.cells.Zygote
 import io.github.some_example_name.old.core.DIContext
+import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.core.WorldResizable
 import io.github.some_example_name.old.core.utils.OrderedIntPairMap
@@ -22,8 +23,13 @@ import io.github.some_example_name.old.entities.SubstancesEntity
 import io.github.some_example_name.old.systems.genomics.OrganManager
 import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.physics.GridManager
+import io.github.some_example_name.old.ui.screens.GlobalSettings
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
 import it.unimi.dsi.fastutil.ints.IntArrayList
+import java.io.DataOutputStream
+import java.io.File
+import io.github.some_example_name.old.systems.debug.LogSaver
+import io.github.some_example_name.old.ui.screens.GlobalSettings.DEBUG_MODE
 import kotlin.collections.map
 import kotlin.math.sqrt
 
@@ -65,8 +71,19 @@ class WorldCommandsManager(
 
     var evenLinkLists = Array(diContext.threadCount) { IntArrayList(5000) }
     var oddLinkLists = Array(diContext.threadCount) { IntArrayList(5000) }
+    var currentTick = -1
+    var replay = false
 
     fun executingCommandsFromTheWorld() {
+//        if (replay) {
+//            currentTick += 1
+//            replay = DISimulationContainer.logReplay.replyTick(currentTick, 0)
+//        }
+
+        if (replay) {
+            return
+        }
+
         worldCommandBuffer.forEachIndexed { threadId, worldCommandBuffer ->
             worldCommandBuffer.consume { type, ints, floats, booleans ->
                 when (type) {
@@ -90,6 +107,8 @@ class WorldCommandsManager(
                         val cellIndex = if (ints[0] == -1) {
                             lastAddedCellIndexBuffer[threadId]
                         } else ints[0]
+
+//                        println(lastAddedCellIndexBuffer[threadId])
 
                         val otherCellIndex = ints[1]
 
@@ -175,6 +194,7 @@ class WorldCommandsManager(
                                 c = floats[10],
                                 isSum = booleans[0],
                                 activationFuncType = ints[6].toByte(),
+                                cellEnergy = 5f,
                                 pheromoneType = ints[7],
                                 specialModData = if (specialModDataIndex == -1) null else worldCommandSpecialModDataBuffer[threadId][specialModDataIndex]
                             )
@@ -327,6 +347,8 @@ class WorldCommandsManager(
             }
         }
 
+        //replay = DISimulationContainer.logReplay.replyTick(currentTick, 1)
+
         worldCommandSecondBuffer.forEachIndexed { threadId, worldCommandBuffer ->
             worldCommandBuffer.consume { type, ints, floats, booleans ->
                 when (type) {
@@ -360,10 +382,22 @@ class WorldCommandsManager(
             }
         }
 
+
+//        println("Manager: ${commandCount}")
+
+
         organIndexCellIdMapIndex.clear()
     }
 
     fun executingLastCommandsFromTheWorld() {
+//        var ticked = false
+//        if (worldCommandBuffer.size > 0 && !ticked) {
+//            DISimulationContainer.logSaver.saveTick()
+//            ticked = true
+//        }
+
+        //replay = DISimulationContainer.logReplay.replyTick(currentTick, 2)
+
         worldCommandLastBuffer.consume { type, ints, floats, booleans ->
             when (type) {
                 WorldCommandType.ADD_ORGAN -> {

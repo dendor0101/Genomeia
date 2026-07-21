@@ -1,13 +1,12 @@
 package io.github.some_example_name.lwjgl3;
 
+import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application;
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration;
+import com.badlogic.gdx.graphics.GL20;
+
 import com.badlogic.gdx.video.SilentVideoPlayer;
-
 import io.github.some_example_name.old.ui.screens.MyGame;
-
-import java.awt.Dimension;
-import java.awt.Toolkit;
 
 /**
  * Launches the desktop (LWJGL3) application.
@@ -34,38 +33,8 @@ public class Lwjgl3Launcher {
     private static Lwjgl3ApplicationConfiguration getDefaultConfiguration() {
         Lwjgl3ApplicationConfiguration configuration = new Lwjgl3ApplicationConfiguration();
         configuration.setTitle("Genomeia");
-
-        // === НАДЁЖНЫЙ способ получить реальное разрешение экрана ===
-        Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
-        int screenWidth = screenSize.width;
-        int screenHeight = screenSize.height;
-
-        System.out.println("[Lwjgl3Launcher] Detected screen resolution: " + screenWidth + " × " + screenHeight);
-
-        // По умолчанию — 1300×1300
-        int windowSize = 1300;
-
-        // Если хотя бы одна сторона экрана меньше 1300 — делаем окно квадратным
-        if (screenWidth < 1300 || screenHeight < 1300) {
-            int minDimension = Math.min(screenWidth, screenHeight);
-            windowSize = (int) (minDimension * 0.8f);
-
-            // Минимальная защита — не меньше 640 пикселей
-            if (windowSize < 640) {
-                windowSize = 640;
-            }
-        }
-
-        // === САМАЯ ВАЖНАЯ ЗАЩИТА ===
-        // Убеждаемся, что окно точно помещается с учётом заголовка окна, рамок и панели задач
-        int maxSafeWidth = screenWidth - 40;   // небольшой отступ по ширине
-        int maxSafeHeight = screenHeight - 120; // отступ сверху (заголовок + панель задач)
-        windowSize = Math.min(windowSize, Math.min(maxSafeWidth, maxSafeHeight));
-
-        System.out.println("[Lwjgl3Launcher] Final window size: " + windowSize + " × " + windowSize);
-
-        configuration.setWindowedMode(windowSize, windowSize);
-
+        //// Vsync limits the frames per second to what your hardware can display, and helps eliminate
+        //// screen tearing. This setting doesn't always work on Linux, so the line after is a safeguard.
         configuration.useVsync(true);
         //// Limits FPS to the refresh rate of the currently active monitor, plus 1 to try to match fractional
         //// refresh rates. The Vsync setting above should limit the actual FPS to match the monitor.
@@ -75,7 +44,7 @@ public class Lwjgl3Launcher {
         //// You may also need to configure GPU drivers to fully disable Vsync; this can cause screen tearing.
 //        configuration.useVsync(false);
 //        configuration.setForegroundFPS(60);
-        configuration.setWindowedMode(1300, 1300);
+        configuration.setWindowedMode(800, 600);
 //        configuration.setFullscreenMode(Lwjgl3ApplicationConfiguration.getDisplayMode());
         configuration.setOpenGLEmulation(Lwjgl3ApplicationConfiguration.GLEmulation.GL32, 3, 2);
 //        configuration.setOpenGLEmulation(Lwjgl3ApplicationConfiguration.GLEmulation.GL30, 4, 3);

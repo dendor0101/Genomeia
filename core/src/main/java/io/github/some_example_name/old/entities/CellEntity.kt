@@ -139,6 +139,7 @@ class CellEntity(
         isSum: Boolean = true,
         activationFuncType: Byte = 7,
         speed: Float = 0f,
+        cellEnergy: Float = 0f,
         pheromoneType: Int = -1,
         specialModData: SpecialModData? = null
     ): Int {
@@ -172,7 +173,7 @@ class CellEntity(
         isDividedInThisStage[cellIndex] = false
         isMutateInThisStage[cellIndex] = false
         this.cellType[cellIndex] = cellType.toByte()
-        energy[cellIndex] = 0f
+        energy[cellIndex] = cellEnergy
         maxEnergy[cellIndex] = cellsSettings[cellType].maxEnergy
         isOnEdge[cellIndex] = true
         this.degreeOfShortening[cellIndex] = 1f

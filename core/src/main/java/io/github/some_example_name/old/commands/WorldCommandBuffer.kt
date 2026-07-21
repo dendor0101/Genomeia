@@ -1,5 +1,7 @@
 package io.github.some_example_name.old.commands
 
+import io.github.some_example_name.old.core.DISimulationContainer
+
 class WorldCommandBuffer (initialCapacity: Int = 1000) {  // Начальный размер — на 1000 команд
     // Массив типов команд (int — ordinal enum)
     var commandTypes = IntArray(initialCapacity) { -1 }  // -1 = пусто
@@ -13,7 +15,10 @@ class WorldCommandBuffer (initialCapacity: Int = 1000) {  // Начальный 
     var size = 0
 
     // Добавление команды (push)
-    fun push(type: WorldCommandType, ints: IntArray? = null, floats: FloatArray? = null, booleans: BooleanArray? = null) {
+    fun push(type: WorldCommandType, ints: IntArray? = null, floats: FloatArray? = null, booleans: BooleanArray? = null, replay: Boolean =false) {
+        if (DISimulationContainer.worldCommandsManager.replay && !replay) {
+            return
+        }
         if (size >= commandTypes.size) resize()  // Авто-ресайз
 
         val baseIndex = size

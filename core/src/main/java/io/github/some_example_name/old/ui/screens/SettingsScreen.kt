@@ -6,6 +6,7 @@ import com.badlogic.gdx.Screen
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.scenes.scene2d.Event
+import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.utils.viewport.ScreenViewport
 import com.kotcrab.vis.ui.VisUI
@@ -17,12 +18,14 @@ import io.github.some_example_name.old.ui.screens.makeStyledSlider
 import com.kotcrab.vis.ui.widget.VisTable
 import com.kotcrab.vis.ui.widget.VisTextButton
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
+import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.badlogic.gdx.utils.I18NBundle
 import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.DISimulationContainer.gridHeight
 import io.github.some_example_name.old.core.DISimulationContainer.gridWidth
 import io.github.some_example_name.old.core.DISimulationContainer.heightMultiplier
 import io.github.some_example_name.old.core.FileProvider
+import io.github.some_example_name.old.systems.render.usePostProcess
 import io.github.some_example_name.old.ui.screens.GlobalSettings.GRAVITATION
 import io.github.some_example_name.old.ui.screens.GlobalSettings.GRID_HEIGHT
 import io.github.some_example_name.old.ui.screens.GlobalSettings.GRID_WIDTH
@@ -157,6 +160,18 @@ class SettingsScreen(
         table.row()
         table.add(gravitationSlider).fillX()
         table.row()
+        // TODO: Change from constant name to bundle, а зачем я пишу на английском? Нужно поменять на bundle.get
+        val debugMode = makeStyledButton("Debug Mode", game, extraTextures, toggle = true)
+        game.applyCustomFont(debugMode)
+
+        debugMode.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                GlobalSettings.DEBUG_MODE = debugMode.isChecked
+            }
+        })
+
+        table.add(debugMode)
+        table.row()
 
         val backButton = makeStyledButton(bundle.get("button.back"), game, extraTextures).apply {
             addListener { e ->
@@ -212,6 +227,7 @@ object GlobalSettings {
     var GRID_WIDTH = gridWidth
     var GRID_HEIGHT = gridHeight
     var GRAVITATION = 0f
+    var DEBUG_MODE = false
 
 //    var WORLD_SIZE_TYPE = WorldSize.XL
 //    var WORLD_CELL_WIDTH = WORLD_SIZE_TYPE.size

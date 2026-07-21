@@ -2,9 +2,11 @@ package io.github.some_example_name.old.commands
 
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.math.MathUtils
+import com.badlogic.gdx.math.RandomXS128
 import com.badlogic.gdx.utils.Disposable
 import io.github.some_example_name.old.cells.Cell
 import io.github.some_example_name.old.cells.Zygote
+import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.DISimulationContainer.threadCount
 import io.github.some_example_name.old.core.DISimulationContainer.worldCommandsManager
 import io.github.some_example_name.old.core.utils.collectParticles
@@ -16,6 +18,7 @@ import io.github.some_example_name.old.systems.simulation.SimulationData
 import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.physics.GridManager
 import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem.Companion.PARTICLE_MAX_RADIUS
+import io.github.some_example_name.old.ui.screens.GlobalSettings.DEBUG_MODE
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.collections.forEach
 import kotlin.math.cos
@@ -41,6 +44,8 @@ class UserCommandManager(
     @Volatile var tapY = 0f
     @Volatile var isDragging = false
 
+    val random: RandomXS128 = RandomXS128()
+
     fun push(cmd: PlayerCommand) {
         commandQueue.offer(cmd)
     }
@@ -51,6 +56,12 @@ class UserCommandManager(
         while (true) {
             val cmd = commandQueue.poll() ?: break
 
+            if (DEBUG_MODE) {
+                DISimulationContainer.logSaver.saveUserCommand(cmd)
+            }
+
+            var floats = FloatArray(4)
+
             when (cmd) {
                 PlayerCommand.StopDrag -> {
                     grabbedParticleIndex = -1
@@ -59,6 +70,9 @@ class UserCommandManager(
                 }
 
                 is PlayerCommand.TouchDown -> {
+//                    floats = FloatArray(2) {cmd.x; cmd.y}
+//                    bools = BooleanArray(1) {cmd.isLeftButton}
+
                     val neighborsCellIndexes =
                         gridManager.collectParticles(cmd.x.toInt(), cmd.y.toInt(), radius = 1)
                     grabbedParticleIndex = neighborsCellIndexes
@@ -81,6 +95,8 @@ class UserCommandManager(
 
                 is PlayerCommand.Drag -> {
                     if (grabbedParticleIndex != -1) {
+                        // floats = FloatArray(4) {cmd.x; cmd.y; particleEntity.x[grabbedParticleIndex]; particleEntity.y[grabbedParticleIndex]}
+
                         isAlreadyDragged = true
                         val grabDrag = 0.5f // To reduce oscillations
 
@@ -99,6 +115,9 @@ class UserCommandManager(
                 }
 
                 is PlayerCommand.Tap -> {
+//                    floats = FloatArray(2) {cmd.x; cmd.y}
+//                    bools = BooleanArray(1) {cmd.isLeftButton}
+
                     val neighborsCellIndexes =
                         gridManager.collectParticles(cmd.x.toInt(), cmd.y.toInt(), radius = 1)
                     val grabbedParticleIndexTap = neighborsCellIndexes
@@ -123,7 +142,7 @@ class UserCommandManager(
                     if (simulationData.selectedCellIndex == -1) {
                         if (cmd.isLeftButton) {
                             if (cmd.x > 0 && cmd.x < gridManager.gridWidth && cmd.y > 0 && cmd.y < gridManager.gridHeight) {
-                                val genomeIndex = simulationData.currentGenomeIndex
+                                val genomeIndex = cmd.genomeIndex//simulationData.currentGenomeIndex
                                 val genome = genomeManager.genomes[genomeIndex]
                                 val organIndex = organEntity.addOrgan(
                                     genomeIndex = genomeIndex,
@@ -131,7 +150,8 @@ class UserCommandManager(
                                     dividedTimes = genome.dividedTimes[0],
                                     mutatedTimes = genome.mutatedTimes[0]
                                 )
-                                val randomAngle = 0f//MathUtils.random(0f, MathUtils.PI2)
+                                val randomAngle = random.nextFloat(0f, MathUtils.PI2)//cmd.angle//if ( cmd.replay ) MathUtils.random(0f, MathUtils.PI2) else 1f//Вот тут хз, ты это закоментировал но я что бы протестить раскомментирую.
+                                floats[0] = randomAngle
                                 cellEntity.addCell(
                                     x = cmd.x,
                                     y = cmd.y,
@@ -142,13 +162,15 @@ class UserCommandManager(
                                     angleCos = cos(randomAngle),
                                     angleSin = sin(randomAngle)
                                 )
+
                             }
                         } else {
                             val radius = 7.0f
                             repeat(10) {
-                                val angle = MathUtils.random(0f, MathUtils.PI2)
+                                val angle = random.nextFloat(0f, MathUtils.PI2)//MathUtils.random(0f, MathUtils.PI2)
+                                println("now angle: ${angle}")
 
-                                val r = radius * sqrt(MathUtils.random())
+                                val r = radius * sqrt(random.nextFloat())//MathUtils.random())
 
                                 val x = cmd.x + MathUtils.cos(angle) * r
                                 val y = cmd.y + MathUtils.sin(angle) * r
@@ -171,9 +193,17 @@ class UserCommandManager(
 
                                     if (neighborIndex == null) {
                                         val color = Color.RED.toIntBits()
-                                        val radius = Random.nextFloat() * (0.5f - 0.1f) + 0.1f
+                                        val radius = random.nextFloat() * (0.5f - 0.1f) + 0.1f
 
-                                        worldCommandsManager.worldCommandBuffer[Random.nextInt(
+//                                        worldCommandsManager.worldCommandBuffer[Random.nextInt(
+//                                            0,
+//                                            threadCount
+//                                        )].push(
+//                                            type = WorldCommandType.ADD_SUBSTANCE,
+//                                            floats = floatArrayOf(x, y, radius),
+//                                            ints = intArrayOf(color, 0)
+//                                        )
+                                        worldCommandsManager.worldCommandBuffer[random.nextInt(
                                             0,
                                             threadCount
                                         )].push(

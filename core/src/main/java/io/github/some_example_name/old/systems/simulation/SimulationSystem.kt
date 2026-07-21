@@ -3,6 +3,7 @@ package io.github.some_example_name.old.systems.simulation
 import com.badlogic.gdx.graphics.Color
 import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.commands.UserCommandManager
+import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.DISimulationContainer.threadCount
 import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.entities.CellEntity
@@ -22,6 +23,7 @@ import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem
 import io.github.some_example_name.old.systems.render.RenderBufferManager
 import io.github.some_example_name.old.systems.render.RenderSystem
 import io.github.some_example_name.old.systems.render.ShaderManager
+import io.github.some_example_name.old.ui.screens.GlobalSettings.DEBUG_MODE
 import io.github.some_example_name.old.ui.screens.GlobalSettings.GRID_HEIGHT
 import io.github.some_example_name.old.ui.screens.GlobalSettings.GRID_WIDTH
 import kotlin.random.Random
@@ -54,9 +56,15 @@ class SimulationSystem(
     private var simulationThread: Thread? = null
     private var map: Array<BooleanArray>? = null
 
+    private var logPlay = true //специальная переменная для запуска логов, изначально false
+
     fun startThread() {
         if (!threadManager.isRunning) {
             threadManager.isRunning = true
+
+            if(!DEBUG_MODE && logPlay) {
+                DISimulationContainer.logReplay.play()
+            }
 
             simulationThread = Thread { threadManager.runUpdateLoop { updateTick() } }.apply {
                 isDaemon = true
@@ -74,8 +82,38 @@ class SimulationSystem(
             restartSim()
         }
 
+//        if (DEBUG_MODE) { уже не нужно
+//            try {
+//                val x = cellEntity.getX(0) //для particle заменить на particleEntity
+//                val y = cellEntity.getY(0)
+//                DISimulationContainer.logSaver.saveDebug(x, y, DISimulationContainer.simulationData.tickCounter)
+//            }
+//            catch (e: Exception) {
+//
+//            }
+//        }
+
+//        try { не нужно
+//            val x = cellEntity.getX(0)
+//            val y = cellEntity.getY(0)
+//
+//            if (DISimulationContainer.logReplay.startReplayTick != -1) {
+//                var currentTick = DISimulationContainer.simulationData.tickCounter
+//                val (logX, logY) = DISimulationContainer.logReplay.coordList[currentTick] ?: Pair(0f,0f)
+//                println("Tick: ${currentTick}, x compare: ${x==logX}, x: ${x}, logX: ${logX}")
+//                print("y compare: ${y==logY}, y: ${y}, logY: ${logY}")
+//            }
+//        }
+//        catch (e: Throwable) {
+//            println("nah")
+//        }
+
         simulationData.tickCounter++
         simulationData.timeSimulation += DELTA_SIM_TICK_TIME
+
+        if (!DEBUG_MODE && logPlay) {
+            DISimulationContainer.logReplay.updateReplay()
+        }
 
         linkPhysicsSystem.iterateLinks()
         processParticleCollision()
@@ -87,6 +125,7 @@ class SimulationSystem(
         organManager.performOrgansNextStage()
         userCommandManager.processingCommandsFromUser()
         worldCommandsManager.executingLastCommandsFromTheWorld()
+
 
         renderBufferManager.updateBuffer()
     }
@@ -145,6 +184,7 @@ class SimulationSystem(
         entityList.forEach { it.clear() }
         simulationData.clear()
         worldCommandsManager.dispose()
+        DISimulationContainer.logSaver.close()
     }
 
     private fun restartSim() {
