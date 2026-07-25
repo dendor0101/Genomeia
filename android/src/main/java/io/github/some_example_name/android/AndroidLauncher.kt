@@ -24,7 +24,10 @@ import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.badlogic.gdx.backends.android.AndroidApplication
 import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration
+import com.example.concurrent.DefaultSimulationSystemFactory
+import com.example.concurrent.JvmConcurrentFactory
 import games.spooky.gdx.nativefilechooser.android.AndroidFileChooser
+import io.github.some_example_name.old.core.concurrent.Platform
 import io.github.some_example_name.old.game.KeyBoardListener
 import io.github.some_example_name.old.game.MyGame
 import java.io.File
@@ -62,7 +65,7 @@ class AndroidLauncher : AndroidApplication(), KeyBoardListener {
         super.onCreate(savedInstanceState)
         val config = AndroidApplicationConfiguration().apply {
             useImmersiveMode = true
-            useGL30 = true          // ← Это включает OpenGL ES 3.2 на поддерживаемых устройствах
+            useGL30 = true
 
         }
 
@@ -70,6 +73,8 @@ class AndroidLauncher : AndroidApplication(), KeyBoardListener {
         GLES32.glGenBuffers(1, buf, 0)
 
         val fileProvider = AndroidFileProvider(this, AndroidFileChooser(this))
+        Platform.concurrent = JvmConcurrentFactory()
+        Platform.simulationFactory = DefaultSimulationSystemFactory()
         val gameView = initializeForView(
             MyGame(fileProvider),
             config

@@ -68,9 +68,10 @@ class SubstrateSettings {
 
         val saveDir: FileHandle = when (Gdx.app.type) {
             Application.ApplicationType.Desktop -> {
-                val jarFile =
-                    File(GenomeJsonReader::class.java.protectionDomain.codeSource.location.toURI())
-                Gdx.files.absolute(jarFile.parentFile.absolutePath)
+//                val jarFile =
+//                    File(GenomeJsonReader::class.java.protectionDomain.codeSource.location.toURI())
+//                Gdx.files.absolute(jarFile.parentFile.absolutePath)
+                Gdx.files.local("")
             }
 
             Application.ApplicationType.Android -> {

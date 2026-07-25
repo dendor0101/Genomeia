@@ -3,8 +3,12 @@ package io.github.some_example_name;
 import apple.uikit.c.UIKit;
 import com.badlogic.gdx.backends.iosmoe.IOSApplication;
 import com.badlogic.gdx.backends.iosmoe.IOSApplicationConfiguration;
+import com.example.concurrent.DefaultSimulationSystemFactory;
+import com.example.concurrent.JvmConcurrentFactory;
+
 import org.moe.natj.general.Pointer;
-import io.github.some_example_name.Main;
+import io.github.some_example_name.old.core.concurrent.Platform;
+import io.github.some_example_name.old.game.MyGame;
 
 /** Launches the iOS (Multi-Os Engine) application. */
 public class IOSLauncher extends IOSApplication.Delegate {
@@ -15,7 +19,9 @@ public class IOSLauncher extends IOSApplication.Delegate {
     @Override
     protected IOSApplication createApplication() {
         IOSApplicationConfiguration configuration = new IOSApplicationConfiguration();
-        return new IOSApplication(new Main(), configuration);
+        Platform.INSTANCE.setConcurrent(new JvmConcurrentFactory());
+        Platform.INSTANCE.setSimulationFactory(new DefaultSimulationSystemFactory());
+        return new IOSApplication(new MyGame(new IosFileProvider(), null), configuration);
     }
 
     public static void main(String[] argv) {

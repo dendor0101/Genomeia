@@ -15,9 +15,22 @@ class RenderContext {
     lateinit var fullscreenMesh: Mesh
 
     // Camera/projection
+    /** Full camera.combined (world → clip). */
     lateinit var cameraProjection: Matrix4
 
+    /**
+     * Camera-relative projection (camera.projection): treats (0,0) as camera center.
+     * Used with positions packed as (world - cameraPos) to avoid float stair-stepping
+     * at large world coordinates.
+     */
+    lateinit var cameraRelativeProjection: Matrix4
+
+    /** Camera world position — origin of the relative coordinate system. */
+    var cameraX: Float = 0f
+    var cameraY: Float = 0f
+
     // Particle data
+
     lateinit var particleData: ByteBuffer
     var numInstances: Int = 0
     var isNewFrame: Boolean = false

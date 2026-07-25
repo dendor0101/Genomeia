@@ -32,10 +32,11 @@ class SimulationScreen(
     val genomeName: String?
 ) : Screen {
 
-    private val simEntity = DISimulationContainer.simulationData
+    private val simulationData = DISimulationContainer.simulationData
     private val simulationSystem = DISimulationContainer.simulationSystem
     private val renderSystem = DISimulationContainer.renderSystem
     private val userCommandManager = DISimulationContainer.userCommandManager
+    private val genomeManager = DISimulationContainer.genomeManager
 
     private val camera = OrthographicCamera().apply { setToOrtho(false, w, h) }
 
@@ -104,7 +105,7 @@ class SimulationScreen(
         font.data.setScale(Gdx.graphics.density)
         DISimulationContainer.resizeWorld()
 
-        simulationSystem.startThread()
+
         root = Table()
         root.setFillParent(true)
         stage.addActor(root)
@@ -124,7 +125,7 @@ class SimulationScreen(
         )
 
         DISimulationContainer.worldTerrainManager.map = map
-        simulationSystem.initMap()
+        simulationSystem.start()
     }
 
     val keyCodes = intArrayOf(
@@ -139,7 +140,7 @@ class SimulationScreen(
     override fun render(delta: Float) {
         if (Gdx.app.type == Application.ApplicationType.Desktop) {
             for (i in 0 until 19) {
-                simulationSystem.simulationData.controllerKeyTouched[i] =
+                simulationData.controllerKeyTouched[i] =
                     Gdx.input.isKeyPressed(keyCodes[i])
             }
         }
@@ -195,19 +196,19 @@ class SimulationScreen(
     }
 
     override fun pause() {
-        simEntity.isPlay = false
+        simulationData.isPlay = false
     }
 
     override fun resume() {
-        simEntity.isPlay = true
+        simulationData.isPlay = true
     }
 
     override fun hide() { }
 
     override fun dispose() {
         renderSystem.dispose()
-        simulationSystem.simulationData.isFinish = true
-        simulationSystem.stopUpdateThread()
+        simulationData.isFinish = true
+        simulationSystem.stop()
         stage.dispose()
         spriteBatch.dispose()
         font.dispose()
@@ -254,7 +255,7 @@ class SimulationScreen(
                 extraTextures,
                 toggle = true
             )
-        pauseSimToggle.isChecked = !simEntity.isPlay
+        pauseSimToggle.isChecked = !simulationData.isPlay
         val restartSimulationButton =
             makeStyledButton(
                 DIGameGlobalContainer.bundle.get("button.restart"),
@@ -277,7 +278,7 @@ class SimulationScreen(
                 extraTextures,
                 toggle = true
             )
-        controllerKeysToggle.isChecked = simulationSystem.simulationData.showControllerKeys
+        controllerKeysToggle.isChecked = simulationData.showControllerKeys
 
         val buttons = if (genomeName == null) {
             listOf(
@@ -316,7 +317,7 @@ class SimulationScreen(
         root.add(controls).growX().top().left().row()
 
         // === НОВАЯ КЛАВИАТУРА (3 строки) ===
-        if (simulationSystem.simulationData.showControllerKeys) {
+        if (simulationData.showControllerKeys) {
 
             val density = Gdx.graphics.density
             val screenW = minOf(Gdx.graphics.width.toFloat(), Gdx.graphics.height.toFloat())
@@ -337,11 +338,11 @@ class SimulationScreen(
                 val index = num          // 0..9
                 btn.addListener(object : ClickListener() {
                     override fun touchDown(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int): Boolean {
-                        simulationSystem.simulationData.controllerKeyTouched[index] = true
+                        simulationData.controllerKeyTouched[index] = true
                         return true
                     }
                     override fun touchUp(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int) {
-                        simulationSystem.simulationData.controllerKeyTouched[index] = false
+                        simulationData.controllerKeyTouched[index] = false
                     }
                 })
                 numbersTable.add(btn)
@@ -367,12 +368,12 @@ class SimulationScreen(
 
             wBtn.addListener(object : ClickListener() {
                 override fun touchDown(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int): Boolean {
-                    simulationSystem.simulationData.controllerKeyTouched[10] = true
+                    simulationData.controllerKeyTouched[10] = true
                     return true
                 }
 
                 override fun touchUp(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int) {
-                    simulationSystem.simulationData.controllerKeyTouched[10] = false
+                    simulationData.controllerKeyTouched[10] = false
                 }
             })
 
@@ -382,12 +383,12 @@ class SimulationScreen(
 
             upBtn.addListener(object : ClickListener() {
                 override fun touchDown(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int): Boolean {
-                    simulationSystem.simulationData.controllerKeyTouched[15] = true
+                    simulationData.controllerKeyTouched[15] = true
                     return true
                 }
 
                 override fun touchUp(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int) {
-                    simulationSystem.simulationData.controllerKeyTouched[15] = false
+                    simulationData.controllerKeyTouched[15] = false
                 }
             })
 
@@ -426,12 +427,12 @@ class SimulationScreen(
 
             aBtn.addListener(object : ClickListener() {
                 override fun touchDown(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int): Boolean {
-                    simulationSystem.simulationData.controllerKeyTouched[11] = true
+                    simulationData.controllerKeyTouched[11] = true
                     return true
                 }
 
                 override fun touchUp(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int) {
-                    simulationSystem.simulationData.controllerKeyTouched[11] = false
+                    simulationData.controllerKeyTouched[11] = false
                 }
             })
 
@@ -443,12 +444,12 @@ class SimulationScreen(
 
             sBtn.addListener(object : ClickListener() {
                 override fun touchDown(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int): Boolean {
-                    simulationSystem.simulationData.controllerKeyTouched[12] = true
+                    simulationData.controllerKeyTouched[12] = true
                     return true
                 }
 
                 override fun touchUp(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int) {
-                    simulationSystem.simulationData.controllerKeyTouched[12] = false
+                    simulationData.controllerKeyTouched[12] = false
                 }
             })
 
@@ -460,12 +461,12 @@ class SimulationScreen(
 
             dBtn.addListener(object : ClickListener() {
                 override fun touchDown(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int): Boolean {
-                    simulationSystem.simulationData.controllerKeyTouched[13] = true
+                    simulationData.controllerKeyTouched[13] = true
                     return true
                 }
 
                 override fun touchUp(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int) {
-                    simulationSystem.simulationData.controllerKeyTouched[13] = false
+                    simulationData.controllerKeyTouched[13] = false
                 }
             })
 
@@ -479,12 +480,12 @@ class SimulationScreen(
 
             spaceBtn.addListener(object : ClickListener() {
                 override fun touchDown(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int): Boolean {
-                    simulationSystem.simulationData.controllerKeyTouched[14] = true
+                    simulationData.controllerKeyTouched[14] = true
                     return true
                 }
 
                 override fun touchUp(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int) {
-                    simulationSystem.simulationData.controllerKeyTouched[14] = false
+                    simulationData.controllerKeyTouched[14] = false
                 }
             })
 
@@ -500,12 +501,12 @@ class SimulationScreen(
 
             leftBtn.addListener(object : ClickListener() {
                 override fun touchDown(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int): Boolean {
-                    simulationSystem.simulationData.controllerKeyTouched[16] = true
+                    simulationData.controllerKeyTouched[16] = true
                     return true
                 }
 
                 override fun touchUp(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int) {
-                    simulationSystem.simulationData.controllerKeyTouched[16] = false
+                    simulationData.controllerKeyTouched[16] = false
                 }
             })
 
@@ -517,12 +518,12 @@ class SimulationScreen(
 
             downBtn.addListener(object : ClickListener() {
                 override fun touchDown(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int): Boolean {
-                    simulationSystem.simulationData.controllerKeyTouched[17] = true
+                    simulationData.controllerKeyTouched[17] = true
                     return true
                 }
 
                 override fun touchUp(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int) {
-                    simulationSystem.simulationData.controllerKeyTouched[17] = false
+                    simulationData.controllerKeyTouched[17] = false
                 }
             })
 
@@ -534,12 +535,12 @@ class SimulationScreen(
 
             rightBtn.addListener(object : ClickListener() {
                 override fun touchDown(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int): Boolean {
-                    simulationSystem.simulationData.controllerKeyTouched[18] = true
+                    simulationData.controllerKeyTouched[18] = true
                     return true
                 }
 
                 override fun touchUp(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int) {
-                    simulationSystem.simulationData.controllerKeyTouched[18] = false
+                    simulationData.controllerKeyTouched[18] = false
                 }
             })
 
@@ -570,7 +571,7 @@ class SimulationScreen(
 
         controllerKeysToggle.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                simulationSystem.simulationData.showControllerKeys = controllerKeysToggle.isChecked
+                simulationData.showControllerKeys = controllerKeysToggle.isChecked
                 rebuildMenu() // перестраиваем меню, чтобы показать/скрыть клавиатуру
             }
         })
@@ -591,7 +592,7 @@ class SimulationScreen(
 
         pauseSimToggle.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                simEntity.isPlay = !pauseSimToggle.isChecked
+                simulationData.isPlay = !pauseSimToggle.isChecked
             }
         })
 
@@ -603,7 +604,7 @@ class SimulationScreen(
 
         restartSimulationButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                simulationSystem.simulationData.isRestart = true
+                simulationData.isRestart = true
             }
         })
 
@@ -624,7 +625,7 @@ class SimulationScreen(
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 GenomeListDialog(
                     genomesList = DIGameGlobalContainer.genomeJsonReader.getGenomeFileNamesFromFolder()/*genomeManager.genomes.map { it.name }*/,
-                    selectedGenomeIndex = simulationSystem.simulationData.currentGenomeIndex,
+                    selectedGenomeIndex = simulationData.currentGenomeIndex,
                     title = DIGameGlobalContainer.bundle.get("button.selectGenome"),
                     new = DIGameGlobalContainer.bundle.get("button.new"),
                     select = DIGameGlobalContainer.bundle.get("button.select"),
@@ -636,11 +637,10 @@ class SimulationScreen(
                     onNext = { genomeName ->
                         println("onNext $genomeName ${genomeNames.indexOf(genomeName)}")
                         println(genomeNames)
-                        simulationSystem.simulationData.currentGenomeIndex =
-                            genomeNames.indexOf(genomeName)
+                        simulationData.currentGenomeIndex = genomeNames.indexOf(genomeName)
                     },
                     onRestart = {
-                        val reader = simulationSystem.genomeManager.genomeJsonReader
+                        val reader = genomeManager.genomeJsonReader
                         val assetsGenomes = reader.getGenomeFileNamesFromAssetsFolder("genomes")
                         val userGenomes = reader.getGenomeFileNamesFromFolder()
                         genomeNames = assetsGenomes + userGenomes

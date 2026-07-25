@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.editor.system
 
+import com.badlogic.gdx.Gdx
 import io.github.some_example_name.old.core.utils.distanceTo
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.currentTick
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.nextStageTick
@@ -126,7 +127,6 @@ class CellSearchManager(
             clickedCell.y,
             clickedCellIndex
         )
-
         neighboursAllowedForConnectionIds.forEach { it ->
             val clickedCell = toEditorDataMapper.mapToEditorData(it)
             xs.add(clickedCell.x)

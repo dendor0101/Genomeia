@@ -286,31 +286,10 @@ fun makeStyledTextField(game: MyGame, textures: MutableList<Texture>): VisTextFi
     val field = object : VisTextField("", style) {
         override fun letterUnderCursor(x: Float): Int {
             var xx = x
-            try {
-                val textOffsetField = javaClass.superclass.getDeclaredField("textOffset").apply { isAccessible = true }
-                val fontOffsetField = javaClass.superclass.getDeclaredField("fontOffset").apply { isAccessible = true }
-                val visibleTextStartField = javaClass.superclass.getDeclaredField("visibleTextStart").apply { isAccessible = true }
-                val glyphPositionsField = javaClass.superclass.getDeclaredField("glyphPositions").apply { isAccessible = true }
-
-                val textOffset = textOffsetField.getFloat(this)
-                val fontOffset = fontOffsetField.getFloat(this)
-                val visibleTextStart = visibleTextStartField.getInt(this)
-                val glyphPositions = glyphPositionsField.get(this) as FloatArray
-
-                xx -= textOffset + fontOffset - style.font.getData().cursorX - glyphPositions.get(visibleTextStart)
-                xx -= style.background.getLeftWidth()
-
-                val n = glyphPositions.size
-                val positions = glyphPositions.items
-                for (i in 1 until n) {
-                    if (positions[i] > xx) {
-                        return if (positions[i] - xx <= xx - positions[i - 1]) i else i - 1
-                    }
-                }
-            } catch (_: Exception) {
-                return super.letterUnderCursor(x)
-            }
-            return super.letterUnderCursor(x)
+            // В calculateOffsets() VisTextField всегда считает отступы по style.background,
+            // поэтому берём именно его (а не focusedBackground / backgroundOver)
+            style.background?.let { xx -= it.leftWidth }
+            return super.letterUnderCursor(xx)
         }
     }
     return field

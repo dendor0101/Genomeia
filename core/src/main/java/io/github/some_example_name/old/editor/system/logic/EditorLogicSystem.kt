@@ -117,7 +117,7 @@ class EditorLogicSystem(
                     val clickedIndex = it.first
                     val clickedCell = toEditorDataMapper.mapToEditorData(clickedIndex)
                     grabbedCellIndex = -1
-                    val isDesktop = Gdx.app.type == Application.ApplicationType.Desktop
+                    val isDesktop = Gdx.app.type == Application.ApplicationType.Desktop || Gdx.app.type == Application.ApplicationType.WebGL
 
                     val isLeftClick = if (isDesktop) command.isLeft else command.isCtrl || !isRightClick
 

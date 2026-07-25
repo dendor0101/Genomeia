@@ -61,8 +61,9 @@ class RenderSystem(
         camera.update()
     }
 
-    private var bufferCell = allocateBuffer(INITIAL_PARTICLE_CAPACITY)
-    private var bufferPheromone = allocateBuffer(INITIAL_PHEROMONE_CAPACITY)
+    private var bufferCell = allocateBuffer(INITIAL_PARTICLE_CAPACITY, PARTICLE_STRUCT_SIZE)
+    private var bufferPheromone = allocateBuffer(INITIAL_PHEROMONE_CAPACITY, PHEROMONE_STRUCT_SIZE)
+
 
     fun resize(width: Int, height: Int) {
         shaderManager.resize(width, height)
@@ -109,9 +110,9 @@ class RenderSystem(
         }
     }
 
-    private fun allocateBuffer(numParticles: Int): ByteBuffer {
+    private fun allocateBuffer(numInstances: Int, structSize: Int): ByteBuffer {
         return ByteBuffer
-            .allocateDirect(numParticles * PARTICLE_STRUCT_SIZE)
+            .allocateDirect(numInstances * structSize)
             .order(ByteOrder.nativeOrder())
     }
 
@@ -123,7 +124,7 @@ class RenderSystem(
         do { newCapacity *= 1.5 } while (newCapacity < neededParticles)
 
         val finalCapacity = newCapacity.toInt().coerceAtLeast(neededParticles)
-        bufferCell = allocateBuffer(finalCapacity)
+        bufferCell = allocateBuffer(finalCapacity, PARTICLE_STRUCT_SIZE)
     }
 
 
@@ -135,56 +136,72 @@ class RenderSystem(
         do { newCapacity *= 1.5 } while (newCapacity < neededPheromones)
 
         val finalCapacity = newCapacity.toInt().coerceAtLeast(neededPheromones)
-        bufferPheromone = allocateBuffer(finalCapacity)
+        bufferPheromone = allocateBuffer(finalCapacity, PHEROMONE_STRUCT_SIZE)
     }
 
+
     private fun drawPheromoneShader(pheromoneBuffer: PheromoneBufferData) {
+        val camX = camera.position.x
+        val camY = camera.position.y
         (bufferPheromone as java.nio.Buffer).clear()
         with(pheromoneBuffer) {
             for (i in 0..<pheromoneBufferSize) {
-                bufferPheromone.putFloat(x[i])
-                bufferPheromone.putFloat(y[i])
+                // Camera-relative positions — keeps float precision near the viewport
+                // RGBA32F: 2 texels — (x,y,A,r) | (g,b,pad,pad)
+                bufferPheromone.putFloat(x[i] - camX)
+                bufferPheromone.putFloat(y[i] - camY)
                 bufferPheromone.putFloat(a[i])
-                bufferPheromone.putInt(color[i])
+                val c = color[i]
+                bufferPheromone.putFloat((c and 0xFF) / 255f)
+                bufferPheromone.putFloat(((c ushr 8) and 0xFF) / 255f)
+                bufferPheromone.putFloat(((c ushr 16) and 0xFF) / 255f)
+                bufferPheromone.putFloat(0f)
+                bufferPheromone.putFloat(0f)
             }
         }
         (bufferPheromone as java.nio.Buffer).flip()
-//        pheromoneShaderManager.renderPheromones(camera.combined, bufferPheromone)
     }
 
+
     private fun drawCellShader(cellBuf: RenderCellBufferData) {
+        val camX = camera.position.x
+        val camY = camera.position.y
         (bufferCell as java.nio.Buffer).clear()
         with(cellBuf) {
             for (i in 0..<renderCellBufferSize) {
-                bufferCell.putFloat(x[i])
-                bufferCell.putFloat(y[i])
-                bufferCell.putInt(color[i])
-                bufferCell.putInt(packed1[i])
-                bufferCell.putInt(packed2[i])
-                // Pad to 32 bytes = 2× RGBA32UI texels (GLES 3.0 data-texture path)
-                bufferCell.putInt(0)
-                bufferCell.putInt(0)
-                bufferCell.putInt(0)
-
+                // Camera-relative positions — avoids stair-step motion at large world coords
+                // RGBA32F: 3 texels — (x,y,r,g) | (b,radius,energy,cellType) | (cos,sin,pad,pad)
+                bufferCell.putFloat(x[i] - camX)
+                bufferCell.putFloat(y[i] - camY)
+                bufferCell.putFloat(colorR[i])
+                bufferCell.putFloat(colorG[i])
+                bufferCell.putFloat(colorB[i])
+                bufferCell.putFloat(radius[i])
+                bufferCell.putFloat(energy[i])
+                bufferCell.putFloat(cellType[i])
+                bufferCell.putFloat(angleCos[i])
+                bufferCell.putFloat(angleSin[i])
+                bufferCell.putFloat(0f)
+                bufferCell.putFloat(0f)
             }
         }
         (bufferCell as java.nio.Buffer).flip()
 
-        val worldX = camera.position.x
-        val worldY = camera.position.y
         shaderManager.render(
             currentRead = bufferCell,
             cameraProjection = camera.combined,
+            cameraRelativeProjection = camera.projection,
             isNewFrame = true,
             isClear = false,
-            worldX = worldX,
-            worldY = worldY,
+            worldX = camX,
+            worldY = camY,
             blurAmount = blurLevel,
             zoom = camera.zoom,
             vignetteEnabled = 1f,
             pheromoneData = bufferPheromone
         )
     }
+
 
     fun drawDebug(cellBuf: RenderCellBufferData, linkBuf: RenderLinkBufferData, pheromoneBuffer: PheromoneBufferData) {
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
@@ -316,9 +333,11 @@ class RenderSystem(
     companion object {
         const val INITIAL_PARTICLE_CAPACITY = 30_000
         const val INITIAL_PHEROMONE_CAPACITY = 1_000
-        /** 32 bytes = 2× RGBA32UI texels (x,y,color,packed1 | packed2,pad,pad,pad). */
-        const val PARTICLE_STRUCT_SIZE = 32
+        /** 48 bytes = 3× RGBA32F texels (x,y,r,g | b,radius,energy,cellType | cos,sin,pad,pad). */
+        const val PARTICLE_STRUCT_SIZE = 48
 
-        const val PHEROMONE_STRUCT_SIZE = 16
+        /** 32 bytes = 2× RGBA32F texels (x,y,A,r | g,b,pad,pad). */
+        const val PHEROMONE_STRUCT_SIZE = 32
     }
+
 }

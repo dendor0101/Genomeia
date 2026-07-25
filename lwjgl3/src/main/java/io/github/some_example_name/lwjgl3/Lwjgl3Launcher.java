@@ -2,7 +2,10 @@ package io.github.some_example_name.lwjgl3;
 
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application;
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration;
+import com.example.concurrent.DefaultSimulationSystemFactory;
+import com.example.concurrent.JvmConcurrentFactory;
 
+import io.github.some_example_name.old.core.concurrent.Platform;
 import io.github.some_example_name.old.game.MyGame;
 import kotlin.Unit;
 
@@ -28,6 +31,8 @@ public class Lwjgl3Launcher {
     }
 
     private static Lwjgl3Application createApplication() {
+        Platform.INSTANCE.setConcurrent(new JvmConcurrentFactory());
+        Platform.INSTANCE.setSimulationFactory(new DefaultSimulationSystemFactory());
         return new Lwjgl3Application(new MyGame(new DesktopFileProvider(), null), getDefaultConfiguration());
     }
 

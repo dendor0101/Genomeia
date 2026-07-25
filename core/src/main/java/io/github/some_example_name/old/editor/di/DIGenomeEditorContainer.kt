@@ -206,8 +206,7 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
         worldCommandsManager = worldCommandsManager,
         gridManager = gridManager,
         divideManager = divideManager,
-        mutateManager = mutateManager,
-        threadManager = null
+        mutateManager = mutateManager
     )
 
     val cellReplay = CellReplay(

@@ -7,6 +7,8 @@ import io.github.some_example_name.old.cells.Cell
 import io.github.some_example_name.old.cells.Zygote
 import io.github.some_example_name.old.core.DISimulationContainer.threadCount
 import io.github.some_example_name.old.core.DISimulationContainer.worldCommandsManager
+import io.github.some_example_name.old.core.concurrent.CommandQueue
+import io.github.some_example_name.old.core.concurrent.Platform
 import io.github.some_example_name.old.core.utils.collectParticles
 import io.github.some_example_name.old.core.utils.distanceTo
 import io.github.some_example_name.old.entities.CellEntity
@@ -16,7 +18,6 @@ import io.github.some_example_name.old.systems.simulation.SimulationData
 import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.physics.CollisionManager.Companion.PARTICLE_MAX_RADIUS
 import io.github.some_example_name.old.systems.physics.GridManager
-import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -34,7 +35,7 @@ class UserCommandManager(
     val isEditor: Boolean
 ): Disposable {
 
-    private val commandQueue = ConcurrentLinkedQueue<PlayerCommand>()
+    val commandQueue: CommandQueue<PlayerCommand> = Platform.concurrent.createCommandQueue()
 
     @Volatile var grabbedParticleIndex = -1
     @Volatile var tapX = 0f
@@ -42,7 +43,7 @@ class UserCommandManager(
     @Volatile var isDragging = false
 
     fun push(cmd: PlayerCommand) {
-        commandQueue.offer(cmd)
+        commandQueue.push(cmd)
     }
 
     fun processingCommandsFromUser() {

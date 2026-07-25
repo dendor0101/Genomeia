@@ -3,15 +3,12 @@ package io.github.some_example_name.old.systems.physics
 import com.badlogic.gdx.graphics.Color
 import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.commands.WorldCommandType
-import io.github.some_example_name.old.core.DIContext
 import io.github.some_example_name.old.core.DISimulationContainer.linkMaxLength2
-import io.github.some_example_name.old.core.DISimulationContainer.threadManager
 import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.systems.genomics.CellSystem
-import it.unimi.dsi.fastutil.ints.IntArrayList
 import kotlin.math.sqrt
 
 class LinkPhysicsSystem(
@@ -20,31 +17,8 @@ class LinkPhysicsSystem(
     val substrateSettings: SubstrateSettings,
     val cellEntity: CellEntity,
     val cellSystem: CellSystem,
-    val worldCommandsManager: WorldCommandsManager,
-    val diContext: DIContext
+    val worldCommandsManager: WorldCommandsManager
 ) {
-
-    fun iterateLinksInParallel() {
-        processPhase(worldCommandsManager.oddLinkLists)
-        processPhase(worldCommandsManager.evenLinkLists)
-    }
-
-    private fun processPhase(lists: Array<IntArrayList>) {
-        threadManager.futures.clear()
-        for (t in 0 until diContext.threadCount) {
-            threadManager.futures.add(
-                threadManager.executor.submit {
-                    val list = lists[t]
-                    for (i in list.indices) {
-                        val linkIndex = list.getInt(i)
-                        processLink(linkIndex,t)
-                    }
-                }
-            )
-        }
-        threadManager.futures.forEach { it.get() }
-        threadManager.futures.clear()
-    }
 
     fun processLink(linkIndex: Int, threadId: Int = 0) = with(particleEntity) {
         with(cellEntity) {

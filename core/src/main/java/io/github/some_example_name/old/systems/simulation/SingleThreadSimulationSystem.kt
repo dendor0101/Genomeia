@@ -14,6 +14,7 @@ import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem
 import io.github.some_example_name.old.systems.physics.MovementManager
 import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem
 import io.github.some_example_name.old.systems.render.RenderBufferManager
+import io.github.some_example_name.old.systems.simulation.Simulation.Companion.DELTA_SIM_TICK_TIME
 
 class SingleThreadSimulationSystem(
     val gridManager: GridManager,
@@ -31,9 +32,11 @@ class SingleThreadSimulationSystem(
     val movementManager: MovementManager,
     val particlePhysicsSystem: ParticlePhysicsSystem,
     val entityList: List<Entity>
-) {
+): Simulation {
 
-    fun updateTick() {
+    override fun start() { }
+
+    override fun updateTick() {
         simulationData.tickCounter++
         simulationData.timeSimulation += DELTA_SIM_TICK_TIME
 
@@ -60,6 +63,8 @@ class SingleThreadSimulationSystem(
         renderBufferManager.updateBuffer()
     }
 
+    override fun stop() { }
+
     private fun processGridChunkPhysics() {
         val start = 0
         val end = gridManager.gridSize
@@ -77,14 +82,12 @@ class SingleThreadSimulationSystem(
         }
     }
 
-    fun dispose() {
+    override fun dispose() {
         gridManager.clearAll()
         entityList.forEach { it.clear() }
         simulationData.clear()
         worldCommandsManager.dispose()
     }
 
-    companion object {
-        const val DELTA_SIM_TICK_TIME = 0.016666666f
-    }
+    override fun resize() {}
 }

@@ -21,11 +21,13 @@ class MenuViewModel(
     val genomeManager: GenomeManager = DISingleThreadSimulationContainer.genomeManager
 ) {
 
+    private val rng = java.util.Random()
+
     fun startMenuSimulation() {
         val map = worldGenerator.generateWorld(
             width = DISingleThreadSimulationContainer.gridWidth,
             height = DISingleThreadSimulationContainer.gridHeight,
-            seed = Random.nextLong()
+            seed = rng.nextLong()
         )
         worldTerrainManager.map = map
         worldTerrainManager.initWorld(
@@ -39,8 +41,8 @@ class MenuViewModel(
             genomeManager.genomes.forEachIndexed { index, _ ->
                 userCommandManager.push(
                     cmd = PlayerCommand.Tap(
-                        x = Random.nextFloat() * DISingleThreadSimulationContainer.gridWidth,
-                        y = Random.nextFloat() * DISingleThreadSimulationContainer.gridHeight,
+                        x = rng.nextFloat() * DISingleThreadSimulationContainer.gridWidth,
+                        y = rng.nextFloat() * DISingleThreadSimulationContainer.gridHeight,
                         isLeftButton = true,
                         genomeIndex = index
                     )

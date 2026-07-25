@@ -137,7 +137,7 @@ class GenomeEditorScreen(
             editorLogicSystem.putUiCommand(CtrlY)
         }
 
-        if (Gdx.app.type == Application.ApplicationType.Desktop) {
+        if (Gdx.app.type == Application.ApplicationType.Desktop || Gdx.app.type == Application.ApplicationType.WebGL) {
             composeGenomeEditor.isCtrl = Gdx.input.isKeyPressed(Input.Keys.CONTROL_LEFT)
             if (!composeGenomeEditor.isCtrl) previousCtrlClicked = -1
         }

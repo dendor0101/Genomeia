@@ -1,18 +1,18 @@
 #version 300 es
 precision highp float;
 precision highp int;
-precision highp usampler2D;
 
 layout (location = 0) in vec2 a_position;
 
+// camera.projection — positions in u_data are camera-relative (world - cameraPos)
 uniform mat4 u_projTrans;
 uniform float u_K;
 uniform float u_P;
 
-// RGBA32UI data texture: one texel per pheromone instance.
-// CPU writes: putFloat(x), putFloat(y), putFloat(A), putInt(color)
-// → four uint bit-patterns per texel.
-uniform usampler2D u_data;
+// RGBA32F data texture: 2 texels per pheromone instance
+// texel0: x, y, A, colorR   (x,y relative to camera)
+// texel1: colorG, colorB, pad, pad
+uniform sampler2D u_data;
 uniform int u_texWidth;
 
 out vec2 v_localUV;
@@ -22,30 +22,26 @@ flat out vec3 ex_Color;
 
 void main() {
     int id = gl_InstanceID;
-    int texX = id - (id / u_texWidth) * u_texWidth; // id % u_texWidth without remainder op variance
-    int texY = id / u_texWidth;
 
-    // Exact integer fetch — NEAREST, no filtering
-    uvec4 ph = texelFetch(u_data, ivec2(texX, texY), 0);
+    // 2 texels per instance; width is even so both stay on the same row
+    int base = id * 2;
+    int texY = base / u_texWidth;
+    int texX0 = base - texY * u_texWidth;
+    int texX1 = texX0 + 1;
 
-    // Recover floats from raw bits (same bits CPU putFloat wrote)
-    vec2 worldPos = vec2(uintBitsToFloat(ph.x), uintBitsToFloat(ph.y));
-    v_A = uintBitsToFloat(ph.z);
+    vec4 t0 = texelFetch(u_data, ivec2(texX0, texY), 0);
+    vec4 t1 = texelFetch(u_data, ivec2(texX1, texY), 0);
 
-    // Manual RGBA8 unpack — unpackUnorm4x8 is GLSL ES 3.10+ only, not in 300 es
-    uint c = ph.w;
-    ex_Color = vec3(
-        float(c & 0xFFu),
-        float((c >> 8u) & 0xFFu),
-        float((c >> 16u) & 0xFFu)
-    ) * (1.0 / 255.0);
+    vec2 camRelativePos = t0.xy;
+    v_A = t0.z;
+    ex_Color = vec3(t0.w, t1.x, t1.y);
 
     float squaredRadius = max((v_A / u_P - 1.0) / u_K, 0.0);
     float radius = sqrt(squaredRadius);
 
     vec2 offset = a_position * radius;
 
-    gl_Position = u_projTrans * vec4(worldPos + offset, 0.0, 1.0);
+    gl_Position = u_projTrans * vec4(camRelativePos + offset, 0.0, 1.0);
 
     v_localUV = a_position;
     v_radius  = squaredRadius;

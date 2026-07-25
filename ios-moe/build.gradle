@@ -48,6 +48,7 @@ configurations { natives }
 dependencies {
   implementation "io.github.berstanio:gdx-backend-moe:$moeGdxVersion"
   implementation project(':core')
+  implementation project(':concurrent')
   compileOnly "org.graalvm.sdk:graal-sdk:$moeGraalvmVersion"
   natives "com.badlogicgames.gdx:gdx-backend-robovm-metalangle:$gdxVersion"
   natives "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-ios"

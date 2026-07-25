@@ -259,8 +259,7 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
         worldCommandsManager = worldCommandsManager,
         gridManager = gridManager,
         divideManager = divideManager,
-        mutateManager = mutateManager,
-        threadManager = null
+        mutateManager = mutateManager
     )
 
     val linkPhysicsSystem = LinkPhysicsSystem(
@@ -269,8 +268,7 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
         particleEntity = particleEntity,
         cellEntity = cellEntity,
         worldCommandsManager = worldCommandsManager,
-        cellSystem = cellSystem,
-        diContext = this
+        cellSystem = cellSystem
     )
 
     val movementManager = MovementManager(

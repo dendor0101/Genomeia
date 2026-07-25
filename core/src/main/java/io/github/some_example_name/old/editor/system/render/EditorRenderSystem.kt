@@ -70,27 +70,31 @@ class EditorRenderSystem(
         radius: Float,
         cellType: Byte
     ) {
-        val cosByte = ((cos * 0.5f + 0.5f) * 255f + 0.5f).toInt().coerceIn(0, 255)
-        val sinByte = ((sin * 0.5f + 0.5f) * 255f + 0.5f).toInt().coerceIn(0, 255)
+        // LibGDX Color.toIntBits() = ABGR8888 (R in low byte)
+        val colorR = (color and 0xFF) / 255f
+        val colorG = ((color ushr 8) and 0xFF) / 255f
+        val colorB = ((color ushr 16) and 0xFF) / 255f
 
-        val bRadius = (((radius - 0.05f) / 0.7f) * 255f + 0.5f).toInt().coerceIn(0, 255)
-        val bEnergy = 0
-        val bCell = cellType.toInt().coerceIn(0, 255)
+        // Camera-relative positions (same as RenderSystem) for float precision
+        val camX = camera.position.x
+        val camY = camera.position.y
 
-        val packed1 = cosByte or (sinByte shl 8) or (bRadius shl 24)
-        val packed2 = bEnergy or (bCell shl 8)
-
-
-        buffer.putFloat(x)
-        buffer.putFloat(y)
-        buffer.putInt(color)
-        buffer.putInt(packed1)
-        buffer.putInt(packed2)
-        // Pad to 32 bytes = 2× RGBA32UI texels (GLES 3.0 data-texture path)
-        buffer.putInt(0)
-        buffer.putInt(0)
-        buffer.putInt(0)
+        // RGBA32F: 3 texels — (x,y,r,g) | (b,radius,energy,cellType) | (cos,sin,pad,pad)
+        buffer.putFloat(x - camX)
+        buffer.putFloat(y - camY)
+        buffer.putFloat(colorR)
+        buffer.putFloat(colorG)
+        buffer.putFloat(colorB)
+        buffer.putFloat(radius)
+        buffer.putFloat(0f) // energy
+        buffer.putFloat(cellType.toFloat())
+        buffer.putFloat(cos)
+        buffer.putFloat(sin)
+        buffer.putFloat(0f)
+        buffer.putFloat(0f)
     }
+
+
 
 
     fun render(touchedCellX: Float, touchedCellY: Float) {
@@ -138,6 +142,7 @@ class EditorRenderSystem(
         shaderManager.render(
             currentRead = buffer,
             cameraProjection = camera.combined,
+            cameraRelativeProjection = camera.projection,
             isNewFrame = true,
             isClear = false,
             worldX = camera.position.x,
@@ -146,6 +151,7 @@ class EditorRenderSystem(
             zoom = camera.zoom,
             vignetteEnabled = 0f
         )
+
 
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)
         Gdx.gl.glDepthMask(false)

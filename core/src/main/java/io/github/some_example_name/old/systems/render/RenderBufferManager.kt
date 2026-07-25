@@ -64,20 +64,22 @@ class RenderBufferManager(
                 val i = aliveList.getInt(bufIndex)
                 back.x[bufIndex] = x[i]
                 back.y[bufIndex] = y[i]
-                back.color[bufIndex] = color[i]
+
+                // LibGDX Color.toIntBits() = ABGR8888 (R in low byte)
+                val c = color[i]
+                back.colorR[bufIndex] = (c and 0xFF) / 255f
+                back.colorG[bufIndex] = ((c ushr 8) and 0xFF) / 255f
+                back.colorB[bufIndex] = ((c ushr 16) and 0xFF) / 255f
 
                 if (isCell[i]) {
                     val cellIndex = holderEntityIndex[i]
 
-                    val cosByte = ((cellEntity.angleCos[cellIndex] * 0.5f + 0.5f) * 255f + 0.5f).toInt().coerceIn(0, 255)
-                    val sinByte = ((cellEntity.angleSin[cellIndex] * 0.5f + 0.5f) * 255f + 0.5f).toInt().coerceIn(0, 255)
-
-                    val bRadius = ((((radius[i] * cellEntity.degreeOfShortening[cellIndex]) - 0.05f) / 0.7f) * 255f + 0.5f).toInt().coerceIn(0, 255)
-                    val bEnergy = ((cellEntity.energy[cellIndex] / 10f) * 255f + 0.5f).toInt().coerceIn(0, 255)
-                    val bCell = cellEntity.cellType[cellIndex].toInt().coerceIn(0, 255)
-
-                    back.packed1[bufIndex] = cosByte or (sinByte shl 8) or (bRadius shl 24)
-                    back.packed2[bufIndex] = bEnergy or (bCell shl 8)
+                    back.radius[bufIndex] = radius[i] * cellEntity.degreeOfShortening[cellIndex]
+                    // energy/10 matches previous packed-byte path (byte/255 ≈ energy/10)
+                    back.energy[bufIndex] = (cellEntity.energy[cellIndex] / 10f).coerceIn(0f, 1f)
+                    back.cellType[bufIndex] = cellEntity.cellType[cellIndex].toFloat()
+                    back.angleCos[bufIndex] = cellEntity.angleCos[cellIndex]
+                    back.angleSin[bufIndex] = cellEntity.angleSin[cellIndex]
 
                     if (!doesUsePostProcess) {
                         val length = when (cellEntity.cellType[cellIndex].toInt()) {
@@ -95,11 +97,11 @@ class RenderBufferManager(
                         }
                     }
                 } else {
-                    val bRadius = (((radius[i] - 0.05f) / 0.7f) * 255f + 0.5f).toInt().coerceIn(0, 255)
-                    val bCell = (cellList.size + 1).coerceIn(0, 255)
-
-                    back.packed1[bufIndex] = bRadius shl 24
-                    back.packed2[bufIndex] = bCell shl 8
+                    back.radius[bufIndex] = radius[i]
+                    back.energy[bufIndex] = 0f
+                    back.cellType[bufIndex] = (cellList.size + 1).toFloat()
+                    back.angleCos[bufIndex] = 0f
+                    back.angleSin[bufIndex] = 0f
 
                     if (!doesUsePostProcess) {
                         back.directedAngleCos[bufIndex] = 0f
@@ -107,6 +109,7 @@ class RenderBufferManager(
                     }
                 }
             }
+
             back.renderCellBufferSize = aliveList.size
         }
         cellFrontIndex.set(1 - cellFrontIndex.get())   // swap
@@ -209,9 +212,16 @@ class RenderCellBufferData(initialCapacity: Int) {
 
     var x = FloatArray(capacity)
     var y = FloatArray(capacity)
-    var color = IntArray(capacity)
-    var packed1 = IntArray(capacity)
-    var packed2 = IntArray(capacity)
+    /** Unpacked RGB in 0..1 (from ABGR8888 Color.toIntBits). */
+    var colorR = FloatArray(capacity)
+    var colorG = FloatArray(capacity)
+    var colorB = FloatArray(capacity)
+    var radius = FloatArray(capacity)
+    /** energy/10, clamped 0..1 — matches previous packed-byte visual scale. */
+    var energy = FloatArray(capacity)
+    var cellType = FloatArray(capacity)
+    var angleCos = FloatArray(capacity)
+    var angleSin = FloatArray(capacity)
     var directedAngleCos = FloatArray(capacity)
     var directedAngleSin = FloatArray(capacity)
 
@@ -222,14 +232,20 @@ class RenderCellBufferData(initialCapacity: Int) {
 
             x = x.copyOf(newCapacity)
             y = y.copyOf(newCapacity)
-            color = color.copyOf(newCapacity)
-            packed1 = packed1.copyOf(newCapacity)
-            packed2 = packed2.copyOf(newCapacity)
+            colorR = colorR.copyOf(newCapacity)
+            colorG = colorG.copyOf(newCapacity)
+            colorB = colorB.copyOf(newCapacity)
+            radius = radius.copyOf(newCapacity)
+            energy = energy.copyOf(newCapacity)
+            cellType = cellType.copyOf(newCapacity)
+            angleCos = angleCos.copyOf(newCapacity)
+            angleSin = angleSin.copyOf(newCapacity)
             directedAngleCos = directedAngleCos.copyOf(newCapacity)
             directedAngleSin = directedAngleSin.copyOf(newCapacity)
         }
     }
 }
+
 
 class PheromoneBufferData(initialCapacity: Int) {
     var capacity = initialCapacity

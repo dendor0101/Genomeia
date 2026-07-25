@@ -66,6 +66,7 @@ dependencies {
   implementation 'androidx.core:core:1.13.1'
 
   implementation project(':core')
+  implementation project(':concurrent')
 
   natives "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-arm64-v8a"
   natives "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-armeabi-v7a"

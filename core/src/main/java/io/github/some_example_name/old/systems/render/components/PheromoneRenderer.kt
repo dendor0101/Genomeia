@@ -11,36 +11,32 @@ import com.badlogic.gdx.utils.BufferUtils
 import io.github.some_example_name.old.systems.pheromone.PheromonesManager.Companion.K
 import io.github.some_example_name.old.systems.pheromone.PheromonesManager.Companion.P
 import io.github.some_example_name.old.systems.render.RenderSystem.Companion.INITIAL_PHEROMONE_CAPACITY
-import io.github.some_example_name.old.systems.render.RenderSystem.Companion.PHEROMONE_STRUCT_SIZE
 import java.nio.ByteBuffer
 
 /**
- * Renders pheromones using GLES 3.0 instanced drawing.
+ * Renders pheromones using GLES 3.0 / WebGL2 instanced drawing.
  *
- * Instance data is uploaded as an RGBA32UI texture (one texel per pheromone).
- * CPU packing is unchanged from the SSBO path (16 bytes / instance):
- *   putFloat(x), putFloat(y), putFloat(A), putInt(color)
+ * Instance data is uploaded as an RGBA32F texture — 2 texels per pheromone (32 bytes):
+ *   texel0: x, y, A, colorR
+ *   texel1: colorG, colorB, pad, pad
  *
- * On the GPU those 4×uint bits are recovered via uintBitsToFloat / unpackUnorm4x8.
- * Integer textures avoid float NaN-canonicalization that would corrupt color bits.
- *
- * Compatible with OpenGL ES 3.0 / mobile (no SSBO).
+ * Float textures (not RGBA32UI) are required for WebGL/TeaVM compatibility.
  */
 class PheromoneRenderer : RenderComponent {
 
     private lateinit var shader: ShaderProgram
     private lateinit var mesh: Mesh
 
-    /** GPU data texture id (RGBA32UI, NEAREST). */
+    /** GPU data texture id (RGBA32F, NEAREST). */
     private var dataTexture = 0
 
-    /** Fixed texture width in texels. Height grows with capacity. */
+    /** Fixed texture width in texels (must be even — 2 texels per instance). */
     private var texWidth = TEX_WIDTH
 
     /** Current allocated texture height in texels. */
     private var texHeight = 0
 
-    /** Max pheromone instances the texture can hold (texWidth * texHeight). */
+    /** Max pheromone instances the texture can hold. */
     private var texCapacity = 0
 
     override fun create() {
@@ -70,9 +66,8 @@ class PheromoneRenderer : RenderComponent {
     }
 
     /**
-     * Grow RGBA32UI texture so it can hold at least [neededInstances] pheromones.
-     * Layout: row-major, [texWidth] texels wide, height grows by 1.5x.
-     * Zero GPU reallocations on the steady-state path.
+     * Grow RGBA32F texture so it can hold at least [neededInstances] pheromones.
+     * Layout: row-major, [texWidth] texels wide (even), height grows by 1.5x.
      */
     private fun ensureTextureCapacity(neededInstances: Int) {
         if (neededInstances <= texCapacity) return
@@ -82,38 +77,30 @@ class PheromoneRenderer : RenderComponent {
             newCapacity = (newCapacity * 1.5).toInt().coerceAtLeast(neededInstances)
         }
 
-        // Round up to full rows so every texel slot is addressable
-        val newHeight = (newCapacity + texWidth - 1) / texWidth
-        newCapacity = newHeight * texWidth
+        val instancesPerRow = texWidth / TEXELS_PER_INSTANCE
+        val newHeight = (newCapacity + instancesPerRow - 1) / instancesPerRow
+        newCapacity = newHeight * instancesPerRow
 
         val gl = Gdx.gl
-        val gl30 = Gdx.gl30
         gl.glBindTexture(GL20.GL_TEXTURE_2D, dataTexture)
 
-        // RGBA32UI — exact bit-preserving storage (no float NaN scrubbing)
+        // RGBA32F — WebGL2 / TeaVM compatible (FLOAT + Float32Array)
         gl.glTexImage2D(
             GL20.GL_TEXTURE_2D,
             0,
-            GL30.GL_RGBA32UI,
+            GL30.GL_RGBA32F,
             texWidth,
             newHeight,
             0,
-            GL30.GL_RGBA_INTEGER,
-            GL20.GL_UNSIGNED_INT,
+            GL20.GL_RGBA,
+            GL20.GL_FLOAT,
             null
         )
 
-        // NEAREST — exact texelFetch, no filtering between instances
         gl.glTexParameteri(GL20.GL_TEXTURE_2D, GL20.GL_TEXTURE_MIN_FILTER, GL20.GL_NEAREST)
         gl.glTexParameteri(GL20.GL_TEXTURE_2D, GL20.GL_TEXTURE_MAG_FILTER, GL20.GL_NEAREST)
         gl.glTexParameteri(GL20.GL_TEXTURE_2D, GL20.GL_TEXTURE_WRAP_S, GL20.GL_CLAMP_TO_EDGE)
         gl.glTexParameteri(GL20.GL_TEXTURE_2D, GL20.GL_TEXTURE_WRAP_T, GL20.GL_CLAMP_TO_EDGE)
-
-        // Integer textures must not have non-zero base level / incomplete mip chain
-        if (gl30 != null) {
-            gl30.glTexParameteri(GL20.GL_TEXTURE_2D, GL30.GL_TEXTURE_BASE_LEVEL, 0)
-            gl30.glTexParameteri(GL20.GL_TEXTURE_2D, GL30.GL_TEXTURE_MAX_LEVEL, 0)
-        }
 
         gl.glBindTexture(GL20.GL_TEXTURE_2D, 0)
 
@@ -124,17 +111,16 @@ class PheromoneRenderer : RenderComponent {
     /**
      * Upload tightly-packed pheromone ByteBuffer into the data texture.
      *
-     * CPU layout per instance (16 bytes = 1 RGBA32UI texel), native endian:
-     *   [0..3]   float x     → bits read as uint, uintBitsToFloat on GPU
-     *   [4..7]   float y     → same
-     *   [8..11]  float A     → same
-     *   [12..15] int color   → RGBA8 packed uint, unpackUnorm4x8 on GPU
+     * CPU layout per instance (32 bytes = 2 RGBA32F texels), native endian:
+     *   [0..3]   float x
+     *   [4..7]   float y
+     *   [8..11]  float A
+     *   [12..15] float colorR
+     *   [16..19] float colorG
+     *   [20..23] float colorB
+     *   [24..31] float pad, pad
      *
-     * Upload strategy (zero intermediate allocations):
-     *   1) full rows as one glTexSubImage2D
-     *   2) leftover partial row as a second glTexSubImage2D
-     *
-     * Row pitch is always a multiple of 16 bytes → default UNPACK_ALIGNMENT=4 is fine.
+     * Uses asFloatBuffer() so WebGL receives a Float32Array (required for GL_FLOAT).
      */
     private fun uploadPheromoneTexture(data: ByteBuffer, numInstances: Int) {
         ensureTextureCapacity(numInstances)
@@ -143,27 +129,27 @@ class PheromoneRenderer : RenderComponent {
         gl.glBindTexture(GL20.GL_TEXTURE_2D, dataTexture)
 
         val w = texWidth
-        val fullRows = numInstances / w
-        val remainder = numInstances % w
-        val bytesPerTexel = PHEROMONE_STRUCT_SIZE // 16
+        val totalTexels = numInstances * TEXELS_PER_INSTANCE
+        val fullRows = totalTexels / w
+        val remainder = totalTexels % w
+        val bytesPerTexel = 16
 
-        // Save caller buffer state
         val oldPos = data.position()
         val oldLimit = data.limit()
 
         if (fullRows > 0) {
             val fullBytes = fullRows * w * bytesPerTexel
-            // Buffer must start at absolute offset 0 of the packed array
             data.position(0)
             data.limit(fullBytes)
+            val floatView = data.asFloatBuffer()
             gl.glTexSubImage2D(
                 GL20.GL_TEXTURE_2D,
                 0,
                 0, 0,
                 w, fullRows,
-                GL30.GL_RGBA_INTEGER,
-                GL20.GL_UNSIGNED_INT,
-                data
+                GL20.GL_RGBA,
+                GL20.GL_FLOAT,
+                floatView
             )
         }
 
@@ -171,18 +157,18 @@ class PheromoneRenderer : RenderComponent {
             val offsetBytes = fullRows * w * bytesPerTexel
             data.position(offsetBytes)
             data.limit(offsetBytes + remainder * bytesPerTexel)
+            val floatView = data.asFloatBuffer()
             gl.glTexSubImage2D(
                 GL20.GL_TEXTURE_2D,
                 0,
-                0, fullRows,          // x=0, y=first incomplete row
-                remainder, 1,         // width=remainder texels, height=1
-                GL30.GL_RGBA_INTEGER,
-                GL20.GL_UNSIGNED_INT,
-                data
+                0, fullRows,
+                remainder, 1,
+                GL20.GL_RGBA,
+                GL20.GL_FLOAT,
+                floatView
             )
         }
 
-        // Restore buffer state for any subsequent readers
         data.position(oldPos)
         data.limit(oldLimit)
 
@@ -213,7 +199,8 @@ class PheromoneRenderer : RenderComponent {
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)
 
         shader.bind()
-        shader.setUniformMatrix("u_projTrans", context.cameraProjection)
+        // camera.projection + camera-relative packed positions → no float stair-stepping
+        shader.setUniformMatrix("u_projTrans", context.cameraRelativeProjection)
         shader.setUniformf("u_K", K)
         shader.setUniformf("u_P", P)
         shader.setUniformi("u_data", 0)
@@ -253,12 +240,12 @@ class PheromoneRenderer : RenderComponent {
     }
 
     companion object {
+        /** Texels per pheromone instance (2 × RGBA32F = 32 bytes). */
+        private const val TEXELS_PER_INSTANCE = 2
+
         /**
-         * Texture width in texels. 1024 keeps addressing simple and stays
-         * well under GLES3 minimum max-texture-size (≥ 2048).
-         * Height grows as capacity increases.
-         *
-         * 1024 × 1 row = 1024 instances ≈ INITIAL capacity ballpark after grow.
+         * Texture width in texels — must be divisible by TEXELS_PER_INSTANCE.
+         * Stays well under GLES3 / WebGL2 minimum max-texture-size (≥ 2048).
          */
         private const val TEX_WIDTH = 1024
     }

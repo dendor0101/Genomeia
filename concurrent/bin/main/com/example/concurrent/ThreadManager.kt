@@ -1,17 +1,14 @@
-package io.github.some_example_name.old.systems.simulation
+package com.example.concurrent
 
-import io.github.some_example_name.old.core.DISimulationContainer.chunkSize
-import io.github.some_example_name.old.core.DISimulationContainer.gridSize
-import io.github.some_example_name.old.core.DISimulationContainer.threadCount
-import io.github.some_example_name.old.core.DISimulationContainer.totalChunks
+import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.WorldResizable
-import io.github.some_example_name.old.systems.simulation.SimulationSystem.Companion.DELTA_SIM_TICK_TIME
+import io.github.some_example_name.old.systems.simulation.SimulationData
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 
-class ThreadManager(
+internal class ThreadManager(
     val simulationData: SimulationData
 ): WorldResizable {
 
@@ -21,10 +18,10 @@ class ThreadManager(
     var isRunning = false
 
     private fun createDaemonFixedThreadPool(): ExecutorService {
-        return Executors.newFixedThreadPool(threadCount) { runnable ->
+        return Executors.newFixedThreadPool(DISimulationContainer.threadCount) { runnable ->
             val thread = Thread(runnable)
             thread.isDaemon = true
-            thread.name = "Sim-Worker-${threadCount}"
+            thread.name = "Sim-Worker-${DISimulationContainer.threadCount}"
             thread
         }
     }
@@ -134,9 +131,9 @@ class ThreadManager(
     ) {
         var threadCounter = 0
         val first = if (isOdd) 1 else 0
-        for (i in first until totalChunks step 2) {
-            val start = i * chunkSize
-            val end = if (i == totalChunks - 1) gridSize else (i + 1) * chunkSize
+        for (i in first until DISimulationContainer.totalChunks step 2) {
+            val start = i * DISimulationContainer.chunkSize
+            val end = if (i == DISimulationContainer.totalChunks - 1) DISimulationContainer.gridSize else (i + 1) * DISimulationContainer.chunkSize
             val threadId = threadCounter++
             futures.add(executor.submit { job(start, end, threadId) })
         }

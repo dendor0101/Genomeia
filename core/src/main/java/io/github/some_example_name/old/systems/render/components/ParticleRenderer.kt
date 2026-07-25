@@ -11,14 +11,17 @@ import java.nio.ByteBuffer
 
 
 /**
- * Renders particles using GLES 3.0 instanced drawing.
+ * Renders particles using GLES 3.0 / WebGL2 instanced drawing.
  *
- * Instance data is uploaded as an RGBA32UI texture — 2 texels per particle (32 bytes):
- *   texel0: x_bits, y_bits, color, packed1
- *   texel1: packed2, pad, pad, pad
+ * Instance data is uploaded as an RGBA32F texture — 3 texels per particle (48 bytes):
+ *   texel0: x, y, colorR, colorG
+ *   texel1: colorB, radius, energy, cellType
+ *   texel2: cosA, sinA, pad, pad
  *
- * CPU packing (RenderSystem) must match PARTICLE_STRUCT_SIZE = 32.
- * Compatible with OpenGL ES 3.0 / mobile (no SSBO).
+ * Float textures (not RGBA32UI) are required for WebGL/TeaVM compatibility:
+ * texSubImage2D with UNSIGNED_INT needs a Uint32Array view which TeaVM does not provide.
+ *
+ * CPU packing (RenderSystem) must match PARTICLE_STRUCT_SIZE = 48.
  */
 class ParticleRenderer(private val texturePaths: List<String>) : RenderComponent {
 
@@ -26,10 +29,10 @@ class ParticleRenderer(private val texturePaths: List<String>) : RenderComponent
     private var textureArray: Int = 0
     private var numLayers: Int = 0
 
-    /** GPU instance-data texture (RGBA32UI, NEAREST). */
+    /** GPU instance-data texture (RGBA32F, NEAREST). */
     private var dataTexture = 0
 
-    /** Texture width in texels (must be even — 2 texels per particle). */
+    /** Texture width in texels (must be divisible by TEXELS_PER_PARTICLE). */
     private var texWidth = TEX_WIDTH
 
     /** Allocated texture height in texels. */
@@ -49,6 +52,7 @@ class ParticleRenderer(private val texturePaths: List<String>) : RenderComponent
         val fragmentShader = Gdx.files.internal("shaders/debug/circle.frag").readString()
         shader = ShaderProgram(vertexShader, fragmentShader)
         if (!shader.isCompiled) {
+            Gdx.app.error("Shader", shader.log)
             throw RuntimeException("Shader compilation failed: ${shader.log}")
         }
     }
@@ -120,8 +124,8 @@ class ParticleRenderer(private val texturePaths: List<String>) : RenderComponent
     }
 
     /**
-     * Grow RGBA32UI texture to hold at least [neededParticles] instances.
-     * Each particle = 2 texels. Width fixed (even), height grows ×1.5.
+     * Grow RGBA32F texture to hold at least [neededParticles] instances.
+     * Each particle = 3 texels. Width fixed (divisible by 3), height grows ×1.5.
      */
     private fun ensureTextureCapacity(neededParticles: Int) {
         if (neededParticles <= texCapacityParticles) return
@@ -131,24 +135,23 @@ class ParticleRenderer(private val texturePaths: List<String>) : RenderComponent
             newCap = (newCap * 1.5).toInt().coerceAtLeast(neededParticles)
         }
 
-        // particlesPerRow = texWidth / 2 (two texels each)
         val particlesPerRow = texWidth / TEXELS_PER_PARTICLE
         val newHeight = (newCap + particlesPerRow - 1) / particlesPerRow
         newCap = newHeight * particlesPerRow
 
         val gl = Gdx.gl
-        val gl30 = Gdx.gl30
         gl.glBindTexture(GL20.GL_TEXTURE_2D, dataTexture)
 
+        // RGBA32F — WebGL2 / TeaVM compatible (FLOAT + Float32Array)
         gl.glTexImage2D(
             GL20.GL_TEXTURE_2D,
             0,
-            GL30.GL_RGBA32UI,
+            GL30.GL_RGBA32F,
             texWidth,
             newHeight,
             0,
-            GL30.GL_RGBA_INTEGER,
-            GL20.GL_UNSIGNED_INT,
+            GL20.GL_RGBA,
+            GL20.GL_FLOAT,
             null
         )
 
@@ -156,11 +159,6 @@ class ParticleRenderer(private val texturePaths: List<String>) : RenderComponent
         gl.glTexParameteri(GL20.GL_TEXTURE_2D, GL20.GL_TEXTURE_MAG_FILTER, GL20.GL_NEAREST)
         gl.glTexParameteri(GL20.GL_TEXTURE_2D, GL20.GL_TEXTURE_WRAP_S, GL20.GL_CLAMP_TO_EDGE)
         gl.glTexParameteri(GL20.GL_TEXTURE_2D, GL20.GL_TEXTURE_WRAP_T, GL20.GL_CLAMP_TO_EDGE)
-
-        if (gl30 != null) {
-            gl30.glTexParameteri(GL20.GL_TEXTURE_2D, GL30.GL_TEXTURE_BASE_LEVEL, 0)
-            gl30.glTexParameteri(GL20.GL_TEXTURE_2D, GL30.GL_TEXTURE_MAX_LEVEL, 0)
-        }
 
         gl.glBindTexture(GL20.GL_TEXTURE_2D, 0)
 
@@ -171,15 +169,21 @@ class ParticleRenderer(private val texturePaths: List<String>) : RenderComponent
     /**
      * Upload tightly-packed particle ByteBuffer into the data texture.
      *
-     * CPU layout per particle (32 bytes = 2 RGBA32UI texels), native endian:
+     * CPU layout per particle (48 bytes = 3 RGBA32F texels), native endian:
      *   [0..3]   float x
      *   [4..7]   float y
-     *   [8..11]  int color
-     *   [12..15] int packed1
-     *   [16..19] int packed2
-     *   [20..31] pad (3× int 0)
+     *   [8..11]  float colorR
+     *   [12..15] float colorG
+     *   [16..19] float colorB
+     *   [20..23] float radius
+     *   [24..27] float energy
+     *   [28..31] float cellType
+     *   [32..35] float cosA
+     *   [36..39] float sinA
+     *   [40..47] float pad, pad
      *
      * Zero intermediate allocations: full rows + optional partial row.
+     * Uses asFloatBuffer() so WebGL receives a Float32Array (required for GL_FLOAT).
      */
     private fun uploadParticleTexture(data: ByteBuffer, numParticles: Int) {
         ensureTextureCapacity(numParticles)
@@ -188,11 +192,10 @@ class ParticleRenderer(private val texturePaths: List<String>) : RenderComponent
         gl.glBindTexture(GL20.GL_TEXTURE_2D, dataTexture)
 
         val w = texWidth
-        // Each particle occupies TEXELS_PER_PARTICLE consecutive texels
         val totalTexels = numParticles * TEXELS_PER_PARTICLE
         val fullRows = totalTexels / w
         val remainderTexels = totalTexels % w
-        val bytesPerTexel = 16 // RGBA32UI
+        val bytesPerTexel = 16
 
         val oldPos = data.position()
         val oldLimit = data.limit()
@@ -201,14 +204,15 @@ class ParticleRenderer(private val texturePaths: List<String>) : RenderComponent
             val fullBytes = fullRows * w * bytesPerTexel
             data.position(0)
             data.limit(fullBytes)
+            val floatView = data.asFloatBuffer()
             gl.glTexSubImage2D(
                 GL20.GL_TEXTURE_2D,
                 0,
                 0, 0,
                 w, fullRows,
-                GL30.GL_RGBA_INTEGER,
-                GL20.GL_UNSIGNED_INT,
-                data
+                GL20.GL_RGBA,
+                GL20.GL_FLOAT,
+                floatView
             )
         }
 
@@ -216,20 +220,20 @@ class ParticleRenderer(private val texturePaths: List<String>) : RenderComponent
             val offsetBytes = fullRows * w * bytesPerTexel
             data.position(offsetBytes)
             data.limit(offsetBytes + remainderTexels * bytesPerTexel)
+            val floatView = data.asFloatBuffer()
             gl.glTexSubImage2D(
                 GL20.GL_TEXTURE_2D,
                 0,
                 0, fullRows,
                 remainderTexels, 1,
-                GL30.GL_RGBA_INTEGER,
-                GL20.GL_UNSIGNED_INT,
-                data
+                GL20.GL_RGBA,
+                GL20.GL_FLOAT,
+                floatView
             )
         }
 
         data.position(oldPos)
         data.limit(oldLimit)
-
         gl.glBindTexture(GL20.GL_TEXTURE_2D, 0)
     }
 
@@ -257,8 +261,10 @@ class ParticleRenderer(private val texturePaths: List<String>) : RenderComponent
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
 
         shader.bind()
-        shader.setUniformMatrix("u_projTrans", context.cameraProjection)
+        // camera.projection + camera-relative packed positions → no float stair-stepping
+        shader.setUniformMatrix("u_projTrans", context.cameraRelativeProjection)
         shader.setUniformf("u_textureScale", 1.0f)
+
         shader.setUniformf("u_colorScale", if (context.usePostProcess) 0.0f else 1.0f)
         shader.setUniformi("u_textureArray", 0)
         shader.setUniformi("u_data", 1)
@@ -312,13 +318,13 @@ class ParticleRenderer(private val texturePaths: List<String>) : RenderComponent
     }
 
     companion object {
-        /** Texels per particle in the data texture (2 × RGBA32UI = 32 bytes). */
-        private const val TEXELS_PER_PARTICLE = 2
+        /** Texels per particle in the data texture (3 × RGBA32F = 48 bytes). */
+        private const val TEXELS_PER_PARTICLE = 3
 
         /**
          * Texture width in texels — must be divisible by TEXELS_PER_PARTICLE
          * so a particle never straddles a row boundary.
          */
-        private const val TEX_WIDTH = 1024
+        private const val TEX_WIDTH = 1020
     }
 }

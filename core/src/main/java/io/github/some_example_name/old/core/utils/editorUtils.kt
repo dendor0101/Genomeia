@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.core.utils
 
+import com.badlogic.gdx.Gdx
 import kotlin.math.*
 
 data class Point(val x: Float, val y: Float)
@@ -12,60 +13,79 @@ const val MAX_DISTANCE_TO_CENTER = 0.9f
 //const val TARGET_Y = 160f
 const val MIN_DISTANCE_TO_OTHERS = 0.6
 
-fun findNewOptimalCellPosition(x: Float, y: Float, xs: List<Float>, ys: List<Float>): Pair<Float, Float>? {
+fun findNewOptimalCellPosition(
+    x: Float,
+    y: Float,
+    xs: List<Float>,
+    ys: List<Float>
+): Pair<Float, Float>? {
     if (xs.size != ys.size) {
         throw IllegalArgumentException("xs and ys must have the same size")
     }
+
     val others = xs.indices.map { Point(xs[it], ys[it]) }
+
     val dx = START_EDITOR_CELL_X - x
     val dy = START_EDITOR_CELL_Y - y
-    val d = sqrt(dx.pow(2) + dy.pow(2))
+    val d = sqrt(dx * dx + dy * dy)
 
-    // Try ideal point first if d > 0
-    var bestX: Float? = null
-    var bestY: Float? = null
-    var minDistToTarget = Float.MAX_VALUE
-
-    if (d > 0f) {
+    // 1. Сначала пробуем идеальную точку
+    if (d > 1e-5f) {
         val idealAngle = atan2(dy, dx)
-        val idealR = when {
-            d < MIN_DISTANCE_TO_CENTER -> MIN_DISTANCE_TO_CENTER
-            d > MAX_DISTANCE_TO_CENTER -> MAX_DISTANCE_TO_CENTER
-            else -> d
-        }
+        val idealR = d.coerceIn(MIN_DISTANCE_TO_CENTER, MAX_DISTANCE_TO_CENTER)
+
         val idealPx = x + idealR * cos(idealAngle)
         val idealPy = y + idealR * sin(idealAngle)
-        val isValid = others.all { dist(idealPx, idealPy, it.x, it.y) >= MIN_DISTANCE_TO_OTHERS }
-        if (isValid) {
-            return Pair(idealPx, idealPy)
+
+        if (isPositionValid(idealPx, idealPy, others)) {
+            return idealPx to idealPy
         }
     }
 
-    // Sampling if ideal not valid or d==0
-    val numRadiusSteps = 101 // From MIN_DISTANCE_TO_CENTER to MAX_DISTANCE_TO_CENTER inclusive, step ~0.1
-    val numAngleSteps = 360 // 1 degree steps
+    // 2. Сэмплирование
+    val numRadiusSteps = 101
+    val numAngleSteps = 360
     val radiusStep = (MAX_DISTANCE_TO_CENTER - MIN_DISTANCE_TO_CENTER) / (numRadiusSteps - 1)
-    val angleStep = (2 * PI.toFloat()) / numAngleSteps
+    val angleStep = (2f * PI.toFloat()) / numAngleSteps
+
+    var bestX: Float? = null
+    var bestY: Float? = null
+    var bestDist = Float.MAX_VALUE
+    var bestAngle = Float.MAX_VALUE   // для стабильного выбора при почти равных расстояниях
 
     for (i in 0 until numRadiusSteps) {
         val r = MIN_DISTANCE_TO_CENTER + i * radiusStep
+
         for (j in 0 until numAngleSteps) {
             val a = j * angleStep
             val px = x + r * cos(a)
             val py = y + r * sin(a)
-            val isValid = others.all { dist(px, py, it.x, it.y) >= MIN_DISTANCE_TO_OTHERS }
-            if (isValid) {
-                val distToTarget = dist(px, py, START_EDITOR_CELL_X, START_EDITOR_CELL_Y)
-                if (distToTarget < minDistToTarget) {
-                    minDistToTarget = distToTarget
-                    bestX = px
-                    bestY = py
-                }
+
+            if (!isPositionValid(px, py, others)) continue
+
+            val distToTarget = dist(px, py, START_EDITOR_CELL_X, START_EDITOR_CELL_Y)
+
+            // Выбираем точку по двум критериям:
+            // 1. Меньшее расстояние до целевой точки
+            // 2. При почти равном расстоянии — меньший угол (детерминированность)
+            val isBetter = distToTarget < bestDist - 1e-4f ||
+                (abs(distToTarget - bestDist) <= 1e-4f && a < bestAngle)
+
+            if (isBetter) {
+                bestDist = distToTarget
+                bestAngle = a
+                bestX = px
+                bestY = py
             }
         }
     }
 
-    return if (bestX != null && bestY != null) Pair(bestX, bestY) else null
+    return if (bestX != null && bestY != null) bestX to bestY else null
+}
+
+// Вспомогательная функция
+private fun isPositionValid(px: Float, py: Float, others: List<Point>): Boolean {
+    return others.all { dist(px, py, it.x, it.y) >= MIN_DISTANCE_TO_OTHERS }
 }
 
 private fun dist(ax: Float, ay: Float, bx: Float, by: Float): Float {

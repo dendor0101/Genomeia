@@ -4,7 +4,6 @@ import io.github.some_example_name.old.cells.Zygote
 import io.github.some_example_name.old.commands.PlayerCommand
 import io.github.some_example_name.old.commands.UserCommandManager
 import io.github.some_example_name.old.commands.WorldCommandsManager
-import io.github.some_example_name.old.core.prettyPrint
 import io.github.some_example_name.old.editor.entities.EditorReplay
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.Entity

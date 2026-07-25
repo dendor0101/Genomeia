@@ -118,9 +118,19 @@ class ShaderManager(val texturePaths: List<String>) {
         components.forEach { it.resize(width, height) }
     }
 
+    /**
+     * @param cameraProjection full camera.combined (kept for any world-space debug)
+     * @param cameraRelativeProjection camera.projection — maps camera-local coords to clip
+     * @param worldX camera world X (origin used when packing particle positions)
+     * @param worldY camera world Y
+     *
+     * Particle/pheromone buffers must store positions as (world - camera) so float
+     * precision stays high near the viewport (no stair-step motion at large coords).
+     */
     fun render(
         currentRead: ByteBuffer,
         cameraProjection: Matrix4,
+        cameraRelativeProjection: Matrix4,
         isNewFrame: Boolean,
         isClear: Boolean,
         worldX: Float,
@@ -137,6 +147,9 @@ class ShaderManager(val texturePaths: List<String>) {
         renderContext.apply {
             fullscreenMesh = mesh
             this.cameraProjection = cameraProjection
+            this.cameraRelativeProjection = cameraRelativeProjection
+            this.cameraX = worldX
+            this.cameraY = worldY
             particleData = currentRead
             this.numInstances = numInstances
             this.isNewFrame = isNewFrame

@@ -1,11 +1,11 @@
-package io.github.some_example_name.lwjgl3
+package io.github.some_example_name
 
 import com.badlogic.gdx.files.FileHandle
 import io.github.some_example_name.old.core.FileProvider
 import com.example.concurrent.SimulationSystem
 import java.io.File
 
-class DesktopFileProvider : FileProvider {
+class IosFileProvider : FileProvider {
     override fun getGenomeFile(fileName: String): File {
         val baseDir = getJarDir()
         return File(baseDir, fileName)
@@ -34,4 +34,3 @@ class DesktopFileProvider : FileProvider {
         }
     }
 }
-

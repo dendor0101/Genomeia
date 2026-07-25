@@ -69,77 +69,90 @@ class MyGame(
         DISimulationContainer
         DIGenomeEditorContainer
 
-        // Генерация шрифта с большим размером (адаптировано под DPI).
-        // На Android полный Gdx.graphics.density (часто 2.5–4) делает текст огромным:
-        // ScreenViewport работает в пикселях, а меню единственное дополнительно
-        // ужимает buttonFont под ширину кнопки. Для остальных экранов нужен
-        // более мягкий множитель, иначе large/extraLarge/title выглядят ×2–3 слишком крупно.
-        val generator = FreeTypeFontGenerator(Gdx.files.internal("fonts/Rubik-Regular.ttf"))
-        val parameter = FreeTypeFontGenerator.FreeTypeFontParameter()
-        parameter.genMipMaps = true
-        parameter.minFilter = TextureFilter.MipMapLinearLinear
-        parameter.magFilter = TextureFilter.Linear
-        parameter.characters = FreeTypeFontGenerator.DEFAULT_CHARS + "абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"  // Добавляем кириллицу для русского текста
+//        if (Gdx.app.type == Application.ApplicationType.WebGL) {
+            // Используем дефолтный шрифт libGDX / VisUI
+            val defaultFont = BitmapFont()          // или VisUI.getSkin().getFont("default-font")
 
-        val MIN_GEN_SIZE = 15
-        val rawDensity = Gdx.graphics.density
-        val fontDensity = if (Gdx.app.type == Application.ApplicationType.Android) {
-            // ~half density keeps physical size readable without eating the phone screen
-            (rawDensity * 0.5f).coerceIn(1.0f, 2.0f)
-        } else {
-            rawDensity.coerceAtLeast(1.0f)
-        }
+            titleFont = defaultFont
+            extraLargeFont = defaultFont
+            largeFont = defaultFont
+            buttonFont = defaultFont
+            mediumFont = defaultFont
+            smallFont = defaultFont
+//        } else {
+//            // Генерация шрифта с большим размером (адаптировано под DPI).
+//            // На Android полный Gdx.graphics.density (часто 2.5–4) делает текст огромным:
+//            // ScreenViewport работает в пикселях, а меню единственное дополнительно
+//            // ужимает buttonFont под ширину кнопки. Для остальных экранов нужен
+//            // более мягкий множитель, иначе large/extraLarge/title выглядят ×2–3 слишком крупно.
+//            val generator = FreeTypeFontGenerator(Gdx.files.internal("fonts/Rubik-Regular.ttf"))
+//            val parameter = FreeTypeFontGenerator.FreeTypeFontParameter()
+//            parameter.genMipMaps = true
+//            parameter.minFilter = TextureFilter.MipMapLinearLinear
+//            parameter.magFilter = TextureFilter.Linear
+//            parameter.characters = FreeTypeFontGenerator.DEFAULT_CHARS + "абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"  // Добавляем кириллицу для русского текста
+//
+//            val MIN_GEN_SIZE = 15
+//            val rawDensity = Gdx.graphics.density
+//            val fontDensity = if (Gdx.app.type == Application.ApplicationType.Android) {
+//                // ~half density keeps physical size readable without eating the phone screen
+//                (rawDensity * 0.5f).coerceIn(1.0f, 2.0f)
+//            } else {
+//                rawDensity.coerceAtLeast(1.0f)
+//            }
+//
+//            // Medium font
+//            val desiredMediumSize = (16 * fontDensity).toInt()
+//            parameter.size = max(MIN_GEN_SIZE, desiredMediumSize)
+//            mediumFont = generator.generateFont(parameter)
+//            if (desiredMediumSize < MIN_GEN_SIZE) {
+//                mediumFont.data.setScale(desiredMediumSize.toFloat() / MIN_GEN_SIZE.toFloat())
+//            }
+//
+//            // Small font
+//            val desiredSmallSize = (8 * fontDensity).toInt()
+//            parameter.size = max(MIN_GEN_SIZE, desiredSmallSize)
+//            smallFont = generator.generateFont(parameter)
+//            if (desiredSmallSize < MIN_GEN_SIZE) {
+//                smallFont.data.setScale(desiredSmallSize.toFloat() / MIN_GEN_SIZE.toFloat())
+//            }
+//
+//            // Large font
+//            val desiredLargeSize = (24 * fontDensity).toInt()
+//            parameter.size = max(MIN_GEN_SIZE, desiredLargeSize)
+//            largeFont = generator.generateFont(parameter)
+//            if (desiredLargeSize < MIN_GEN_SIZE) {
+//                largeFont.data.setScale(desiredLargeSize.toFloat() / MIN_GEN_SIZE.toFloat())
+//            }
+//
+//            // Button font — generated at 2x size so scaling down in buttons stays sharp
+//            val desiredButtonSize = (48 * fontDensity).toInt()
+//            parameter.size = max(MIN_GEN_SIZE, desiredButtonSize)
+//            parameter.borderWidth = 1.2f
+//            parameter.borderColor = Color.WHITE
+//            buttonFont = generator.generateFont(parameter)
+//            parameter.borderWidth = 0f
+//            parameter.size = max(MIN_GEN_SIZE, desiredLargeSize)
+//
+//            // Extra large font
+//            val desiredExtraLargeSize = (40 * fontDensity).toInt()
+//            parameter.size = max(MIN_GEN_SIZE, desiredExtraLargeSize)
+//            extraLargeFont = generator.generateFont(parameter)
+//            if (desiredExtraLargeSize < MIN_GEN_SIZE) {
+//                extraLargeFont.data.setScale(desiredExtraLargeSize.toFloat() / MIN_GEN_SIZE.toFloat())
+//            }
+//
+//            // Title font — large display size for the main menu logo
+//            val desiredTitleSize = (64 * fontDensity).toInt()
+//            parameter.size = max(MIN_GEN_SIZE, desiredTitleSize)
+//            titleFont = generator.generateFont(parameter)
+//            if (desiredTitleSize < MIN_GEN_SIZE) {
+//                titleFont.data.setScale(desiredTitleSize.toFloat() / MIN_GEN_SIZE.toFloat())
+//            }
+//
+//            generator.dispose()
+//        }
 
-        // Medium font
-        val desiredMediumSize = (16 * fontDensity).toInt()
-        parameter.size = max(MIN_GEN_SIZE, desiredMediumSize)
-        mediumFont = generator.generateFont(parameter)
-        if (desiredMediumSize < MIN_GEN_SIZE) {
-            mediumFont.data.setScale(desiredMediumSize.toFloat() / MIN_GEN_SIZE.toFloat())
-        }
-
-        // Small font
-        val desiredSmallSize = (8 * fontDensity).toInt()
-        parameter.size = max(MIN_GEN_SIZE, desiredSmallSize)
-        smallFont = generator.generateFont(parameter)
-        if (desiredSmallSize < MIN_GEN_SIZE) {
-            smallFont.data.setScale(desiredSmallSize.toFloat() / MIN_GEN_SIZE.toFloat())
-        }
-
-        // Large font
-        val desiredLargeSize = (24 * fontDensity).toInt()
-        parameter.size = max(MIN_GEN_SIZE, desiredLargeSize)
-        largeFont = generator.generateFont(parameter)
-        if (desiredLargeSize < MIN_GEN_SIZE) {
-            largeFont.data.setScale(desiredLargeSize.toFloat() / MIN_GEN_SIZE.toFloat())
-        }
-
-        // Button font — generated at 2x size so scaling down in buttons stays sharp
-        val desiredButtonSize = (48 * fontDensity).toInt()
-        parameter.size = max(MIN_GEN_SIZE, desiredButtonSize)
-        parameter.borderWidth = 1.2f
-        parameter.borderColor = Color.WHITE
-        buttonFont = generator.generateFont(parameter)
-        parameter.borderWidth = 0f
-        parameter.size = max(MIN_GEN_SIZE, desiredLargeSize)
-
-        // Extra large font
-        val desiredExtraLargeSize = (40 * fontDensity).toInt()
-        parameter.size = max(MIN_GEN_SIZE, desiredExtraLargeSize)
-        extraLargeFont = generator.generateFont(parameter)
-        if (desiredExtraLargeSize < MIN_GEN_SIZE) {
-            extraLargeFont.data.setScale(desiredExtraLargeSize.toFloat() / MIN_GEN_SIZE.toFloat())
-        }
-
-        // Title font — large display size for the main menu logo
-        val desiredTitleSize = (64 * fontDensity).toInt()
-        parameter.size = max(MIN_GEN_SIZE, desiredTitleSize)
-        titleFont = generator.generateFont(parameter)
-        if (desiredTitleSize < MIN_GEN_SIZE) {
-            titleFont.data.setScale(desiredTitleSize.toFloat() / MIN_GEN_SIZE.toFloat())
-        }
-
-        generator.dispose()
 
         openKeyBoardListenerGlobal = openKeyBoardListener
         shuffleTracks()

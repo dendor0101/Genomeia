@@ -3,6 +3,7 @@ package io.github.some_example_name.teavm;
 import com.github.xpenatan.gdx.teavm.backends.web.WebApplicationConfiguration;
 import com.github.xpenatan.gdx.teavm.backends.web.WebApplication;
 
+import io.github.some_example_name.old.core.concurrent.Platform;
 import io.github.some_example_name.old.game.MyGame;
 
 /**
@@ -18,6 +19,8 @@ public class TeaVMLauncher {
         System.out.println("=== MY REAL GAME IS STARTING ===");
         config.width = 0;
         config.height = 0;
+        config.useGL30 = true;
+        Platform.INSTANCE.setConcurrent(new WebConcurrentFactory());
         new WebApplication(new MyGame(new WebFileProvider(), null), config);
     }
 }

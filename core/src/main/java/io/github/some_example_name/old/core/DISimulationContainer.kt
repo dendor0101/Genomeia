@@ -1,19 +1,15 @@
 package io.github.some_example_name.old.core
 
+import com.badlogic.gdx.Application
 import com.badlogic.gdx.Gdx
-import com.badlogic.gdx.graphics.Color
-import com.badlogic.gdx.graphics.Texture
-import com.badlogic.gdx.graphics.g2d.NinePatch
-import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable
 import com.badlogic.gdx.utils.Disposable
-import com.kotcrab.vis.ui.VisUI
-import com.kotcrab.vis.ui.widget.VisTextButton
 import io.github.some_example_name.old.cells.base.CellListBuilder
 import io.github.some_example_name.old.commands.UserCommandManager
 import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.core.DIGameGlobalContainer.genomeJsonReader
 import io.github.some_example_name.old.core.DIGameGlobalContainer.shaderManager
 import io.github.some_example_name.old.core.DIGameGlobalContainer.substrateSettings
+import io.github.some_example_name.old.core.concurrent.Platform.simulationFactory
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.EyeEntity
 import io.github.some_example_name.old.entities.LinkEntity
@@ -39,13 +35,12 @@ import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem
 import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem
 import io.github.some_example_name.old.systems.render.RenderBufferManager
 import io.github.some_example_name.old.systems.render.RenderSystem
-import io.github.some_example_name.old.systems.simulation.SimulationSystem
-import io.github.some_example_name.old.systems.simulation.ThreadManager
 import io.github.some_example_name.old.features.settings.GlobalSettings.GRID_HEIGHT
 import io.github.some_example_name.old.features.settings.GlobalSettings.GRID_WIDTH
 import io.github.some_example_name.old.features.worldeditor.WorldTerrainManager
 import io.github.some_example_name.old.systems.physics.CollisionManager
 import io.github.some_example_name.old.systems.physics.MovementManager
+import io.github.some_example_name.old.systems.simulation.SingleThreadSimulationSystem
 import kotlin.getValue
 
 object DISimulationContainer:  DIContext, Disposable {
@@ -254,10 +249,6 @@ object DISimulationContainer:  DIContext, Disposable {
         collisionManager = collisionManager
     )
 
-    val threadManager = ThreadManager(
-        simulationData = simulationData
-    )
-
     val divideManager = DivideManager(
         cellEntity = cellEntity,
         worldCommandsManager = worldCommandsManager,
@@ -285,8 +276,7 @@ object DISimulationContainer:  DIContext, Disposable {
         worldCommandsManager = worldCommandsManager,
         gridManager = gridManager,
         divideManager = divideManager,
-        mutateManager = mutateManager,
-        threadManager = threadManager
+        mutateManager = mutateManager
     )
 
     val linkPhysicsSystem = LinkPhysicsSystem(
@@ -295,8 +285,7 @@ object DISimulationContainer:  DIContext, Disposable {
         particleEntity = particleEntity,
         cellEntity = cellEntity,
         worldCommandsManager = worldCommandsManager,
-        cellSystem = cellSystem,
-        diContext = this
+        cellSystem = cellSystem
     )
 
     val movementManager = MovementManager(
@@ -314,29 +303,42 @@ object DISimulationContainer:  DIContext, Disposable {
 
 
     val simulationSystem by lazy {
-        SimulationSystem(
-            gridManager = gridManager,
-            worldCommandsManager = worldCommandsManager,
-            organManager = organManager,
-            organEntity = organEntity,
-            cellEntity = cellEntity,
-            linkEntity = linkEntity,
-            particleEntity = particleEntity,
-            pheromoneEntity = pheromoneEntity,
-            substrateSettings = substrateSettings,
-            threadManager = threadManager,
-            genomeManager = genomeManager,
-            particlePhysicsSystem = particlePhysicsSystem,
-            linkPhysicsSystem = linkPhysicsSystem,
-            simulationData = simulationData,
-            cellSystem = cellSystem,
-            userCommandManager = userCommandManager,
-            entityList = entityList,
-            renderBufferManager = renderBufferManager,
-            pheromonesManager = pheromonesManager,
-            movementManager = movementManager,
-            worldTerrainManager = worldTerrainManager
-        )
+        if (Gdx.app.type != Application.ApplicationType.WebGL) {
+            SingleThreadSimulationSystem(
+                gridManager = gridManager,
+                worldCommandsManager = worldCommandsManager,
+                organManager = organManager,
+                cellEntity = cellEntity,
+                linkEntity = linkEntity,
+                particleEntity = particleEntity,
+                particlePhysicsSystem = particlePhysicsSystem,
+                linkPhysicsSystem = linkPhysicsSystem,
+                simulationData = simulationData,
+                cellSystem = cellSystem,
+                userCommandManager = userCommandManager,
+                entityList = entityList,
+                renderBufferManager = renderBufferManager,
+                pheromonesManager = pheromonesManager,
+                movementManager = movementManager
+            )
+        } else {
+            simulationFactory.create(
+                gridManager = gridManager,
+                worldCommandsManager = worldCommandsManager,
+                organManager = organManager,
+                cellEntity = cellEntity,
+                particlePhysicsSystem = particlePhysicsSystem,
+                linkPhysicsSystem = linkPhysicsSystem,
+                simulationData = simulationData,
+                cellSystem = cellSystem,
+                userCommandManager = userCommandManager,
+                entityList = entityList,
+                renderBufferManager = renderBufferManager,
+                pheromonesManager = pheromonesManager,
+                movementManager = movementManager,
+                worldTerrainManager = worldTerrainManager
+            )
+        }
     }
 
     override fun dispose() {
@@ -357,7 +359,7 @@ object DISimulationContainer:  DIContext, Disposable {
         if (gridHeight % heightMultiplier != 0) throw Exception("gridHeight should be a multiple of (halfChunkHeight * 2 * 2)")
         gridManager.resize()
         cellListBuilder.resize()
-        threadManager.resize()
+        simulationSystem.resize()
         worldCommandsManager.resize()
     }
 }
