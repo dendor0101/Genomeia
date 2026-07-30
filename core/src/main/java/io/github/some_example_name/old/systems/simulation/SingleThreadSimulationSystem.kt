@@ -5,8 +5,10 @@ import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.Entity
 import io.github.some_example_name.old.entities.LinkEntity
+import io.github.some_example_name.old.entities.NeuralLinkEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.systems.genomics.CellSystem
+import io.github.some_example_name.old.systems.genomics.NeuralLinkManager
 import io.github.some_example_name.old.systems.genomics.OrganManager
 import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.old.systems.physics.GridManager
@@ -21,6 +23,8 @@ class SingleThreadSimulationSystem(
     val organManager: OrganManager,
     val cellEntity: CellEntity,
     val linkEntity: LinkEntity,
+    val neuralLinkEntity: NeuralLinkEntity,
+    val neuralLinkManager: NeuralLinkManager,
     val particleEntity: ParticleEntity,
     val linkPhysicsSystem: LinkPhysicsSystem,
     val simulationData: SimulationData,
@@ -36,10 +40,13 @@ class SingleThreadSimulationSystem(
     fun updateTick() {
         simulationData.tickCounter++
         simulationData.timeSimulation += DELTA_SIM_TICK_TIME
+        val isEnergy = simulationData.tickCounter % 3 == 0
 
         linkEntity.aliveList.forEach {
-            linkPhysicsSystem.processLink(it)
+            linkPhysicsSystem.processLink(it, isEnergy)
         }
+
+        neuralLinkManager.iterate()
 
         processGridChunkPhysics()
 

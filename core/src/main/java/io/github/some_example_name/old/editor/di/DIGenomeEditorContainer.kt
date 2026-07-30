@@ -11,6 +11,7 @@ import io.github.some_example_name.old.editor.system.command.CommandEditorStackM
 import io.github.some_example_name.old.editor.entities.CellReplay
 import io.github.some_example_name.old.editor.entities.EyeReplay
 import io.github.some_example_name.old.editor.entities.LinkReplay
+import io.github.some_example_name.old.editor.entities.NeuralLinkReplay
 import io.github.some_example_name.old.editor.entities.NeuralReplay
 import io.github.some_example_name.old.editor.system.CellSearchManager
 import io.github.some_example_name.old.editor.system.control.LeftRightClickManager
@@ -27,6 +28,7 @@ import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.EyeEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.NeuralEntity
+import io.github.some_example_name.old.entities.NeuralLinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.entities.PheromoneEmitterEntity
@@ -141,6 +143,13 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
         particleEntity = particleEntity,
         diContext = this
     )
+
+    override val neuralLinkEntity = NeuralLinkEntity(
+        50,
+        cellEntity = cellEntity,
+        isEditor = true
+    )
+
     override val substancesEntity = SubstancesEntity(
         startMaxAmount = 1,
         particleEntity = particleEntity,
@@ -160,6 +169,7 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
         organEntity = organEntity,
         cellEntity = cellEntity,
         linkEntity = linkEntity,
+        neuralLinkEntity = neuralLinkEntity,
         particleEntity = particleEntity,
         substrateSettings = DIGameGlobalContainer.substrateSettings,
         genomeManager = genomeManager,
@@ -190,6 +200,7 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
     val mutateManager = MutateManager(
         cellEntity = cellEntity,
         linkEntity = linkEntity,
+        neuralLinkEntity = neuralLinkEntity,
         worldCommandsManager = worldCommandsManager,
         particleEntity = particleEntity,
         gridManager = gridManager,
@@ -216,9 +227,13 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
         cellEntity = cellEntity
     )
 
-    val linkReplay = LinkReplay(
-        startCapacity = 1_000,
-        linkEntity = linkEntity
+//    val linkReplay = LinkReplay(
+//        startCapacity = 1_000,
+//        linkEntity = linkEntity
+//    )
+    val neuralLinkReplay = NeuralLinkReplay(
+        startCapacity = 300,
+        neuralLinkEntity = neuralLinkEntity
     )
 
     val eyeReplay = EyeReplay(
@@ -242,6 +257,7 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
         specialEntity,
         cellEntity,
         linkEntity,
+        neuralLinkEntity,
         substancesEntity,
         producerEntity,
         pheromoneEntity,
@@ -250,7 +266,8 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
 
     private val replays = listOf(
         cellReplay,
-        linkReplay,
+//        linkReplay,
+        neuralLinkReplay,
         eyeReplay,
         neuralReplay
     )
@@ -318,9 +335,11 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
     val leftRightClickManager = LeftRightClickManager(
         commandEditorStackManager = commandEditorStackManager,
         editorSimulationSystem = editorSimulationSystem,
-        linkReplay = linkReplay,
+//        linkReplay = linkReplay,
         cellEntity = cellEntity,
         linkEntity = linkEntity,
+        neuralLinkEntity = neuralLinkEntity,
+        neuralLinkReplay = neuralLinkReplay,
         symmetryManager = symmetryManager,
         cellSearchManager = cellSearchManager,
         toEditorDataMapper = toEditorDataMapper,
@@ -356,7 +375,8 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
 
     val drawingHelperElements = DrawingHelperElements(
         cellReplay = cellReplay,
-        linkReplay = linkReplay,
+//        linkReplay = linkReplay,
+        neuralLinkReplay = neuralLinkReplay,
         cellEntity = cellEntity,
         particleEntity = particleEntity,
         editorSimulationSystem = editorSimulationSystem,

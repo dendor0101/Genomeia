@@ -4,6 +4,7 @@ import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.Entity
 import io.github.some_example_name.old.entities.LinkEntity
+import io.github.some_example_name.old.entities.NeuralLinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.entities.PheromoneEntity
@@ -23,6 +24,7 @@ interface DIContext {
     val particleEntity: ParticleEntity
     val cellEntity: CellEntity
     val linkEntity: LinkEntity
+    val neuralLinkEntity: NeuralLinkEntity
     val substancesEntity: SubstancesEntity
     val specialEntity: SpecialEntity
     val worldCommandsManager: WorldCommandsManager

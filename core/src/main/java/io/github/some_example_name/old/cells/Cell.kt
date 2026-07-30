@@ -37,6 +37,7 @@ sealed class Cell(
     val particleEntity get() = context.particleEntity
     val cellEntity get() = context.cellEntity
     val linkEntity get() = context.linkEntity
+    val neuralLinkEntity get() = context.neuralLinkEntity
     val substancesEntity get() = context.substancesEntity
     val specialEntity get() = context.specialEntity
     val worldCommandsManager get() = context.worldCommandsManager

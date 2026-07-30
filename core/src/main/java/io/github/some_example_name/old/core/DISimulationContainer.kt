@@ -1,13 +1,6 @@
 package io.github.some_example_name.old.core
 
-import com.badlogic.gdx.Gdx
-import com.badlogic.gdx.graphics.Color
-import com.badlogic.gdx.graphics.Texture
-import com.badlogic.gdx.graphics.g2d.NinePatch
-import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable
 import com.badlogic.gdx.utils.Disposable
-import com.kotcrab.vis.ui.VisUI
-import com.kotcrab.vis.ui.widget.VisTextButton
 import io.github.some_example_name.old.cells.base.CellListBuilder
 import io.github.some_example_name.old.commands.UserCommandManager
 import io.github.some_example_name.old.commands.WorldCommandsManager
@@ -18,6 +11,7 @@ import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.EyeEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.NeuralEntity
+import io.github.some_example_name.old.entities.NeuralLinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.entities.PheromoneEmitterEntity
@@ -42,11 +36,12 @@ import io.github.some_example_name.old.systems.render.RenderSystem
 import io.github.some_example_name.old.systems.simulation.SimulationSystem
 import io.github.some_example_name.old.systems.simulation.ThreadManager
 import io.github.some_example_name.old.features.worldeditor.WorldTerrainManager
+import io.github.some_example_name.old.systems.genomics.NeuralLinkManager
 import io.github.some_example_name.old.systems.physics.CollisionManager
 import io.github.some_example_name.old.systems.physics.MovementManager
 import kotlin.getValue
 
-object DISimulationContainer:  DIContext, Disposable {
+object DISimulationContainer : DIContext, Disposable {
 
     override var gridWidth = 128
     override var gridHeight = 128
@@ -132,6 +127,11 @@ object DISimulationContainer:  DIContext, Disposable {
         particleEntity = particleEntity,
         diContext = this
     )
+    override val neuralLinkEntity = NeuralLinkEntity(
+        5_000,
+        cellEntity = cellEntity,
+        isEditor = false
+    )
     override val pheromoneEntity = PheromoneEntity(
         gridManager = gridManager
     )
@@ -151,6 +151,7 @@ object DISimulationContainer:  DIContext, Disposable {
         specialEntity,
         cellEntity,
         linkEntity,
+        neuralLinkEntity,
         pheromoneEntity,
         substancesEntity,
         producerEntity,
@@ -175,7 +176,8 @@ object DISimulationContainer:  DIContext, Disposable {
         linkEntity = linkEntity,
         cellList = cellList,
         specialEntity = specialEntity,
-        pheromoneEntity = pheromoneEntity
+        pheromoneEntity = pheromoneEntity,
+        neuralLinkEntity = neuralLinkEntity
     )
 
     val renderSystem = RenderSystem(
@@ -205,6 +207,7 @@ object DISimulationContainer:  DIContext, Disposable {
         organEntity = organEntity,
         cellEntity = cellEntity,
         linkEntity = linkEntity,
+        neuralLinkEntity = neuralLinkEntity,
         particleEntity = particleEntity,
         pheromoneEntity = pheromoneEntity,
         substrateSettings = substrateSettings,
@@ -267,6 +270,7 @@ object DISimulationContainer:  DIContext, Disposable {
     val mutateManager = MutateManager(
         cellEntity = cellEntity,
         linkEntity = linkEntity,
+        neuralLinkEntity = neuralLinkEntity,
         worldCommandsManager = worldCommandsManager,
         particleEntity = particleEntity,
         gridManager = gridManager,
@@ -294,7 +298,14 @@ object DISimulationContainer:  DIContext, Disposable {
         cellEntity = cellEntity,
         worldCommandsManager = worldCommandsManager,
         cellSystem = cellSystem,
+        simulationData = simulationData,
         diContext = this
+    )
+
+    val neuralLinkManager = NeuralLinkManager(
+        neuralLinkEntity = neuralLinkEntity,
+        worldCommandsManager = worldCommandsManager,
+        cellEntity = cellEntity
     )
 
     val movementManager = MovementManager(
@@ -319,6 +330,8 @@ object DISimulationContainer:  DIContext, Disposable {
             organEntity = organEntity,
             cellEntity = cellEntity,
             linkEntity = linkEntity,
+            neuralLinkEntity = neuralLinkEntity,
+            neuralLinkManager = neuralLinkManager,
             particleEntity = particleEntity,
             pheromoneEntity = pheromoneEntity,
             substrateSettings = substrateSettings,

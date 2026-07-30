@@ -5,6 +5,7 @@ import io.github.some_example_name.old.cells.Eye
 import io.github.some_example_name.old.cells.base.formulaType
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
+import io.github.some_example_name.old.entities.NeuralLinkEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.entities.PheromoneEntity
 import io.github.some_example_name.old.entities.SpecialEntity
@@ -18,6 +19,7 @@ class RenderBufferManager(
     val particleEntity: ParticleEntity,
     val pheromoneEntity: PheromoneEntity,
     val linkEntity: LinkEntity,
+    val neuralLinkEntity: NeuralLinkEntity,
     val cellList: List<Cell>,
     val specialEntity: SpecialEntity,
     initialCellCapacity: Int = 50_000,
@@ -134,34 +136,60 @@ class RenderBufferManager(
 
         // ==================== LINK ====================
         if (!doesUsePostProcess) {
-            val needed = linkEntity.aliveList.size
+            val needed = linkEntity.aliveList.size + neuralLinkEntity.aliveList.size
             val backIndex = 1 - linkFrontIndex.get()
             val back = linkBuffers[backIndex]
 
             back.ensureCapacity(needed)
 
-            with(linkEntity) {
-                for (bufIndex in 0..<aliveList.size) {
+            var writeIndex = 0
+
+            // длинные нейролинки
+            with(neuralLinkEntity) {
+                for (bufIndex in aliveList.indices) {
                     val i = aliveList.getInt(bufIndex)
                     val linkCellA = links1[i]
                     val linkCellB = links2[i]
                     val linkCellAIsDead = !cellEntity.isAlive[linkCellA] || cellEntity.getGeneration(linkCellA) != linksGeneration1[i]
                     val linkCellBIsDead = !cellEntity.isAlive[linkCellB] || cellEntity.getGeneration(linkCellB) != linksGeneration2[i]
                     if (linkCellAIsDead || linkCellBIsDead) continue
-                    val particleAIndex = cellEntity.getParticleIndex(links1[i])
-                    val particleBIndex = cellEntity.getParticleIndex(links2[i])
 
-                    back.cellA[bufIndex] = particleEntity.positionInAlive[particleAIndex]
-                    back.cellB[bufIndex] = particleEntity.positionInAlive[particleBIndex]
+                    val particleAIndex = cellEntity.getParticleIndex(linkCellA)
+                    val particleBIndex = cellEntity.getParticleIndex(linkCellB)
 
-                    back.isNeuralDirected[bufIndex] = if (isNeuronLink[i]) {
-                        if (isLink1NeuralDirected[i]) 1 else 0
-                    } else {
-                        if (isStickyLink[i]) 3 else -1
-                    }
+                    back.cellA[writeIndex] = particleEntity.positionInAlive[particleAIndex]
+                    back.cellB[writeIndex] = particleEntity.positionInAlive[particleBIndex]
+
+                    // длинные нейролинки всегда neural-directed
+                    back.isNeuralDirected[writeIndex] = if (isLink1NeuralDirected[i]) 1 else 0
+
+                    writeIndex++
                 }
-                back.renderLinkAmount = aliveList.size
             }
+
+            // обычные линки
+            with(linkEntity) {
+                for (bufIndex in aliveList.indices) {
+                    val i = aliveList.getInt(bufIndex)
+                    val linkCellA = links1[i]
+                    val linkCellB = links2[i]
+                    val linkCellAIsDead = !cellEntity.isAlive[linkCellA] || cellEntity.getGeneration(linkCellA) != linksGeneration1[i]
+                    val linkCellBIsDead = !cellEntity.isAlive[linkCellB] || cellEntity.getGeneration(linkCellB) != linksGeneration2[i]
+                    if (linkCellAIsDead || linkCellBIsDead) continue
+
+                    val particleAIndex = cellEntity.getParticleIndex(linkCellA)
+                    val particleBIndex = cellEntity.getParticleIndex(linkCellB)
+
+                    back.cellA[writeIndex] = particleEntity.positionInAlive[particleAIndex]
+                    back.cellB[writeIndex] = particleEntity.positionInAlive[particleBIndex]
+
+                    back.isNeuralDirected[writeIndex] = -1
+
+                    writeIndex++
+                }
+            }
+
+            back.renderLinkAmount = writeIndex
             linkFrontIndex.set(backIndex)
         }
 

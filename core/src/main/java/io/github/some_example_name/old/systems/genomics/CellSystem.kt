@@ -159,40 +159,6 @@ class CellSystem(
         }
     }
 
-    fun transportNeuralSignal(linkIndex: Int, linkCellA: Int, linkCellB: Int, threadId: Int) = with(cellEntity) {
-        if (linkEntity.isNeuronLink[linkIndex]) {
-            val directed = linkEntity.isLink1NeuralDirected[linkIndex]
-            val signalToCellIndex = if (directed) linkCellA else linkCellB
-            val signalFromCellIndex = if (directed) linkCellB else linkCellA
-
-            val neuronImpulseOutput = neuronImpulseOutput[signalFromCellIndex]
-
-            if (isNeural[signalToCellIndex]) {
-                if (getIsSum(signalToCellIndex)) {
-                    neuronImpulseInput[signalToCellIndex] += neuronImpulseOutput
-                } else {
-                    neuronImpulseInput[signalToCellIndex] *= neuronImpulseOutput
-                }
-            } else {
-                neuronImpulseInput[signalToCellIndex] += neuronImpulseOutput
-            }
-
-            //Добавление нейро-импульсов для мутировших в клетку нужндающующихся в нейролинках
-            if (command[linkCellA] == 0.toByte()) {
-                worldCommandsManager.worldCommandBuffer[threadId].push(
-                    type = WorldCommandType.ADD_NEURAL_CONNECTION,
-                    ints = intArrayOf(linkCellA, linkIndex)
-                )
-            }
-            if (command[linkCellB] == 0.toByte()) {
-                worldCommandsManager.worldCommandBuffer[threadId].push(
-                    type = WorldCommandType.ADD_NEURAL_CONNECTION,
-                    ints = intArrayOf(linkCellB, linkIndex)
-                )
-            }
-        }
-    }
-
     override fun dispose() {
 
     }

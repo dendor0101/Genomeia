@@ -7,6 +7,7 @@ import io.github.some_example_name.old.features.devsupport.SupportScreen
 import io.github.some_example_name.old.features.ecosystem.EcoSystemScreen
 import io.github.some_example_name.old.features.editor.GenomeEditorScreen
 import io.github.some_example_name.old.features.settings.SettingsScreen
+import io.github.some_example_name.old.features.simulation.SimulationScreen
 import io.github.some_example_name.old.features.worldeditor.WorldEditorScreen
 
 class NavigationCommandsManager {
@@ -28,7 +29,7 @@ class NavigationCommandsManager {
                     GoSupport -> SupportScreen()
                     EcoSystemScreenCellsSettings -> TODO()
                     EcoSystemScreenGlobalSettings -> TODO()
-                    is GoSimulation -> TODO()
+                    is GoSimulation -> SimulationScreen(navigationCommands.map, navigationCommands.genomeName)
                 }
             }
 

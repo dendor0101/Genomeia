@@ -18,11 +18,6 @@ class LinkEntity(
     var linksGeneration1 = IntArray(maxAmount) { -1 }
     var linksGeneration2 = IntArray(maxAmount) { -1 }
     var linksNaturalLength = FloatArray(maxAmount) { -10f }
-    var isNeuronLink = BooleanArray(maxAmount)
-    var isLink1NeuralDirected = BooleanArray(maxAmount)
-    var isStickyLink = BooleanArray(maxAmount) { false }
-    var isLongNeuralLink = BooleanArray(maxAmount) { false }
-    var color = IntArray(maxAmount)
     val linkIndexMap = UnorderedIntPairMap(100_000)
 
     var linkPhase = BooleanArray(maxAmount)
@@ -90,10 +85,6 @@ class LinkEntity(
         cellIndex: Int,
         otherCellIndex: Int,
         linksLength: Float,
-        isStickyLink: Boolean,
-        isNeuronLink: Boolean,
-        isLink1NeuralDirected: Boolean,
-        color: Int
     ): Int {
         val addLinkIndex = add()
 
@@ -103,30 +94,11 @@ class LinkEntity(
         linksGeneration2[addLinkIndex] = cellEntity.getGeneration(otherCellIndex)
 
         this.linksNaturalLength[addLinkIndex] = linksLength
-        this.isNeuronLink[addLinkIndex] = isNeuronLink
-        this.isLink1NeuralDirected[addLinkIndex] = isLink1NeuralDirected
-        this.isStickyLink[addLinkIndex] = isStickyLink
-        this.color[addLinkIndex] = color
-
-        isLongNeuralLink[addLinkIndex] = linksLength <= 0
 
         cellEntity.linkAmount[cellIndex] ++
         cellEntity.linkAmount[otherCellIndex] ++
 
         linkIndexMap.put(cellIndex, otherCellIndex, addLinkIndex)
-
-        if (isNeuronLink) {
-            with(cellEntity) {
-                val cellA = cellList[cellType[cellIndex].toInt()]
-                val cellB = cellList[cellType[otherCellIndex].toInt()]
-                if (cellA.doesNeedNeuralConnections) {
-                    addNeuralConnection(cellIndex, addLinkIndex)
-                }
-                if (cellB.doesNeedNeuralConnections) {
-                    addNeuralConnection(otherCellIndex, addLinkIndex)
-                }
-            }
-        }
 
         return addLinkIndex
     }
@@ -140,12 +112,6 @@ class LinkEntity(
 
             linkIndexMap.remove(cellA, cellB)
 
-            if (isNeuronLink[linkIndex]) {
-                val cellIndex = if (isLink1NeuralDirected[linkIndex]) cellA else cellB
-                cellEntity.neuronImpulseInput[cellIndex] = 0f
-                cellEntity.neuronImpulseOutput[cellIndex] = 0f
-            }
-
             cellEntity.linkAmount[cellA] --
             cellEntity.linkAmount[cellB] --
 
@@ -155,14 +121,6 @@ class LinkEntity(
             linksGeneration2[linkIndex] = -1
 
             linksNaturalLength[linkIndex] = -10f
-            isNeuronLink[linkIndex] = false
-            isLink1NeuralDirected[linkIndex] = false
-            isStickyLink[linkIndex] = false
-            isLongNeuralLink[linkIndex] = false
-            color[linkIndex] = 0
-
-            cellEntity.removeNeuralConnection(cellA, linkIndex)
-            cellEntity.removeNeuralConnection(cellB, linkIndex)
         }
     }
 
@@ -209,11 +167,6 @@ class LinkEntity(
         linksGeneration1.clear(-1)
         linksGeneration2.clear(-1)
         linksNaturalLength.clear(-10f)
-        isNeuronLink.clear(false)
-        isLink1NeuralDirected.clear(false)
-        isStickyLink.clear(false)
-        isLongNeuralLink.clear(false)
-        color.clear()
         linkIndexMap.clear()
         linkPhase.clear(false)
         assignedThread.clear(-1)
@@ -226,11 +179,6 @@ class LinkEntity(
         linksGeneration1 = linksGeneration1.resize(-1)
         linksGeneration2 = linksGeneration2.resize(-1)
         linksNaturalLength = linksNaturalLength.resize(-10f)
-        isNeuronLink = isNeuronLink.resize(false)
-        isLink1NeuralDirected = isLink1NeuralDirected.resize(false)
-        isStickyLink = isStickyLink.resize(false)
-        isLongNeuralLink = isLongNeuralLink.resize(false)
-        color = color.resize()
         linkPhase = linkPhase.resize(false)
         assignedThread = assignedThread.resize(-1)
         linkToListPosition = linkToListPosition.resize(-1)

@@ -4,6 +4,7 @@ import io.github.some_example_name.old.cells.Cell
 import io.github.some_example_name.old.cells.SpecialModData
 import io.github.some_example_name.old.core.DISimulationContainer.cellsSettings
 import io.github.some_example_name.old.core.SubstrateSettings
+import io.github.some_example_name.old.core.utils.OrderedIntPairMap
 import io.github.some_example_name.old.systems.genomics.genome.CellAction
 import io.github.some_example_name.old.systems.simulation.SimulationData
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
@@ -71,7 +72,9 @@ class CellEntity(
     var pheromoneType = IntArray(maxAmount) { -1 }
     var linkAmount = IntArray(maxAmount) { 0 }
     var command = ByteArray(maxAmount) { -1 }
+    //Что бы не делать 2 структуры сделал та, что для длинных нейро-линков будет отрицательный индекс
     var neuralConnections = Int2ObjectOpenHashMap<IntArrayList>()
+    @Transient val organToIdToIndex = OrderedIntPairMap(maxAmount)
 
     fun addNeuralConnection(cellIndex: Int, targetNeuralIndex: Int) {
         val list = neuralConnections[cellIndex] ?: IntArrayList(4).also {
@@ -227,12 +230,15 @@ class CellEntity(
             specialModData = specialModData
         )
 
+        organToIdToIndex.put(organIndex, cellGenomeId, cellIndex)
+
         return cellIndex
     }
 
     fun deleteCell(cellIndex: Int) {
         delete(cellIndex)
 
+        organToIdToIndex.remove(organIndex[cellIndex], cellGenomeId[cellIndex])
         particleEntity.deleteParticle(particleIndexes[cellIndex])
         particleIndexes[cellIndex] = -1
 
@@ -276,6 +282,7 @@ class CellEntity(
 
     override fun onPaste() {
 
+        //TODO map_save востанвить по данным - organToIdToIndex
     }
 
     override fun onClear(bound: Int) {
@@ -307,6 +314,7 @@ class CellEntity(
         linkAmount.clear(0)
         command.clear(-1)
         neuralConnections.clear()
+        organToIdToIndex.clear()
     }
 
     override fun onResize(oldMax: Int) {

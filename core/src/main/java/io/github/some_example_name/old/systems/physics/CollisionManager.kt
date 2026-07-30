@@ -39,7 +39,7 @@ class CollisionManager(
                     holderEntityIndex[particleAId],
                     holderEntityIndex[particleBId]
                 )
-                if (linkIndex != -1 && !linkEntity.isLongNeuralLink[linkIndex]) {
+                if (linkIndex != -1) {
                     return@with
                 }
             }

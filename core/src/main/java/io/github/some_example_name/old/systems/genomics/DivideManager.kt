@@ -5,7 +5,6 @@ import io.github.some_example_name.old.cells.Cell
 import io.github.some_example_name.old.cells.Zygote
 import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.commands.WorldCommandsManager
-import io.github.some_example_name.old.core.utils.collectParticles
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.systems.physics.CollisionManager.Companion.PARTICLE_MAX_RADIUS
@@ -132,54 +131,46 @@ class DivideManager(
             }
 
             if (action.physicalLinkMirroredForCell.isNotEmpty()) {
-                val gridX = x.toInt()
-                val gridY = y.toInt()
-                val closestCells = gridManager.collectParticles(gridX, gridY)
-                val idToIndexAssociation = closestCells
-                        .filter { particleEntity.isCell[it] }
-                        .map { particleEntity.holderEntityIndex[it] }
-                        .filter { organIndex[it] == organIndex[index]}
-                        .associateBy { this.cellGenomeId[it] }
-
                 action.physicalLinkMirroredForCell.forEach { (cellGenomeIdToConnectWith, linkData) ->
-                    val otherCellIndex = idToIndexAssociation[cellGenomeIdToConnectWith]
+                    val otherCellIndex = organToIdToIndex.get(organIndex[index], cellGenomeIdToConnectWith)
                     if (linkData != null) {
-
                         val cellIndex: Int = -1
                         val linksLength: Float = linkData.length ?: -1f
-                        val degreeOfShortening: Float = 1f
-                        val isStickyLink: Boolean = false
                         val isNeuronLink: Boolean = linkData.isNeuronal
                         val isLink1NeuralDirected: Boolean = linkData.directedNeuronLink == action.id
                         val linkColor = (linkData.color ?: if (linkData.isNeuronal) Color.CYAN else Color.RED).toIntBits()
 
-                        if (otherCellIndex != null) {
-                            if (linkData.isNeuronal && linkData.directedNeuronLink != action.id
-                                && linkData.directedNeuronLink != cellGenomeIdToConnectWith
-                            ) {
-                                throw Exception("Incorrect logic in the neural-link")
+                        if (otherCellIndex != -1) {
+                            if (!isNeuronLink) {
+                                worldCommandsManager.worldCommandBuffer[threadId].push(
+                                    type = WorldCommandType.ADD_LINK,
+                                    floats = floatArrayOf(linksLength),
+                                    ints = intArrayOf(cellIndex, otherCellIndex)
+                                )
+                            } else {
+                                worldCommandsManager.worldCommandBuffer[threadId].push(
+                                    type = WorldCommandType.ADD_NEURAL_LINK,
+                                    booleans = booleanArrayOf(isLink1NeuralDirected),
+                                    ints = intArrayOf(cellIndex, otherCellIndex, linkColor)
+                                )
                             }
-
-                            worldCommandsManager.worldCommandBuffer[threadId].push(
-                                type = WorldCommandType.ADD_LINK,
-                                booleans = booleanArrayOf(
-                                    isStickyLink,
-                                    isNeuronLink,
-                                    isLink1NeuralDirected
-                                ),
-                                floats = floatArrayOf(linksLength, degreeOfShortening),
-                                ints = intArrayOf(cellIndex, otherCellIndex, linkColor)
-                            )
                         } else {
                             val cellId: Int = cellGenomeId
                             val otherCellId: Int = cellGenomeIdToConnectWith
 
-                            worldCommandsManager.worldCommandSecondBuffer[threadId].push(
-                                type = WorldCommandType.ADD_LINK_BY_ID,
-                                booleans = booleanArrayOf(isNeuronLink, isLink1NeuralDirected),
-                                floats = floatArrayOf(linksLength),
-                                ints = intArrayOf(cellId, otherCellId, parentOrganIndex, linkColor)
-                            )
+                            if (!isNeuronLink) {
+                                worldCommandsManager.worldCommandSecondBuffer[threadId].push(
+                                    type = WorldCommandType.ADD_LINK_BY_ID,
+                                    floats = floatArrayOf(linksLength),
+                                    ints = intArrayOf(cellId, otherCellId, parentOrganIndex)
+                                )
+                            } else {
+                                worldCommandsManager.worldCommandSecondBuffer[threadId].push(
+                                    type = WorldCommandType.ADD_NEURAL_LINK_BY_ID,
+                                    booleans = booleanArrayOf(isLink1NeuralDirected),
+                                    ints = intArrayOf(cellId, otherCellId, parentOrganIndex, linkColor)
+                                )
+                            }
                         }
                     }
                 }

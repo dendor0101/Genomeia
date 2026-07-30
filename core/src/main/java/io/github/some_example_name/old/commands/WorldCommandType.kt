@@ -1,20 +1,44 @@
 package io.github.some_example_name.old.commands
 
-enum class WorldCommandType(val intParamsCount: Int, val floatParamsCount: Int, val booleanParamsCount: Int) {
+enum class WorldCommandType(
+    val intParamsCount: Int,
+    val floatParamsCount: Int,
+    val booleanParamsCount: Int
+) {
     ADD_CELL(
         intParamsCount = 9,
         floatParamsCount = 11,
         booleanParamsCount = 2
     ),
     ADD_LINK(
-        intParamsCount = 3,
-        floatParamsCount = 2,
-        booleanParamsCount = 3
+        intParamsCount = 2,
+        floatParamsCount = 1,
+        booleanParamsCount = 0
     ),
     ADD_LINK_BY_ID(
-        intParamsCount = 4,
+        intParamsCount = 3,
         floatParamsCount = 1,
-        booleanParamsCount = 2
+        booleanParamsCount = 0
+    ),
+    DELETE_LINK( // linkIndex
+        intParamsCount = 2,
+        floatParamsCount = 0,
+        booleanParamsCount = 0
+    ),
+    ADD_NEURAL_LINK(
+        intParamsCount = 3,
+        floatParamsCount = 0,
+        booleanParamsCount = 1
+    ),
+    ADD_NEURAL_LINK_BY_ID(
+        intParamsCount = 4,
+        floatParamsCount = 0,
+        booleanParamsCount = 1
+    ),
+    DELETE_NEURAL_LINK(
+        intParamsCount = 2,
+        floatParamsCount = 0,
+        booleanParamsCount = 0
     ),
     ADD_SUBSTANCE(
         intParamsCount = 2, //color, subType
@@ -56,16 +80,12 @@ enum class WorldCommandType(val intParamsCount: Int, val floatParamsCount: Int, 
         floatParamsCount = 0,
         booleanParamsCount = 0
     ),
-    DELETE_LINK( // linkIndex
-        intParamsCount = 2,
-        floatParamsCount = 0,
-        booleanParamsCount = 0
-    ),
     DELETE_PARTICLE( // particleIndex
         intParamsCount = 2,
         floatParamsCount = 0,
         booleanParamsCount = 0
     ),
+
     /*
     * EN: A counter for all living cells of the organism that are supposed to divide/mutate
     * in the current stage. This is needed so the stage doesn’t stall if some cell

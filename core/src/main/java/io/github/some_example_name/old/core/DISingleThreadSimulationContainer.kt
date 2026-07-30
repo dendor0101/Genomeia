@@ -11,6 +11,7 @@ import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.EyeEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.NeuralEntity
+import io.github.some_example_name.old.entities.NeuralLinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.entities.PheromoneEmitterEntity
@@ -24,6 +25,7 @@ import io.github.some_example_name.old.features.worldeditor.WorldTerrainManager
 import io.github.some_example_name.old.systems.genomics.CellSystem
 import io.github.some_example_name.old.systems.genomics.DivideManager
 import io.github.some_example_name.old.systems.genomics.MutateManager
+import io.github.some_example_name.old.systems.genomics.NeuralLinkManager
 import io.github.some_example_name.old.systems.genomics.OrganManager
 import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.pheromone.PheromonesManager
@@ -113,6 +115,11 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
         particleEntity = particleEntity,
         diContext = this
     )
+    override val neuralLinkEntity = NeuralLinkEntity(
+        150,
+        cellEntity = cellEntity,
+        isEditor = false
+    )
     override val pheromoneEntity = PheromoneEntity(
         gridManager = gridManager
     )
@@ -132,6 +139,7 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
         specialEntity,
         cellEntity,
         linkEntity,
+        neuralLinkEntity,
         pheromoneEntity,
         substancesEntity,
         producerEntity,
@@ -156,7 +164,8 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
         linkEntity = linkEntity,
         cellList = cellList,
         specialEntity = specialEntity,
-        pheromoneEntity = pheromoneEntity
+        pheromoneEntity = pheromoneEntity,
+        neuralLinkEntity = neuralLinkEntity
     )
 
     val renderSystem = RenderSystem(
@@ -186,6 +195,7 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
         organEntity = organEntity,
         cellEntity = cellEntity,
         linkEntity = linkEntity,
+        neuralLinkEntity = neuralLinkEntity,
         particleEntity = particleEntity,
         pheromoneEntity = pheromoneEntity,
         substrateSettings = substrateSettings,
@@ -240,6 +250,7 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
     val mutateManager = MutateManager(
         cellEntity = cellEntity,
         linkEntity = linkEntity,
+        neuralLinkEntity = neuralLinkEntity,
         worldCommandsManager = worldCommandsManager,
         particleEntity = particleEntity,
         gridManager = gridManager,
@@ -267,7 +278,14 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
         cellEntity = cellEntity,
         worldCommandsManager = worldCommandsManager,
         cellSystem = cellSystem,
+        simulationData = simulationData,
         diContext = this
+    )
+
+    val neuralLinkManager = NeuralLinkManager(
+        neuralLinkEntity = neuralLinkEntity,
+        worldCommandsManager = worldCommandsManager,
+        cellEntity = cellEntity
     )
 
     val movementManager = MovementManager(
@@ -288,8 +306,6 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
         substancesEntity = substancesEntity
     )
 
-//    var menuViewModel: MenuViewModel? = null
-
     val simulationSystem by lazy {
         SingleThreadSimulationSystem(
             gridManager = gridManager,
@@ -297,6 +313,8 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
             organManager = organManager,
             cellEntity = cellEntity,
             linkEntity = linkEntity,
+            neuralLinkEntity = neuralLinkEntity,
+            neuralLinkManager = neuralLinkManager,
             particleEntity = particleEntity,
             particlePhysicsSystem = particlePhysicsSystem,
             linkPhysicsSystem = linkPhysicsSystem,

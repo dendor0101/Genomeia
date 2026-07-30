@@ -42,6 +42,7 @@ class MenuScreen : VisDslScreen(
     private val menuViewModel = MenuViewModel()
 
     init {
+        println("MenuScreen init")
         menuViewModel.startMenuSimulation()
         menuViewModel.renderSystem.isRenderUi = false
 

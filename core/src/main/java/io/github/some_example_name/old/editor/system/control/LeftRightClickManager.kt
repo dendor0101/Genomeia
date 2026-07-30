@@ -7,7 +7,7 @@ import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.nextSta
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.previousCtrlClicked
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.uiScreenCommands
 import io.github.some_example_name.old.editor.entities.EditorCell
-import io.github.some_example_name.old.editor.entities.LinkReplay
+import io.github.some_example_name.old.editor.entities.NeuralLinkReplay
 import io.github.some_example_name.old.editor.system.CellSearchManager
 import io.github.some_example_name.old.editor.system.SymmetryManager
 import io.github.some_example_name.old.editor.system.command.CommandEditorStackManager
@@ -18,13 +18,16 @@ import io.github.some_example_name.old.editor.system.logic.ToEditorDataMapper
 import io.github.some_example_name.old.editor.system.simulation.EditorSimulationSystem
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
+import io.github.some_example_name.old.entities.NeuralLinkEntity
 
 class LeftRightClickManager(
     val commandEditorStackManager: CommandEditorStackManager,
     val editorSimulationSystem: EditorSimulationSystem,
-    val linkReplay: LinkReplay,
+//    val linkReplay: LinkReplay,
     val cellEntity: CellEntity,
     val linkEntity: LinkEntity,
+    val neuralLinkEntity: NeuralLinkEntity,
+    val neuralLinkReplay: NeuralLinkReplay,
     val symmetryManager: SymmetryManager,
     val cellSearchManager: CellSearchManager,
     val toEditorDataMapper: ToEditorDataMapper,
@@ -70,34 +73,38 @@ class LeftRightClickManager(
                 //Выполнение команды по созданию нейролинка
                 val cellFrom = toEditorDataMapper.mapToEditorData(previousCtrlClicked)
                 val cellTo = toEditorDataMapper.mapToEditorData(clickedIndex)
-                val linkIndex = linkEntity.linkIndexMap.get(previousCtrlClicked, clickedIndex)
+//                val linkIndex = linkEntity.linkIndexMap.get(previousCtrlClicked, clickedIndex)
+                var neuralLinkIndex = neuralLinkEntity.linkIndexMap.get(previousCtrlClicked, clickedIndex)
 
-                val isNeural = if (linkIndex != -1) {
-                    linkReplay.getLinkIsNeural(nextStageTick, linkIndex) ?: throw Exception()
-                } else false
+//                var isNeural = false
+                var isLink1NeuralDirected = false
+//                var isLongNeuralLink = false
 
-                val isLink1NeuralDirected = if (linkIndex != -1) {
-                    linkReplay.getIsLink1NeuralDirected(nextStageTick, linkIndex) ?: throw Exception()
-                } else false
+//                if (linkIndex != -1) {
+//                    resultLinkIndex = linkIndex
+//                    isNeural = linkReplay.getLinkIsNeural(nextStageTick, linkIndex) ?: throw Exception()
+//                    isLink1NeuralDirected = linkReplay.getIsLink1NeuralDirected(nextStageTick, linkIndex) ?: throw Exception()
+////                    isLongNeuralLink = false
+//                } else
 
-                val isLongNeuralLink = if (linkIndex != -1) {
-                    linkReplay.getIsLongNeuralLink(nextStageTick, linkIndex) ?: throw Exception()
-                } else true
+                if (neuralLinkIndex != -1 && neuralLinkReplay.isAlive(nextStageTick, neuralLinkIndex) == true) {
+//                    resultLinkIndex = neuralLinks
+//                    isNeural = true
+                    isLink1NeuralDirected = neuralLinkReplay.getIsLink1NeuralDirected(nextStageTick, neuralLinkIndex) ?: throw Exception()
+//                    isLongNeuralLink = true
+                } else {
+                    neuralLinkIndex = -1
+                }
+
                 commandEditorStackManager.executeCommand(
                     command = AddNeuralLinkCommand(
                         cellFrom = cellFrom,
                         cellTo = cellTo,
-                        isNeural = isNeural,
+//                        isNeural = isNeural,
                         isLink1NeuralDirected = isLink1NeuralDirected,
-                        isLongNeuralLink = isLongNeuralLink,
+//                        isLongNeuralLink = isLongNeuralLink,
                         color = linkColor,
-                        linkId = linkIndex,
-                        cellAId = if (linkIndex != -1) {
-                            cellEntity.cellGenomeId[linkEntity.links1[linkIndex]]
-                        } else cellFrom.id,
-                        cellBId = if (linkIndex != -1) {
-                            cellEntity.cellGenomeId[linkEntity.links2[linkIndex]]
-                        } else cellTo.id,
+                        linkIndex = neuralLinkIndex,
                         stageInstruction = genomeStageInstruction,
                         currentTick = currentTick
                     )

@@ -16,17 +16,18 @@ import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.previou
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.showPhysicalLink
 import io.github.some_example_name.old.editor.entities.CellReplay
 import io.github.some_example_name.old.editor.entities.LinkReplay
+import io.github.some_example_name.old.editor.entities.NeuralLinkReplay
 import io.github.some_example_name.old.editor.system.CellSearchManager
 import io.github.some_example_name.old.editor.system.SymmetryManager
 import io.github.some_example_name.old.editor.system.simulation.EditorSimulationSystem
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import kotlin.math.PI
-import kotlin.math.sqrt
 
 class DrawingHelperElements(
     val cellReplay: CellReplay,
-    val linkReplay: LinkReplay,
+//    val linkReplay: LinkReplay,
+    val neuralLinkReplay: NeuralLinkReplay,
     val cellEntity: CellEntity,
     val particleEntity: ParticleEntity,
     val symmetryManager: SymmetryManager,
@@ -79,65 +80,12 @@ class DrawingHelperElements(
             }
         }
 
-        linkReplay.forEachInTick(DIGenomeEditorContainer.nextStageTick) { isNeural, isLink1NeuralDirected, color, links1, links2, isLongNeuralLink ->
-            val cellA = links1
-            val cellB = links2
+//        linkReplay.forEachInTick(DIGenomeEditorContainer.nextStageTick) { links1, links2 ->
+//            drawLinks(false, false, 0, links1, links2)
+//        }
 
-            var isDrawLinkByDistance = true
-            if (DIGenomeEditorContainer.grabbedCellIndex != -1) {
-                if (DIGenomeEditorContainer.grabbedCellIndex == cellA || DIGenomeEditorContainer.grabbedCellIndex == cellB) {
-                    val dx = particleEntity.x[cellB] - particleEntity.x[cellA]
-                    val dy = particleEntity.y[cellB] - particleEntity.y[cellA]
-
-                    val radiusA = particleEntity.radius[cellA]
-                    val radiusB = particleEntity.radius[cellB]
-
-                    val r = radiusA + radiusB
-
-                    if (dx * dx + dy * dy > r * r) {
-                        isDrawLinkByDistance = false
-                    }
-                }
-            }
-
-            if (isDrawLinkByDistance) {
-                if (isNeural) {
-                    val colorOfLink = Color().also {
-                        val argb = color
-                        val rgba = ((argb shr 16) and 0xFF) or (argb and 0xFF00) or ((argb shl 16) and 0xFF0000) or (argb and -0x1000000)
-                        Color.argb8888ToColor(it,  rgba)
-                    }
-                    shapeRenderer.color = colorOfLink
-                    if (isLink1NeuralDirected) {
-                        shapeRenderer.drawTriangleMiddle(
-                            particleEntity.x[cellB],
-                            particleEntity.y[cellB],
-                            particleEntity.x[cellA],
-                            particleEntity.y[cellA],
-                            0.1f
-                        )
-                    } else {
-                        shapeRenderer.drawTriangleMiddle(
-                            particleEntity.x[cellA],
-                            particleEntity.y[cellA],
-                            particleEntity.x[cellB],
-                            particleEntity.y[cellB],
-                            0.1f
-                        )
-                    }
-                } else {
-                    shapeRenderer.color = Color.RED
-                }
-
-                if (showPhysicalLink || isNeural) {
-                    shapeRenderer.line(
-                        particleEntity.x[cellB],
-                        particleEntity.y[cellB],
-                        particleEntity.x[cellA],
-                        particleEntity.y[cellA]
-                    )
-                }
-            }
+        neuralLinkReplay.forEachInTick(DIGenomeEditorContainer.nextStageTick) { isLink1NeuralDirected, color, links1, links2 ->
+            drawLinks(true, isLink1NeuralDirected, color, links1, links2)
         }
 
         cellReplay.forEachInTick(currentTick) { cellType, index, cellGenomeId, angleCos, angleSin, color ->
@@ -229,35 +177,13 @@ class DrawingHelperElements(
 
             shapeRenderer.color = Color.CYAN
             shapeRenderer.circle(x, y,  0.125f, 32)
-            shapeRenderer.circle(x, y,  3.0f, 64)
-
-            val dx = touchedCellX - x
-            val dy = touchedCellY - y
-
-            val dist = sqrt(dx * dx + dy * dy)
-
-            val maxDist = 3f
 
             shapeRenderer.color = linkColor
-
-            var endX = touchedCellX
-            var endY = touchedCellY
-
-            if (dist > maxDist) {
-                val scale = maxDist / dist
-                val clampedX = x + dx * scale
-                val clampedY = y + dy * scale
-
-                shapeRenderer.line(x, y, clampedX, clampedY)
-                endX = clampedX
-                endY = clampedY
-            } else {
-                shapeRenderer.line(x, y, touchedCellX, touchedCellY)
-            }
+            shapeRenderer.line(x, y, touchedCellX, touchedCellY)
 
             val clickedCell = cellSearchManager.getClickedCellIndex(
-                clickX = endX,
-                clickY = endY
+                clickX = touchedCellX,
+                clickY = touchedCellY
             )
 
             if (clickedCell != null) {
@@ -271,5 +197,70 @@ class DrawingHelperElements(
         }
 
         shapeRenderer.end()
+    }
+
+    fun drawLinks(
+        isNeural: Boolean,
+        isLink1NeuralDirected: Boolean,
+        color: Int,
+        cellA: Int,
+        cellB: Int
+    ) {
+
+        var isDrawLinkByDistance = true
+        if (DIGenomeEditorContainer.grabbedCellIndex != -1) {
+            if (DIGenomeEditorContainer.grabbedCellIndex == cellA || DIGenomeEditorContainer.grabbedCellIndex == cellB) {
+                val dx = particleEntity.x[cellB] - particleEntity.x[cellA]
+                val dy = particleEntity.y[cellB] - particleEntity.y[cellA]
+
+                val radiusA = particleEntity.radius[cellA]
+                val radiusB = particleEntity.radius[cellB]
+
+                val r = radiusA + radiusB
+
+                if (dx * dx + dy * dy > r * r) {
+                    isDrawLinkByDistance = false
+                }
+            }
+        }
+
+        if (isDrawLinkByDistance) {
+            if (isNeural) {
+                val colorOfLink = Color().also {
+                    val argb = color
+                    val rgba = ((argb shr 16) and 0xFF) or (argb and 0xFF00) or ((argb shl 16) and 0xFF0000) or (argb and -0x1000000)
+                    Color.argb8888ToColor(it,  rgba)
+                }
+                shapeRenderer.color = colorOfLink
+                if (isLink1NeuralDirected) {
+                    shapeRenderer.drawTriangleMiddle(
+                        particleEntity.x[cellB],
+                        particleEntity.y[cellB],
+                        particleEntity.x[cellA],
+                        particleEntity.y[cellA],
+                        0.1f
+                    )
+                } else {
+                    shapeRenderer.drawTriangleMiddle(
+                        particleEntity.x[cellA],
+                        particleEntity.y[cellA],
+                        particleEntity.x[cellB],
+                        particleEntity.y[cellB],
+                        0.1f
+                    )
+                }
+            } else {
+                shapeRenderer.color = Color.RED
+            }
+
+            if (showPhysicalLink || isNeural) {
+                shapeRenderer.line(
+                    particleEntity.x[cellB],
+                    particleEntity.y[cellB],
+                    particleEntity.x[cellA],
+                    particleEntity.y[cellA]
+                )
+            }
+        }
     }
 }

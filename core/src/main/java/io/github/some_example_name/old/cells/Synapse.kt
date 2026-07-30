@@ -27,38 +27,40 @@ class Synapse(cellTypeId: Int): Cell(
     //Бинарная активация
     //Пока что очень костыльная клетка, но нужна в качестве эксперимента
 
-    override fun doOnTick(cellIndex: Int, threadId: Int) = with(cellEntity) {
+    override fun doOnTick(cellIndex: Int, threadId: Int): Unit = with(cellEntity) {
+        return
         val learningRate = if (getB(cellIndex) <= 0) 0.01f else getB(cellIndex) // b
         val depression = if (getC(cellIndex) <= 0) 0.008f else getC(cellIndex) // c
 
         var weight = getWeight(cellIndex)
 
         val neuralLinks = getNeuralLinks(cellIndex)
+        println("Synapse ${neuralLinks.size}")
 
         if (neuralLinks.size != 2) {
             neuronImpulseOutput[cellIndex] = 0f
             return
         }
 
-        var inputSignalCellRed = -1
+//        var inputSignalCellRed = -1
         var outputSignalCellPain = -1
 
         neuralLinks.forEach { linkIndex ->
-            val linkCell1 = linkEntity.links1[linkIndex]
-            val linkCell2 = linkEntity.links2[linkIndex]
+            val normalLinkIndex = abs(linkIndex + 1)
+            val linkCell1 = neuralLinkEntity.links1[normalLinkIndex]
+            val linkCell2 = neuralLinkEntity.links2[normalLinkIndex]
 
-            val directed = linkEntity.isLink1NeuralDirected[linkIndex]
+            val directed = neuralLinkEntity.isLink1NeuralDirected[normalLinkIndex]
             val signalToCellIndex = if (directed) linkCell1 else linkCell2
             val signalFromCellIndex = if (directed) linkCell2 else linkCell1
 
-            if (cellIndex == signalToCellIndex) inputSignalCellRed = signalFromCellIndex
             if (cellIndex == signalFromCellIndex) outputSignalCellPain = signalToCellIndex
         }
 
-        if (cellList[cellType[inputSignalCellRed].toInt()] !is Neuron){
-            neuronImpulseOutput[cellIndex] = 0f
-            return
+        if (outputSignalCellPain == -1) {
+            println("Synapse error ${ organEntity.genomeIndex[cellEntity.organIndex[cellIndex]] } - ${neuralLinks.size}")
         }
+
         if (cellList[cellType[outputSignalCellPain].toInt()] !is Neuron){
             neuronImpulseOutput[cellIndex] = 0f
             return
@@ -75,10 +77,12 @@ class Synapse(cellTypeId: Int): Cell(
             500 // fallback к старому значению если параметры некорректны
         }
 
-        val (redSpikeTick, isRedJustSpiked) = spikeRed(cellIndex, neuronImpulseOutput[inputSignalCellRed], fullDepressionTicks)
-        val (painSpikeTick, isPainJustSpiked) = spikePain(cellIndex, neuronImpulseOutput[outputSignalCellPain] - neuronImpulseOutput[inputSignalCellRed] * weight, fullDepressionTicks)
+        val inputSignal = neuronImpulseInput[cellIndex]
+
+        val (redSpikeTick, isRedJustSpiked) = spikeRed(cellIndex, inputSignal, fullDepressionTicks)
+        val (painSpikeTick, isPainJustSpiked) = spikePain(cellIndex, neuronImpulseOutput[outputSignalCellPain] - inputSignal * weight, fullDepressionTicks)
         if (redSpikeTick < 0f || painSpikeTick < 0f) {
-            neuronImpulseOutput[cellIndex] = weight * neuronImpulseOutput[inputSignalCellRed]
+            neuronImpulseOutput[cellIndex] = weight * inputSignal
             return
         }
 
@@ -104,7 +108,7 @@ class Synapse(cellTypeId: Int): Cell(
             }
         }
 
-        neuronImpulseOutput[cellIndex] = weight * neuronImpulseOutput[inputSignalCellRed]
+        neuronImpulseOutput[cellIndex] = weight * inputSignal
     }
 
     fun spikeRed(cellIndex: Int, redSignal: Float, fullDepressionTicks: Int): Pair<Int, Boolean> = with(cellEntity) {

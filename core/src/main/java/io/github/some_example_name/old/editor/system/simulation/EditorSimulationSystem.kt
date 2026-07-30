@@ -81,6 +81,7 @@ class EditorSimulationSystem(
     }
 
     fun simulate() {
+        maxCellId = 0
         mapCellGenomeIdToIndex.clear()
         gridManager.clearAll()
         entityList.forEach { it.clear() }

@@ -7,10 +7,12 @@ import io.github.some_example_name.old.core.DIContext
 import io.github.some_example_name.old.core.DISimulationContainer.linkMaxLength2
 import io.github.some_example_name.old.core.DISimulationContainer.threadManager
 import io.github.some_example_name.old.core.SubstrateSettings
+import io.github.some_example_name.old.core.utils.invSqrt
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.systems.genomics.CellSystem
+import io.github.some_example_name.old.systems.simulation.SimulationData
 import it.unimi.dsi.fastutil.ints.IntArrayList
 import kotlin.math.sqrt
 
@@ -21,15 +23,17 @@ class LinkPhysicsSystem(
     val cellEntity: CellEntity,
     val cellSystem: CellSystem,
     val worldCommandsManager: WorldCommandsManager,
-    val diContext: DIContext
+    val diContext: DIContext,
+    val simulationData: SimulationData
 ) {
 
     fun iterateLinksInParallel() {
-        processPhase(worldCommandsManager.oddLinkLists)
-        processPhase(worldCommandsManager.evenLinkLists)
+        val isEnergy = simulationData.tickCounter % 3 == 0
+        processPhase(worldCommandsManager.oddLinkLists, isEnergy)
+        processPhase(worldCommandsManager.evenLinkLists, isEnergy)
     }
 
-    private fun processPhase(lists: Array<IntArrayList>) {
+    private fun processPhase(lists: Array<IntArrayList>, isEnergy: Boolean) {
         threadManager.futures.clear()
         for (t in 0 until diContext.threadCount) {
             threadManager.futures.add(
@@ -37,7 +41,7 @@ class LinkPhysicsSystem(
                     val list = lists[t]
                     for (i in list.indices) {
                         val linkIndex = list.getInt(i)
-                        processLink(linkIndex,t)
+                        processLink(linkIndex, isEnergy, t)
                     }
                 }
             )
@@ -46,7 +50,7 @@ class LinkPhysicsSystem(
         threadManager.futures.clear()
     }
 
-    fun processLink(linkIndex: Int, threadId: Int = 0) = with(particleEntity) {
+    fun processLink(linkIndex: Int, isEnergy: Boolean, threadId: Int = 0) = with(particleEntity) {
         with(cellEntity) {
             with(linkEntity) {
                 val linkCellA = links1[linkIndex]
@@ -79,20 +83,8 @@ class LinkPhysicsSystem(
                 val dy = y[linkParticleA] - y[linkParticleB]
                 val distanceSquared = dx * dx + dy * dy
 
-                if (isLongNeuralLink[linkIndex]) {
-                    if (distanceSquared > 16) {
-                        worldCommandsManager.worldCommandBuffer[threadId].push(
-                            type = WorldCommandType.DELETE_LINK,
-                            ints = intArrayOf(linkIndex, linkEntity.getGeneration(linkIndex))
-                        )
-                        return@with
-                    }
-                    cellSystem.transportNeuralSignal(linkIndex, linkCellA, linkCellB, threadId)
-                    return@with
-                }
+                if (isEnergy) cellSystem.transportEnergy(linkCellA, linkCellB)
 
-                cellSystem.transportEnergy(linkCellA, linkCellB)
-                cellSystem.transportNeuralSignal(linkIndex, linkCellA, linkCellB, threadId)
                 val parentCellA = parentIndex[linkCellA]
                 val parentCellB = parentIndex[linkCellB]
                 if (linkCellA == parentCellB) {
@@ -120,17 +112,17 @@ class LinkPhysicsSystem(
                 val stiffness = 2 * stiffnessA * stiffnessB / (stiffnessA + stiffnessB)
 
                 if (distanceSquared < 0) throw Exception("distanceSquared < 0, distanceSquared = $distanceSquared")
-                val dist = sqrt(distanceSquared)
+                val invDist = invSqrt(distanceSquared)
+                val dist = distanceSquared * invDist
+
+                val dirX = dx * invDist
+                val dirY = dy * invDist
 
                 val degreeOfShorteningA = degreeOfShortening[linkCellA]
                 val degreeOfShorteningB = degreeOfShortening[linkCellB]
-                val degreeOfShortening = 2 * degreeOfShorteningA * degreeOfShorteningB / (degreeOfShorteningA + degreeOfShorteningB)
+                val degreeOfShortening = 2f * degreeOfShorteningA * degreeOfShorteningB / (degreeOfShorteningA + degreeOfShorteningB)
 
                 val force = (dist - linksNaturalLength[linkIndex] * degreeOfShortening) * stiffness
-
-                val dirX = dx / dist
-                val dirY = dy / dist
-
                 // Spring dampening
                 val dvx = vx[linkParticleA] - vx[linkParticleB]
                 val dvy = vy[linkParticleA] - vy[linkParticleB]

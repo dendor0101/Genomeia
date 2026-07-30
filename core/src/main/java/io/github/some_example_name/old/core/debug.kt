@@ -6,7 +6,7 @@ import com.badlogic.gdx.utils.JsonWriter
 val json = Json().apply { setOutputType(JsonWriter.OutputType.json) }
 
 fun <T> prettyPrint(objectToPrint: T) {
-    println(json.prettyPrint(objectToPrint))
+    println(json.prettyPrint(objectToPrint, 120))
 }
 
 fun <T> printObjectMemoryAddress(objectToPrint: T) {

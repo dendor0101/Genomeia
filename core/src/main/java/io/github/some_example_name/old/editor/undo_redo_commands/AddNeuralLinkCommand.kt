@@ -1,6 +1,7 @@
 package io.github.some_example_name.old.editor.undo_redo_commands
 
 import com.badlogic.gdx.graphics.Color
+import io.github.some_example_name.old.core.prettyPrint
 import io.github.some_example_name.old.editor.entities.EditorCell
 import io.github.some_example_name.old.systems.genomics.genome.Action
 import io.github.some_example_name.old.systems.genomics.genome.CellAction
@@ -10,13 +11,11 @@ import io.github.some_example_name.old.systems.genomics.genome.LinkData
 class AddNeuralLinkCommand(
     val cellFrom: EditorCell,
     val cellTo: EditorCell,
-    val isNeural: Boolean,
-    val isLongNeuralLink: Boolean,
+//    val isNeural: Boolean,
+//    val isLongNeuralLink: Boolean,
     val color: Color,
-    val linkId: Int,
+    val linkIndex: Int,
     val isLink1NeuralDirected: Boolean,
-    val cellAId: Int,
-    val cellBId: Int,
     stageInstruction: MutableList<GenomeStage>,
     currentTick: Int
 ) : UndoRedoCommand(
@@ -28,20 +27,20 @@ class AddNeuralLinkCommand(
     override fun execute(): StageResult {
         val stage = genomeStageInstruction[tick]
 
-        // === 1. Определяем, что делать со связью (добавить / изменить / удалить) ===
+        // === 1. Определяем, что делать со связью (добавить / удалить) ===
         val linkData: LinkData? = when {
-            linkId == -1 && isLongNeuralLink -> LinkData(
+            linkIndex == -1 -> LinkData(
                 isNeuronal = true,
                 directedNeuronLink = cellTo.id,
                 color = color
             )
-            linkId != -1 && isLongNeuralLink -> null // удаляем длинный нейро-линк
-            isNeural -> LinkData(isNeuronal = false, directedNeuronLink = null)
-            else -> LinkData(
-                isNeuronal = true,
-                directedNeuronLink = cellTo.id,
-                color = color
-            )
+            else -> null // удаляем нейро-линк
+//            isNeural -> LinkData(isNeuronal = false, directedNeuronLink = null)
+//            else -> LinkData(
+//                isNeuronal = true,
+//                directedNeuronLink = cellTo.id,
+//                color = color
+//            )
         }
 
         // === 2. Основная логика обновления ===
@@ -95,9 +94,9 @@ class AddNeuralLinkCommand(
                 var targetParentId = cellFrom.id
                 var otherCellId = cellTo.id
 
-                if (isNeural) {
-                    targetParentId = if (isLink1NeuralDirected) cellBId else cellAId
-                    otherCellId = if (isLink1NeuralDirected) cellAId else cellBId
+                if (linkIndex != -1) {
+                    targetParentId = if (isLink1NeuralDirected) cellTo.id else cellFrom.id
+                    otherCellId = if (isLink1NeuralDirected) cellFrom.id else cellTo.id
                 }
 
                 val oldAction = stage.cellActions[targetParentId]
@@ -123,9 +122,9 @@ class AddNeuralLinkCommand(
                     (oldMutate ?: Action()).copy(physicalLink = newLinks)
                 }
 
-                val newAction = when {
-                    newMutate == null && oldAction?.divide == null -> null
-                    newMutate == null -> oldAction?.copy(mutate = null)
+                val newAction = when (newMutate) {
+                    null if oldAction?.divide == null -> null
+                    null -> oldAction?.copy(mutate = null)
                     else -> (oldAction ?: CellAction()).copy(mutate = newMutate)
                 }
 

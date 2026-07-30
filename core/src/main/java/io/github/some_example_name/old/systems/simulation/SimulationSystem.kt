@@ -7,6 +7,7 @@ import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.Entity
 import io.github.some_example_name.old.entities.LinkEntity
+import io.github.some_example_name.old.entities.NeuralLinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.entities.PheromoneEntity
@@ -19,6 +20,7 @@ import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem
 import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem
 import io.github.some_example_name.old.systems.render.RenderBufferManager
 import io.github.some_example_name.old.features.worldeditor.WorldTerrainManager
+import io.github.some_example_name.old.systems.genomics.NeuralLinkManager
 import io.github.some_example_name.old.systems.physics.MovementManager
 
 class SimulationSystem(
@@ -28,6 +30,8 @@ class SimulationSystem(
     val organEntity: OrganEntity,
     val cellEntity: CellEntity,
     val linkEntity: LinkEntity,
+    val neuralLinkEntity: NeuralLinkEntity,
+    val neuralLinkManager: NeuralLinkManager,
     val particleEntity: ParticleEntity,
     val pheromoneEntity: PheromoneEntity,
     val substrateSettings: SubstrateSettings,
@@ -71,6 +75,9 @@ class SimulationSystem(
         simulationData.timeSimulation += DELTA_SIM_TICK_TIME
 
         linkPhysicsSystem.iterateLinksInParallel()
+
+        neuralLinkManager.iterate()
+
         processParticleCollision()
         cellSystem.iterateCellInParallel()
         pheromonesManager.iterate()
