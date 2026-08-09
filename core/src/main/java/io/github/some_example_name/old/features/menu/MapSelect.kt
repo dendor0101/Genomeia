@@ -135,22 +135,14 @@ class MapSelect(
                         val old = DIGameGlobalContainer.game.screen
                         old.dispose()
 
-                        // 1. Загружаем данные сущностей (без привязок)
-                        //DISimulationContainer.gridManager.clearAll()
-                        DISimulationContainer.cellEntity.clear()
-                        DISimulationContainer.specialEntity.clear()
-                        DISimulationContainer.substancesEntity.clear()
-                        DISimulationContainer.specialModDataEntity.clear()
-                        DISimulationContainer.tailEntity.clear()
-                        DISimulationContainer.eyeEntity.clear()
-                        DISimulationContainer.linkEntity.clear()
-                        DISimulationContainer.neuralEntity.clear()
-                        DISimulationContainer.organEntity.clear()
-                        DISimulationContainer.particleEntity.clear()
-                        DISimulationContainer.pheromoneEntity.clear()
-                        DISimulationContainer.pheromoneEntity.clear()
-                        DISimulationContainer.producerEntity.clear()
-                        DISimulationContainer.pheromoneEmitterEntity.clear()
+                        // 1. Полный сброс мира перед загрузкой.
+                        // Чистить сущности недостаточно: частицы прошлой сессии остаются
+                        // зарегистрированными в GridManager, а restoreGridManager() ниже добавляет
+                        // те же индексы повторно. Тогда в одной ячейке сетки индекс встречается
+                        // дважды, repulse(i, i) получает dx = dy = 0 и все деления на distance
+                        // дают NaN, который расползается по всему миру.
+                        // dispose() чистит сетку, все сущности из entityList, буферы команд и simulationData.
+                        DISimulationContainer.simulationSystem.dispose()
                         getEntities(mapName)
 
                         // 2. Привязываем зависимости, которые НЕ зависят от GridManager
@@ -182,7 +174,11 @@ class MapSelect(
 
                         // 4. Привязываем GridManager-зависимые сущности к НОВОМУ GridManager
                         //DISimulationContainer.particleEntity.loadEntity(DISimulationContainer.gridManager)
-                        DISimulationContainer.particleEntity.restoreGridManager()   // восстановление индексов в сетке
+                        // восстановление индексов в сетке
+                        val repaired = DISimulationContainer.particleEntity.restoreGridManager()
+                        if (repaired > 0) {
+                            println("В сохранении $mapName было $repaired частиц с битыми координатами/скоростями, они восстановлены")
+                        }
                         println(DISimulationContainer.particleEntity.x.size)
 
 //                        DISimulationContainer.linkEntity.loadEntity(

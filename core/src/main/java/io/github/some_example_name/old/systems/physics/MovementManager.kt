@@ -13,6 +13,7 @@ import io.github.some_example_name.old.entities.SubstancesEntity
 import io.github.some_example_name.old.features.settings.GlobalSettings.GRAVITATION
 import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.old.systems.simulation.SimulationData
+import java.util.concurrent.atomic.AtomicInteger
 
 class MovementManager(
     val entity: ParticleEntity,
@@ -26,6 +27,9 @@ class MovementManager(
     val substancesEntity: SubstancesEntity,
     val pheromonesManager: PheromonesManager
 ) {
+
+    /** Сколько раз пришлось чинить NaN у частиц. Ноль — значит источников NaN не осталось. */
+    val repairedNaNCount = AtomicInteger()
 
     fun moveParticle(particleIndex: Int, threadId: Int = 0) = with(entity) {
         val oldX = x[particleIndex].toInt()
@@ -68,6 +72,16 @@ class MovementManager(
     }
 
     private fun processWorldBorders(cellId: Int) = with(entity) {
+        // NaN не проходит ни одно сравнение ниже, поэтому битую частицу нужно отсечь явно:
+        // иначе координата никогда не клампится, NaN остаётся навсегда, расходится по соседям
+        // через repulse и попадает в сохранение.
+        if (!x[cellId].isFinite() || !y[cellId].isFinite() ||
+            !vx[cellId].isFinite() || !vy[cellId].isFinite()
+        ) {
+            recoverBrokenParticle(cellId)
+            return
+        }
+
         if (x[cellId] < radius[cellId]) {
             x[cellId] = radius[cellId]
             vx[cellId] *= -0.8f
@@ -82,6 +96,22 @@ class MovementManager(
         } else if (y[cellId] > gridManager.gridHeight - radius[cellId]) {
             y[cellId] = gridManager.gridHeight - radius[cellId]
             vy[cellId] *= -0.8f
+        }
+    }
+
+    /**
+     * Возвращает частицу в валидное состояние. Восстановить исходную позицию неоткуда,
+     * поэтому битая ось ставится в центр мира, а скорость обнуляется.
+     * Счётчик нужен, чтобы видеть, остались ли ещё источники NaN.
+     */
+    private fun recoverBrokenParticle(cellId: Int) = with(entity) {
+        if (!x[cellId].isFinite()) x[cellId] = gridManager.gridWidth * 0.5f
+        if (!y[cellId].isFinite()) y[cellId] = gridManager.gridHeight * 0.5f
+        vx[cellId] = 0f
+        vy[cellId] = 0f
+
+        if (repairedNaNCount.incrementAndGet() == 1) {
+            println("MovementManager: у частицы $cellId были NaN координаты/скорость, состояние восстановлено. Дальнейшие случаи не логируются.")
         }
     }
 

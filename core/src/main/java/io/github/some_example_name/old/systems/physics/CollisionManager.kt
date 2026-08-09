@@ -19,6 +19,10 @@ class CollisionManager(
 ) {
 
     fun repulse(particleAId: Int, particleBId: Int, threadId: Int = 0) = with(entity) {
+        // Частица может оказаться в сетке дважды (например, если её не сняли с сетки
+        // при сбросе мира). Тогда dx = dy = 0 и dx / distance ниже даёт NaN.
+        if (particleAId == particleBId) return
+
         val dx = x[particleAId] - x[particleBId]
         val dy = y[particleAId] - y[particleBId]
         val dx2 = dx * dx
@@ -31,6 +35,9 @@ class CollisionManager(
 
         val distanceSquared = dx2 + dy2
         if (distanceSquared < radiusSquared) {
+            // Совпавшие координаты: distance == 0, и любой dx / distance даёт NaN.
+            // Пропускаем такой тик — за него частицы всё равно разойдутся.
+            if (distanceSquared <= MIN_DISTANCE_SQUARED) return
 
             val isParticleAIsCell = isCell[particleAId]
             val isParticleBIsCell = isCell[particleBId]
@@ -146,7 +153,10 @@ class CollisionManager(
                 // Квадратичная зависимость силы
                 val stiffnessA = cellStiffness[particleAId]
                 val stiffnessB = cellStiffness[particleBId]
-                val cellStrengthAverage = 2 * stiffnessA * stiffnessB / (stiffnessA + stiffnessB)
+                val stiffnessSum = stiffnessA + stiffnessB
+                // Обе жёсткости нулевые (например, у частиц, переживших clear()) — 0 / 0 = NaN
+                if (stiffnessSum <= 0f) return
+                val cellStrengthAverage = 2 * stiffnessA * stiffnessB / stiffnessSum
 
                 val force =
                     cellStrengthAverage - cellStrengthAverage * distanceSquared / radiusSquared
@@ -168,5 +178,8 @@ class CollisionManager(
         const val PARTICLE_MAX_RADIUS = 0.5f
         const val PARTICLE_MAX_RADIUS_SQUARED = 0.25f
         const val MAX_RADIUS_SQUARED = 4
+
+        // Ниже этого квадрата расстояния направляющий вектор посчитать нельзя (деление на 0)
+        const val MIN_DISTANCE_SQUARED = 1e-8f
     }
 }

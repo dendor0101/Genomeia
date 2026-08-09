@@ -112,14 +112,45 @@ class ParticleEntity(
     /**
      * Восстанавливает структуры GridManager по загруженным данным.
      * Должен вызываться после loadEntity(gridManager) и loadSerializedEntity().
+     *
+     * Заодно чинит частицы, у которых в сохранении оказались NaN или координаты за границами
+     * сетки: NaN.toInt() == 0, поэтому без починки все такие частицы свалились бы в ячейку 0,
+     * а координаты за границей уронили бы addParticle с "Out of grid bounds".
+     *
+     * @return количество починенных частиц
      */
-    fun restoreGridManager() {
+    fun restoreGridManager(): Int {
+        val maxX = gridManager.gridWidth - 1f
+        val maxY = gridManager.gridHeight - 1f
+        var repaired = 0
+
         for (i in 0..lastId) {
-            if (isAlive[i]) {
-                gridId[i] = gridManager.addParticle(x[i].toInt(), y[i].toInt(), i)
+            if (!isAlive[i]) continue
+
+            val fixedX = sanitizeCoordinate(x[i], maxX)
+            val fixedY = sanitizeCoordinate(y[i], maxY)
+            val fixedVx = sanitizeVelocity(vx[i])
+            val fixedVy = sanitizeVelocity(vy[i])
+
+            // NaN != NaN, поэтому битые значения тоже попадают в счётчик
+            if (fixedX != x[i] || fixedY != y[i] || fixedVx != vx[i] || fixedVy != vy[i]) {
+                repaired++
             }
+
+            x[i] = fixedX
+            y[i] = fixedY
+            vx[i] = fixedVx
+            vy[i] = fixedVy
+
+            gridId[i] = gridManager.addParticle(fixedX.toInt(), fixedY.toInt(), i)
         }
+        return repaired
     }
+
+    private fun sanitizeCoordinate(value: Float, max: Float) =
+        if (value.isFinite()) value.coerceIn(0f, max) else max * 0.5f
+
+    private fun sanitizeVelocity(value: Float) = if (value.isFinite()) value else 0f
 
     override fun onCopy() {}
     override fun onPaste() {}
@@ -182,7 +213,9 @@ class ParticleEntity(
         dragCoefficient.clear(0.03f)
         effectOnContact.clear(false)
         isCollidable.clear(true)
-        cellStiffness.clear()
+        // Дефолт должен совпадать с инициализатором поля: нулевая жёсткость у обеих частиц
+        // даёт 0 / 0 = NaN в CollisionManager.repulse
+        cellStiffness.clear(0.5f)
         isCell.clear(false)
         isSub.clear(false)
         holderEntityIndex.clear(-1)
@@ -201,7 +234,7 @@ class ParticleEntity(
         dragCoefficient = dragCoefficient.resize(0.03f)
         effectOnContact = effectOnContact.resize(false)
         isCollidable = isCollidable.resize(true)
-        cellStiffness = cellStiffness.resize()
+        cellStiffness = cellStiffness.resize(0.5f)
         isCell = isCell.resize(false)
         isSub = isSub.resize(false)
         holderEntityIndex = holderEntityIndex.resize(-1)
