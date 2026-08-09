@@ -39,6 +39,12 @@ class EyeEntity(
         super.loadSerialize()
     }
 
+    fun copyFrom(other: EyeEntity) {
+        copyBaseFrom(other)
+        copyInto(other.colorDifferentiation, colorDifferentiation)
+        copyInto(other.visibilityRange, visibilityRange)
+    }
+
     override fun onCopy() {}
     override fun onPaste() {}
 

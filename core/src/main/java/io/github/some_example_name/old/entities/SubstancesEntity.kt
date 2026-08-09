@@ -90,13 +90,17 @@ class SubstancesEntity(
 
     // Методы для процесса сохранения
     fun serializeEntity() {
-        println("Start: ${maxAmount}")
         super.saveSerialize()
     }
 
     fun loadSerializedEntity() {
-        println("End: ${this.maxAmount}")
         super.loadSerialize()
+    }
+
+    fun copyFrom(other: SubstancesEntity) {
+        copyBaseFrom(other)
+        copyInto(other.particleIndex, particleIndex)
+        copyInto(other.substanceType, substanceType)
     }
 
     override fun onCopy() {}

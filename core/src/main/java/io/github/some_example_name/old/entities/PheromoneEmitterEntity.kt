@@ -31,6 +31,11 @@ class PheromoneEmitterEntity(
         super.loadSerialize()
     }
 
+    fun copyFrom(other: PheromoneEmitterEntity) {
+        copyBaseFrom(other)
+        copyInto(other.lastImpulse, lastImpulse)
+    }
+
     override fun onCopy() {}
     override fun onPaste() {}
 

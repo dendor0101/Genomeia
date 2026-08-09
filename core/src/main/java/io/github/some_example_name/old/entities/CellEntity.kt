@@ -5,6 +5,7 @@ import io.github.some_example_name.old.cells.SpecialModData
 import io.github.some_example_name.old.core.DISimulationContainer.cellsSettings
 import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.systems.genomics.genome.CellAction
+import io.github.some_example_name.old.systems.genomics.genome.Genome
 import io.github.some_example_name.old.systems.simulation.SimulationData
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 import it.unimi.dsi.fastutil.ints.IntArrayList
@@ -96,7 +97,15 @@ class CellEntity(
 
     @ProtoNumber(27) var neuralConnectionsData: Map<Int, List<Int>> = emptyMap()
 
-    @ProtoNumber(3) var cellActionsData: List<CellActionEntry> = emptyList()
+    /**
+     * Индексы клеток, у которых сейчас есть действие генома.
+     *
+     * Сам CellAction сериализовать нельзя: DivideManager читает у него
+     * physicalLinkMirroredForCell — @Transient-поле, которое досчитывается только при разборе
+     * генома. Копия из архива пришла бы с пустым мостом связей, поэтому храним лишь список
+     * клеток, а сам объект берём из генома в restoreCellActions().
+     */
+    @ProtoNumber(3) var cellActionIndexes: List<Int> = emptyList()
 
     fun addNeuralConnection(cellIndex: Int, targetNeuralIndex: Int) {
         val list = neuralConnections[cellIndex] ?: IntArrayList(4).also {
@@ -301,24 +310,78 @@ class CellEntity(
             .mapValues { it.value.toList() }
             .toMap()
 
-        cellActionsData = cellActions
-            .mapIndexedNotNull { index, action ->
-                action?.let { CellActionEntry(index, it) }
-            }
+        cellActionIndexes = cellActions.mapIndexedNotNull { index, action ->
+            index.takeIf { action != null }
+        }
     }
 
     fun loadSerializedEntity() {
         super.loadSerialize()
+        rebuildTransient()
+    }
+
+    fun copyFrom(other: CellEntity) {
+        copyBaseFrom(other)
+
+        copyInto(other.particleIndexes, particleIndexes)
+        copyInto(other.cellGenomeId, cellGenomeId)
+        copyInto(other.organIndex, organIndex)
+        copyInto(other.parentIndex, parentIndex)
+        copyInto(other.angleCos, angleCos)
+        copyInto(other.angleSin, angleSin)
+        copyInto(other.angleDirectedCos, angleDirectedCos)
+        copyInto(other.angleDirectedSin, angleDirectedSin)
+        copyInto(other.angleCompensationCos, angleCompensationCos)
+        copyInto(other.angleCompensationSin, angleCompensationSin)
+        copyInto(other.energyNecessaryToDivide, energyNecessaryToDivide)
+        copyInto(other.energyNecessaryToMutate, energyNecessaryToMutate)
+        copyInto(other.isDividedInThisStage, isDividedInThisStage)
+        copyInto(other.isMutateInThisStage, isMutateInThisStage)
+        copyInto(other.cellType, cellType)
+        copyInto(other.energy, energy)
+        copyInto(other.maxEnergy, maxEnergy)
+        copyInto(other.isNeural, isNeural)
+        copyInto(other.neuronImpulseInput, neuronImpulseInput)
+        copyInto(other.neuronImpulseOutput, neuronImpulseOutput)
+        copyInto(other.isOnEdge, isOnEdge)
+        copyInto(other.degreeOfShortening, degreeOfShortening)
+        copyInto(other.pheromoneType, pheromoneType)
+        copyInto(other.linkAmount, linkAmount)
+        copyInto(other.command, command)
+        copyInto(other.neuralIndexes, neuralIndexes)
+
+        neuralConnectionsData = other.neuralConnectionsData
+        cellActionIndexes = other.cellActionIndexes
+        rebuildTransient()
+    }
+
+    private fun rebuildTransient() {
         neuralConnections.clear()
         for ((key, list) in neuralConnectionsData) {
             neuralConnections[key] = IntArrayList(list)
         }
-
         cellActions = arrayOfNulls(maxAmount)
-        for (entry in cellActionsData) {
-            if (entry.index in cellActions.indices) {
-                cellActions[entry.index] = entry.action
-            }
+    }
+
+    /**
+     * Возвращает клеткам ссылки на действия генома — те же объекты, что лежат в
+     * genomeManager.genomes, а не их копии (см. [cellActionIndexes]).
+     *
+     * Вызывать после того, как загружены organEntity и геномы.
+     */
+    fun restoreCellActions(organEntity: OrganEntity, genomes: List<Genome>) {
+        cellActions = arrayOfNulls(maxAmount)
+
+        for (cellIndex in cellActionIndexes) {
+            if (cellIndex !in cellActions.indices || !isAlive[cellIndex]) continue
+
+            val organIndex = organIndex[cellIndex]
+            if (organIndex < 0 || organIndex >= organEntity.maxAmount || !organEntity.isAlive[organIndex]) continue
+
+            val genome = genomes.getOrNull(organEntity.genomeIndex[organIndex]) ?: continue
+            val stage = genome.genomeStageInstruction.getOrNull(organEntity.stage[organIndex]) ?: continue
+
+            cellActions[cellIndex] = stage.cellActions[cellGenomeId[cellIndex]]
         }
     }
 
@@ -364,7 +427,8 @@ class CellEntity(
         isNeural.clear(false)
         neuronImpulseInput.clear()
         neuronImpulseOutput.clear()
-        neuralIndexes.clear()
+        // Дефолт -1, как у инициализатора поля и deleteNeural: 0 — валидный индекс в neuralEntity
+        neuralIndexes.clear(-1)
         isOnEdge.clear(true)
         degreeOfShortening.clear(1f)
         pheromoneType.clear(-1)
@@ -399,7 +463,7 @@ class CellEntity(
         isNeural = isNeural.resize(false)
         neuronImpulseInput = neuronImpulseInput.resize()
         neuronImpulseOutput = neuronImpulseOutput.resize()
-        neuralIndexes = neuralIndexes.resize()
+        neuralIndexes = neuralIndexes.resize(-1)
         isOnEdge = isOnEdge.resize(true)
         degreeOfShortening = degreeOfShortening.resize(1f)
         pheromoneType = pheromoneType.resize(-1)
@@ -407,9 +471,3 @@ class CellEntity(
         command = command.resize(-1)
     }
 }
-
-@Serializable
-data class CellActionEntry(
-    @ProtoNumber(1) val index: Int,
-    @ProtoNumber(2) val action: CellAction
-)

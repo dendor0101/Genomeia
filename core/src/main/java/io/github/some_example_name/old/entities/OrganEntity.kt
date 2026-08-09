@@ -67,6 +67,21 @@ class OrganEntity(
         super.loadSerialize()
     }
 
+    fun copyFrom(other: OrganEntity) {
+        copyBaseFrom(other)
+        copyInto(other.genomeIndex, genomeIndex)
+        copyInto(other.genomeSize, genomeSize)
+        copyInto(other.stage, stage)
+        copyInto(other.dividedTimes, dividedTimes)
+        copyInto(other.mutatedTimes, mutatedTimes)
+        copyInto(other.alreadyGrownUp, alreadyGrownUp)
+        copyInto(other.divideCounterThisStage, divideCounterThisStage)
+        copyInto(other.mutateCounterThisStage, mutateCounterThisStage)
+        copyInto(other.divideAmountThisStage, divideAmountThisStage)
+        copyInto(other.mutateAmountThisStage, mutateAmountThisStage)
+        copyInto(other.justChangedStage, justChangedStage)
+    }
+
     override fun onCopy() {}
     override fun onPaste() {}
 

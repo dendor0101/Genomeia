@@ -27,16 +27,33 @@ class GenomeManager(
         }
     }
 
-    private fun parseGenome(name: String): Genome {
-        return loadGenome(name).apply {
-            genomeStageInstruction = addInvertedDivideLinks()
-            dividedTimes = IntArray(genomeStageInstruction.size)
-            mutatedTimes = IntArray(genomeStageInstruction.size)
-            genomeStageInstruction.forEachIndexed { index, stage ->
-                stage.cellActions.forEach { (_, action) ->
-                    if (action.divide != null) dividedTimes[index]++
-                    if (action.mutate != null) mutatedTimes[index]++
-                }
+    /**
+     * Восстанавливает список геномов из сохранения карты.
+     *
+     * Порядок обязан совпадать с тем, что был на момент сохранения: OrganEntity.genomeIndex —
+     * это индекс в этом списке. Поэтому после загрузки карты loadGenomes() звать нельзя,
+     * он пересобирает список из папки с геномами и сдвигает индексы.
+     */
+    fun restoreGenomes(saved: List<Genome>) {
+        genomes.clear()
+        saved.forEach { genomes.add(it.prepare()) }
+        simulationData.currentGenomeIndex = 0
+    }
+
+    private fun parseGenome(name: String): Genome = loadGenome(name).prepare()
+
+    /**
+     * Досчитывает @Transient-поля генома. Они не сериализуются, поэтому нужны и после
+     * чтения из файла, и после восстановления из сохранения карты.
+     */
+    private fun Genome.prepare(): Genome = apply {
+        genomeStageInstruction = addInvertedDivideLinks()
+        dividedTimes = IntArray(genomeStageInstruction.size)
+        mutatedTimes = IntArray(genomeStageInstruction.size)
+        genomeStageInstruction.forEachIndexed { index, stage ->
+            stage.cellActions.forEach { (_, action) ->
+                if (action.divide != null) dividedTimes[index]++
+                if (action.mutate != null) mutatedTimes[index]++
             }
         }
     }

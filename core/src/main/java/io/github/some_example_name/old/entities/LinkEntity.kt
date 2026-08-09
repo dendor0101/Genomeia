@@ -225,7 +225,25 @@ class LinkEntity(
 
     fun loadSerializedEntity() {
         super.loadSerialize()
-        // transient-массивы и linkIndexMap нужно перестроить
+        rebuildTransient()
+    }
+
+    fun copyFrom(other: LinkEntity) {
+        copyBaseFrom(other)
+        copyInto(other.links1, links1)
+        copyInto(other.links2, links2)
+        copyInto(other.linksGeneration1, linksGeneration1)
+        copyInto(other.linksGeneration2, linksGeneration2)
+        copyInto(other.linksNaturalLength, linksNaturalLength)
+        copyInto(other.isNeuronLink, isNeuronLink)
+        copyInto(other.isLink1NeuralDirected, isLink1NeuralDirected)
+        copyInto(other.isStickyLink, isStickyLink)
+        copyInto(other.isLongNeuralLink, isLongNeuralLink)
+        copyInto(other.color, color)
+        rebuildTransient()
+    }
+
+    private fun rebuildTransient() {
         linkIndexMap.clear()
         for (i in 0..lastId) {
             if (isAlive[i]) {
@@ -235,6 +253,43 @@ class LinkEntity(
         linkPhase = BooleanArray(maxAmount)
         assignedThread = ByteArray(maxAmount) { -1 }
         linkToListPosition = IntArray(maxAmount) { -1 }
+    }
+
+    /**
+     * Раскладывает загруженные связи по потоковым спискам.
+     *
+     * Без этого связи не попадают в LinkPhysicsSystem.iterateLinksInParallel и организм после
+     * загрузки просто рассыпается: клетки есть, а пружины между ними не считаются.
+     *
+     * Вызывать строго после particleEntity.restoreGridManager(): registerNewLink читает
+     * gridId клетки, чтобы определить чанк и поток.
+     *
+     * @return количество связей, которые не удалось разложить (ссылаются на мёртвые клетки)
+     */
+    fun restoreLinkLists(
+        evenLinkLists: Array<IntArrayList>,
+        oddLinkLists: Array<IntArrayList>
+    ): Int {
+        var skipped = 0
+        for (i in 0..lastId) {
+            if (!isAlive[i]) continue
+
+            val cellIndex = links1[i]
+            val otherCellIndex = links2[i]
+            val isBroken = cellIndex < 0 || otherCellIndex < 0 ||
+                !cellEntity.isAliveAndSameGen(cellIndex, linksGeneration1[i]) ||
+                !cellEntity.isAliveAndSameGen(otherCellIndex, linksGeneration2[i]) ||
+                // registerNewLink читает gridId клетки через её частицу
+                cellEntity.getParticleIndex(cellIndex) < 0
+
+            if (isBroken) {
+                skipped++
+                continue
+            }
+
+            registerNewLink(i, evenLinkLists, oddLinkLists)
+        }
+        return skipped
     }
 
     override fun onCopy() {

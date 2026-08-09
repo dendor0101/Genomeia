@@ -1,11 +1,14 @@
+@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+
 package io.github.some_example_name.old.systems.maps
+
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.PixmapIO
-import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.utils.ScreenUtils
 import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.entities.CellEntity
+import io.github.some_example_name.old.entities.Entity
 import io.github.some_example_name.old.entities.EyeEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.NeuralEntity
@@ -18,255 +21,393 @@ import io.github.some_example_name.old.entities.SpecialEntity
 import io.github.some_example_name.old.entities.SpecialModDataEntity
 import io.github.some_example_name.old.entities.SubstancesEntity
 import io.github.some_example_name.old.entities.TailEntity
-import io.github.some_example_name.old.entities.samples.CellEntitySample
 import io.github.some_example_name.old.features.settings.GlobalSettings
-import kotlinx.serialization.builtins.serializer
-import kotlinx.serialization.json.Json
+import io.github.some_example_name.old.features.worldeditor.WorldGenerator
+import io.github.some_example_name.old.systems.genomics.genome.Genome
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.protobuf.ProtoBuf
-import java.io.FileOutputStream
+import kotlinx.serialization.protobuf.ProtoNumber
+import java.io.ByteArrayInputStream
+import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
 import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
-import javax.imageio.ImageIO
 
+/**
+ * Метаданные мира. Лежат отдельно от world.bin, потому что world.bin пишется один раз
+ * при создании карты, а размер сетки и время симуляции меняются по ходу игры.
+ */
+@Serializable
+data class WorldMeta(
+    @ProtoNumber(1) val gridWidth: Int = 0,
+    @ProtoNumber(2) val gridHeight: Int = 0,
+    @ProtoNumber(3) val tickCounter: Int = 0,
+    @ProtoNumber(4) val timeSimulation: Float = 0f,
+    @ProtoNumber(5) val currentGenomeIndex: Int = 0
+)
+
+/**
+ * Геномы обязаны лежать в карте: OrganEntity.genomeIndex — это индекс в
+ * genomeManager.genomes, а тот собирается из папки с геномами и меняется между запусками.
+ */
+@Serializable
+data class GenomesSave(
+    @ProtoNumber(1) val genomes: List<Genome> = emptyList()
+)
+
+/**
+ * Результат загрузки карты.
+ *
+ * @param terrain карта рельефа для WorldTerrainManager
+ * @param hasWorldState были ли в архиве сущности. Если нет — это только что созданная в
+ *   редакторе карта, мир нужно сгенерировать заново через initMap()
+ */
+class LoadedMap(
+    val terrain: Array<BooleanArray>,
+    val hasWorldState: Boolean
+)
 
 class MapSave {
     var currentMap = -1
 
-    fun getName(): Int {
-        val file = File(DISimulationContainer.baseMapDir)
-        file.mkdirs()
+    // ---------------------------------------------------------------- сохранение
 
-        return file.listFiles()?.count {it.isFile } ?: 0
-    }
-
-    fun resaveMap() {
-        println("Map is: ${currentMap}")
-        val zipname = DISimulationContainer.baseMapDir + currentMap.toString() + ".zip"
-        val file = File(zipname)
-
-        // 1. Временно читаем старый world.bin в память, чтобы не потерять его при перезаписи архива
-        var oldWorldBin: ByteArray? = null
-        if (file.exists()) {
-            ZipInputStream(FileInputStream(file)).use { zipIn ->
-                var entry = zipIn.nextEntry
-                while (entry != null) {
-                    if (entry.name == "world.bin") {
-                        oldWorldBin = zipIn.readBytes()
-                        break
-                    }
-                    entry = zipIn.nextEntry
-                }
-            }
-        }
-
-        // 2. Перезаписываем архив
-        FileOutputStream(zipname).use { fos ->
-            ZipOutputStream(fos).use { zos ->
-
-                // Восстанавливаем world.bin
-                if (oldWorldBin != null) {
-                    zos.putNextEntry(ZipEntry("world.bin"))
-                    zos.write(oldWorldBin!!, 0, oldWorldBin!!.size)
-                    zos.closeEntry()
-                }
-
-                // Сохраняем обновленные сущности
-                saveEntity(zos)
-
-                // Делаем свежий скриншот
-                val width = Gdx.graphics.width
-                val height = Gdx.graphics.height
-                val pixmap = ScreenUtils.getFrameBufferPixmap(0, 0, width, height)
-                saveScreenshot(zos, pixmap)
-            }
-        }
-    }
-
+    /**
+     * Создаёт новую карту: рельеф и скриншот. Сущности сюда не пишутся — на момент выхода
+     * из редактора мира ещё нет, он создаётся уже в SimulationScreen.initMap().
+     */
     fun saveMap(custom: Boolean, seed: Long, map: Array<BooleanArray>, canvasTexture: Pixmap) {
-        val mapName = getName()+1
+        val mapName = nextMapName()
         currentMap = mapName
-        val zipname = DISimulationContainer.baseMapDir+mapName.toString() + ".zip"
 
-        FileOutputStream(zipname).use { fos ->
+        FileOutputStream(mapFile(mapName)).use { fos ->
             ZipOutputStream(fos).use { zos ->
+                zos.putNextEntry(ZipEntry(WORLD_BIN))
                 val dataOut = DataOutputStream(zos)
 
-                // --- ЗАПИСЬ ФАЙЛА 1 (Бинарные данные) ---
-                zos.putNextEntry(ZipEntry("world.bin"))
-
                 dataOut.writeBoolean(custom)
-                dataOut.writeInt(map.size)//GlobalSettings.GRID_WIDTH)
-                dataOut.writeInt(map[0].size)//GlobalSettings.GRID_HEIGHT)
-//                dataOut.writeInt(map.size)
+                dataOut.writeInt(map.size)
+                dataOut.writeInt(map[0].size)
 
                 if (!custom) {
                     dataOut.writeLong(seed)
-                }
-                else {
+                } else {
                     dataOut.writeInt(map.size)
-                    for (height in map) {
-                        dataOut.writeInt(height.size)
-                        for (width in height) {
-                            dataOut.writeBoolean(width)
+                    for (row in map) {
+                        dataOut.writeInt(row.size)
+                        for (value in row) {
+                            dataOut.writeBoolean(value)
                         }
                     }
                 }
-
-                dataOut.writeInt(-555)
-                saveScreenshot(zos, canvasTexture)
-                saveEntity(zos)
-
-                dataOut.flush()               // Очищаем буфер, проталкивая данные в ZIP
+                dataOut.writeInt(WORLD_BIN_END_MARKER)
+                dataOut.flush()
                 zos.closeEntry()
+
+                zos.writeEntry(WORLD_META, ProtoBuf.encodeToByteArray(WorldMeta.serializer(), currentWorldMeta()))
+                zos.writeScreenshot(mapName, canvasTexture)
             }
         }
     }
 
-    fun saveEntity(zos: ZipOutputStream) {
-        //cellEntity сейв
-        val cellEntitySerialized = DISimulationContainer.cellEntity
-        cellEntitySerialized.serializeEntity()
-        println(cellEntitySerialized.maxAmount)
-        var bytes = ProtoBuf.encodeToByteArray(CellEntity.serializer(), cellEntitySerialized)
-
-        zos.putNextEntry(ZipEntry("CellEntity.bin"))
-        zos.write(bytes, 0, bytes.size)
-        zos.closeEntry()
-
-        val specEntity = DISimulationContainer.specialEntity
-        specEntity.saveSerialize()
-        bytes = ProtoBuf.encodeToByteArray(SpecialEntity.serializer(), specEntity)
-
-        zos.putNextEntry(ZipEntry("SpecialEntity.bin"))
-        zos.write(bytes, 0, bytes.size)
-        zos.closeEntry()
-
-        val subStancEntity = DISimulationContainer.substancesEntity
-        subStancEntity.serializeEntity()
-        bytes = ProtoBuf.encodeToByteArray(SubstancesEntity.serializer(), subStancEntity)
-
-        zos.putNextEntry(ZipEntry("SubstanceEntity.bin"))
-        zos.write(bytes, 0, bytes.size)
-        zos.closeEntry()
-
-        val specModDataEntity = DISimulationContainer.specialModDataEntity
-        specModDataEntity.serializeEntity()
-        bytes = ProtoBuf.encodeToByteArray(SpecialModDataEntity.serializer(), specModDataEntity)
-
-        zos.putNextEntry(ZipEntry("SpecialModDataEntity.bin"))
-        zos.write(bytes, 0, bytes.size)
-        zos.closeEntry()
-
-        val tailEntitySave = DISimulationContainer.tailEntity
-        tailEntitySave.serializeEntity()
-        bytes = ProtoBuf.encodeToByteArray(TailEntity.serializer(), tailEntitySave)
-
-        zos.putNextEntry(ZipEntry("TailEntity.bin"))
-        zos.write(bytes, 0, bytes.size)
-        zos.closeEntry()
-
-        val eyeEntitySave = DISimulationContainer.eyeEntity
-        eyeEntitySave.serializeEntity()
-        bytes = ProtoBuf.encodeToByteArray(EyeEntity.serializer(), eyeEntitySave)
-
-        zos.putNextEntry(ZipEntry("EyeEntity.bin"))
-        zos.write(bytes, 0, bytes.size)
-        zos.closeEntry()
-
-        val linkEntitySave = DISimulationContainer.linkEntity
-        linkEntitySave.serializeEntity()
-        bytes = ProtoBuf.encodeToByteArray(LinkEntity.serializer(), linkEntitySave)
-
-        zos.putNextEntry(ZipEntry("LinkEntity.bin"))
-        zos.write(bytes, 0, bytes.size)
-        zos.closeEntry()
-
-        val neuralEntitySave = DISimulationContainer.neuralEntity
-        neuralEntitySave.serializeEntity()
-        bytes = ProtoBuf.encodeToByteArray(NeuralEntity.serializer(), neuralEntitySave)
-
-        zos.putNextEntry(ZipEntry("NeuralEntity.bin"))
-        zos.write(bytes, 0, bytes.size)
-        zos.closeEntry()
-
-        val organEntitySave = DISimulationContainer.organEntity
-        organEntitySave.serializeEntity()
-        bytes = ProtoBuf.encodeToByteArray(OrganEntity.serializer(), organEntitySave)
-
-        zos.putNextEntry(ZipEntry("OrganEntity.bin"))
-        zos.write(bytes, 0, bytes.size)
-        zos.closeEntry()
-
-        val particleEntitySave = DISimulationContainer.particleEntity
-        particleEntitySave.serializeEntity()
-        println("Size x: ${particleEntitySave.x.size}, 0 index: ${particleEntitySave.x[0]}")
-        bytes = ProtoBuf.encodeToByteArray(ParticleEntity.serializer(), particleEntitySave)
-
-        zos.putNextEntry(ZipEntry("ParticleEntity.bin"))
-        zos.write(bytes, 0, bytes.size)
-        zos.closeEntry()
-
-        val pheromoneEmitterEntitySave = DISimulationContainer.pheromoneEmitterEntity
-        pheromoneEmitterEntitySave.serializeEntity()
-        bytes = ProtoBuf.encodeToByteArray(PheromoneEmitterEntity.serializer(), pheromoneEmitterEntitySave)
-
-        zos.putNextEntry(ZipEntry("PheromoneEmitterEntity.bin"))
-        zos.write(bytes, 0, bytes.size)
-        zos.closeEntry()
-
-        val pheromoneEntitySave = DISimulationContainer.pheromoneEntity
-        pheromoneEntitySave.serializeEntity()
-        bytes = ProtoBuf.encodeToByteArray(PheromoneEntity.serializer(), pheromoneEntitySave)
-
-        zos.putNextEntry(ZipEntry("PheromoneEntity.bin"))
-        zos.write(bytes, 0, bytes.size)
-        zos.closeEntry()
-
-        val producerEntitySave = DISimulationContainer.producerEntity
-        producerEntitySave.serializeEntity()
-        bytes = ProtoBuf.encodeToByteArray(ProducerEntity.serializer(), producerEntitySave)
-
-        zos.putNextEntry(ZipEntry("ProducerEntity.bin"))
-        zos.write(bytes, 0, bytes.size)
-        zos.closeEntry()
-    }
-
-
-    fun saveScreenshot(zos: ZipOutputStream,canvasTexture: Pixmap) {
-        //val width = Gdx.graphics.width
-        //val height = Gdx.graphics.height
-
-        // Создаем Pixmap из текущего кадрового буфера
-        //val pixmap = ScreenUtils.getFrameBufferPixmap(0, 0, width, height)
-
-//        val pixmap = textureToPixmap(canvasTexture)
-
-        val zipname = DISimulationContainer.baseMapDir+currentMap.toString() + ".zip"
-
-        val imageName = currentMap.toString() + ".png"
-
-        val zipEntry = ZipEntry(imageName)
-        zos.putNextEntry(zipEntry)
-
-        val writer = PixmapIO.PNG()
-        writer.setFlipY(true)
-        writer.write(zos, canvasTexture)
-
-        canvasTexture.dispose()
-
-        zos.closeEntry()
-    }
-
-    fun textureToPixmap(texture: Texture): Pixmap {
-        val textureData = texture.textureData
-        if (!textureData.isPrepared) {
-            textureData.prepare()
+    /**
+     * Перезаписывает текущую карту вместе с живым состоянием мира.
+     * Симуляция на время сохранения ставится на паузу, иначе в архив попадёт состояние,
+     * собранное из разных тиков.
+     */
+    fun resaveMap() {
+        if (currentMap < 0) {
+            println("MapSave: карта не выбрана (currentMap = $currentMap), сохранять некуда")
+            return
         }
 
-        return textureData.consumePixmap()
+        val file = mapFile(currentMap)
+        // world.bin пишется только при создании карты, поэтому его надо перенести в новый архив
+        val oldWorldBin = if (file.exists()) readArchive(file)[WORLD_BIN] else null
+        if (oldWorldBin == null) {
+            println("MapSave: в карте $currentMap нет $WORLD_BIN, сохранение отменено")
+            return
+        }
+
+        // Скриншот снимаем до паузы: он берётся с текущего кадра GL
+        val screenshot = ScreenUtils.getFrameBufferPixmap(0, 0, Gdx.graphics.width, Gdx.graphics.height)
+
+        val wasPlaying = DISimulationContainer.simulationSystem.pauseAndAwaitTick()
+        try {
+            FileOutputStream(file).use { fos ->
+                ZipOutputStream(fos).use { zos ->
+                    zos.writeEntry(WORLD_BIN, oldWorldBin)
+                    zos.writeEntry(WORLD_META, ProtoBuf.encodeToByteArray(WorldMeta.serializer(), currentWorldMeta()))
+                    zos.writeEntry(
+                        GENOMES,
+                        ProtoBuf.encodeToByteArray(
+                            GenomesSave.serializer(),
+                            GenomesSave(DISimulationContainer.genomeManager.genomes.toList())
+                        )
+                    )
+                    saveEntity(zos)
+                    zos.writeScreenshot(currentMap, screenshot)
+                }
+            }
+        } finally {
+            DISimulationContainer.simulationSystem.resumeAfterPause(wasPlaying)
+            screenshot.dispose()
+        }
+    }
+
+    private fun saveEntity(zos: ZipOutputStream) = with(DISimulationContainer) {
+        cellEntity.serializeEntity()
+        zos.writeEntry(CELL_ENTITY, ProtoBuf.encodeToByteArray(CellEntity.serializer(), cellEntity))
+
+        specialEntity.serializeEntity()
+        zos.writeEntry(SPECIAL_ENTITY, ProtoBuf.encodeToByteArray(SpecialEntity.serializer(), specialEntity))
+
+        substancesEntity.serializeEntity()
+        zos.writeEntry(SUBSTANCE_ENTITY, ProtoBuf.encodeToByteArray(SubstancesEntity.serializer(), substancesEntity))
+
+        specialModDataEntity.serializeEntity()
+        zos.writeEntry(SPECIAL_MOD_DATA_ENTITY, ProtoBuf.encodeToByteArray(SpecialModDataEntity.serializer(), specialModDataEntity))
+
+        tailEntity.serializeEntity()
+        zos.writeEntry(TAIL_ENTITY, ProtoBuf.encodeToByteArray(TailEntity.serializer(), tailEntity))
+
+        eyeEntity.serializeEntity()
+        zos.writeEntry(EYE_ENTITY, ProtoBuf.encodeToByteArray(EyeEntity.serializer(), eyeEntity))
+
+        linkEntity.serializeEntity()
+        zos.writeEntry(LINK_ENTITY, ProtoBuf.encodeToByteArray(LinkEntity.serializer(), linkEntity))
+
+        neuralEntity.serializeEntity()
+        zos.writeEntry(NEURAL_ENTITY, ProtoBuf.encodeToByteArray(NeuralEntity.serializer(), neuralEntity))
+
+        organEntity.serializeEntity()
+        zos.writeEntry(ORGAN_ENTITY, ProtoBuf.encodeToByteArray(OrganEntity.serializer(), organEntity))
+
+        particleEntity.serializeEntity()
+        zos.writeEntry(PARTICLE_ENTITY, ProtoBuf.encodeToByteArray(ParticleEntity.serializer(), particleEntity))
+
+        pheromoneEmitterEntity.serializeEntity()
+        zos.writeEntry(PHEROMONE_EMITTER_ENTITY, ProtoBuf.encodeToByteArray(PheromoneEmitterEntity.serializer(), pheromoneEmitterEntity))
+
+        pheromoneEntity.serializeEntity()
+        zos.writeEntry(PHEROMONE_ENTITY, ProtoBuf.encodeToByteArray(PheromoneEntity.serializer(), pheromoneEntity))
+
+        producerEntity.serializeEntity()
+        zos.writeEntry(PRODUCER_ENTITY, ProtoBuf.encodeToByteArray(ProducerEntity.serializer(), producerEntity))
+    }
+
+    // ---------------------------------------------------------------- загрузка
+
+    /**
+     * Загружает карту целиком: размер мира, рельеф, геномы, все сущности и время симуляции.
+     *
+     * Порядок шагов важен:
+     * 1. размер мира применяется до всего остального, потому что resizeWorld() пересоздаёт
+     *    сетку и потоковые буферы — после восстановления частиц это стёрло бы их регистрацию;
+     * 2. dispose() чистит сетку и сущности (иначе частицы прошлой сессии останутся в сетке
+     *    и дадут дубли индексов);
+     * 3. сущности копируются в существующие объекты контейнера, а не подменяют их —
+     *    все системы держат ссылки, полученные в конструкторе;
+     * 4. сетка и потоковые списки связей восстанавливаются последними, по уже готовым данным.
+     */
+    fun loadMap(fileName: String): LoadedMap = with(DISimulationContainer) {
+        val entries = readArchive(File(DISimulationContainer.baseMapDir + fileName))
+
+        val terrain = entries[WORLD_BIN]?.let { readTerrain(it) } ?: emptyArray()
+        val meta = entries[WORLD_META]?.let { ProtoBuf.decodeFromByteArray(WorldMeta.serializer(), it) }
+
+        // 1. Размер мира
+        if (meta != null && meta.gridWidth > 0 && meta.gridHeight > 0) {
+            GlobalSettings.GRID_WIDTH = meta.gridWidth
+            GlobalSettings.GRID_HEIGHT = meta.gridHeight
+        }
+        resizeWorld()
+
+        // 2. Полный сброс мира
+        simulationSystem.dispose()
+
+        currentMap = fileName.substringBefore('.').toIntOrNull() ?: -1
+
+        // Сущностей нет — карту только что создали в редакторе, мир будет сгенерирован из рельефа
+        if (!entries.containsKey(PARTICLE_ENTITY)) {
+            return@with LoadedMap(terrain, hasWorldState = false)
+        }
+
+        try {
+            restoreWorldState(entries, meta)
+            LoadedMap(terrain, hasWorldState = true)
+        } catch (e: Exception) {
+            // Архив из несовместимой версии формата или повреждён. Мир уже частично залит
+            // мусором, поэтому сбрасываем его и отдаём карту как пустую — рельеф сгенерируется заново.
+            println("MapSave: не удалось прочитать состояние мира из $fileName (${e.message}), карта открыта без организмов")
+            simulationSystem.dispose()
+            LoadedMap(terrain, hasWorldState = false)
+        }
+    }
+
+    private fun restoreWorldState(
+        entries: Map<String, ByteArray>,
+        meta: WorldMeta?
+    ) = with(DISimulationContainer) {
+        // 3. Геномы до сущностей: organEntity.genomeIndex индексирует именно этот список
+        entries[GENOMES]?.let { bytes ->
+            val saved = ProtoBuf.decodeFromByteArray(GenomesSave.serializer(), bytes).genomes
+            if (saved.isNotEmpty()) genomeManager.restoreGenomes(saved)
+        }
+
+        // 4. Сущности
+        entries.decode(CELL_ENTITY, CellEntity.serializer())?.let { cellEntity.copyFrom(it) }
+        entries.decode(SPECIAL_ENTITY, SpecialEntity.serializer())?.let { specialEntity.copyFrom(it) }
+        entries.decode(SUBSTANCE_ENTITY, SubstancesEntity.serializer())?.let { substancesEntity.copyFrom(it) }
+        entries.decode(SPECIAL_MOD_DATA_ENTITY, SpecialModDataEntity.serializer())?.let { specialModDataEntity.copyFrom(it) }
+        entries.decode(TAIL_ENTITY, TailEntity.serializer())?.let { tailEntity.copyFrom(it) }
+        entries.decode(EYE_ENTITY, EyeEntity.serializer())?.let { eyeEntity.copyFrom(it) }
+        entries.decode(LINK_ENTITY, LinkEntity.serializer())?.let { linkEntity.copyFrom(it) }
+        entries.decode(NEURAL_ENTITY, NeuralEntity.serializer())?.let { neuralEntity.copyFrom(it) }
+        entries.decode(ORGAN_ENTITY, OrganEntity.serializer())?.let { organEntity.copyFrom(it) }
+        entries.decode(PARTICLE_ENTITY, ParticleEntity.serializer())?.let { particleEntity.copyFrom(it) }
+        entries.decode(PHEROMONE_EMITTER_ENTITY, PheromoneEmitterEntity.serializer())?.let { pheromoneEmitterEntity.copyFrom(it) }
+        entries.decode(PHEROMONE_ENTITY, PheromoneEntity.serializer())?.let { pheromoneEntity.copyFrom(it) }
+        entries.decode(PRODUCER_ENTITY, ProducerEntity.serializer())?.let { producerEntity.copyFrom(it) }
+
+        // 5. Transient-структуры, которые считаются по уже загруженным данным
+        cellEntity.restoreCellActions(organEntity, genomeManager.genomes)
+
+        val repairedParticles = particleEntity.restoreGridManager()
+        val skippedLinks = linkEntity.restoreLinkLists(
+            evenLinkLists = worldCommandsManager.evenLinkLists,
+            oddLinkLists = worldCommandsManager.oddLinkLists
+        )
+
+        // 6. Время симуляции
+        meta?.let {
+            simulationData.tickCounter = it.tickCounter
+            simulationData.timeSimulation = it.timeSimulation
+            simulationData.currentGenomeIndex = it.currentGenomeIndex.coerceIn(0, maxOf(0, genomeManager.genomes.size - 1))
+        }
+
+        println(
+            "Мир восстановлен: клеток ${cellEntity.aliveList.size}, " +
+                "частиц ${particleEntity.aliveList.size}, связей ${linkEntity.aliveList.size}, " +
+                "организмов ${organEntity.aliveList.size}, геномов ${genomeManager.genomes.size}"
+        )
+        if (repairedParticles > 0) println("MapSave: починено частиц с битыми координатами — $repairedParticles")
+        if (skippedLinks > 0) println("MapSave: связей с мёртвыми клетками пропущено — $skippedLinks")
+    }
+
+    private fun readTerrain(bytes: ByteArray): Array<BooleanArray> =
+        DataInputStream(ByteArrayInputStream(bytes)).use { data ->
+            val custom = data.readBoolean()
+            val width = data.readInt()
+            val height = data.readInt()
+
+            if (!custom) {
+                WorldGenerator().generateWorld(width, height, data.readLong())
+            } else {
+                val rows = data.readInt()
+                Array(rows) {
+                    val rowWidth = data.readInt()
+                    BooleanArray(rowWidth) { data.readBoolean() }
+                }
+            }
+        }
+
+    // ---------------------------------------------------------------- файлы и утилиты
+
+    fun getMaps(): List<String> = mapsDir().listFiles()
+        ?.filter { it.isFile && it.name.endsWith(".zip") }
+        ?.map { it.name }
+        ?.sortedBy { it.substringBefore('.').toIntOrNull() ?: Int.MAX_VALUE }
+        ?: emptyList()
+
+    fun getTexturePixmap(fileName: String): Pixmap? {
+        val imageName = fileName.substringBefore('.') + ".png"
+        val bytes = readArchive(File(DISimulationContainer.baseMapDir + fileName))[imageName] ?: return null
+        return Pixmap(bytes, 0, bytes.size)
+    }
+
+    private fun mapsDir() = File(DISimulationContainer.baseMapDir).apply { mkdirs() }
+
+    private fun mapFile(name: Int) = File(mapsDir(), "$name.zip")
+
+    /** Берём максимальный существующий номер + 1, иначе после удаления карты имена столкнутся. */
+    private fun nextMapName(): Int {
+        val maxExisting = getMaps().mapNotNull { it.substringBefore('.').toIntOrNull() }.maxOrNull() ?: 0
+        return maxExisting + 1
+    }
+
+    private fun currentWorldMeta() = WorldMeta(
+        gridWidth = GlobalSettings.GRID_WIDTH,
+        gridHeight = GlobalSettings.GRID_HEIGHT,
+        tickCounter = DISimulationContainer.simulationData.tickCounter,
+        timeSimulation = DISimulationContainer.simulationData.timeSimulation,
+        currentGenomeIndex = DISimulationContainer.simulationData.currentGenomeIndex
+    )
+
+    private fun readArchive(file: File): Map<String, ByteArray> {
+        val entries = LinkedHashMap<String, ByteArray>()
+        if (!file.exists()) return entries
+
+        ZipInputStream(FileInputStream(file)).use { zipIn ->
+            var entry = zipIn.nextEntry
+            while (entry != null) {
+                if (!entry.isDirectory) entries[entry.name] = zipIn.readBytes()
+                zipIn.closeEntry()
+                entry = zipIn.nextEntry
+            }
+        }
+        return entries
+    }
+
+    /**
+     * Декодирует сущность и разворачивает её служебные списки обратно в массивы.
+     *
+     * loadSerialize() обязателен: generation/isAlive/aliveList помечены @Transient и после
+     * декодирования пустые, все живые данные лежат в generationList/isAliveList/aliveListData.
+     * Без этого шага copyFrom() скопировал бы нули.
+     */
+    private fun <T : Entity> Map<String, ByteArray>.decode(
+        name: String,
+        serializer: kotlinx.serialization.KSerializer<T>
+    ): T? = this[name]?.let {
+        ProtoBuf.decodeFromByteArray(serializer, it).apply { loadSerialize() }
+    }
+
+    private fun ZipOutputStream.writeEntry(name: String, bytes: ByteArray) {
+        putNextEntry(ZipEntry(name))
+        write(bytes, 0, bytes.size)
+        closeEntry()
+    }
+
+    /** Pixmap не освобождаем: владеет им вызывающий код. */
+    private fun ZipOutputStream.writeScreenshot(mapName: Int, pixmap: Pixmap) {
+        putNextEntry(ZipEntry("$mapName.png"))
+        PixmapIO.PNG().apply { setFlipY(true) }.write(this@writeScreenshot, pixmap)
+        closeEntry()
+    }
+
+    companion object {
+        private const val WORLD_BIN = "world.bin"
+        private const val WORLD_META = "world_meta.bin"
+        private const val GENOMES = "genomes.bin"
+        private const val WORLD_BIN_END_MARKER = -555
+
+        private const val CELL_ENTITY = "CellEntity.bin"
+        private const val SPECIAL_ENTITY = "SpecialEntity.bin"
+        private const val SUBSTANCE_ENTITY = "SubstanceEntity.bin"
+        private const val SPECIAL_MOD_DATA_ENTITY = "SpecialModDataEntity.bin"
+        private const val TAIL_ENTITY = "TailEntity.bin"
+        private const val EYE_ENTITY = "EyeEntity.bin"
+        private const val LINK_ENTITY = "LinkEntity.bin"
+        private const val NEURAL_ENTITY = "NeuralEntity.bin"
+        private const val ORGAN_ENTITY = "OrganEntity.bin"
+        private const val PARTICLE_ENTITY = "ParticleEntity.bin"
+        private const val PHEROMONE_EMITTER_ENTITY = "PheromoneEmitterEntity.bin"
+        private const val PHEROMONE_ENTITY = "PheromoneEntity.bin"
+        private const val PRODUCER_ENTITY = "ProducerEntity.bin"
     }
 }

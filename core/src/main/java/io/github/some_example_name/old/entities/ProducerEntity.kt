@@ -31,6 +31,11 @@ class ProducerEntity(
         super.loadSerialize()
     }
 
+    fun copyFrom(other: ProducerEntity) {
+        copyBaseFrom(other)
+        copyInto(other.reproductionRestriction, reproductionRestriction)
+    }
+
     override fun onCopy() {}
     override fun onPaste() {}
 

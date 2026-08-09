@@ -133,6 +133,34 @@ class SimulationSystem(
         threadManager.futures.clear()
     }
 
+    /**
+     * Останавливает симуляцию и дожидается конца текущего тика.
+     *
+     * Сохранение идёт из UI-потока, а мир считается в своём — без паузы в архив попадает
+     * рваное состояние (координаты из одного тика, aliveList из другого).
+     *
+     * @return было ли проигрывание включено, чтобы вернуть его через [resumeAfterPause]
+     */
+    fun pauseAndAwaitTick(): Boolean {
+        val wasPlaying = simulationData.isPlay
+        simulationData.isPlay = false
+
+        val deadline = System.nanoTime() + PAUSE_TIMEOUT_NANOS
+        while (threadManager.isTickRunning && System.nanoTime() < deadline) {
+            try {
+                Thread.sleep(1)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                break
+            }
+        }
+        return wasPlaying
+    }
+
+    fun resumeAfterPause(wasPlaying: Boolean) {
+        simulationData.isPlay = wasPlaying
+    }
+
     fun dispose() {
         gridManager.clearAll()
         entityList.forEach { it.clear() }
@@ -152,5 +180,6 @@ class SimulationSystem(
 
     companion object {
         const val DELTA_SIM_TICK_TIME = 0.016666666f
+        private const val PAUSE_TIMEOUT_NANOS = 2_000_000_000L
     }
 }

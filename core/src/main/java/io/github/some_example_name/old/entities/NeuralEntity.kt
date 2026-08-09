@@ -81,6 +81,21 @@ class NeuralEntity(
         super.loadSerialize()
     }
 
+    fun copyFrom(other: NeuralEntity) {
+        copyBaseFrom(other)
+        copyInto(other.isNeuronTransportable, isNeuronTransportable)
+        copyInto(other.activationFuncType, activationFuncType)
+        copyInto(other.a, a)
+        copyInto(other.b, b)
+        copyInto(other.c, c)
+        copyInto(other.dTime, dTime)
+        copyInto(other.remember, remember)
+        copyInto(other.isSum, isSum)
+        copyInto(other.tickPain, tickPain)
+        copyInto(other.tickRed, tickRed)
+        copyInto(other.weight, weight)
+    }
+
     override fun onCopy() {}
     override fun onPaste() {}
 

@@ -30,7 +30,13 @@ import io.github.some_example_name.old.systems.render.doesUsePostProcess
 
 class SimulationScreen(
     val map: Array<BooleanArray>?,
-    val genomeName: String?
+    val genomeName: String?,
+    /**
+     * Мир уже восстановлен из сохранения карты. Тогда его нельзя генерировать заново,
+     * а геномы нельзя перечитывать из папки: organEntity.genomeIndex ссылается на список,
+     * восстановленный вместе с картой.
+     */
+    val restoredFromSave: Boolean = false
 ) : Screen {
 
     private val simEntity = DISimulationContainer.simulationData
@@ -90,7 +96,9 @@ class SimulationScreen(
     private val extraTextures = mutableListOf<Texture>()
 
     override fun show() {
-        DISimulationContainer.genomeManager.loadGenomes(genomeName)
+        if (!restoredFromSave) {
+            DISimulationContainer.genomeManager.loadGenomes(genomeName)
+        }
 
         spriteBatch = SpriteBatch()
         stage = Stage(ScreenViewport())
@@ -104,6 +112,17 @@ class SimulationScreen(
         // Это обеспечивает корректный размер текста при любом разрешении/DPI
         font.data.setScale(Gdx.graphics.density)
         DISimulationContainer.resizeWorld()
+
+        // Мир строим до старта потока симуляции, иначе он начнёт считать недостроенный мир.
+        // Восстановленный из сохранения мир уже готов — его генерировать нельзя, иначе
+        // рельеф добавится поверх загруженных частиц.
+        if (map != null) {
+            DISimulationContainer.worldTerrainManager.map = map
+            if (!restoredFromSave) {
+                simulationSystem.dispose()   // чистый лист под новый мир
+                simulationSystem.initMap()
+            }
+        }
 
         simulationSystem.startThread()
         root = Table()
@@ -124,13 +143,6 @@ class SimulationScreen(
             camera = camera
         )
 
-        if (map != null) {
-            println("map")
-            DISimulationContainer.worldTerrainManager.map = map
-            simulationSystem.initMap()
-        }
-
-        println("Size x after: ${DISimulationContainer.particleEntity.x.size}, 0 index: ${DISimulationContainer.particleEntity.x[0]}")
     }
 
     val keyCodes = intArrayOf(

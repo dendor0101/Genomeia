@@ -144,21 +144,19 @@ abstract class Entity(
         generationList = generation.copyOf(bound).toList()
         isAliveList = isAlive.copyOf(bound).toList()
         positionInAliveList = positionInAlive.copyOf(bound).toList()
-        aliveListData = aliveList.subList(0, aliveList.size)          // IntArrayList -> IntArray -> List
-        deadStackData = deadStack.subList(0, deadStack.size)
+        // Именно копии: subList у fastutil возвращает view на живой список,
+        // который симуляция продолжит менять прямо во время сериализации
+        aliveListData = aliveList.toIntArray().toList()
+        deadStackData = deadStack.toIntArray().toList()
     }
 
     // Вызывается сразу после десериализации
     open fun loadSerialize() {
         // Восстанавливаем transient-массивы нужного размера (maxAmount уже восстановлен)
-        println(maxAmount)
-        println("GenList: ${generationList.size}")
-        println(startMaxAmount)
         val safeMaxAmount = maxOf(maxAmount, generationList.size, startMaxAmount)
 
         // Принудительно обновляем maxAmount, чтобы наследники (SubstancesEntity) видели правильное значение
         maxAmount = safeMaxAmount
-        println(maxAmount)
         generation = IntArray(maxAmount)
         isAlive = BooleanArray(maxAmount)
         positionInAlive = IntArray(maxAmount) { -1 }
@@ -170,6 +168,56 @@ abstract class Entity(
         // Восстанавливаем fastutil-коллекции
         deadStack = IntArrayList(deadStackData)
         aliveList = IntArrayList(aliveListData)
+    }
+
+    /**
+     * Наращивает все массивы (через штатный onResize наследника), пока maxAmount не достигнет target.
+     * Нужно при загрузке: в сохранении мир мог вырасти больше, чем стартовый размер контейнера.
+     */
+    fun growTo(target: Int) {
+        while (maxAmount < target) resize()
+    }
+
+    /**
+     * Копирует служебные данные Entity из [other] в существующие массивы.
+     *
+     * Важно: копируем содержимое, а не подменяем сам объект. Все системы (CellSystem,
+     * LinkPhysicsSystem, RenderSystem и т.д.) держат ссылки на сущности, полученные в
+     * конструкторе, поэтому замена объекта в DI-контейнере их не затронула бы.
+     */
+    protected fun copyBaseFrom(other: Entity) {
+        growTo(other.maxAmount)
+
+        lastId = other.lastId
+
+        generation.fill(0)
+        isAlive.fill(false)
+        positionInAlive.fill(-1)
+
+        copyInto(other.generation, generation)
+        copyInto(other.isAlive, isAlive)
+        copyInto(other.positionInAlive, positionInAlive)
+
+        aliveList.clear()
+        aliveList.addAll(other.aliveList)
+        deadStack.clear()
+        deadStack.addAll(other.deadStack)
+    }
+
+    protected fun copyInto(src: IntArray, dst: IntArray) {
+        System.arraycopy(src, 0, dst, 0, minOf(src.size, dst.size))
+    }
+
+    protected fun copyInto(src: FloatArray, dst: FloatArray) {
+        System.arraycopy(src, 0, dst, 0, minOf(src.size, dst.size))
+    }
+
+    protected fun copyInto(src: BooleanArray, dst: BooleanArray) {
+        System.arraycopy(src, 0, dst, 0, minOf(src.size, dst.size))
+    }
+
+    protected fun copyInto(src: ByteArray, dst: ByteArray) {
+        System.arraycopy(src, 0, dst, 0, minOf(src.size, dst.size))
     }
 
     protected abstract fun onCopy()

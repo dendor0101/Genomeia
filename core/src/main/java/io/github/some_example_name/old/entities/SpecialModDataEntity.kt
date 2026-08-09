@@ -35,6 +35,16 @@ class SpecialModDataEntity(
 
     fun loadEntity() {
         super.loadSerialize()
+        rebuildTransient()
+    }
+
+    fun copyFrom(other: SpecialModDataEntity) {
+        copyBaseFrom(other)
+        specialModDataList = other.specialModDataList
+        rebuildTransient()
+    }
+
+    private fun rebuildTransient() {
         specialModData = Array(maxAmount) { null }
         specialModDataList.forEachIndexed { index, modData ->
             if (index < maxAmount) specialModData[index] = modData

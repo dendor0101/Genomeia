@@ -20,6 +20,10 @@ class ThreadManager(
 
     var isRunning = false
 
+    /** Тик выполняется прямо сейчас. Нужен, чтобы сохранение дождалось согласованного состояния мира. */
+    @Volatile
+    var isTickRunning = false
+
     private fun createDaemonFixedThreadPool(): ExecutorService {
         return Executors.newFixedThreadPool(threadCount) { runnable ->
             val thread = Thread(runnable)
@@ -88,12 +92,16 @@ class ThreadManager(
                 accumulator += frameTime
 
                 if (simulationData.maxSpeed) {
+                    isTickRunning = true
                     onUpdateTick.invoke()
+                    isTickRunning = false
                     updatesThisSecond++
                 } else {
                     // обычный фиксированный timestep
                     while (accumulator >= deltaTimePerTick) {
+                        isTickRunning = true
                         onUpdateTick.invoke()
+                        isTickRunning = false
                         accumulator -= deltaTimePerTick
                         updatesThisSecond++
                     }

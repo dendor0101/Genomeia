@@ -168,6 +168,25 @@ class PheromoneEntity(
 
     fun loadSerializedEntity() {
         super.loadSerialize()
+        rebuildTransient()
+    }
+
+    fun copyFrom(other: PheromoneEntity) {
+        copyBaseFrom(other)
+        copyInto(other.x, x)
+        copyInto(other.y, y)
+        copyInto(other.time, time)
+        copyInto(other.radiusSquared, radiusSquared)
+        copyInto(other.emitterIndex, emitterIndex)
+        copyInto(other.color, color)
+        copyInto(other.type, type)
+
+        pheromoneMapGridData = other.pheromoneMapGridData
+        emitterMapData = other.emitterMapData
+        rebuildTransient()
+    }
+
+    private fun rebuildTransient() {
         pheromoneMapGrid.clear()
         for (entry in pheromoneMapGridData) {
             val gridMap = pheromoneMapGrid.computeIfAbsent(entry.type) { Int2ObjectOpenHashMap() }

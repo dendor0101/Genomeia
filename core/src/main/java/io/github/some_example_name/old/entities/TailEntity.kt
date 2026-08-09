@@ -31,6 +31,11 @@ class TailEntity(
         super.loadSerialize()
     }
 
+    fun copyFrom(other: TailEntity) {
+        copyBaseFrom(other)
+        copyInto(other.speed, speed)
+    }
+
     override fun onCopy() {}
     override fun onPaste() {}
 

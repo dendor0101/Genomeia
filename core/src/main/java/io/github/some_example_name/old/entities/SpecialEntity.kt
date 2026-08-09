@@ -159,14 +159,28 @@ class SpecialEntity(
         this.pheromoneEmitterEntity = pheromoneEmitterEntity
     }
 
+    fun serializeEntity() {
+        super.saveSerialize()
+    }
+
+    fun loadSerializedEntity() {
+        super.loadSerialize()
+    }
+
+    fun copyFrom(other: SpecialEntity) {
+        copyBaseFrom(other)
+        copyInto(other.specialTypeIndexes, specialTypeIndexes)
+    }
+
     override fun onCopy() {}
     override fun onPaste() {}
 
     override fun onClear(bound: Int) {
-        specialTypeIndexes.clear()
+        // Дефолт -1, как у инициализатора поля и у delete*: 0 — валидный индекс в eyeEntity/tailEntity
+        specialTypeIndexes.clear(-1)
     }
 
     override fun onResize(oldMax: Int) {
-        specialTypeIndexes = specialTypeIndexes.resize()
+        specialTypeIndexes = specialTypeIndexes.resize(-1)
     }
 }
