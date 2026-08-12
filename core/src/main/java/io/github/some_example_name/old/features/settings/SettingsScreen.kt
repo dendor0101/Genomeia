@@ -97,7 +97,11 @@ class SettingsScreen : VisDslScreen(
 
             visTextButton(
                 text = bundle.get("button.back"),
-                onClick = { navigation.performCommand(GoBack) }
+                onClick = {
+                    navigation.performCommand(GoBack)
+                    viewModel.saveSettings(GlobalSettings, "./settings/globalSettings.json")
+
+                }
             ) {
                 padTop(24f.dp())
             }

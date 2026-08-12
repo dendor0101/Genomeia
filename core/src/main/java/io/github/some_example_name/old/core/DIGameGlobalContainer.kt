@@ -13,6 +13,9 @@ import io.github.some_example_name.old.cells.base.CellListBuilder
 import io.github.some_example_name.old.commands.NavigationCommandsManager
 import io.github.some_example_name.old.core.DISimulationContainer.gridHeight
 import io.github.some_example_name.old.core.DISimulationContainer.heightMultiplier
+import io.github.some_example_name.old.features.settings.GlobalSettings
+import io.github.some_example_name.old.features.settings.SettingsScreen
+import io.github.some_example_name.old.features.settings.SettingsViewModel
 import io.github.some_example_name.old.systems.genomics.Morphogenesis
 import io.github.some_example_name.old.systems.genomics.genome_deprecated.GenomeJsonReader
 import io.github.some_example_name.old.systems.render.ShaderManager
@@ -107,6 +110,8 @@ object DIGameGlobalContainer {
             checked = roundOver
             checkedOver = roundOver
         }
+
+        SettingsViewModel.loadSettings("./settings/globalSettings.json")
     }
 
     val navigationCommandsManager = NavigationCommandsManager()
