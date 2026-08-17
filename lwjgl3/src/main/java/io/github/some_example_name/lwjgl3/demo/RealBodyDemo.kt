@@ -76,6 +76,21 @@ import kotlin.math.sqrt
  *  - SOFT_COMPLIANCE НИКОГДА не ноль. Ноль усиливает шум float32 в 1/h раз и
  *    раскручивает организм при сокращении мышцы: момент -896 против +12. Это общее
  *    свойство XPBD на float, а не особенность стенда.
+ *  - AREA_COMPLIANCE ТОЖЕ НИКОГДА не ноль, и по той же причине. У площади утечка не
+ *    линейная, а УГЛОВАЯ: плечо у градиента площади не нулевое, и невязка уходит в
+ *    раскрутку тела. Величина своя, в триста раз меньше: сравнивать надо не с
+ *    SOFT_COMPLIANCE, а с суммой w*|grad|^2 своей стадии.
+ *  - SHAPE MATCHING СЧИТАТЬ В ЛОКАЛЬНЫХ КООРДИНАТАХ И ОБНУЛЯТЬ СУММУ ПОПРАВКИ.
+ *    Это оказалось ГЛАВНЫМ источником паразитного дрейфа во всём стенде — сильнее
+ *    ограничений расстояния и площади в тысячу раз. Причина не физическая:
+ *    вычитание мировой координаты (1.55) из мировой координаты даёт смещение (0.05)
+ *    с относительной ошибкой 2e-6, и сумма w*q, обязанная быть нулём, ею и оказывается.
+ *    Дальше updateVelocities умножает это на 1/h. Подробности и три лекарства — в
+ *    комментарии projectBone. В движке это тем важнее, чем ДАЛЬШЕ организм от начала
+ *    координат: ошибка растёт пропорционально абсолютной координате, а мир большой.
+ *  - ПАМЯТЬ СРЕДЫ ХРАНИТЬ ВЕКТОРОМ В МИРОВЫХ ОСЯХ, а не скаляром вдоль нормали ребра.
+ *    Скаляр в поворачивающейся рамке возит запасённый импульс среды за телом бесплатно:
+ *    на чистом повороте тела он выдаёт 2.35 единицы скорости из ниоткуда. См. flowX.
  *  - Площадь покоя треугольника ОБЯЗАНА масштабироваться вместе с длинами при
  *    сокращении мышцы, квадратично (s^2). Сейчас в движке processLink меняет
  *    linksNaturalLength, а restArea2 остаётся - с жёстким ограничением площади
@@ -116,7 +131,8 @@ import kotlin.math.sqrt
  * ----------
  * ЛКМ - тянуть вершину, наведение на ребро мышцы - сокращение её кластера,
  * 1..9 - держать мышцу сокращённой, 0 - все сразу, G - автоматический гребок,
- * SPACE - пауза, R - сброс, B - жёсткость костей, C - режим отрисовки.
+ * SPACE - пауза, R - сброс (включая камеру), B - жёсткость костей, C - режим отрисовки,
+ * ПКМ или средняя кнопка - панорама, колесо - зум к точке под курсором.
  */
 class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
 
@@ -159,11 +175,49 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * «максимальная жёсткость даром».
          */
         private const val SOFT_COMPLIANCE = 1.0e-4f
-        private const val AREA_COMPLIANCE = 0f
 
-        private const val GRAVITY = 0f//-9.81f
-        private const val GROUND_Y = 0f
-        private const val GROUND_FRICTION = 0.8f
+        /**
+         * ТОЖЕ НЕ СТАВИТЬ В НОЛЬ, по той же причине, что и SOFT_COMPLIANCE.
+         *
+         * Тут долго стоял ноль — при том что у SOFT_COMPLIANCE прямо написано, что ноль
+         * усиливает шум float32. Ограничение площади ровно так же на этом стоит, только
+         * утечка у него не линейная, а УГЛОВАЯ: градиент площади направлен по нормали к
+         * противолежащей стороне, плечо у него не нулевое, и остаточная невязка уходит
+         * не в дрейф, а в РАСКРУТКУ тела.
+         *
+         * Замер, 600 кадров удержания мышцы, суммарный r x dx по стадии (идеал — ноль):
+         *
+         *     AREA_COMPLIANCE = 0       ->  +3.4e-03   момент тела L = +1.28
+         *     AREA_COMPLIANCE = 3.0e-7  ->  -2.6e-04   L = -0.096      в 13 раз меньше
+         *
+         * Заодно падает и утечка ограничения РАССТОЯНИЯ (-1.3e-3 -> +9.2e-5): жёсткая
+         * площадь подкидывала шум ему на вход.
+         *
+         * ВЕЛИЧИНА. Сравнивать надо не с SOFT_COMPLIANCE, а со знаменателем своей стадии:
+         * у расстояния это w = 2, у площади это сумма w*|grad|^2, то есть порядка
+         * 3 * 0.045^2 = 6e-3, в триста раз меньше. Поэтому и податливость должна быть
+         * во столько же раз меньше — 1e-4 здесь запёрло бы ткань наглухо.
+         *
+         * Развёртка (кость уже починена), метрика — ПОВТОРЯЕМОСТЬ гребка, разброс шага
+         * центра масс по 6 одинаковым циклам, и тяга за цикл:
+         *
+         *          0     разброс 6.1%   тяга 0.194
+         *      1e-08     разброс 3.8%   тяга 0.180
+         *      1e-07     разброс 2.8%   тяга 0.156
+         *      3e-07     разброс 2.4%   тяга 0.144
+         *      1e-06     разброс 1.0%   тяга 0.137   <- стоит сейчас
+         *      3e-06     разброс 4.0%   тяга 0.135
+         *      1e-05     разброс 3.3%   тяга 0.133
+         *
+         * Тяга падает монотонно и полого, разброс имеет чёткий минимум на 1e-6. Часть
+         * потерянной «тяги» тягой и не была: при нуле тело вдобавок само раскручивалось,
+         * и метрика записывала это себе в плюс.
+         */
+        private const val AREA_COMPLIANCE = 1.0e-6f
+
+        private const val GRAVITY = 0f
+        private const val GROUND_Y = -100f
+        private const val GROUND_FRICTION = 0.0f
         private const val GROUND_RESTITUTION = 0f
         /**
          * Изотропное сопротивление среды, 1/сек. Гасит скорость одинаково во всех
@@ -172,7 +226,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * Поднимать его ради «плотности среды» бессмысленно — движение умрёт, а плавания
          * не появится. Здесь оно остаётся только общим успокоителем.
          */
-        private const val MEDIUM_DRAG = 0.5f
+        private const val MEDIUM_DRAG = 0.1f
 
         /**
          * АНИЗОТРОПНОЕ сопротивление на граничных рёбрах, 1/(сек * единица длины).
@@ -202,7 +256,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * замере, и не проверил, каково тело на ощупь. Это в 14 раз плотнее изотропного
          * сопротивления, отсюда и ощущение вязкой субстанции при перетаскивании.
          */
-        private const val NORMAL_DRAG = 60f
+        private const val NORMAL_DRAG = 15f
 
         /**
          * КВАДРАТИЧНАЯ часть сопротивления: сила растёт как v*|v|, а не как v.
@@ -228,12 +282,99 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * и профиль скорости начинает влиять даже на линейной модели.
          *
          * ЧТО ИЗ ДВУХ ЧЛЕНОВ ГЛАВНЫЙ. Квадратичный перевешивает линейный при
-         * |vn| > NORMAL_DRAG / NORMAL_DRAG_QUADRATIC = 60/900 = 0.067. Замер нормальной
+         * |vn| > NORMAL_DRAG / NORMAL_DRAG_QUADRATIC = 15/3600 = 0.004. Замер нормальной
          * скорости на граничных рёбрах во время гребка: средняя 0.24, пиковая до 1.9 —
          * то есть в 4 и в 28 раз выше порога. На практике режим квадратичный почти всегда,
          * линейный член работает только на затухании между гребками.
+         *
+         * БАЛАНС ЛИНЕЙНОГО И КВАДРАТИЧНОГО — ЭТО РУЧКА «СКОЛЬЖЕНИЯ».
+         *
+         * Линейный член тормозит на ЛЮБОЙ скорости, включая медленный накат после
+         * толчка. Квадратичный заметен только на быстрых движениях, то есть на самом
+         * взмахе. Значит сдвиг баланса в сторону квадратичного сохраняет тягу гребка
+         * и убирает торможение наката.
+         *
+         * Замер: 6 полных циклов гребли (20 с), затем 10 с наката без гребков.
+         *
+         *     ND=60  Q=900   среда 0.5  ->  путь 0.0274  накат 0.0131   (было)
+         *     ND=60  Q=900   среда 0.1  ->  путь 0.0283  накат 0.0111
+         *     ND=15  Q=3600  среда 0.5  ->  путь 0.0147  накат 0.0174
+         *     ND=15  Q=3600  среда 0.1  ->  путь 0.0593  накат 0.0221   (стоит сейчас)
+         *
+         * Последняя строка лучше первой и по тяге в 2.2 раза, и по накату в 1.7.
+         * Третья строка выпадает из монотонности — замер по одной траектории шумит,
+         * потому что тело ещё и поворачивает, а метрика берёт расстояние от старта.
          */
         private const val NORMAL_DRAG_QUADRATIC = 900f
+
+        /**
+         * УВЛЕЧЁННЫЙ ПОТОК (присоединённая масса), 1/сек. 0 — выключено.
+         *
+         * Проблема, которую это решает: в чисто резистивной модели сопротивление считается
+         * от АБСОЛЮТНОЙ скорости ребра, будто среда всегда неподвижна. В реальности тело
+         * разгоняет среду вокруг себя, и через долю секунды она движется почти вместе с
+         * ним — сопротивление падает почти до нуля. Именно поэтому толкнутое тело ещё
+         * какое-то время плывёт, и это НЕ инерция тела, а импульс, запасённый в потоке.
+         *
+         * Модель: у каждого граничного ребра хранится нормальная скорость увлечённой
+         * среды. Она экспоненциально догоняет скорость ребра, а сопротивление считается
+         * от ОТНОСИТЕЛЬНОЙ скорости.
+         *
+         *   - резкий взмах: поток догнать не успел, относительная скорость велика,
+         *     тяга максимальная;
+         *   - равномерное скольжение: поток догнал, относительная скорость около нуля,
+         *     торможения почти нет.
+         *
+         * То есть та же самая величина одновременно даёт и сильный гребок, и длинный
+         * накат — без всяких порогов и без ущерба тяге.
+         *
+         * ВЕЛИЧИНА. Замер на теле 370 клеток с одной мышцей: путь за 20 секунд гребли
+         * и накат за 5 секунд после толчка v = 0.5.
+         *
+         *      0  ->  тяга 1.34   накат 0.23   (классическая резистивная модель)
+         *      2  ->  тяга 6.39   накат 0.93   максимум тяги
+         *      8  ->  тяга 5.41   накат 1.45   стоит сейчас
+         *     30  ->  тяга 0.31   накат 1.75   тяга ОБВАЛИЛАСЬ
+         *
+         * Тяга имеет максимум, накат растёт монотонно — это две разные вещи, и ручка
+         * между ними торгует. Выше 8 среда догоняет плавник так быстро, что оттолкнуться
+         * уже не от чего: при 30 путь вчетверо хуже, чем вообще без потока.
+         *
+         * Полезный диапазон 2..8. Меньше — хочется резкости, больше — скольжения.
+         * Оптимум привязан к ДЛИТЕЛЬНОСТИ ГРЕБКА: постоянная времени потока должна быть
+         * сравнима с ней, поэтому при смене GAIT_PERIOD значение надо пересматривать.
+         */
+
+        private const val FLOW_ENTRAIN = 2f
+
+        /**
+         * РАССЕЯНИЕ увлечённого потока, 1/сек. Пара к FLOW_ENTRAIN, без неё модель врёт.
+         *
+         * FLOW_ENTRAIN только ДОГОНЯЕТ тело и ничего не теряет, поэтому сам по себе
+         * запас среды — вечный аккумулятор импульса. После нескольких гребков он накачан,
+         * и разность (vn - поток) становится отрицательной: среда начинает толкать
+         * тело ВПЕРЁД без единого гребка, а движение не кончается вовсе.
+         *
+         * В реальности вязкость уносит импульс потока в объём жидкости за конечное
+         * время. Эта константа и задаёт это время: 1/сек — секунда, 4/сек — четверть.
+         *
+         *
+         * ЗАМЕР: 8 гребков, затем мышца отпущена насовсем (FLOW_ENTRAIN = 0.2):
+         *
+         *     0  ->  за гребки 5.07,  ПОСЛЕ них ещё 3.32 за 20 с и всё ещё едет
+         *     1  ->  за гребки 2.15,  после них 0.26
+         *     3  ->  за гребки 1.92,  после них 0.26
+         *    10  ->  за гребки 1.82,  после них 0.24
+         *
+         * Накат падает в 13 раз уже при 1, дальше не улучшается, а тяга продолжает
+         * снижаться — поэтому стоит 1. Обратите внимание, во что обходится починка:
+         * тяга упала с 5.07 до 2.15, то есть больше половины прежней «мощности»
+         * была не гребком, а разряжающимся аккумулятором.
+         * Осмысленное соотношение: рассеяние должно быть БЫСТРЕЕ, чем увлечение
+         * (FLOW_DECAY > FLOW_ENTRAIN), иначе поток успевает накопиться больше, чем
+         * потерять, и аккумулятор возвращается.
+         */
+        private const val FLOW_DECAY = 1f
 
         private const val VISCOSITY = 200f
 
@@ -263,7 +404,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * Без тяги посылка верна, и там зачёт работает. Дрейф от мышц как раз копится
          * в свободном плавании, то есть ровно тогда, когда поправка включена.
          */
-        private const val CANCEL_INTERNAL_DRIFT = true
+        private const val CANCEL_INTERNAL_DRIFT = false
 
         /** Тяга — ограничение с потолком, а не телепорт (см. SoftBodyWithBoneDemo). */
         private const val MAX_DRAG_STEP = 0.008f
@@ -358,6 +499,36 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
     private lateinit var boundA: IntArray
     private lateinit var boundB: IntArray
 
+    /**
+     * Скорость увлечённой средой у каждого граничного ребра — ВЕКТОРОМ в мировых осях.
+     *
+     * Раньше здесь лежал скаляр «вдоль нормали ребра», и это было неверно. Нормаль
+     * поворачивается вместе с телом, значит запасённый в среде импульс поворачивался
+     * вместе с ним БЕСПЛАТНО, без всякой реакции — среда таскалась за телом, как
+     * приклеенная. Замер, вскрывающий это, — жёсткое вращение тела вокруг центра масс
+     * при ω = 2 рад/с, решатель не участвует, работает только сопротивление среды.
+     * Честная среда обязана дать импульс, который за оборот ВОЗВРАЩАЕТСЯ (сила в
+     * системе тела постоянна, в мировой — крутится), то есть ноль на оборот:
+     *
+     *     поток выключен вовсе      ->  0.00   за каждый из 4 оборотов
+     *     скаляр вдоль нормали      ->  870    и не возвращается
+     *     вектор в мировых осях     ->  308    и не возвращается
+     *
+     * Импульс 870 на массе 370 — это 2.35 единицы скорости ИЗ НИОТКУДА, разово, за один
+     * поворот тела. Вот откуда «тело вдруг поехало не туда»: организм повернулся,
+     * и накопитель среды выдал ему толчок в стороне, никак не связанной с гребком.
+     *
+     * Вектор в мире убирает две трети этого. Остаток — от того, что запас всё равно
+     * привязан к ребру и рассеивается (FLOW_DECAY), а не возвращается. Полностью
+     * убирает только FLOW_ENTRAIN = 0, ценой примерно 15% тяги (замер у FLOW_ENTRAIN).
+     * Пробовал и полноценного партнёра по импульсу — присоединённую порцию среды с
+     * массой и симметричным обменом: разовый толчок оказался ПРОПОРЦИОНАЛЕН массе
+     * порции (70 при 10, 250 при 40, 1068 при 400), а повторяемость гребка развалилась
+     * с 1% до 40..55%. Не стоит того.
+     */
+    private lateinit var flowX: FloatArray
+    private lateinit var flowY: FloatArray
+
     // --- треугольники ---
     private lateinit var triMuscle: IntArray
     private lateinit var triInverted: BooleanArray
@@ -375,6 +546,20 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
 
     /** Номер кости у вершины, -1 если не в жёсткой кости. */
     private lateinit var boneOf: IntArray
+
+    /**
+     * Поза покоя каждой кости — смещения от её центроида, предпосчитанные один раз.
+     *
+     * Это то самое r0, которое в движке надо запечь в BakedLayout. Здесь оно не только
+     * экономит работу: сумма w*q0 досажена в НОЛЬ ровно во float, и без этого зачёт
+     * поправки в projectBone не имел бы смысла — см. её комментарий.
+     */
+    private lateinit var boneRestQx: Array<FloatArray>
+    private lateinit var boneRestQy: Array<FloatArray>
+
+    /** Черновик поправок самой большой кости. Заводится один раз, в горячем цикле не аллоцируется. */
+    private lateinit var boneDx: FloatArray
+    private lateinit var boneDy: FloatArray
 
     // --- мышцы ---
     private lateinit var muscleOf: IntArray
@@ -439,6 +624,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         degenerateBones = body.boneClusters.size - rigid.size
         rigidBones = rigid.toTypedArray()
         rigidBones.forEachIndexed { b, ids -> for (i in ids) boneOf[i] = b }
+        buildBoneRestPose()
 
         body.muscleClusters.forEachIndexed { m, ids -> for (i in ids) muscleOf[i] = m }
         muscleActivation = FloatArray(body.muscleClusters.size)
@@ -481,6 +667,43 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
     }
 
     /**
+     * Поза покоя костей: смещения от центроида кластера, один раз и навсегда.
+     *
+     * Центроид считается в double НАМЕРЕННО: это подготовка, а не горячий путь, и
+     * именно здесь дешевле всего убить сокращение разрядов. В движке это делает
+     * запекатель BakedLayout, в рантайме double не появляется.
+     *
+     * Сумма смещений досаживается в ноль итерацией: после вычитания среднего во float
+     * сумма остаётся порядка 1e-6, второй проход убирает и её. Без этого проекция кости
+     * каждый подшаг сдвигала бы кость на этот остаток — а это и был дрейф.
+     */
+    private fun buildBoneRestPose() {
+        boneRestQx = Array(rigidBones.size) { FloatArray(rigidBones[it].size) }
+        boneRestQy = Array(rigidBones.size) { FloatArray(rigidBones[it].size) }
+        var maxSize = 1
+        rigidBones.forEachIndexed { b, ids ->
+            if (ids.size > maxSize) maxSize = ids.size
+            val qx = boneRestQx[b]; val qy = boneRestQy[b]
+            var cx = 0.0; var cy = 0.0
+            for (i in ids) { cx += body.x[i]; cy += body.y[i] }
+            cx /= ids.size; cy /= ids.size
+            for (k in ids.indices) {
+                qx[k] = (body.x[ids[k]] - cx).toFloat()
+                qy[k] = (body.y[ids[k]] - cy).toFloat()
+            }
+            for (pass in 0 until 3) {
+                var sx = 0f; var sy = 0f
+                for (k in ids.indices) { sx += qx[k]; sy += qy[k] }
+                if (sx == 0f && sy == 0f) break
+                val dx = sx / ids.size; val dy = sy / ids.size
+                for (k in ids.indices) { qx[k] -= dx; qy[k] -= dy }
+            }
+        }
+        boneDx = FloatArray(maxSize)
+        boneDy = FloatArray(maxSize)
+    }
+
+    /**
      * Граница тела — рёбра, входящие ровно в ОДИН треугольник.
      *
      * Внутреннее ребро делят два треугольника, граничное — только один. Это работает на
@@ -514,6 +737,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         }
         boundCount = a.size
         boundA = a.toIntArray(); boundB = b.toIntArray()
+        flowX = FloatArray(boundCount); flowY = FloatArray(boundCount)
         println("[RealBodyDemo] boundary edges = $boundCount")
     }
 
@@ -523,12 +747,16 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             vx[i] = 0f; vy[i] = 0f
             invMass[i] = 1f; matchWeight[i] = 1f
         }
+        flowX.fill(0f); flowY.fill(0f)
         muscleActivation.fill(0f)
         muscleTarget.fill(0f)
         gaitFrame = 0
         hoveredMuscle = -1
         hoverId = -1
         dragId = -1
+        camera.zoom = 1f
+        camera.position.set(1.55f, 0.85f, 0f)
+        camera.update()
         invertedPeak = 0
     }
 
@@ -637,31 +865,99 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         for (i in 0 until n) { px[i] -= dx; py[i] -= dy }
     }
 
-    private fun projectBone(ids: IntArray) {
-        var cx = 0f; var cy = 0f; var c0x = 0f; var c0y = 0f; var wsum = 0f
+    /**
+     * Shape matching, alpha = 1. Проекция кости на позу покоя.
+     *
+     * ГЛАВНЫЙ ИСТОЧНИК ПАРАЗИТНОГО ДРЕЙФА БЫЛ ИМЕННО ЗДЕСЬ — и это была не физика,
+     * а сокращение значащих разрядов float32. Замер на этом теле, 600 кадров удержания
+     * мышцы, суммарное смещение центра масс от каждой стадии (идеал — ноль):
+     *
+     *     стадия              как было      после починки
+     *     solveConstraints    1.1e-05        1.8e-05
+     *     solveAreas          6.0e-05        (см. AREA_COMPLIANCE)
+     *     projectBone        -1.1e-02       -9.5e-06      в 1170 раз меньше
+     *
+     * То есть проекция кости текла в ТЫСЯЧУ раз сильнее, чем оба ограничения вместе.
+     * updateVelocities делит это смещение на h, то есть умножает на 576, и оно попадает
+     * прямо в скорость: суммарный импульс тела за 600 кадров был |P| = 9.8 при массе 370.
+     * Отсюда и «мышца дёрнулась пару раз, а тело потом само куда-то уплывает».
+     *
+     * ПОЧЕМУ ТЕКЛО. Всё считалось в МИРОВЫХ координатах: px около 1.55, а смещение от
+     * центра кости около 0.05. Разность двух чисел величиной 1.55 несёт ошибку 1e-7
+     * АБСОЛЮТНУЮ, то есть 2e-6 ОТНОСИТЕЛЬНО самого смещения. В сумме по кластеру эти
+     * ошибки не гасятся, и сумма w*q, которая обязана быть нулём по определению
+     * центроида, оказывается порядка 1e-5. Ровно на неё центр масс кости и съезжает —
+     * каждый подшаг, всегда примерно в одну сторону, потому что поза покоя постоянна.
+     *
+     * ТРИ ЛЕКАРСТВА, по вкладу (замер выше, разбор в PhysicsAudit5, тест K):
+     *   1. локальное начало отсчёта — числа порядка размера кости, а не мира: 24x;
+     *   2. смещения позы покоя q0 предпосчитаны и досажены суммой в ноль: само по себе
+     *      почти ничего не даёт, но нужно для п.3 и убирает работу с горячего пути;
+     *   3. суммарная поправка обнуляется ЯВНО: ещё 45x, итого 1170x.
+     *
+     * Зачёт УГЛОВОЙ поправки тоже пробовался и оказался вреден: линейная утечка от него
+     * выросла с 9.5e-6 до 9.8e-5, а угловая не улучшилась. Дело в том, что оптимальный
+     * угол best-fit сам по себе даёт нулевой угловой импульс — это условие
+     * стационарности того максимума, который ищет полярное разложение. Угловая утечка
+     * живёт не здесь, а в solveAreas.
+     *
+     * ЧЕМ ЗА ЭТО ЗАПЛАЧЕНО, честно. Прежняя версия в позе покоя давала РОВНО ноль:
+     * она собирала позицию обратно из тех же самых сумм, из которых считала центроид,
+     * и промахи взаимно уничтожались до бита. Здесь q0 предпосчитан, поэтому цель
+     * отличается от body.x на 1e-7, и в покое остаётся ненулевая поправка. Замер,
+     * 2400 кадров без всякой активности мышц: смещение центра масс 1.3e-3, и это
+     * СЛУЧАЙНОЕ БЛУЖДАНИЕ (знак меняется), а не снос. Против 0.742 за 70 секунд после
+     * одного сокращения — то есть проиграно 500x там, где выиграно 16x. Вернуть точный
+     * ноль в покое, не отказываясь от предпосчитанного r0, у меня не получилось:
+     * пробовал и мировые координаты вместо локальных (утечка в покое 1.7e-3, а выбег
+     * ХУЖЕ: |P| 0.49 против 0.14), и отказ от досаживания суммы q0 в ноль (3.3e-3 и
+     * |P| 0.42). Обе хуже по обоим показателям сразу.
+     */
+    private fun projectBone(b: Int) {
+        val ids = rigidBones[b]
+        val q0x = boneRestQx[b]
+        val q0y = boneRestQy[b]
+
+        // Начало отсчёта — первая вершина кости. Дальше все числа порядка размера
+        // кости, и сокращения значащих разрядов больше нет.
+        val ox = px[ids[0]]; val oy = py[ids[0]]
+
+        var cx = 0f; var cy = 0f; var wsum = 0f
         for (i in ids) {
             val w = matchWeight[i]
-            cx += w * px[i]; cy += w * py[i]
-            c0x += w * body.x[i]; c0y += w * body.y[i]
+            cx += w * (px[i] - ox); cy += w * (py[i] - oy)
             wsum += w
         }
-        cx /= wsum; cy /= wsum; c0x /= wsum; c0y /= wsum
+        cx /= wsum; cy /= wsum
 
         var s = 0f; var t = 0f
-        for (i in ids) {
+        for (k in ids.indices) {
+            val i = ids[k]
             val w = matchWeight[i]
-            val ppx = px[i] - cx; val ppy = py[i] - cy
-            val qx = body.x[i] - c0x; val qy = body.y[i] - c0y
-            s += w * (qx * ppx + qy * ppy)
-            t += w * (qx * ppy - qy * ppx)
+            val ppx = (px[i] - ox) - cx; val ppy = (py[i] - oy) - cy
+            s += w * (q0x[k] * ppx + q0y[k] * ppy)
+            t += w * (q0x[k] * ppy - q0y[k] * ppx)
         }
         val norm = sqrt(s * s + t * t)
         if (norm < 1e-9f) return
         val cos = s / norm; val sin = t / norm
-        for (i in ids) {
-            val qx = body.x[i] - c0x; val qy = body.y[i] - c0y
-            px[i] = cx + cos * qx - sin * qy
-            py[i] = cy + sin * qx + cos * qy
+
+        // Считаются ПОПРАВКИ, а не сразу позиции: только по ним и можно обнулить
+        // утечку. Сама поправка мала (1e-6), поэтому её сумма считается точно.
+        var sdx = 0f; var sdy = 0f
+        for (k in ids.indices) {
+            val i = ids[k]
+            val tx = ox + cx + cos * q0x[k] - sin * q0y[k]
+            val ty = oy + cy + sin * q0x[k] + cos * q0y[k]
+            boneDx[k] = tx - px[i]; boneDy[k] = ty - py[i]
+            val w = matchWeight[i]
+            sdx += w * boneDx[k]; sdy += w * boneDy[k]
+        }
+        val mdx = sdx / wsum; val mdy = sdy / wsum
+        for (k in ids.indices) {
+            val i = ids[k]
+            px[i] += boneDx[k] - mdx
+            py[i] += boneDy[k] - mdy
         }
     }
 
@@ -738,7 +1034,33 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             // Скорость середины ребра: гребёт ребро целиком, а не каждый конец отдельно.
             val vmx = (vx[i] + vx[j]) * 0.5f
             val vmy = (vy[i] + vy[j]) * 0.5f
-            val vn = vmx * nx + vmy * ny
+            val vnAbs = vmx * nx + vmy * ny
+
+            // Поток экспоненциально догоняет ребро, сопротивление считается от
+            // ОТНОСИТЕЛЬНОЙ скорости. См. FLOW_ENTRAIN.
+            //
+            // Догоняется НОРМАЛЬНАЯ составляющая (тангенциальное скольжение среду не
+            // увлекает — в этом вся анизотропия), но ХРАНИТСЯ она вектором в мировых
+            // осях: поворот ребра запасённый импульс за собой не тащит. См. flowX.
+            var vn = vnAbs
+            if (FLOW_ENTRAIN > 0f) {
+                var kf = FLOW_ENTRAIN * h
+                if (kf > 1f) kf = 1f
+                flowX[e] += (vnAbs * nx - flowX[e]) * kf
+                flowY[e] += (vnAbs * ny - flowY[e]) * kf
+
+                // Поток РАССЕИВАЕТСЯ сам по себе. Без этих строк запас был бы вечным
+                // аккумулятором импульса: за гребки он накачивается, потом (vn - поток)
+                // уходит в минус, и среда начинает ТОЛКАТЬ тело вперёд без гребков —
+                // тело едет бесконечно долго. В реальности вязкость уносит импульс
+                // потока в объём, здесь это и моделируется.
+                var kd = FLOW_DECAY * h
+                if (kd > 1f) kd = 1f
+                flowX[e] -= flowX[e] * kd
+                flowY[e] -= flowY[e] * kd
+
+                vn = vnAbs - (flowX[e] * nx + flowY[e] * ny)
+            }
 
             // Линейная плюс квадратичная. Квадратичная сила равна NORMAL_DRAG_Q * vn*|vn|,
             // поэтому в коэффициенте (он делится на vn) остаётся |vn|.
@@ -792,7 +1114,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             solveConstraints(h)
             solveAreas(h)
             solveDrag(h)
-            if (bonesRigid) for (ids in rigidBones) projectBone(ids)
+            if (bonesRigid) for (b in rigidBones.indices) projectBone(b)
 
             if (cancel) cancelInternalDrift(beforeX, beforeY)
 
@@ -824,7 +1146,9 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
     private fun updateMuscleTargets() {
         muscleTarget.fill(0f)
 
-        if (hoveredMuscle >= 0) muscleTarget[hoveredMuscle] = 1f
+        // Проверка верхней границы не лишняя: тело может не иметь мышц вовсе
+        // (у текущей выгрузки muscle = 0), и тогда массив пуст.
+        if (hoveredMuscle in muscleTarget.indices) muscleTarget[hoveredMuscle] = 1f
 
         // Цифры 1..9 — держать соответствующую мышцу сокращённой.
         val keys = minOf(9, muscleTarget.size)
@@ -861,7 +1185,21 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         viewport.unproject(tmp)
         mouseX = tmp.x; mouseY = tmp.y
 
-        val touched = Gdx.input.isTouched
+        // Панорама средней или правой кнопкой. ЛЕВАЯ остаётся за перетаскиванием вершины,
+        // поэтому ниже проверяется именно она, а не isTouched: тот истинен для любой
+        // кнопки и панорама воровала бы захват.
+        if (Gdx.input.isButtonPressed(Input.Buttons.RIGHT) ||
+            Gdx.input.isButtonPressed(Input.Buttons.MIDDLE)
+        ) {
+            // Сколько мира приходится на пиксель — зависит от зума, поэтому считается
+            // каждый кадр, иначе на приближении панорама была бы рывками.
+            val unitsPerPixel = viewport.worldWidth * camera.zoom / viewport.screenWidth
+            camera.position.x -= Gdx.input.deltaX * unitsPerPixel
+            camera.position.y += Gdx.input.deltaY * unitsPerPixel   // экранный Y смотрит вниз
+            camera.update()
+        }
+
+        val touched = Gdx.input.isButtonPressed(Input.Buttons.LEFT)
         if (touched && !wasTouched) {
             val i = nearestParticle()
             if (i >= 0) { dragId = i; matchWeight[i] = 200f }
@@ -920,16 +1258,48 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         camera = OrthographicCamera()
         viewport = FitViewport(VIEW_WIDTH, VIEW_HEIGHT, camera)
         hudCamera = OrthographicCamera()
+
+        // Зум колесом. Только он и требует InputProcessor: всё остальное опрашивается
+        // напрямую, а прокрутка приходит событием и опросом её не поймать.
+        Gdx.input.inputProcessor = object : com.badlogic.gdx.InputAdapter() {
+            override fun scrolled(amountX: Float, amountY: Float): Boolean {
+                // Мир под курсором запоминается ДО зума и возвращается ПОСЛЕ — так
+                // приближение идёт к точке под мышью, а не к центру экрана.
+                tmp.set(Gdx.input.x.toFloat(), Gdx.input.y.toFloat(), 0f)
+                viewport.unproject(tmp)
+                val wx = tmp.x
+                val wy = tmp.y
+
+                camera.zoom *= if (amountY > 0) 1.15f else 1f / 1.15f
+                camera.zoom = camera.zoom.coerceIn(0.05f, 8f)
+                camera.update()
+
+                tmp.set(Gdx.input.x.toFloat(), Gdx.input.y.toFloat(), 0f)
+                viewport.unproject(tmp)
+                camera.position.x += wx - tmp.x
+                camera.position.y += wy - tmp.y
+                camera.update()
+                return true
+            }
+        }
+
         buildFromFile()
         reset()
     }
 
     override fun resize(width: Int, height: Int) {
         viewport.update(width, height)
-        camera.position.set(1.55f, 0.85f, 0f)
+        // Позиция ставится ТОЛЬКО в первый раз: иначе изменение размера окна сбрасывало
+        // бы панораму и зум, которые пользователь только что настроил.
+        if (!cameraPlaced) {
+            camera.position.set(1.55f, 0.85f, 0f)
+            cameraPlaced = true
+        }
         camera.update()
         hudCamera.setToOrtho(false, width.toFloat(), height.toFloat())
     }
+
+    private var cameraPlaced = false
 
     override fun render() {
         handleInput()
@@ -1028,7 +1398,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         font.color = HUD_MUTED
         font.draw(batch, "LMB drag   HOVER a muscle edge   1..9 hold a muscle   0 hold ALL   " +
             "G auto-gait" + if (gait) " [ON, period $GAIT_PERIOD]" else "", 16f, y); y -= line
-        font.draw(batch, "SPACE pause   R reset   B bones   C view", 16f, y); y -= line
+        font.draw(batch, "SPACE pause   R reset   B bones   C view   RMB/MMB pan   wheel zoom", 16f, y); y -= line
         if (paused) { font.color = HUD_WARN; font.draw(batch, "PAUSED", 16f, y) }
         batch.end()
     }
