@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>XPBD + DDA CCD + hash grid</title>
+<style>
+  html,body{margin:0;background:#0d1015;color:#c9d4e3;font:13px/1.5 ui-monospace,Consolas,"Courier New",monospace}
+  #wrap{display:flex;gap:14px;padding:14px;align-items:flex-start}
+  canvas{background:#11151c;border:1px solid #29323f;border-radius:6px;display:block;cursor:crosshair}
+  #ui{width:300px}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:3px 0}
+  .row label{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .val{width:62px;text-align:right;color:#8fd0a0}
+  input[type=range]{width:120px}
+  h3{margin:14px 0 4px;font-size:11px;color:#7d8b9e;text-transform:uppercase;letter-spacing:.09em}
+  button{background:#1b232e;color:#c9d4e3;border:1px solid #303c4b;border-radius:4px;padding:5px 9px;cursor:pointer;margin:2px 2px 2px 0}
+  button:hover{background:#232d3a}
+  .hint{color:#7d8b9e;font-size:12px}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div>
+    <canvas id="cv" width="1000" height="640"></canvas>
+    <div class="hint" style="margin-top:6px">
+      ЛКМ — тащить/разгонять частицы (бросок по скорости мыши) &nbsp;|&nbsp; ПКМ — взрыв &nbsp;|&nbsp; колесо — радиус кисти
+      <br>Чтобы разглядеть удар: «Замедление времени» 0.05x + «Показать свип-путь». Кнопка «Шаг &gt;» на паузе считает один кадр физики и проигрывает его подшаги.
+    </div>
+  </div>
+  <div id="ui">
+    <h3>Шаг симуляции</h3>
+    <div class="row"><label>Кадр (UPS)</label><input id="ups" type="range" min="1" max="120" step="1" value="60"><span class="val" id="ups_v"></span></div>
+    <div class="row"><label><input id="interp" type="checkbox" checked> Интерполяция по подшагам</label></div>
+    <div class="row"><label>Замедление времени</label><input id="tscale" type="range" min="2" max="100" step="1" value="100"><span class="val" id="tscale_v"></span></div>
+    <div class="row"><button id="b_pause">Пауза</button><button id="b_step">Шаг &gt;</button></div>
+    <div class="row"><label>Подшагов</label><input id="sub" type="range" min="1" max="30" step="1" value="10"><span class="val" id="sub_v"></span></div>
+    <div class="row"><label>Итераций/подшаг</label><input id="its" type="range" min="1" max="8" step="1" value="1"><span class="val" id="its_v"></span></div>
+
+    <h3>Материал</h3>
+    <div class="row"><label>Податливость контакта</label><input id="cc" type="range" min="0" max="100" step="1" value="80"><span class="val" id="cc_v"></span></div>
+    <div class="row"><label>Податливость верёвки</label><input id="rc" type="range" min="0" max="100" step="1" value="20"><span class="val" id="rc_v"></span></div>
+    <div class="row"><label>Упругость e</label><input id="rest" type="range" min="0" max="100" step="1" value="25"><span class="val" id="rest_v"></span></div>
+    <div class="row"><label>Трение mu</label><input id="fric" type="range" min="0" max="150" step="1" value="35"><span class="val" id="fric_v"></span></div>
+    <div class="row"><label>Демпфер среды</label><input id="drag" type="range" min="0" max="200" step="1" value="0"><span class="val" id="drag_v"></span></div>
+    <div class="row"><label>Гравитация</label><input id="grav" type="range" min="0" max="3000" step="50" value="1200"><span class="val" id="grav_v"></span></div>
+
+    <h3>CCD (DDA)</h3>
+    <div class="row"><label><input id="ccd" type="checkbox" checked> Непрерывная проверка</label></div>
+    <div class="row"><label>Макс. проникновение</label><input id="core" type="range" min="0" max="95" step="5" value="60"><span class="val" id="core_v"></span></div>
+
+    <h3>Сцена</h3>
+    <button id="b_reset">Сброс</button>
+    <button id="b_bullet">Пуля 30000 px/s</button>
+    <button id="b_tunnel">Тест туннелирования</button>
+    <button id="b_energy">Тест энергии</button>
+    <div class="row"><label><input id="showGrid" type="checkbox"> Показать сетку</label></div>
+    <div class="row"><label><input id="showTrail" type="checkbox"> Показать свип-путь</label></div>
+
+    <h3>Диагностика</h3>
+    <pre id="stats" style="margin:0;color:#8fd0a0;font-size:12px"></pre>
+    <canvas id="egraph" width="300" height="80" style="margin-top:6px;background:#11151c;border:1px solid #29323f;border-radius:4px"></canvas>
+    <div class="hint">Зелёная линия — полная энергия (K+U). Без внешнего ввода она обязана только падать.</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+// =====================================================================================
+//  XPBD (small-steps) + непрерывная детекция столкновений через DDA по хеш-сетке.
+//
+//  Что здесь решено:
+//   1. Туннелирование  -> свип-путь частицы растеризуется DDA по сетке (широкая фаза),
+//                         затем аналитический TOI между двумя движущимися кругами
+//                         (узкая фаза) обрезает подшаг так, что центр никогда не
+//                         проскакивает "ядро" соседа.
+//   2. Сохранение энергии -> нет "квадрата отталкивания". Столкновение = позиционное
+//                         ограничение (проекция, энергию НЕ добавляет) + отдельный
+//                         velocity-pass, где нормальная скорость восстанавливается
+//                         строго как -e * v_n(до решателя). При e<=1 энергия может
+//                         только уменьшаться; потери = "нагрев" + трение.
+//   3. Мягкость        -> податливость (compliance) в XPBD: частицы взаимно
+//                         проникают тем сильнее, чем больше compliance, но система
+//                         остаётся устойчивой при большом шаге.
+//
+//  Структуры данных намеренно "джавовые" (SoA + плоские массивы), чтобы 1:1
+//  переносилось в основную симуляцию.
+// =====================================================================================
+
+// ------------------------------------------------------------------ константы мира
+var W = 1000, H = 640;          // размеры мира == пиксели канваса
+var MAXP = 512;                 // ёмкость пула частиц
+var R_MAX = 13;                 // максимальный радиус (нужен для размера ячейки)
+var CS = 2 * R_MAX;             // размер ячейки сетки: >= максимального диаметра.
+                                // Гарантия: если два круга пересекаются, их индексы
+                                // ячеек отличаются не более чем на 1 по каждой оси.
+
+// ------------------------------------------------------------------ частицы (SoA)
+var n = 0;                      // текущее число частиц
+var px = new Float64Array(MAXP), py = new Float64Array(MAXP);   // позиция
+var qx = new Float64Array(MAXP), qy = new Float64Array(MAXP);   // позиция в начале подшага (x_prev)
+var vx = new Float64Array(MAXP), vy = new Float64Array(MAXP);   // скорость
+var rad = new Float64Array(MAXP);
+var invM = new Float64Array(MAXP);
+var mass = new Float64Array(MAXP);
+var tint = new Int32Array(MAXP);      // 0 — обычная, 1 — верёвка, 2 — пуля
+
+// ------------------------------------------------------------------ верёвка (10 частиц последовательно)
+var ropeStart = -1, ropeCount = 10;
+var linkA = new Int32Array(64), linkB = new Int32Array(64), linkL = new Float64Array(64), linkLam = new Float64Array(64);
+var linkN = 0;
+
+// ------------------------------------------------------------------ параметры
+var P = {
+  ups: 60, substeps: 10, iters: 1,
+  contactCompliance: 0, ropeCompliance: 0,
+  restitution: 0.25, friction: 0.35, drag: 0, gravity: 1200,
+  ccd: true, core: 0.40,         // core=0.4 -> разрешаем провалиться максимум на 60% суммы радиусов
+  timeScale: 1                   // только скорость проигрывания, на физику не влияет
+};
+
+// =====================================================================================
+//  ХЕШ-СЕТКА:  аналог fastutil Long2ObjectOpenHashMap<int[]>
+//  Ключ  = упакованные (ix, iy).  В Java: ((long)ix << 32) | (iy & 0xFFFFFFFFL).
+//  Здесь: (ix+BIAS)*65536 + (iy+BIAS) — точно представимо в double (< 2^53).
+//  Значение = int[], где [0] — счётчик, дальше id частиц. Массивы переиспользуются
+//  между кадрами (обнуляется только счётчик), чтобы не мусорить GC.
+// =====================================================================================
+var GRID_BIAS = 32768;
+var grid = new Map();           // key(long) -> Int32Array
+var usedKeys = [];              // ключи, задействованные в текущем подшаге
+var usedN = 0;
+
+function cellKey(ix, iy) { return (ix + GRID_BIAS) * 65536 + (iy + GRID_BIAS); }
+
+function gridClear() {
+  for (var i = 0; i < usedN; i++) grid.get(usedKeys[i])[0] = 0;
+  usedN = 0;
+}
+function gridInsert(key, id) {
+  var arr = grid.get(key);
+  if (arr === undefined) { arr = new Int32Array(9); grid.set(key, arr); }        // [0] = count
+  if (arr[0] === 0) { if (usedN < usedKeys.length) usedKeys[usedN] = key; else usedKeys.push(key); usedN++; }
+  if (arr[0] + 1 >= arr.length) {                                                // рост x2
+    var bigger = new Int32Array(arr.length * 2);
+    bigger.set(arr); arr = bigger; grid.set(key, arr);
+  }
+  arr[0]++; arr[arr[0]] = id;
+}
+
+// =====================================================================================
+//  DDA (Amanatides & Woo): растеризация отрезка [x0,y0]->[x1,y1] в ячейки сетки.
+//  Возвращает число ячеек, кладёт (ix,iy) в ddaX/ddaY.
+//  Это ключ к отсутствию туннелирования: даже если частица за подшаг перелетела
+//  20 ячеек, мы обойдём все 20, а не только начальную и конечную.
+// =====================================================================================
+var DDA_MAX = 4096;
+var ddaX = new Int32Array(DDA_MAX), ddaY = new Int32Array(DDA_MAX);
+
+function dda(x0, y0, x1, y1) {
+  var ix = Math.floor(x0 / CS), iy = Math.floor(y0 / CS);
+  var ex = Math.floor(x1 / CS), ey = Math.floor(y1 / CS);
+  var dx = x1 - x0, dy = y1 - y0;
+  var stepX = dx > 0 ? 1 : (dx < 0 ? -1 : 0);
+  var stepY = dy > 0 ? 1 : (dy < 0 ? -1 : 0);
+  var adx = Math.abs(dx), ady = Math.abs(dy);
+  var tDX = adx > 1e-12 ? CS / adx : Infinity;
+  var tDY = ady > 1e-12 ? CS / ady : Infinity;
+  var tMX = adx > 1e-12 ? ((dx > 0 ? (ix + 1) * CS - x0 : x0 - ix * CS) / adx) : Infinity;
+  var tMY = ady > 1e-12 ? ((dy > 0 ? (iy + 1) * CS - y0 : y0 - iy * CS) / ady) : Infinity;
+  var c = 0;
+  ddaX[c] = ix; ddaY[c] = iy; c++;
+  while ((ix !== ex || iy !== ey) && c < DDA_MAX) {
+    if (tMX < tMY) { tMX += tDX; ix += stepX; } else { tMY += tDY; iy += stepY; }
+    ddaX[c] = ix; ddaY[c] = iy; c++;
+  }
+  return c;
+}
+
+// =====================================================================================
+//  Широкая фаза: вставляем свип-путь каждой частицы, затем собираем пары-кандидаты.
+// =====================================================================================
+var mark = new Int32Array(MAXP);        // штамп для дедупликации кандидатов
+var stampCounter = 0;
+var pairA = new Int32Array(16384), pairB = new Int32Array(16384), pairN = 0;
+
+function bonded(i, j) {
+  if (ropeStart < 0) return false;
+  var a = i - ropeStart, b = j - ropeStart;
+  return a >= 0 && a < ropeCount && b >= 0 && b < ropeCount && Math.abs(a - b) === 1;
+}
+
+function broadphase() {
+  gridClear();
+  var i, k, c;
+  for (i = 0; i < n; i++) {
+    c = dda(qx[i], qy[i], px[i], py[i]);
+    for (k = 0; k < c; k++) gridInsert(cellKey(ddaX[k], ddaY[k]), i);
+  }
+  pairN = 0;
+  for (i = 0; i < n; i++) {
+    stampCounter++;
+    mark[i] = stampCounter;
+    c = dda(qx[i], qy[i], px[i], py[i]);
+    for (k = 0; k < c; k++) {
+      var cx = ddaX[k], cy = ddaY[k];
+      for (var ox = -1; ox <= 1; ox++) for (var oy = -1; oy <= 1; oy++) {
+        var bucket = grid.get(cellKey(cx + ox, cy + oy));
+        if (bucket === undefined) continue;
+        var cnt = bucket[0];
+        for (var b = 1; b <= cnt; b++) {
+          var j = bucket[b];
+          if (mark[j] === stampCounter) continue;
+          mark[j] = stampCounter;
+          if (j < i) continue;                // пара берётся ровно один раз
+          if (bonded(i, j)) continue;         // соседи по верёвке не сталкиваются
+          if (pairN < pairA.length) { pairA[pairN] = i; pairB[pairN] = j; pairN++; }
+        }
+      }
+    }
+  }
+}
+
+// =====================================================================================
+//  CCD: обрезка подшага по времени первого контакта (TOI).
+//  Два круга движутся линейно внутри подшага. Ищем наименьший t в [0,1], когда
+//  |d0 + t*dv| == Rcore, где Rcore = core*(ri+rj) — "ядро", сквозь которое проникать
+//  нельзя. core=0.4 значит: провалиться на 60% суммы радиусов можно (мягко),
+//  глубже — уже нет. Позиция откатывается на min(TOI) по всем парам частицы.
+//  Обрезка только уменьшает перемещение => энергию не добавляет.
+// =====================================================================================
+var toi = new Float64Array(MAXP);
+
+function ccdClamp() {
+  var i;
+  for (i = 0; i < n; i++) toi[i] = 1;
+  for (var p = 0; p < pairN; p++) {
+    var a = pairA[p], j = pairB[p];
+    var d0x = qx[a] - qx[j], d0y = qy[a] - qy[j];
+    var dvx = (px[a] - qx[a]) - (px[j] - qx[j]);
+    var dvy = (py[a] - qy[a]) - (py[j] - qy[j]);
+    var Rc = P.core * (rad[a] + rad[j]);
+    var c = d0x * d0x + d0y * d0y - Rc * Rc;
+    if (c <= 0) continue;                       // уже внутри ядра — этим займётся решатель
+    var aa = dvx * dvx + dvy * dvy;
+    if (aa < 1e-14) continue;
+    var bb = 2 * (d0x * dvx + d0y * dvy);
+    if (bb >= 0) continue;                      // расходятся
+    var disc = bb * bb - 4 * aa * c;
+    if (disc < 0) continue;
+    var t = (-bb - Math.sqrt(disc)) / (2 * aa);
+    if (t < 0 || t >= 1) continue;
+    if (t < toi[a]) toi[a] = t;
+    if (t < toi[j]) toi[j] = t;
+  }
+  for (i = 0; i < n; i++) {
+    var tt = toi[i];
+    if (tt >= 1) continue;
+    px[i] = qx[i] + (px[i] - qx[i]) * tt;
+    py[i] = qy[i] + (py[i] - qy[i]) * tt;
+  }
+}
+
+// =====================================================================================
+//  Контакты. j >= 0 — частица-частица; j < 0 — стена (нормаль в cNx/cNy).
+//  cVn — нормальная относительная скорость ДО позиционного решателя: именно она
+//  задаёт отскок. Так энергия не берётся из воздуха.
+// =====================================================================================
+var CMAX = 16384;
+var cI = new Int32Array(CMAX), cJ = new Int32Array(CMAX);
+var cNx = new Float64Array(CMAX), cNy = new Float64Array(CMAX);
+var cVn = new Float64Array(CMAX), cLam = new Float64Array(CMAX);
+var cN = 0;
+
+function addWall(i, C, nx, ny) {
+  if (C >= 0 || cN >= CMAX) return;
+  cI[cN] = i; cJ[cN] = -1; cNx[cN] = nx; cNy[cN] = ny;
+  cVn[cN] = vx[i] * nx + vy[i] * ny;
+  cLam[cN] = 0; cN++;
+}
+
+function buildContacts() {
+  cN = 0;
+  for (var p = 0; p < pairN; p++) {
+    var i = pairA[p], j = pairB[p];
+    var dx = px[i] - px[j], dy = py[i] - py[j];
+    var d2 = dx * dx + dy * dy;
+    var rr = rad[i] + rad[j];
+    if (d2 >= rr * rr) continue;
+    var d = Math.sqrt(d2);
+    var nx, ny;
+    if (d > 1e-9) { nx = dx / d; ny = dy / d; } else { nx = 1; ny = 0; }
+    if (cN >= CMAX) break;
+    cI[cN] = i; cJ[cN] = j; cNx[cN] = nx; cNy[cN] = ny;
+    cVn[cN] = (vx[i] - vx[j]) * nx + (vy[i] - vy[j]) * ny;
+    cLam[cN] = 0; cN++;
+  }
+  // пол, потолок, стены
+  for (var k = 0; k < n; k++) {
+    var r = rad[k];
+    addWall(k, px[k] - r, 1, 0);
+    addWall(k, (W - r) - px[k], -1, 0);
+    addWall(k, py[k] - r, 0, 1);
+    addWall(k, (H - r) - py[k], 0, -1);
+  }
+}
+
+// =====================================================================================
+//  Позиционный решатель XPBD.
+//  dLambda = (-C - alphaTilde*lambda) / (w_i + w_j + alphaTilde),  alphaTilde = compliance/h^2
+//  При compliance = 0 это обычный жёсткий PBD-проектор.
+//
+//  ВАЖНО про энергию связей (замерено на этом прототипе):
+//  жёсткая связь + v = (x - x_prev)/h даёт паразитное демпфирование вращения
+//  порядка O(h): быстро крутящаяся верёвка за 10 с теряет ~23% энергии при
+//  10 подшагах, ~13% при 20 и ~7% при 40. Число итераций на это НЕ влияет,
+//  влияет только длина подшага. Это врождённая черта PBD, а не баг: скорость
+//  считается по хорде дуги, а хорда короче дуги. Лечится подшагами.
+//  Контакты и стены при этом сохраняют энергию точно (проверено: e=1 -> 1.0000).
+// =====================================================================================
+function solvePositions(h) {
+  var aC = P.contactCompliance / (h * h);
+  var aR = P.ropeCompliance / (h * h);
+  var l;
+
+  for (l = 0; l < linkN; l++) linkLam[l] = 0;
+
+  for (var it = 0; it < P.iters; it++) {
+    // --- верёвка: расстояние между соседями
+    for (l = 0; l < linkN; l++) {
+      var i = linkA[l], j = linkB[l];
+      var dx = px[i] - px[j], dy = py[i] - py[j];
+      var d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 1e-9) continue;
+      var wsum = invM[i] + invM[j];
+      if (wsum <= 0) continue;
+      var C = d - linkL[l];
+      var nx = dx / d, ny = dy / d;
+      var dl = (-C - aR * linkLam[l]) / (wsum + aR);
+      linkLam[l] += dl;
+      px[i] += invM[i] * dl * nx; py[i] += invM[i] * dl * ny;
+      px[j] -= invM[j] * dl * nx; py[j] -= invM[j] * dl * ny;
+    }
+    // --- контакты
+    for (var c = 0; c < cN; c++) {
+      var ci = cI[c], cj = cJ[c], C2, nx2, ny2, wsum2;
+      if (cj >= 0) {
+        var ddx = px[ci] - px[cj], ddy = py[ci] - py[cj];
+        var dd = Math.sqrt(ddx * ddx + ddy * ddy);
+        if (dd < 1e-9) { nx2 = cNx[c]; ny2 = cNy[c]; C2 = -(rad[ci] + rad[cj]); }
+        else { nx2 = ddx / dd; ny2 = ddy / dd; C2 = dd - (rad[ci] + rad[cj]); }
+        cNx[c] = nx2; cNy[c] = ny2;             // нормаль обновляем — она нужна velocity-pass
+        wsum2 = invM[ci] + invM[cj];
+      } else {
+        nx2 = cNx[c]; ny2 = cNy[c];
+        var r2 = rad[ci];
+        if (nx2 > 0) C2 = px[ci] - r2;
+        else if (nx2 < 0) C2 = (W - r2) - px[ci];
+        else if (ny2 > 0) C2 = py[ci] - r2;
+        else C2 = (H - r2) - py[ci];
+        wsum2 = invM[ci];
+      }
+      if (C2 >= 0 || wsum2 <= 0) continue;
+      var dl2 = (-C2 - aC * cLam[c]) / (wsum2 + aC);
+      cLam[c] += dl2;
+      px[ci] += invM[ci] * dl2 * nx2; py[ci] += invM[ci] * dl2 * ny2;
+      if (cj >= 0) { px[cj] -= invM[cj] * dl2 * nx2; py[cj] -= invM[cj] * dl2 * ny2; }
+    }
+  }
+}
+
+// =====================================================================================
+//  Velocity pass: отскок и трение.
+//  Позиционный решатель сделал удар АБСОЛЮТНО неупругим (вся нормальная скорость
+//  съедена — это и есть "нагрев"). Здесь мы возвращаем ровно e долю той скорости,
+//  с которой тела реально сближались. e <= 1  =>  энергия никогда не растёт.
+// =====================================================================================
+function solveVelocities(h) {
+  var eBase = P.restitution;
+  var mu = P.friction;
+  var vThresh = 2 * P.gravity * h;    // порог: медленные контакты не отскакивают (нет дрожания)
+
+  for (var c = 0; c < cN; c++) {
+    var i = cI[c], j = cJ[c];
+    var nx = cNx[c], ny = cNy[c];
+    var wi = invM[i], wj = (j >= 0) ? invM[j] : 0;
+    var wsum = wi + wj;
+    if (wsum <= 0) continue;
+
+    var rvx = vx[i] - (j >= 0 ? vx[j] : 0);
+    var rvy = vy[i] - (j >= 0 ? vy[j] : 0);
+    var vn = rvx * nx + rvy * ny;
+
+    // --- кулоновское трение, ограниченное накопленным нормальным импульсом lambda
+    var tvx = rvx - vn * nx, tvy = rvy - vn * ny;
+    var tl = Math.sqrt(tvx * tvx + tvy * tvy);
+    if (tl > 1e-9 && mu > 0 && cLam[c] > 0) {
+      var maxDv = mu * cLam[c] * wsum / h;      // |dv_rel| <= mu * f_n * h * (wi + wj)
+      var dvt = Math.min(tl, maxDv);
+      var pfx = -(tvx / tl) * dvt / wsum, pfy = -(tvy / tl) * dvt / wsum;
+      vx[i] += pfx * wi; vy[i] += pfy * wi;
+      if (j >= 0) { vx[j] -= pfx * wj; vy[j] -= pfy * wj; }
+      rvx = vx[i] - (j >= 0 ? vx[j] : 0); rvy = vy[i] - (j >= 0 ? vy[j] : 0);
+      vn = rvx * nx + rvy * ny;
+    }
+
+    // --- восстановление (отскок)
+    var vnPrev = cVn[c];
+    var e = (Math.abs(vnPrev) < vThresh) ? 0 : eBase;
+    var target = Math.max(-e * vnPrev, 0);      // желаемая скорость расхождения
+    var dvn = target - vn;
+    if (dvn > 0) {                              // только расталкиваем, никогда не притягиваем
+      var pnx = nx * dvn / wsum, pny = ny * dvn / wsum;
+      vx[i] += pnx * wi; vy[i] += pny * wi;
+      if (j >= 0) { vx[j] -= pnx * wj; vy[j] -= pny * wj; }
+    }
+  }
+}
+
+// =====================================================================================
+//  ИСТОРИЯ ПОДШАГОВ ДЛЯ ОТРИСОВКИ.
+//  Физика идёт большими кадрами (при 1 UPS — раз в секунду), а рисуем мы 60 раз в
+//  секунду. Чтобы движение не выглядело телепортацией, сохраняем позиции ПОСЛЕ
+//  КАЖДОГО подшага и на отрисовке проигрываем их как ключевые кадры.
+//  Интерполяция именно по подшагам, а не между кадрами: только так на большом шаге
+//  видно реальную ломаную траектории — момент касания, обрезку по TOI, отскок.
+//  Рендер при этом отстаёт от физики ровно на один кадр — это нормально и так же
+//  делается в обычных играх с фиксированным тиком.
+// =====================================================================================
+var HIST_MAX = 32;                                   // максимум подшагов + 1
+var histX = new Float64Array(MAXP * HIST_MAX);
+var histY = new Float64Array(MAXP * HIST_MAX);
+var histSteps = 1;                                   // сколько ключевых кадров записано
+var histN = 0;                                       // сколько частиц было на момент записи
+
+function histSnap(slot) {
+  var off = slot * MAXP;
+  for (var i = 0; i < n; i++) { histX[off + i] = px[i]; histY[off + i] = py[i]; }
+  histN = n;
+}
+
+// =====================================================================================
+//  Основной цикл: small-steps XPBD
+// =====================================================================================
+var statPen = 0, statToi = 0;
+
+function substep(h) {
+  var i;
+  // 1. интегрируем скорость и предсказываем позицию
+  var damp = Math.max(0, 1 - P.drag * h);
+  for (i = 0; i < n; i++) {
+    if (invM[i] > 0) vy[i] += P.gravity * h;
+    vx[i] *= damp; vy[i] *= damp;
+    qx[i] = px[i]; qy[i] = py[i];
+    px[i] += vx[i] * h; py[i] += vy[i] * h;
+  }
+  // 2. широкая фаза по свип-путям (DDA)
+  broadphase();
+  // 3. непрерывная детекция: обрезаем подшаг по TOI
+  statToi = 0;
+  if (P.ccd) { ccdClamp(); for (i = 0; i < n; i++) if (toi[i] < 1) statToi++; }
+  // 4. контакты (cVn снимается здесь, до проекции)
+  buildContacts();
+  // 5. позиционный решатель
+  solvePositions(h);
+  // 6. скорость из смещения — так XPBD гасит удар "в тепло"
+  var invH = 1 / h;
+  for (i = 0; i < n; i++) { vx[i] = (px[i] - qx[i]) * invH; vy[i] = (py[i] - qy[i]) * invH; }
+  // 7. отскок + трение
+  solveVelocities(h);
+}
+
+function stepWorld() {
+  var dt = 1 / P.ups;
+  var h = dt / P.substeps;
+  var keep = Math.min(P.substeps, HIST_MAX - 1);   // если подшагов больше буфера — пишем часть
+  histSnap(0);
+  histSteps = 1;
+  for (var s = 0; s < P.substeps; s++) {
+    substep(h);
+    if (s < keep) { histSnap(s + 1); histSteps = s + 2; }
+  }
+
+  // измеряем реальное максимальное проникновение (диагностика)
+  statPen = 0;
+  for (var p = 0; p < pairN; p++) {
+    var i = pairA[p], j = pairB[p];
+    var dx = px[i] - px[j], dy = py[i] - py[j];
+    var d = Math.sqrt(dx * dx + dy * dy), rr = rad[i] + rad[j];
+    if (d < rr) { var pen = (rr - d) / rr; if (pen > statPen) statPen = pen; }
+  }
+}
+
+// =====================================================================================
+//  Сцена
+// =====================================================================================
+function addParticle(x, y, r, kind) {
+  if (n >= MAXP) return -1;
+  var i = n++;
+  px[i] = x; py[i] = y; qx[i] = x; qy[i] = y; vx[i] = 0; vy[i] = 0;
+  rad[i] = r; mass[i] = r * r * 0.01; invM[i] = 1 / mass[i]; tint[i] = kind || 0;
+  return i;
+}
+
+function reset() {
+  n = 0; linkN = 0; ropeStart = -1;
+  for (var i = 0; i < 50; i++) {
+    var r = 7 + Math.random() * (R_MAX - 7);
+    var id = addParticle(60 + Math.random() * (W - 120), 60 + Math.random() * (H * 0.55), r, 0);
+    vx[id] = (Math.random() - 0.5) * 300;
+    vy[id] = (Math.random() - 0.5) * 300;
+  }
+  ropeStart = n;
+  var rr = 9, x0 = W * 0.5 - (ropeCount - 1) * rr, y0 = 90;
+  for (var k = 0; k < ropeCount; k++) {
+    var pid = addParticle(x0 + k * 2 * rr, y0, rr, 1);
+    if (k > 0) { linkA[linkN] = pid - 1; linkB[linkN] = pid; linkL[linkN] = 2 * rr; linkN++; }
+  }
+}
+
+function bullet() {
+  var i = addParticle(20, H * 0.82, 8, 2);
+  if (i < 0) return;
+  vx[i] = 30000; vy[i] = 0;
+}
+
+// Стенд для CCD: неподвижная стенка (invM = 0) + пуля 30000 px/s.
+// За подшаг (1/600 c) пуля пролетает 50 px — это больше диаметра частиц,
+// поэтому дискретная проверка её пропустит, а DDA + TOI остановят.
+// Снимите галочку "Непрерывная проверка" и нажмите кнопку ещё раз — пуля пролетит насквозь.
+function tunnelTest() {
+  n = 0; linkN = 0; ropeStart = -1;
+  for (var y = 30; y < H; y += 22) {
+    var id = addParticle(620, y, 10, 3);
+    invM[id] = 0;                       // статичная преграда
+  }
+  var b = addParticle(40, H * 0.5, 8, 2);
+  vx[b] = 30000; vy[b] = 0;
+}
+
+// =====================================================================================
+//  Мышь
+// =====================================================================================
+var cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+var mx = 0, my = 0, pmx = 0, pmy = 0, mvx = 0, mvy = 0;
+var brush = 70, mDown = 0;
+
+cv.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+cv.addEventListener("mousemove", function (e) {
+  var b = cv.getBoundingClientRect();
+  mx = e.clientX - b.left; my = e.clientY - b.top;
+});
+cv.addEventListener("mousedown", function (e) { mDown = (e.button === 2) ? 2 : 1; e.preventDefault(); });
+window.addEventListener("mouseup", function () { mDown = 0; });
+cv.addEventListener("wheel", function (e) {
+  brush = Math.max(20, Math.min(260, brush - e.deltaY * 0.15)); e.preventDefault();
+}, { passive: false });
+
+// Скорость мыши копится по КАЖДОМУ кадру отрисовки и усредняется по реальному
+// времени, прошедшему с прошлого тика физики. Иначе при 1 UPS бросок мышью
+// измерялся бы как "смещение за секунду" и частицы бы почти не разгонялись.
+var accDX = 0, accDY = 0, accT = 0;
+function sampleMouse(real) {
+  accDX += mx - pmx; accDY += my - pmy; accT += real;
+  pmx = mx; pmy = my;
+}
+
+function applyMouse(dt) {
+  var span = Math.max(1e-4, accT);
+  mvx = accDX / span; mvy = accDY / span;
+  accDX = 0; accDY = 0; accT = 0;
+  if (!mDown) return;
+  var b2 = brush * brush;
+  for (var i = 0; i < n; i++) {
+    var dx = px[i] - mx, dy = py[i] - my;
+    var d2 = dx * dx + dy * dy;
+    if (d2 > b2) continue;
+    var fall = 1 - Math.sqrt(d2) / brush;
+    if (mDown === 1) {                       // тащим/бросаем: подмешиваем скорость мыши
+      vx[i] += (mvx - vx[i]) * fall * 0.6;
+      vy[i] += (mvy - vy[i]) * fall * 0.6;
+    } else {                                 // взрыв
+      var d = Math.max(1e-3, Math.sqrt(d2));
+      vx[i] += (dx / d) * fall * 2500 * dt * 60;
+      vy[i] += (dy / d) * fall * 2500 * dt * 60;
+    }
+  }
+}
+
+// =====================================================================================
+//  Энергия (диагностика сохранения)
+// =====================================================================================
+var eHist = new Float64Array(300), eHead = 0, eFilled = 0;
+function totalEnergy() {
+  var K = 0, U = 0;
+  for (var i = 0; i < n; i++) {
+    K += 0.5 * mass[i] * (vx[i] * vx[i] + vy[i] * vy[i]);
+    U += mass[i] * P.gravity * (H - py[i]);
+  }
+  return { K: K, U: U, T: K + U };
+}
+
+// =====================================================================================
+//  Отрисовка
+// =====================================================================================
+var eg = document.getElementById("egraph"), egc = eg.getContext("2d");
+var showGrid = false, showTrail = false, interp = true;
+
+// позиции для отрисовки (интерполированные) + пара соседних ключевых кадров
+var rx = new Float64Array(MAXP), ry = new Float64Array(MAXP);
+var rsp = new Float64Array(MAXP);      // скорость на проигрываемом подшаге, px/s
+var renderSlot = 0;
+
+// alpha in [0,1) — доля проигранного кадра физики
+function computeRender(alpha) {
+  var i;
+  if (!interp || histSteps < 2) {
+    for (i = 0; i < n; i++) {
+      rx[i] = px[i]; ry[i] = py[i];
+      rsp[i] = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i]);
+    }
+    renderSlot = histSteps - 1;
+    return;
+  }
+  var f = alpha * (histSteps - 1);
+  var s0 = Math.floor(f);
+  if (s0 > histSteps - 2) s0 = histSteps - 2;
+  var t = f - s0;
+  renderSlot = s0;
+  var o0 = s0 * MAXP, o1 = (s0 + 1) * MAXP;
+  var invSubDt = (histSteps - 1) * P.ups;              // 1 / длительность подшага
+  for (i = 0; i < n; i++) {
+    if (i >= histN) {                                  // частица родилась после снимка
+      rx[i] = px[i]; ry[i] = py[i];
+      rsp[i] = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i]);
+      continue;
+    }
+    var ax = histX[o0 + i], ay = histY[o0 + i];
+    var bx = histX[o1 + i], by = histY[o1 + i];
+    rx[i] = ax + (bx - ax) * t;
+    ry[i] = ay + (by - ay) * t;
+    rsp[i] = Math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay)) * invSubDt;
+  }
+}
+
+function draw() {
+  ctx.fillStyle = "#11151c"; ctx.fillRect(0, 0, W, H);
+
+  if (showGrid) {
+    ctx.strokeStyle = "#1a2130"; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (var gx = 0; gx <= W; gx += CS) { ctx.moveTo(gx + .5, 0); ctx.lineTo(gx + .5, H); }
+    for (var gy = 0; gy <= H; gy += CS) { ctx.moveTo(0, gy + .5); ctx.lineTo(W, gy + .5); }
+    ctx.stroke();
+    ctx.fillStyle = "rgba(80,140,220,0.12)";
+    for (var u = 0; u < usedN; u++) {
+      var key = usedKeys[u];
+      if (grid.get(key)[0] === 0) continue;
+      var iy = (key % 65536) - GRID_BIAS, ix = Math.floor(key / 65536) - GRID_BIAS;
+      ctx.fillRect(ix * CS, iy * CS, CS, CS);
+    }
+  }
+
+  if (ropeStart >= 0) {
+    ctx.strokeStyle = "#e0a755"; ctx.lineWidth = 3; ctx.beginPath();
+    for (var k = 0; k < ropeCount; k++) {
+      var id = ropeStart + k;
+      if (k === 0) ctx.moveTo(rx[id], ry[id]); else ctx.lineTo(rx[id], ry[id]);
+    }
+    ctx.stroke();
+  }
+
+  for (var i = 0; i < n; i++) {
+    if (showTrail) {                 // ломаная всех подшагов текущего кадра физики
+      ctx.strokeStyle = "rgba(120,200,255,0.30)"; ctx.lineWidth = 1;
+      ctx.beginPath();
+      if (interp && histSteps > 1 && i < histN) {
+        ctx.moveTo(histX[i], histY[i]);
+        for (var hs = 1; hs < histSteps; hs++) ctx.lineTo(histX[hs * MAXP + i], histY[hs * MAXP + i]);
+      } else { ctx.moveTo(qx[i], qy[i]); ctx.lineTo(px[i], py[i]); }
+      ctx.stroke();
+    }
+    var t = Math.min(1, rsp[i] / 2500);   // цвет по скорости проигрываемого подшага
+    var col;
+    if (tint[i] === 1) col = "hsl(38,70%," + (45 + 30 * t) + "%)";
+    else if (tint[i] === 2) col = "#ff5d5d";
+    else if (tint[i] === 3) col = "#55606e";
+    else col = "hsl(" + (205 - 195 * t) + ",65%," + (48 + 22 * t) + "%)";
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(rx[i], ry[i], rad[i], 0, 6.2832); ctx.fill();
+  }
+
+  ctx.strokeStyle = (mDown === 2) ? "rgba(255,120,120,.8)" : "rgba(160,220,255,.5)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(mx, my, brush, 0, 6.2832); ctx.stroke();
+
+  // график энергии
+  egc.fillStyle = "#11151c"; egc.fillRect(0, 0, 300, 80);
+  var mxE = 1e-9;
+  for (var q = 0; q < eFilled; q++) if (eHist[q] > mxE) mxE = eHist[q];
+  egc.strokeStyle = "#8fd0a0"; egc.lineWidth = 1.2; egc.beginPath();
+  for (var q2 = 0; q2 < eFilled; q2++) {
+    var idx = (eHead - eFilled + q2 + eHist.length) % eHist.length;
+    var xx = q2 / (eHist.length - 1) * 300;
+    var yy = 78 - (eHist[idx] / mxE) * 74;
+    if (q2 === 0) egc.moveTo(xx, yy); else egc.lineTo(xx, yy);
+  }
+  egc.stroke();
+}
+
+// =====================================================================================
+//  Цикл + UI
+// =====================================================================================
+var statsEl = document.getElementById("stats");
+var acc = 0, last = performance.now(), fps = 60, frames = 0, fpsT = 0;
+var paused = false, replayT = 1e9, REPLAY_DUR = 0.8;   // проигрывание одного ручного шага
+
+function pushEnergy() {
+  var E = totalEnergy();
+  eHist[eHead] = E.T; eHead = (eHead + 1) % eHist.length;
+  if (eFilled < eHist.length) eFilled++;
+}
+
+function frame(now) {
+  var real = Math.min(0.1, (now - last) / 1000); last = now;
+  frames++; fpsT += real;
+  if (fpsT > 0.4) { fps = frames / fpsT; frames = 0; fpsT = 0; }
+
+  var dt = 1 / P.ups;
+  var alpha;
+  sampleMouse(real);
+
+  if (paused) {
+    // на паузе прокручиваем последний посчитанный кадр физики по подшагам
+    replayT += real;
+    alpha = Math.min(0.9999, replayT / REPLAY_DUR);
+    acc = 0;
+  } else {
+    acc += real * P.timeScale;
+    var guard = 0;
+    while (acc >= dt && guard++ < 5) {
+      applyMouse(dt);
+      stepWorld();
+      acc -= dt;
+      pushEnergy();
+    }
+    if (guard >= 5) acc = 0;
+    alpha = Math.max(0, Math.min(0.9999, acc / dt));
+  }
+
+  // alpha — доля уже "проигранного" последнего кадра физики
+  computeRender(alpha);
+  draw();
+
+  var E2 = totalEnergy();
+  var vmax = 0;
+  for (var i = 0; i < n; i++) { var s = Math.sqrt(vx[i] * vx[i] + vy[i] * vy[i]); if (s > vmax) vmax = s; }
+  statsEl.textContent =
+    "fps          " + fps.toFixed(0) + "\n" +
+    "частиц       " + n + "\n" +
+    "пар (broad)  " + pairN + "\n" +
+    "контактов    " + cN + "\n" +
+    "ячеек занято " + usedN + "\n" +
+    "TOI-обрезок  " + statToi + "\n" +
+    "подшаг показ " + (renderSlot + 1) + " / " + (histSteps - 1) + "\n" +
+    "макс. v      " + vmax.toFixed(0) + " px/s\n" +
+    "путь/подшаг  " + (vmax / P.ups / P.substeps).toFixed(1) + " px (ячейка " + CS + ")\n" +
+    "проникнов.   " + (statPen * 100).toFixed(1) + " %\n" +
+    "просадка mg  " + (P.contactCompliance * (9 * 9 * 0.01) * P.gravity).toFixed(2) + " px\n" +
+    "удар за подш " + (vmax / P.ups / P.substeps).toFixed(2) + " px\n" +
+    "K            " + E2.K.toFixed(0) + "\n" +
+    "U            " + E2.U.toFixed(0) + "\n" +
+    "K+U          " + E2.T.toFixed(0);
+  requestAnimationFrame(frame);
+}
+
+function bindRange(id, apply) {
+  var el = document.getElementById(id), out = document.getElementById(id + "_v");
+  function upd() { out.textContent = apply(parseFloat(el.value)); }
+  el.addEventListener("input", upd); upd();
+}
+bindRange("ups", function (v) { P.ups = v; return v; });
+bindRange("sub", function (v) { P.substeps = v | 0; return v; });
+bindRange("its", function (v) { P.iters = v | 0; return v; });
+// Податливость alpha имеет размерность длина/сила, поэтому шкала логарифмическая:
+// 0..100 -> 1e-7 .. 1e-2. Просадка под постоянной нагрузкой = alpha * F, ровно.
+function complianceOf(v) { return Math.pow(10, -7 + 5 * v / 100); }
+bindRange("cc", function (v) { P.contactCompliance = complianceOf(v); return P.contactCompliance.toExponential(1); });
+bindRange("rc", function (v) { P.ropeCompliance = complianceOf(v); return P.ropeCompliance.toExponential(1); });
+bindRange("rest", function (v) { P.restitution = v / 100; return (v / 100).toFixed(2); });
+bindRange("fric", function (v) { P.friction = v / 100; return (v / 100).toFixed(2); });
+bindRange("drag", function (v) { P.drag = v / 100; return (v / 100).toFixed(2); });
+bindRange("grav", function (v) { P.gravity = v; return v; });
+bindRange("core", function (v) { P.core = 1 - v / 100; return v + " %"; });
+
+document.getElementById("ccd").addEventListener("change", function (e) { P.ccd = e.target.checked; });
+document.getElementById("interp").addEventListener("change", function (e) { interp = e.target.checked; });
+bindRange("tscale", function (v) { P.timeScale = v / 100; return (v / 100).toFixed(2) + "x"; });
+document.getElementById("b_pause").addEventListener("click", function (e) {
+  paused = !paused; replayT = 1e9;
+  e.target.textContent = paused ? "Пуск" : "Пауза";
+});
+document.getElementById("b_step").addEventListener("click", function () {
+  if (!paused) { paused = true; document.getElementById("b_pause").textContent = "Пуск"; }
+  applyMouse(1 / P.ups); stepWorld(); pushEnergy();
+  replayT = 0;                    // проиграть подшаги этого кадра
+});
+document.getElementById("showGrid").addEventListener("change", function (e) { showGrid = e.target.checked; });
+document.getElementById("showTrail").addEventListener("change", function (e) { showTrail = e.target.checked; });
+document.getElementById("b_reset").addEventListener("click", reset);
+document.getElementById("b_bullet").addEventListener("click", bullet);
+document.getElementById("b_tunnel").addEventListener("click", tunnelTest);
+document.getElementById("b_energy").addEventListener("click", function () {
+  // Проверка закона сохранения: нет гравитации, идеально упругие удары,
+  // нет трения и среды, жёсткий контакт. Линия K+U обязана быть горизонтальной.
+  setVal("grav", 0); setVal("rest", 100); setVal("fric", 0); setVal("drag", 0); setVal("cc", 0);
+});
+function setVal(id, v) {
+  var el = document.getElementById(id);
+  el.value = v; el.dispatchEvent(new Event("input"));
+}
+
+reset();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

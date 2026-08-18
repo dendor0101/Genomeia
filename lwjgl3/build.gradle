@@ -208,3 +208,47 @@ tasks.withType(JavaExec.class).configureEach {
 if(enableGraalNative == 'true') {
   apply from: file("nativeimage.gradle")
 }
+
+// Стенд честности физики RealBodyDemo: gradlew :lwjgl3:physicsAudit
+// Считает сохранение импульса и момента по стадиям решателя и печатает таблицы.
+// Опорные числа — в комментариях PhysicsAudit.kt и у констант RealBodyDemo.
+tasks.register('physicsAudit', JavaExec) {
+  group = 'verification'
+  description = 'Проверка XPBD-решателя RealBodyDemo на сохранение импульса и момента'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.demo.PhysicsAuditKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+// Подбор параметров плавания эволюционным поиском: gradlew :lwjgl3:swimTune
+// Аргументы: --pop 64 --gen 60 --seed 7 --w-residual 5
+tasks.register('swimTune', JavaExec) {
+  group = 'verification'
+  description = 'Ищет параметры, при которых тело плывёт быстро и не блуждает'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.demo.SwimTunerKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+
+// Цена double в производительности: gradlew :lwjgl3:solverBench
+tasks.register('solverBench', JavaExec) {
+  group = 'verification'
+  description = 'Меряет один и тот же конвейер во float и в double при разном размере арены'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.demo.SolverBenchKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+// Точность против масштаба мира: gradlew :lwjgl3:precisionScale
+tasks.register('precisionScale', JavaExec) {
+  group = 'verification'
+  description = 'Утечка решателя в зависимости от координаты тела в мире и способа хранения позиций'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.demo.PrecisionScaleKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
