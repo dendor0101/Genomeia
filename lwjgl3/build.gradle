@@ -252,3 +252,13 @@ tasks.register('precisionScale', JavaExec) {
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8'
 }
+
+// Застревание вывернутой ткани: gradlew :lwjgl3:foldRecovery
+tasks.register('foldRecovery', JavaExec) {
+  group = 'verification'
+  description = 'Складывает ткань насильно и смотрит, распрямляется ли она сама'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.demo.FoldRecoveryKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8'
+}

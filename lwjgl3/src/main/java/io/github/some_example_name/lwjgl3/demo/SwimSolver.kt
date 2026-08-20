@@ -41,7 +41,31 @@ class Topology private constructor(
     val boneRestQy: Array<DoubleArray>,
     val muscleCount: Int,
     val meanLinkLength: Float,
+
+    /**
+     * ИЗГИБ ГРАНИЧНОГО КОНТУРА: пары «через одну» вдоль границы плюс длина покоя.
+     *
+     * Зачем вообще. Заворот ткани, при котором НИ ОДИН треугольник не вывернулся, —
+     * не редкость и не недосмотр, а принципиальная слепота знаковой площади: она
+     * ЛОКАЛЬНА. Лист может сложиться пополам, и каждый треугольник в нём останется
+     * положительным — так же, как сложенный лист бумаги нигде не выворачивается
+     * наизнанку. Ограничение площади про это узнать не может в принципе, сколько его
+     * ни ужесточай.
+     *
+     * Чтобы складка стала дорогой, нужно наказывать не площадь, а ИЗГИБ контура.
+     *
+     * ПОЧЕМУ ЭТО НЕ УГОЛ, А РАССТОЯНИЕ. Ограничение на угол при вершине потребовало бы
+     * atan2 или acos на каждую вершину границы и своего вывода градиентов. Но угол при
+     * вершине однозначно связан с расстоянием между её двумя соседями (стороны
+     * треугольника фиксированы связями), поэтому достаточно обычного ограничения
+     * РАССТОЯНИЯ между соседями через одну, с длиной покоя из позы покоя. Это тот же
+     * решатель, что и для связей, ни одной новой формулы — и никаких тригонометрий.
+     */
+    val bendA: IntArray,
+    val bendB: IntArray,
+    val bendRest: DoubleArray,
 ) {
+    val bendCount: Int get() = bendA.size
     val conCount: Int get() = conA.size
     val triCount: Int get() = triA.size
     val boundCount: Int get() = boundA.size
@@ -60,6 +84,38 @@ class Topology private constructor(
                 return fl.get(demo) as T
             }
             val body: BodyFile = f("body")
+
+            // --- пары изгиба вдоль границы ---
+            //
+            // Обходить контур по порядку не требуется и было бы хрупко: у рваных краёв
+            // и развилок порядок неоднозначен. Достаточно локального признака — вершина,
+            // у которой ровно ДВА граничных ребра, лежит внутри гладкого участка контура,
+            // и её соседи через одну и образуют пару. Вершины развилок (три и более
+            // граничных ребра) пропускаются: там «изгиб» не определён.
+            val bA: IntArray = f("boundA")
+            val bB: IntArray = f("boundB")
+            val nb0 = IntArray(body.count) { -1 }
+            val nb1 = IntArray(body.count) { -1 }
+            val deg = IntArray(body.count)
+            for (e in bA.indices) {
+                for ((u, v) in listOf(bA[e] to bB[e], bB[e] to bA[e])) {
+                    when (deg[u]) {
+                        0 -> nb0[u] = v
+                        1 -> nb1[u] = v
+                    }
+                    deg[u]++
+                }
+            }
+            val ba = ArrayList<Int>(); val bb = ArrayList<Int>(); val br = ArrayList<Double>()
+            for (v in 0 until body.count) {
+                if (deg[v] != 2) continue
+                val i = nb0[v]; val j = nb1[v]
+                if (i < 0 || j < 0 || i == j) continue
+                val dx = (body.x[i] - body.x[j]).toDouble()
+                val dy = (body.y[i] - body.y[j]).toDouble()
+                ba.add(i); bb.add(j); br.add(sqrt(dx * dx + dy * dy))
+            }
+
             return Topology(
                 n = f("n"),
                 restX = body.x, restY = body.y,
@@ -72,6 +128,8 @@ class Topology private constructor(
                 boneRestQx = f("boneRestQx"), boneRestQy = f("boneRestQy"),
                 muscleCount = body.muscleClusters.size,
                 meanLinkLength = body.meanLinkLength,
+                bendA = ba.toIntArray(), bendB = bb.toIntArray(),
+                bendRest = br.toDoubleArray(),
             )
         }
     }
@@ -177,6 +235,49 @@ data class SwimParams(
 
     val softCompliance: Double = 1.0e-4,
     val areaCompliance: Double = 1.0e-6,
+
+    /**
+     * Отдельная податливость площади для ВЫВЕРНУТЫХ треугольников. -1 — выключено,
+     * используется обычная (тогда поведение совпадает с RealBodyDemo побитово).
+     *
+     * Зачем разделять. Податливость нужна, чтобы не усиливать шум float РЯДОМ С
+     * РАВНОВЕСИЕМ — там невязка это чистое округление, и жёсткое ограничение его
+     * раздувает. Вывернутый треугольник от равновесия бесконечно далеко: невязка у него
+     * порядка удвоенной площади покоя, то есть на четыре порядка больше шума. Фильтровать
+     * там нечего, а мягкость только мешает распрямиться.
+     */
+    val areaComplianceInverted: Double = 0.0,
+
+    /**
+     * ПОТОЛОК на норму поправки одного треугольника за подшаг, в долях средней связи.
+     * 0 — выключено.
+     *
+     * Лечит РЫВОК. Жёсткая ветка выправляет вывернутый треугольник за один подшаг
+     * целиком, а updateVelocities делит это смещение на h и превращает в скорость,
+     * которой там взяться неоткуда. Потолок оставляет силу прежней, но растягивает
+     * выправление на несколько подшагов: медленнее, зато без выстрела.
+     */
+    val areaMaxStep: Double = 0.2,
+
+    /**
+     * Плавный переход между мягкой и жёсткой ветками вместо ступеньки.
+     *
+     * Лечит ДРЕБЕЗГ. Ступенька означает разрыв жёсткости в 55 раз ровно на нулевой
+     * площади, и треугольник, болтающийся около неё, каждый подшаг попадает то в одну
+     * ветку, то в другую. Плавный переход убирает саму границу.
+     */
+    val areaSmoothRamp: Boolean = true,
+
+    /**
+     * Податливость ограничения ИЗГИБА граничного контура. -1 — стадия выключена.
+     *
+     * Единственное, что вообще способно сделать заворот ткани дорогим: знаковая площадь
+     * ЛОКАЛЬНА и сложенный лист для неё выглядит здоровым. См. [Topology.bendA].
+     *
+     * Ставить жёстко нельзя: контур это гребущая поверхность, и лишняя жёсткость там
+     * бьёт прямо по тяге. Величину надо мерить, а не назначать.
+     */
+    val bendCompliance: Double = -1.0,
     val flowModel: FlowModel = FlowModel.GLOBAL_TRACKING,
 )
 
@@ -274,8 +375,36 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         }
     }
 
+    /**
+     * Изгиб границы: обычное ограничение расстояния между соседями через одну.
+     * Стадия ставится ПОСЛЕ площадей и перед проекцией кости — там же, где живут
+     * остальные позиционные ограничения.
+     */
+    private fun solveBend(h: Double) {
+        if (p.bendCompliance < 0.0) return
+        val alpha = p.bendCompliance / (h * h)
+        for (c in 0 until topo.bendCount) {
+            val i = topo.bendA[c]; val j = topo.bendB[c]
+            val wi = invMass[i]; val wj = invMass[j]
+            val w = wi + wj
+            if (w == 0.0) continue
+            var dx = px[i] - px[j]
+            var dy = py[i] - py[j]
+            val len = sqrt(dx * dx + dy * dy)
+            if (len < 1e-12) continue
+            dx /= len; dy /= len
+            val dL = -(len - topo.bendRest[c]) / (w + alpha)
+            px[i] += dx * dL * wi; py[i] += dy * dL * wi
+            px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
+        }
+    }
+
     private fun solveAreas(h: Double) {
         val alpha = p.areaCompliance / (h * h)
+        // -1 значит «не разделять»: тогда ветка ниже выбирает то же самое число, и
+        // поведение совпадает с демо до бита.
+        val alphaInv = if (p.areaComplianceInverted >= 0.0) p.areaComplianceInverted / (h * h) else alpha
+        val maxStep = p.areaMaxStep * topo.meanLinkLength
         for (t in 0 until topo.triCount) {
             val i0 = topo.triA[t]; val i1 = topo.triB[t]; val i2 = topo.triC[t]
             val x0 = px[i0]; val y0 = py[i0]
@@ -295,7 +424,17 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             val s = muscleScale(topo.triMuscle[t])
             val restArea2 = topo.triRestArea2[t].toDouble() * s * s
             val area2 = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0)
-            val dL = -(area2 - restArea2) / (denom + alpha)
+            // Плавный переход убирает ступеньку жёсткости ровно на нулевой площади.
+            val a = if (p.areaSmoothRamp) {
+                val t = (area2 / restArea2).coerceIn(0.0, 1.0)
+                alphaInv + (alpha - alphaInv) * t * t
+            } else if (area2 < 0.0) alphaInv else alpha
+            var dL = -(area2 - restArea2) / (denom + a)
+            // Потолок на норму поправки: |dL| * sqrt(denom) и есть её длина.
+            if (maxStep > 0.0) {
+                val corr = abs(dL) * sqrt(denom)
+                if (corr > maxStep) dL *= maxStep / corr
+            }
 
             px[i0] += w0 * dL * g0x; py[i0] += w0 * dL * g0y
             px[i1] += w1 * dL * g1x; py[i1] += w1 * dL * g1y
@@ -504,6 +643,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             sweepBackwards = !sweepBackwards
             solveConstraints(h)
             solveAreas(h)
+            solveBend(h)
             for (b in topo.rigidBones.indices) projectBone(b)
             updateVelocities(h)
             applyViscosity(h)
@@ -530,6 +670,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             sweepBackwards = !sweepBackwards
             solveConstraints(h)
             solveAreas(h)
+            solveBend(h)
             for (b in topo.rigidBones.indices) projectBone(b)
             updateVelocities(h)
             applyViscosity(h)
@@ -558,10 +699,14 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     /**
      * Сколько треугольников ВЫВЕРНУТО наизнанку.
      *
-     * Знаковая площадь ушла в минус — ткань прошла сама через себя. Ограничение площади
-     * такой треугольник назад не вывернет: оно тянет площадь к нужной ВЕЛИЧИНЕ, а знак
-     * ему безразличен, и вывернутое состояние для него такое же законное равновесие.
-     * Поэтому это не переходный эффект, а необратимая порча формы.
+     * Знаковая площадь ушла в минус — ткань прошла сама через себя.
+     *
+     * ЗДЕСЬ РАНЬШЕ БЫЛО НАПИСАНО НЕВЕРНО: будто ограничение площади к знаку безразлично
+     * и вывернутый треугольник назад не выправит. На самом деле restArea2 положительна,
+     * area2 знаковая, значит цель у ограничения это +restArea2, и для вывернутого
+     * треугольника невязка огромна, а знак поправки правильный — выправлять оно умеет.
+     * Мешала ему только податливость, и это чинится отдельной веткой: см.
+     * AREA_COMPLIANCE_INVERTED в RealBodyDemo и стенд FoldRecovery.
      *
      * В подборе меряется потому, что сильным сокращением мышцы расплачиваются именно
      * этим: площадь покоя едет как s^2, и при s = 0.165 треугольник сжимается до 2.7%
@@ -583,7 +728,34 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     fun comY(): Double { var s = 0.0; for (i in 0 until n) s += py[i]; return s / n }
     fun momX(): Double { var s = 0.0; for (i in 0 until n) s += vx[i]; return s }
     fun momY(): Double { var s = 0.0; for (i in 0 until n) s += vy[i]; return s }
+    fun kinetic(): Double {
+        var e = 0.0
+        for (i in 0 until n) e += 0.5 * (vx[i] * vx[i] + vy[i] * vy[i])
+        return e
+    }
+
     fun momentum() = sqrt(momX() * momX() + momY() * momY())
+
+    /** Момент импульса относительно центра масс, за вычетом поступательного движения. */
+    fun angularMomentum(): Double {
+        val cx = comX(); val cy = comY()
+        val vxm = momX() / n; val vym = momY() / n
+        var l = 0.0
+        for (i in 0 until n) {
+            l += (px[i] - cx) * (vy[i] - vym) - (py[i] - cy) * (vx[i] - vxm)
+        }
+        return l
+    }
+
+    fun inertia(): Double {
+        val cx = comX(); val cy = comY()
+        var j = 0.0
+        for (i in 0 until n) {
+            val rx = px[i] - cx; val ry = py[i] - cy
+            j += rx * rx + ry * ry
+        }
+        return j
+    }
 
     fun maxSpeed(): Double {
         var mx = 0.0

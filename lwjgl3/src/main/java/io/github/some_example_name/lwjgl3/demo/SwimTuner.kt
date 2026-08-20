@@ -104,6 +104,10 @@ private val GENES = listOf(
     Gene("gaitPeriod", 8.0, 900.0, integer = true),
     Gene("gaitDuty", 0.05, 0.85, log = false),
     Gene("flowEntrain", 0.03, 60.0),
+    // Изгиб границы. Диапазон широкий и включает «почти выключено»: стенд FoldRecovery
+    // показал, что жёсткий изгиб съедает до 73% тяги, так что поиску нужна свобода
+    // отказаться от него, если он не окупается.
+    Gene("bendCompliance", 1e-6, 1e-1),
 )
 
 /**
@@ -130,6 +134,7 @@ private fun decode(g: DoubleArray): SwimParams {
         gaitPeriod = v(9).toInt().coerceAtLeast(4),
         gaitDuty = v(10),
         flowEntrain = v(11),
+        bendCompliance = v(12),
         flowModel = SEARCH_FLOW_MODEL,
     )
 }
@@ -147,6 +152,7 @@ private fun encode(p: SwimParams): DoubleArray = doubleArrayOf(
     GENES[9].encode(p.gaitPeriod.toDouble()),
     GENES[10].encode(p.gaitDuty),
     GENES[11].encode(p.flowEntrain),
+    GENES[12].encode(if (p.bendCompliance > 0) p.bendCompliance else 1e-1),
 )
 
 // =====================================================================
@@ -324,6 +330,12 @@ private fun verifyAgainstDemo(topo: Topology, path: String): Double {
         muscleRateRelax = P.const("MUSCLE_RATE_RELAX"),
         softCompliance = P.const("SOFT_COMPLIANCE"),
         areaCompliance = P.const("AREA_COMPLIANCE"),
+        areaComplianceInverted = P.const("AREA_COMPLIANCE_INVERTED"),
+        areaMaxStep = P.const("AREA_MAX_STEP"),
+        areaSmoothRamp = P.constBool("AREA_SMOOTH_RAMP"),
+        // Изгиб контура в демо переключается клавишей, то есть это состояние, а не
+        // константа. Читаем ТЕКУЩЕЕ значение, иначе сверка проверяла бы не тот режим.
+        bendCompliance = P.bendCompliance(),
         flowModel = FlowModel.GLOBAL_TRACKING,
     )
     val s = SwimSolver(topo, ref)

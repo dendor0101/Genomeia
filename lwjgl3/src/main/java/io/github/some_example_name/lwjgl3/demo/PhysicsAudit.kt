@@ -67,6 +67,17 @@ object Probe {
         return f.getFloat(null)
     }
 
+    /** Текущая податливость изгиба контура в демо: это состояние, а не константа. */
+    fun bendCompliance(): Double =
+        RealBodyDemo::class.java.getDeclaredMethod("bendCompliance")
+            .apply { isAccessible = true }.invoke(demo) as Double
+
+    fun constBool(name: String): Boolean {
+        val f = RealBodyDemo::class.java.getDeclaredField(name)
+        f.isAccessible = true
+        return f.getBoolean(null)
+    }
+
     fun constInt(name: String): Int {
         val f = RealBodyDemo::class.java.getDeclaredField(name)
         f.isAccessible = true
