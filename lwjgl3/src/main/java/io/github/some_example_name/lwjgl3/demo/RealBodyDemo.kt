@@ -120,6 +120,34 @@ import kotlin.math.sqrt
  *    SIMD при этом не теряется: циклы идут через косвенную адресацию conA/conB,
  *    а такое не векторизуется ни во float, ни в double.
  *
+ *    ЭТИ 14..16% ИЗМЕРЕНЫ НА ДЕСКТОПЕ. НА ANDROID ПЕРЕМЕРИТЬ ОБЯЗАТЕЛЬНО, до того как
+ *    решение станет необратимым. Это не перестраховка: double УДВАИВАЕТ рабочий набор,
+ *    а у мобильных ровно те три особенности, из-за которых лишний трафик в память там
+ *    стоит дороже:
+ *      * последний уровень кэша меньше и ДЕЛИТСЯ С GPU (SLC 4..8 МБ против 16..32 МБ
+ *        L3 на десктопе). Заметьте, L1 при этом НЕ меньше — у Apple с A14 он 128 КБ,
+ *        то есть больше типичных 32..48 КБ на x86. Дело не в «кэши меньше», а именно
+ *        в последнем уровне и в том, что за него конкурирует отрисовка;
+ *      * LPDDR заметно уже десктопной памяти, а предвыборка слабее и меньше промахов
+ *        держится в полёте — неаккуратный доступ там прощается хуже;
+ *      * обращение к DRAM дорого по ЭНЕРГИИ, а устойчивая производительность на
+ *        телефоне ограничена троттлингом. Лишний трафик бьёт не только по мгновенному
+ *        FPS, но и по тому, как долго он держится.
+ *
+ *    КАК МЕРИТЬ. Стенд SolverBench для этого и написан: он гоняет один и тот же
+ *    конвейер во float и в double при аренах от 1 до 1024 организмов и печатает объём
+ *    горячего состояния в КБ. Смотреть надо не на одно число, а на то, ГДЕ отношение
+ *    double/float начинает расти — это и есть точка, где набор перестал помещаться.
+ *    На десктопе она видна на 1024 копиях (1.23x против 1.14x в середине); на телефоне
+ *    она наступит раньше и, возможно, будет круче.
+ *
+ *    Задачу придётся завести в модуле android — через :lwjgl3 она не запустится, это
+ *    не одна команда. Замер того стоит: если на устройстве выйдет не 15%, а, скажем,
+ *    40%, разговор про смешанную точность и фиксированную точку надо открывать заново.
+ *    Тогда пригодится, что фиксированная точка ИЗМЕРЕНА: ровно нулевая утечка при
+ *    2.93x на десктопе (см. ниже). При подорожавшем double разрыв сократится, и та
+ *    таблица будет выглядеть иначе, чем сейчас.
+ *
  *    ЧЕГО ДЕЛАТЬ НЕ НАДО — три варианта, каждый проверен и каждый хуже:
  *      * СМЕШИВАТЬ ТОЧНОСТЬ (позиции double, скорости float): экономии НЕТ вовсе,
  *        1.15x против 1.14x, а утечка в 55 раз хуже. Дорогая часть шага — разбросанный
@@ -289,7 +317,9 @@ import kotlin.math.sqrt
  * ----------
  * ЛКМ - тянуть вершину, наведение на ребро мышцы - сокращение её кластера,
  * 1..9 - держать мышцу сокращённой, 0 - все сразу, G - автоматический гребок,
- * SPACE - пауза, F - ускорение до максимума машины, E - изгиб контура (перебор),
+ * SPACE - пауза, F - ускорение до максимума машины, T - диалог скорости (ползунок
+ * x0..x10), Y - вернуть x1, E - изгиб контура (перебор),
+ * I - режим интерполяции (выкл / по тикам, по умолчанию / по подшагам),
  * R - сброс (включая камеру),
  * B - жёсткость костей, C - режим отрисовки,
  * ПКМ или средняя кнопка - панорама, колесо - зум к точке под курсором.
@@ -297,17 +327,58 @@ import kotlin.math.sqrt
 class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
 
     companion object {
-        private const val DT = 1.0 / 144.0
+        private const val DT = 1.0 / 30.0
 
         /**
-         * Подшагов на кадр.
+         * Подшагов на тик. ВМЕСТЕ С DT задаёт единственную величину, у которой есть
+         * физический смысл: h = 1 / (UPS * SUBSTEPS), здесь 1/480.
          *
-         * Критерий тот же, что выведен на падении синтетического тела: за подшаг вершина
-         * не должна проскакивать дальше половины характерного расстояния между клетками.
-         * Здесь опорой служит СРЕДНЯЯ длина связи (0.0285), а не минимальная: по минимуму
-         * (0.0057) вышло бы впятеро больше подшагов ради нескольких коротких рёбер.
+         * UPS И SUBSTEPS ПО ОТДЕЛЬНОСТИ ФИЗИКУ НЕ ОПРЕДЕЛЯЮТ. Замер (стенд TickRate):
+         * при одном бюджете 576 подшагов/с деления от 288x2 до 18x32 дают невязку
+         * 15.4867% против 15.4860% и |L| 1.374e-01 против 1.358e-01 — то есть одно и
+         * то же с точностью до шума, и цена та же. Делить бюджет можно свободно.
+         *
+         * ТОГДА ЧЕМ ВЫБИРАТЬ КАЖДОЕ. Произведение — качеством сходимости (ниже).
+         * Само UPS — тем, что привязано к ТИКУ: в движке это нейросеть, геном и
+         * управление мышцами, они считаются раз в тик, а не раз в подшаг. Чем ниже UPS,
+         * тем они дешевле, и физика от этого не страдает.
+         *
+         * СТАРЫЙ КРИТЕРИЙ ПРО ТУННЕЛИРОВАНИЕ («за подшаг не проскочить дальше половины
+         * расстояния между клетками») БОЛЬШЕ НЕ ВЕДУЩИЙ, если в движке есть CCD: там
+         * непрерывная детекция закрывает проскок сама. Проверка на числах движка:
+         * v_max = 4, dt = 1/30, клетка 1 — путь за тик 0.133, то есть критерий проходит
+         * даже при ОДНОМ подшаге. Оставлять его как ограничение снизу стоит только там,
+         * где CCD нет.
+         *
+         * НАСТОЯЩИЙ КРИТЕРИЙ — СХОДИМОСТЬ. Податливость задаёт целевую жёсткость, но
+         * решатель добирается до неё за несколько подшагов: мало подшагов — ткань мягче,
+         * чем задано, и сильнее угловая утечка. Замер при периоде гребка, удержанном
+         * равным 0.722 с (иначе сравнивались бы разные существа):
+         *
+         *      подш./с   невязка    |L|        вывернутых   мкс/с
+         *        144     15.903%    7.73e-01       10         3182
+         *        288     15.543%    2.55e-01        8         6276
+         *        480     15.493%    1.49e-01        5        10294   <- стоит сейчас
+         *        576     15.487%    1.38e-01       11        12217
+         *       1152     15.477%    1.20e-01        0        28740
+         *       2304     15.475%    1.12e-01        0        48377
+         *
+         * Невязка сходится к 15.475% — это не недосчёт, а заданная SOFT_COMPLIANCE
+         * мягкость материала. К 480..576 она добрана. Угловая утечка после 576
+         * улучшается уже всего на 15% и 6%, а цена растёт линейно — колено там.
+         *
+         * ПРЕДЕЛ СНИЗУ У UPS задаёт не решатель, а КВАНТОВАНИЕ УПРАВЛЕНИЯ: активация
+         * мышцы меняется раз в тик. При MUSCLE_RATE_RELAX = 35.3 постоянная времени
+         * распрямления 28 мс, и на 36 UPS тик уже равен ей — гребок вырождается в
+         * ступеньку. По замеру выбега слом виден ровно там: 0.49 при 72 UPS, 0.73 при
+         * 48, 1.73 при 36. Отсюда 60 UPS — с запасом над порогом.
+         *
+         * ХОТИТЕ 30 UPS — это возможно, но не даром: порог держат скорости мышц,
+         * которые тюнер выбирал свободно. Зафиксируйте UPS в поиске и ограничьте их
+         * сверху величиной около 1/(2*dt), тогда найдётся существо, честно живущее на
+         * 30 тиках.
          */
-        private const val SUBSTEPS = 4
+        private const val SUBSTEPS = 16
 
         /**
          * НЕ СТАВИТЬ В НОЛЬ. Ноль раскручивает организм при сокращении мышцы.
@@ -556,7 +627,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * Поднимать его ради «плотности среды» бессмысленно — движение умрёт, а плавания
          * не появится. Здесь оно остаётся только общим успокоителем.
          */
-        private const val MEDIUM_DRAG = 0.0021
+        private const val MEDIUM_DRAG = 0.0921
 
         /**
          * АНИЗОТРОПНОЕ сопротивление на граничных рёбрах, 1/(сек * единица длины).
@@ -586,7 +657,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * замере, и не проверил, каково тело на ощупь. Это в 14 раз плотнее изотропного
          * сопротивления, отсюда и ощущение вязкой субстанции при перетаскивании.
          */
-        private const val NORMAL_DRAG = 43.33
+        private const val NORMAL_DRAG = 43.33//184.12
 
         /**
          * КВАДРАТИЧНАЯ часть сопротивления: сила растёт как v*|v|, а не как v.
@@ -635,7 +706,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * Третья строка выпадает из монотонности — замер по одной траектории шумит,
          * потому что тело ещё и поворачивает, а метрика берёт расстояние от старта.
          */
-        private const val NORMAL_DRAG_QUADRATIC = 71.8
+        private const val NORMAL_DRAG_QUADRATIC = 71.8//135.6
 
         /**
          * УВЛЕЧЁННЫЙ ПОТОК (присоединённая масса), 1/сек. 0 — выключено.
@@ -675,7 +746,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * сравнима с ней, поэтому при смене GAIT_PERIOD значение надо пересматривать.
          */
 
-        private const val FLOW_ENTRAIN = 2f
+        private const val FLOW_ENTRAIN = 2f//34.047
 
         /**
          * МАССА увлечённой среды, в массах тела. Тело — это n частиц массой 1.
@@ -688,7 +759,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * Величина скромная, и это осмысленно — большая масса означает, что тело волочит
          * за собой много воды, и тогда гребок уходит в её разгон вместо движения.
          */
-        private const val FLOW_MASS = 0.088
+        private const val FLOW_MASS = 0.050
 
         /**
          * РАССЕЯНИЕ увлечённого потока, 1/сек. Пара к FLOW_ENTRAIN, без неё модель врёт.
@@ -717,9 +788,9 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * (FLOW_DECAY > FLOW_ENTRAIN), иначе поток успевает накопиться больше, чем
          * потерять, и аккумулятор возвращается.
          */
-        private const val FLOW_DECAY = 1.168
+        private const val FLOW_DECAY = 1.168//0.488
 
-        private const val VISCOSITY = 850.5
+        private const val VISCOSITY = 10.0
 
         /**
          * Гасить паразитный дрейф от внутренних решателей.
@@ -750,10 +821,50 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         private const val CANCEL_INTERNAL_DRIFT = false
 
         /** Тяга — ограничение с потолком, а не телепорт (см. SoftBodyWithBoneDemo). */
-        private const val MAX_DRAG_STEP = 0.008
-        private const val DRAG_COMPLIANCE = 1e-6
+        /**
+         * Потолок на скорость тяги мышью, мировых единиц В СЕКУНДУ.
+         *
+         * РАНЬШЕ ЭТО БЫЛ ПОТОЛОК НА ПОДШАГ (MAX_DRAG_STEP = 0.008), и это была мина.
+         * Смысл константы молча зависел от числа подшагов: за тик вершину можно было
+         * сдвинуть на SUBSTEPS * 0.008, то есть при 4 подшагах на 0.72 средней связи,
+         * а при 32 — уже на 5.7. Тяга становилась в восемь раз резче просто оттого, что
+         * поменяли деление времени, и тело начинало дрожать под курсором. Особенно
+         * заметно на кости: у схваченной вершины matchWeight = 200, вся кость жёстко
+         * идёт за ней, и рывок уходит в мягкую ткань целиком.
+         *
+         * Теперь величина выражена в единицах в СЕКУНДУ и от DT с SUBSTEPS не зависит
+         * вовсе. Значение 4.0 выбрано не на глаз: столько же составляет верхняя граница
+         * скорости частиц в движке, так что тяга по определению не может разогнать
+         * вершину быстрее, чем бывает в самой симуляции. При прежних настройках
+         * (4 подшага, 144 тика) старая константа давала 4.6 единиц в секунду — то есть
+         * прежнее ощущение сохраняется, меняется только устойчивость к смене режима.
+         */
+        private const val MAX_DRAG_SPEED = 4.0
+        /**
+         * Податливость тяги мышью. БОЛЬШЕ — мягче.
+         *
+         * Было 1e-6, и это оказалось слишком жёстко. Доля зазора, закрываемая за подшаг,
+         * равна 1/(1 + DRAG_COMPLIANCE/h^2); при 1e-6 и h = 1/960 это 52%, то есть
+         * вершина за один подшаг почти прыгает на курсор. Дальше ткань — а у кости
+         * projectBone, который идёт СЛЕДОМ и просто перезаписывает позицию жёсткой
+         * позой, — утаскивает её назад, и следующий подшаг повторяет рывок.
+         *
+         * Получается ПИЛА С ЧАСТОТОЙ ПОДШАГОВ. Она была всегда, но раньше отрисовка
+         * показывала только состояние на границе тика — одну точку из шестнадцати, и
+         * пила в выборку не попадала. С интерполяцией по подшагам она стала видна.
+         * То есть интерполяция дрожание не создала, а вскрыла.
+         *
+         * 1e-5 даёт около 10% за подшаг и примерно 81% за тик: тяга остаётся отзывчивой,
+         * но перестаёт биться о ткань каждый подшаг.
+         *
+         * Настоящая причина глубже и не чинится константой: solveDrag стоит ПЕРЕД
+         * projectBone, поэтому на кости его результат отменяется всегда. Правильно было
+         * бы тянуть кость за её жёсткое тело целиком, а не за одну вершину, — но это
+         * уже другая механика, и для стенда она не нужна.
+         */
+        private const val DRAG_COMPLIANCE = 1e-5
 
-        private const val MUSCLE_CONTRACTION = 0.165
+        private const val MUSCLE_CONTRACTION = 0.200
         /**
          * Скорость сокращения и РАСПРЯМЛЕНИЯ, 1/сек — намеренно разные.
          *
@@ -799,11 +910,14 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * активации в замерном окне — при этих значениях он равен 1.0, то есть мышца
          * действительно ходит от нуля до полного сокращения.
          */
-        private const val GAIT_PERIOD = 104
-        private const val GAIT_DUTY = 0.402
+        // 43 кадра при 60 UPS = 0.722 с — тот же период В СЕКУНДАХ, при котором тюнер
+        // искал остальные константы. Задан в КАДРАХ, поэтому при смене DT его надо
+        // пересчитывать, иначе молча меняется само существо, а не настройки решателя.
+        private const val GAIT_PERIOD = 9
+        private const val GAIT_DUTY = 0.615
 
-        private const val MUSCLE_RATE_CONTRACT = 24.71
-        private const val MUSCLE_RATE_RELAX = 35.313
+        private const val MUSCLE_RATE_CONTRACT = 12.59
+        private const val MUSCLE_RATE_RELAX = 15.0
 
         /** Радиусы захвата масштабируются от средней связи: тело мельче синтетического. */
         private const val PICK_FACTOR = 1.2f
@@ -831,6 +945,9 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * просрочен — без него цикл мог бы уйти в тысячи шагов и подвесить окно.
          */
         private const val FAST_MAX_STEPS = 4096
+
+        /** Потолок на догон после подвисания, секунды. Больше — не отрабатываем. */
+        private const val MAX_CATCHUP = 0.25
 
         private const val VIEW_WIDTH = 3.4f
         private const val VIEW_HEIGHT = 2.125f
@@ -1005,6 +1122,48 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
      * своей жизни» — величина, воспроизводимая между запусками и сравнимая с цифрами
      * из PhysicsAudit. Настоящее время наблюдения не значит ничего.
      */
+    /** Долг нерасходованного реального времени. См. аккумулятор в render(). */
+    private var accumulator = 0.0
+
+    // --- интерполяция отрисовки ---
+    /** История позиций по подшагам: SUBSTEPS + 1 состояний за тик. См. fx(). */
+    private lateinit var histX: Array<DoubleArray>
+    private lateinit var histY: Array<DoubleArray>
+    private var histCount = 0
+
+    /** Доля тика, уже покрытая реальным временем. 0 — начало тика, 1 — конец. */
+    private var renderAlpha = 0.0
+
+    /**
+     * Режим интерполяции: 0 — выключена (сырое состояние физики), 1 — по границам
+     * тиков, 2 — по подшагам. Переключается клавишей I.
+     *
+     * ПО УМОЛЧАНИЮ 1, И ЭТО ПРАВИЛЬНЫЙ ВЫБОР, а не компромисс.
+     *
+     * Цена режима 2 — не память, а КЭШ. Снимок за подшаг копирует 2*n чисел; при 16
+     * подшагах и 947 частицах это 242 КБ за тик, то есть 7.3 МБ/с при 30 UPS. Сама
+     * пропускная способность копеечная, но это копирование каждый подшаг вымывает из
+     * кэша ровно те массивы, по которым работает решатель. Режиму 1 нужны ДВА снимка на
+     * тик вместо семнадцати.
+     *
+     * Точность при этом почти не теряется. Хорда вместо дуги врёт тем сильнее, чем
+     * больше тело успевает повернуться за тик, а при верхней границе скорости 4
+     * единицы в секунду и 30 UPS за тик проходится 0.13 единицы при клетке 1 — срезать
+     * там нечего. Режим 2 нужен, если тик станет длинным или появятся быстро
+     * вращающиеся обломки.
+     *
+     * И отдельно он полезен как ДИАГНОСТИКА: если дрожание видно на 2 и пропадает на 1,
+     * значит это пила внутри тика — что-то бьётся с частотой подшагов, обычно тяга
+     * против projectBone. Если видно на всех трёх — дрожит сама физика, и смотреть надо
+     * не на отрисовку.
+     */
+    private var interpMode = 1
+
+    /** Заполнены ли промежуточные слоты истории. Нужно на кадр после переключения. */
+    private var histHasSubsteps = false
+
+    private val controls = SimControls()
+
     private var simTime = 0.0
 
     /** Где был центр масс на сбросе. Дрейф считается от него. */
@@ -1087,6 +1246,8 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
 
         buildBoundary()
         buildBend()
+        histX = Array(SUBSTEPS + 1) { DoubleArray(n) }
+        histY = Array(SUBSTEPS + 1) { DoubleArray(n) }
 
         pickRadius = body.meanLinkLength * PICK_FACTOR
         edgePickRadius = body.meanLinkLength * EDGE_PICK_FACTOR
@@ -1221,6 +1382,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         camera.update()
         invertedPeak = 0
         simTime = 0.0
+        accumulator = 0.0
         stepsAvg = 1f
         startCx = comX()
         startCy = comY()
@@ -1344,7 +1506,9 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         if (d < 1e-12) return
         val alpha = DRAG_COMPLIANCE / (h * h)
         var corr = d * invMass[i] / (invMass[i] + alpha)
-        if (corr > MAX_DRAG_STEP) corr = MAX_DRAG_STEP
+        // Потолок пересчитывается в шаг: скорость * длительность подшага.
+        val maxStep = MAX_DRAG_SPEED * h
+        if (corr > maxStep) corr = maxStep
         val ax = dx / d * corr
         val ay = dy / d * corr
         px[i] += ax
@@ -1662,6 +1826,13 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
 
     private fun simulate() {
         val h = DT / SUBSTEPS
+        // Нулевой слот — состояние на НАЧАЛО тика. Промежуточные пишутся ТОЛЬКО когда
+        // их кто-то будет читать: в обычном режиме это лишние 242 КБ копирования за
+        // тик, вымывающие кэш решателя. См. interpMode.
+        val keepSubsteps = interpMode == 2
+        histSnap(0)
+        histCount = SUBSTEPS + 1
+        histHasSubsteps = keepSubsteps
         for (step in 0 until SUBSTEPS) {
             integrate(h)
 
@@ -1694,6 +1865,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             applyNormalDrag(h)
             applyRestitution()
             applyMediumDrag(h)
+            if (keepSubsteps || step == SUBSTEPS - 1) histSnap(step + 1)
         }
     }
 
@@ -1712,9 +1884,62 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         simTime += DT
     }
 
-    /** Позиция для отрисовки: состояние в double, а ShapeRenderer принимает float. */
-    private fun fx(i: Int) = px[i].toFloat()
-    private fun fy(i: Int) = py[i].toFloat()
+    /**
+     * Позиция для отрисовки — ИНТЕРПОЛИРОВАННАЯ, по истории подшагов.
+     *
+     * ЗАЧЕМ. Физика идёт 30 раз в секунду, экран рисует 60..240. Без интерполяции одно
+     * и то же состояние показывалось бы по 2..8 кадров подряд, и движение выглядело бы
+     * рваным, хотя сама физика ровная. Это чисто визуальная проблема, и решается она
+     * чисто визуально: рисуем не «последнее состояние», а точку между двумя
+     * сохранёнными, соответствующую тому, сколько реального времени уже накоплено.
+     *
+     * ПОЧЕМУ ПО ПОДШАГАМ, А НЕ ПО ГРАНИЦАМ ТИКОВ. За тик тело успевает заметно
+     * повернуться и изогнуться, и прямая между началом и концом тика срезает эту дугу.
+     * История по подшагам (17 состояний при 16 подшагах) даёт ту же дугу кусочно, и
+     * срезание падает во столько же раз. Память тут копеечная: 17 * n * 2 double.
+     *
+     * ЭТО НЕ ВЛИЯЕТ НА ФИЗИКУ ВООБЩЕ. Интерполяция только читает историю; решатель
+     * работает с px/py, как и работал.
+     */
+    /**
+     * Какие два слота истории смешивать и с каким весом. Одна формула на обе оси,
+     * иначе x и y однажды разойдутся при правке.
+     *
+     * Режим 1 берёт только границы тика: слот 0 и последний. Режим 2 идёт по подшагам.
+     */
+    private var lerpLo = 0
+    private var lerpHi = 0
+    private var lerpU = 0.0
+
+    private fun prepareLerp() {
+        if (interpMode == 0 || histCount < 2) { lerpLo = -1; return }
+        if (interpMode == 1 || !histHasSubsteps) {
+            lerpLo = 0
+            lerpHi = histCount - 1
+            lerpU = renderAlpha
+            return
+        }
+        val f = renderAlpha * (histCount - 1)
+        var a = f.toInt()
+        if (a > histCount - 2) a = histCount - 2
+        lerpLo = a
+        lerpHi = a + 1
+        lerpU = f - a
+    }
+
+    private fun fx(i: Int): Float =
+        if (lerpLo < 0) px[i].toFloat()
+        else (histX[lerpLo][i] + (histX[lerpHi][i] - histX[lerpLo][i]) * lerpU).toFloat()
+
+    private fun fy(i: Int): Float =
+        if (lerpLo < 0) py[i].toFloat()
+        else (histY[lerpLo][i] + (histY[lerpHi][i] - histY[lerpLo][i]) * lerpU).toFloat()
+
+    /** Снимок состояния в слот истории. Вызывается из simulate(). */
+    private fun histSnap(slot: Int) {
+        val hx = histX[slot]; val hy = histY[slot]
+        for (i in 0 until n) { hx[i] = px[i]; hy[i] = py[i] }
+    }
 
     private fun countInverted() {
         var c = 0
@@ -1777,6 +2002,14 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         viewport.unproject(tmp)
         mouseX = tmp.x.toDouble(); mouseY = tmp.y.toDouble()
 
+        // Диалог забирает мышь ПЕРВЫМ. Иначе клик по ползунку, который висит поверх
+        // тела, одновременно хватал бы вершину под ним.
+        val uiTookMouse = controls.handleInput(Gdx.graphics.width, Gdx.graphics.height)
+        if (uiTookMouse) {
+            if (dragId >= 0) { matchWeight[dragId] = 1.0; dragId = -1 }
+            wasTouched = true
+        }
+
         // Панорама средней или правой кнопкой. ЛЕВАЯ остаётся за перетаскиванием вершины,
         // поэтому ниже проверяется именно она, а не isTouched: тот истинен для любой
         // кнопки и панорама воровала бы захват.
@@ -1791,7 +2024,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             camera.update()
         }
 
-        val touched = Gdx.input.isButtonPressed(Input.Buttons.LEFT)
+        val touched = Gdx.input.isButtonPressed(Input.Buttons.LEFT) && !uiTookMouse
         if (touched && !wasTouched) {
             val i = nearestParticle()
             if (i >= 0) { dragId = i; matchWeight[i] = 200.0 }
@@ -1809,7 +2042,14 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         if (Gdx.input.isKeyJustPressed(Input.Keys.G)) { gait = !gait; gaitFrame = 0 }
         if (Gdx.input.isKeyJustPressed(Input.Keys.F)) fastForward = !fastForward
         if (Gdx.input.isKeyJustPressed(Input.Keys.E)) bendLevel = (bendLevel + 1) % BEND_LEVELS.size
-        if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) Gdx.app.exit()
+        if (Gdx.input.isKeyJustPressed(Input.Keys.T)) controls.toggle()
+        if (Gdx.input.isKeyJustPressed(Input.Keys.Y)) controls.reset()
+        if (Gdx.input.isKeyJustPressed(Input.Keys.I)) interpMode = (interpMode + 1) % 3
+        // ESC сначала закрывает диалог и только потом выходит: иначе из него не выйти
+        // иначе как повторным T, а рефлекс у всех один.
+        if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
+            if (controls.isOpen) controls.close() else Gdx.app.exit()
+        }
     }
 
     private fun nearestParticle(): Int {
@@ -1903,7 +2143,31 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         // и при снятии паузы тело получало бы разом накопленную ошибку — рывок.
         if (!paused) {
             var steps = 0
-            if (fastForward) {
+            if (!fastForward) {
+                // ФИКСИРОВАННЫЙ ШАГ С АККУМУЛЯТОРОМ.
+                //
+                // Раньше здесь был ровно один шаг на кадр отрисовки, и DT работал как
+                // «предполагаемая длительность кадра». Пока DT совпадал с частотой
+                // экрана, это сходилось; после перехода на 60 UPS при отрисовке в 144
+                // кадра симуляция пошла бы в 2.4 раза быстрее реального времени, и
+                // счётчик simTime врал бы ровно во столько же.
+                //
+                // DT НЕ ТРОГАЕТСЯ НИКОГДА: детерминизм требует фиксированного шага, а
+                // скорость проигрывания меняется числом тиков, а не их длиной.
+                // timeScale умножает РЕАЛЬНОЕ время, а не DT. Значит меняется число
+                // тиков в секунду, а не их длина: на 0.5x получаются побитово те же
+                // состояния, просто показанные на большем числе кадров.
+                accumulator += Gdx.graphics.deltaTime.toDouble() * controls.timeScale
+                // Потолок на догон. Без него после подвисания (перетаскивание окна,
+                // сборка мусора) накопленный долг отрабатывается разом, и тело получает
+                // пачку шагов подряд — выглядит как взрыв.
+                if (accumulator > MAX_CATCHUP) accumulator = MAX_CATCHUP
+                while (accumulator >= DT) {
+                    stepOnce()
+                    accumulator -= DT
+                    steps++
+                }
+            } else {
                 // Крутим шаги, пока не выйдет бюджет. Проверка ПОСЛЕ шага, а не до:
                 // хотя бы один шаг за кадр обязан пройти, иначе при просроченном кадре
                 // симуляция встанет совсем и это будет похоже на зависание.
@@ -1912,13 +2176,18 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
                     stepOnce()
                     steps++
                 } while (System.nanoTime() < deadline && steps < FAST_MAX_STEPS)
-            } else {
-                stepOnce()
-                steps = 1
+                // В ускорении долг не копим: реальное время тут ни при чём.
+                accumulator = 0.0
             }
+            // Доля тика, уже покрытая реальным временем: по ней fx()/fy() выбирают точку
+            // в истории подшагов. В ускорении интерполировать нечего — там за кадр
+            // проходит много тиков, показываем последнее состояние.
+            renderAlpha = if (fastForward) 1.0 else (accumulator / DT).coerceIn(0.0, 1.0)
+
             // Сглаживание, иначе число в HUD прыгает и его невозможно прочесть.
             stepsAvg += (steps - stepsAvg) * 0.1f
         }
+        prepareLerp()
         countInverted()
 
         ScreenUtils.clear(BG)
@@ -2038,6 +2307,14 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
                 .format(bendCompliance(), bendCount)
         else "E -- contour bend (OFF, %d pairs available)".format(bendCount), 16f, y); y -= line
 
+        font.color = if (controls.timeScale != 1.0) HUD_WARN else HUD_MUTED
+        font.draw(batch, "TIME SCALE [T] = x%.2f   INTERP [I] = %s".format(controls.timeScale,
+            when (interpMode) {
+                0 -> "off (raw physics state)"
+                1 -> "tick bounds (2 snapshots/tick)"
+                else -> "by substeps (%d snapshots/tick)".format(SUBSTEPS + 1)
+            }), 16f, y); y -= line
+
         font.color = if (fastForward) HUD_WARN else HUD_MUTED
         font.draw(batch, if (fastForward)
             "FAST FORWARD [F] -- x%.0f  (%.0f steps/frame, budget %d ms)"
@@ -2051,6 +2328,10 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             16f, y); y -= line
         if (paused) { font.color = HUD_WARN; font.draw(batch, "PAUSED", 16f, y) }
         batch.end()
+
+        // Диалог рисуется ПОСЛЕДНИМ, поверх всего: он и логически сверху, и свои
+        // begin/end у него собственные — рисовать его внутри чужой пары нельзя.
+        controls.render(shapes, batch, font, Gdx.graphics.width)
     }
 
     override fun dispose() {

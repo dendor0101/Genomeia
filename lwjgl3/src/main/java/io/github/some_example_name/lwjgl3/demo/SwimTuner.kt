@@ -91,16 +91,51 @@ private class Gene(
 /** Какую модель памяти среды ищем. Меняется аргументом --flow. */
 private var SEARCH_FLOW_MODEL = FlowModel.GLOBAL_TRACKING
 
+/**
+ * Шаг и число подшагов берутся ИЗ ДЕМО, а не задаются здесь.
+ *
+ * Иначе тюнер молча искал бы константы для другого режима. Хуже всего с GAIT_PERIOD —
+ * он задан В КАДРАХ, и при другом DT найденный период означал бы другое время в секундах.
+ *
+ * Объявлены ВЫШЕ списка генов намеренно: свойства верхнего уровня в Kotlin считаются
+ * по порядку в файле, а от DT зависит потолок скоростей мышц.
+ */
+private val DT: Double = DemoConst.DT
+private val SUBSTEPS: Int = DemoConst.SUBSTEPS
+
+/**
+ * ПОТОЛОК НА СКОРОСТИ МЫШЦ, привязанный к частоте тика.
+ *
+ * Активация считается как `act += (target - act) * min(rate * dt, 1)`. Если `rate * dt`
+ * доходит до единицы, активация прыгает к цели за ОДИН тик — у гребка не остаётся формы
+ * вовсе, остаётся ступенька.
+ *
+ * Почему это надо запрещать, а не оставлять на усмотрение поиска. Такая мышца перестаёт
+ * быть свойством СУЩЕСТВА и становится свойством ЧАСТОТЫ ТИКА: поменяли UPS — поменялось
+ * поведение организма. По метрикам поиск такое вполне может и не забраковать (резкий
+ * гребок даёт импульс), поэтому область отсекается прямо в декодировании генов.
+ *
+ * Порог 0.5 означает, что переход занимает не меньше 1.4 тика. При 30 UPS это 15 1/с.
+ * Ровно на этом ломался прежний набор: MUSCLE_RATE_RELAX = 35.3 при 30 UPS давало
+ * rate*dt = 1.18, то есть чистую ступеньку, и выбег подскакивал с 0.43 до 2.50.
+ */
+private val MUSCLE_RATE_MAX: Double = 0.5 / DT
+
 private val GENES = listOf(
     Gene("normalDrag", 1.0, 400.0),
     Gene("normalDragQuadratic", 0.2, 30000.0),
     Gene("mediumDrag", 0.0002, 3.0),
     Gene("viscosity", 5.0, 1500.0),
     Gene("flowMass", 0.02, 30.0),
-    Gene("flowDecay", 0.02, 30.0),
+    // Нижняя граница НЕ физическая, а методическая: 0.2 это постоянная времени наката
+    // 5 секунд, и она обязана помещаться в окно замера. Прошлый прогон при свободной
+    // границе выбрал 0.029, то есть накат длиной 34 секунды, — и «скорость в устойчивом
+    // режиме» мерилась на разгоне, потому что устойчивого режима за 10 секунд не
+    // наступало. Метрика переставала значить то, что написано в её названии.
+    Gene("flowDecay", 0.2, 30.0),
     Gene("muscleContraction", 0.15, 0.92, log = false),
-    Gene("muscleRateContract", 1.0, 120.0),
-    Gene("muscleRateRelax", 0.2, 60.0),
+    Gene("muscleRateContract", 1.0, min(120.0, MUSCLE_RATE_MAX)),
+    Gene("muscleRateRelax", 0.2, min(60.0, MUSCLE_RATE_MAX)),
     Gene("gaitPeriod", 8.0, 900.0, integer = true),
     Gene("gaitDuty", 0.05, 0.85, log = false),
     Gene("flowEntrain", 0.03, 60.0),
@@ -191,8 +226,6 @@ private class Weights(
     val inverted: Double = 50.0,
 )
 
-private const val DT = 1.0 / 144.0
-private const val SUBSTEPS = 4
 
 private class Evaluator(val topo: Topology) {
     private val local = ThreadLocal.withInitial { SwimSolver(topo, SwimParams()) }
@@ -213,7 +246,9 @@ private class Evaluator(val topo: Topology) {
         // погаснуть, и в среднюю скорость попадает только то, что гребки поддерживают
         // ПОСТОЯННО. Считается по целому числу циклов, чтобы фаза не шумела.
         val period = p.gaitPeriod
-        val warmupFrames = ((6.0 / DT / period).toInt().coerceAtLeast(1)) * period
+        // 12 секунд разгона: вдвое больше самой медленной динамики, которую поиску
+        // разрешено выбрать (постоянная времени наката ограничена пятью секундами).
+        val warmupFrames = ((12.0 / DT / period).toInt().coerceAtLeast(1)) * period
         val measureCycles = (10.0 / (period * DT)).roundToInt().coerceAtLeast(1)
         val measureFrames = measureCycles * period
 
@@ -418,6 +453,11 @@ fun main(args: Array<String>) {
     println("тело: n=${topo.n} links=${topo.conCount} tris=${topo.triCount} " +
         "boundary=${topo.boundCount} bones=${topo.rigidBones.size} muscles=${topo.muscleCount}")
     println("популяция $pop, поколений $gens, seed $seed, модель среды $SEARCH_FLOW_MODEL")
+    println("режим времени взят из демо: UPS = ${Math.round(1.0 / DT)}, подшагов $SUBSTEPS, " +
+        "итого ${Math.round(SUBSTEPS / DT)} подшагов/с")
+    println(String.format(Locale.ROOT,
+        "потолок скоростей мышц %.1f 1/с (rate*dt <= 0.5, иначе гребок вырождается в ступеньку)",
+        MUSCLE_RATE_MAX))
     println("веса: накат ${w.glide}, ост.импульс ${w.residual}, покой ${w.rest}, " +
         "поворот ${w.rot}, вывернутые ${w.inverted}")
 
@@ -449,28 +489,40 @@ fun main(args: Array<String>) {
 
     // --- опорные точки: как сейчас в демо (память среды по рёбрам) и она же
     //     с общим запасом среды. Обе считаются вне поиска, для сравнения. ---
-    // ОПОРНАЯ ТОЧКА — значения, которые стояли в демо ДО подбора, вместе со старой
-    // моделью памяти среды. Это то, с чем сравнивается всё остальное; не путать с
-    // значениями по умолчанию SwimParams, которые теперь равны НАЙДЕННЫМ.
+    // ОПОРНАЯ ТОЧКА — ТЕКУЩИЕ константы демо, прочитанные рефлексией.
+    //
+    // Раньше здесь были зашиты числа «как было когда-то», и это молча сломалось при
+    // смене UPS: gaitPeriod задан В КАДРАХ, и зашитые 480 кадров при 30 UPS означали
+    // гребок длиной 16 секунд. Опорная точка становилась заведомо неподвижным телом,
+    // а любой найденный кандидат выглядел рядом с ней «быстрее в десятки раз».
+    // Сравнивать надо с тем, что стоит в демо СЕЙЧАС, иначе множители — самообман.
     val demoParams = SwimParams(
-        normalDrag = 15.0, normalDragQuadratic = 900.0, mediumDrag = 0.1, viscosity = 200.0,
-        flowEntrain = 0.2, flowDecay = 1.0,
-        muscleContraction = 0.4, muscleRateContract = 25.0, muscleRateRelax = 1.0,
-        gaitPeriod = 480, gaitDuty = 1.0 / 3.0,
-        flowModel = FlowModel.PER_EDGE,
+        normalDrag = Probe.const("NORMAL_DRAG"),
+        normalDragQuadratic = Probe.const("NORMAL_DRAG_QUADRATIC"),
+        mediumDrag = Probe.const("MEDIUM_DRAG"),
+        viscosity = Probe.const("VISCOSITY"),
+        flowMass = Probe.const("FLOW_MASS"),
+        flowEntrain = Probe.const("FLOW_ENTRAIN"),
+        flowDecay = Probe.const("FLOW_DECAY"),
+        muscleContraction = Probe.const("MUSCLE_CONTRACTION"),
+        muscleRateContract = Probe.const("MUSCLE_RATE_CONTRACT"),
+        muscleRateRelax = Probe.const("MUSCLE_RATE_RELAX"),
+        gaitPeriod = Probe.constInt("GAIT_PERIOD"),
+        gaitDuty = Probe.const("GAIT_DUTY"),
+        flowModel = FlowModel.GLOBAL_TRACKING,
     )
     val mDemo = ev.measure(demoParams)
     val mDemoNoFlow = ev.measure(demoParams.copy(flowModel = FlowModel.NONE))
     val mDemoGlobal = ev.measure(demoParams.copy(flowModel = FlowModel.GLOBAL_RESERVOIR, flowMass = 1.0))
-    val mDemoTrack = ev.measure(demoParams.copy(flowModel = FlowModel.GLOBAL_TRACKING, flowMass = 1.0))
+    val mDemoTrack = ev.measure(demoParams.copy(flowMass = 1.0))
 
     println()
     println("=== ОПОРНЫЕ ТОЧКИ (параметры демо, меняется ТОЛЬКО модель памяти среды) ===")
     println(HEADER)
-    println(reportRow("память по рёбрам (было)", mDemo, mDemo.score(w)))
+    println(reportRow("константы демо как есть", mDemo, mDemo.score(w)))
     println(reportRow("памяти нет вовсе", mDemoNoFlow, mDemoNoFlow.score(w)))
     println(reportRow("общий запас (от рёбер)", mDemoGlobal, mDemoGlobal.score(w)))
-    println(reportRow("общий запас (от ЦМ)", mDemoTrack, mDemoTrack.score(w)))
+    println(reportRow("то же, но масса среды 1.0", mDemoTrack, mDemoTrack.score(w)))
 
     // --- эволюция ---
     val rnd = Random(seed)
@@ -541,10 +593,10 @@ fun main(args: Array<String>) {
     println()
     println("=== ИТОГ ===")
     println(HEADER)
-    println(reportRow("память по рёбрам (было)", mDemo, mDemo.score(w)))
+    println(reportRow("константы демо как есть", mDemo, mDemo.score(w)))
     println(reportRow("памяти нет вовсе", mDemoNoFlow, mDemoNoFlow.score(w)))
     println(reportRow("общий запас (от рёбер)", mDemoGlobal, mDemoGlobal.score(w)))
-    println(reportRow("общий запас (от ЦМ)", mDemoTrack, mDemoTrack.score(w)))
+    println(reportRow("то же, но масса среды 1.0", mDemoTrack, mDemoTrack.score(w)))
     println(reportRow("НАЙДЕНО", bm, best.score))
     println()
     // Остаточный импульс НЕЛЬЗЯ сравнивать в лоб: у быстрого пловца его просто больше,

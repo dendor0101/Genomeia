@@ -31,8 +31,8 @@ import java.util.Locale
  * рычагами: потолком на длину поправки и плавным переходом между ветками.
  * См. AREA_MAX_STEP и AREA_SMOOTH_RAMP в RealBodyDemo.
  */
-private const val DT = 1.0 / 144.0
-private const val SUBSTEPS = 4
+private val DT = DemoConst.DT
+private val SUBSTEPS = DemoConst.SUBSTEPS
 
 /**
  * Складывает тело зеркалом относительно вертикали, проходящей через долю [at] его

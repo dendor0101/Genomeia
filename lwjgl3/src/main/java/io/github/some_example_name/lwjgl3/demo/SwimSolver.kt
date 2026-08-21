@@ -213,28 +213,68 @@ enum class FlowModel {
     GLOBAL_TRACKING,
 }
 
-/** Всё, что подбирается. Значения по умолчанию — ровно те, что стоят в RealBodyDemo. */
+/**
+ * Константы демо, прочитанные рефлексией ОДИН раз.
+ *
+ * Нужен, чтобы умолчания SwimParams не жили своей жизнью. Дублирование значений уже
+ * трижды приводило к тому, что стенды мерили не тот режим, который стоит в демо:
+ * сначала разъехались DT и SUBSTEPS, потом опорная точка тюнера с её gaitPeriod,
+ * потом подписи вариантов в FoldRecovery. Каждый раз ошибка была молчаливой — числа
+ * выглядели правдоподобно и просто относились к другому существу.
+ *
+ * Теперь источник один: RealBodyDemo. Здесь только чтение.
+ */
+internal object DemoConst {
+    private fun d(name: String): Double =
+        RealBodyDemo::class.java.getDeclaredField(name)
+            .apply { isAccessible = true }.getDouble(null)
+
+    private fun i(name: String): Int =
+        RealBodyDemo::class.java.getDeclaredField(name)
+            .apply { isAccessible = true }.getInt(null)
+
+    val DT = d("DT")
+    val SUBSTEPS = i("SUBSTEPS")
+    val NORMAL_DRAG = d("NORMAL_DRAG")
+    val NORMAL_DRAG_QUADRATIC = d("NORMAL_DRAG_QUADRATIC")
+    val MEDIUM_DRAG = d("MEDIUM_DRAG")
+    val VISCOSITY = d("VISCOSITY")
+    val FLOW_MASS = d("FLOW_MASS")
+    val FLOW_DECAY = d("FLOW_DECAY")
+    val FLOW_ENTRAIN = d("FLOW_ENTRAIN")
+    val MUSCLE_CONTRACTION = d("MUSCLE_CONTRACTION")
+    val MUSCLE_RATE_CONTRACT = d("MUSCLE_RATE_CONTRACT")
+    val MUSCLE_RATE_RELAX = d("MUSCLE_RATE_RELAX")
+    val GAIT_PERIOD = i("GAIT_PERIOD")
+    val GAIT_DUTY = d("GAIT_DUTY")
+    val SOFT_COMPLIANCE = d("SOFT_COMPLIANCE")
+    val AREA_COMPLIANCE = d("AREA_COMPLIANCE")
+    val AREA_COMPLIANCE_INVERTED = d("AREA_COMPLIANCE_INVERTED")
+    val AREA_MAX_STEP = d("AREA_MAX_STEP")
+}
+
+/** Всё, что подбирается. Умолчания читаются из RealBodyDemo, см. [DemoConst]. */
 data class SwimParams(
-    val normalDrag: Double = 43.33,
-    val normalDragQuadratic: Double = 71.8,
-    val mediumDrag: Double = 0.0021,
-    val viscosity: Double = 850.5,
+    val normalDrag: Double = DemoConst.NORMAL_DRAG,
+    val normalDragQuadratic: Double = DemoConst.NORMAL_DRAG_QUADRATIC,
+    val mediumDrag: Double = DemoConst.MEDIUM_DRAG,
+    val viscosity: Double = DemoConst.VISCOSITY,
 
     /** Масса увлечённой среды в массах тела. Тело — n частиц массой 1. */
-    val flowMass: Double = 0.088,
-    val flowDecay: Double = 1.168,
-    val flowEntrain: Double = 1.660,
+    val flowMass: Double = DemoConst.FLOW_MASS,
+    val flowDecay: Double = DemoConst.FLOW_DECAY,
+    val flowEntrain: Double = DemoConst.FLOW_ENTRAIN,
 
-    val muscleContraction: Double = 0.165,
-    val muscleRateContract: Double = 24.71,
-    val muscleRateRelax: Double = 35.313,
+    val muscleContraction: Double = DemoConst.MUSCLE_CONTRACTION,
+    val muscleRateContract: Double = DemoConst.MUSCLE_RATE_CONTRACT,
+    val muscleRateRelax: Double = DemoConst.MUSCLE_RATE_RELAX,
 
-    val gaitPeriod: Int = 104,
+    val gaitPeriod: Int = DemoConst.GAIT_PERIOD,
     /** Доля периода на рабочую фазу. */
-    val gaitDuty: Double = 0.402,
+    val gaitDuty: Double = DemoConst.GAIT_DUTY,
 
-    val softCompliance: Double = 1.0e-4,
-    val areaCompliance: Double = 1.0e-6,
+    val softCompliance: Double = DemoConst.SOFT_COMPLIANCE,
+    val areaCompliance: Double = DemoConst.AREA_COMPLIANCE,
 
     /**
      * Отдельная податливость площади для ВЫВЕРНУТЫХ треугольников. -1 — выключено,
@@ -246,7 +286,7 @@ data class SwimParams(
      * порядка удвоенной площади покоя, то есть на четыре порядка больше шума. Фильтровать
      * там нечего, а мягкость только мешает распрямиться.
      */
-    val areaComplianceInverted: Double = 0.0,
+    val areaComplianceInverted: Double = DemoConst.AREA_COMPLIANCE_INVERTED,
 
     /**
      * ПОТОЛОК на норму поправки одного треугольника за подшаг, в долях средней связи.
@@ -257,7 +297,7 @@ data class SwimParams(
      * которой там взяться неоткуда. Потолок оставляет силу прежней, но растягивает
      * выправление на несколько подшагов: медленнее, зато без выстрела.
      */
-    val areaMaxStep: Double = 0.2,
+    val areaMaxStep: Double = DemoConst.AREA_MAX_STEP,
 
     /**
      * Плавный переход между мягкой и жёсткой ветками вместо ступеньки.
@@ -728,6 +768,25 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     fun comY(): Double { var s = 0.0; for (i in 0 until n) s += py[i]; return s / n }
     fun momX(): Double { var s = 0.0; for (i in 0 until n) s += vx[i]; return s }
     fun momY(): Double { var s = 0.0; for (i in 0 until n) s += vy[i]; return s }
+    /**
+     * НЕВЯЗКА СВЯЗЕЙ: корень из среднего квадрата (len - rest), в долях средней связи.
+     *
+     * Прямая мера СХОДИМОСТИ. Податливость задаёт целевую жёсткость материала, но
+     * добирается решатель до неё только за несколько подшагов. Мало подшагов — ткань
+     * получается мягче, чем задано, и невязка большая. Именно этим и надо выбирать
+     * число подшагов, а не туннелированием: его закрывает CCD.
+     */
+    fun linkResidual(): Double {
+        var s = 0.0
+        for (c in 0 until topo.conCount) {
+            val i = topo.conA[c]; val j = topo.conB[c]
+            val dx = px[i] - px[j]; val dy = py[i] - py[j]
+            val d = sqrt(dx * dx + dy * dy) - topo.conRest[c] * muscleScale(topo.conMuscle[c])
+            s += d * d
+        }
+        return sqrt(s / topo.conCount) / topo.meanLinkLength
+    }
+
     fun kinetic(): Double {
         var e = 0.0
         for (i in 0 until n) e += 0.5 * (vx[i] * vx[i] + vy[i] * vy[i])

@@ -262,3 +262,13 @@ tasks.register('foldRecovery', JavaExec) {
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8'
 }
+
+// Подбор UPS и SUBSTEPS: gradlew :lwjgl3:tickRate
+tasks.register('tickRate', JavaExec) {
+  group = 'verification'
+  description = 'Сходимость и цена при разных UPS и числе подшагов'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.demo.TickRateKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
