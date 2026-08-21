@@ -26,6 +26,7 @@ object Probe {
     lateinit var prevX: DoubleArray
     lateinit var prevY: DoubleArray
     lateinit var invMass: DoubleArray
+    lateinit var restInvMass: DoubleArray
     lateinit var matchWeight: DoubleArray
     lateinit var muscleActivation: DoubleArray
     lateinit var muscleTarget: DoubleArray
@@ -93,6 +94,7 @@ object Probe {
         vx = field("vx"); vy = field("vy")
         prevX = field("prevX"); prevY = field("prevY")
         invMass = field("invMass"); matchWeight = field("matchWeight")
+        restInvMass = field("restInvMass")
         muscleActivation = field("muscleActivation")
         muscleTarget = field("muscleTarget")
         rigidBones = field("rigidBones")
@@ -107,7 +109,10 @@ object Probe {
         for (i in 0 until n) {
             px[i] = body.x[i].toDouble(); py[i] = body.y[i].toDouble()
             vx[i] = 0.0; vy[i] = 0.0
-            invMass[i] = 1.0; matchWeight[i] = 1.0
+            // Массу берём ТУ ЖЕ, что считает демо, а не зашитую единицу. Раньше здесь
+            // стояло 1.0, и когда демо начало считать её из радиуса, разошлось на
+            // один ulp — этого хватило, чтобы за 200 кадров траектории разъехались.
+            invMass[i] = restInvMass[i]; matchWeight[i] = 1.0
             prevX[i] = px[i]; prevY[i] = py[i]
         }
         muscleActivation.fill(0.0)

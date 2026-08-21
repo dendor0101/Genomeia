@@ -25,6 +25,8 @@ class Topology private constructor(
     val n: Int,
     val restX: FloatArray,
     val restY: FloatArray,
+    /** Радиус клетки: из него берётся масса, см. invMass в SwimSolver. */
+    val restR: FloatArray,
     val conA: IntArray,
     val conB: IntArray,
     val conRest: DoubleArray,
@@ -118,7 +120,7 @@ class Topology private constructor(
 
             return Topology(
                 n = f("n"),
-                restX = body.x, restY = body.y,
+                restX = body.x, restY = body.y, restR = body.radius,
                 conA = f("conA"), conB = f("conB"),
                 conRest = f("conRest"), conMuscle = f("conMuscle"),
                 triA = body.triA, triB = body.triB, triC = body.triC,
@@ -251,6 +253,7 @@ internal object DemoConst {
     val AREA_COMPLIANCE = d("AREA_COMPLIANCE")
     val AREA_COMPLIANCE_INVERTED = d("AREA_COMPLIANCE_INVERTED")
     val AREA_MAX_STEP = d("AREA_MAX_STEP")
+    val BONE_MAX_STEP = d("BONE_MAX_STEP")
 }
 
 /** Всё, что подбирается. Умолчания читаются из RealBodyDemo, см. [DemoConst]. */
@@ -299,6 +302,9 @@ data class SwimParams(
      */
     val areaMaxStep: Double = DemoConst.AREA_MAX_STEP,
 
+    /** Потолок на смещение вершины проекцией кости за подшаг. См. BONE_MAX_STEP. */
+    val boneMaxStep: Double = DemoConst.BONE_MAX_STEP,
+
     /**
      * Плавный переход между мягкой и жёсткой ветками вместо ступеньки.
      *
@@ -330,7 +336,22 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     private val prevY = DoubleArray(n)
     val vx = DoubleArray(n)
     val vy = DoubleArray(n)
-    private val invMass = DoubleArray(n) { 1.0 }
+    /**
+     * Обратная масса из радиуса клетки — как buildMasses() в демо.
+     *
+     * Масса пропорциональна ПЛОЩАДИ (квадрату радиуса) и нормирована на среднюю, чтобы
+     * подобранные константы не зависели от того, какого размера клетки сохранил редактор.
+     */
+    private val invMass = run {
+        var meanArea = 0.0
+        for (k in 0 until n) { val r = topo.restR[k].toDouble(); meanArea += r * r }
+        meanArea /= n
+        DoubleArray(n) { i ->
+            val r = topo.restR[i].toDouble()
+            val m = if (meanArea > 0.0) (r * r) / meanArea else 1.0
+            if (m > 1e-12) 1.0 / m else 1.0
+        }
+    }
     private val matchWeight = DoubleArray(n) { 1.0 }
 
     private val muscleActivation = DoubleArray(topo.muscleCount)
@@ -357,7 +378,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             px[i] = topo.restX[i].toDouble(); py[i] = topo.restY[i].toDouble()
             prevX[i] = px[i]; prevY[i] = py[i]
             vx[i] = 0.0; vy[i] = 0.0
-            invMass[i] = 1.0; matchWeight[i] = 1.0
+            matchWeight[i] = 1.0
         }
         flowEx.fill(0.0); flowEy.fill(0.0)
         flowVX = 0.0; flowVY = 0.0
@@ -518,10 +539,24 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             sdx += w * boneDx[k]; sdy += w * boneDy[k]
         }
         val mdx = sdx / wsum; val mdy = sdy / wsum
+
+        // Потолок на смещение за подшаг — как BONE_MAX_STEP в демо. Масштабируется
+        // весь набор ОДНИМ множителем, поэтому обнулённая сумма остаётся нулём.
+        var maxD2 = 0.0
+        for (k in ids.indices) {
+            val dx = boneDx[k] - mdx
+            val dy = boneDy[k] - mdy
+            val d2 = dx * dx + dy * dy
+            if (d2 > maxD2) maxD2 = d2
+        }
+        var scale = 1.0
+        val cap = p.boneMaxStep * topo.meanLinkLength
+        if (cap > 0.0 && maxD2 > cap * cap) scale = cap / sqrt(maxD2)
+
         for (k in ids.indices) {
             val i = ids[k]
-            px[i] += boneDx[k] - mdx
-            py[i] += boneDy[k] - mdy
+            px[i] += (boneDx[k] - mdx) * scale
+            py[i] += (boneDy[k] - mdy) * scale
         }
     }
 

@@ -272,3 +272,14 @@ tasks.register('tickRate', JavaExec) {
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8'
 }
+
+// Регрессионная проверка физики одной командой: gradlew :lwjgl3:physicsCheck
+// Возвращает ненулевой код при выходе за опорные значения — годится для CI и хуков.
+tasks.register('physicsCheck', JavaExec) {
+  group = 'verification'
+  description = 'PASS/FAIL по законам сохранения; ненулевой код при регрессии'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.demo.PhysicsCheckKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
