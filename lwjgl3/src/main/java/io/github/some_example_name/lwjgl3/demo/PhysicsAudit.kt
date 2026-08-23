@@ -31,6 +31,8 @@ object Probe {
     lateinit var muscleActivation: DoubleArray
     lateinit var muscleTarget: DoubleArray
     lateinit var rigidBones: Array<IntArray>
+    lateinit var organismOf: IntArray
+    var organismCount = 0
     lateinit var boundA: IntArray
     lateinit var boundB: IntArray
     var boundCount = 0
@@ -98,6 +100,7 @@ object Probe {
         muscleActivation = field("muscleActivation")
         muscleTarget = field("muscleTarget")
         rigidBones = field("rigidBones")
+        organismOf = field("organismOf"); organismCount = field("organismCount")
         boundA = field("boundA"); boundB = field("boundB")
         boundCount = field("boundCount")
         conCount = field("conCount")
@@ -142,11 +145,27 @@ object Probe {
         f.setBoolean(demo, !f.getBoolean(demo))
     }
 
-    /** Один кадр ровно как в simulate(). hydro=false — гидродинамика не вызывается. */
+    /** Настоящий simulate() демо, без пересборки стадий. */
+    private fun simulate() { m("simulate").invoke(demo) }
+
+    /**
+     * Один кадр.
+     *
+     * При hydro = true зовётся НАСТОЯЩИЙ simulate() демо, а не пересобранный из стадий.
+     * Раньше здесь был ручной список, и он ровно так и подвёл: в simulate() добавились
+     * контакты, предел длины связи и потолок скорости, а список о них не знал — стенд
+     * стал мерить конвейер, которого в демо нет. Пересобирать порядок стадий вручную
+     * можно только там, где нужно вклиниться МЕЖДУ ними (замер утечки по стадиям), и
+     * нигде больше.
+     *
+     * hydro = false — намеренно урезанный диагностический режим «внешних сил нет».
+     * Он и обязан отличаться от демо, поэтому собирается вручную.
+     */
     fun frame(dt: Double, sub: Int, contract: Boolean, hydro: Boolean = true) {
         muscleTarget.fill(0.0)
         if (contract && muscleTarget.isNotEmpty()) muscleTarget[0] = 1.0
         updateMuscles(dt)
+        if (hydro) { simulate(); return }
         val h = dt / sub
         for (s in 0 until sub) {
             integrate(h)
@@ -156,7 +175,6 @@ object Probe {
             projectBones()
             updateVelocities(h)
             applyViscosity(h)
-            if (hydro) applyNormalDrag(h)
             applyRestitution()
             applyMediumDrag(h)
         }
@@ -240,18 +258,22 @@ object Probe {
     }
 
     /** Скорость увлечённой среды. Теперь ОДИН вектор на организм, а не массив по рёбрам. */
+    /** Наибольший запас среди организмов: теперь их несколько. */
     fun flowPeak(): Double {
-        val x = flowField("flowVX").getDouble(demo)
-        val y = flowField("flowVY").getDouble(demo)
-        return sqrt(x * x + y * y)
+        val fx = flowField("flowVX").get(demo) as DoubleArray
+        val fy = flowField("flowVY").get(demo) as DoubleArray
+        var mx = 0.0
+        for (o in fx.indices) mx = maxOf(mx, sqrt(fx[o] * fx[o] + fy[o] * fy[o]))
+        return mx
     }
 
     private fun flowField(name: String) =
         RealBodyDemo::class.java.getDeclaredField(name).apply { isAccessible = true }
 
+    /** Запас среды теперь МАССИВ — по одному на организм, а не один на мир. */
     fun resetFlow() {
-        flowField("flowVX").setDouble(demo, 0.0)
-        flowField("flowVY").setDouble(demo, 0.0)
+        (flowField("flowVX").get(demo) as DoubleArray).fill(0.0)
+        (flowField("flowVY").get(demo) as DoubleArray).fill(0.0)
     }
 }
 

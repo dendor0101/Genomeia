@@ -418,6 +418,7 @@ import kotlin.math.sqrt
  * SPACE - пауза, F - ускорение до максимума машины, T - диалог скорости (ползунок
  * x0..x10), Y - вернуть x1, E - изгиб контура (перебор),
  * I - режим интерполяции (выкл / по тикам, по умолчанию / по подшагам),
+ * K - самоконтакт граничного контура,
  * R - сброс (включая камеру),
  * B - жёсткость костей, C - режим отрисовки,
  * ПКМ или средняя кнопка - панорама, колесо - зум к точке под курсором.
@@ -673,6 +674,72 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * одним множителем, а их сумма уже обнулена — ноль остаётся нулём.
          */
         private const val BONE_MAX_STEP = 0.5
+
+        // =============================================================
+        //  САМОКОНТАКТ ГРАНИЧНОГО КОНТУРА
+        //  Реализация — в BoundaryContacts, общая с SwimSolver.
+        // =============================================================
+
+        /** Включён ли самоконтакт. Клавиша K переключает на ходу. */
+        private const val CONTACTS_ON = true
+
+        /**
+         * Доля суммы радиусов, на которой срабатывает контакт.
+         *
+         * ЕДИНИЦУ СТАВИТЬ НЕЛЬЗЯ, и вот почему. В покое соседние клетки стоят на 0.6
+         * при сумме радиусов 1.0 — они ПЕРЕКРЫВАЮТСЯ на 40%. Связанные пары из
+         * контактов исключены, но вторые соседи по сетке стоят на 1.04..1.2, то есть
+         * практически на пороге. При сокращении мышцы до 0.2 длины покоя они сходятся
+         * ещё ближе, и контакт начал бы бороться с мышцей.
+         *
+         * 0.6 — это ровно расстояние между соседями в позе покоя: контакт срабатывает,
+         * когда несвязанные клетки сблизились до расстояния связанных, то есть когда
+         * ткань действительно налезла сама на себя.
+         *
+         * Меньше делать опасно: вершины должны расталкиваться РАНЬШЕ, чем пересекутся
+         * отрезки контура между ними, иначе граница проскочит сквозь себя между
+         * частицами.
+         */
+        private const val CONTACT_SCALE = 0.6
+
+        /**
+         * «Ядро» для CCD: глубже этой доли суммы радиусов проникать нельзя.
+         * Перенесено из прототипа как есть. Мягкое проникновение до ядра разрешено —
+         * им занимается позиционный решатель, а CCD ловит только сквозной пролёт.
+         */
+        private const val CCD_CORE = 0.4
+
+        /** Отскок. Меньше единицы — энергия не растёт никогда. */
+        private const val CONTACT_RESTITUTION = 0.1
+
+        /** Трение в контакте, ограничено накопленным нормальным импульсом. */
+        private const val CONTACT_FRICTION = 0.3
+
+        /**
+         * ПОТОЛОК НА СКОРОСТЬ, в средних длинах связи ЗА ТИК.
+         *
+         * Не физическая величина, а гарантия для коллизий: DDA обходит все ячейки пути,
+         * но буфер ddaX конечен, и растущий без предела путь однажды в него не влезет.
+         * Плюс это верхняя граница, на которой держится вся оценка «широкую фазу можно
+         * строить раз в тик» при переносе в движок.
+         *
+         * Выражено в клетках за тик, а не в единицах в секунду, потому что именно это
+         * отношение и важно для сетки — оно не зависит ни от UPS, ни от масштаба тела.
+         */
+        private const val MAX_SPEED_CELLS_PER_TICK = 4.0
+
+        /**
+         * МАКСИМАЛЬНАЯ ДЛИНА СВЯЗИ в долях суммы радиусов её концов.
+         *
+         * В стенде связь БЕСКОНЕЧНО КРЕПКАЯ: при достижении предела она жёстко
+         * ограничивается, податливость ноль. В движке это же условие — сигнал к
+         * РАЗРЫВУ связи; здесь рвать нечем, поэтому держим.
+         *
+         * Единица означает «не длиннее суммы радиусов»: клетки не могут разойтись так,
+         * чтобы между ними появилась дыра. Запас до предела при этом приличный — в позе
+         * покоя связь 0.6 от суммы радиусов, то есть тянуться можно ещё в 1.67 раза.
+         */
+        private const val LINK_MAX_LENGTH = 1.0
 
         /**
          * ИЗГИБ ГРАНИЧНОГО КОНТУРА — податливости, которые перебирает клавиша E.
@@ -1070,6 +1137,19 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         /** Потолок на догон после подвисания, секунды. Больше — не отрабатываем. */
         private const val MAX_CATCHUP = 0.25
 
+        /**
+         * Сколько организмов создать из одного файла тела.
+         *
+         * Копии независимы: связей между ними нет, кластеры костей и мышц у каждой
+         * свои, решатель обходится с ними как с разными телами. Нужны, чтобы проверять
+         * МЕЖОРГАНИЗМЕННЫЕ контакты — самоконтакт границы и так работал, а вот встреча
+         * двух тел до сих пор не проверялась ничем.
+         *
+         * Мышцы у копий управляются вместе (гребок G, цифры), а наведением мыши — по
+         * отдельности: hoveredMuscle указывает на конкретный кластер.
+         */
+        private const val ORGANISMS = 2
+
         private const val VIEW_WIDTH = 3.4f
         private const val VIEW_HEIGHT = 2.125f
 
@@ -1089,6 +1169,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         private val HUD_WARN      = Color.valueOf("E8A33DFF")
         private val BOUNDARY_COLOR = Color.valueOf("4BE08AFF")
         private val BEND_COLOR     = Color.valueOf("E8A33D88")
+        private val CONTACT_COLOR  = Color.valueOf("4BE08A22")
     }
 
     private lateinit var body: BodyFile
@@ -1105,6 +1186,13 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
 
     /** Обратная масса позы покоя: из радиуса клетки, см. buildMasses(). */
     private lateinit var restInvMass: DoubleArray
+
+    // --- самоконтакт границы ---
+    private var contacts: BoundaryContacts? = null
+    private var contactsOn = CONTACTS_ON
+    private lateinit var radius: DoubleArray
+    /** Максимальная длина каждой связи: LINK_MAX_LENGTH * (ri + rj). */
+    private lateinit var conMaxLen: DoubleArray
     private lateinit var matchWeight: DoubleArray
     private lateinit var inContact: BooleanArray
 
@@ -1177,8 +1265,27 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
      * ПРОПОРЦИОНАЛЕН массе порции (70 при массе 10, 250 при 40, 1068 при 400), а
      * повторяемость гребка развалилась с 1% до 40..55%.
      */
-    private var flowVX = 0.0
-    private var flowVY = 0.0
+    /**
+     * К какому организму принадлежит частица. Связные компоненты графа связей.
+     *
+     * Нужны, потому что запас увлечённой среды обязан быть СВОИМ у каждого тела.
+     * Пока организм был один, разницы не существовало и здесь стоял один скаляр на
+     * весь мир — и это оказалось прямой ошибкой: два тела делили один запас, поэтому
+     * движение одного толкало другое НА ЛЮБОМ РАССТОЯНИИ, а тяга у обоих падала,
+     * потому что запас следовал за средней скоростью пары, а не за своей.
+     *
+     * В движке это ровно те же острова, которые понадобятся для сна и для разбиения
+     * по аренам.
+     */
+    private lateinit var organismOf: IntArray
+    private var organismCount = 0
+    private lateinit var organismSize: IntArray
+
+    private lateinit var flowVX: DoubleArray
+    private lateinit var flowVY: DoubleArray
+    /** Черновик под сумму скоростей организма. Заводится один раз, в цикле не аллоцируется. */
+    private lateinit var comAccX: DoubleArray
+    private lateinit var comAccY: DoubleArray
 
     // --- треугольники ---
     private lateinit var triMuscle: IntArray
@@ -1317,7 +1424,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
     // =================================================================
 
     private fun buildFromFile() {
-        body = BodyFile.load(bodyPath)
+        body = BodyFile.load(bodyPath, copies = ORGANISMS)
         n = body.count
 
         px = DoubleArray(n); py = DoubleArray(n)
@@ -1371,6 +1478,8 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         buildBoundary()
         buildBend()
         buildMasses()
+        buildOrganisms()
+        buildContacts()
         histX = Array(SUBSTEPS + 1) { DoubleArray(n) }
         histY = Array(SUBSTEPS + 1) { DoubleArray(n) }
 
@@ -1408,6 +1517,68 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
      * Это и хорошо — механизм заводится, а настройки не сбиваются. Разница появится
      * на телах, где геном вырастил клетки разного размера.
      */
+    /**
+     * Строит самоконтакт и предельные длины связей.
+     *
+     * Предел длины считается на КАЖДУЮ связь отдельно, а не общим числом: радиусы у
+     * клеток разные, и общий предел был бы неверен для обеих сторон сразу.
+     */
+    /** Связные компоненты графа связей — это и есть отдельные организмы. */
+    private fun buildOrganisms() {
+        organismOf = IntArray(n) { -1 }
+        val adjHead = IntArray(n) { -1 }
+        // По ПОЛНОМУ списку связей из файла, а не по conA/conB: внутрикостные связи
+        // в решатель намеренно не попадают (их держит проекция кости), и по ним кости
+        // распались бы на отдельные компоненты. На двух телах это давало 126
+        // «организмов» вместо двух.
+        val adjNext = IntArray(body.linkCount * 2)
+        val adjTo = IntArray(body.linkCount * 2)
+        var e = 0
+        for (c in 0 until body.linkCount) {
+            val a = body.linkA[c]; val b = body.linkB[c]
+            adjTo[e] = b; adjNext[e] = adjHead[a]; adjHead[a] = e; e++
+            adjTo[e] = a; adjNext[e] = adjHead[b]; adjHead[b] = e; e++
+        }
+        val queue = IntArray(n)
+        var comp = 0
+        for (s in 0 until n) {
+            if (organismOf[s] != -1) continue
+            var head = 0; var tail = 0
+            organismOf[s] = comp; queue[tail++] = s
+            while (head < tail) {
+                val v = queue[head++]
+                var k = adjHead[v]
+                while (k != -1) {
+                    val u = adjTo[k]
+                    if (organismOf[u] == -1) { organismOf[u] = comp; queue[tail++] = u }
+                    k = adjNext[k]
+                }
+            }
+            comp++
+        }
+        organismCount = comp
+        organismSize = IntArray(comp)
+        for (i in 0 until n) organismSize[organismOf[i]]++
+        flowVX = DoubleArray(comp)
+        flowVY = DoubleArray(comp)
+        comAccX = DoubleArray(comp)
+        comAccY = DoubleArray(comp)
+        println("[RealBodyDemo] organisms = $comp (own flow reservoir each)")
+    }
+
+    private fun buildContacts() {
+        radius = DoubleArray(n) { body.radius[it].toDouble() }
+        conMaxLen = DoubleArray(conCount) { c ->
+            LINK_MAX_LENGTH * (radius[conA[c]] + radius[conB[c]])
+        }
+        contacts = BoundaryContacts.build(
+            n, conA, conB, conCount, boundA, boundB, boundCount, radius,
+            CONTACT_SCALE, CCD_CORE, CONTACT_RESTITUTION, CONTACT_FRICTION,
+        )
+        println("[RealBodyDemo] contact particles = ${boundCount} boundary edges, " +
+            "contact at ${CONTACT_SCALE} of radii sum")
+    }
+
     private fun buildMasses() {
         restInvMass = DoubleArray(n)
         var meanArea = 0.0
@@ -1528,18 +1699,21 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             vx[i] = 0.0; vy[i] = 0.0
             invMass[i] = restInvMass[i]; matchWeight[i] = 1.0
         }
-        flowVX = 0.0; flowVY = 0.0
+        flowVX.fill(0.0); flowVY.fill(0.0)
         muscleActivation.fill(0.0)
         muscleTarget.fill(0.0)
         gaitFrame = 0
         hoveredMuscle = -1
         hoverId = -1
         dragId = -1
-        camera.zoom = 1f
-        camera.position.set(1.55f, 0.85f, 0f)
+        // Зум под число копий: две рядом в исходный кадр не влезают.
+        camera.zoom = ORGANISMS.toFloat()
+        camera.position.set(viewCenterX(), 0.85f, 0f)
         camera.update()
         invertedPeak = 0
         boneCapHits = 0
+        linkCapHits = 0
+        speedCapHits = 0
         simTime = 0.0
         accumulator = 0.0
         stepsAvg = 1f
@@ -1592,6 +1766,60 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
      * Стоит ПОСЛЕ площадей и перед проекцией кости, вместе с остальными позиционными.
      * См. BEND_LEVELS — по умолчанию стадия выключена и выходит на первой же строке.
      */
+    /**
+     * ПРЕДЕЛ ДЛИНЫ СВЯЗИ. Жёстко, без податливости — см. LINK_MAX_LENGTH.
+     *
+     * Односторонний: сжатию не мешает вовсе, срабатывает только на растяжении сверх
+     * суммы радиусов. Стоит СРАЗУ ПОСЛЕ solveConstraints, чтобы мягкая пружина не могла
+     * оставить связь растянутой до конца подшага.
+     *
+     * В движке ровно это условие — сигнал к разрыву связи. Здесь рвать нечем, поэтому
+     * связь просто бесконечно крепкая.
+     */
+    private fun solveLinkMaxLength() {
+        for (c in 0 until conCount) {
+            val i = conA[c]; val j = conB[c]
+            val wi = invMass[i]; val wj = invMass[j]
+            val w = wi + wj
+            if (w == 0.0) continue
+            var dx = px[i] - px[j]
+            var dy = py[i] - py[j]
+            val len = sqrt(dx * dx + dy * dy)
+            val max = conMaxLen[c]
+            if (len <= max || len < 1e-12) continue
+            dx /= len; dy /= len
+            val dL = -(len - max) / w
+            px[i] += dx * dL * wi; py[i] += dy * dL * wi
+            px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
+            linkCapHits++
+        }
+    }
+
+    /** Сколько раз предел длины связи сработал с последнего сброса. Видно в HUD. */
+    private var linkCapHits = 0
+
+    /**
+     * ПОТОЛОК СКОРОСТИ — см. MAX_SPEED_CELLS_PER_TICK.
+     *
+     * Не физика, а гарантия для коллизий: путь за подшаг обязан оставаться конечным,
+     * иначе DDA упрётся в размер буфера, а оценка «широкую фазу можно строить раз в
+     * тик» перестанет быть верхней границей.
+     */
+    private fun clampSpeed() {
+        val maxV = MAX_SPEED_CELLS_PER_TICK * body.meanLinkLength / DT
+        val maxV2 = maxV * maxV
+        for (i in 0 until n) {
+            val v2 = vx[i] * vx[i] + vy[i] * vy[i]
+            if (v2 <= maxV2) continue
+            val s = maxV / sqrt(v2)
+            vx[i] *= s; vy[i] *= s
+            speedCapHits++
+        }
+    }
+
+    /** Сколько раз потолок скорости сработал. Видно в HUD. */
+    private var speedCapHits = 0
+
     private fun solveBend(h: Double) {
         val compliance = bendCompliance()
         if (compliance < 0.0) return
@@ -1923,11 +2151,17 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         // организм, а не на ребро. Вращение сюда не попадает — у чистого вращения
         // скорость центра масс равна нулю.
         if (FLOW_ENTRAIN > 0.0 && FLOW_MASS > 0.0) {
-            var comVX = 0.0
-            var comVY = 0.0
-            for (i in 0 until n) { comVX += vx[i]; comVY += vy[i] }
-            comVX /= n
-            comVY /= n
+            // Скорость центра масс КАЖДОГО организма по отдельности.
+            //
+            // Раньше здесь было одно среднее по всем частицам мира, и это была прямая
+            // ошибка: два тела делили один запас среды, поэтому движение одного толкало
+            // другое на любом расстоянии, а тяга у обоих падала — запас следовал за
+            // средней скоростью пары, а не за собственной скоростью тела.
+            for (o in 0 until organismCount) { comAccX[o] = 0.0; comAccY[o] = 0.0 }
+            for (i in 0 until n) {
+                val o = organismOf[i]
+                comAccX[o] += vx[i]; comAccY[o] += vy[i]
+            }
 
             // Это демпфер между телом и запасом: за шаг относительная скорость падает
             // на kf * (1 + FLOW_MASS). Выше единицы — переброс через ноль, то есть
@@ -1937,24 +2171,30 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             val limit = 0.9 / (1.0 + FLOW_MASS)
             if (kf > limit) kf = limit
 
-            val dfx = (comVX - flowVX) * kf
-            val dfy = (comVY - flowVY) * kf
-            flowVX += dfx
-            flowVY += dfy
-
-            // Разгон среды телу СТОИТ: импульс FLOW_MASS * n * dFlow, размазанный по n
-            // частицам массой 1, то есть FLOW_MASS * dFlow на каждую. Именно эта строка
-            // делает обмен честным — тело не может получить от среды больше, чем вложило.
-            for (i in 0 until n) {
-                vx[i] -= FLOW_MASS * dfx
-                vy[i] -= FLOW_MASS * dfy
+            for (o in 0 until organismCount) {
+                val comVX = comAccX[o] / organismSize[o]
+                val comVY = comAccY[o] / organismSize[o]
+                val dfx = (comVX - flowVX[o]) * kf
+                val dfy = (comVY - flowVY[o]) * kf
+                flowVX[o] += dfx
+                flowVY[o] += dfy
+                comAccX[o] = dfx      // переиспользуем под плату, чтобы не заводить массив
+                comAccY[o] = dfy
+                // Рассеяние запаса в объём жидкости: только сток, никогда источник.
+                // Без него запас был бы вечным аккумулятором импульса и тело не
+                // остановилось бы никогда.
+                flowVX[o] -= flowVX[o] * kd
+                flowVY[o] -= flowVY[o] * kd
             }
 
-            // Рассеяние запаса в объём жидкости: только сток, никогда источник.
-            // Без него запас был бы вечным аккумулятором импульса и тело не остановилось
-            // бы никогда — именно это и наблюдалось раньше.
-            flowVX -= flowVX * kd
-            flowVY -= flowVY * kd
+            // Разгон среды телу СТОИТ: импульс FLOW_MASS * dFlow на каждую частицу.
+            // Именно эта строка делает обмен честным — тело не может получить от среды
+            // больше, чем вложило.
+            for (i in 0 until n) {
+                val o = organismOf[i]
+                vx[i] -= FLOW_MASS * comAccX[o]
+                vy[i] -= FLOW_MASS * comAccY[o]
+            }
         }
 
         for (e in 0 until boundCount) {
@@ -1971,8 +2211,10 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             // а не каждый конец отдельно. Вычитание общего вектора и даёт длинный накат —
             // когда среда догнала корпус, сопротивление его движению обнуляется, а
             // локальные взмахи плавника по-прежнему гребут в полную силу.
-            val vmx = (vx[i] + vx[j]) * 0.5 - flowVX
-            val vmy = (vy[i] + vy[j]) * 0.5 - flowVY
+            // Запас берётся СВОЕГО организма: у каждого тела он свой, см. flowVX.
+            val o = organismOf[i]
+            val vmx = (vx[i] + vx[j]) * 0.5 - flowVX[o]
+            val vmy = (vy[i] + vy[j]) * 0.5 - flowVY[o]
             val vn = vmx * nx + vmy * ny
 
             // Линейная плюс квадратичная. Квадратичная сила равна NORMAL_DRAG_Q * vn*|vn|,
@@ -2034,20 +2276,50 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             // Обход связей меняет направление КАЖДЫЙ подшаг — см. sweepBackwards.
             // Ставится здесь, а не внутри solveConstraints, чтобы фаза шла ровно по
             // подшагам и не зависела от того, сколько раз стадию позвали снаружи.
+            // КОЛЛИЗИИ: широкая фаза, CCD и список контактов — сразу после integrate,
+            // пока prevX/prevY ещё держат начало подшага. CCD обрезает предсказанную
+            // позицию по времени первого касания ДО того, как за неё возьмутся
+            // ограничения, иначе решатель уже растащил бы проникшие клетки.
+            val ct = contacts
+            if (ct != null && contactsOn) ct.prepare(px, py, prevX, prevY, vx, vy)
+
             sweepBackwards = !sweepBackwards
             solveConstraints(h)
+            solveLinkMaxLength()
             solveAreas(h)
             solveBend(h)
             solveDrag(h)
             if (bonesRigid) for (b in rigidBones.indices) projectBone(b)
 
+            // ПРЕДЕЛ ДЛИНЫ ПОВТОРНО, УЖЕ ПОСЛЕ КОСТИ.
+            //
+            // Первый вызов стоит после solveConstraints, но проекция кости идёт ПОЗЖЕ
+            // и способна снова растянуть связь сверх предела — она ставит вершины на
+            // жёсткую позу, ни на что не оглядываясь. А от этого предела зависит
+            // непроницаемость границы: два соседних граничных круга перекрываются,
+            // только пока расстояние между ними не больше суммы радиусов. Растянутая
+            // костью связь оставляет в мембране щель, и сквозь неё можно воткнуть
+            // чужое тело — что и наблюдалось при резком рывке за кость.
+            solveLinkMaxLength()
+
+            // КОНТАКТЫ ПОСЛЕДНИМИ СРЕДИ ПОЗИЦИОННЫХ, и это принципиально.
+            // projectBone перезаписывает позиции жёсткой позой; поставь контакты
+            // раньше — и кость проходила бы сквозь тело, потому что её проекция
+            // просто затирала бы расталкивание. Ценой идёт лёгкая нежёсткость кости
+            // в момент удара: следующий подшаг возвращает её на место, а при 16
+            // подшагах это незаметно.
+            if (ct != null && contactsOn) ct.solvePositions(px, py, invMass)
+
             if (cancel) cancelInternalDrift(beforeX, beforeY)
 
             updateVelocities(h)
+            // Отскок и трение — по скоростям, поэтому только после их восстановления.
+            if (ct != null && contactsOn) ct.solveVelocities(vx, vy, invMass, h)
             applyViscosity(h)
             applyNormalDrag(h)
             applyRestitution()
             applyMediumDrag(h)
+            clampSpeed()
             if (keepSubsteps || step == SUBSTEPS - 1) histSnap(step + 1)
         }
     }
@@ -2231,6 +2503,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         if (Gdx.input.isKeyJustPressed(Input.Keys.T)) controls.toggle()
         if (Gdx.input.isKeyJustPressed(Input.Keys.Y)) controls.reset()
         if (Gdx.input.isKeyJustPressed(Input.Keys.I)) interpMode = (interpMode + 1) % 3
+        if (Gdx.input.isKeyJustPressed(Input.Keys.K)) contactsOn = !contactsOn
         // ESC сначала закрывает диалог и только потом выходит: иначе из него не выйти
         // иначе как повторным T, а рефлекс у всех один.
         if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
@@ -2330,7 +2603,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         // Позиция ставится ТОЛЬКО в первый раз: иначе изменение размера окна сбрасывало
         // бы панораму и зум, которые пользователь только что настроил.
         if (!cameraPlaced) {
-            camera.position.set(1.55f, 0.85f, 0f)
+            camera.position.set(viewCenterX(), 0.85f, 0f)
             cameraPlaced = true
         }
         camera.update()
@@ -2338,6 +2611,17 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
     }
 
     private var cameraPlaced = false
+
+    /** Центр кадра: середина между копиями, иначе вторая уезжает за край. */
+    private fun viewCenterX(): Float {
+        var lo = Float.MAX_VALUE; var hi = -Float.MAX_VALUE
+        for (i in 0 until n) {
+            val v = body.x[i]
+            if (v < lo) lo = v
+            if (v > hi) hi = v
+        }
+        return (lo + hi) * 0.5f
+    }
 
     override fun render() {
         handleInput()
@@ -2441,6 +2725,20 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             shapes.rectLine(fx(i), fy(i), fx(j), fy(j), 0.0015f)
         }
 
+        // КОНТАКТНЫЕ ЧАСТИЦЫ. Рисуются кружком СВОЕГО радиуса, умноженного на
+        // CONTACT_SCALE, — то есть ровно тем кругом, которым клетка и сталкивается.
+        // Так видно настоящую геометрию контакта, а не приблизительную метку: если
+        // круги налезли друг на друга, значит контакт обязан был сработать.
+        // Кости сюда попадают наравне с мягкой тканью: граница у них общая.
+        if (contactsOn) {
+            shapes.color = CONTACT_COLOR
+            for (e in 0 until boundCount) {
+                for (v in intArrayOf(boundA[e], boundB[e])) {
+                    shapes.circle(fx(v), fy(v), (radius[v] * CONTACT_SCALE).toFloat(), 12)
+                }
+            }
+        }
+
         // Граница: то, что реально омывается средой и создаёт тягу.
         shapes.color = BOUNDARY_COLOR
         for (e in 0 until boundCount) {
@@ -2507,6 +2805,15 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
 
         // Изгиб контура: показывается всегда, потому что он МЕНЯЕТ ФИЗИКУ и по картинке
         // это не всегда очевидно — тело просто становится упрямее.
+        // Контакты: число сработавших, обрезок CCD и обоих потолков. Потолки в норме
+        // должны быть нулями — ненулевое значит удар или что-то пошло не так.
+        font.color = if (contactsOn) HUD_TEXT else HUD_MUTED
+        val ct = contacts
+        font.draw(batch, if (contactsOn)
+            "CONTACTS [K] on   now = %d   ccd clamps = %d   link cap = %d   speed cap = %d"
+                .format(ct?.lastContacts ?: 0, ct?.lastToiClamps ?: 0, linkCapHits, speedCapHits)
+        else "K -- self-contact (OFF)", 16f, y); y -= line
+
         font.color = if (bendLevel > 0) HUD_WARN else HUD_MUTED
         font.draw(batch, if (bendLevel > 0)
             "CONTOUR BEND [E] = %.0e on %d pairs  -- thrust cost, see BEND_LEVELS"

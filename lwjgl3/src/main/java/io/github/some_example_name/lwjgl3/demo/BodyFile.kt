@@ -83,6 +83,10 @@ class BodyFile private constructor(
             targetHeight: Float = 1.7f,
             centerX: Float = 1.55f,
             centerY: Float = 0.85f,
+            /** Сколько независимых организмов создать из одного файла. */
+            copies: Int = 1,
+            /** Зазор между копиями в мировых единицах. */
+            gap: Float = 0.35f,
         ): BodyFile {
             val file = File(path)
             require(file.isFile) { "нет файла тела: $path" }
@@ -138,23 +142,69 @@ class BodyFile private constructor(
             val srcCx = (minX + maxX) * 0.5f
             val srcCy = (minY + maxY) * 0.5f
 
-            val x = FloatArray(n) { centerX + (rawX[it] - srcCx) * scale }
-            val y = FloatArray(n) { centerY + (rawY[it] - srcCy) * scale }
-            val r = FloatArray(n) { rawR[it] * scale }
-            val isBone = BooleanArray(n) { bone[it] }
-            val isMuscle = BooleanArray(n) { muscle[it] }
+            // Позиции ОДНОЙ копии. Ниже они размножаются со сдвигом, см. РАЗМНОЖЕНИЕ ТЕЛА.
+            val x0 = FloatArray(n) { centerX + (rawX[it] - srcCx) * scale }
+            val y0 = FloatArray(n) { centerY + (rawY[it] - srcCy) * scale }
+            val r0 = FloatArray(n) { rawR[it] * scale }
 
             // --- связи: без дублей, без ссылок в никуда ---
-            val adjacency = Array(n) { sortedSetOf<Int>() }
-            val la = ArrayList<Int>(rawLinks.size)
-            val lb = ArrayList<Int>(rawLinks.size)
+            val seen = HashSet<Long>(rawLinks.size * 2)
+            val la0 = ArrayList<Int>(rawLinks.size)
+            val lb0 = ArrayList<Int>(rawLinks.size)
             for (l in rawLinks) {
                 val a = indexOfId[l[0]] ?: continue
                 val b = indexOfId[l[1]] ?: continue
                 if (a == b) continue
-                if (!adjacency[a].add(b)) continue      // уже была — дубль
-                adjacency[b].add(a)
-                la.add(a); lb.add(b)
+                val key = (minOf(a, b).toLong() shl 32) or maxOf(a, b).toLong()
+                if (!seen.add(key)) continue            // уже была — дубль
+                la0.add(a); lb0.add(b)
+            }
+
+            // --- РАЗМНОЖЕНИЕ ТЕЛА ---
+            //
+            // Копии делаются ПОСЛЕ нормировки и ДО построения смежности. Это важно:
+            //   * после нормировки — иначе общая рамка охватила бы обе копии, масштаб
+            //     упал бы вдвое, и вместе с ним поехали бы meanLinkLength и все
+            //     подобранные под него константы. Каждая копия обязана быть ровно того
+            //     же размера, что одиночное тело;
+            //   * до смежности, треугольников и компонент — тогда вся производная
+            //     структура выводится из графа сама и для копий получается правильной,
+            //     а связей между копиями не возникает: индексы сдвинуты, общих рёбер нет.
+            //
+            // Копии — это отдельные организмы, а не одно тело из двух кусков: связные
+            // компоненты костей и мышц у каждой свои, и решатель обходится с ними как
+            // с независимыми телами. Ровно то, что нужно для проверки межорганизменных
+            // контактов.
+            val nOne = n
+            val total = nOne * copies
+            val x = FloatArray(total)
+            val y = FloatArray(total)
+            val r = FloatArray(total)
+            val isBone = BooleanArray(total)
+            val isMuscle = BooleanArray(total)
+            for (c in 0 until copies) {
+                val off = c * nOne
+                val shiftX = (spanX * scale + gap) * c
+                for (i in 0 until nOne) {
+                    x[off + i] = x0[i] + shiftX
+                    y[off + i] = y0[i]
+                    r[off + i] = r0[i]
+                    isBone[off + i] = bone[i]
+                    isMuscle[off + i] = muscle[i]
+                }
+            }
+
+            val adjacency = Array(total) { sortedSetOf<Int>() }
+            val la = ArrayList<Int>(la0.size * copies)
+            val lb = ArrayList<Int>(lb0.size * copies)
+            for (c in 0 until copies) {
+                val off = c * nOne
+                for (k in la0.indices) {
+                    val a = la0[k] + off
+                    val b = lb0[k] + off
+                    adjacency[a].add(b); adjacency[b].add(a)
+                    la.add(a); lb.add(b)
+                }
             }
 
             // --- треугольники: тройки взаимно связанных клеток ---
@@ -163,7 +213,8 @@ class BodyFile private constructor(
             // чтобы каждый треугольник встретился ровно один раз, а не трижды.
             val ta = ArrayList<Int>(); val tb = ArrayList<Int>(); val tc = ArrayList<Int>()
             val area = ArrayList<Float>()
-            for (v in 0 until n) {
+            // По ВСЕМ частицам, включая копии: n это размер одного тела.
+            for (v in 0 until total) {
                 val nb = adjacency[v].toIntArray()
                 for (i in nb.indices) {
                     val a = nb[i]

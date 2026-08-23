@@ -44,6 +44,11 @@ class Topology private constructor(
     val muscleCount: Int,
     val meanLinkLength: Float,
 
+    /** Организм каждой частицы: связные компоненты графа связей. См. flowVX в демо. */
+    val organismOf: IntArray,
+    val organismCount: Int,
+    val organismSize: IntArray,
+
     /**
      * ИЗГИБ ГРАНИЧНОГО КОНТУРА: пары «через одну» вдоль границы плюс длина покоя.
      *
@@ -130,6 +135,9 @@ class Topology private constructor(
                 boneRestQx = f("boneRestQx"), boneRestQy = f("boneRestQy"),
                 muscleCount = body.muscleClusters.size,
                 meanLinkLength = body.meanLinkLength,
+                organismOf = f("organismOf"),
+                organismCount = f("organismCount"),
+                organismSize = f("organismSize"),
                 bendA = ba.toIntArray(), bendB = bb.toIntArray(),
                 bendRest = br.toDoubleArray(),
             )
@@ -254,6 +262,14 @@ internal object DemoConst {
     val AREA_COMPLIANCE_INVERTED = d("AREA_COMPLIANCE_INVERTED")
     val AREA_MAX_STEP = d("AREA_MAX_STEP")
     val BONE_MAX_STEP = d("BONE_MAX_STEP")
+    val CONTACT_SCALE = d("CONTACT_SCALE")
+    val CCD_CORE = d("CCD_CORE")
+    val CONTACT_RESTITUTION = d("CONTACT_RESTITUTION")
+    val CONTACT_FRICTION = d("CONTACT_FRICTION")
+    val MAX_SPEED_CELLS_PER_TICK = d("MAX_SPEED_CELLS_PER_TICK")
+    val LINK_MAX_LENGTH = d("LINK_MAX_LENGTH")
+    val CONTACTS_ON = RealBodyDemo::class.java.getDeclaredField("CONTACTS_ON")
+        .apply { isAccessible = true }.getBoolean(null)
 }
 
 /** Всё, что подбирается. Умолчания читаются из RealBodyDemo, см. [DemoConst]. */
@@ -304,6 +320,15 @@ data class SwimParams(
 
     /** Потолок на смещение вершины проекцией кости за подшаг. См. BONE_MAX_STEP. */
     val boneMaxStep: Double = DemoConst.BONE_MAX_STEP,
+
+    // --- самоконтакт границы, см. BoundaryContacts ---
+    val contactsOn: Boolean = DemoConst.CONTACTS_ON,
+    val contactScale: Double = DemoConst.CONTACT_SCALE,
+    val ccdCore: Double = DemoConst.CCD_CORE,
+    val contactRestitution: Double = DemoConst.CONTACT_RESTITUTION,
+    val contactFriction: Double = DemoConst.CONTACT_FRICTION,
+    val maxSpeedCellsPerTick: Double = DemoConst.MAX_SPEED_CELLS_PER_TICK,
+    val linkMaxLength: Double = DemoConst.LINK_MAX_LENGTH,
 
     /**
      * Плавный переход между мягкой и жёсткой ветками вместо ступеньки.
@@ -362,8 +387,50 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     private val flowEy = DoubleArray(topo.boundCount)
 
     /** GLOBAL_RESERVOIR: один вектор скорости увлечённой среды на организм. */
-    private var flowVX = 0.0
-    private var flowVY = 0.0
+    private val flowVX = DoubleArray(topo.organismCount)
+    private val flowVY = DoubleArray(topo.organismCount)
+    private val comAccX = DoubleArray(topo.organismCount)
+    private val comAccY = DoubleArray(topo.organismCount)
+
+    // --- самоконтакт границы: та же реализация, что в демо ---
+    private val radius = DoubleArray(n) { topo.restR[it].toDouble() }
+    private val conMaxLen = DoubleArray(topo.conCount) { c ->
+        p.linkMaxLength * (radius[topo.conA[c]] + radius[topo.conB[c]])
+    }
+    val contacts = BoundaryContacts.build(
+        n, topo.conA, topo.conB, topo.conCount,
+        topo.boundA, topo.boundB, topo.boundCount, radius,
+        p.contactScale, p.ccdCore, p.contactRestitution, p.contactFriction,
+    )
+
+    private fun solveLinkMaxLength() {
+        for (c in 0 until topo.conCount) {
+            val i = topo.conA[c]; val j = topo.conB[c]
+            val wi = invMass[i]; val wj = invMass[j]
+            val w = wi + wj
+            if (w == 0.0) continue
+            var dx = px[i] - px[j]
+            var dy = py[i] - py[j]
+            val len = sqrt(dx * dx + dy * dy)
+            val max = conMaxLen[c]
+            if (len <= max || len < 1e-12) continue
+            dx /= len; dy /= len
+            val dL = -(len - max) / w
+            px[i] += dx * dL * wi; py[i] += dy * dL * wi
+            px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
+        }
+    }
+
+    private fun clampSpeed(dt: Double) {
+        val maxV = p.maxSpeedCellsPerTick * topo.meanLinkLength / dt
+        val maxV2 = maxV * maxV
+        for (i in 0 until n) {
+            val v2 = vx[i] * vx[i] + vy[i] * vy[i]
+            if (v2 <= maxV2) continue
+            val s = maxV / sqrt(v2)
+            vx[i] *= s; vy[i] *= s
+        }
+    }
 
     private val boneDx = DoubleArray(topo.maxBoneSize)
     private val boneDy = DoubleArray(topo.maxBoneSize)
@@ -381,7 +448,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             matchWeight[i] = 1.0
         }
         flowEx.fill(0.0); flowEy.fill(0.0)
-        flowVX = 0.0; flowVY = 0.0
+        flowVX.fill(0.0); flowVY.fill(0.0)
         muscleActivation.fill(0.0); muscleTarget.fill(0.0)
         gaitFrame = 0
         diverged = false
@@ -611,10 +678,14 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         if (kf > 1.0) kf = 1.0
 
         if (tracking) {
-            // Запас догоняет скорость ЦЕНТРА МАСС. Вращение сюда не попадает вовсе.
-            var comVX = 0.0; var comVY = 0.0
-            for (i in 0 until n) { comVX += vx[i]; comVY += vy[i] }
-            comVX /= n; comVY /= n
+            // Запас догоняет скорость ЦЕНТРА МАСС СВОЕГО организма, а не всего мира.
+            // Одно среднее на всех было прямой ошибкой: тела делили запас и толкали
+            // друг друга на любом расстоянии. См. flowVX в RealBodyDemo.
+            for (o in 0 until topo.organismCount) { comAccX[o] = 0.0; comAccY[o] = 0.0 }
+            for (i in 0 until n) {
+                val o = topo.organismOf[i]
+                comAccX[o] += vx[i]; comAccY[o] += vy[i]
+            }
 
             // Демпфер между телом и запасом: за шаг относительная скорость падает на
             // kf*(1 + flowMass). Выше единицы это переброс через ноль, то есть раскачка,
@@ -622,19 +693,26 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             val limit = 0.9 / (1.0 + p.flowMass)
             val kfe = if (kf > limit) limit else kf
 
-            val dfx = (comVX - flowVX) * kfe
-            val dfy = (comVY - flowVY) * kfe
-            flowVX += dfx
-            flowVY += dfy
+            for (o in 0 until topo.organismCount) {
+                val comVX = comAccX[o] / topo.organismSize[o]
+                val comVY = comAccY[o] / topo.organismSize[o]
+                val dfx = (comVX - flowVX[o]) * kfe
+                val dfy = (comVY - flowVY[o]) * kfe
+                flowVX[o] += dfx
+                flowVY[o] += dfy
+                comAccX[o] = dfx      // переиспользуем под плату
+                comAccY[o] = dfy
+                // Рассеяние в объём: только сток.
+                flowVX[o] -= flowVX[o] * kd
+                flowVY[o] -= flowVY[o] * kd
+            }
 
-            // Разгон запаса телу СТОИТ: импульс mFlow * dFlow, размазанный по n частицам
-            // массой 1, то есть flowMass * dFlow на каждую.
+            // Разгон запаса телу СТОИТ: flowMass * dFlow на каждую частицу.
             val pay = p.flowMass
-            for (i in 0 until n) { vx[i] -= pay * dfx; vy[i] -= pay * dfy }
-
-            // Рассеяние в объём: только сток.
-            flowVX -= flowVX * kd
-            flowVY -= flowVY * kd
+            for (i in 0 until n) {
+                val o = topo.organismOf[i]
+                vx[i] -= pay * comAccX[o]; vy[i] -= pay * comAccY[o]
+            }
         }
 
         for (e in 0 until topo.boundCount) {
@@ -660,7 +738,8 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
                 vn = vnAbs - (flowEx[e] * nx + flowEy[e] * ny)
             } else if (global || tracking) {
                 // Скорость ребра ОТНОСИТЕЛЬНО увлечённой среды.
-                vn = (vmx - flowVX) * nx + (vmy - flowVY) * ny
+                val o = topo.organismOf[i]
+                vn = (vmx - flowVX[o]) * nx + (vmy - flowVY[o]) * ny
             }
 
             var k = (p.normalDrag + p.normalDragQuadratic * abs(vn)) * len * h
@@ -677,11 +756,11 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             // Обмен симметричный: тело получило impX, среда потеряла ровно столько же.
             // Масса среды — flowMass масс тела, тело это n частиц массой 1.
             val mf = p.flowMass * n
-            flowVX -= impX / mf
-            flowVY -= impY / mf
-            // Рассеяние в объём: только сток, никогда источник.
-            flowVX -= flowVX * kd
-            flowVY -= flowVY * kd
+            // GLOBAL_RESERVOIR остался только для сравнения в стендах и общий на мир.
+            flowVX[0] -= impX / mf
+            flowVY[0] -= impY / mf
+            flowVX[0] -= flowVX[0] * kd
+            flowVY[0] -= flowVY[0] * kd
         }
     }
 
@@ -714,16 +793,24 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         val h = dt / substeps
         for (s in 0 until substeps) {
             integrate(h)
+            if (p.contactsOn) contacts.prepare(px, py, prevX, prevY, vx, vy)
             // Фаза чередования идёт ровно по подшагам, как в демо.
             sweepBackwards = !sweepBackwards
             solveConstraints(h)
+            solveLinkMaxLength()
             solveAreas(h)
             solveBend(h)
             for (b in topo.rigidBones.indices) projectBone(b)
+            // Предел длины повторно, уже после кости — см. демо.
+            solveLinkMaxLength()
+            // Контакты последними среди позиционных — см. демо.
+            if (p.contactsOn) contacts.solvePositions(px, py, invMass)
             updateVelocities(h)
+            if (p.contactsOn) contacts.solveVelocities(vx, vy, invMass, h)
             applyViscosity(h)
             applyNormalDrag(h)
             applyMediumDrag(h)
+            clampSpeed(dt)
         }
     }
 
@@ -741,16 +828,24 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         val h = dt / substeps
         for (s in 0 until substeps) {
             integrate(h)
+            if (p.contactsOn) contacts.prepare(px, py, prevX, prevY, vx, vy)
             // Фаза чередования идёт ровно по подшагам, как в демо.
             sweepBackwards = !sweepBackwards
             solveConstraints(h)
+            solveLinkMaxLength()
             solveAreas(h)
             solveBend(h)
             for (b in topo.rigidBones.indices) projectBone(b)
+            // Предел длины повторно, уже после кости — см. демо.
+            solveLinkMaxLength()
+            // Контакты последними среди позиционных — см. демо.
+            if (p.contactsOn) contacts.solvePositions(px, py, invMass)
             updateVelocities(h)
+            if (p.contactsOn) contacts.solveVelocities(vx, vy, invMass, h)
             applyViscosity(h)
             applyNormalDrag(h)
             applyMediumDrag(h)
+            clampSpeed(dt)
         }
     }
 
