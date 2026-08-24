@@ -407,7 +407,7 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
     )
 
     val editorRenderSystem = EditorRenderSystem(
-        shaderManager = DIGameGlobalContainer.shaderManager,
+        worldRenderer = DIGameGlobalContainer.worldRenderer,
         cellReplay = cellReplay,
         particleEntity = particleEntity,
         editorSimulationSystem = editorSimulationSystem,

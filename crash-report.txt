@@ -1,0 +1,29 @@
+=== Genomeia crash report ===
+
+Экран: 1300x1300, локаль ru_RU
+Маршрут: GoMenu -> GoWorldEditor -> GoSimulation(seed=49367317 dn=15 sm=12 edits=0)
+
+--- Действия игрока (последние) ---
+[0.000] Menu BrowseGenomes
+[2.306] Menu OpenGenomeEditor(A-11 рыб)
+[2.339] Player Tap(64,64 L genome=current)
+[2.449] Navigation GoGenomeEditor(A-11 рыб)
+[6.267] Navigation GoReplace(GoMenu)
+[7.109] Menu OpenWorldEditor
+[7.150] Navigation GoWorldEditor
+[8.931] Navigation GoSimulation(seed=49367317 dn=15 sm=12 edits=0)
+[12.188] Player TouchDown(119,154 L)
+[12.262] Player Tap(119,154 L genome=current)
+[12.633] Player TouchDown(141,146 L)
+[12.703] Player Tap(141,146 L genome=current)
+[14.626] Player TouchDown(88,150 L)
+[14.695] Player Tap(88,149 L genome=current)
+
+--- Исключение ---
+java.lang.IllegalStateException: арена клеток организма 2 исчерпана (ёмкость 0): тело выросло больше, чем под него зарезервировали — поднимите OrganEntity.ARENA_HEADROOM_PERCENT или пересохраните геном
+	at io.github.some_example_name.old.entities.CellEntity.addCell(CellEntity.kt:357)
+	at io.github.some_example_name.old.entities.CellEntity.addCell$default(CellEntity.kt:324)
+	at io.github.some_example_name.old.commands.UserCommandManager.processingCommandsFromUser(UserCommandManager.kt:164)
+	at io.github.some_example_name.old.systems.simulation.SimulationSystem.updateTick(SimulationSystem.kt:117)
+	at io.github.some_example_name.old.systems.simulation.SimulationSystem.startThread$lambda$0(SimulationSystem.kt:71)
+	at java.base/java.lang.Thread.run(Unknown Source)

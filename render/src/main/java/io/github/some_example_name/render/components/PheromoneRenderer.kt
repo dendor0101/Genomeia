@@ -1,4 +1,4 @@
-package io.github.some_example_name.old.systems.render.components
+package io.github.some_example_name.render.components
 
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.GL20
@@ -8,10 +8,8 @@ import com.badlogic.gdx.graphics.VertexAttribute
 import com.badlogic.gdx.graphics.VertexAttributes
 import com.badlogic.gdx.graphics.glutils.ShaderProgram
 import com.badlogic.gdx.utils.BufferUtils
-import io.github.some_example_name.old.systems.pheromone.PheromonesManager.Companion.K
-import io.github.some_example_name.old.systems.pheromone.PheromonesManager.Companion.P
-import io.github.some_example_name.old.systems.render.RenderSystem.Companion.INITIAL_PHEROMONE_CAPACITY
-import io.github.some_example_name.old.systems.render.RenderSystem.Companion.PHEROMONE_STRUCT_SIZE
+import io.github.some_example_name.render.pack.PheromoneInstanceBuffer.Companion.INITIAL_CAPACITY
+import io.github.some_example_name.render.pack.PheromoneInstanceBuffer.Companion.STRUCT_SIZE
 import java.nio.ByteBuffer
 
 /**
@@ -66,7 +64,7 @@ class PheromoneRenderer : RenderComponent {
         Gdx.gl.glGenTextures(1, buf)
         dataTexture = buf.get(0)
 
-        ensureTextureCapacity(INITIAL_PHEROMONE_CAPACITY)
+        ensureTextureCapacity(INITIAL_CAPACITY)
     }
 
     /**
@@ -77,7 +75,7 @@ class PheromoneRenderer : RenderComponent {
     private fun ensureTextureCapacity(neededInstances: Int) {
         if (neededInstances <= texCapacity) return
 
-        var newCapacity = if (texCapacity == 0) INITIAL_PHEROMONE_CAPACITY else texCapacity
+        var newCapacity = if (texCapacity == 0) INITIAL_CAPACITY else texCapacity
         while (newCapacity < neededInstances) {
             newCapacity = (newCapacity * 1.5).toInt().coerceAtLeast(neededInstances)
         }
@@ -145,7 +143,7 @@ class PheromoneRenderer : RenderComponent {
         val w = texWidth
         val fullRows = numInstances / w
         val remainder = numInstances % w
-        val bytesPerTexel = PHEROMONE_STRUCT_SIZE // 16
+        val bytesPerTexel = STRUCT_SIZE // 16
 
         // Save caller buffer state
         val oldPos = data.position()
@@ -214,8 +212,8 @@ class PheromoneRenderer : RenderComponent {
 
         shader.bind()
         shader.setUniformMatrix("u_projTrans", context.cameraProjection)
-        shader.setUniformf("u_K", K)
-        shader.setUniformf("u_P", P)
+        shader.setUniformf("u_K", context.pheromoneK)
+        shader.setUniformf("u_P", context.pheromoneP)
         shader.setUniformi("u_data", 0)
         shader.setUniformi("u_texWidth", texWidth)
 

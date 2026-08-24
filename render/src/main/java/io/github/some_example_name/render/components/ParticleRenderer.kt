@@ -1,4 +1,4 @@
-package io.github.some_example_name.old.systems.render.components
+package io.github.some_example_name.render.components
 
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.GL20
@@ -6,7 +6,7 @@ import com.badlogic.gdx.graphics.GL30
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.glutils.ShaderProgram
 import com.badlogic.gdx.utils.BufferUtils
-import io.github.some_example_name.old.systems.render.RenderSystem.Companion.INITIAL_PARTICLE_CAPACITY
+import io.github.some_example_name.render.pack.CellInstanceBuffer.Companion.INITIAL_CAPACITY
 import java.nio.ByteBuffer
 
 
@@ -116,7 +116,7 @@ class ParticleRenderer(private val texturePaths: List<String>) : RenderComponent
         val buf = BufferUtils.newIntBuffer(1)
         Gdx.gl.glGenTextures(1, buf)
         dataTexture = buf.get(0)
-        ensureTextureCapacity(INITIAL_PARTICLE_CAPACITY)
+        ensureTextureCapacity(INITIAL_CAPACITY)
     }
 
     /**
@@ -126,7 +126,7 @@ class ParticleRenderer(private val texturePaths: List<String>) : RenderComponent
     private fun ensureTextureCapacity(neededParticles: Int) {
         if (neededParticles <= texCapacityParticles) return
 
-        var newCap = if (texCapacityParticles == 0) INITIAL_PARTICLE_CAPACITY else texCapacityParticles
+        var newCap = if (texCapacityParticles == 0) INITIAL_CAPACITY else texCapacityParticles
         while (newCap < neededParticles) {
             newCap = (newCap * 1.5).toInt().coerceAtLeast(neededParticles)
         }
@@ -239,11 +239,12 @@ class ParticleRenderer(private val texturePaths: List<String>) : RenderComponent
 
     override fun render(context: RenderContext) {
         val gl30 = Gdx.gl30 ?: return
-        val dataSize = context.particleData.remaining()
+        val particleData = context.particleData
+        val dataSize = particleData?.remaining() ?: 0
         val numInstances = context.numInstances
 
-        if (context.isNewFrame && dataSize > 0 && numInstances > 0) {
-            uploadParticleTexture(context.particleData, numInstances)
+        if (context.isNewFrame && particleData != null && dataSize > 0 && numInstances > 0) {
+            uploadParticleTexture(particleData, numInstances)
         }
 
         if (context.usePostProcess) {

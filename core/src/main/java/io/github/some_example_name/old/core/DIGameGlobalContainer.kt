@@ -16,7 +16,7 @@ import io.github.some_example_name.old.core.DISimulationContainer.gridHeight
 import io.github.some_example_name.old.core.DISimulationContainer.heightMultiplier
 import io.github.some_example_name.old.systems.genomics.Morphogenesis
 import io.github.some_example_name.old.systems.genomics.genome_deprecated.GenomeJsonReader
-import io.github.some_example_name.old.systems.render.ShaderManager
+import io.github.some_example_name.render.WorldRenderer
 import io.github.some_example_name.old.game.MyGame
 import java.util.Locale
 
@@ -70,7 +70,7 @@ object DIGameGlobalContainer {
         it.name to it.defaultCellSettings
     }
 
-    val shaderManager: ShaderManager = ShaderManager(particleTexturePaths)
+    val worldRenderer: WorldRenderer = WorldRenderer(particleTexturePaths)
 
     val morphogenesis = Morphogenesis()
 

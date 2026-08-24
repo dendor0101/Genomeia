@@ -5,7 +5,7 @@ import io.github.some_example_name.old.cells.base.CellListBuilder
 import io.github.some_example_name.old.commands.UserCommandManager
 import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.core.DIGameGlobalContainer.genomeJsonReader
-import io.github.some_example_name.old.core.DIGameGlobalContainer.shaderManager
+import io.github.some_example_name.old.core.DIGameGlobalContainer.worldRenderer
 import io.github.some_example_name.old.core.DIGameGlobalContainer.substrateSettings
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.EyeEntity
@@ -176,12 +176,8 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
     )
 
     val renderSystem = RenderSystem(
-        cellEntity = cellEntity,
-        linkEntity = linkEntity,
-        shaderManager = shaderManager,
-        particleEntity = particleEntity,
-        renderBufferManager = renderBufferManager,
-        pheromoneEntity = pheromoneEntity
+        worldRenderer = worldRenderer,
+        renderBufferManager = renderBufferManager
     )
 
     val userCommandManager = UserCommandManager(

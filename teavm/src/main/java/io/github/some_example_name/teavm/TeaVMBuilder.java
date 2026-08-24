@@ -44,7 +44,11 @@ public class TeaVMBuilder {
             .setDebugInformationGenerated(debug)
             .setSourceMapsFileGenerated(debug)
             .setSourceFilePolicy(TeaVMSourceFilePolicy.COPY)
-            .addSourceFileProvider(new DirectorySourceFileProvider(new File("../core/src/main/kotlin/")))
+            // Исходники для source maps в отладочной сборке. Путь именно src/main/java:
+            // каталога src/main/kotlin в этом проекте нет и не было, так что прежний
+            // провайдер молча не давал ничего — в отладке вместо кода была пустота.
+            .addSourceFileProvider(new DirectorySourceFileProvider(new File("../core/src/main/java/")))
+            .addSourceFileProvider(new DirectorySourceFileProvider(new File("../render/src/main/java/")))
             // You can also register any classes or packages that require reflection here:
             .addReflectionClass("com.kotcrab.vis.ui.widget")
             .addReflectionClass("com.kotcrab.vis.ui.widget.spinner")

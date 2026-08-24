@@ -30,7 +30,7 @@ import io.github.some_example_name.old.core.ui.w
 import io.github.some_example_name.old.features.editor.GenomeEditorScreen
 import io.github.some_example_name.old.features.menu.MenuScreen
 import io.github.some_example_name.old.features.worldeditor.WorldSpec
-import io.github.some_example_name.old.systems.render.doesUsePostProcess
+import io.github.some_example_name.render.RenderSettings
 
 class SimulationScreen(
     /** Рецепт мира из редактора. null — мир не из редактора (тест генома). */
@@ -199,7 +199,7 @@ class SimulationScreen(
                 Gdx.input.isKeyPressed(Input.Keys.D)
         }
 
-        if (doesUsePostProcess) {
+        if (RenderSettings.usePostProcess) {
             Gdx.gl.glClearColor(0.0f, 0.0f, 0.0f, 1f)
         } else {
             Gdx.gl.glClearColor(1.0f * 0.7f, 0.969f * 0.7f, 0.855f * 0.7f, 1.0f)
@@ -334,7 +334,7 @@ class SimulationScreen(
                 extraTextures,
                 toggle = true
             )
-        drawRaysToggle.isChecked = doesUsePostProcess
+        drawRaysToggle.isChecked = RenderSettings.usePostProcess
 
         val controllerKeysToggle =
             makeStyledButton(
@@ -650,7 +650,7 @@ class SimulationScreen(
 
         drawRaysToggle.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                doesUsePostProcess = drawRaysToggle.isChecked
+                RenderSettings.usePostProcess = drawRaysToggle.isChecked
             }
         })
 

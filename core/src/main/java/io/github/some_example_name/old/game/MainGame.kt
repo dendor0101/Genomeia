@@ -187,6 +187,11 @@ class MyGame(
     override fun dispose() {
         currentMusic.dispose()
         screen.dispose()
+        // Рендер один на всю игру и переживает смену экранов, поэтому освобождать его
+        // может только тот, кто им владеет, и только здесь. Раньше это не делал никто:
+        // RenderSystem.dispose() был пустым TODO именно потому, что дёрнуть общий
+        // ShaderManager из одного экрана значило бы оставить два других без шейдеров.
+        DIGameGlobalContainer.worldRenderer.dispose()
         titleFont.dispose()
         largeFont.dispose()
         buttonFont.dispose()

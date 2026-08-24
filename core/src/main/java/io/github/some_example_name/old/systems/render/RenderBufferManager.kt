@@ -11,6 +11,8 @@ import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.entities.PheromoneEntity
 import io.github.some_example_name.old.entities.SpecialEntity
 import io.github.some_example_name.old.systems.simulation.SimulationData
+import io.github.some_example_name.render.RenderSettings
+import io.github.some_example_name.render.pack.CellInstanceBuffer
 import kotlin.math.round
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -208,8 +210,8 @@ class RenderBufferManager(
         val pRadius = particleEntity.radius
 
         // Тип «не клетка» один на всех — считается один раз, а не на каждой частице.
-        val packed2Value = (cellList.size + 1).coerceIn(0, 255) shl 8
-        val writeDirected = !doesUsePostProcess
+        val nonCellType = (cellList.size + 1)
+        val writeDirected = !RenderSettings.usePostProcess
 
         for (i in 0 until nonCells.size) {
             val particleIndex = nonCells.getInt(i)
@@ -218,10 +220,18 @@ class RenderBufferManager(
             back.y[writeIndex] = py[particleIndex]
             back.color[writeIndex] = pColor[particleIndex]
 
-            val bRadius = (((pRadius[particleIndex] - 0.05f) / 0.7f) * 255f + 0.5f)
-                .toInt().coerceIn(0, 255)
-            back.packed1[writeIndex] = bRadius shl 24
-            back.packed2[writeIndex] = packed2Value or ((particleIndex and 0xFFFF) shl 16)
+            // Углы намеренно нулевые: у не-клетки направления нет. В шейдере нулевой байт
+            // распаковывается в -1, то есть доворот получается постоянный, а не случайный.
+            back.packed1[writeIndex] = CellInstanceBuffer.packed1(
+                cosByte = 0,
+                sinByte = 0,
+                radiusByte = CellInstanceBuffer.radiusByte(pRadius[particleIndex])
+            )
+            back.packed2[writeIndex] = CellInstanceBuffer.packed2(
+                energyByte = 0,
+                cellType = nonCellType,
+                noiseSeed = particleIndex
+            )
 
             if (writeDirected) {
                 back.directedAngleCos[writeIndex] = 0f
@@ -252,14 +262,13 @@ class RenderBufferManager(
         val angleSin = cellEntity.angleSin[cellIndex]
         val cellType = cellEntity.cellType[cellIndex].toInt()
 
-        val cosByte = ((angleCos * 0.5f + 0.5f) * 255f + 0.5f).toInt().coerceIn(0, 255)
-        val sinByte = ((angleSin * 0.5f + 0.5f) * 255f + 0.5f).toInt().coerceIn(0, 255)
+        val visibleRadius = pRadius[particleIndex] * cellEntity.degreeOfShortening[cellIndex]
 
-        val bRadius = ((((pRadius[particleIndex] * cellEntity.degreeOfShortening[cellIndex]) - 0.05f) / 0.7f) * 255f + 0.5f)
-            .toInt().coerceIn(0, 255)
-        val bEnergy = ((cellEntity.energy[cellIndex] / 10f) * 255f + 0.5f).toInt().coerceIn(0, 255)
-
-        back.packed1[writeIndex] = cosByte or (sinByte shl 8) or (bRadius shl 24)
+        back.packed1[writeIndex] = CellInstanceBuffer.packed1(
+            cosByte = CellInstanceBuffer.angleByte(angleCos),
+            sinByte = CellInstanceBuffer.angleByte(angleSin),
+            radiusByte = CellInstanceBuffer.radiusByte(visibleRadius)
+        )
         // Старшие 16 бит — устойчивый ключ шума для шейдера.
         //
         // Шейдер доворачивает текстуру на случайный угол, и раньше брал его из
@@ -271,10 +280,13 @@ class RenderBufferManager(
         //
         // Индекс частицы это слот арены: он закреплён за клеткой на всю жизнь и от
         // порядка сборки буфера не зависит вообще.
-        back.packed2[writeIndex] =
-            bEnergy or (cellType.coerceIn(0, 255) shl 8) or ((particleIndex and 0xFFFF) shl 16)
+        back.packed2[writeIndex] = CellInstanceBuffer.packed2(
+            energyByte = CellInstanceBuffer.energyByte(cellEntity.energy[cellIndex]),
+            cellType = cellType,
+            noiseSeed = particleIndex
+        )
 
-        if (!doesUsePostProcess) {
+        if (!RenderSettings.usePostProcess) {
             val cell = cellList[cellType]
             val length = when {
                 cell is Eye -> specialEntity.getVisibilityRange(cellIndex)
@@ -339,7 +351,7 @@ class RenderBufferManager(
 
         // ==================== LINK ====================
         val linkBack = linkBuffers[frameBackIndex]
-        if (!doesUsePostProcess) {
+        if (!RenderSettings.usePostProcess) {
             val needed = linkEntity.aliveList.size + neuralLinkEntity.aliveList.size
             val back = linkBack
 

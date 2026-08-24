@@ -3,6 +3,10 @@ eclipse.project.name = appName + '-core'
 
 dependencies {
   api "com.badlogicgames.gdx:gdx:$gdxVersion"
+  // api, а не implementation: платформенные модули (lwjgl3, android, teavm, ios-moe)
+  // должны видеть типы рендера транзитивно, иначе каждому пришлось бы прописывать
+  // зависимость самому. Направление строго одностороннее — :render о :core не знает.
+  api project(':render')
   api "com.kotcrab.vis:vis-ui:$visUiVersion"
   api "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
   implementation "it.unimi.dsi:fastutil:8.5.16"

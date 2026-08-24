@@ -4,6 +4,7 @@ gradle-app.setting
 /build/
 /android/build/
 /core/build/
+/render/build/
 /lwjgl2/build/
 /lwjgl3/build/
 /html/build/
@@ -68,6 +69,7 @@ www-test/
 .metadata/
 /android/bin/
 /core/bin/
+/render/bin/
 /lwjgl2/bin/
 /lwjgl3/bin/
 /html/bin/
@@ -105,6 +107,7 @@ www-test/
 /nbbuild/
 /android/nbbuild/
 /core/nbbuild/
+/render/nbbuild/
 /lwjgl2/nbbuild/
 /lwjgl3/nbbuild/
 /html/nbbuild/

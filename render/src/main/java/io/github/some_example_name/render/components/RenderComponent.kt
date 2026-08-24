@@ -1,4 +1,4 @@
-package io.github.some_example_name.old.systems.render.components
+package io.github.some_example_name.render.components
 
 import com.badlogic.gdx.graphics.Mesh
 import com.badlogic.gdx.graphics.Texture
@@ -18,13 +18,20 @@ class RenderContext {
     lateinit var cameraProjection: Matrix4
 
     // Particle data
-    lateinit var particleData: ByteBuffer
+    var particleData: ByteBuffer? = null
     var numInstances: Int = 0
     var isNewFrame: Boolean = false
 
     // Pheromone data
     var pheromoneData: ByteBuffer? = null
     var numPheromoneInstances: Int = 0
+
+    /**
+     * Коэффициенты спада концентрации феромона: радиус пятна = (a/P - 1)/K.
+     * Приходят из RenderFrame — см. пояснение там, почему их здесь не хардкодят.
+     */
+    var pheromoneK: Float = 0f
+    var pheromoneP: Float = 0f
 
     // Render parameters
     var blurAmount: Float = 0f

@@ -1,0 +1,27 @@
+[compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
+eclipse.project.name = appName + '-render'
+
+// Модуль намеренно нищий на зависимости: только libGDX и stdlib.
+//
+// Здесь лежит ВЕСЬ код, который говорит с GPU, и НИ ОДНОЙ строчки, которая знает про
+// клетки, организмы и симуляцию. Проверяется это тривиально: у модуля нет зависимости
+// на :core, поэтому любой импорт оттуда — ошибка компиляции, а не вопрос дисциплины.
+//
+// Зависимость :core -> :render односторонняя. Обратной быть не может физически.
+dependencies {
+  api "com.badlogicgames.gdx:gdx:$gdxVersion"
+  api "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
+
+  testImplementation "org.jetbrains.kotlin:kotlin-test:$kotlinVersion"
+  testImplementation "org.jetbrains.kotlin:kotlin-test-junit:$kotlinVersion"
+  testImplementation "junit:junit:4.13.2"
+}
+
+test {
+  useJUnit()
+  testLogging { events "passed", "skipped", "failed" }
+}
+
+jar {
+  duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}

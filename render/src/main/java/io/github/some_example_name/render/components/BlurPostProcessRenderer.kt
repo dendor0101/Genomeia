@@ -1,4 +1,4 @@
-package io.github.some_example_name.old.systems.render.components
+package io.github.some_example_name.render.components
 
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.GL20
