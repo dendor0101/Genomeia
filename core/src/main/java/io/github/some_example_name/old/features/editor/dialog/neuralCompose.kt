@@ -11,7 +11,7 @@ import io.github.some_example_name.old.core.ui.visLabel
 import io.github.some_example_name.old.core.ui.visSelectBox
 import io.github.some_example_name.old.core.ui.visTable
 import io.github.some_example_name.old.core.ui.visTextField
-import kotlin.text.toFloat
+import kotlin.text.toFloatOrNull
 
 
 fun VisTable.neuralCompose(actionSystem: ActionDialogSystem) {
@@ -24,7 +24,7 @@ fun VisTable.neuralCompose(actionSystem: ActionDialogSystem) {
         visTextField(
             text = a.toString(),
             textFieldFilter = FloatDigitsOnlyFilter(true),
-            onTextChange = { actionSystem.action = actionSystem.action.copy(a = it.toFloat()) }
+            onTextChange = { text -> text.toFloatOrNull()?.let { actionSystem.action = actionSystem.action.copy(a = it) } }
         ) { padRight(16.dp()) }
 
         visLabel("b:", font = game.extraLargeFont)
@@ -32,7 +32,7 @@ fun VisTable.neuralCompose(actionSystem: ActionDialogSystem) {
         visTextField(
             text = b.toString(),
             textFieldFilter = FloatDigitsOnlyFilter(true),
-            onTextChange = { actionSystem.action = actionSystem.action.copy(b = it.toFloat()) }
+            onTextChange = { text -> text.toFloatOrNull()?.let { actionSystem.action = actionSystem.action.copy(b = it) } }
         ) { padRight(16.dp()) }
 
         visLabel("c:", font = game.extraLargeFont)
@@ -40,7 +40,7 @@ fun VisTable.neuralCompose(actionSystem: ActionDialogSystem) {
         visTextField(
             text = c.toString(),
             textFieldFilter = FloatDigitsOnlyFilter(true),
-            onTextChange = { actionSystem.action = actionSystem.action.copy(c = it.toFloat()) }
+            onTextChange = { text -> text.toFloatOrNull()?.let { actionSystem.action = actionSystem.action.copy(c = it) } }
         )
     }
 
