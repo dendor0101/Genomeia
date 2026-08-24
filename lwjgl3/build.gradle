@@ -59,6 +59,11 @@ run {
   //setIgnoreExitValue(true)
   jvmArgs += "--enable-native-access=ALL-UNNAMED"
   if (os.contains('mac')) jvmArgs += "-XstartOnFirstThread"
+// Прокидывает -Dgenomeia.* из командной строки Gradle в JVM игры:
+// gradlew :lwjgl3:run -Dgenomeia.start=GoWorldEditor -Dgenomeia.screenshot=shot.png
+  System.properties.each { key, value ->
+    if (key.toString().startsWith('genomeia.')) systemProperty(key.toString(), value)
+  }
 }
 
 jar {
@@ -280,6 +285,17 @@ tasks.register('physicsCheck', JavaExec) {
   description = 'PASS/FAIL по законам сохранения; ненулевой код при регрессии'
   classpath = sourceSets.main.runtimeClasspath
   mainClass = 'io.github.some_example_name.lwjgl3.demo.PhysicsCheckKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+// Регрессия рецепта мира: gradlew :lwjgl3:worldSpecCheck
+// Ненулевой код, если карта по WorldSpec разошлась с картой редактора.
+tasks.register('worldSpecCheck', JavaExec) {
+  group = 'verification'
+  description = 'Совпадает ли карта по рецепту с картой на экране редактора'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.demo.WorldSpecCheckKt'
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8'
 }

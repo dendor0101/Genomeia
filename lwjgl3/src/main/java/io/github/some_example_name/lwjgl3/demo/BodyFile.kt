@@ -87,6 +87,20 @@ class BodyFile private constructor(
             copies: Int = 1,
             /** Зазор между копиями в мировых единицах. */
             gap: Float = 0.35f,
+            /**
+             * СВОБОДНЫЕ ЧАСТИЦЫ — отдельные клетки без единой связи.
+             *
+             * Нужны для проверки НЕПРОНИЦАЕМОСТИ контура. Связного тела для этого
+             * мало: его частицы держат соседи, и не пустить его внутрь чужого тела
+             * помогает не только контакт, но и вся сетка связей. Одиночную частицу
+             * не держит ничто — если в контуре есть дыра, она пройдёт насквозь, и
+             * это видно сразу.
+             *
+             * Связей у них нет, поэтому они не попадают ни в треугольники, ни в
+             * кости, ни в мышцы, а связной компонентой каждая оказывается сама себе,
+             * то есть отдельным организмом со своим запасом среды.
+             */
+            freeParticles: Int = 0,
         ): BodyFile {
             val file = File(path)
             require(file.isFile) { "нет файла тела: $path" }
@@ -176,7 +190,8 @@ class BodyFile private constructor(
             // с независимыми телами. Ровно то, что нужно для проверки межорганизменных
             // контактов.
             val nOne = n
-            val total = nOne * copies
+            val bodied = nOne * copies
+            val total = bodied + freeParticles
             val x = FloatArray(total)
             val y = FloatArray(total)
             val r = FloatArray(total)
@@ -191,6 +206,27 @@ class BodyFile private constructor(
                     r[off + i] = r0[i]
                     isBone[off + i] = bone[i]
                     isMuscle[off + i] = muscle[i]
+                }
+            }
+
+            // Кладём их РЯДОМ с телами, а не внутри: внутри они стартовали бы уже в
+            // проникновении, и первый же кадр выстрелил бы ими наружу. Ряд снизу с
+            // шагом в два диаметра, чтобы не задевали друг друга на старте.
+            if (freeParticles > 0) {
+                var rMean = 0f
+                for (i in 0 until nOne) rMean += r0[i]
+                rMean /= nOne
+                var minY = Float.MAX_VALUE
+                var minX = Float.MAX_VALUE
+                for (i in 0 until bodied) {
+                    if (y[i] < minY) minY = y[i]
+                    if (x[i] < minX) minX = x[i]
+                }
+                for (k in 0 until freeParticles) {
+                    val i = bodied + k
+                    x[i] = minX + rMean * 4f * k
+                    y[i] = minY - rMean * 6f
+                    r[i] = rMean
                 }
             }
 

@@ -1,6 +1,5 @@
 package io.github.some_example_name.old.features.settings
 
-import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.utils.Align
 import com.kotcrab.vis.ui.widget.VisTable
@@ -8,7 +7,6 @@ import com.kotcrab.vis.ui.widget.VisTextButton
 import io.github.some_example_name.old.commands.GoBack
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
-import io.github.some_example_name.old.core.DIGameGlobalContainer.game
 import io.github.some_example_name.old.core.ui.VisDslScreen
 import io.github.some_example_name.old.core.ui.dp
 import io.github.some_example_name.old.core.ui.visLabel
@@ -18,20 +16,20 @@ import io.github.some_example_name.old.core.ui.visTable
 import io.github.some_example_name.old.core.ui.visTextButton
 import io.github.some_example_name.old.core.ui.visToggleButton
 import io.github.some_example_name.old.core.ui.w
-import io.github.some_example_name.old.features.settings.SettingsScreen.Settings.*
 
 class SettingsScreen : VisDslScreen(
     background = Color(0.04f, 0.04f, 0.06f, 1f),
     isScrollable = false
 ) {
 
-    enum class Settings {
-        SOUND, GRAPHICS, LANGUAGE
-    }
-
-    // Сохраняем текущий выбранный таб между рекомпозициями
-    private var currentSettings = SOUND
     private val viewModel = SettingsViewModel()
+
+    // Нужна ссылка на dynamic-таблицу из switchTo
+    private var dynamicContent: VisTable? = null
+
+    init {
+        viewModel.onLanguageChanged = { recompose() }
+    }
 
     override fun VisTable.compose() {
         visTable(cellInit = {
@@ -44,40 +42,40 @@ class SettingsScreen : VisDslScreen(
                 lateinit var graphicsButton: VisTextButton
                 lateinit var languageButton: VisTextButton
 
-                fun switchTo(selected: VisTextButton, settings: Settings) {
+                fun switchTo(selected: VisTextButton, tab: SettingsTab) {
                     soundButton.isChecked = selected === soundButton
                     graphicsButton.isChecked = selected === graphicsButton
                     languageButton.isChecked = selected === languageButton
 
-                    if (currentSettings == settings) return
-                    currentSettings = settings
+                    if (viewModel.currentTab == tab) return
+                    viewModel.handle(SettingsIntent.SelectTab(tab))
 
                     dynamicContent?.clearChildren()
-                    dynamicContent?.composeDynamic(settings)
+                    dynamicContent?.composeDynamic(tab)
                     dynamicContent?.invalidateHierarchy()
                 }
 
                 soundButton = visToggleButton(
                     text = bundle.get("settings.tab.sound"),
-                    checked = currentSettings == SOUND,
+                    checked = viewModel.currentTab == SettingsTab.SOUND,
                     onCheckedChange = {
-                        if (soundButton.isChecked) switchTo(soundButton, SOUND)
+                        if (soundButton.isChecked) switchTo(soundButton, SettingsTab.SOUND)
                     }
                 ) { expandX().fillX() }
 
                 graphicsButton = visToggleButton(
                     text = bundle.get("settings.tab.graphics"),
-                    checked = currentSettings == GRAPHICS,
+                    checked = viewModel.currentTab == SettingsTab.GRAPHICS,
                     onCheckedChange = {
-                        if (graphicsButton.isChecked) switchTo(graphicsButton, GRAPHICS)
+                        if (graphicsButton.isChecked) switchTo(graphicsButton, SettingsTab.GRAPHICS)
                     }
                 ) { expandX().fillX() }
 
                 languageButton = visToggleButton(
                     text = bundle.get("settings.tab.language"),
-                    checked = currentSettings == LANGUAGE,
+                    checked = viewModel.currentTab == SettingsTab.LANGUAGE,
                     onCheckedChange = {
-                        if (languageButton.isChecked) switchTo(languageButton, LANGUAGE)
+                        if (languageButton.isChecked) switchTo(languageButton, SettingsTab.LANGUAGE)
                     }
                 ) { expandX().fillX() }
             }
@@ -88,7 +86,7 @@ class SettingsScreen : VisDslScreen(
             val dynamicContent = visTable (cellInit = {
                 growX()
             }) { }
-            dynamicContent.composeDynamic(currentSettings)
+            dynamicContent.composeDynamic(viewModel.currentTab)
 
             // Сохраняем ссылку, чтобы switchTo мог её обновлять
             this@SettingsScreen.dynamicContent = dynamicContent
@@ -104,37 +102,33 @@ class SettingsScreen : VisDslScreen(
         }
     }
 
-    // Нужна ссылка на dynamic-таблицу из switchTo
-    private var dynamicContent: VisTable? = null
-
     fun VisTable.sound() {
         val musicLabel = visLabel(
-            text = "${bundle.get("label.music_volume")}: ${GlobalSettings.MUSIC_VOLUME}"
+            text = "${bundle.get("label.music_volume")}: ${viewModel.musicVolume}"
         ) { left().fillX().growX() }
         row()
 
         visSlider(
             min = 0f, max = 100f, step = 1f,
-            value = GlobalSettings.MUSIC_VOLUME.toFloat(),
+            value = viewModel.musicVolume.toFloat(),
             onValueChange = { value ->
-                GlobalSettings.MUSIC_VOLUME = value.toInt()
-                game.currentMusic.volume = value / 100f
-                musicLabel.setText("${bundle.get("label.music_volume")}: ${GlobalSettings.MUSIC_VOLUME}")
+                viewModel.handle(SettingsIntent.SetMusicVolume(value.toInt()))
+                musicLabel.setText("${bundle.get("label.music_volume")}: ${viewModel.musicVolume}")
             }
         ) { fillX() }
         row()
 
         val soundLabel = visLabel(
-            text = "${bundle.get("label.sound_volume")}: ${GlobalSettings.SOUND_VOLUME}"
+            text = "${bundle.get("label.sound_volume")}: ${viewModel.soundVolume}"
         ) { left().fillX() }
         row()
 
         visSlider(
             min = 0f, max = 100f, step = 1f,
-            value = GlobalSettings.SOUND_VOLUME.toFloat(),
+            value = viewModel.soundVolume.toFloat(),
             onValueChange = { value ->
-                GlobalSettings.SOUND_VOLUME = value.toInt()
-                soundLabel.setText("${bundle.get("label.sound_volume")}: ${GlobalSettings.SOUND_VOLUME}")
+                viewModel.handle(SettingsIntent.SetSoundVolume(value.toInt()))
+                soundLabel.setText("${bundle.get("label.sound_volume")}: ${viewModel.soundVolume}")
             }
         ) { fillX() }
         row()
@@ -163,10 +157,8 @@ class SettingsScreen : VisDslScreen(
                 items = displayNames,
                 selectedIndex = currentIndex,
                 onChange = { _, index ->
-                    val newLocale = languages[index]
-                    GlobalSettings.currentLanguageTag = newLocale.toLanguageTag()
-                    DIGameGlobalContainer.setLanguage(newLocale)
-                    recompose()
+                    // recompose() дёрнет сама ViewModel через onLanguageChanged.
+                    viewModel.handle(SettingsIntent.SetLanguage(languages[index]))
                 }
             ) {
                 expandX().fillX().padTop(16.dp())
@@ -188,18 +180,16 @@ class SettingsScreen : VisDslScreen(
 
         visTable(cellInit = { expandX().fillX() }) {
             visTextButton("Go to Github", onClick = {
-                Gdx.net.openURI("https://github.com/dendor0101/Genomeia")
-            }) {
-                // если кнопку тоже хочешь на всю ширину — добавь expandX().fillX()
-            }
+                viewModel.handle(SettingsIntent.OpenGithub)
+            })
         }
     }
 
-    fun VisTable.composeDynamic(settings: Settings) {
-        when (settings) {
-            SOUND -> sound()
-            GRAPHICS -> graphics()
-            LANGUAGE -> language()
+    fun VisTable.composeDynamic(tab: SettingsTab) {
+        when (tab) {
+            SettingsTab.SOUND -> sound()
+            SettingsTab.GRAPHICS -> graphics()
+            SettingsTab.LANGUAGE -> language()
         }
     }
 }

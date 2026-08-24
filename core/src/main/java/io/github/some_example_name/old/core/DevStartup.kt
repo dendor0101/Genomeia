@@ -4,6 +4,7 @@ import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.PixmapIO
 import io.github.some_example_name.old.commands.navigationCommandByName
+import io.github.some_example_name.old.core.log.ActionLog
 
 /**
  * Управление запуском игры из командной строки — для проверки вёрстки и для отчётов о багах.
@@ -21,6 +22,7 @@ import io.github.some_example_name.old.commands.navigationCommandByName
  *   genomeia.screenshot      путь к PNG; после съёмки игра закрывается
  *   genomeia.screenshotFrame номер кадра для съёмки (по умолчанию 60)
  *   genomeia.keepRunning     true — не закрывать игру после скриншота
+ *   genomeia.logActions      true — печатать журнал действий в консоль по мере событий
  *
  * genomeia.width/height читает лаунчер (Lwjgl3Launcher), а не этот объект.
  */
@@ -30,6 +32,7 @@ object DevStartup {
     private const val SCREENSHOT_PROPERTY = "genomeia.screenshot"
     private const val SCREENSHOT_FRAME_PROPERTY = "genomeia.screenshotFrame"
     private const val KEEP_RUNNING_PROPERTY = "genomeia.keepRunning"
+    private const val LOG_ACTIONS_PROPERTY = "genomeia.logActions"
 
     private const val DEFAULT_SCREENSHOT_FRAME = 60
 
@@ -38,16 +41,23 @@ object DevStartup {
 
     /** Вызывается в конце MyGame.create(), когда стартовый экран уже выставлен. */
     fun applyStartCommand() {
-        val name = System.getProperty(START_PROPERTY) ?: return
-        val command = navigationCommandByName(name)
-
-        if (command == null) {
-            Gdx.app.error("DevStartup", "Неизвестная команда навигации: $name")
-            return
+        if (System.getProperty(LOG_ACTIONS_PROPERTY) == "true") {
+            ActionLog.sink = { entry -> Gdx.app.log("ActionLog", entry.toString()) }
         }
 
-        Gdx.app.log("DevStartup", "Стартовая навигация: $name")
-        DIGameGlobalContainer.navigationCommandsManager.performCommand(command)
+        val script = System.getProperty(START_PROPERTY) ?: return
+
+        // Список через запятую, а не одна команда: маршрут из нескольких переходов —
+        // это уже минимальное воспроизведение сценария, а GoBack в одиночку бессмыслен.
+        script.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { name ->
+            val command = navigationCommandByName(name)
+            if (command == null) {
+                Gdx.app.error("DevStartup", "Неизвестная команда навигации: $name")
+                return@forEach
+            }
+            Gdx.app.log("DevStartup", "Стартовая навигация: $name")
+            DIGameGlobalContainer.navigationCommandsManager.performCommand(command)
+        }
     }
 
     /** Вызывается в конце MyGame.render(), когда кадр уже нарисован в бэкбуфер. */
@@ -79,6 +89,7 @@ object DevStartup {
             // Кадровый буфер читается снизу вверх, PNG пишется сверху вниз — отсюда flipY.
             PixmapIO.writePNG(screenshotFile(path), pixmap, -1, true)
             Gdx.app.log("DevStartup", "Скриншот сохранён: $path")
+            Gdx.app.log("DevStartup", "Журнал действий:\n${ActionLog.dump()}")
         } finally {
             pixmap.dispose()
         }

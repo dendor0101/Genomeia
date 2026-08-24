@@ -4,7 +4,10 @@ import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.kotcrab.vis.ui.widget.color.ColorPickerAdapter
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
-import io.github.some_example_name.old.core.DIGameGlobalContainer.game
+import io.github.some_example_name.old.commands.GoMenu
+import io.github.some_example_name.old.commands.GoReplace
+import io.github.some_example_name.old.commands.GoSimulation
+import io.github.some_example_name.old.core.DIGameGlobalContainer.navigationCommandsManager
 import io.github.some_example_name.old.core.color_picker.ColorPicker
 import io.github.some_example_name.old.editor.system.logic.DivideDialog
 import io.github.some_example_name.old.editor.system.logic.MutateDialog
@@ -21,8 +24,6 @@ import io.github.some_example_name.old.features.editor.dialog.ActionDialogType
 import io.github.some_example_name.old.features.editor.dialog.MutateOrDivideDialog
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer
 import io.github.some_example_name.old.systems.genomics.genome.Genome
-import io.github.some_example_name.old.features.menu.MenuScreen
-import io.github.some_example_name.old.features.simulation.SimulationScreen
 
 fun Stage.changeRemoveActionDialog(
     command: ShowChangeRemoveDialog,
@@ -163,16 +164,15 @@ fun Stage.saveDialog(
                 sortedGraph = layout
             )
         },
+        // Оба перехода идут через менеджер, а не через game.screen = ...: только так они
+        // попадают в журнал действий, и только так чистится стек прошлого маршрута.
         onSaveAndTest = { genomeNameForTest ->
-            game.screen.dispose()
-            game.screen = SimulationScreen(
-                map = null,
-                genomeName = genomeNameForTest
+            navigationCommandsManager.performCommand(
+                GoReplace(GoSimulation(world = null, genomeName = genomeNameForTest))
             )
         },
         onGoMenu = {
-            game.screen.dispose()
-            game.screen = MenuScreen()
+            navigationCommandsManager.performCommand(GoReplace(GoMenu))
         },
         isGoToMenu = isGoToMenu
     ).show(this)

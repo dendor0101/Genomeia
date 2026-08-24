@@ -9,14 +9,8 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Matrix4
 import com.kotcrab.vis.ui.widget.VisTable
-import io.github.some_example_name.old.commands.GoExit
-import io.github.some_example_name.old.commands.GoGenomeEditor
-import io.github.some_example_name.old.commands.GoSettings
-import io.github.some_example_name.old.commands.GoSupport
-import io.github.some_example_name.old.commands.GoWorldEditor
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
-import io.github.some_example_name.old.core.DIGameGlobalContainer.genomeJsonReader
 import io.github.some_example_name.old.core.ui.STYLE_BEIGE_BLACK
 import io.github.some_example_name.old.core.ui.VisDslScreen
 import io.github.some_example_name.old.core.ui.h
@@ -67,54 +61,56 @@ class MenuScreen : VisDslScreen(
             row()
 
             visTextButton(bundle.get("button.empty"), onClick = {
-                navigation.performCommand(GoWorldEditor)
+                menuViewModel.handle(MenuIntent.OpenWorldEditor)
             }) { growX() }
             row()
 
             visTextButton(bundle.get("button.editor"), onClick = {
-                val genomes = genomeJsonReader.getGenomeFileNamesFromFolder()
-                if (genomes.isEmpty()) {
-                    navigation.performCommand(GoGenomeEditor(null))
-                } else {
-                    GenomeListDialog(
-                        genomesList = genomes,
-                        selectedGenomeIndex = null,
-                        title = bundle.get("button.selectGenome"),
-                        new = bundle.get("button.new"),
-                        select = bundle.get("button.select"),
-                        import = bundle.get("button.import"),
-                        onNew = {
-                            navigation.performCommand(GoGenomeEditor(null))
-                        },
-                        onNext = { n ->
-                            navigation.performCommand(GoGenomeEditor(n))
-                        },
-                        onRestart = {},
-                        game = game,
-                        onResize = { h -> onResize = if (h == {}) null else h },
-                        isMenu = true
-                    ).show(stage)
-                }
+                // Решение «список или сразу пустой редактор» принимает ViewModel,
+                // экран только показывает диалог, если её попросили.
+                showEffect(menuViewModel.handle(MenuIntent.BrowseGenomes))
             }) { growX() }
             row()
 
             visTextButton(bundle.get("button.options"), onClick = {
-                navigation.performCommand(GoSettings)
+                menuViewModel.handle(MenuIntent.OpenSettings)
             }) { growX() }
             row()
 
             visTextButton(bundle.get("label.support"), onClick = {
-                navigation.performCommand(GoSupport)
+                menuViewModel.handle(MenuIntent.OpenSupport)
             }) { growX() }
             row()
 
             visTextButton(bundle.get("button.exit"), onClick = {
-                navigation.performCommand(GoExit)
+                menuViewModel.handle(MenuIntent.Exit)
             }) { growX() }
             row()
 
             visLabel(text = "alpha-0.2.4", font = game.mediumFont, textColor = STYLE_BEIGE_BLACK)
             row()
+        }
+    }
+
+    /** Вёрстка того, что ViewModel попросила показать. */
+    private fun showEffect(effect: MenuEffect) {
+        when (effect) {
+            is MenuEffect.None -> Unit
+
+            is MenuEffect.ShowGenomeList -> GenomeListDialog(
+                genomesList = effect.genomes,
+                selectedGenomeIndex = null,
+                title = bundle.get("button.selectGenome"),
+                new = bundle.get("button.new"),
+                select = bundle.get("button.select"),
+                import = bundle.get("button.import"),
+                onNew = { menuViewModel.handle(MenuIntent.OpenGenomeEditor(null)) },
+                onNext = { name -> menuViewModel.handle(MenuIntent.OpenGenomeEditor(name)) },
+                onRestart = {},
+                game = game,
+                onResize = { h -> onResize = if (h == {}) null else h },
+                isMenu = true
+            ).show(stage)
         }
     }
 

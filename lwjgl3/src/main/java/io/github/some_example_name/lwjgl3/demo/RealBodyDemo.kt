@@ -1,4 +1,4 @@
-package io.github.some_example_name.lwjgl3.demo
+﻿package io.github.some_example_name.lwjgl3.demo
 
 import com.badlogic.gdx.ApplicationAdapter
 import com.badlogic.gdx.Gdx
@@ -44,9 +44,9 @@ import kotlin.math.sqrt
  *      integrate            позиции += v * h, гравитация, пол
  *      solveConstraints     расстояния
  *      solveAreas           знаковая площадь
- *      solveDrag            тяга мыши (в движке не нужна)
  *      projectBone          ПОСЛЕДНЯЯ из позиционных: всё после неё нарушит жёсткость
  *      updateVelocities     v = (x - prevX) / h
+ *      applyDragVelocity    тяга мыши — СКОРОСТЬЮ, после позиционных (в движке не нужна)
  *      applyViscosity       \
  *      applyNormalDrag       |  по СКОРОСТЯМ и только после их восстановления
  *      applyRestitution      |
@@ -673,6 +673,21 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * Ограничение НЕ ломает сохранение импульса: масштабируется весь набор поправок
          * одним множителем, а их сумма уже обнулена — ноль остаётся нулём.
          */
+        /**
+         * ПРОБОВАЛ СНИЗИТЬ ДО 0.25 — СТАЛО ХУЖЕ, оставлено 0.5.
+         *
+         * Рассуждение было такое: потолок поправки за подшаг превращается в потолок
+         * скорости умножением на число подшагов, 0.5 при 16 подшагах даёт ровно 8
+         * клеток за тик, то есть впритык к MAX_SPEED_CELLS_PER_TICK. Логика верна
+         * для контакта, где она и сработала, но здесь замер её опроверг: при тряске
+         * за кость пик вырос с 8.5 до 9.5, а срабатываний clampSpeed стало вдвое
+         * больше, 8 против 4.
+         *
+         * Причина в том, что кость с меньшим шагом ХУЖЕ СХОДИТСЯ к жёсткой позе,
+         * ошибка накапливается, и разбирать её приходится связям вокруг — а они
+         * дают поправки крупнее той, что мы сэкономили. Пик у мягкой ткани, а не у
+         * самой кости.
+         */
         private const val BONE_MAX_STEP = 0.5
 
         // =============================================================
@@ -707,6 +722,24 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * Перенесено из прототипа как есть. Мягкое проникновение до ядра разрешено —
          * им занимается позиционный решатель, а CCD ловит только сквозной пролёт.
          */
+        /**
+         * ПОТОЛОК ПОПРАВКИ КОНТАКТА ЗА ПОДШАГ, в долях средней длины связи.
+         *
+         * Контакт жёсткий, и без потолка глубокое проникновение разгребается целиком
+         * за один подшаг. updateVelocities делит поправку на h, h крошечное, и из
+         * загиба тела в себя получался выброс скорости под 84 клетки за тик при
+         * рабочем уровне около трёх. Дальше он гасился потолком скорости, а тот
+         * правит каждую частицу отдельно и импульс не сохраняет — так загиб и
+         * превращался в вечное блуждание.
+         *
+         * 0.25 при 16 подшагах даёт предел около 4 клеток за тик — столько же, сколько
+         * давал прежний потолок скорости, но симметрично по паре.
+         *
+         * ПРИ ПЕРЕНОСЕ: значение привязано к числу подшагов. Меняешь SUBSTEPS —
+         * перемеряй, иначе предел по скорости молча съедет во столько же раз.
+         */
+        private const val CONTACT_MAX_STEP = 0.25
+
         private const val CCD_CORE = 0.4
 
         /** Отскок. Меньше единицы — энергия не растёт никогда. */
@@ -726,20 +759,112 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * Выражено в клетках за тик, а не в единицах в секунду, потому что именно это
          * отношение и важно для сетки — оно не зависит ни от UPS, ни от масштаба тела.
          */
-        private const val MAX_SPEED_CELLS_PER_TICK = 4.0
+        /**
+         * Поднято с 4.0 до 8.0, и это не ослабление, а разведение двух механизмов.
+         *
+         * Потолок скорости правит КАЖДУЮ частицу отдельно и потому импульс не
+         * сохраняет — как аварийная сетка это нормально, как рабочий ограничитель
+         * это источник блуждания. Раньше он и работал ограничителем: при загибе тела
+         * в себя срабатывал 243 раза за одно перетаскивание.
+         *
+         * Теперь скорость держит CONTACT_MAX_STEP — потолок ПОПРАВКИ, симметричный
+         * по паре. Он даёт как раз 4 клетки за тик, и потолок скорости на тех же 4.0
+         * переступался любой второй стадией, попавшей в тот же подшаг. Восьмёрка
+         * оставляет двукратный запас, и тогда сетка молчит, пока всё исправно.
+         *
+         * Проскок при этом по-прежнему невозможен: 8 клеток за тик при 16 подшагах
+         * это полклетки за подшаг, а ядро контакта — две трети клетки. Встречной паре
+         * на полном ходу пара десятых не хватит, и там сработает обрезка CCD — ровно
+         * тот редкий случай, ради которого она и оставлена.
+         */
+        private const val MAX_SPEED_CELLS_PER_TICK = 8.0
 
         /**
-         * МАКСИМАЛЬНАЯ ДЛИНА СВЯЗИ в долях суммы радиусов её концов.
+         * МАКСИМАЛЬНОЕ РАСТЯЖЕНИЕ СВЯЗИ в долях её СОБСТВЕННОЙ ДЛИНЫ ПОКОЯ.
          *
          * В стенде связь БЕСКОНЕЧНО КРЕПКАЯ: при достижении предела она жёстко
          * ограничивается, податливость ноль. В движке это же условие — сигнал к
          * РАЗРЫВУ связи; здесь рвать нечем, поэтому держим.
          *
-         * Единица означает «не длиннее суммы радиусов»: клетки не могут разойтись так,
-         * чтобы между ними появилась дыра. Запас до предела при этом приличный — в позе
-         * покоя связь 0.6 от суммы радиусов, то есть тянуться можно ещё в 1.67 раза.
+         * РАНЬШЕ СЧИТАЛОСЬ ОТ СУММЫ РАДИУСОВ, и это было ошибкой того же рода, что
+         * и радиус контакта: радиус клетки рисовальный, его задаёт игрок в редакторе,
+         * и к длине связи он отношения не имеет. В теле с клетками 0.5 и 0.2 при шаге
+         * решётки 0.6 предел для пары мелких выходил 0.4 при длине покоя 0.6 — то есть
+         * 49 связей (1.9%) нарушали предел УЖЕ В ПОЗЕ ПОКОЯ. Жёсткая стадия воевала с
+         * длиной покоя каждый подшаг, тело не могло прийти в равновесие вовсе: дрейф
+         * в покое 3 клетки за 20 секунд и момент импульса, растущий до 13.
+         *
+         * ОТКУДА 1.05. Это не вкус, а то же условие сшивания мембраны, что и у
+         * contactRadius: круги соседей по контуру имеют радиус в половину длины покоя
+         * с запасом CONTACT_SEAL, поэтому перекрываться они перестают ровно когда
+         * связь растянулась сверх этого запаса. Числа обязаны совпадать.
+         *
+         * Следствие для движка: связь может растянуться лишь на 5% сверх покоя, иначе
+         * мембрана течёт. Хочешь ткань тянучее — придётся сталкиваться с РЕБРОМ как с
+         * отрезком, а не кругами на вершинах. Запас на этом теле всего 1.15x.
          */
-        private const val LINK_MAX_LENGTH = 1.0
+        private const val LINK_MAX_STRETCH = 1.05
+
+        /**
+         * ПОРОГ РАЗРЫВА для ОТМЕТКИ, в долях длины покоя. Рвать здесь нечем — стенд
+         * держит связи бесконечно крепкими, — но место, где ткань обязана была
+         * порваться, надо ВИДЕТЬ. Такие связи и их треугольники красятся синим и
+         * остаются синими до сброса, потому что важен ПИК за всё время, а не текущий
+         * кадр: рвущее усилие живёт один подшаг, глазом его не поймать.
+         *
+         * Меряется не длина, а НЕДОБОР: насколько связь хотела растянуться СВЕРХ
+         * предела LINK_MAX_STRETCH. Саму длину смотреть бесполезно — жёсткая стадия
+         * возвращает её на предел в том же подшаге, и в кадре она всегда в норме.
+         *
+         * ПРИ ПЕРЕНОСЕ: в движке это же число — условие настоящего РАЗРЫВА связи,
+         * а не окраски.
+         */
+        private const val LINK_TEAR_STRAIN = 0.25
+
+        /**
+         * Потолок УСКОРЕНИЯ тяги мыши, в клетках за тик в квадрате.
+         *
+         * Ограничивать надо именно ускорение, а не смещение: смещение тяга давала
+         * напрямую и потому перебивала контакт. Ускорение же превращается в
+         * положение только через integrate, а контакт решает после него и последним.
+         *
+         * Двойка означает «за тик тяга способна разогнать клетку до двух клеток за
+         * тик» — этого хватает, чтобы таскать тело живо, и мало, чтобы продавить
+         * мембрану: контакт снимает такую скорость за один подшаг.
+         */
+        private const val DRAG_ACCEL = 16.0
+
+        /**
+         * Потолок скорости для тяги, в долях общего MAX_SPEED_CELLS_PER_TICK.
+         *
+         * Считается по САМОЙ БЫСТРОЙ клетке кости, а не по той, за которую тянут.
+         * Кость твёрдая, и схваченная у центра нужную скорость в точке захвата
+         * получает только раскрутившись — а у дальних клеток скорость равна омега
+         * на радиус и выходит в разы больше. Замер на встряхивании: в точке захвата
+         * тяга держала свои 4.4 клетки за тик, а пик по кости достигал 9.4 при
+         * общем потолке 8.
+         *
+         * Дальше шла уже разобранная цепочка: срабатывал clampSpeed, а он правит
+         * частицы ПО ОДНОЙ и импульс не сохраняет, поэтому тело получало скорость
+         * из ниоткуда и улетало.
+         *
+         * Ограничение стоит на ИТОГЕ, а не на силе, поэтому DRAG_ACCEL можно крутить
+         * под ощущение сколько угодно: физику он больше не ломает.
+         */
+        private const val DRAG_SPEED_LIMIT = 0.25
+
+        /**
+         * ПУЛЯ [P] — одиночная клетка, запущенная справа налево на потолке скорости.
+         *
+         * Проверка непроницаемости в самом злом допустимом случае: быстрее в стенде
+         * не летает ничто, потому что clampSpeed режет всё выше. Если пуля прошла
+         * насквозь, значит дыра настоящая, а не следствие слишком резкой мыши.
+         * Так же сделано в прототипе, откуда переносились контакты.
+         */
+        private const val BULLET_SPEED_FRACTION = 0.95
+
+        private val TEAR_FILL = Color(0.25f, 0.45f, 0.95f, 1f)
+        private val TEAR_LINK = Color(0.45f, 0.65f, 1f, 1f)
 
         /**
          * ИЗГИБ ГРАНИЧНОГО КОНТУРА — податливости, которые перебирает клавиша E.
@@ -1150,6 +1275,19 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          */
         private const val ORGANISMS = 2
 
+        /**
+         * СВОБОДНЫЕ ЧАСТИЦЫ — проверка непроницаемости контура вручную.
+         *
+         * Тащишь такую мышью в бок организма и смотришь, пролезет или нет. Связного
+         * тела для этой проверки мало: его частицы держат соседи, и внутрь чужого
+         * тела его не пускает вся сетка связей сразу, а не только контакт. Одиночную
+         * не держит ничто, поэтому дыру в контуре она находит честно.
+         *
+         * Стоят рядом с телами, каждая — сам себе связная компонента, то есть
+         * отдельный организм со своим запасом среды.
+         */
+        private const val FREE_PARTICLES = 6
+
         private const val VIEW_WIDTH = 3.4f
         private const val VIEW_HEIGHT = 2.125f
 
@@ -1191,7 +1329,10 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
     private var contacts: BoundaryContacts? = null
     private var contactsOn = CONTACTS_ON
     private lateinit var radius: DoubleArray
-    /** Максимальная длина каждой связи: LINK_MAX_LENGTH * (ri + rj). */
+
+    /** Клетка без единой связи — свободная частица, см. FREE_PARTICLES. */
+    private lateinit var isFree: BooleanArray
+    /** Максимальная длина каждой связи: LINK_MAX_STRETCH * длина покоя. */
     private lateinit var conMaxLen: DoubleArray
     private lateinit var matchWeight: DoubleArray
     private lateinit var inContact: BooleanArray
@@ -1424,7 +1565,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
     // =================================================================
 
     private fun buildFromFile() {
-        body = BodyFile.load(bodyPath, copies = ORGANISMS)
+        body = BodyFile.load(bodyPath, copies = ORGANISMS, freeParticles = FREE_PARTICLES)
         n = body.count
 
         px = DoubleArray(n); py = DoubleArray(n)
@@ -1487,7 +1628,8 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         edgePickRadius = body.meanLinkLength * EDGE_PICK_FACTOR
 
         println("[RealBodyDemo] " + body.describe())
-        println("[RealBodyDemo] rigid bones = ${rigidBones.size}, degenerate clusters dropped = $degenerateBones")
+        println("[RealBodyDemo] rigid bones = ${rigidBones.size}, degenerate clusters dropped = $degenerateBones" +
+            ", largest = ${rigidBones.maxOfOrNull { it.size } ?: 0} cells (drag on it is that many times weaker)")
     }
 
     /**
@@ -1568,15 +1710,28 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
 
     private fun buildContacts() {
         radius = DoubleArray(n) { body.radius[it].toDouble() }
+        isFree = BooleanArray(n) { true }
+        for (k in body.linkA.indices) { isFree[body.linkA[k]] = false; isFree[body.linkB[k]] = false }
         conMaxLen = DoubleArray(conCount) { c ->
-            LINK_MAX_LENGTH * (radius[conA[c]] + radius[conB[c]])
+            LINK_MAX_STRETCH * conRest[c]
+        }
+        linkTorn = BooleanArray(conCount)
+        // Карта пары вершин в номер связи: нужна отрисовке, чтобы покрасить
+        // ТРЕУГОЛЬНИК по его рёбрам. Строится один раз, в кадре только чтение.
+        linkOfPair = HashMap(conCount * 2)
+        for (c in 0 until conCount) {
+            val a = minOf(conA[c], conB[c]).toLong()
+            val b = maxOf(conA[c], conB[c]).toLong()
+            linkOfPair[a * 1000003L + b] = c
         }
         contacts = BoundaryContacts.build(
             n, conA, conB, conCount, boundA, boundB, boundCount, radius,
             CONTACT_SCALE, CCD_CORE, CONTACT_RESTITUTION, CONTACT_FRICTION,
+            body.x, body.y,
+            body.meanLinkLength.toDouble(), CONTACT_MAX_STEP, isFree,
         )
         println("[RealBodyDemo] contact particles = ${boundCount} boundary edges, " +
-            "contact at ${CONTACT_SCALE} of radii sum")
+            "contact radius from boundary edges, seal margin")
     }
 
     private fun buildMasses() {
@@ -1713,6 +1868,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         invertedPeak = 0
         boneCapHits = 0
         linkCapHits = 0
+        if (::linkTorn.isInitialized) linkTorn.fill(false)
         speedCapHits = 0
         simTime = 0.0
         accumulator = 0.0
@@ -1787,8 +1943,17 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             val len = sqrt(dx * dx + dy * dy)
             val max = conMaxLen[c]
             if (len <= max || len < 1e-12) continue
+            // Пик недобора за всё время: сколько связь хотела сверх предела.
+            if (len - max > LINK_TEAR_STRAIN * conRest[c]) linkTorn[c] = true
             dx /= len; dy /= len
-            val dL = -(len - max) / w
+            // Тот же потолок поправки за подшаг, что и у контакта, и по той же
+            // причине: стадия ЖЁСТКАЯ, перерастяжение она снимает целиком за один
+            // подшаг, а updateVelocities делит поправку на крошечное h. При загибе
+            // связи растягиваются сильно, и отсюда шёл остаток выброса скорости.
+            // Делится по паре в тех же долях, поэтому импульс пары сохраняется.
+            var dL = -(len - max) / w
+            val capL = CONTACT_MAX_STEP * body.meanLinkLength / w
+            if (dL < -capL) dL = -capL
             px[i] += dx * dL * wi; py[i] += dy * dL * wi
             px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
             linkCapHits++
@@ -1797,6 +1962,98 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
 
     /** Сколько раз предел длины связи сработал с последнего сброса. Видно в HUD. */
     private var linkCapHits = 0
+
+    /** Связь хоть раз требовала растяжения сверх порога разрыва. См. LINK_TEAR_STRAIN. */
+    private lateinit var linkTorn: BooleanArray
+    private var linkOfPair = HashMap<Long, Int>()
+
+    /** Какую свободную частицу заряжать следующей. См. fireBullet. */
+    private var nextBullet = 0
+
+    /**
+     * Запустить свободную частицу справа налево на потолке скорости.
+     *
+     * Берутся по кругу уже существующие свободные частицы: заводить новые значило бы
+     * менять n на ходу, а от n зависят все массивы решателя и разбиение на организмы.
+     */
+    /**
+     * ТАРАН [O]: два самых крупных организма разгоняются НАВСТРЕЧУ друг другу.
+     *
+     * Пуля проверяет мембрану на одиночной лёгкой клетке, и этого мало: там масса
+     * ничтожная, ткань даже не напрягается. Здесь на контур наваливается вся масса
+     * второго тела, и это уже настоящее условие — самое тяжёлое столкновение,
+     * какое в симуляции вообще возможно при действующем потолке скорости.
+     *
+     * Импульс задаётся КАЖДОЙ частице организма, а не одной: тело должно лететь
+     * целиком, как брошенное, а не растягиваться за разогнанным краем.
+     */
+    private fun slamOrganisms() {
+        // Два самых крупных организма — это тела; свободные частицы отсеиваются
+        // сами, они размером в одну клетку.
+        val order = (0 until organismCount).sortedByDescending { organismSize[it] }
+        if (order.size < 2) return
+        val a = order[0]; val b = order[1]
+        if (organismSize[b] < 2) return
+
+        var ax = 0.0; var ay = 0.0; var an = 0
+        var bx = 0.0; var by = 0.0; var bn = 0
+        for (i in 0 until n) {
+            when (organismOf[i]) {
+                a -> { ax += px[i]; ay += py[i]; an++ }
+                b -> { bx += px[i]; by += py[i]; bn++ }
+            }
+        }
+        if (an == 0 || bn == 0) return
+        ax /= an; ay /= an; bx /= bn; by /= bn
+
+        var dx = bx - ax; var dy = by - ay
+        val d = sqrt(dx * dx + dy * dy)
+        if (d < 1e-12) return
+        dx /= d; dy /= d
+
+        val speed = BULLET_SPEED_FRACTION * MAX_SPEED_CELLS_PER_TICK * body.meanLinkLength / DT
+        for (i in 0 until n) {
+            when (organismOf[i]) {
+                a -> { vx[i] = dx * speed; vy[i] = dy * speed }
+                b -> { vx[i] = -dx * speed; vy[i] = -dy * speed }
+            }
+        }
+        println("[RealBodyDemo] таран: организмы $a и $b, по " +
+            "%.1f клеток/тик навстречу".format(speed * DT / body.meanLinkLength))
+    }
+
+    private fun fireBullet() {
+        val ids = (0 until n).filter { isFree[it] }
+        if (ids.isEmpty()) return
+        val i = ids[nextBullet % ids.size]
+        nextBullet++
+
+        // Справа от всего, что есть на сцене, на высоте середины тел.
+        var maxX = -Double.MAX_VALUE
+        var sumY = 0.0; var cnt = 0
+        for (k in 0 until n) {
+            if (isFree[k]) continue
+            if (px[k] > maxX) maxX = px[k]
+            sumY += py[k]; cnt++
+        }
+        if (cnt == 0) return
+        val speed = BULLET_SPEED_FRACTION * MAX_SPEED_CELLS_PER_TICK * body.meanLinkLength / DT
+        px[i] = maxX + body.meanLinkLength * 8.0
+        py[i] = sumY / cnt
+        prevX[i] = px[i]; prevY[i] = py[i]
+        vx[i] = -speed; vy[i] = 0.0
+        println("[RealBodyDemo] пуля: клетка #$i, скорость " +
+            "%.1f клеток/тик".format(speed * DT / body.meanLinkLength))
+    }
+
+    /** Порвалась ли хоть одна из трёх сторон треугольника. */
+    private fun triTorn(i0: Int, i1: Int, i2: Int): Boolean =
+        pairTorn(i0, i1) || pairTorn(i1, i2) || pairTorn(i0, i2)
+
+    private fun pairTorn(a: Int, b: Int): Boolean {
+        val c = linkOfPair[minOf(a, b).toLong() * 1000003L + maxOf(a, b).toLong()] ?: return false
+        return linkTorn[c]
+    }
 
     /**
      * ПОТОЛОК СКОРОСТИ — см. MAX_SPEED_CELLS_PER_TICK.
@@ -1810,6 +2067,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         val maxV2 = maxV * maxV
         for (i in 0 until n) {
             val v2 = vx[i] * vx[i] + vy[i] * vy[i]
+            if (v2 > peakSpeed2) peakSpeed2 = v2
             if (v2 <= maxV2) continue
             val s = maxV / sqrt(v2)
             vx[i] *= s; vy[i] *= s
@@ -1819,6 +2077,9 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
 
     /** Сколько раз потолок скорости сработал. Видно в HUD. */
     private var speedCapHits = 0
+
+    /** Наибольшая увиденная скорость в квадрате, ДО обрезки. Замер, а не гадание. */
+    private var peakSpeed2 = 0.0
 
     private fun solveBend(h: Double) {
         val compliance = bendCompliance()
@@ -1884,26 +2145,161 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         }
     }
 
-    private fun solveDrag(h: Double) {
+    /**
+     * ТЯГА МЫШИ — СИЛА, А НЕ ТЕЛЕПОРТ. Зовётся ПОСЛЕ updateVelocities.
+     *
+     * Раньше тяга правила ПОЗИЦИЮ прямо среди позиционных стадий, и из этого росли
+     * сразу две беды, обе видимые руками.
+     *
+     * ПЕРВАЯ: сквозь тело можно было протащить что угодно. Контакт расталкивает
+     * позиционно, но на следующем подшаге тяга снова ставила клетку туда же, куда
+     * тянет курсор. Позиционная тяга ничем не ограничена и просто перетягивала
+     * контакт, сколько бы тот ни отталкивал. Ткань при этом даже не напрягалась —
+     * поэтому и синие треугольники не появлялись: рвать было нечего, клетка ехала
+     * насквозь, а не продавливала.
+     *
+     * ВТОРАЯ: тяга за кость выходила тем сильнее, чем кость крупнее. projectBone
+     * идёт ПОСЛЕ тяги и подтягивает ВЕСЬ кластер к сдвинутой клетке, так что одна
+     * позиционная поправка двигала всю костную массу целиком.
+     *
+     * Обе беды снимает одно и то же: тяга задаёт СКОРОСТЬ, а положение получается
+     * из неё через integrate на следующем подшаге. Тогда
+     *   - контакт решает позиционно и ПОСЛЕДНИМ, значит выигрывает всегда;
+     *   - кость сама делит тягу на свой размер: shape matching разносит смещение
+     *     одной клетки по всему кластеру, и кость из N клеток трогается примерно
+     *     в N раз медленнее. Делить вручную не нужно, это выходит из сохранения
+     *     импульса.
+     *
+     * Ограничение по УСКОРЕНИЮ, а не по силе: тянуть надо одинаково отзывчиво и
+     * лёгкую клетку, и тяжёлую, иначе мелкие клетки улетали бы от курсора. Деление
+     * тяги по массе всё равно происходит, но уровнем ниже — в кости и в связях.
+     */
+    private fun applyDragVelocity(h: Double) {
         val i = dragId
         if (i < 0 || invMass[i] == 0.0) return
         val dx = mouseX - px[i]
         val dy = mouseY - py[i]
         val d = sqrt(dx * dx + dy * dy)
         if (d < 1e-12) return
-        val alpha = DRAG_COMPLIANCE / (h * h)
-        var corr = d * invMass[i] / (invMass[i] + alpha)
-        // Потолок пересчитывается в шаг: скорость * длительность подшага.
-        val maxStep = MAX_DRAG_SPEED * h
-        if (corr > maxStep) corr = maxStep
-        val ax = dx / d * corr
-        val ay = dy / d * corr
-        px[i] += ax
-        py[i] += ay
-        // Тяга мыши — сила ВНЕШНЯЯ, центр масс двигать имеет право. Её вклад
-        // запоминается, чтобы гашение дрейфа его не съело вместе с ошибкой.
-        dragShiftX += ax
-        dragShiftY += ay
+
+        // РУКА ДАЁТ ПОСТОЯННУЮ СИЛУ, а не постоянное ускорение. Это и есть причина
+        // несоразмерности тяги за кость.
+        //
+        // Раньше кость получала ТО ЖЕ УСКОРЕНИЕ, что одиночная клетка. Ускорение то
+        // же, а масса в N раз больше — значит импульс в N раз больше, и чем крупнее
+        // кластер, тем сильнее рывок. Именно это и наблюдалось: за самую большую
+        // кость тело улетало несоизмеримо резче, чем за мягкую ткань.
+        //
+        // Теперь ограничена СИЛА. Одиночная клетка средней массы получает прежнее
+        // ускорение, а кость из N клеток — в N раз меньшее, потому что тяжёлое и
+        // разгоняется медленнее. Импульс за подшаг при насыщении выходит одинаковым
+        // в обоих случаях, force * h, то есть тяга стала честной по импульсу.
+        //
+        // Массы нормированы так, что средняя клетка весит единицу (см. restInvMass),
+        // поэтому эталонная масса здесь и есть единица, и отдельной константы для
+        // неё не нужно.
+        val b = if (bonesRigid) boneOf[i] else -1
+
+        var mTotal = 0.0
+        var cx = 0.0; var cy = 0.0
+        val ids = if (b >= 0) rigidBones[b] else null
+        if (ids != null) {
+            for (k in ids) {
+                if (invMass[k] <= 0.0) continue
+                val m = 1.0 / invMass[k]
+                mTotal += m; cx += m * px[k]; cy += m * py[k]
+            }
+            if (mTotal <= 0.0) return
+            cx /= mTotal; cy /= mTotal
+        }
+
+        val force = DRAG_ACCEL * body.meanLinkLength / (DT * DT)
+        val aMax = if (ids != null) force / mTotal else force * invMass[i]
+
+        // Целевая скорость: добраться до курсора за тик, но не быстрее потолка.
+        var vWant = d / DT
+        if (vWant > MAX_DRAG_SPEED) vWant = MAX_DRAG_SPEED
+        val tx = dx / d * vWant
+        val ty = dy / d * vWant
+
+        // Догоняем целевую скорость, но не быстрее, чем позволяет сила.
+        var ax = (tx - vx[i]) / h
+        var ay = (ty - vy[i]) / h
+        val a = sqrt(ax * ax + ay * ay)
+        if (a > aMax) { val s = aMax / a; ax *= s; ay *= s }
+
+        val vLimit = DRAG_SPEED_LIMIT * MAX_SPEED_CELLS_PER_TICK * body.meanLinkLength / DT
+
+        if (ids == null) {
+            var nvx = vx[i] + ax * h
+            var nvy = vy[i] + ay * h
+            val v = sqrt(nvx * nvx + nvy * nvy)
+            if (v > vLimit) { val sc = vLimit / v; nvx *= sc; nvy *= sc }
+            vx[i] = nvx; vy[i] = nvy
+            return
+        }
+
+        // КОСТЬ ТЯНЕТСЯ ЦЕЛИКОМ, а не через одну свою клетку.
+        //
+        // Дать скорость одной клетке жёсткой кости нельзя: projectBone тут же
+        // вернёт её на жёсткую позу, updateVelocities сделает из возврата скорость
+        // ПРОТИВОПОЛОЖНУЮ тяге, а на следующем подшаге тяга надавит снова. Кость
+        // начинает перекачиваться сама с собой на частоте подшагов — отсюда и
+        // хаотичная скорость, и разрывы ткани там, где рука её не касалась.
+        //
+        // Правильно — приложить импульс В ТОЧКУ ЗАХВАТА ко всему твёрдому телу и
+        // разнести его как положено: поступательная часть J/M одинакова для всех,
+        // вращательная (r x J)/I добавляет скорость по радиусу. Тогда поза кости
+        // не нарушается вовсе, проекции нечего исправлять, и качаться нечему.
+        //
+        // Величина импульса подобрана так, чтобы кость получала ТО ЖЕ линейное
+        // ускорение, что получила бы одиночная клетка. Значит тяжёлую кость тянуть
+        // так же отзывчиво, как лёгкую, а вот тело вокруг неё сопротивляется по
+        // своей массе — что и требуется.
+        var inertia = 0.0
+        var maxR = 0.0
+        for (k in ids) {
+            if (invMass[k] <= 0.0) continue
+            val rx = px[k] - cx; val ry = py[k] - cy
+            val r2 = rx * rx + ry * ry
+            inertia += r2 / invMass[k]
+            if (r2 > maxR) maxR = r2
+        }
+        maxR = sqrt(maxR)
+
+        val jx = ax * h * mTotal
+        val jy = ay * h * mTotal
+        val rgx = px[i] - cx; val rgy = py[i] - cy
+        var dOmega = if (inertia > 1e-18) (rgx * jy - rgy * jx) / inertia else 0.0
+
+        // Вращение ограничивается тем же потолком: у длинной кости дальняя клетка
+        // иначе получила бы куда больше, чем разрешено ускорением тяги.
+        val vEdge = abs(dOmega) * maxR
+        val vCap = sqrt(ax * ax + ay * ay) * h
+        if (vEdge > vCap && vEdge > 1e-18) dOmega *= vCap / vEdge
+
+        // Прикидываем итог и, если самая быстрая клетка кости выходит за потолок,
+        // ослабляем ВЕСЬ импульс — и поступательную часть, и вращательную. Резать
+        // скорости по одной здесь нельзя: это сломало бы и жёсткость позы, и
+        // сохранение импульса, ради которого весь этот кусок и написан.
+        var worst = 0.0
+        for (k in ids) {
+            if (invMass[k] <= 0.0) continue
+            val rx = px[k] - cx; val ry = py[k] - cy
+            val nvx = vx[k] + jx / mTotal - dOmega * ry
+            val nvy = vy[k] + jy / mTotal + dOmega * rx
+            val v = sqrt(nvx * nvx + nvy * nvy)
+            if (v > worst) worst = v
+        }
+        var sc = 1.0
+        if (worst > vLimit && worst > 1e-18) sc = vLimit / worst
+
+        for (k in ids) {
+            if (invMass[k] <= 0.0) continue
+            val rx = px[k] - cx; val ry = py[k] - cy
+            vx[k] += sc * (jx / mTotal - dOmega * ry)
+            vy[k] += sc * (jy / mTotal + dOmega * rx)
+        }
     }
 
     private var dragShiftX = 0.0
@@ -2276,19 +2672,13 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             // Обход связей меняет направление КАЖДЫЙ подшаг — см. sweepBackwards.
             // Ставится здесь, а не внутри solveConstraints, чтобы фаза шла ровно по
             // подшагам и не зависела от того, сколько раз стадию позвали снаружи.
-            // КОЛЛИЗИИ: широкая фаза, CCD и список контактов — сразу после integrate,
-            // пока prevX/prevY ещё держат начало подшага. CCD обрезает предсказанную
-            // позицию по времени первого касания ДО того, как за неё возьмутся
-            // ограничения, иначе решатель уже растащил бы проникшие клетки.
             val ct = contacts
-            if (ct != null && contactsOn) ct.prepare(px, py, prevX, prevY, vx, vy)
 
             sweepBackwards = !sweepBackwards
             solveConstraints(h)
             solveLinkMaxLength()
             solveAreas(h)
             solveBend(h)
-            solveDrag(h)
             if (bonesRigid) for (b in rigidBones.indices) projectBone(b)
 
             // ПРЕДЕЛ ДЛИНЫ ПОВТОРНО, УЖЕ ПОСЛЕ КОСТИ.
@@ -2308,11 +2698,31 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             // просто затирала бы расталкивание. Ценой идёт лёгкая нежёсткость кости
             // в момент удара: следующий подшаг возвращает её на место, а при 16
             // подшагах это незаметно.
-            if (ct != null && contactsOn) ct.solvePositions(px, py, invMass)
+            //
+            // СПИСОК КОНТАКТОВ СТРОИТСЯ ЗДЕСЬ ЖЕ, а не сразу после integrate, и это
+            // была настоящая дыра в непроницаемости.
+            //
+            // Широкая фаза, DDA и CCD раньше работали по позициям СРАЗУ ПОСЛЕ
+            // integrate, то есть по чисто баллистическому предсказанию. А дальше
+            // solveDrag и projectBone двигали клетки ещё раз, и порой очень далеко:
+            // проекция кости жёсткая, рывок мышью за кость даёт огромное смещение.
+            // Перекрытия, возникшие ИМЕННО от этого движения, в список не попадали —
+            // и solvePositions про них просто не знал. Не «CCD не справился» и не
+            // «частицы мягкие»: пары до решателя не доходили вовсе. Замер на рывке за
+            // кость показывал 23 таких пары и проникновение на 0.58 порога.
+            //
+            // prevX/prevY по-прежнему держат начало подшага, поэтому DDA заметает
+            // весь настоящий путь клетки за подшаг, включая ту часть, которую добавили
+            // перетаскивание и кость. Это ровно то, ради чего свип и делался.
+            if (ct != null && contactsOn) {
+                ct.prepare(px, py, prevX, prevY, vx, vy)
+                ct.solvePositions(px, py, invMass)
+            }
 
             if (cancel) cancelInternalDrift(beforeX, beforeY)
 
             updateVelocities(h)
+            applyDragVelocity(h)
             // Отскок и трение — по скоростям, поэтому только после их восстановления.
             if (ct != null && contactsOn) ct.solveVelocities(vx, vy, invMass, h)
             applyViscosity(h)
@@ -2504,6 +2914,8 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         if (Gdx.input.isKeyJustPressed(Input.Keys.Y)) controls.reset()
         if (Gdx.input.isKeyJustPressed(Input.Keys.I)) interpMode = (interpMode + 1) % 3
         if (Gdx.input.isKeyJustPressed(Input.Keys.K)) contactsOn = !contactsOn
+        if (Gdx.input.isKeyJustPressed(Input.Keys.P)) fireBullet()
+        if (Gdx.input.isKeyJustPressed(Input.Keys.O)) slamOrganisms()
         // ESC сначала закрывает диалог и только потом выходит: иначе из него не выйти
         // иначе как повторным T, а рефлекс у всех один.
         if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
@@ -2692,6 +3104,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             val act = if (m >= 0) muscleActivation[m] else 0.0
             shapes.color = when {
                 triInverted[t] -> INVERTED_FILL
+                triTorn(i0, i1, i2) -> TEAR_FILL
                 boneOf[i0] != -1 && boneOf[i0] == boneOf[i1] && boneOf[i0] == boneOf[i2] ->
                     if (bonesRigid) BONE_FILL else BONE_FILL_OFF
                 m >= 0 -> if (act > 0.002) tmpColor.set(MUSCLE_IDLE).lerp(MUSCLE_FILL, act.toFloat()) else MUSCLE_IDLE
@@ -2730,12 +3143,19 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         // Так видно настоящую геометрию контакта, а не приблизительную метку: если
         // круги налезли друг на друга, значит контакт обязан был сработать.
         // Кости сюда попадают наравне с мягкой тканью: граница у них общая.
-        if (contactsOn) {
+        val ctDraw = contacts
+        if (contactsOn && ctDraw != null) {
             shapes.color = CONTACT_COLOR
             for (e in 0 until boundCount) {
                 for (v in intArrayOf(boundA[e], boundB[e])) {
-                    shapes.circle(fx(v), fy(v), (radius[v] * CONTACT_SCALE).toFloat(), 12)
+                    shapes.circle(fx(v), fy(v), ctDraw.contactRadiusOf(v).toFloat(), 12)
                 }
+            }
+            // Свободные частицы рисуем отдельно: они не лежат ни на одном граничном
+            // ребре, и цикл выше их просто не видит.
+            for (i in 0 until n) {
+                if (!isFree[i]) continue
+                shapes.circle(fx(i), fy(i), ctDraw.contactRadiusOf(i).toFloat(), 12)
             }
         }
 
@@ -2810,8 +3230,9 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         font.color = if (contactsOn) HUD_TEXT else HUD_MUTED
         val ct = contacts
         font.draw(batch, if (contactsOn)
-            "CONTACTS [K] on   now = %d   ccd clamps = %d   link cap = %d   speed cap = %d"
-                .format(ct?.lastContacts ?: 0, ct?.lastToiClamps ?: 0, linkCapHits, speedCapHits)
+            "CONTACTS [K] on   now = %d   ccd clamps = %d   link cap = %d   speed cap = %d   torn = %d"
+                .format(ct?.lastContacts ?: 0, ct?.lastToiClamps ?: 0, linkCapHits, speedCapHits,
+                    if (::linkTorn.isInitialized) linkTorn.count { it } else 0)
         else "K -- self-contact (OFF)", 16f, y); y -= line
 
         font.color = if (bendLevel > 0) HUD_WARN else HUD_MUTED
@@ -2837,7 +3258,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         font.color = HUD_MUTED
         font.draw(batch, "LMB drag   HOVER a muscle edge   1..9 hold a muscle   0 hold ALL   " +
             "G auto-gait" + if (gait) " [ON, period $GAIT_PERIOD]" else "", 16f, y); y -= line
-        font.draw(batch, "SPACE pause   F fast   E bend   R reset   B bones   C view   RMB/MMB pan   wheel zoom",
+        font.draw(batch, "SPACE pause   F fast   E bend   R reset   B bones   C view   P bullet   O slam   RMB/MMB pan   wheel zoom",
             16f, y); y -= line
         if (paused) { font.color = HUD_WARN; font.draw(batch, "PAUSED", 16f, y) }
         batch.end()

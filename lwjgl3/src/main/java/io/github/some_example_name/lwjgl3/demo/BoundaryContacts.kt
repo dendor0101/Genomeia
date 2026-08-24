@@ -54,6 +54,36 @@ class BoundaryContacts(
     private val ccdCore: Double,
     private val restitution: Double,
     private val friction: Double,
+    /** Средняя длина связи — масштаб, в котором задан потолок поправки. */
+    private val meanLink: Double,
+    /** Потолок поправки контакта за подшаг, в долях средней связи. */
+    private val contactMaxStep: Double,
+    /**
+     * РАДИУС КОНТАКТА, взятый из ГЕОМЕТРИИ ГРАНИЦЫ, а не из радиуса клетки.
+     *
+     * Непроницаемость мембраны держится на одном условии: круги двух СОСЕДНИХ
+     * граничных клеток обязаны перекрываться, иначе между ними остаётся щель, и
+     * пройти сквозь неё можно не нарушив ни одного правила. Радиус клетки этого не
+     * гарантирует — он рисовальный и задаётся в редакторе как угодно. В теле с
+     * клетками 0.5 и 0.2 при шаге решётки 0.6 круги мелких по прежней формуле
+     * накрывали 0.48 из 0.6, то есть в мембране была дыра шириной 0.12.
+     *
+     * Поэтому радиус берётся как ПОЛОВИНА САМОГО ДЛИННОГО ГРАНИЧНОГО РЕБРА клетки,
+     * умноженная на небольшой запас. Тогда соседи по контуру перекрываются ВСЕГДА,
+     * какие бы радиусы ни нарисовал игрок.
+     *
+     * Окно для этого числа узкое с обеих сторон, и обе границы измерены:
+     * длиннейшее граничное ребро 0.0364 — ниже него щель; ближайшая НЕСВЯЗАННАЯ
+     * пара граничных клеток 0.0418 — выше него они попадают в вечный ложный
+     * контакт и тело само себя распирает. Запас между ними всего 1.15x.
+     *
+     * ПРИ ПЕРЕНОСЕ: тело растёт, и длина рёбер меняется. Радиус надо пересчитывать
+     * при изменении топологии, а не один раз на старте. И проверять, что запас
+     * 1.15x не съеден: если у какой-то клетки граничное ребро станет длиннее
+     * ближайшей несвязанной пары, кругами на вершинах мембрану уже не сшить, и
+     * придётся сталкиваться с РЕБРОМ как с отрезком.
+     */
+    private val contactRadius: DoubleArray,
 ) {
     // --- сетка ---
     private val grid = HashMap<Long, IntArray>(verts.size * 4)
@@ -85,12 +115,48 @@ class BoundaryContacts(
     /** Диагностика: сколько контактов и сколько раз CCD обрезал подшаг. */
     var lastContacts = 0
         private set
+    var lastToiClamps = 0
+        private set
+
+    /**
+     * Сколько перекрывшихся пар НЕ попало в список контактов.
+     *
+     * Полный перебор, как и maxPenetration, — то есть истина, не зависящая от
+     * широкой фазы. Отличает две совсем разные причины проникновения: если число
+     * ноль, а проникновение есть, значит решатель не справился (мягкость, нехватка
+     * подшагов, потолок поправки). Если число большое — пары до решателя вовсе не
+     * дошли, и виновата широкая фаза или момент, в который её строят.
+     */
+    fun missedOverlaps(px: DoubleArray, py: DoubleArray): Int {
+        val inList = HashSet<Long>(cN * 2)
+        for (c in 0 until cN) {
+            val a = minOf(cI[c], cJ[c]).toLong(); val b = maxOf(cI[c], cJ[c]).toLong()
+            inList.add(a * 1000003L + b)
+        }
+        var missed = 0
+        for (a in verts.indices) {
+            val i = verts[a]
+            for (b in a + 1 until verts.size) {
+                val j = verts[b]
+                if (bonded(i, j)) continue
+                val dx = px[i] - px[j]; val dy = py[i] - py[j]
+                val rr = contactRadius[i] + contactRadius[j]
+                if (dx * dx + dy * dy >= rr * rr) continue
+                val k = minOf(i, j).toLong() * 1000003L + maxOf(i, j).toLong()
+                if (!inList.contains(k)) missed++
+            }
+        }
+        return missed
+    }
 
     /**
      * Наибольшее проникновение среди НЕСВЯЗАННЫХ граничных пар, в долях порога контакта.
      * 0 — никто никого не касается, 1 — пара сошлась в точку. Прямая проверка того,
      * что контакты работают: в нормальной работе должно оставаться заметно меньше 1.
      */
+    /** Радиус контакта клетки — для отрисовки настоящей геометрии, а не рисовального радиуса. */
+    fun contactRadiusOf(i: Int): Double = contactRadius[i]
+
     fun maxPenetration(px: DoubleArray, py: DoubleArray): Double {
         var worst = 0.0
         for (a in verts.indices) {
@@ -99,7 +165,7 @@ class BoundaryContacts(
                 val j = verts[b]
                 if (bonded(i, j)) continue
                 val dx = px[i] - px[j]; val dy = py[i] - py[j]
-                val rr = contactScale * (radius[i] + radius[j])
+                val rr = contactRadius[i] + contactRadius[j]
                 val d2 = dx * dx + dy * dy
                 if (d2 >= rr * rr) continue
                 val pen = 1.0 - sqrt(d2) / rr
@@ -108,8 +174,6 @@ class BoundaryContacts(
         }
         return worst
     }
-    var lastToiClamps = 0
-        private set
 
     private fun key(ix: Int, iy: Int): Long =
         ((ix + BIAS).toLong() shl 32) or ((iy + BIAS).toLong() and 0xFFFFFFFFL)
@@ -216,7 +280,29 @@ class BoundaryContacts(
             val d0x = qx[a] - qx[j]; val d0y = qy[a] - qy[j]
             val dvx = (px[a] - qx[a]) - (px[j] - qx[j])
             val dvy = (py[a] - qy[a]) - (py[j] - qy[j])
-            val rc = ccdCore * (radius[a] + radius[j])
+            val rc = ccdCore * (contactRadius[a] + contactRadius[j])
+
+            // ОБРЕЗКА ТОЛЬКО ПРИ РЕАЛЬНОМ РИСКЕ ПРОСКОКА, и это не оптимизация.
+            //
+            // ccdClamp двигает КАЖДУЮ частицу отдельно, по своему минимальному toi.
+            // Это несимметричная позиционная правка: у пары она сдвигает центр масс,
+            // а updateVelocities делает из сдвига импульс. То есть CCD — источник
+            // паразитного движения, и включается он ровно там, где идут столкновения,
+            // то есть когда тело сложилось само в себя. Именно это и давало блуждание
+            // при загибе.
+            //
+            // При этом он почти всегда НЕ НУЖЕН. Проскочить мимо контакта за подшаг
+            // можно, только если относительное смещение за этот подшаг больше ядра.
+            // На нынешних настройках путь за подшаг равен 4 клеткам за тик, делённым
+            // на 16 подшагов, то есть 0.25 клетки, а контакт срабатывает на 1.0 —
+            // запас четырёхкратный. Условие ниже это и проверяет: пока смещение
+            // меньше ядра, дискретная проверка в конце подшага поймает перекрытие
+            // сама, и обрезка не нужна.
+            //
+            // Проверяется квадрат, чтобы не считать корень на каждую пару.
+            val move2 = dvx * dvx + dvy * dvy
+            if (move2 <= rc * rc) continue
+
             val c = d0x * d0x + d0y * d0y - rc * rc
             if (c <= 0) continue                       // уже внутри ядра — дело решателя
             val aa = dvx * dvx + dvy * dvy
@@ -247,7 +333,7 @@ class BoundaryContacts(
             val i = pairA[p]; val j = pairB[p]
             val dx = px[i] - px[j]; val dy = py[i] - py[j]
             val d2 = dx * dx + dy * dy
-            val rr = contactScale * (radius[i] + radius[j])
+            val rr = contactRadius[i] + contactRadius[j]
             if (d2 >= rr * rr) continue
             val d = sqrt(d2)
             val nx: Double; val ny: Double
@@ -291,7 +377,7 @@ class BoundaryContacts(
             val i = cI[c]; val j = cJ[c]
             val dx = px[i] - px[j]; val dy = py[i] - py[j]
             val d = sqrt(dx * dx + dy * dy)
-            val rr = contactScale * (radius[i] + radius[j])
+            val rr = contactRadius[i] + contactRadius[j]
             val nx: Double; val ny: Double; val cc: Double
             if (d < 1e-12) { nx = cNx[c]; ny = cNy[c]; cc = -rr }
             else { nx = dx / d; ny = dy / d; cc = d - rr }
@@ -299,7 +385,25 @@ class BoundaryContacts(
             if (cc >= 0) continue
             val w = invMass[i] + invMass[j]
             if (w <= 0) continue
-            val dl = -cc / w
+            // ПОТОЛОК ПОПРАВКИ ЗА ПОДШАГ, и он тут не для мягкости.
+            //
+            // Контакт жёсткий: глубокое проникновение он разгребает целиком за один
+            // подшаг. А updateVelocities делает из поправки скорость делением на h,
+            // и h крошечное. При загибе тела в себя так и выходило: замер показал
+            // поправку около пяти клеток за подшаг, то есть скорость под 84 клетки
+            // за тик при обычном рабочем уровне около трёх.
+            //
+            // Раньше этот выброс срезал потолок скорости — но он масштабирует КАЖДУЮ
+            // частицу отдельно, импульс не сохраняет, и потому сам превращался в
+            // источник блуждания (243 срабатывания за один загиб). Здесь предел
+            // ставится на ПОПРАВКУ и делится по паре в тех же долях, что и сама
+            // поправка, поэтому сумма импульсов пары остаётся нулевой.
+            //
+            // Проникновение при этом не игнорируется, а разбирается за несколько
+            // подшагов — их 16, и контакт держится не один подшаг.
+            var dl = -cc / w
+            val cap = contactMaxStep * meanLink / w
+            if (dl > cap) dl = cap
             cLam[c] += dl
             px[i] += invMass[i] * dl * nx; py[i] += invMass[i] * dl * ny
             px[j] -= invMass[j] * dl * nx; py[j] -= invMass[j] * dl * ny
@@ -358,6 +462,16 @@ class BoundaryContacts(
         private const val DDA_MAX = 4096
 
         /**
+         * Запас на сшивание мембраны. Окно у этого числа узкое с обеих сторон:
+         * ниже единицы круги соседей по контуру перестают перекрываться и в
+         * мембране появляется щель, выше 1.15 несвязанные граничные клетки
+         * попадают в вечный ложный контакт и тело распирает само себя.
+         * Замер на теле 947 клеток: длиннейшее граничное ребро 0.0364,
+         * ближайшая несвязанная граничная пара 0.0418.
+         */
+        private const val CONTACT_SEAL = 1.05
+
+        /**
          * Строит CSR-смежность и список граничных вершин из рёбер границы и связей.
          *
          * Смежность берётся по ВСЕМ связям, а не только граничным: связанные клетки не
@@ -369,6 +483,11 @@ class BoundaryContacts(
             boundA: IntArray, boundB: IntArray, boundCount: Int,
             radius: DoubleArray,
             contactScale: Double, ccdCore: Double, restitution: Double, friction: Double,
+            /** Позиции покоя — из них берутся длины граничных рёбер. */
+            restX: FloatArray, restY: FloatArray,
+            meanLink: Double, contactMaxStep: Double,
+            /** Клетки без единой связи в ПОЛНОМ графе связей. */
+            isolated: BooleanArray? = null,
         ): BoundaryContacts {
             val deg = IntArray(n)
             for (c in 0 until conCount) { deg[conA[c]]++; deg[conB[c]]++ }
@@ -383,17 +502,45 @@ class BoundaryContacts(
 
             val onBound = BooleanArray(n)
             for (e in 0 until boundCount) { onBound[boundA[e]] = true; onBound[boundB[e]] = true }
+            // Одиночные клетки тоже участвуют в контактах, хотя ни на каком контуре
+            // не лежат: связей у них нет вовсе, поэтому граничным ребром их не поймать.
+            //
+            // Признак приходит СНАРУЖИ и не выводится из смежности выше. Смежность
+            // построена по conA/conB, а там намеренно НЕТ внутрикостных связей, и
+            // «степень ноль» пометила бы всю внутренность костей — они полезли бы в
+            // контакты со своим же телом. На этом уже спотыкались, когда по conA/conB
+            // считали связные компоненты и получили 126 организмов вместо двух.
+            if (isolated != null) for (i in 0 until n) if (isolated[i]) onBound[i] = true
             val verts = (0 until n).filter { onBound[it] }.toIntArray()
 
             // Сторона ячейки — наибольший диаметр контакта. Меньше нельзя: пара из
             // соседних ячеек тогда могла бы не попасть в перебор 3x3.
             var maxR = 0.0
-            for (v in verts) if (radius[v] > maxR) maxR = radius[v]
-            val cell = maxOf(2.0 * maxR * contactScale, 1e-6)
+            // Радиус контакта — половина самого длинного граничного ребра клетки,
+            // с запасом. См. contactRadius: круги соседей по контуру обязаны
+            // перекрываться, иначе в мембране остаётся щель.
+            val contactRadius = DoubleArray(n)
+            for (e in 0 until boundCount) {
+                val a = boundA[e]; val b = boundB[e]
+                val dx = (restX[a] - restX[b]).toDouble()
+                val dy = (restY[a] - restY[b]).toDouble()
+                val half = 0.5 * Math.sqrt(dx * dx + dy * dy) * CONTACT_SEAL
+                if (half > contactRadius[a]) contactRadius[a] = half
+                if (half > contactRadius[b]) contactRadius[b] = half
+            }
+            // Одиночные клетки граничных рёбер не имеют вовсе — им остаётся
+            // собственный радиус: они не мембрана, а пробники.
+            if (isolated != null) for (i in 0 until n) {
+                if (isolated[i]) contactRadius[i] = radius[i] * contactScale
+            }
+
+            for (v in verts) if (contactRadius[v] > maxR) maxR = contactRadius[v]
+            val cell = maxOf(2.0 * maxR, 1e-6)
 
             return BoundaryContacts(
                 n, verts, start, adj, radius, cell,
-                contactScale, ccdCore, restitution, friction,
+                contactScale, ccdCore, restitution, friction, meanLink, contactMaxStep,
+                contactRadius,
             )
         }
     }

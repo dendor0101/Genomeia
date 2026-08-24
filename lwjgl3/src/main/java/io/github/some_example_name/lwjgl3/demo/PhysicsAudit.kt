@@ -129,6 +129,7 @@ object Probe {
     fun solveAreas(h: Double) { m("solveAreas", Double::class.java).invoke(demo, h) }
     fun projectBones() { for (b in rigidBones.indices) m("projectBone", Int::class.java).invoke(demo, b) }
     fun updateVelocities(h: Double) { m("updateVelocities", Double::class.java).invoke(demo, h) }
+    fun applyDragVelocity(h: Double) { m("applyDragVelocity", Double::class.java).invoke(demo, h) }
     fun applyViscosity(h: Double) { m("applyViscosity", Double::class.java).invoke(demo, h) }
     fun applyNormalDrag(h: Double) { m("applyNormalDrag", Double::class.java).invoke(demo, h) }
     fun applyRestitution() { m("applyRestitution").invoke(demo) }
@@ -174,6 +175,7 @@ object Probe {
             solveAreas(h)
             projectBones()
             updateVelocities(h)
+            applyDragVelocity(h)
             applyViscosity(h)
             applyRestitution()
             applyMediumDrag(h)
@@ -181,37 +183,165 @@ object Probe {
     }
 
     // --- измерители ---
-    fun comX(): Double { var s = 0.0; for (i in 0 until n) s += px[i]; return s / n }
-    fun comY(): Double { var s = 0.0; for (i in 0 until n) s += py[i]; return s / n }
-    fun pX(): Double { var s = 0.0; for (i in 0 until n) s += vx[i]; return s }
-    fun pY(): Double { var s = 0.0; for (i in 0 until n) s += vy[i]; return s }
+    /**
+     * Счётчики АВАРИЙНЫХ механизмов. Оба чинят состояние, правя частицы ПО ОДНОЙ,
+     * то есть НЕ сохраняют импульс: обрезка CCD тянет частицу назад по её
+     * собственному toi, потолок скорости масштабирует её скорость отдельно от
+     * соседей. Пока они молчат — это страховка; как только начали срабатывать
+     * регулярно, они превращаются в источник блуждания. Поэтому их видно в
+     * проверке, а не только в HUD.
+     */
+    fun speedCapHits(): Int {
+        val f = RealBodyDemo::class.java.getDeclaredField("speedCapHits").apply { isAccessible = true }
+        return f.getInt(demo)
+    }
+
+    /** Объект самоконтакта демо — для полного перебора проникновений. */
+    /**
+     * НАСТОЯЩИЙ тракт перетаскивания мышью: dragId плюс цель курсора.
+     *
+     * Держать частицу нулевой обратной массой для проверки непроницаемости НЕЛЬЗЯ:
+     * бесконечную массу не остановит ничто, она обязана оказаться внутри чужого тела,
+     * и тест мерил бы собственную жестокость, а не физику. Настоящее перетаскивание
+     * податливое и ограничено MAX_DRAG_SPEED — именно оно и есть сценарий игрока.
+     */
+    fun dragTo(id: Int, x: Double, y: Double) {
+        setField("dragId", id)
+        setField("mouseX", x)
+        setField("mouseY", y)
+    }
+
+    fun dragRelease() { setField("dragId", -1) }
+
+    /** Свободная ли это клетка — без единой связи. */
+    /** Сколько связей отмечено как «должна была порваться». */
+    fun organismSize(o: Int): Int {
+        val f = RealBodyDemo::class.java.getDeclaredField("organismSize").apply { isAccessible = true }
+        return (f.get(demo) as IntArray)[o]
+    }
+
+    fun tornCount(): Int {
+        val f = RealBodyDemo::class.java.getDeclaredField("linkTorn").apply { isAccessible = true }
+        val a = f.get(demo) as BooleanArray? ?: return 0
+        return a.count { it }
+    }
+
+    fun resetCounters() {
+        RealBodyDemo::class.java.getDeclaredField("speedCapHits").apply { isAccessible = true }.setInt(demo, 0)
+        RealBodyDemo::class.java.getDeclaredField("peakSpeed2").apply { isAccessible = true }.setDouble(demo, 0.0)
+        val f = RealBodyDemo::class.java.getDeclaredField("linkTorn").apply { isAccessible = true }
+        (f.get(demo) as BooleanArray?)?.fill(false)
+    }
+
+    fun isFree(i: Int): Boolean {
+        val f = RealBodyDemo::class.java.getDeclaredField("isFree").apply { isAccessible = true }
+        @Suppress("UNCHECKED_CAST")
+        return (f.get(demo) as BooleanArray)[i]
+    }
+
+    fun contactsObj(): BoundaryContacts? {
+        val cf = RealBodyDemo::class.java.getDeclaredField("contacts").apply { isAccessible = true }
+        return cf.get(demo) as BoundaryContacts?
+    }
+
+    fun toiClamps(): Int {
+        val cf = RealBodyDemo::class.java.getDeclaredField("contacts").apply { isAccessible = true }
+        val ct = cf.get(demo) ?: return 0
+        val f = ct.javaClass.getDeclaredField("lastToiClamps").apply { isAccessible = true }
+        return f.getInt(ct)
+    }
+
+    fun peakSpeedCellsPerTick(): Double {
+        val f = RealBodyDemo::class.java.getDeclaredField("peakSpeed2").apply { isAccessible = true }
+        val v2 = f.getDouble(demo)
+        return Math.sqrt(v2) * const("DT") / body.meanLinkLength
+    }
+
+    /**
+     * ВСЕ СВОДНЫЕ ВЕЛИЧИНЫ ВЗВЕШЕНЫ ПО МАССЕ, и это не педантизм.
+     *
+     * Раньше здесь везде стояли простые суммы: центр масс считался как центр
+     * ТЯЖЕСТИ ТОЧЕК, импульс — как сумма скоростей. Пока у всех клеток был один
+     * радиус, массы были равны, и разница пряталась в общем множителе — проверки
+     * проходили с остатком 1e-12 и выглядели надёжными.
+     *
+     * Стоило появиться телу с двумя радиусами (0.5 и 0.2, то есть массы отличаются
+     * в шесть с лишним раз), и всё посыпалось: XPBD сохраняет сумму m*dx, а сумму
+     * одних только dx не сохраняет и не должен. Проверка «стадия не двигает центр
+     * масс» стала ловить ПРАВИЛЬНУЮ физику как ошибку и выдавала остаток 1.389
+     * вместо 1e-12.
+     *
+     * Урок общий: тест, верный лишь при равных массах, молча становится ложным,
+     * как только тела перестают быть однородными. В движке клетки разнотипные с
+     * самого начала, так что взвешивать надо было сразу.
+     *
+     * Масса берётся как 1/invMass. Закреплённые клетки (invMass = 0, бесконечная
+     * масса) в суммы не входят вовсе: иначе один пин утянул бы центр масс на себя
+     * и обессмыслил любой замер.
+     */
+    private inline fun massWeighted(acc: (Int, Double) -> Unit): Double {
+        var total = 0.0
+        for (i in 0 until n) {
+            val w = invMass[i]
+            if (w <= 0.0) continue
+            val m = 1.0 / w
+            total += m
+            acc(i, m)
+        }
+        return total
+    }
+
+    /** Суммарная масса подвижных клеток. */
+    fun totalMass(): Double = massWeighted { _, _ -> }
+
+    /**
+     * Скорость ЦЕНТРА МАСС в связях за секунду.
+     *
+     * Нормировать |P| НА ЧИСЛО ЧАСТИЦ было неверно: импульс это сумма m*v, и деление
+     * на количество оставляет в числе единицу массы, которая зависит от радиусов
+     * клеток в конкретном теле. Порог 1e-5, подобранный на теле из одинаковых клеток
+     * радиуса 0.5, на теле со смешанными радиусами означает уже совсем другую
+     * скорость. Деление на суммарную массу даёт скорость, а деление на длину связи
+     * делает её независимой ещё и от масштаба тела.
+     */
+    fun comSpeed(): Double {
+        val m = totalMass()
+        if (m <= 0.0) return 0.0
+        val vx0 = pX() / m; val vy0 = pY() / m
+        return sqrt(vx0 * vx0 + vy0 * vy0) / body.meanLinkLength
+    }
+
+    fun comX(): Double { var s = 0.0; val m = massWeighted { i, mi -> s += mi * px[i] }; return s / m }
+    fun comY(): Double { var s = 0.0; val m = massWeighted { i, mi -> s += mi * py[i] }; return s / m }
+    fun pX(): Double { var s = 0.0; massWeighted { i, mi -> s += mi * vx[i] }; return s }
+    fun pY(): Double { var s = 0.0; massWeighted { i, mi -> s += mi * vy[i] }; return s }
 
     /** Момент импульса относительно центра масс, за вычетом поступательного движения. */
     fun angMom(): Double {
         val cx = comX(); val cy = comY()
-        var vxm = 0.0; var vym = 0.0
-        for (i in 0 until n) { vxm += vx[i]; vym += vy[i] }
-        vxm /= n; vym /= n
+        var sx = 0.0; var sy = 0.0
+        val mt = massWeighted { i, mi -> sx += mi * vx[i]; sy += mi * vy[i] }
+        val vxm = sx / mt; val vym = sy / mt
         var l = 0.0
-        for (i in 0 until n) {
+        massWeighted { i, mi ->
             val rx = px[i] - cx; val ry = py[i] - cy
-            l += rx * (vy[i] - vym) - ry * (vx[i] - vxm)
+            l += mi * (rx * (vy[i] - vym) - ry * (vx[i] - vxm))
         }
         return l
     }
 
     fun kinetic(): Double {
         var e = 0.0
-        for (i in 0 until n) e += 0.5 * (vx[i].toDouble() * vx[i] + vy[i].toDouble() * vy[i])
+        massWeighted { i, mi -> e += 0.5 * mi * (vx[i] * vx[i] + vy[i] * vy[i]) }
         return e
     }
 
     fun inertia(): Double {
         val cx = comX(); val cy = comY()
         var j = 0.0
-        for (i in 0 until n) {
+        massWeighted { i, mi ->
             val rx = px[i] - cx; val ry = py[i] - cy
-            j += rx * rx + ry * ry
+            j += mi * (rx * rx + ry * ry)
         }
         return j
     }
@@ -225,15 +355,15 @@ object Probe {
     /** Линейный и угловой позиционный импульс стадии: сумма dx и сумма r x dx. */
     fun positionalImpulse(before: DoubleArray): DoubleArray {
         var cx = 0.0; var cy = 0.0
-        for (i in 0 until n) { cx += before[2 * i]; cy += before[2 * i + 1] }
-        cx /= n; cy /= n
+        val mt = massWeighted { i, mi -> cx += mi * before[2 * i]; cy += mi * before[2 * i + 1] }
+        cx /= mt; cy /= mt
         var sx = 0.0; var sy = 0.0; var l = 0.0
-        for (i in 0 until n) {
+        massWeighted { i, mi ->
             val dx = px[i] - before[2 * i]
             val dy = py[i] - before[2 * i + 1]
-            sx += dx; sy += dy
+            sx += mi * dx; sy += mi * dy
             val rx = before[2 * i] - cx; val ry = before[2 * i + 1] - cy
-            l += rx * dy - ry * dx
+            l += mi * (rx * dy - ry * dx)
         }
         return doubleArrayOf(sx, sy, l)
     }

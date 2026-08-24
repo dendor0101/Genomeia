@@ -1,11 +1,65 @@
 package io.github.some_example_name.old.features.worldeditor
 
+import io.github.some_example_name.old.core.log.ActionLog
+
+/** Что игрок хочет сделать в редакторе мира. Один тип на все действия экрана. */
+sealed interface WorldEditorIntent {
+    val name: String
+    val detail: String get() = ""
+
+    data object NewSeed : WorldEditorIntent {
+        override val name get() = "NewSeed"
+    }
+
+    data class SetSeed(val seed: String) : WorldEditorIntent {
+        override val name get() = "SetSeed"
+        override val detail get() = seed
+    }
+
+    data class SetDayNight(val value: Int) : WorldEditorIntent {
+        override val name get() = "SetDayNight"
+        override val detail get() = value.toString()
+    }
+
+    data class SetSmoothing(val value: Int) : WorldEditorIntent {
+        override val name get() = "SetSmoothing"
+        override val detail get() = value.toString()
+    }
+
+    data class SetBrushSize(val value: Int) : WorldEditorIntent {
+        override val name get() = "SetBrushSize"
+        override val detail get() = value.toString()
+    }
+
+    data class SetErasing(val value: Boolean) : WorldEditorIntent {
+        override val name get() = "SetErasing"
+        override val detail get() = value.toString()
+    }
+
+    data class SetCircleBrush(val value: Boolean) : WorldEditorIntent {
+        override val name get() = "SetCircleBrush"
+        override val detail get() = value.toString()
+    }
+
+    data class Paint(val gridX: Int, val gridY: Int) : WorldEditorIntent {
+        override val name get() = "Paint"
+        override val detail get() = "$gridX,$gridY"
+    }
+
+    data object ClearMap : WorldEditorIntent {
+        override val name get() = "ClearMap"
+    }
+}
+
 /**
  * Вся логика редактора мира: генерация карты, кисть, состояние настроек.
  *
+ * Единственный вход — [handle]. Экран не трогает поля напрямую, поэтому любое действие
+ * игрока проходит ровно через одну строку и там же попадает в журнал: краш в редакторе
+ * воспроизводится по логу, а не по пересказу.
+ *
  * Ничего не знает ни про scene2d, ни про Pixmap/Texture — оперирует только
- * `map: Array<BooleanArray>`. Благодаря этому её можно дёргать из тестов и из
- * будущего воспроизведения записанных действий игрока, без окна и GL-контекста.
+ * `map: Array<BooleanArray>`, поэтому её можно дёргать из тестов без окна и GL-контекста.
  */
 class WorldEditorViewModel(
     private val worldGenerator: WorldGenerator = WorldGenerator(),
@@ -24,6 +78,7 @@ class WorldEditorViewModel(
         const val BRUSH_SIZE_MAX = 20f
 
         private const val SEED_LENGTH = 8
+        private const val LOG_SOURCE = "WorldEditor"
     }
 
     var seed: String = randomSeed()
@@ -39,8 +94,16 @@ class WorldEditorViewModel(
     val smoothing: Int get() = WorldGenerator.GENERATOR_INTERPOLATE
 
     var brushSize: Int = 9
+        private set
+
     var isErasing: Boolean = false
+        private set
+
     var useCircleBrush: Boolean = true
+        private set
+
+    /** Правки поверх сгенерированной карты — то, из чего собирается [WorldSpec]. */
+    private val edits = mutableListOf<WorldEdit>()
 
     var map: Array<BooleanArray> = generate()
         private set
@@ -53,68 +116,79 @@ class WorldEditorViewModel(
     var mapVersion: Int = 0
         private set
 
-    fun newSeed() {
-        seed = randomSeed()
-        regenerate()
-    }
+    fun handle(intent: WorldEditorIntent) {
+        ActionLog.record(LOG_SOURCE, intent.name, intent.detail)
 
-    /** Возвращает true, если сид действительно поменялся (и карта перегенерировалась). */
-    fun setSeed(value: String): Boolean {
-        if (value == seed) return false
-        seed = value
-        regenerate()
-        return true
-    }
+        when (intent) {
+            is WorldEditorIntent.NewSeed -> {
+                seed = randomSeed()
+                regenerate()
+            }
 
-    fun setDayNight(value: Int) {
-        if (value == dayNight) return
-        WorldGenerator.GENERATOR_DAY_NIGHT = value
-        regenerate()
-    }
-
-    fun setSmoothing(value: Int) {
-        if (value == smoothing) return
-        WorldGenerator.GENERATOR_INTERPOLATE = value
-        regenerate()
-    }
-
-    fun regenerate() {
-        map = generate()
-        mapVersion++
-    }
-
-    fun clearMap() {
-        for (y in 0 until gridHeight) {
-            map[y].fill(false)
-        }
-        mapVersion++
-    }
-
-    /**
-     * Мазок кистью в клетке (gridX, gridY). Начало координат — левый нижний угол карты.
-     */
-    fun paint(gridX: Int, gridY: Int) {
-        val value = !isErasing
-        val radius = brushSize
-        val radiusSquared = radius * radius
-        var changed = false
-
-        for (dy in -radius..radius) {
-            val y = gridY + dy
-            if (y !in 0 until gridHeight) continue
-            val row = map[y]
-            for (dx in -radius..radius) {
-                if (useCircleBrush && dx * dx + dy * dy > radiusSquared) continue
-                val x = gridX + dx
-                if (x !in 0 until gridWidth) continue
-                if (row[x] != value) {
-                    row[x] = value
-                    changed = true
+            is WorldEditorIntent.SetSeed -> {
+                if (intent.seed != seed) {
+                    seed = intent.seed
+                    regenerate()
                 }
             }
-        }
 
-        if (changed) mapVersion++
+            is WorldEditorIntent.SetDayNight -> {
+                if (intent.value != dayNight) {
+                    WorldGenerator.GENERATOR_DAY_NIGHT = intent.value
+                    regenerate()
+                }
+            }
+
+            is WorldEditorIntent.SetSmoothing -> {
+                if (intent.value != smoothing) {
+                    WorldGenerator.GENERATOR_INTERPOLATE = intent.value
+                    regenerate()
+                }
+            }
+
+            is WorldEditorIntent.SetBrushSize -> brushSize = intent.value
+
+            is WorldEditorIntent.SetErasing -> isErasing = intent.value
+
+            is WorldEditorIntent.SetCircleBrush -> useCircleBrush = intent.value
+
+            is WorldEditorIntent.Paint -> applyEdit(
+                WorldEdit.Stroke(
+                    gridX = intent.gridX,
+                    gridY = intent.gridY,
+                    brushSize = brushSize,
+                    erase = isErasing,
+                    circle = useCircleBrush
+                )
+            )
+
+            is WorldEditorIntent.ClearMap -> applyEdit(WorldEdit.Clear)
+        }
+    }
+
+    /** Рецепт текущего мира: по нему карта восстанавливается побайтово. */
+    fun toSpec(): WorldSpec = WorldSpec(
+        gridWidth = gridWidth,
+        gridHeight = gridHeight,
+        seed = seed,
+        dayNight = dayNight,
+        smoothing = smoothing,
+        edits = edits.toList()
+    )
+
+    private fun applyEdit(edit: WorldEdit) {
+        edits += edit
+        if (applyWorldEdit(map, edit, gridWidth, gridHeight)) {
+            mapVersion++
+        }
+    }
+
+    private fun regenerate() {
+        // Новая генерация обнуляет карту целиком, значит прошлые правки к ней уже
+        // неприменимы — рецепт должен описывать ровно то, что игрок видит сейчас.
+        edits.clear()
+        map = generate()
+        mapVersion++
     }
 
     private fun generate(): Array<BooleanArray> =

@@ -148,7 +148,7 @@ class WorldEditorScreen : VisDslScreen(background = Color(0.1f, 0.1f, 0.1f, 1f))
             step = 1f,
             value = viewModel.dayNight.toFloat(),
             onValueChange = { value ->
-                viewModel.setDayNight(value.toInt())
+                viewModel.handle(WorldEditorIntent.SetDayNight(value.toInt()))
                 dayNightLabel.setText(dayNightText())
             }
         ) { growX().padBottom(GAP.dp()) }
@@ -162,7 +162,7 @@ class WorldEditorScreen : VisDslScreen(background = Color(0.1f, 0.1f, 0.1f, 1f))
             step = 1f,
             value = viewModel.smoothing.toFloat(),
             onValueChange = { value ->
-                viewModel.setSmoothing(value.toInt())
+                viewModel.handle(WorldEditorIntent.SetSmoothing(value.toInt()))
                 smoothingLabel.setText(smoothingText())
             }
         ) { growX().padBottom(GAP.dp()) }
@@ -176,7 +176,7 @@ class WorldEditorScreen : VisDslScreen(background = Color(0.1f, 0.1f, 0.1f, 1f))
             step = 1f,
             value = viewModel.brushSize.toFloat(),
             onValueChange = { value ->
-                viewModel.brushSize = value.toInt()
+                viewModel.handle(WorldEditorIntent.SetBrushSize(value.toInt()))
                 brushSizeLabel.setText(brushSizeText())
             }
         ) { growX().padBottom(GAP.dp()) }
@@ -185,14 +185,14 @@ class WorldEditorScreen : VisDslScreen(background = Color(0.1f, 0.1f, 0.1f, 1f))
         visToggleButton(
             text = bundle.get("checkbox.eraseMode"),
             checked = viewModel.isErasing,
-            onCheckedChange = { viewModel.isErasing = it }
+            onCheckedChange = { viewModel.handle(WorldEditorIntent.SetErasing(it)) }
         ) { growX() }
         row()
 
         visToggleButton(
             text = bundle.get("checkbox.circleBrush"),
             checked = viewModel.useCircleBrush,
-            onCheckedChange = { viewModel.useCircleBrush = it }
+            onCheckedChange = { viewModel.handle(WorldEditorIntent.SetCircleBrush(it)) }
         ) { growX() }
         row()
     }
@@ -204,7 +204,7 @@ class WorldEditorScreen : VisDslScreen(background = Color(0.1f, 0.1f, 0.1f, 1f))
             visTextButton(
                 text = bundle.get("button.newSeed"),
                 onClick = {
-                    viewModel.newSeed()
+                    viewModel.handle(WorldEditorIntent.NewSeed)
                     // Присвоение дёрнет onTextChange, но setSeed на тот же сид — это no-op.
                     seedField?.text = viewModel.seed
                 }
@@ -213,7 +213,7 @@ class WorldEditorScreen : VisDslScreen(background = Color(0.1f, 0.1f, 0.1f, 1f))
             seedField = visTextField(
                 text = viewModel.seed,
                 hint = bundle.get("textfield.enterSeed"),
-                onTextChange = { viewModel.setSeed(it) }
+                onTextChange = { viewModel.handle(WorldEditorIntent.SetSeed(it)) }
             ) {
                 // Своя ширина у поля маленькая, а растёт оно за счёт growX. Иначе желаемая
                 // ширина VisTextField задирала бы желаемую ширину всей панели, и на узком
@@ -230,14 +230,14 @@ class WorldEditorScreen : VisDslScreen(background = Color(0.1f, 0.1f, 0.1f, 1f))
         visTable({ growX() }) {
             visTextButton(
                 text = bundle.get("button.clearMap"),
-                onClick = { viewModel.clearMap() }
+                onClick = { viewModel.handle(WorldEditorIntent.ClearMap) }
             ) { left() }
 
             spacer()
 
             visTextButton(
                 text = bundle.get("button.createNewWorld"),
-                onClick = { navigation.performCommand(GoSimulation(viewModel.map, null)) }
+                onClick = { navigation.performCommand(GoSimulation(viewModel.toSpec(), null)) }
             ) { right() }
         }
     }

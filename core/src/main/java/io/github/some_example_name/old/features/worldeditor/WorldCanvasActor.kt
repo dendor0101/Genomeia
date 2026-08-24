@@ -107,7 +107,7 @@ class WorldCanvasActor(
         val gridY = (insideY / mapHeight * viewModel.gridHeight).toInt()
             .coerceIn(0, viewModel.gridHeight - 1)
 
-        viewModel.paint(gridX, gridY)
+        viewModel.handle(WorldEditorIntent.Paint(gridX, gridY))
     }
 
     private fun drawBorder(batch: Batch, mapX: Float, mapY: Float) {

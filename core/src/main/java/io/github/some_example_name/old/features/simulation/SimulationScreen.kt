@@ -16,6 +16,9 @@ import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.badlogic.gdx.utils.viewport.ScreenViewport
+import io.github.some_example_name.old.commands.GoGenomeEditor
+import io.github.some_example_name.old.commands.GoMenu
+import io.github.some_example_name.old.commands.GoReplace
 import io.github.some_example_name.old.commands.PlayerCommand
 import io.github.some_example_name.old.core.DEBUG_CHECKS
 import io.github.some_example_name.old.core.DIGameGlobalContainer
@@ -26,10 +29,12 @@ import io.github.some_example_name.old.core.ui.makeStyledButton
 import io.github.some_example_name.old.core.ui.w
 import io.github.some_example_name.old.features.editor.GenomeEditorScreen
 import io.github.some_example_name.old.features.menu.MenuScreen
+import io.github.some_example_name.old.features.worldeditor.WorldSpec
 import io.github.some_example_name.old.systems.render.doesUsePostProcess
 
 class SimulationScreen(
-    val map: Array<BooleanArray>?,
+    /** Рецепт мира из редактора. null — мир не из редактора (тест генома). */
+    val world: WorldSpec?,
     val genomeName: String?
 ) : Screen {
 
@@ -135,7 +140,7 @@ class SimulationScreen(
             camera = camera
         )
 
-        DISimulationContainer.worldTerrainManager.map = map
+        DISimulationContainer.worldTerrainManager.map = world?.buildMap()
         simulationSystem.initMap()
 
         // Поток симуляции стартует ТОЛЬКО после того, как мир создан.
@@ -670,13 +675,16 @@ class SimulationScreen(
 
         menuButton.addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                DIGameGlobalContainer.game.screen.dispose()
-                if (genomeName == null)
-                    DIGameGlobalContainer.game.screen = MenuScreen()
-                else {
-                    DIGameGlobalContainer.game.screen =
-                        GenomeEditorScreen(genomeName.replace(".json", ""))
-                }
+                // Через менеджер, а не game.screen = ...: иначе переход не виден журналу,
+                // а стек остаётся от прошлого маршрута — «Назад» в меню уводило бы туда,
+                // откуда игрок уже вышел.
+                DIGameGlobalContainer.navigationCommandsManager.performCommand(
+                    if (genomeName == null) {
+                        GoReplace(GoMenu)
+                    } else {
+                        GoReplace(GoGenomeEditor(genomeName.replace(".json", "")))
+                    }
+                )
             }
         })
 
@@ -691,8 +699,9 @@ class SimulationScreen(
                     select = DIGameGlobalContainer.bundle.get("button.select"),
                     import = DIGameGlobalContainer.bundle.get("button.import"),
                     onNew = {
-                        DIGameGlobalContainer.game.screen.dispose()
-                        DIGameGlobalContainer.game.screen = GenomeEditorScreen(genomeName = null)
+                        DIGameGlobalContainer.navigationCommandsManager.performCommand(
+                            GoReplace(GoGenomeEditor(null))
+                        )
                     },
                     onNext = { selectedFileName ->
                         val index = genomeNames.indexOf(selectedFileName)

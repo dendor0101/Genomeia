@@ -7,6 +7,7 @@ import io.github.some_example_name.old.cells.Cell
 import io.github.some_example_name.old.cells.Zygote
 import io.github.some_example_name.old.core.DISimulationContainer.threadCount
 import io.github.some_example_name.old.core.DISimulationContainer.worldCommandsManager
+import io.github.some_example_name.old.core.log.ActionLog
 import io.github.some_example_name.old.core.utils.collectParticles
 import io.github.some_example_name.old.core.utils.distanceTo
 import io.github.some_example_name.old.entities.CellEntity
@@ -42,6 +43,10 @@ class UserCommandManager(
     @Volatile var isDragging = false
 
     fun push(cmd: PlayerCommand) {
+        // Единственный вход для действий игрока в мире — значит и единственное место,
+        // где их надо журналировать. Drag сыпется на каждое движение мыши, но подряд
+        // идущие однотипные записи ActionLog схлопывает в одну со счётчиком.
+        ActionLog.record(LOG_SOURCE, cmd.name, cmd.detail)
         commandQueue.offer(cmd)
     }
 
@@ -225,6 +230,10 @@ class UserCommandManager(
                 vy[grabbedParticleIndex] = vy[grabbedParticleIndex] * grabDrag + (tapY - y[grabbedParticleIndex]) * 0.02f
             }
         }
+    }
+
+    private companion object {
+        const val LOG_SOURCE = "Player"
     }
 
     override fun dispose() {

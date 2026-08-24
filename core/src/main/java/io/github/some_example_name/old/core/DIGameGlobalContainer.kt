@@ -11,6 +11,7 @@ import com.kotcrab.vis.ui.VisUI
 import com.kotcrab.vis.ui.widget.VisTextButton
 import io.github.some_example_name.old.cells.base.CellListBuilder
 import io.github.some_example_name.old.commands.NavigationCommandsManager
+import io.github.some_example_name.old.core.log.ActionLog
 import io.github.some_example_name.old.core.DISimulationContainer.gridHeight
 import io.github.some_example_name.old.core.DISimulationContainer.heightMultiplier
 import io.github.some_example_name.old.systems.genomics.Morphogenesis
@@ -109,5 +110,20 @@ object DIGameGlobalContainer {
         }
     }
 
-    val navigationCommandsManager = NavigationCommandsManager()
+    val navigationCommandsManager = NavigationCommandsManager().apply {
+        // Побочный канал навигации. Переходы не схлопываются: два GoBack подряд — это два
+        // разных перехода, и назначение у них разное, а именно оно и делает запись
+        // проверяемой при воспроизведении.
+        onCommand = { command, destination ->
+            // Стрелку дописываем только когда команда сама не называет, куда ведёт:
+            // у GoWorldEditor назначение очевидно, а вот GoBack без него бесполезен.
+            val namesItsDestination = destination == command.name || destination == command.detail
+            ActionLog.record(
+                source = "Navigation",
+                kind = command.name,
+                detail = if (namesItsDestination) command.detail else "${command.detail} -> $destination".trim(),
+                coalesce = false
+            )
+        }
+    }
 }

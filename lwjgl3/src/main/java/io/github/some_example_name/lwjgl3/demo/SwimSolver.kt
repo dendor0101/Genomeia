@@ -49,6 +49,9 @@ class Topology private constructor(
     val organismCount: Int,
     val organismSize: IntArray,
 
+    /** Клетки без единой связи — свободные частицы, см. FREE_PARTICLES в демо. */
+    val isFree: BooleanArray,
+
     /**
      * ИЗГИБ ГРАНИЧНОГО КОНТУРА: пары «через одну» вдоль границы плюс длина покоя.
      *
@@ -136,6 +139,7 @@ class Topology private constructor(
                 muscleCount = body.muscleClusters.size,
                 meanLinkLength = body.meanLinkLength,
                 organismOf = f("organismOf"),
+                isFree = f("isFree"),
                 organismCount = f("organismCount"),
                 organismSize = f("organismSize"),
                 bendA = ba.toIntArray(), bendB = bb.toIntArray(),
@@ -264,10 +268,11 @@ internal object DemoConst {
     val BONE_MAX_STEP = d("BONE_MAX_STEP")
     val CONTACT_SCALE = d("CONTACT_SCALE")
     val CCD_CORE = d("CCD_CORE")
+    val CONTACT_MAX_STEP = d("CONTACT_MAX_STEP")
     val CONTACT_RESTITUTION = d("CONTACT_RESTITUTION")
     val CONTACT_FRICTION = d("CONTACT_FRICTION")
     val MAX_SPEED_CELLS_PER_TICK = d("MAX_SPEED_CELLS_PER_TICK")
-    val LINK_MAX_LENGTH = d("LINK_MAX_LENGTH")
+    val LINK_MAX_STRETCH = d("LINK_MAX_STRETCH")
     val CONTACTS_ON = RealBodyDemo::class.java.getDeclaredField("CONTACTS_ON")
         .apply { isAccessible = true }.getBoolean(null)
 }
@@ -325,10 +330,11 @@ data class SwimParams(
     val contactsOn: Boolean = DemoConst.CONTACTS_ON,
     val contactScale: Double = DemoConst.CONTACT_SCALE,
     val ccdCore: Double = DemoConst.CCD_CORE,
+    val contactMaxStep: Double = DemoConst.CONTACT_MAX_STEP,
     val contactRestitution: Double = DemoConst.CONTACT_RESTITUTION,
     val contactFriction: Double = DemoConst.CONTACT_FRICTION,
     val maxSpeedCellsPerTick: Double = DemoConst.MAX_SPEED_CELLS_PER_TICK,
-    val linkMaxLength: Double = DemoConst.LINK_MAX_LENGTH,
+    val linkMaxStretch: Double = DemoConst.LINK_MAX_STRETCH,
 
     /**
      * Плавный переход между мягкой и жёсткой ветками вместо ступеньки.
@@ -395,12 +401,14 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     // --- самоконтакт границы: та же реализация, что в демо ---
     private val radius = DoubleArray(n) { topo.restR[it].toDouble() }
     private val conMaxLen = DoubleArray(topo.conCount) { c ->
-        p.linkMaxLength * (radius[topo.conA[c]] + radius[topo.conB[c]])
+        p.linkMaxStretch * topo.conRest[c]
     }
     val contacts = BoundaryContacts.build(
         n, topo.conA, topo.conB, topo.conCount,
         topo.boundA, topo.boundB, topo.boundCount, radius,
         p.contactScale, p.ccdCore, p.contactRestitution, p.contactFriction,
+        topo.restX, topo.restY,
+        topo.meanLinkLength.toDouble(), p.contactMaxStep, topo.isFree,
     )
 
     private fun solveLinkMaxLength() {
@@ -415,7 +423,14 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             val max = conMaxLen[c]
             if (len <= max || len < 1e-12) continue
             dx /= len; dy /= len
-            val dL = -(len - max) / w
+            // Тот же потолок поправки за подшаг, что и у контакта, и по той же
+            // причине: стадия ЖЁСТКАЯ, перерастяжение она снимает целиком за один
+            // подшаг, а updateVelocities делит поправку на крошечное h. При загибе
+            // связи растягиваются сильно, и отсюда шёл остаток выброса скорости.
+            // Делится по паре в тех же долях, поэтому импульс пары сохраняется.
+            var dL = -(len - max) / w
+            val capL = p.contactMaxStep * topo.meanLinkLength / w
+            if (dL < -capL) dL = -capL
             px[i] += dx * dL * wi; py[i] += dy * dL * wi
             px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
         }
@@ -793,7 +808,6 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         val h = dt / substeps
         for (s in 0 until substeps) {
             integrate(h)
-            if (p.contactsOn) contacts.prepare(px, py, prevX, prevY, vx, vy)
             // Фаза чередования идёт ровно по подшагам, как в демо.
             sweepBackwards = !sweepBackwards
             solveConstraints(h)
@@ -804,7 +818,10 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             // Предел длины повторно, уже после кости — см. демо.
             solveLinkMaxLength()
             // Контакты последними среди позиционных — см. демо.
-            if (p.contactsOn) contacts.solvePositions(px, py, invMass)
+            if (p.contactsOn) {
+                contacts.prepare(px, py, prevX, prevY, vx, vy)
+                contacts.solvePositions(px, py, invMass)
+            }
             updateVelocities(h)
             if (p.contactsOn) contacts.solveVelocities(vx, vy, invMass, h)
             applyViscosity(h)
@@ -828,7 +845,6 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         val h = dt / substeps
         for (s in 0 until substeps) {
             integrate(h)
-            if (p.contactsOn) contacts.prepare(px, py, prevX, prevY, vx, vy)
             // Фаза чередования идёт ровно по подшагам, как в демо.
             sweepBackwards = !sweepBackwards
             solveConstraints(h)
@@ -839,7 +855,10 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             // Предел длины повторно, уже после кости — см. демо.
             solveLinkMaxLength()
             // Контакты последними среди позиционных — см. демо.
-            if (p.contactsOn) contacts.solvePositions(px, py, invMass)
+            if (p.contactsOn) {
+                contacts.prepare(px, py, prevX, prevY, vx, vy)
+                contacts.solvePositions(px, py, invMass)
+            }
             updateVelocities(h)
             if (p.contactsOn) contacts.solveVelocities(vx, vy, invMass, h)
             applyViscosity(h)
