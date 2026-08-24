@@ -349,6 +349,8 @@ fun VisTable.visImage(
 fun VisTable.visScrollPane(
     cellInit: (Cell<VisScrollPane>.() -> Unit) = {},
     fadeScrollBars: Boolean = true,
+    scrollingDisabledX: Boolean = false,
+    scrollingDisabledY: Boolean = false,
     content: VisTable.() -> Unit
 ): VisScrollPane {
     val contentTable = VisTable(true)
@@ -356,7 +358,10 @@ fun VisTable.visScrollPane(
 
     val scrollPane = VisScrollPane(contentTable).apply {
         setFadeScrollBars(fadeScrollBars)           // ← теперь работает правильно
-        setScrollingDisabled(false, false)
+        // Отключённый скролл по оси означает ещё и то, что содержимое получает ширину
+        // (или высоту) панели, а не свою желаемую — только так вертикальная колонка
+        // настроек ужимается по ширине вместо того, чтобы уезжать за край.
+        setScrollingDisabled(scrollingDisabledX, scrollingDisabledY)
         setForceScroll(false, true)
         setFlickScroll(true)
         setOverscroll(false, false)

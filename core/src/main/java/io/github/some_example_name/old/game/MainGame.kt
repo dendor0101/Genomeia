@@ -24,6 +24,7 @@ import com.kotcrab.vis.ui.widget.VisTextButton.VisTextButtonStyle
 import com.kotcrab.vis.ui.widget.VisTextField
 import com.kotcrab.vis.ui.widget.VisValidatableTextField
 import io.github.some_example_name.old.core.DIGameGlobalContainer
+import io.github.some_example_name.old.core.DevStartup
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer
 import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.features.settings.GlobalSettings.MUSIC_VOLUME
@@ -146,6 +147,7 @@ class MyGame(
         shuffleTracks()
         playNextTrack()
         setScreen(MenuScreen())
+        DevStartup.applyStartCommand()
 
         pikSounds = listOf<Sound>(
             Gdx.audio.newSound(Gdx.files.internal("sounds/pik1.mp3")),
@@ -154,6 +156,11 @@ class MyGame(
             Gdx.audio.newSound(Gdx.files.internal("sounds/pik4.mp3")),
             Gdx.audio.newSound(Gdx.files.internal("sounds/pik5.mp3"))
         )
+    }
+
+    override fun render() {
+        super.render()
+        DevStartup.afterRender()
     }
 
     private fun shuffleTracks() {

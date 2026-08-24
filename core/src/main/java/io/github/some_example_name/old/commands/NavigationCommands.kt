@@ -19,3 +19,21 @@ class GoSimulation(
 ): Menu()
 object EcoSystemScreenGlobalSettings: Menu()
 object EcoSystemScreenCellsSettings: Menu()
+
+/**
+ * Команда навигации по имени, как она пишется в коде: "GoWorldEditor", "GoSettings".
+ *
+ * Нужна там, где команда приходит строкой, а не из кода: параметр запуска для скриншотов
+ * вёрстки, а в перспективе — воспроизведение записанного лога действий игрока.
+ * Команды с обязательными аргументами (GoSimulation) сюда намеренно не попадают.
+ */
+fun navigationCommandByName(name: String): NavigationCommands? = when (name.trim()) {
+    "GoWorldEditor" -> GoWorldEditor
+    "GoSettings" -> GoSettings
+    "GoEcoSystem" -> GoEcoSystem
+    "GoSupport" -> GoSupport
+    "GoGenomeEditor" -> GoGenomeEditor(null)
+    "GoBack" -> GoBack
+    "GoExit" -> GoExit
+    else -> null
+}
