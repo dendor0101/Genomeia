@@ -107,8 +107,22 @@ object Probe {
         setField("dragId", -1)
     }
 
+    /** Перечитать массивы, которые пересборка топологии могла заменить. */
+    private fun refresh() {
+        boundA = field("boundA"); boundB = field("boundB")
+        boundCount = field("boundCount")
+        conCount = field("conCount")
+        organismOf = field("organismOf"); organismCount = field("organismCount")
+    }
+
     /** Позиции и скорости в начальное состояние (аналог reset без камеры). */
     fun resetState() {
+        // Топология тоже возвращается к целой: без этого одно порванное тело
+        // утекало бы во все последующие проверки, а идут они подряд по одному
+        // экземпляру демо.
+        RealBodyDemo::class.java.getDeclaredMethod("restoreTopology")
+            .apply { isAccessible = true }.invoke(demo)
+        refresh()
         for (i in 0 until n) {
             px[i] = body.x[i].toDouble(); py[i] = body.y[i].toDouble()
             vx[i] = 0.0; vy[i] = 0.0
@@ -241,6 +255,7 @@ object Probe {
     /** Сколько связей отмечено как «должна была порваться». */
     fun setContacts(on: Boolean) { setField("contactsOn", on) }
     fun setBonesRigid(on: Boolean) { setField("bonesRigid", on) }
+    fun setTearing(on: Boolean) { setField("tearingOn", on) }
 
     fun liveContacts(): Int {
         val ct = contactsObj() ?: return 0
@@ -281,6 +296,17 @@ object Probe {
     fun organismSize(o: Int): Int {
         val f = RealBodyDemo::class.java.getDeclaredField("organismSize").apply { isAccessible = true }
         return (f.get(demo) as IntArray)[o]
+    }
+
+    /** Сколько связей РЕАЛЬНО убито разрывом (не просто помечено). */
+    fun killedLinks(): Int {
+        val f = RealBodyDemo::class.java.getDeclaredField("tornTotal").apply { isAccessible = true }
+        return f.getInt(demo)
+    }
+
+    fun softLinks(): Int {
+        val f = RealBodyDemo::class.java.getDeclaredField("conCount").apply { isAccessible = true }
+        return f.getInt(demo)
     }
 
     fun tornCount(): Int {
