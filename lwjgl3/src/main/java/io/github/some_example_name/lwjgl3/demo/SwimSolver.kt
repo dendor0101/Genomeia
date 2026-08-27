@@ -39,6 +39,8 @@ class Topology private constructor(
     val boundA: IntArray,
     val boundB: IntArray,
     val rigidBones: Array<IntArray>,
+    /** Номер жёсткой кости у клетки, -1 если не в кости. */
+    val boneOf: IntArray,
     val boneRestQx: Array<DoubleArray>,
     val boneRestQy: Array<DoubleArray>,
     val muscleCount: Int,
@@ -139,6 +141,7 @@ class Topology private constructor(
                 muscleCount = body.muscleClusters.size,
                 meanLinkLength = body.meanLinkLength,
                 organismOf = f("organismOf"),
+                boneOf = f("boneOf"),
                 isFree = f("isFree"),
                 organismCount = f("organismCount"),
                 organismSize = f("organismSize"),
@@ -829,6 +832,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             // Контакты последними среди позиционных — см. демо.
             if (p.contactsOn) {
                 contacts.prepare(px, py, prevX, prevY, vx, vy)
+                contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
                 contacts.solvePositions(px, py, invMass)
             }
             updateVelocities(h)
@@ -866,6 +870,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             // Контакты последними среди позиционных — см. демо.
             if (p.contactsOn) {
                 contacts.prepare(px, py, prevX, prevY, vx, vy)
+                contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
                 contacts.solvePositions(px, py, invMass)
             }
             updateVelocities(h)

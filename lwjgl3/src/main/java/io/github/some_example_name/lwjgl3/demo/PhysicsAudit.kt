@@ -240,6 +240,7 @@ object Probe {
     /** Свободная ли это клетка — без единой связи. */
     /** Сколько связей отмечено как «должна была порваться». */
     fun setContacts(on: Boolean) { setField("contactsOn", on) }
+    fun setBonesRigid(on: Boolean) { setField("bonesRigid", on) }
 
     fun liveContacts(): Int {
         val ct = contactsObj() ?: return 0

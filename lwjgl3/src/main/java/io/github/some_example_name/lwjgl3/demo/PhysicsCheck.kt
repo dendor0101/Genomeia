@@ -81,7 +81,40 @@ fun main(args: Array<String>) {
     //     Самая ценная проверка: ловит любое расхождение SwimSolver с RealBodyDemo,
     //     из-за которого подбор параметров оптимизировал бы не то, что поедет.
     // ------------------------------------------------------------------
+    // Три радиуса, которые легко перепутать. Печатаются в долях средней связи,
+    // потому что только так их вообще можно сравнивать между телами.
+    run {
+        val ct = P.contactsObj()
+        var rMin = Double.MAX_VALUE; var rMax = 0.0
+        var cMin = Double.MAX_VALUE; var cMax = 0.0
+        for (i in 0 until P.n) {
+            val r = P.body.radius[i].toDouble() / topo.meanLinkLength
+            if (r < rMin) rMin = r
+            if (r > rMax) rMax = r
+            val c = (ct?.contactRadiusOf(i) ?: 0.0) / topo.meanLinkLength
+            if (c > 0.0) { if (c < cMin) cMin = c; if (c > cMax) cMax = c }
+        }
+        var linkMin = Double.MAX_VALUE; var linkMax = 0.0
+        for (c in 0 until topo.conCount) {
+            val l = topo.conRest[c] / topo.meanLinkLength
+            if (l < linkMin) linkMin = l
+            if (l > linkMax) linkMax = l
+        }
+        // У тела целиком из кости conCount равен нулю: внутрикостных связей в
+        // conA/conB намеренно нет, и печатать их длину нечего.
+        val linkPart = if (topo.conCount > 0)
+            String.format(Locale.ROOT, ", длина связи %.2f..%.2f", linkMin, linkMax)
+        else ", мягких связей нет (тело целиком костяное)"
+        println(String.format(Locale.ROOT,
+            "       радиусы в долях средней связи: клетка %.2f..%.2f, контакт %.2f..%.2f%s",
+            rMin, rMax, cMin, cMax, linkPart))
+        println(String.format(Locale.ROOT,
+            "       перекрытие соседей по радиусу клетки: %.0f%% (сумма радиусов %.2f при связи 1.00)",
+            100.0 * (2.0 * rMax - 1.0) / (2.0 * rMax), 2.0 * rMax))
+    }
+
     println("--- копия решателя")
+
     run {
         P.resetState()
         val ref = SwimParams(flowModel = FlowModel.GLOBAL_TRACKING)
@@ -132,13 +165,13 @@ fun main(args: Array<String>) {
             println(String.format(Locale.ROOT,
                 "       разбор покоя: свободных %d, их vmax %.3e; у тела vmax %.3e", nFree, vFree, vBody))
         }
-        // Порог 1e-01 вместо 1e-02, основание то же, что у скорости центра масс
-        // ниже: без среды дрейф равен 1e-11, вся величина идёт от анизотропного
-        // сопротивления. Замер 3.4e-02 связи за 20 секунд, порог с запасом втрое.
-        // Прежнее 1e-02 было подобрано на теле из 370 одинаковых клеток и на теле
-        // со смешанными радиусами ловило не ошибку, а устройство модели среды.
+        // ПОРОГ УЖАТ ОБРАТНО ДО 1e-02. Он поднимался до 1e-01 под ту же неверную
+        // гипотезу, что дрейф в покое неустраним и идёт от среды. После исключения
+        // пар, перекрытых в покое, и решения контактов на кости как на твёрдом теле
+        // дрейф упал: у кирпича он равен НУЛЮ, у остальных тел на порядки ниже
+        // прежнего. Держать разжатый порог теперь значит не ловить регресс.
         check("дрейф в покое, 20 с", "тело поехало само, без единого сокращения мышцы") {
-            expectBelow(drift, 1e-1, " связи")
+            expectBelow(drift, 1e-2, " связи")
         }
     }
 
@@ -214,12 +247,23 @@ fun main(args: Array<String>) {
         // скорости. Порог 1e-02 даёт запас вчетверо от измеренного и по-прежнему
         // ловит настоящую полку импульса, ради которой проверка и заводилась
         // (там было в сотни раз больше).
-        val negligible = comV < 1e-2
+        // ПОРОГ УЖАТ ОБРАТНО, потому что физика законно починилась.
+        //
+        // Он был поднят до 1e-02, когда крип считался неустранимым свойством модели
+        // среды: замер показывал 2.4e-03 связи в секунду и не падал. Вывод был
+        // НЕВЕРЕН — крип шёл от контактов, а не от среды. Две правки его убрали:
+        // исключение пар, перекрытых в позе покоя, и решение контакта на жёсткой
+        // кости как контакта твёрдого тела.
+        //
+        // Замер после них: базовое тело 2.75e-10, кирпич 3.10e-14, медуза 4.88e-11.
+        // Порог 1e-04 оставляет запас в сотни тысяч раз и снова способен ловить
+        // настоящую полку импульса, ради которой проверка и заводилась.
+        val negligible = comV < 1e-4
         check("тело останавливается за 30..90 с",
             "импульс вышел на полку — что-то подкачивает тело из ничего") {
             ok = decayed || negligible
             detail = String.format(Locale.ROOT,
-                "затухание %.1fx, скорость центра масс %.2e связей/с (нужно >20x ИЛИ <1e-2)",
+                "затухание %.1fx, скорость центра масс %.2e связей/с (нужно >20x ИЛИ <1e-4)",
                 if (p90 > 0) p30 / p90 else Double.POSITIVE_INFINITY, comV)
         }
         // НОРМИРУЕМ НА МОМЕНТ ИНЕРЦИИ, то есть меряем угловую СКОРОСТЬ.
@@ -444,7 +488,7 @@ fun main(args: Array<String>) {
         val decayed = p90 <= 0.0 || p30 / p90 > 20.0
         check("после загиба тело останавливается",
             "загнутое тело продолжает ехать — аварийный тракт качает импульс") {
-            ok = decayed || comV < 1e-2
+            ok = decayed || comV < 1e-4
             detail = String.format(Locale.ROOT,
                 "затухание %.1fx, скорость центра масс %.2e связей/с",
                 if (p90 > 0) p30 / p90 else Double.POSITIVE_INFINITY, comV)
@@ -1026,6 +1070,78 @@ fun main(args: Array<String>) {
     //      друга. Глубина проникновения тут вторична: под таким ударом ткань
     //      обязана мяться и рваться, но НЕ пропускать.
     // ------------------------------------------------------------------
+    // ПОВТОРНЫЙ ТАРАН И РОЛЬ ЖЁСТКОСТИ КОСТИ.
+    //
+    //     Руками замечено: два тела ЦЕЛИКОМ ИЗ КОСТИ после нескольких таранов
+    //     проваливаются друг в друга. У мягкой ткани такого нет — там ответом
+    //     служит разрыв, а кость порваться не может, и в движке это станет
+    //     настоящей дырой.
+    //
+    //     Гипотеза: жёсткая проекция РАЗБАВЛЯЕТ поправку контакта. Контакт
+    //     расталкивает отдельные граничные клетки, а projectBone на следующем
+    //     подшаге подгоняет весь кластер под жёсткую позу, и от поправки в каждой
+    //     клетке остаётся около 1/N. Проверяется сравнением с ВЫКЛЮЧЕННОЙ
+    //     жёсткостью: если без неё проникновение исчезает, виновата проекция.
+    println("--- повторный таран: роль жёсткости кости")
+    run {
+        val order0 = (0 until P.organismCount).sortedByDescending { P.organismSize(it) }
+        val ct0 = P.contactsObj()
+        if (order0.size >= 2 && P.organismSize(order0[1]) >= 2 && ct0 != null) {
+            val oa = order0[0]; val ob = order0[1]
+            fun com2(o: Int): DoubleArray {
+                var x = 0.0; var y = 0.0; var c = 0
+                for (i in 0 until P.n) if (P.organismOf[i] == o) { x += P.px[i]; y += P.py[i]; c++ }
+                return doubleArrayOf(x / c, y / c)
+            }
+            fun slamRound(rigid: Boolean, rounds: Int): DoubleArray {
+                P.setBonesRigid(rigid)
+                P.resetState(); P.resetCounters()
+                var worstPen = 0.0; var worstThrough = 0.0
+                // Ось удара берётся ОДИН РАЗ, до всех раундов. Пересчёт её каждый
+                // раунд делал число бессмысленным: после отскока тела меняются
+                // местами, ось разворачивается, и «прошло насквозь» показывало
+                // разлёт вместо проникновения.
+                val ca0 = com2(oa); val cb0 = com2(ob)
+                var axX = cb0[0] - ca0[0]; var axY = cb0[1] - ca0[1]
+                val ax0 = sqrt(axX * axX + axY * axY)
+                if (ax0 > 1e-12) { axX /= ax0; axY /= ax0 }
+                for (r in 1..rounds) {
+                    val ca = com2(oa); val cb = com2(ob)
+                    var dx = cb[0] - ca[0]; var dy = cb[1] - ca[1]
+                    val d0 = sqrt(dx * dx + dy * dy)
+                    if (d0 < 1e-12) break
+                    dx /= d0; dy /= d0
+                    val speed = 0.95 * P.const("MAX_SPEED_CELLS_PER_TICK") * topo.meanLinkLength / dt
+                    for (i in 0 until P.n) {
+                        when (P.organismOf[i]) {
+                            oa -> { P.vx[i] = dx * speed; P.vy[i] = dy * speed }
+                            ob -> { P.vx[i] = -dx * speed; P.vy[i] = -dy * speed }
+                        }
+                    }
+                    for (fr in 1..(2.0 / dt).toInt()) {
+                        P.frame(dt, sub, contract = false)
+                        val p = ct0.maxPenetration(P.px, P.py)
+                        if (p > worstPen) worstPen = p
+                        val na = com2(oa); val nb = com2(ob)
+                        val sep = (nb[0] - na[0]) * axX + (nb[1] - na[1]) * axY
+                        val through = -sep / topo.meanLinkLength
+                        if (through > worstThrough) worstThrough = through
+                    }
+                }
+                P.setBonesRigid(true)
+                return doubleArrayOf(worstPen, worstThrough)
+            }
+            val rigid = slamRound(true, 4)
+            val soft = slamRound(false, 4)
+            println(String.format(Locale.ROOT,
+                "       4 тарана подряд: кости ЖЁСТКИЕ проникновение %.3f, прошло насквозь %.2f связи",
+                rigid[0], rigid[1]))
+            println(String.format(Locale.ROOT,
+                "                        кости МЯГКИЕ  проникновение %.3f, прошло насквозь %.2f связи",
+                soft[0], soft[1]))
+        }
+    }
+
     println("--- таран двух тел навстречу")
     run {
         P.resetState(); P.resetCounters()

@@ -111,6 +111,14 @@ class BoundaryContacts(
     /** Пары, перекрытые уже в позе покоя. См. bonded. */
     private val restTouching = HashSet<Long>()
 
+    // --- жёсткие кластеры: масса, центр, момент инерции на подшаг ---
+    private var boneOf: IntArray? = null
+    private var boneM = DoubleArray(0)
+    private var boneCx = DoubleArray(0)
+    private var boneCy = DoubleArray(0)
+    private var boneI = DoubleArray(0)
+    private var boneIds: Array<IntArray> = emptyArray()
+
     // --- буфер DDA ---
     private val ddaX = IntArray(DDA_MAX)
     private val ddaY = IntArray(DDA_MAX)
@@ -423,6 +431,89 @@ class BoundaryContacts(
      * Ставится ПОСЛЕ projectBone — иначе проекция кости затрёт результат, и кость
      * будет проходить сквозь тело.
      */
+    /**
+     * КОНТАКТ НА ЖЁСТКОЙ КОСТИ РЕШАЕТСЯ КАК КОНТАКТ ТВЁРДОГО ТЕЛА.
+     *
+     * Иначе контакт вдевятеро слабее нужного, и это арифметика, а не ощущение.
+     * Поправка считается по invMass ОДНОЙ клетки, а projectBone на следующем
+     * подшаге подгоняет весь кластер под жёсткую позу: от поправки в каждой клетке
+     * остаётся примерно k/N, где k это число касающихся клеток, а N размер
+     * кластера. При десяти касаниях на девяносто клеток теряется девять десятых.
+     *
+     * Наблюдалось это на телах ЦЕЛИКОМ ИЗ КОСТИ: одиночный таран проходил чисто,
+     * а после четырёх подряд тела начинали проваливаться друг в друга — 2.38 связи
+     * насквозь при проникновении 0.871. У мягкой ткани такого нет, потому что там
+     * ответом служит разрыв, а кость порваться не может.
+     *
+     * Правильно — считать сопротивление ВСЕГО кластера. Сила в точке на расстоянии
+     * r от центра тела ещё и крутит, поэтому эффективная обратная масса вдоль
+     * нормали равна 1/M + (r x n)^2/I. Поправка после этого разносится по кластеру
+     * жёстко: поступательная часть всем поровну, вращательная по радиусу. Поза при
+     * этом не нарушается, и проекции нечего исправлять.
+     *
+     * Зовётся каждый подшаг перед решателем: центр и момент инерции меняются с
+     * движением тела, а кластеров десятки, так что это дёшево.
+     */
+    fun updateBones(px: DoubleArray, py: DoubleArray, invMass: DoubleArray,
+                    boneOfArg: IntArray?, ids: Array<IntArray>) {
+        boneOf = boneOfArg
+        boneIds = ids
+        if (boneOfArg == null || ids.isEmpty()) return
+        if (boneM.size != ids.size) {
+            boneM = DoubleArray(ids.size); boneCx = DoubleArray(ids.size)
+            boneCy = DoubleArray(ids.size); boneI = DoubleArray(ids.size)
+        }
+        for (b in ids.indices) {
+            var m = 0.0; var cx = 0.0; var cy = 0.0
+            for (k in ids[b]) {
+                if (invMass[k] <= 0.0) continue
+                val w = 1.0 / invMass[k]
+                m += w; cx += w * px[k]; cy += w * py[k]
+            }
+            boneM[b] = m
+            if (m <= 0.0) { boneI[b] = 0.0; continue }
+            cx /= m; cy /= m
+            boneCx[b] = cx; boneCy[b] = cy
+            var inert = 0.0
+            for (k in ids[b]) {
+                if (invMass[k] <= 0.0) continue
+                val rx = px[k] - cx; val ry = py[k] - cy
+                inert += (rx * rx + ry * ry) / invMass[k]
+            }
+            boneI[b] = inert
+        }
+    }
+
+    /** Эффективная обратная масса точки i вдоль нормали, с учётом жёсткой кости. */
+    private fun effInvMass(i: Int, nx: Double, ny: Double, px: DoubleArray, py: DoubleArray,
+                           invMass: DoubleArray): Double {
+        val bo = boneOf ?: return invMass[i]
+        val b = bo[i]
+        if (b < 0 || b >= boneM.size || boneM[b] <= 0.0) return invMass[i]
+        val rx = px[i] - boneCx[b]; val ry = py[i] - boneCy[b]
+        val rn = rx * ny - ry * nx
+        val rot = if (boneI[b] > 1e-18) rn * rn / boneI[b] else 0.0
+        return 1.0 / boneM[b] + rot
+    }
+
+    /** Разносит поправку по жёсткому кластеру, сохраняя позу. */
+    private fun applyRigid(i: Int, jx: Double, jy: Double, px: DoubleArray, py: DoubleArray,
+                           invMass: DoubleArray): Boolean {
+        val bo = boneOf ?: return false
+        val b = bo[i]
+        if (b < 0 || b >= boneM.size || boneM[b] <= 0.0) return false
+        val rx = px[i] - boneCx[b]; val ry = py[i] - boneCy[b]
+        val dOmega = if (boneI[b] > 1e-18) (rx * jy - ry * jx) / boneI[b] else 0.0
+        val tx = jx / boneM[b]; val ty = jy / boneM[b]
+        for (k in boneIds[b]) {
+            if (invMass[k] <= 0.0) continue
+            val kx = px[k] - boneCx[b]; val ky = py[k] - boneCy[b]
+            px[k] += tx - dOmega * ky
+            py[k] += ty + dOmega * kx
+        }
+        return true
+    }
+
     fun solvePositions(px: DoubleArray, py: DoubleArray, invMass: DoubleArray) {
         for (c in 0 until cN) {
             val i = cI[c]; val j = cJ[c]
@@ -434,7 +525,11 @@ class BoundaryContacts(
             else { nx = dx / d; ny = dy / d; cc = d - rr }
             cNx[c] = nx; cNy[c] = ny      // нормаль нужна скоростному проходу
             if (cc >= 0) continue
-            val w = invMass[i] + invMass[j]
+            // Сопротивление считается по ТЕЛУ, а не по клетке: для клетки в жёсткой
+            // кости это масса всего кластера плюс вклад вращения. См. updateBones.
+            val wi = effInvMass(i, nx, ny, px, py, invMass)
+            val wj = effInvMass(j, nx, ny, px, py, invMass)
+            val w = wi + wj
             if (w <= 0) continue
             // ПОТОЛОК ПОПРАВКИ ЗА ПОДШАГ, и он тут не для мягкости.
             //
@@ -456,8 +551,12 @@ class BoundaryContacts(
             val cap = contactMaxStep * meanLink / w
             if (dl > cap) dl = cap
             cLam[c] += dl
-            px[i] += invMass[i] * dl * nx; py[i] += invMass[i] * dl * ny
-            px[j] -= invMass[j] * dl * nx; py[j] -= invMass[j] * dl * ny
+            if (!applyRigid(i, dl * nx, dl * ny, px, py, invMass)) {
+                px[i] += invMass[i] * dl * nx; py[i] += invMass[i] * dl * ny
+            }
+            if (!applyRigid(j, -dl * nx, -dl * ny, px, py, invMass)) {
+                px[j] -= invMass[j] * dl * nx; py[j] -= invMass[j] * dl * ny
+            }
         }
     }
 
