@@ -286,6 +286,10 @@ tasks.register('physicsCheck', JavaExec) {
   classpath = sourceSets.main.runtimeClasspath
   mainClass = 'io.github.some_example_name.lwjgl3.demo.PhysicsCheckKt'
   workingDir = rootProject.projectDir
+  // Тело задаётся так: gradlew :lwjgl3:physicsCheck -Pbody=body-export-кирпич.txt
+  // Проверки одни и те же, тела разные — на кирпиче из чистой кости вылезает
+  // то, чего на мягком теле не видно вовсе.
+  args = [project.findProperty('body') ?: 'body-export.txt']
   jvmArgs '-Dfile.encoding=UTF-8'
 }
 
@@ -297,5 +301,17 @@ tasks.register('worldSpecCheck', JavaExec) {
   classpath = sourceSets.main.runtimeClasspath
   mainClass = 'io.github.some_example_name.lwjgl3.demo.WorldSpecCheckKt'
   workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+// Воспроизведение записанных мышиных действий: gradlew :lwjgl3:dragReplay -Plog=drag-log.txt
+// Лог пишется в самом демо по клавише L (запись начинается со сброса тела).
+tasks.register('dragReplay', JavaExec) {
+  group = 'verification'
+  description = 'Прогоняет записанный лог перетаскивания и печатает, где тело срывается'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.demo.DragReplayKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('log') ?: 'drag-log.txt']
   jvmArgs '-Dfile.encoding=UTF-8'
 }

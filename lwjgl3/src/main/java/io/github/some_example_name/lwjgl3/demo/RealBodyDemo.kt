@@ -851,7 +851,57 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * Ограничение стоит на ИТОГЕ, а не на силе, поэтому DRAG_ACCEL можно крутить
          * под ощущение сколько угодно: физику он больше не ломает.
          */
+        /**
+         * ВЕС СХВАЧЕННОЙ КЛЕТКИ В SHAPE MATCHING. Был 200.0, стал 1.0.
+         *
+         * Появился, когда тяга была ПОЗИЦИОННОЙ: чтобы кость шла за курсором, её
+         * жёсткую позу подгоняли под схваченную клетку, задрав ей вес. Теперь тяга
+         * прикладывает импульс ко всему твёрдому телу как положено, и подгонять
+         * позу под одну клетку больше не нужно.
+         *
+         * Двести означает, что при подборе позы одна клетка весит как две сотни
+         * остальных: проекция кости каждый подшаг рвётся за ней, поправки выходят
+         * огромные, скорость перелетает потолок и включается clampSpeed, который
+         * импульс не сохраняет. В кадре это выглядело как разнос — пик 15.01 при
+         * потолке 8.0, 867 срабатываний потолка, 100 порванных связей.
+         *
+         * ЗАМЕР НА ЗАПИСАННОМ ПЕРЕТАСКИВАНИИ. Обрыв резкий, между 20 и 5:
+         *
+         *     вес   пик   потолок  порвано  клетка до курсора в конце
+         *     200  17.31    20194      248        134.51 связи
+         *      20  13.90    22195       51        120.31
+         *       5   3.48        0        0          0.00
+         *       1   3.48        0        0          0.01
+         *
+         * При двухстах и двадцати клетка НЕ ВОЗВРАЩАЕТСЯ к курсору вовсе — это и
+         * есть наблюдавшееся «тело улетело и не вернулось». При пяти и ниже всё
+         * чисто: потолок молчит, связи целы, клетка садится на курсор.
+         *
+         * Единица выбрана не как «достаточно малое», а как ОТСУТСТВИЕ особого
+         * веса: за костью теперь следит импульс, приложенный ко всему твёрдому
+         * телу, и подгонять позу под одну клетку незачем.
+         */
+        private const val DRAG_MATCH_WEIGHT = 1.0
+
         private const val DRAG_SPEED_LIMIT = 0.25
+
+        /**
+         * ПОСТОЯННАЯ ВРЕМЕНИ ТЯГИ, в секундах: за сколько сервотяга РАССЧИТЫВАЕТ
+         * закрыть разрыв между клеткой и курсором.
+         *
+         * Раньше здесь неявно стоял ОДИН ТИК: целевая скорость считалась как
+         * расстояние делить на DT. Отставание всего в одну связь требовало при этом
+         * тридцати связей в секунду, тело столько не развивает, ошибка сервотяги
+         * никогда не обращалась в ноль — и сила давила без остановки. На записанном
+         * перетаскивании это давало полторы секунды монотонного разгона: скорость
+         * центра масс с 2.1 до 8.0 связей в секунду, вращение с 0.28 до 1.13 рад/с.
+         * То есть получалась не рука, а буксир с постоянной тягой.
+         *
+         * С постоянной времени сервотяга выходит в режим регулирования: по мере
+         * приближения к курсору цель падает, сила снимается сама, и клетка
+         * останавливается у курсора вместо того, чтобы проскочить и качнуться назад.
+         */
+        private const val DRAG_TAU = 0.2
 
         /**
          * ПУЛЯ [P] — одиночная клетка, запущенная справа налево на потолке скорости.
@@ -1421,6 +1471,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
     private lateinit var organismOf: IntArray
     private var organismCount = 0
     private lateinit var organismSize: IntArray
+    private lateinit var organismMass: DoubleArray
 
     private lateinit var flowVX: DoubleArray
     private lateinit var flowVY: DoubleArray
@@ -1701,6 +1752,13 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         organismCount = comp
         organismSize = IntArray(comp)
         for (i in 0 until n) organismSize[organismOf[i]]++
+        // МАССА организма, а не число клеток: запас среды заряжается от скорости
+        // ЦЕНТРА МАСС, а она есть сумма m*v делённая на сумму m. См. applyNormalDrag.
+        organismMass = DoubleArray(comp)
+        for (i in 0 until n) {
+            if (restInvMass[i] <= 0.0) continue
+            organismMass[organismOf[i]] += 1.0 / restInvMass[i]
+        }
         flowVX = DoubleArray(comp)
         flowVY = DoubleArray(comp)
         comAccX = DoubleArray(comp)
@@ -2214,25 +2272,40 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         }
 
         val force = DRAG_ACCEL * body.meanLinkLength / (DT * DT)
-        val aMax = if (ids != null) force / mTotal else force * invMass[i]
-
-        // Целевая скорость: добраться до курсора за тик, но не быстрее потолка.
-        var vWant = d / DT
-        if (vWant > MAX_DRAG_SPEED) vWant = MAX_DRAG_SPEED
-        val tx = dx / d * vWant
-        val ty = dy / d * vWant
-
-        // Догоняем целевую скорость, но не быстрее, чем позволяет сила.
-        var ax = (tx - vx[i]) / h
-        var ay = (ty - vy[i]) / h
-        val a = sqrt(ax * ax + ay * ay)
-        if (a > aMax) { val s = aMax / a; ax *= s; ay *= s }
-
         val vLimit = DRAG_SPEED_LIMIT * MAX_SPEED_CELLS_PER_TICK * body.meanLinkLength / DT
 
+        // ЦЕЛЬ ОБЯЗАНА БЫТЬ ДОСТИЖИМОЙ, иначе сервотяга превращается в ракету.
+        //
+        // Здесь стояло «доехать до курсора за один тик, но не быстрее
+        // MAX_DRAG_SPEED», а это 4.0 мировых в секунду, то есть около 140 связей в
+        // секунду. Схваченная клетка столько не развивает никогда: её держит тело,
+        // и замер на записанном перетаскивании дал пик 1.37. Значит ошибка сервотяги
+        // НИКОГДА не уменьшалась, полная сила давила без остановки, и тело полторы
+        // секунды монотонно разгонялось: скорость центра масс 2.1 -> 8.0 связей/с,
+        // вращение 0.28 -> 1.13 рад/с. Демпфирующее слагаемое в формуле есть, но
+        // работает только у самой цели, куда дело не доходило.
+        //
+        // Вдобавок потолка было ДВА и они противоречили друг другу: цель
+        // ограничивалась значением 4.0, а результат — vLimit, то есть 1.71. Цель
+        // была заведомо недостижима по построению.
+        //
+        // Теперь потолок один. Как только клетка набирает vLimit, ошибка обращается
+        // в ноль, сила снимается, и вместо бесконечного разгона получается
+        // предельная скорость — то есть рука, а не ракета.
+        var vWant = d / DRAG_TAU
+        if (vWant > vLimit) vWant = vLimit
+
+        val wantX = dx / d * vWant - vx[i]
+        val wantY = dy / d * vWant - vy[i]
+
         if (ids == null) {
-            var nvx = vx[i] + ax * h
-            var nvy = vy[i] + ay * h
+            var jx = wantX / invMass[i]
+            var jy = wantY / invMass[i]
+            val jm = sqrt(jx * jx + jy * jy)
+            val jMax = force * h
+            if (jm > jMax) { val s = jMax / jm; jx *= s; jy *= s }
+            var nvx = vx[i] + jx * invMass[i]
+            var nvy = vy[i] + jy * invMass[i]
             val v = sqrt(nvx * nvx + nvy * nvy)
             if (v > vLimit) { val sc = vLimit / v; nvx *= sc; nvy *= sc }
             vx[i] = nvx; vy[i] = nvy
@@ -2267,16 +2340,51 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         }
         maxR = sqrt(maxR)
 
-        val jx = ax * h * mTotal
-        val jy = ay * h * mTotal
+        // ЭФФЕКТИВНАЯ МАССА В ТОЧКЕ ЗАХВАТА — вот где был баг с хвостом.
+        //
+        // Прежний код считал импульс как J = m * dv, будто точка захвата отзывается
+        // на силу ускорением J/M. Для твёрдого тела это неверно: сила в точке на
+        // расстоянии r от центра ещё и КРУТИТ, и та же точка отзывается сильнее —
+        // J/M плюс вклад вращения (r x J)/I по радиусу.
+        //
+        // Насколько сильнее — считается точно. Для стержня, схваченного за кончик,
+        // множитель 1 + M*r^2/I равен четырём. То есть сервотяга вчетверо
+        // ПЕРЕДАВЛИВАЛА, точка проскакивала цель, на следующем подшаге тяга давила
+        // в обратную сторону — и раскачка шла по вращательной степени свободы,
+        // которую servo по одной точке вообще не видит: у твёрдого тела три
+        // степени свободы, а скорость точки задаёт только две.
+        //
+        // Отсюда и наблюдаемое руками: схватить хвост, потянуть, отпустить,
+        // потянуть снова — и организм начинает бешено вращаться. И отсюда же дрейф
+        // кирпича от одного лишь удержания кости: 0.208 связи в секунду при полной
+        // физике против 3.1e-14 без среды.
+        //
+        // Правильно — решить систему на импульс честно. Скорость точки меняется как
+        //     dv = J/M + ((r x J)/I) x r,
+        // что в двумерии есть линейная система dv = A*J с симметричной матрицей
+        //     A = [[1/M + ry^2/I,  -rx*ry/I ],
+        //          [ -rx*ry/I,     1/M + rx^2/I]].
+        // Она положительно определена, обращается в две строки, и найденный J даёт
+        // точке РОВНО заданное изменение скорости. Перелёту взяться неоткуда.
         val rgx = px[i] - cx; val rgy = py[i] - cy
-        var dOmega = if (inertia > 1e-18) (rgx * jy - rgy * jx) / inertia else 0.0
+        val invI = if (inertia > 1e-18) 1.0 / inertia else 0.0
+        val invM = 1.0 / mTotal
+        val a11 = invM + rgy * rgy * invI
+        val a12 = -rgx * rgy * invI
+        val a22 = invM + rgx * rgx * invI
+        val det = a11 * a22 - a12 * a12
+        if (det < 1e-24) return
+        var jx = (a22 * wantX - a12 * wantY) / det
+        var jy = (a11 * wantY - a12 * wantX) / det
 
-        // Вращение ограничивается тем же потолком: у длинной кости дальняя клетка
-        // иначе получила бы куда больше, чем разрешено ускорением тяги.
-        val vEdge = abs(dOmega) * maxR
-        val vCap = sqrt(ax * ax + ay * ay) * h
-        if (vEdge > vCap && vEdge > 1e-18) dOmega *= vCap / vEdge
+        // Сила руки ограничена одинаково для любой кости — см. выше про постоянную
+        // силу. Ограничивается ИМПУЛЬС, а не ускорение, иначе крупная кость снова
+        // получала бы больше импульса, чем мелкая.
+        val jm = sqrt(jx * jx + jy * jy)
+        val jMax = force * h
+        if (jm > jMax) { val sJ = jMax / jm; jx *= sJ; jy *= sJ }
+
+        val dOmega = (rgx * jy - rgy * jx) * invI
 
         // Прикидываем итог и, если самая быстрая клетка кости выходит за потолок,
         // ослабляем ВЕСЬ импульс — и поступательную часть, и вращательную. Резать
@@ -2553,10 +2661,25 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             // ошибка: два тела делили один запас среды, поэтому движение одного толкало
             // другое на любом расстоянии, а тяга у обоих падала — запас следовал за
             // средней скоростью пары, а не за собственной скоростью тела.
+            // ВЗВЕШЕННО ПО МАССЕ, и это не педантизм.
+            //
+            // Здесь стояла простая сумма скоростей, делённая на число клеток. Это
+            // среднее по частицам, а не скорость центра масс: та есть сумма m*v на
+            // сумму m. Пока все клетки весили одинаково, разница пряталась в общем
+            // множителе, и код был верен ПО СОВПАДЕНИЮ.
+            //
+            // На теле с разными радиусами совпадение кончается, и ломается ровно тот
+            // инвариант, который обещан в комментарии выше. У чистого вращения
+            // сумма m*v равна нулю, а сумма одних только v равна omega, векторно
+            // умноженному на N и на разность геометрического центра и центра масс, —
+            // то есть НЕ ноль. Вращение начинает заряжать запас, среда толкает тело,
+            // толчок снова крутит. Движение из ничего.
             for (o in 0 until organismCount) { comAccX[o] = 0.0; comAccY[o] = 0.0 }
             for (i in 0 until n) {
+                if (invMass[i] <= 0.0) continue
                 val o = organismOf[i]
-                comAccX[o] += vx[i]; comAccY[o] += vy[i]
+                val m = 1.0 / invMass[i]
+                comAccX[o] += m * vx[i]; comAccY[o] += m * vy[i]
             }
 
             // Это демпфер между телом и запасом: за шаг относительная скорость падает
@@ -2568,8 +2691,10 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             if (kf > limit) kf = limit
 
             for (o in 0 until organismCount) {
-                val comVX = comAccX[o] / organismSize[o]
-                val comVY = comAccY[o] / organismSize[o]
+                val mo = organismMass[o]
+                if (mo <= 0.0) continue
+                val comVX = comAccX[o] / mo
+                val comVY = comAccY[o] / mo
                 val dfx = (comVX - flowVX[o]) * kf
                 val dfy = (comVY - flowVY[o]) * kf
                 flowVX[o] += dfx
@@ -2744,9 +2869,123 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
      */
     private fun stepOnce() {
         updateMuscleTargets()
+        recordMuscles()
         updateMuscles(DT)
+        recordDrag()
         simulate()
         simTime += DT
+        logTick++
+    }
+
+    // ================================================================
+    //  ЗАПИСЬ ДЕЙСТВИЙ МЫШЬЮ [L] И ИХ ВОСПРОИЗВЕДЕНИЕ
+    //
+    //  Зачем. Часть неустойчивости видна только руками: пользователь тащит
+    //  конкретный кластер, отпускает, держит — и тело начинает дёргаться.
+    //  Описать это словами достаточно точно, чтобы воспроизвести в тесте, не
+    //  выходит: результат зависит от того, ЗА КАКУЮ клетку взялись и по какой
+    //  траектории вели. Лог снимает этот разрыв — записанное воспроизводится
+    //  побитово, потому что симуляция детерминирована.
+    //
+    //  Запись НАЧИНАЕТСЯ СО СБРОСА, и это обязательно: без известного начального
+    //  состояния воспроизвести нечего — тело к моменту нажатия уже прожило
+    //  произвольную историю.
+    //
+    //  Формат построчный и разреженный: строка пишется только когда что-то
+    //  изменилось, поэтому «держу мышь на месте десять секунд» это одна строка, а
+    //  не триста. При воспроизведении последняя команда держится до следующей.
+    //
+    //      D <тик> <клетка> <x> <y>   тянуть эту клетку к точке
+    //      U <тик>                     отпустить
+    //      E <тик>                     конец записи
+    // ================================================================
+    private var dragLog: StringBuilder? = null
+    private var logTick = 0
+    private var logLastId = -2
+    private var logLastX = 0.0
+    private var logLastY = 0.0
+
+    private fun toggleDragLog() {
+        val log = dragLog
+        if (log == null) {
+            reset()
+            logTick = 0
+            logLastId = -2
+            val sb = StringBuilder()
+            sb.append("# GENOMEIA DRAG LOG v1\n")
+            sb.append("# body=").append(bodyPath).append('\n')
+            sb.append("# ups=").append(Math.round(1.0 / DT))
+                .append(" substeps=").append(SUBSTEPS)
+                .append(" organisms=").append(ORGANISMS)
+                .append(" free=").append(FREE_PARTICLES).append('\n')
+            logMuscles = ""
+            sb.append("# dragAccel=").append(DRAG_ACCEL)
+                .append(" dragSpeedLimit=").append(DRAG_SPEED_LIMIT)
+                .append(" bones=").append(if (bonesRigid) 1 else 0)
+                .append(" contacts=").append(if (contactsOn) 1 else 0)
+                .append(" bend=").append(bendLevel)
+                .append(" gait=").append(if (gait) 1 else 0).append('\n')
+            dragLog = sb
+            println("[RealBodyDemo] ЗАПИСЬ НАЧАТА, тело сброшено. Нажми L снова, чтобы остановить.")
+        } else {
+            log.append("E ").append(logTick).append('\n')
+            val out = java.io.File("drag-log.txt")
+            out.writeText(log.toString())
+            dragLog = null
+            println("[RealBodyDemo] ЗАПИСЬ ОСТАНОВЛЕНА, строк " + log.count { it == '\n' } +
+                ", файл " + out.absolutePath)
+            println("----- НАЧАЛО ЛОГА -----")
+            print(log)
+            println("----- КОНЕЦ ЛОГА -----")
+        }
+    }
+
+    /**
+     * ЗАПИСЬ СОСТОЯНИЯ МЫШЦ. Без неё лог был неполон, и это уже подвело.
+     *
+     * Воспроизведение гоняло с выключенными мышцами, потому что в логе о них не
+     * было ни слова. Записанное перетаскивание при этом сходилось к курсору
+     * идеально, а руками тело улетало и не возвращалось — расхождение объяснялось
+     * ровно тем, что при записи работал гребок, и тело уплывало СВОИМ ХОДОМ.
+     *
+     * Пишется строка вида «M тик 0:1.0,3:0.5» — только ненулевые цели и только
+     * когда набор изменился. Молчащие мышцы не дают ни одной строки.
+     */
+    private var logMuscles = ""
+
+    private fun recordMuscles() {
+        val log = dragLog ?: return
+        val sb = StringBuilder()
+        for (m in muscleTarget.indices) {
+            if (muscleTarget[m] == 0.0) continue
+            if (sb.isNotEmpty()) sb.append(',')
+            sb.append(m).append(':').append(muscleTarget[m])
+        }
+        val now = sb.toString()
+        if (now == logMuscles) return
+        logMuscles = now
+        log.append("M ").append(logTick).append(' ').append(if (now.isEmpty()) "-" else now).append('\n')
+    }
+
+    private fun recordDrag() {
+        val log = dragLog ?: return
+        val id = dragId
+        if (id != logLastId) {
+            if (id < 0) log.append("U ").append(logTick).append('\n')
+            else log.append("D ").append(logTick).append(' ').append(id)
+                .append(' ').append(mouseX).append(' ').append(mouseY).append('\n')
+            logLastId = id; logLastX = mouseX; logLastY = mouseY
+            return
+        }
+        if (id < 0) return
+        // Порог в сотую долю связи: дрожание руки в лог не пишем, оно и в игре
+        // ничего не решает, а строк добавило бы сотни.
+        val eps = body.meanLinkLength * 0.01
+        if (abs(mouseX - logLastX) > eps || abs(mouseY - logLastY) > eps) {
+            log.append("D ").append(logTick).append(' ').append(id)
+                .append(' ').append(mouseX).append(' ').append(mouseY).append('\n')
+            logLastX = mouseX; logLastY = mouseY
+        }
     }
 
     /**
@@ -2895,7 +3134,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         val touched = Gdx.input.isButtonPressed(Input.Buttons.LEFT) && !uiTookMouse
         if (touched && !wasTouched) {
             val i = nearestParticle()
-            if (i >= 0) { dragId = i; matchWeight[i] = 200.0 }
+            if (i >= 0) { dragId = i; matchWeight[i] = DRAG_MATCH_WEIGHT }
         }
         if (!touched && wasTouched && dragId >= 0) { matchWeight[dragId] = 1.0; dragId = -1 }
         wasTouched = touched
@@ -2916,6 +3155,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         if (Gdx.input.isKeyJustPressed(Input.Keys.K)) contactsOn = !contactsOn
         if (Gdx.input.isKeyJustPressed(Input.Keys.P)) fireBullet()
         if (Gdx.input.isKeyJustPressed(Input.Keys.O)) slamOrganisms()
+        if (Gdx.input.isKeyJustPressed(Input.Keys.L)) toggleDragLog()
         // ESC сначала закрывает диалог и только потом выходит: иначе из него не выйти
         // иначе как повторным T, а рефлекс у всех один.
         if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
@@ -3223,6 +3463,45 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         font.draw(batch, "sim time = %.1f s   drift = %.4f (%.2f cells)   |P| = %.3f"
             .format(simTime, drift, drift / body.meanLinkLength, momentum), 16f, y); y -= line
 
+        // ДИАГНОСТИКА ТЯГИ ПРЯМО В КАДРЕ.
+        //
+        // Вынесено сюда после двух записей, которые воспроизводились как исправные,
+        // хотя руками симптом был. Догадки кончились: пусть те же самые величины
+        // видно в тот момент, когда всё ломается, а не только в разборе лога.
+        //
+        //   cell->cur   отставание схваченной клетки от курсора, в связях. Тяга
+        //               исправна, когда оно идёт к нулю.
+        //   body->cur   расстояние от ЦЕНТРА МАСС организма до курсора. Оно НЕ
+        //               обязано быть нулём: схваченная клетка может стоять на
+        //               курсоре, а центр тела законно висеть в стороне. Важен
+        //               РОСТ этого числа, а не само значение.
+        //   cap         срабатывания потолка скорости. Он правит частицы по одной
+        //               и импульс не сохраняет — любое ненулевое число здесь
+        //               означает движение из ниоткуда.
+        if (dragId >= 0) {
+            val gx = px[dragId] - mouseX
+            val gy = py[dragId] - mouseY
+            val cellGap = sqrt(gx * gx + gy * gy) / body.meanLinkLength
+            val o = organismOf[dragId]
+            var mm = 0.0; var cxx = 0.0; var cyy = 0.0
+            for (q in 0 until n) {
+                if (organismOf[q] != o || invMass[q] <= 0.0) continue
+                val w = 1.0 / invMass[q]
+                mm += w; cxx += w * px[q]; cyy += w * py[q]
+            }
+            val bodyGap = if (mm > 0.0) {
+                val bx = cxx / mm - mouseX; val by = cyy / mm - mouseY
+                sqrt(bx * bx + by * by) / body.meanLinkLength
+            } else 0.0
+            val vPeak = sqrt(peakSpeed2) * DT / body.meanLinkLength
+            font.color = if (speedCapHits > 0) INVERTED_FILL else HUD_TEXT
+            font.draw(batch, ("DRAG  cell->cur = %.2f   body->cur = %.2f   peak = %.2f of %.1f   cap = %d")
+                .format(cellGap, bodyGap, vPeak, MAX_SPEED_CELLS_PER_TICK, speedCapHits), 16f, y)
+            font.color = HUD_TEXT
+            y -= line
+        }
+
+
         // Изгиб контура: показывается всегда, потому что он МЕНЯЕТ ФИЗИКУ и по картинке
         // это не всегда очевидно — тело просто становится упрямее.
         // Контакты: число сработавших, обрезок CCD и обоих потолков. Потолки в норме
@@ -3258,7 +3537,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         font.color = HUD_MUTED
         font.draw(batch, "LMB drag   HOVER a muscle edge   1..9 hold a muscle   0 hold ALL   " +
             "G auto-gait" + if (gait) " [ON, period $GAIT_PERIOD]" else "", 16f, y); y -= line
-        font.draw(batch, "SPACE pause   F fast   E bend   R reset   B bones   C view   P bullet   O slam   RMB/MMB pan   wheel zoom",
+        font.draw(batch, "SPACE pause   F fast   E bend   R reset   B bones   C view   P bullet   O slam   L rec   RMB/MMB pan   wheel zoom",
             16f, y); y -= line
         if (paused) { font.color = HUD_WARN; font.draw(batch, "PAUSED", 16f, y) }
         batch.end()

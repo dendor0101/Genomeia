@@ -1,0 +1,7 @@
+﻿# GENOMEIA DRAG LOG v1
+# body=body-export.txt
+# ups=30 substeps=16 organisms=2 free=6
+D 5 1389 1.9 0.55
+D 20 1389 2.1 0.75
+U 60
+E 120

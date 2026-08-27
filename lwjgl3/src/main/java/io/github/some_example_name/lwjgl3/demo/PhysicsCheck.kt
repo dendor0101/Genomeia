@@ -151,15 +151,28 @@ fun main(args: Array<String>) {
     // и изотропное гашение. Если крип остаётся и там, виноваты ограничения; если
     // пропадает — среда ректифицирует остаточное дыхание тела в тягу.
     run {
-        P.resetState()
-        for (fr in 1..(20.0 / dt).toInt()) P.frame(dt, sub, contract = false, hydro = false)
-        val vNoHydro = P.comSpeed()
-        P.resetState()
-        for (fr in 1..(20.0 / dt).toInt()) P.frame(dt, sub, contract = false)
-        val vFull = P.comSpeed()
+        // Крупнейший организм — само тело; по нему и мерится вращение.
+        var big = 0
+        for (o in 0 until P.organismCount) if (P.organismSize(o) > P.organismSize(big)) big = o
+
+        fun run20(hydro: Boolean, contacts: Boolean): DoubleArray {
+            P.setContacts(contacts)
+            P.resetState()
+            for (fr in 1..(20.0 / dt).toInt()) P.frame(dt, sub, contract = false, hydro = hydro)
+            return doubleArrayOf(P.comSpeed(), abs(P.angVelOf(big)))
+        }
+        val noHydro = run20(false, true)
+        val noContacts = run20(true, false)
+        val full = run20(true, true)
+        val live = P.liveContacts()
+        val ct0 = P.contactsObj()
+        val pen0 = ct0?.maxPenetration(P.px, P.py) ?: 0.0
+        P.setContacts(true)
         println(String.format(Locale.ROOT,
-            "       крип за 20 с: без среды %.2e, с полной физикой %.2e связей/с",
-            vNoHydro, vFull))
+            "       контактов в покое: %d, глубина %.4f", live, pen0))
+        println(String.format(Locale.ROOT,
+            "       крип за 20 с: без среды %.2e/%.2e, без контактов %.2e/%.2e, полная %.2e/%.2e (связей/с и рад/с)",
+            noHydro[0], noHydro[1], noContacts[0], noContacts[1], full[0], full[1]))
     }
 
     println("--- остановка после гребков")
@@ -705,7 +718,255 @@ fun main(args: Array<String>) {
     }
 
     // ------------------------------------------------------------------
+    //  8d. ТАБЛИЦА ПО ВСЕМ КОСТЯМ: захват на оси и захват с краю.
+    //
+    //     Руками замечено два разных эффекта: одни кластеры тянутся вяло, другие
+    //     резко, а на некоторых захват с краю сразу уводит вбок. Поэтому мерятся
+    //     ВСЕ кости, а не одна: по одной кости не отличить свойство модели от
+    //     свойства конкретного кластера.
+    //
+    //     Для каждой кости берутся две клетки ДАЛЕКО вдоль её главной оси и
+    //     различающиеся смещением ПОПЕРЁК: одна как можно ближе к оси, другая как
+    //     можно дальше. Курсор уводится вбок одинаково. Если разница только в
+    //     плече, отношение будет близко к единице.
+    //
+    //     Проверяется физический предел: за подшаг рука вкладывает импульс не
+    //     больше jMax на плече не больше r_max, значит накопленная угловая
+    //     скорость не может превысить r_max * jMax * шагов / I.
+    // ------------------------------------------------------------------
+    println("--- захват кости: на оси и с краю, по всем костям")
+    run {
+        var worstRatio = 0.0
+        var worstOmega = 0.0
+        var worstBound = Double.MAX_VALUE
+        for (bi in P.rigidBones.indices) {
+            val ids = P.boneIds(bi)
+            if (ids.size < 4) continue
+
+            var cx = 0.0; var cy = 0.0; var m = 0.0
+            for (k in ids) { val w = 1.0 / P.invMass[k]; m += w; cx += w * P.px[k]; cy += w * P.py[k] }
+            cx /= m; cy /= m
+
+            var sxx = 0.0; var sxy = 0.0; var syy = 0.0
+            for (k in ids) {
+                val rx = P.px[k] - cx; val ry = P.py[k] - cy
+                sxx += rx * rx; sxy += rx * ry; syy += ry * ry
+            }
+            val ang = 0.5 * Math.atan2(2.0 * sxy, sxx - syy)
+            val ux = cos(ang); val uy = sin(ang)
+            val vxA = -uy; val vyA = ux
+
+            var alongMax = 0.0; var rMax = 0.0; var inertiaBone = 0.0
+            for (k in ids) {
+                val rx = P.px[k] - cx; val ry = P.py[k] - cy
+                val a2 = abs(rx * ux + ry * uy)
+                if (a2 > alongMax) alongMax = a2
+                val r = sqrt(rx * rx + ry * ry)
+                if (r > rMax) rMax = r
+                inertiaBone += (rx * rx + ry * ry) / P.invMass[k]
+            }
+            var near = -1; var far = -1
+            var perpMin = Double.MAX_VALUE; var perpMax = -1.0
+            for (k in ids) {
+                val rx = P.px[k] - cx; val ry = P.py[k] - cy
+                if (abs(rx * ux + ry * uy) < alongMax * 0.6) continue
+                val p = abs(rx * vxA + ry * vyA)
+                if (p < perpMin) { perpMin = p; near = k }
+                if (p > perpMax) { perpMax = p; far = k }
+            }
+            if (near < 0 || far < 0) continue
+
+            fun pullFrom(g: Int): DoubleArray {
+                P.resetState(); P.resetCounters()
+                val tx = P.px[g] + vxA * topo.meanLinkLength * 10.0
+                val ty = P.py[g] + vyA * topo.meanLinkLength * 10.0
+                for (fr in 1..(1.0 / dt).toInt()) {
+                    P.dragTo(g, tx, ty)
+                    P.frame(dt, sub, contract = false)
+                }
+                P.dragRelease()
+                return doubleArrayOf(abs(P.angVelOf(P.organismOf[g])), P.peakSpeedCellsPerTick())
+            }
+
+            val axis = pullFrom(near)
+            val edge = pullFrom(far)
+            val ratio = if (axis[0] > 0) edge[0] / axis[0] else 0.0
+            val jMax = P.const("DRAG_ACCEL") * topo.meanLinkLength / (dt * dt) * (dt / sub)
+            val bound = rMax * jMax / inertiaBone * (1.0 / dt) * sub
+
+            println(String.format(Locale.ROOT,
+                "       кость %2d: %3d клеток, поперёк %.2f..%.2f связи, omega %.2e -> %.2e (x%.1f), пик %.1f, предел %.1e",
+                bi, ids.size, perpMin / topo.meanLinkLength, perpMax / topo.meanLinkLength,
+                axis[0], edge[0], ratio, maxOf(axis[1], edge[1]), bound))
+
+            if (ratio > worstRatio) worstRatio = ratio
+            if (edge[0] / bound > worstOmega / worstBound) { worstOmega = edge[0]; worstBound = bound }
+        }
+        check("захват с краю не раскручивает сверх вложенного рукой",
+            "вращение больше того, что способна дать ограниченная сила на плече") {
+            expectBelow(worstOmega, worstBound, " рад/с")
+        }
+    }
+
+    // ------------------------------------------------------------------
+    //  8e. ЗАХВАТ ЗА ЛЮБУЮ ГРАНИЧНУЮ КЛЕТКУ И РЕЗКИЙ РЫВОК.
+    //
+    //     Сценарий из наблюдений руками: схватить мышью клетку на контуре и резко
+    //     дёрнуть. На теле целиком из кости это воспроизводилось с ЛЮБОЙ клетки,
+    //     поэтому мерятся все граничные подряд, а не одна выбранная.
+    //
+    //     Инвариант тот же, что и у кости: рука ограничена по силе, значит она не
+    //     может разогнать ничего выше потолка тяги. Срабатывание clampSpeed здесь
+    //     означает, что скорость взялась не от руки — а он правит частицы по одной
+    //     и импульс не сохраняет.
+    // ------------------------------------------------------------------
+    println("--- рывок за граничную клетку")
+    run {
+        val onB = BooleanArray(P.n)
+        for (e in 0 until P.boundCount) { onB[P.boundA[e]] = true; onB[P.boundB[e]] = true }
+        val bset = (0 until P.n).filter { onB[it] }
+        // Берём выборку по контуру, а не все: полный перебор стоил бы минут.
+        val step = maxOf(1, bset.size / 12)
+        var worstPeak = 0.0
+        var worstCaps = 0
+        var worstOmega = 0.0
+        var worstId = -1
+        var k = 0
+        while (k < bset.size) {
+            val g = bset[k]
+            k += step
+            P.resetState(); P.resetCounters()
+            // Рывок наружу от центра тела: так и тянут, когда отдирают край.
+            val o = P.organismOf[g]
+            var cx = 0.0; var cy = 0.0; var c = 0
+            for (q in 0 until P.n) if (P.organismOf[q] == o) { cx += P.px[q]; cy += P.py[q]; c++ }
+            if (c == 0) continue
+            cx /= c; cy /= c
+            var dx = P.px[g] - cx; var dy = P.py[g] - cy
+            val dl = sqrt(dx * dx + dy * dy)
+            if (dl < 1e-12) continue
+            dx /= dl; dy /= dl
+            val tx = P.px[g] + dx * topo.meanLinkLength * 15.0
+            val ty = P.py[g] + dy * topo.meanLinkLength * 15.0
+            for (fr in 1..(0.5 / dt).toInt()) {
+                P.dragTo(g, tx, ty)
+                P.frame(dt, sub, contract = false)
+            }
+            P.dragRelease()
+            val peak = P.peakSpeedCellsPerTick()
+            val caps = P.speedCapHits()
+            val om = abs(P.angVelOf(o))
+            if (peak > worstPeak) { worstPeak = peak; worstId = g }
+            if (caps > worstCaps) worstCaps = caps
+            if (om > worstOmega) worstOmega = om
+        }
+        println(String.format(Locale.ROOT,
+            "       %d проб по контуру: худший пик %.1f клеток/тик (клетка #%d), потолок %d раз, вращение до %.2e рад/с",
+            (bset.size + step - 1) / step, worstPeak, worstId, worstCaps, worstOmega))
+        check("рывок за граничную клетку не разгоняет сверх потолка",
+            "рука разогнала клетку выше потолка — clampSpeed качает импульс") {
+            expectAtMost(worstCaps, 0)
+        }
+    }
+
+    // ------------------------------------------------------------------
+    //  8f. ПЕРЕБОР ПО ВСЕМ КОСТНЫМ КЛЕТКАМ + проверка гипотезы про поток.
+    //
+    //     Наблюдение руками: тяга за кость даёт странный разгон, и подозрение было
+    //     на конфликт с гидродинамикой — резкая тяга разгоняет запас среды, запас
+    //     гонит весь организм. Гипотеза проверяемая, и здесь она проверяется прямо:
+    //     тот же рывок повторяется с ЗАНУЛЁННЫМ каждый кадр запасом. Если запас и
+    //     есть двигатель, без него разгон обязан исчезнуть.
+    //
+    //     Перебираются все костные клетки, а не выбранные: руками замечено, что
+    //     одни клетки кластера ведут себя иначе других, и по одной пробе этого не
+    //     отличить. Отдельно отмечается, лежит ли худшая клетка на контуре —
+    //     подозрение было именно на такие.
+    // ------------------------------------------------------------------
+    println("--- перебор костных клеток: разгон и роль запаса среды")
+    run {
+        val onB = BooleanArray(P.n)
+        for (e in 0 until P.boundCount) { onB[P.boundA[e]] = true; onB[P.boundB[e]] = true }
+
+        fun yank(g: Int, killFlow: Boolean): DoubleArray {
+            P.resetState(); P.resetCounters()
+            val o = P.organismOf[g]
+            var cx = 0.0; var cy = 0.0; var c = 0
+            for (q in 0 until P.n) if (P.organismOf[q] == o) { cx += P.px[q]; cy += P.py[q]; c++ }
+            cx /= c; cy /= c
+            var dx = P.px[g] - cx; var dy = P.py[g] - cy
+            val dl = sqrt(dx * dx + dy * dy)
+            if (dl < 1e-12) return doubleArrayOf(0.0, 0.0, 0.0)
+            dx /= dl; dy /= dl
+            val tx = P.px[g] + dx * topo.meanLinkLength * 15.0
+            val ty = P.py[g] + dy * topo.meanLinkLength * 15.0
+            for (fr in 1..(0.3 / dt).toInt()) {
+                P.dragTo(g, tx, ty)
+                P.frame(dt, sub, contract = false)
+                if (killFlow) P.resetFlow()
+            }
+            P.dragRelease()
+            val peak = P.peakSpeedCellsPerTick()
+            // Отпускаем и смотрим, с чем тело осталось.
+            for (fr in 1..(1.0 / dt).toInt()) {
+                P.frame(dt, sub, contract = false)
+                if (killFlow) P.resetFlow()
+            }
+            return doubleArrayOf(P.comSpeed(), abs(P.angVelOf(o)), peak)
+        }
+
+        var worstV = 0.0; var worstId = -1; var worstBone = -1; var worstPeak = 0.0
+        var caps = 0
+        for (bi in P.rigidBones.indices) {
+            val ids = P.boneIds(bi)
+            val stepB = maxOf(1, ids.size / 6)
+            var k = 0
+            while (k < ids.size) {
+                val g = ids[k]; k += stepB
+                val r = yank(g, false)
+                if (r[0] > worstV) { worstV = r[0]; worstId = g; worstBone = bi; worstPeak = r[2] }
+                caps = maxOf(caps, P.speedCapHits())
+            }
+        }
+        if (worstId >= 0) {
+            val noFlow = yank(worstId, true)
+            println(String.format(Locale.ROOT,
+                "       худшая клетка #%d (кость %d, на контуре=%b): скорость %.3e, без запаса среды %.3e связей/с, пик %.1f",
+                worstId, worstBone, onB[worstId], worstV, noFlow[0], worstPeak))
+            println(String.format(Locale.ROOT,
+                "       роль запаса среды: %.1f%% разгона",
+                if (worstV > 0) 100.0 * (1.0 - noFlow[0] / worstV) else 0.0))
+
+            // БЮДЖЕТ РУКИ: сколько она вообще способна вложить за это время.
+            //
+            // Сила ограничена DRAG_ACCEL на эталонную массу (средняя клетка весит
+            // единицу, см. restInvMass). За 0.3 секунды удержания импульс равен
+            // сила * время, а скорость центра масс — импульс на массу организма.
+            // Если наблюдаемое НИЖЕ бюджета, разгон законен и весь вопрос в
+            // величине DRAG_ACCEL, а не в ошибке модели.
+            var mOrg = 0.0
+            val oW = P.organismOf[worstId]
+            for (q in 0 until P.n) if (P.organismOf[q] == oW && P.invMass[q] > 0.0) mOrg += 1.0 / P.invMass[q]
+            val handForce = P.const("DRAG_ACCEL") * topo.meanLinkLength / (dt * dt)
+            val budget = handForce * 0.3 / mOrg / topo.meanLinkLength
+            println(String.format(Locale.ROOT,
+                "       бюджет руки за 0.3 с: %.2f связей/с при массе организма %.0f — наблюдаемое %s",
+                budget, mOrg, if (worstV <= budget) "В ПРЕДЕЛАХ" else "СВЕРХ БЮДЖЕТА"))
+            check("разгон от рывка не превышает вложенного рукой",
+                "скорость больше той, что способна дать ограниченная сила за это время") {
+                expectBelow(worstV, budget, " связей/с")
+            }
+
+        }
+        check("рывок за костную клетку не разгоняет сверх потолка",
+            "тяга за кость выходит за потолок — clampSpeed качает импульс") {
+            expectAtMost(caps, 0)
+        }
+    }
+
+    // ------------------------------------------------------------------
     //  9. ПУЛЯ НЕ ПРОХОДИТ СКВОЗЬ ТЕЛО.
+
     //
     //     Самый злой допустимый случай: одиночная клетка на потолке скорости.
     //     Быстрее в стенде не летает ничто — clampSpeed режет всё выше. Если

@@ -108,6 +108,9 @@ class BoundaryContacts(
 
     private val toi = DoubleArray(n)
 
+    /** Пары, перекрытые уже в позе покоя. См. bonded. */
+    private val restTouching = HashSet<Long>()
+
     // --- буфер DDA ---
     private val ddaX = IntArray(DDA_MAX)
     private val ddaY = IntArray(DDA_MAX)
@@ -156,6 +159,26 @@ class BoundaryContacts(
      */
     /** Радиус контакта клетки — для отрисовки настоящей геометрии, а не рисовального радиуса. */
     fun contactRadiusOf(i: Int): Double = contactRadius[i]
+
+    fun restTouchingCount(): Int = restTouching.size
+
+    /** Запоминает пары, перекрытые в позе покоя. Зовётся один раз при сборке. */
+    fun markRestTouching(restX: FloatArray, restY: FloatArray) {
+        restTouching.clear()
+        for (a in verts.indices) {
+            val i = verts[a]
+            for (b in a + 1 until verts.size) {
+                val j = verts[b]
+                var linked = false
+                for (k in adjStart[i] until adjStart[i + 1]) if (adj[k] == j) { linked = true; break }
+                if (linked) continue
+                val dx = (restX[i] - restX[j]).toDouble()
+                val dy = (restY[i] - restY[j]).toDouble()
+                val rr = contactRadius[i] + contactRadius[j]
+                if (dx * dx + dy * dy < rr * rr) restTouching.add(pairKey(i, j))
+            }
+        }
+    }
 
     fun maxPenetration(px: DoubleArray, py: DoubleArray): Double {
         var worst = 0.0
@@ -227,10 +250,38 @@ class BoundaryContacts(
     }
 
     /** Связаны ли клетки напрямую. Линейный поиск: степень вершины не больше восьми. */
+    /**
+     * Пара НЕ сталкивается: либо связана, либо перекрыта уже в позе покоя.
+     *
+     * Про связанные было с самого начала: соседи по решётке стоят ближе суммы
+     * радиусов и были бы в вечном контакте.
+     *
+     * Про ПОКОЙ пришлось добавить после кирпича — тела целиком из кости. Радиус
+     * контакта берётся по самому длинному граничному ребру клетки, иначе мембрану
+     * не сшить; но тот же радиус накрывает и другие, более близкие соседства той
+     * же клетки, если они не связаны. На теле с мягкой тканью запас был 1.62x и
+     * всё сходилось, на кирпиче окна нет вовсе: в покое насчитывалось 134
+     * постоянных контакта глубиной 0.0585.
+     *
+     * Постоянный контакт сам по себе не двигал бы тело — он симметричен. Но
+     * позиционный решатель обходит контакты по Гауссу-Зейделю, порядок обхода
+     * несимметричен, и за подшаг накапливается момент. Кирпич от этого крутился
+     * со скоростью 0.066 рад/с из полного покоя, а с выключенными контактами
+     * стоял идеально — по этому расхождению причина и нашлась.
+     *
+     * Пары, перекрытые в покое, — это ТКАНЬ, а не столкновение, и сталкивать их
+     * не нужно: они и должны оставаться рядом. Считаются один раз при сборке.
+     *
+     * ПРИ ПЕРЕНОСЕ: тело растёт, и набор таких пар меняется вместе с топологией.
+     * Пересчитывать вместе с contactRadius.
+     */
     private fun bonded(i: Int, j: Int): Boolean {
         for (k in adjStart[i] until adjStart[i + 1]) if (adj[k] == j) return true
-        return false
+        return restTouching.contains(pairKey(i, j))
     }
+
+    private fun pairKey(i: Int, j: Int): Long =
+        (if (i < j) i else j).toLong() * 1000003L + (if (i < j) j else i).toLong()
 
     private fun addPair(i: Int, j: Int) {
         if (pairN >= pairA.size) {
@@ -537,11 +588,13 @@ class BoundaryContacts(
             for (v in verts) if (contactRadius[v] > maxR) maxR = contactRadius[v]
             val cell = maxOf(2.0 * maxR, 1e-6)
 
-            return BoundaryContacts(
+            val bc = BoundaryContacts(
                 n, verts, start, adj, radius, cell,
                 contactScale, ccdCore, restitution, friction, meanLink, contactMaxStep,
                 contactRadius,
             )
+            bc.markRestTouching(restX, restY)
+            return bc
         }
     }
 }

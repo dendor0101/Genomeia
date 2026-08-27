@@ -162,6 +162,20 @@ object Probe {
      * hydro = false — намеренно урезанный диагностический режим «внешних сил нет».
      * Он и обязан отличаться от демо, поэтому собирается вручную.
      */
+    /**
+     * Кадр с ЯВНО ЗАДАННЫМИ целями мышц — для воспроизведения записи.
+     *
+     * Обычный frame либо молчит, либо жмёт мышцу номер ноль. Записанное же
+     * перетаскивание могло идти под работающим гребком, и без этого воспроизведение
+     * показывало совсем другую картину, чем видел человек.
+     */
+    fun frameWithMuscles(dt: Double, targets: DoubleArray) {
+        muscleTarget.fill(0.0)
+        for (m in targets.indices) if (m < muscleTarget.size) muscleTarget[m] = targets[m]
+        updateMuscles(dt)
+        simulate()
+    }
+
     fun frame(dt: Double, sub: Int, contract: Boolean, hydro: Boolean = true) {
         muscleTarget.fill(0.0)
         if (contract && muscleTarget.isNotEmpty()) muscleTarget[0] = 1.0
@@ -206,15 +220,63 @@ object Probe {
      * податливое и ограничено MAX_DRAG_SPEED — именно оно и есть сценарий игрока.
      */
     fun dragTo(id: Int, x: Double, y: Double) {
+        // Демо при захвате задирает вес клетки в shape matching, и без этого
+        // воспроизведение шло с СОВЕРШЕННО другой физикой кости: две записанные
+        // сессии выглядели исправными, хотя руками тело шло вразнос.
+        val prev = field<Int>("dragId")
+        if (prev >= 0 && prev != id) matchWeight[prev] = 1.0
+        matchWeight[id] = const("DRAG_MATCH_WEIGHT")
         setField("dragId", id)
         setField("mouseX", x)
         setField("mouseY", y)
     }
 
-    fun dragRelease() { setField("dragId", -1) }
+    fun dragRelease() {
+        val prev = field<Int>("dragId")
+        if (prev >= 0) matchWeight[prev] = 1.0
+        setField("dragId", -1)
+    }
 
     /** Свободная ли это клетка — без единой связи. */
     /** Сколько связей отмечено как «должна была порваться». */
+    fun setContacts(on: Boolean) { setField("contactsOn", on) }
+
+    fun liveContacts(): Int {
+        val ct = contactsObj() ?: return 0
+        val f = ct.javaClass.getDeclaredField("lastContacts").apply { isAccessible = true }
+        return f.getInt(ct)
+    }
+
+    fun boneIds(b: Int): IntArray = rigidBones[b]
+
+    /**
+     * Угловая скорость ОДНОГО организма вокруг ЕГО центра масс.
+     *
+     * Общесценовые angMom и inertia для этого не годятся: когда тянут одно тело, а
+     * второе стоит, вокруг общего центра масс возникает большой момент, к вращению
+     * тела отношения не имеющий. На двух копиях одного тела это давало разные
+     * числа для одинаковых костей — по этому расхождению ошибка и нашлась.
+     */
+    fun angVelOf(o: Int): Double {
+        var m = 0.0; var cx = 0.0; var cy = 0.0; var sx = 0.0; var sy = 0.0
+        for (i in 0 until n) {
+            if (organismOf[i] != o || invMass[i] <= 0.0) continue
+            val w = 1.0 / invMass[i]
+            m += w; cx += w * px[i]; cy += w * py[i]; sx += w * vx[i]; sy += w * vy[i]
+        }
+        if (m <= 0.0) return 0.0
+        cx /= m; cy /= m; sx /= m; sy /= m
+        var l = 0.0; var j = 0.0
+        for (i in 0 until n) {
+            if (organismOf[i] != o || invMass[i] <= 0.0) continue
+            val w = 1.0 / invMass[i]
+            val rx = px[i] - cx; val ry = py[i] - cy
+            l += w * (rx * (vy[i] - sy) - ry * (vx[i] - sx))
+            j += w * (rx * rx + ry * ry)
+        }
+        return if (j > 0.0) l / j else 0.0
+    }
+
     fun organismSize(o: Int): Int {
         val f = RealBodyDemo::class.java.getDeclaredField("organismSize").apply { isAccessible = true }
         return (f.get(demo) as IntArray)[o]

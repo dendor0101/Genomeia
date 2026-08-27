@@ -400,6 +400,11 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
 
     // --- самоконтакт границы: та же реализация, что в демо ---
     private val radius = DoubleArray(n) { topo.restR[it].toDouble() }
+
+    /** Масса организма — знаменатель скорости центра масс, см. запас среды. */
+    private val organismMass = DoubleArray(topo.organismCount).also { a ->
+        for (i in 0 until n) if (invMass[i] > 0.0) a[topo.organismOf[i]] += 1.0 / invMass[i]
+    }
     private val conMaxLen = DoubleArray(topo.conCount) { c ->
         p.linkMaxStretch * topo.conRest[c]
     }
@@ -699,7 +704,9 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             for (o in 0 until topo.organismCount) { comAccX[o] = 0.0; comAccY[o] = 0.0 }
             for (i in 0 until n) {
                 val o = topo.organismOf[i]
-                comAccX[o] += vx[i]; comAccY[o] += vy[i]
+                if (invMass[i] <= 0.0) continue
+                val mw = 1.0 / invMass[i]
+                comAccX[o] += mw * vx[i]; comAccY[o] += mw * vy[i]
             }
 
             // Демпфер между телом и запасом: за шаг относительная скорость падает на
@@ -709,8 +716,10 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             val kfe = if (kf > limit) limit else kf
 
             for (o in 0 until topo.organismCount) {
-                val comVX = comAccX[o] / topo.organismSize[o]
-                val comVY = comAccY[o] / topo.organismSize[o]
+                val mo = organismMass[o]
+                if (mo <= 0.0) continue
+                val comVX = comAccX[o] / mo
+                val comVY = comAccY[o] / mo
                 val dfx = (comVX - flowVX[o]) * kfe
                 val dfy = (comVY - flowVY[o]) * kfe
                 flowVX[o] += dfx
