@@ -13,6 +13,7 @@ import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.render.RenderFrame
 import io.github.some_example_name.render.RenderSettings
 import io.github.some_example_name.render.WorldRenderer
+import io.github.some_example_name.render.debug.RenderSceneDump
 import io.github.some_example_name.render.pack.CellInstanceBuffer
 import io.github.some_example_name.render.pack.PheromoneInstanceBuffer
 import kotlin.math.sqrt
@@ -294,6 +295,28 @@ ${spec.detailedPerformance}
         )
         font.data.setScale(1f)
         spriteBatch.end()
+    }
+
+    /**
+     * Выгрузить последний отрисованный кадр в файл — вход рендера, а не картинку.
+     *
+     * Звать только ПОСЛЕ [render] в том же кадре: пишется тот самый [frame], который
+     * только что ушёл в GPU, поэтому дамп и живой кадр совпадают побайтово.
+     *
+     * Дальше этот файл открывается стендом RenderLab, и шейдеры можно крутить, пересобирая
+     * один только :render — без симуляции, потоков и загрузки геномов.
+     */
+    fun dumpScene(file: com.badlogic.gdx.files.FileHandle) {
+        RenderSceneDump.write(
+            file = file,
+            frame = frame,
+            viewportWidth = camera.viewportWidth.toInt(),
+            viewportHeight = camera.viewportHeight.toInt(),
+            cameraX = camera.position.x,
+            cameraY = camera.position.y,
+            zoom = camera.zoom,
+            texturePaths = worldRenderer.texturePaths
+        )
     }
 
     /**

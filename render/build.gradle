@@ -22,6 +22,64 @@ test {
   testLogging { events "passed", "skipped", "failed" }
 }
 
+// ==================== Стенд рендера ====================
+//
+// Отдельный исходный набор, а НЕ часть main. Стенду нужен десктопный бэкенд LWJGL3 с
+// нативными библиотеками; попади он в main — и его потащили бы за собой Android с TeaVM,
+// которым он не нужен и где он не соберётся.
+//
+// Классы main стенду видны, обратно — нет. То есть удалить стенд можно в любой момент,
+// ничего в модуле не сломав.
+sourceSets {
+  lab {
+    compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+    // Каталог assets кладётся в classpath КАК КАТАЛОГ, а не копируется в resources.
+    //
+    // Зачем вообще: WorldRenderer грузит шейдеры через Gdx.files.internal, а internal на
+    // десктопе — это «относительно рабочего каталога, потом classpath». Рабочий каталог у
+    // задачи renderLab равен assets/, и всё находится; но из IDE стенд стартует в корне
+    // проекта, и шейдеры не находились вовсе. Запись в classpath закрывает второй случай.
+    //
+    // Почему именно каталог, а не resources.srcDirs, как в :lwjgl3: срцдир копируется в
+    // build/resources на сборке, и правка шейдера доезжала бы только после processResources.
+    // Прямая запись в classpath читает файл с диска в момент обращения — то есть клавиша R
+    // продолжает перечитывать ЖИВОЙ файл, ради чего стенд и сделан.
+    runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath +
+      files(rootProject.file('assets'))
+  }
+}
+
+dependencies {
+  labImplementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion"
+  labImplementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
+}
+
+// Запуск стенда: gradlew :render:renderLab
+//
+// Без аргументов открывает scene-dumps/scene-last.scene (его пишет F9 в симуляции),
+// а если дампа нет — синтетическую сцену со всеми слоями текстур.
+// Свой файл:  gradlew :render:renderLab -Dgenomeia.scene=scene-dumps/scene-123.scene
+tasks.register('renderLab', JavaExec) {
+  group = 'application'
+  description = 'Стенд рендера: рисует дамп сцены без запуска игры'
+  classpath = sourceSets.lab.runtimeClasspath
+  mainClass = 'io.github.some_example_name.render.lab.RenderLabKt'
+
+  // Рабочий каталог — assets/, потому что шейдеры и текстуры грузятся через
+  // Gdx.files.internal, то есть относительно него. Так же настроен и :lwjgl3:run.
+  workingDir = rootProject.file('assets')
+
+  jvmArgs += '-Dfile.encoding=UTF-8'
+  if (System.properties['os.name'].toLowerCase(Locale.ROOT).contains('mac')) {
+    jvmArgs += '-XstartOnFirstThread'
+  }
+
+  // Прокидывает -Dgenomeia.* из командной строки Gradle в JVM стенда.
+  System.properties.each { key, value ->
+    if (key.toString().startsWith('genomeia.')) systemProperty(key.toString(), value)
+  }
+}
+
 jar {
   duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }

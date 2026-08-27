@@ -5,6 +5,7 @@ gradle-app.setting
 /android/build/
 /core/build/
 /render/build/
+/scene-dumps/
 /lwjgl2/build/
 /lwjgl3/build/
 /html/build/

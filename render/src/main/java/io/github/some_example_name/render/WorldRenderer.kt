@@ -48,7 +48,15 @@ import io.github.some_example_name.render.pack.PheromoneInstanceBuffer
  * Требуется живой GL-контекст: [create] дёргается из конструктора, так что создавать
  * объект можно только после инициализации графики.
  */
-class WorldRenderer(private val texturePaths: List<String>) {
+class WorldRenderer(
+    /**
+     * Слои TextureArray по порядку: тип клетки — это индекс в этом списке.
+     *
+     * Публичный, потому что порядок нужен снимку сцены (RenderSceneDump): без него дамп
+     * открылся бы с чужими текстурами. Снаружи список только читают.
+     */
+    val texturePaths: List<String>
+) {
 
     // Общие ресурсы
     private lateinit var mesh: Mesh
