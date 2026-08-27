@@ -911,7 +911,20 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * насквозь, значит дыра настоящая, а не следствие слишком резкой мыши.
          * Так же сделано в прототипе, откуда переносились контакты.
          */
-        private const val BULLET_SPEED_FRACTION = 0.95
+        /**
+         * Доля потолка скорости для пули и тарана.
+         *
+         * Было 0.95, стало 0.8. Девяносто пять процентов оставляли запаса всего
+         * пять, а его съедает первая же добавка от ограничений: удар, поправка
+         * связи, отклик контакта. Потолок скорости при этом срабатывает, а он
+         * правит частицы по одной и импульс не сохраняет — то есть стенд сам
+         * создавал ту ошибку, которую призван ловить.
+         *
+         * Восемь десятых оставляют пятую часть потолка на отклик решателя. Проверка
+         * непроницаемости от этого не слабеет: пуля по-прежнему летит быстрее, чем
+         * что-либо в симуляции способно двигаться само.
+         */
+        private const val BULLET_SPEED_FRACTION = 0.8
 
         private val TEAR_FILL = Color(0.25f, 0.45f, 0.95f, 1f)
         private val TEAR_LINK = Color(0.45f, 0.65f, 1f, 1f)
@@ -2025,6 +2038,9 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
     private lateinit var linkTorn: BooleanArray
     private var linkOfPair = HashMap<Long, Int>()
 
+    /** Срабатывания потолка на момент захвата — строка DRAG показывает разницу. */
+    private var dragCapBase = 0
+
     /** Какую свободную частицу заряжать следующей. См. fireBullet. */
     private var nextBullet = 0
 
@@ -2046,6 +2062,11 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
      * целиком, как брошенное, а не растягиваться за разогнанным краем.
      */
     private fun slamOrganisms() {
+        // ЗАХВАТ ОТПУСКАЕТСЯ. Держать клетку и одновременно бить тараном —
+        // противоречивая пара действий: таран НАЗНАЧАЕТ скорость всем частицам, а
+        // рука тут же начинает с ней бороться. Замер: пик 9.32 при потолке 8.0 и
+        // 136 срабатываний clampSpeed, хотя сам таран на кирпиче проходит чисто.
+        if (dragId >= 0) { matchWeight[dragId] = 1.0; dragId = -1 }
         // Два самых крупных организма — это тела; свободные частицы отсеиваются
         // сами, они размером в одну клетку.
         val order = (0 until organismCount).sortedByDescending { organismSize[it] }
@@ -3139,7 +3160,17 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         val touched = Gdx.input.isButtonPressed(Input.Buttons.LEFT) && !uiTookMouse
         if (touched && !wasTouched) {
             val i = nearestParticle()
-            if (i >= 0) { dragId = i; matchWeight[i] = DRAG_MATCH_WEIGHT }
+            if (i >= 0) {
+                dragId = i; matchWeight[i] = DRAG_MATCH_WEIGHT
+                // Отсечка счётчиков на момент захвата: строка DRAG обязана
+                // показывать, что натворила ИМЕННО ЭТА тяга. Счётчики
+                // накопительные и обнуляются только по R, поэтому таран через O
+                // красил строку у следующей же тяги, хотя она ни при чём.
+                dragCapBase = speedCapHits
+                // Пик именно ОБНУЛЯЕТСЯ, а не запоминается: это максимум, и
+                // вычитать из максимума базу бессмысленно.
+                peakSpeed2 = 0.0
+            }
         }
         if (!touched && wasTouched && dragId >= 0) { matchWeight[dragId] = 1.0; dragId = -1 }
         wasTouched = touched
@@ -3468,7 +3499,9 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         font.draw(batch, "REAL BODY FROM GENOME EDITOR  -  XPBD + shape matching", 16f, y); y -= line * 1.4f
 
         font.color = HUD_MUTED
-        font.draw(batch, "cells = $n   links = $conCount   area triangles = ${body.triCount}" +
+        // conCount это МЯГКИЕ связи: внутрикостных в нём намеренно нет. У тела
+        // целиком из кости здесь ноль, и это не ошибка выгрузки.
+        font.draw(batch, "cells = $n   soft links = $conCount   area triangles = ${body.triCount}" +
             "   (%.2f per cell)".format(body.triCount.toFloat() / n), 16f, y); y -= line
         font.draw(batch, "substeps = $SUBSTEPS   soft compliance = $SOFT_COMPLIANCE   viscosity = $VISCOSITY /s", 16f, y); y -= line
         font.draw(batch, "medium drag = $MEDIUM_DRAG /s (isotropic, no thrust)   normal drag = $NORMAL_DRAG on $boundCount boundary edges", 16f, y); y -= line
@@ -3531,10 +3564,12 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
                 val bx = cxx / mm - mouseX; val by = cyy / mm - mouseY
                 sqrt(bx * bx + by * by) / body.meanLinkLength
             } else 0.0
+            // И пик, и потолок берутся ОТ МОМЕНТА ЗАХВАТА, а не от сброса.
+            val capHere = speedCapHits - dragCapBase
             val vPeak = sqrt(peakSpeed2) * DT / body.meanLinkLength
-            font.color = if (speedCapHits > 0) INVERTED_FILL else HUD_TEXT
+            font.color = if (capHere > 0) INVERTED_FILL else HUD_TEXT
             font.draw(batch, ("DRAG  cell->cur = %.2f   body->cur = %.2f   peak = %.2f of %.1f   cap = %d")
-                .format(cellGap, bodyGap, vPeak, MAX_SPEED_CELLS_PER_TICK, speedCapHits), 16f, y)
+                .format(cellGap, bodyGap, vPeak, MAX_SPEED_CELLS_PER_TICK, capHere), 16f, y)
             font.color = HUD_TEXT
             y -= line
         }
@@ -3593,7 +3628,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
 /** Запуск: зелёная стрелка. Путь к выгрузке можно передать аргументом. */
 fun main(args: Array<String>) {
     if (StartupHelper.startNewJvmIfRequired()) return
-    val path = if (args.isNotEmpty()) args[0] else "body-export-медуза.txt"
+    val path = if (args.isNotEmpty()) args[0] else "body-export-кирпич.txt"
     val config = Lwjgl3ApplicationConfiguration().apply {
         setTitle("Организм из редактора — XPBD + shape matching")
         setWindowedMode(1100, 720)

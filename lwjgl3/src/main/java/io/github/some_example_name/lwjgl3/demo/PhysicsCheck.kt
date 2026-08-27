@@ -1042,7 +1042,7 @@ fun main(args: Array<String>) {
             P.px[bullet] = maxX + topo.meanLinkLength * 8.0
             P.py[bullet] = sumY / cnt
             P.prevX[bullet] = P.px[bullet]; P.prevY[bullet] = P.py[bullet]
-            P.vx[bullet] = -speed * 0.95; P.vy[bullet] = 0.0
+            P.vx[bullet] = -speed * P.const("BULLET_SPEED_FRACTION"); P.vy[bullet] = 0.0
 
             var deepest = 0.0
             for (fr in 1..(3.0 / dt).toInt()) {
@@ -1111,7 +1111,9 @@ fun main(args: Array<String>) {
                     val d0 = sqrt(dx * dx + dy * dy)
                     if (d0 < 1e-12) break
                     dx /= d0; dy /= d0
-                    val speed = 0.95 * P.const("MAX_SPEED_CELLS_PER_TICK") * topo.meanLinkLength / dt
+                    // Доля берётся ИЗ ДЕМО, а не зашивается здесь: иначе проверка мерит не то,
+                    // что делает клавиша O, и правка константы её не касается.
+                    val speed = P.const("BULLET_SPEED_FRACTION") * P.const("MAX_SPEED_CELLS_PER_TICK") * topo.meanLinkLength / dt
                     for (i in 0 until P.n) {
                         when (P.organismOf[i]) {
                             oa -> { P.vx[i] = dx * speed; P.vy[i] = dy * speed }
@@ -1161,7 +1163,9 @@ fun main(args: Array<String>) {
             var dx = cb[0] - ca[0]; var dy = cb[1] - ca[1]
             val d0 = sqrt(dx * dx + dy * dy)
             dx /= d0; dy /= d0
-            val speed = 0.95 * P.const("MAX_SPEED_CELLS_PER_TICK") * topo.meanLinkLength / dt
+            // Доля берётся ИЗ ДЕМО, а не зашивается здесь: иначе проверка мерит не то,
+                    // что делает клавиша O, и правка константы её не касается.
+                    val speed = P.const("BULLET_SPEED_FRACTION") * P.const("MAX_SPEED_CELLS_PER_TICK") * topo.meanLinkLength / dt
             for (i in 0 until P.n) {
                 when (P.organismOf[i]) {
                     oa -> { P.vx[i] = dx * speed; P.vy[i] = dy * speed }
@@ -1184,8 +1188,9 @@ fun main(args: Array<String>) {
                 }
             }
             println(String.format(Locale.ROOT,
-                "       таран на %.1f клеток/тик: проникновение %.3f, порвано связей %d",
-                speed * dt / topo.meanLinkLength, worstPen, P.tornCount()))
+                "       таран на %.1f клеток/тик: проникновение %.3f, порвано %d, потолок скорости %d раз, пик %.1f",
+                speed * dt / topo.meanLinkLength, worstPen, P.tornCount(), P.speedCapHits(),
+                P.peakSpeedCellsPerTick()))
             check("тела не проходят друг сквозь друга на таране",
                 "центры масс поменялись местами — тела пролетели насквозь") {
                 expectBelow(worstOverlap, 1.0, " связей за встречное тело")
