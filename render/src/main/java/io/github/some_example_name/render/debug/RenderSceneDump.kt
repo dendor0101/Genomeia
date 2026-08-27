@@ -53,7 +53,12 @@ import java.nio.ByteOrder
 object RenderSceneDump {
 
     private const val MAGIC = "GENOMSCN"
-    const val VERSION = 1
+
+    /** Версия 2: инстанс клетки ужался с 32 байт до 20, см. CellInstanceBuffer. */
+    const val VERSION = 2
+
+    /** Раскладка версии 1: x, y, color, packed1, packed2 + 12 байт добивки. */
+    private const val V1_CELL_STRUCT_SIZE = 32
 
     /** Расширение по умолчанию, чтобы дампы было видно глазами в каталоге. */
     const val EXTENSION = "scene"
@@ -153,8 +158,8 @@ object RenderSceneDump {
         }
 
         val version = input.int
-        require(version == VERSION) {
-            "дамп версии $version, а читать умеем только $VERSION — перезапишите файл"
+        require(version == VERSION || version == 1) {
+            "дамп версии $version, а читать умеем 1 и $VERSION — перезапишите файл"
         }
 
         val viewportWidth = input.int
@@ -178,7 +183,11 @@ object RenderSceneDump {
         }
 
         val cellCount = input.int
-        val cells = readDirect(input, cellCount * CellInstanceBuffer.STRUCT_SIZE)
+        val cells = if (version == 1) {
+            readCellsV1(input, cellCount)
+        } else {
+            readDirect(input, cellCount * CellInstanceBuffer.STRUCT_SIZE)
+        }
 
         val pheromoneCount = input.int
         val pheromones = readDirect(input, pheromoneCount * PheromoneInstanceBuffer.STRUCT_SIZE)
@@ -200,6 +209,56 @@ object RenderSceneDump {
             pheromoneCount = pheromoneCount,
             pheromones = pheromones
         )
+    }
+
+    /**
+     * Клетки из дампа версии 1 — переупаковка старой раскладки в текущую.
+     *
+     * Смысл поддержки: дампы это тот материал, на котором проверяют правки шейдера, и
+     * терять накопленные снимки при каждой смене раскладки нельзя — иначе сравнивать
+     * «до и после» будет попросту не на чем.
+     *
+     * Было (32 байта):  x, y, color, packed1, packed2, три нулевых int
+     *   packed1 = cos | sin<<8 | 0<<16 | radius<<24
+     *   packed2 = energy | cellType<<8 | seed<<16
+     * Стало (20 байт):  x, y, color, shape, type
+     *   shape = cos | sin<<8 | radius<<16 | energy<<24
+     *   type  = cellType | seedLo<<8 | seedHi<<16
+     */
+    private fun readCellsV1(source: ByteBuffer, cellCount: Int): ByteBuffer {
+        val target = ByteBuffer
+            .allocateDirect((cellCount * CellInstanceBuffer.STRUCT_SIZE).coerceAtLeast(1))
+            .order(ByteOrder.nativeOrder())
+
+        // Внутри инстанса байты лежали нативным порядком, а заголовок файла — big-endian,
+        // поэтому для полезной нагрузки нужен отдельный вид с нативным порядком.
+        val native = source.slice().order(ByteOrder.nativeOrder())
+
+        for (i in 0 until cellCount) {
+            val base = i * V1_CELL_STRUCT_SIZE
+            val x = native.getFloat(base)
+            val y = native.getFloat(base + 4)
+            val color = native.getInt(base + 8)
+            val packed1 = native.getInt(base + 12)
+            val packed2 = native.getInt(base + 16)
+
+            val cosByte = packed1 and 0xFF
+            val sinByte = (packed1 ushr 8) and 0xFF
+            val radiusByte = (packed1 ushr 24) and 0xFF
+            val energyByte = packed2 and 0xFF
+            val cellType = (packed2 ushr 8) and 0xFF
+            val seed = (packed2 ushr 16) and 0xFFFF
+
+            target.putFloat(x)
+            target.putFloat(y)
+            target.putInt(color)
+            target.putInt(CellInstanceBuffer.shape(cosByte, sinByte, radiusByte, energyByte))
+            target.putInt(CellInstanceBuffer.type(cellType, seed))
+        }
+
+        (source as java.nio.Buffer).position(source.position() + cellCount * V1_CELL_STRUCT_SIZE)
+        (target as java.nio.Buffer).flip()
+        return target
     }
 
     /** Читает без сдвига позиции источника: буфер сейчас поедет на GPU как есть. */

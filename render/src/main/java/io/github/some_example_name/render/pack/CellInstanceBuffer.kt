@@ -9,33 +9,51 @@ import java.nio.ByteOrder
  *
  * ЗАЧЕМ ОТДЕЛЬНЫЙ КЛАСС
  * ---------------------
- * Раскладка этих 32 байт должна совпадать с тем, что распаковывает вершинный шейдер
- * (shaders/debug/circle_pc.vert). Раньше знание о ней жило в трёх местах сразу:
- * побитовые формулы — в RenderBufferManager.writeCell и в EditorRenderSystem.putBuffer,
- * порядок полей — в RenderSystem.drawCellShader и снова в putBuffer, а обратные формулы —
- * в самом шейдере. Три копии одних и тех же магических чисел (0.05, 0.7, 255), которые
- * обязаны сходиться, иначе картинка едет молча: клетки не того размера или с чужим
- * доворотом текстуры, но без единой ошибки в логе.
+ * Раскладка этих 20 байт должна совпадать с тем, как ParticleRenderer объявляет
+ * инстансные атрибуты, и с тем, что ждёт вершинный шейдер (shaders/debug/circle_pc.vert).
+ * Раньше знание о ней жило в трёх местах сразу: побитовые формулы — в
+ * RenderBufferManager.writeCell и в EditorRenderSystem.putBuffer, порядок полей — в
+ * RenderSystem и снова в putBuffer, а обратные формулы — в самом шейдере. Три копии одних
+ * и тех же магических чисел, которые обязаны сходиться, иначе картинка едет молча.
  *
- * Теперь копий на CPU одна, и она покрыта тестами (CellInstanceBufferTest), которые
- * распаковывают записанное ровно теми же формулами, что и шейдер.
+ * Теперь копий на CPU одна, и она покрыта тестами (CellInstanceBufferTest).
  *
- * РАСКЛАДКА (32 байта = 2 текселя RGBA32UI, порядок байт нативный)
- * ---------------------------------------------------------------
- *   [0..3]   float x
- *   [4..7]   float y
- *   [8..11]  int   color   (RGBA8, распаковка unpackRGBA8 в шейдере)
- *   [12..15] int   packed1 (cosByte | sinByte<<8 | radiusByte<<24)
- *   [16..19] int   packed2 (energyByte | cellType<<8 | noiseSeed<<16)
- *   [20..31] три нулевых int — добивка до второго текселя
+ * РАСКЛАДКА (20 байт, порядок байт нативный)
+ * ------------------------------------------
+ *   [0..7]   float x, float y      → a_center  (2 × GL_FLOAT)
+ *   [8..11]  int   color           → a_color   (4 × GL_UNSIGNED_BYTE, normalized)
+ *   [12..15] int   shape           → a_shape   (4 × GL_UNSIGNED_BYTE, normalized)
+ *   [16..19] int   type            → a_type    (4 × GL_UNSIGNED_BYTE, normalized)
+ *
+ *   shape = cosByte | sinByte<<8 | radiusByte<<16 | energyByte<<24
+ *   type  = cellType | seedLo<<8  | seedHi<<16    | 0<<24
+ *
+ * ПОЧЕМУ НОРМАЛИЗОВАННЫЕ БАЙТЫ, А НЕ РАСПАКОВКА В ШЕЙДЕРЕ
+ * -------------------------------------------------------
+ * Раньше эти же 4 байта ехали одним uint и распаковывались вручную:
+ *
+ *     vec4 v1 = unpackRGBA8(packed1);   // сдвиги и маски
+ *     float cosA = v1.x * 2.0 - 1.0;
+ *
+ * Ровно это железо выборки вершинных атрибутов делает бесплатно для типа
+ * GL_UNSIGNED_BYTE с normalized = true. Заодно ушёл целый слой: текстура данных
+ * RGBA32UI, её рост, загрузка glTexSubImage2D по строкам и остатку, и расхождение
+ * float/uint между вебом и остальными платформами.
+ *
+ * ПРО ПОРЯДОК БАЙТ
+ * ----------------
+ * putInt пишет в нативном порядке, а GL читает компоненты атрибута в порядке адресов.
+ * На little-endian (x86, ARM, WASM — то есть все целевые платформы) младший байт числа
+ * оказывается компонентом .x, что здесь и предполагается. Прежний путь через текстуру
+ * держался ровно на том же допущении.
  *
  * ПРО ПОТОКИ
  * ----------
- * packed1/packed2 считает поток симуляции (RenderBufferManager) и кладёт готовыми
- * числами в снимок, а GL-поток потом только переписывает их в этот буфер. Так сделано
- * намеренно: побитовая арифметика на десятках тысяч клеток идёт параллельно кадру, а не
- * внутри него. Поэтому у класса два уровня API:
- *   - [put] — «положи уже готовые packed», для GL-потока;
+ * shape/type считает поток симуляции (RenderBufferManager) и кладёт готовыми числами в
+ * снимок, а GL-поток потом только переписывает их сюда. Так сделано намеренно: побитовая
+ * арифметика на десятках тысяч клеток идёт параллельно кадру, а не внутри него. Поэтому
+ * у класса два уровня API:
+ *   - [put] — «положи уже готовые», для GL-потока;
  *   - [putCell] и функции из companion — упаковка, для того, кто считает.
  */
 class CellInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
@@ -75,17 +93,14 @@ class CellInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
         finished = false
     }
 
-    /** Готовые packed — путь GL-потока, без арифметики. */
-    fun put(x: Float, y: Float, color: Int, packed1: Int, packed2: Int) {
+    /** Готовые shape/type — путь GL-потока, без арифметики. */
+    fun put(x: Float, y: Float, color: Int, shape: Int, type: Int) {
         ensureRoomForOneMore()
         buffer.putFloat(x)
         buffer.putFloat(y)
         buffer.putInt(color)
-        buffer.putInt(packed1)
-        buffer.putInt(packed2)
-        buffer.putInt(0)
-        buffer.putInt(0)
-        buffer.putInt(0)
+        buffer.putInt(shape)
+        buffer.putInt(type)
         written++
     }
 
@@ -112,12 +127,17 @@ class CellInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
             x = x,
             y = y,
             color = color,
-            packed1 = packed1(angleByte(angleCos), angleByte(angleSin), radiusByte(radius)),
-            packed2 = packed2(energyByte(energy), cellType, noiseSeed)
+            shape = shape(
+                cosByte = angleByte(angleCos),
+                sinByte = angleByte(angleSin),
+                radiusByte = radiusByte(radius),
+                energyByte = energyByte(energy)
+            ),
+            type = type(cellType = cellType, noiseSeed = noiseSeed)
         )
     }
 
-    /** Завершить кадр и отдать буфер на загрузку в текстуру данных. Идемпотентно. */
+    /** Завершить кадр и отдать буфер на загрузку в инстансный VBO. Идемпотентно. */
     fun end(): ByteBuffer {
         if (!finished) {
             (buffer as Buffer).flip()
@@ -144,8 +164,7 @@ class CellInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
 
         val bigger = allocate(grown.toInt().coerceAtLeast(instances))
 
-        // Direct-буфер нельзя расширить на месте, поэтому уже записанное переезжает
-        // копированием. Копируем ровно записанное, а не всю ёмкость.
+        // Копируем ровно записанное, а не всю ёмкость.
         if (written > 0) {
             val old = buffer
             (old as Buffer).position(0)
@@ -165,8 +184,17 @@ class CellInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
             .order(ByteOrder.nativeOrder())
 
     companion object {
-        /** 32 байта = 2 текселя RGBA32UI. Менять только вместе с circle_pc.vert. */
-        const val STRUCT_SIZE = 32
+        /**
+         * 20 байт на инстанс: 2 float + 3 упакованных четвёрки байт.
+         * Менять только вместе с раскладкой атрибутов в ParticleRenderer и с circle_pc.vert.
+         */
+        const val STRUCT_SIZE = 20
+
+        /** Смещения полей внутри инстанса — их же объявляет ParticleRenderer. */
+        const val OFFSET_CENTER = 0
+        const val OFFSET_COLOR = 8
+        const val OFFSET_SHAPE = 12
+        const val OFFSET_TYPE = 16
 
         const val INITIAL_CAPACITY = 30_000
 
@@ -174,20 +202,20 @@ class CellInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
 
         /**
          * Диапазон радиуса, который влезает в один байт.
-         * Обратное преобразование в шейдере: `ex_R = 0.05 + v1.w * 0.7`.
+         * Обратное преобразование в шейдере: `ex_R = 0.05 + a_shape.z * 0.7`.
          */
         const val RADIUS_MIN = 0.05f
         const val RADIUS_SPAN = 0.7f
 
         /**
-         * Делитель энергии. В шейдере распакованный байт идёт как `energy = v2.x * 0.5`,
+         * Делитель энергии. В шейдере распакованный байт идёт как `a_shape.w * 0.5`,
          * а потом возводится в квадрат — это радиус чёрной точки внутри клетки, а не
          * физическая энергия. Число 10 здесь просто задаёт, при какой энергии точка
          * достигает максимума.
          */
         const val ENERGY_SPAN = 10f
 
-        /** cos/sin из [-1..1] в байт. Обратно: `v1.x * 2.0 - 1.0`. */
+        /** cos/sin из [-1..1] в байт. Обратно: `a_shape.x * 2.0 - 1.0`. */
         fun angleByte(value: Float): Int =
             ((value * 0.5f + 0.5f) * 255f + 0.5f).toInt().coerceIn(0, 255)
 
@@ -197,14 +225,25 @@ class CellInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
         fun energyByte(energy: Float): Int =
             ((energy / ENERGY_SPAN) * 255f + 0.5f).toInt().coerceIn(0, 255)
 
-        fun packed1(cosByte: Int, sinByte: Int, radiusByte: Int): Int =
-            cosByte or (sinByte shl 8) or (radiusByte shl 24)
+        /** cos, sin, радиус, энергия — по байту на компоненту. */
+        fun shape(cosByte: Int, sinByte: Int, radiusByte: Int, energyByte: Int): Int =
+            (cosByte and 0xFF) or
+                ((sinByte and 0xFF) shl 8) or
+                ((radiusByte and 0xFF) shl 16) or
+                ((energyByte and 0xFF) shl 24)
 
         /**
-         * Старшие 16 бит packed2 — ключ шума, средний байт — тип клетки (индекс слоя в
-         * TextureArray), младший — энергия.
+         * Тип клетки (индекс слоя в TextureArray) и 16-битный ключ шума двумя байтами.
+         *
+         * Ключ раскладывается на два байта, потому что нормализованный атрибут отдаёт в
+         * шейдер четыре независимых компоненты, а не одно число. Собирается обратно как
+         * `lo + hi*256` с округлением — точно, без потери бита.
          */
-        fun packed2(energyByte: Int, cellType: Int, noiseSeed: Int): Int =
-            energyByte or (cellType.coerceIn(0, 255) shl 8) or ((noiseSeed and 0xFFFF) shl 16)
+        fun type(cellType: Int, noiseSeed: Int): Int {
+            val seed = noiseSeed and 0xFFFF
+            return cellType.coerceIn(0, 255) or
+                ((seed and 0xFF) shl 8) or
+                (((seed ushr 8) and 0xFF) shl 16)
+        }
     }
 }

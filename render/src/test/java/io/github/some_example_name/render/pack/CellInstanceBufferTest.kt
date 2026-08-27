@@ -2,62 +2,65 @@ package io.github.some_example_name.render.pack
 
 import org.junit.Test
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Проверка раскладки инстанса клетки против ТОГО ЖЕ разбора, что делает шейдер.
+ * Проверка раскладки инстанса клетки против ТОГО ЖЕ разбора, что делает GPU.
  *
- * Смысл этих тестов не в том, чтобы «покрыть класс», а в том, что раскладка живёт в двух
- * местах сразу — здесь и в shaders/debug/circle_pc.vert — и разъехаться они могут молча.
- * Поэтому распаковка ниже написана не «как удобно», а буквально повторяет шейдер:
+ * Смысл этих тестов не в том, чтобы «покрыть класс», а в том, что раскладка живёт в трёх
+ * местах сразу — здесь, в объявлении атрибутов ParticleRenderer и в circle_pc.vert — и
+ * разъехаться они могут молча. Поэтому распаковка ниже написана не «как удобно», а
+ * буквально повторяет то, что делает железо выборки атрибутов и вершинный шейдер:
  *
- *   vec2 pos = vec2(uintBitsToFloat(t0.x), uintBitsToFloat(t0.y));
- *   ex_R     = 0.05 + v1.w * 0.7;
- *   cosA     = v1.x * 2.0 - 1.0;
- *   seed     = float((packed2 >> 16u) & 0xFFFFu);
+ *   GL_UNSIGNED_BYTE + normalized  →  float = байт / 255.0
+ *   cosA  = a_shape.x * 2.0 - 1.0
+ *   ex_R  = 0.05 + a_shape.z * 0.7
+ *   seed  = byteValue(a_type.y) + byteValue(a_type.z) * 256.0
  *
- * Если кто-то поправит формулу с одной стороны — тест упадёт.
+ * ВНИМАНИЕ: здесь намеренно ЛИТЕРАЛЫ, а не константы из CellInstanceBuffer. Тест сверяет
+ * Kotlin с ШЕЙДЕРОМ, а шейдер про константы Kotlin ничего не знает — в нём голые числа.
+ * Если бы декодер брал RADIUS_SPAN из кодера, правка этой константы прошла бы тест
+ * насквозь: обе стороны поехали бы синхронно, а circle_pc.vert остался бы со старым 0.7.
  */
 class CellInstanceBufferTest {
 
-    // ==================== Разбор, повторяющий шейдер ====================
-    //
-    // ВНИМАНИЕ: здесь намеренно ЛИТЕРАЛЫ, а не константы из CellInstanceBuffer.
-    //
-    // Тест сверяет Kotlin с ШЕЙДЕРОМ, а шейдер про константы Kotlin ничего не знает — в
-    // нём стоят голые числа. Если бы декодер ниже брал RADIUS_SPAN из кодера, правка
-    // этой константы прошла бы тест насквозь: обе стороны поехали бы синхронно, а
-    // circle_pc.vert остался бы со старым 0.7 — то есть ровно та поломка, ради которой
-    // тест и написан, оказалась бы незамеченной.
-    //
-    // Меняете число здесь — обязаны поменять его и в шейдере.
+    // ==================== Разбор, повторяющий GPU ====================
 
-    /** unpackRGBA8 из circle_pc.vert: младший байт — x. */
-    private fun unpackByte(packed: Int, index: Int): Float =
+    /** Нормализованный байт: ровно то, что отдаёт GL для GL_UNSIGNED_BYTE + normalized. */
+    private fun normalized(packed: Int, index: Int): Float =
         ((packed ushr (index * 8)) and 0xFF) / 255f
 
-    /** `cosA = v1.x * 2.0 - 1.0` */
-    private fun shaderAngle(packed1: Int, index: Int): Float = unpackByte(packed1, index) * 2f - 1f
+    /** `byteValue()` из circle_pc.vert: round(normalized * 255). */
+    private fun byteValue(packed: Int, index: Int): Int =
+        (normalized(packed, index) * 255f).roundToInt()
 
-    /** `ex_R = 0.05 + v1.w * 0.7` */
-    private fun shaderRadius(packed1: Int): Float = 0.05f + unpackByte(packed1, 3) * 0.7f
+    /** `cosA = a_shape.x * 2.0 - 1.0` */
+    private fun shaderAngle(shape: Int, index: Int): Float = normalized(shape, index) * 2f - 1f
 
-    /** `int cellType = int(round(v2.y * 255.0))` */
-    private fun shaderCellType(packed2: Int): Int = ((packed2 ushr 8) and 0xFF)
+    /** `ex_R = 0.05 + a_shape.z * 0.7` */
+    private fun shaderRadius(shape: Int): Float = 0.05f + normalized(shape, 2) * 0.7f
 
-    /** `float seed = float((packed2 >> 16u) & 0xFFFFu)` */
-    private fun shaderSeed(packed2: Int): Int = (packed2 ushr 16) and 0xFFFF
+    /** `float energy = a_shape.w * 0.5` */
+    private fun shaderEnergy(shape: Int): Float = normalized(shape, 3) * 0.5f
+
+    /** `ex_cellType = int(byteValue(a_type.x))` */
+    private fun shaderCellType(type: Int): Int = byteValue(type, 0)
+
+    /** `seed = byteValue(a_type.y) + byteValue(a_type.z) * 256.0` */
+    private fun shaderSeed(type: Int): Int = byteValue(type, 1) + byteValue(type, 2) * 256
 
     private fun readInstance(data: ByteBuffer, index: Int): Instance {
         val base = index * CellInstanceBuffer.STRUCT_SIZE
         return Instance(
-            x = data.getFloat(base),
-            y = data.getFloat(base + 4),
-            color = data.getInt(base + 8),
-            packed1 = data.getInt(base + 12),
-            packed2 = data.getInt(base + 16)
+            x = data.getFloat(base + CellInstanceBuffer.OFFSET_CENTER),
+            y = data.getFloat(base + CellInstanceBuffer.OFFSET_CENTER + 4),
+            color = data.getInt(base + CellInstanceBuffer.OFFSET_COLOR),
+            shape = data.getInt(base + CellInstanceBuffer.OFFSET_SHAPE),
+            type = data.getInt(base + CellInstanceBuffer.OFFSET_TYPE)
         )
     }
 
@@ -65,33 +68,41 @@ class CellInstanceBufferTest {
         val x: Float,
         val y: Float,
         val color: Int,
-        val packed1: Int,
-        val packed2: Int
+        val shape: Int,
+        val type: Int
     )
 
     // ==================== Тесты ====================
 
     @Test
-    fun `раскладка инстанса ровно 32 байта и два текселя`() {
-        assertEquals(32, CellInstanceBuffer.STRUCT_SIZE, "менять только вместе с circle_pc.vert")
-        assertEquals(
-            0,
-            CellInstanceBuffer.STRUCT_SIZE % 16,
-            "инстанс обязан быть целым числом текселей RGBA32UI"
-        )
+    fun `раскладка инстанса ровно 20 байт и смещения выровнены`() {
+        assertEquals(20, CellInstanceBuffer.STRUCT_SIZE, "менять только вместе с ParticleRenderer")
+
+        // GL и особенно WebGL2 требуют, чтобы смещение атрибута было кратно размеру его
+        // типа, а шаг — размеру самого крупного. У нас крупнейший тип float (4 байта).
+        assertEquals(0, CellInstanceBuffer.STRUCT_SIZE % 4, "шаг обязан быть кратен 4")
+        assertEquals(0, CellInstanceBuffer.OFFSET_CENTER % 4)
+        assertEquals(0, CellInstanceBuffer.OFFSET_COLOR % 4)
+        assertEquals(0, CellInstanceBuffer.OFFSET_SHAPE % 4)
+        assertEquals(0, CellInstanceBuffer.OFFSET_TYPE % 4)
+
+        // Поля не должны перекрываться и обязаны покрывать инстанс целиком.
+        assertEquals(8, CellInstanceBuffer.OFFSET_COLOR, "после двух float")
+        assertEquals(12, CellInstanceBuffer.OFFSET_SHAPE)
+        assertEquals(16, CellInstanceBuffer.OFFSET_TYPE)
     }
 
     @Test
     fun `константы диапазонов совпадают с литералами в шейдере`() {
-        // Прямая сверка с `ex_R = 0.05 + v1.w * 0.7` из circle_pc.vert.
+        // Прямая сверка с `ex_R = 0.05 + a_shape.z * 0.7` из circle_pc.vert.
         // Падение этого теста означает: либо константу поменяли, не тронув шейдер,
         // либо шейдер поменяли, не тронув константу. Оба случая — молча битая картинка.
         assertEquals(0.05f, CellInstanceBuffer.RADIUS_MIN, "circle_pc.vert: ex_R = 0.05 + ...")
-        assertEquals(0.7f, CellInstanceBuffer.RADIUS_SPAN, "circle_pc.vert: ... + v1.w * 0.7")
+        assertEquals(0.7f, CellInstanceBuffer.RADIUS_SPAN, "circle_pc.vert: ... + a_shape.z * 0.7")
     }
 
     @Test
-    fun `записанная клетка читается обратно теми же формулами, что в шейдере`() {
+    fun `записанная клетка читается обратно теми же формулами, что на GPU`() {
         val buffer = CellInstanceBuffer(initialCapacity = 4)
         buffer.begin(1)
         buffer.putCell(
@@ -119,32 +130,52 @@ class CellInstanceBufferTest {
 
         // Углы и радиус — через байт, поэтому с допуском на квантование в 1/255.
         val quantum = 1f / 255f
-        assertNear(0.6f, shaderAngle(cell.packed1, 0), 2 * quantum, "cos")
-        assertNear(-0.8f, shaderAngle(cell.packed1, 1), 2 * quantum, "sin")
-        assertNear(0.4f, shaderRadius(cell.packed1), 2 * quantum * CellInstanceBuffer.RADIUS_SPAN, "radius")
+        assertNear(0.6f, shaderAngle(cell.shape, 0), 2 * quantum, "cos")
+        assertNear(-0.8f, shaderAngle(cell.shape, 1), 2 * quantum, "sin")
+        assertNear(0.4f, shaderRadius(cell.shape), 2 * quantum * 0.7f, "radius")
 
-        assertEquals(7, shaderCellType(cell.packed2))
-        assertEquals(12345, shaderSeed(cell.packed2))
+        // Энергия: байт = (e/10)*255, в шейдере обратно как a_shape.w * 0.5.
+        assertNear(5f / 10f * 0.5f, shaderEnergy(cell.shape), 2 * quantum, "energy")
+
+        // Тип и ключ шума обязаны восстанавливаться ТОЧНО, без допуска.
+        assertEquals(7, shaderCellType(cell.type))
+        assertEquals(12345, shaderSeed(cell.type))
+    }
+
+    @Test
+    fun `тип клетки и ключ шума точны на всём диапазоне`() {
+        // Байт нормализуется как b/255, а это не всегда точно представимо во float.
+        // Без округления в шейдере тип клетки съезжал бы на единицу — то есть клетка
+        // брала бы ЧУЖОЙ слой текстуры. Проверяем все 256 значений и границы ключа.
+        for (cellType in 0..255) {
+            val packed = CellInstanceBuffer.type(cellType = cellType, noiseSeed = 0)
+            assertEquals(cellType, shaderCellType(packed), "тип $cellType не восстановился")
+        }
+        for (seed in listOf(0, 1, 255, 256, 257, 4242, 32768, 65534, 65535)) {
+            val packed = CellInstanceBuffer.type(cellType = 3, noiseSeed = seed)
+            assertEquals(seed, shaderSeed(packed), "ключ $seed не восстановился")
+            assertEquals(3, shaderCellType(packed), "ключ $seed повредил тип клетки")
+        }
     }
 
     @Test
     fun `ключ шума закреплён за клеткой, а не за позицией в буфере`() {
-        // Ради этого свойства ключ и завели: он берётся из packed2, а не из gl_InstanceID.
-        // Иначе рождение клетки в раннем слоте сдвигало бы все последующие, и текстуры
-        // визуально крутились бы у всего тела, пока организм растёт.
+        // Ради этого свойства ключ и завели: он берётся из инстансных данных, а не из
+        // gl_InstanceID. Иначе рождение клетки в раннем слоте сдвигало бы все последующие,
+        // и текстуры визуально крутились бы у всего тела, пока организм растёт.
         val buffer = CellInstanceBuffer(initialCapacity = 4)
 
         buffer.begin(2)
         buffer.putCell(0f, 0f, 0, 1f, 0f, 0.3f, 0f, 1, noiseSeed = 777)
         buffer.putCell(1f, 1f, 0, 1f, 0f, 0.3f, 0f, 1, noiseSeed = 999)
         val first = buffer.end()
-        val seedAtSlot1 = shaderSeed(readInstance(first, 1).packed2)
+        val seedAtSlot1 = shaderSeed(readInstance(first, 1).type)
 
         // Та же клетка, но теперь она первая в буфере.
         buffer.begin(1)
         buffer.putCell(1f, 1f, 0, 1f, 0f, 0.3f, 0f, 1, noiseSeed = 999)
         val second = buffer.end()
-        val seedAtSlot0 = shaderSeed(readInstance(second, 0).packed2)
+        val seedAtSlot0 = shaderSeed(readInstance(second, 0).type)
 
         assertEquals(999, seedAtSlot1)
         assertEquals(seedAtSlot1, seedAtSlot0, "ключ не должен зависеть от слота в буфере")
@@ -152,8 +183,6 @@ class CellInstanceBufferTest {
 
     @Test
     fun `значения за границами диапазона зажимаются, а не переполняют соседнее поле`() {
-        // Радиус больше максимума раньше дал бы байт > 255, а сдвиг на 24 затёр бы
-        // старший байт packed1 мусором. Проверяем, что зажатие есть.
         val huge = CellInstanceBuffer.radiusByte(1000f)
         val negative = CellInstanceBuffer.radiusByte(-1000f)
         assertEquals(255, huge)
@@ -164,21 +193,28 @@ class CellInstanceBufferTest {
         assertEquals(255, CellInstanceBuffer.energyByte(1e9f))
 
         // Тип клетки за пределом байта не должен залезть в ключ шума.
-        val packed = CellInstanceBuffer.packed2(energyByte = 0, cellType = 9999, noiseSeed = 0)
+        val packed = CellInstanceBuffer.type(cellType = 9999, noiseSeed = 0)
         assertEquals(0, shaderSeed(packed), "переполнение типа не должно попасть в seed")
         assertEquals(255, shaderCellType(packed))
+
+        // И наоборот: ключ шире 16 бит не должен затирать тип.
+        val wide = CellInstanceBuffer.type(cellType = 13, noiseSeed = 0x1_2345)
+        assertEquals(0x2345, shaderSeed(wide))
+        assertEquals(13, shaderCellType(wide))
     }
 
     @Test
-    fun `ключ шума берёт младшие 16 бит и не портит тип клетки`() {
-        val packed = CellInstanceBuffer.packed2(
-            energyByte = 200,
-            cellType = 13,
-            noiseSeed = 0x1_2345 // не влезает в 16 бит
+    fun `поля shape не перетекают друг в друга`() {
+        val packed = CellInstanceBuffer.shape(
+            cosByte = 0x12,
+            sinByte = 0x34,
+            radiusByte = 0x56,
+            energyByte = 0x78
         )
-        assertEquals(0x2345, shaderSeed(packed))
-        assertEquals(13, shaderCellType(packed))
-        assertEquals(200, packed and 0xFF)
+        assertEquals(0x12, (packed) and 0xFF)
+        assertEquals(0x34, (packed ushr 8) and 0xFF)
+        assertEquals(0x56, (packed ushr 16) and 0xFF)
+        assertEquals(0x78, (packed ushr 24) and 0xFF)
     }
 
     @Test
@@ -213,7 +249,7 @@ class CellInstanceBufferTest {
             val cell = readInstance(data, i)
             assertEquals(i.toFloat(), cell.x, "клетка $i потерялась при росте буфера")
             assertEquals(i, cell.color)
-            assertEquals(i, shaderSeed(cell.packed2))
+            assertEquals(i, shaderSeed(cell.type))
         }
     }
 
@@ -237,26 +273,23 @@ class CellInstanceBufferTest {
 
     @Test
     fun `put и putCell дают одинаковые байты`() {
-        // put — путь GL-потока (packed уже посчитаны потоком симуляции),
+        // put — путь GL-потока (shape/type уже посчитаны потоком симуляции),
         // putCell — путь редактора. Разойтись они не имеют права.
         val viaPutCell = CellInstanceBuffer(initialCapacity = 1).apply {
             begin(1)
             putCell(5f, 6f, 0x778899AA.toInt(), -0.3f, 0.95f, 0.62f, 3.5f, 21, 4242)
         }.end()
 
-        val packed1 = CellInstanceBuffer.packed1(
+        val shape = CellInstanceBuffer.shape(
             cosByte = CellInstanceBuffer.angleByte(-0.3f),
             sinByte = CellInstanceBuffer.angleByte(0.95f),
-            radiusByte = CellInstanceBuffer.radiusByte(0.62f)
+            radiusByte = CellInstanceBuffer.radiusByte(0.62f),
+            energyByte = CellInstanceBuffer.energyByte(3.5f)
         )
-        val packed2 = CellInstanceBuffer.packed2(
-            energyByte = CellInstanceBuffer.energyByte(3.5f),
-            cellType = 21,
-            noiseSeed = 4242
-        )
+        val type = CellInstanceBuffer.type(cellType = 21, noiseSeed = 4242)
         val viaPut = CellInstanceBuffer(initialCapacity = 1).apply {
             begin(1)
-            put(5f, 6f, 0x778899AA.toInt(), packed1, packed2)
+            put(5f, 6f, 0x778899AA.toInt(), shape, type)
         }.end()
 
         assertEquals(viaPutCell.remaining(), viaPut.remaining())
@@ -266,17 +299,23 @@ class CellInstanceBufferTest {
     }
 
     @Test
-    fun `добивочные байты нулевые`() {
-        // Второй тексель — packed2 плюс три нуля. Мусор в добивке в шейдер попадает
-        // как t1.y/z/w; сейчас они не читаются, но полагаться на это не стоит.
+    fun `цвет доезжает байт в байт и в порядке r g b a`() {
+        // GL читает компоненты атрибута в порядке адресов, а putInt пишет нативным
+        // порядком (little-endian на всех целевых платформах). То есть младший байт
+        // цвета обязан оказаться компонентой .x — красной. Ровно это даёт
+        // libGDX Color.toIntBits(), которым игра и пользуется.
+        val color = 0x44332211 // a=0x44, b=0x33, g=0x22, r=0x11
         val data = CellInstanceBuffer(initialCapacity = 1).apply {
             begin(1)
-            putCell(1f, 1f, -1, 1f, 1f, 0.5f, 9f, 255, 0xFFFF)
+            putCell(0f, 0f, color, 1f, 0f, 0.3f, 0f, 0, 0)
         }.end()
 
-        assertEquals(0, data.getInt(20))
-        assertEquals(0, data.getInt(24))
-        assertEquals(0, data.getInt(28))
+        assertEquals(ByteOrder.LITTLE_ENDIAN, data.order(), "иначе допущение ниже неверно")
+        val base = CellInstanceBuffer.OFFSET_COLOR
+        assertEquals(0x11, data.get(base).toInt() and 0xFF, "r")
+        assertEquals(0x22, data.get(base + 1).toInt() and 0xFF, "g")
+        assertEquals(0x33, data.get(base + 2).toInt() and 0xFF, "b")
+        assertEquals(0x44, data.get(base + 3).toInt() and 0xFF, "a")
     }
 
     private fun assertNear(expected: Float, actual: Float, tolerance: Float, what: String) {

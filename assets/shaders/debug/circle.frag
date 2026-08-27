@@ -2,13 +2,19 @@
 precision highp float;
 precision highp sampler2DArray;
 
-in vec2 ex_Quad;
-flat in vec2 ex_Centroid;
+/**
+ * d/R в этом фрагменте: 0 в центре клетки, 1 на ободе.
+ *
+ * Приходит интерполяцией по вееру — см. пояснение в circle_pc.vert. Заменяет собой всё,
+ * что раньше считалось здесь на каждом фрагменте: ex_Quad, ex_Centroid, разность,
+ * dot(), деление на R² и sqrt для расстояния.
+ */
+in float ex_R_norm;
+
+in vec2 ex_UV;
 flat in vec3 ex_Color;
 flat in float ex_R;
-flat in float ex_R_2;
 flat in float ex_Energy;
-in vec2 ex_UV;
 flat in float ex_AngleCos;
 flat in float ex_AngleSin;
 flat in int ex_cellType;
@@ -17,7 +23,6 @@ flat in vec2 ex_Refract;   // ← случайный вектор рефракц
 out vec4 fragColor;
 
 uniform sampler2DArray u_textureArray;
-uniform float u_textureScale;
 uniform float u_colorScale;
 
 vec3 rgb2hsv(vec3 c) {
@@ -36,15 +41,10 @@ vec3 hsv2rgb(vec3 c) {
 }
 
 void main() {
-    vec2 diff = ex_Quad - ex_Centroid;
-    float dist2 = dot(diff, diff);
-    if (dist2 > ex_R_2) discard;
-
-    float normalized = dist2 / ex_R_2;
-
-    // === НОРМАЛЬ (псевдо 3D) ===
-    float z = ex_R * (1.0 - normalized * 0.5);
-    vec3 normal = normalize(vec3(diff, z));
+    // Ни discard, ни записи gl_FragDepth здесь больше нет: силуэт задаёт геометрия веера,
+    // а глубину пишет растеризатор. Благодаря этому клетки — полностью непрозрачная
+    // геометрия, и early-Z отбрасывает перекрытые фрагменты ДО этого шейдера.
+    float normalized = ex_R_norm * ex_R_norm;   // (d/R)², как было dist2 / ex_R_2
 
     // === UV ПОВОРОТ ===
     vec2 center = vec2(0.5);
@@ -56,9 +56,9 @@ void main() {
     vec2 rotatedOffset = vec2(ca * offset.x - sa * offset.y, sa * offset.x + ca * offset.y);
     vec2 rotatedUV = center + rotatedOffset;
 
-    // === РЕФРАКЦИЯ (искажение) — теперь полностью от инстанса, угол не влияет ===
+    // === РЕФРАКЦИЯ (искажение) — полностью от инстанса, угол не влияет ===
     vec2 refraction = ex_Refract * 0.13 * (1.0 - normalized);
-    vec2 distortedUV = rotatedUV * u_textureScale + refraction;
+    vec2 distortedUV = rotatedUV + refraction;
 
     vec4 texColor = texture(u_textureArray, vec3(distortedUV, float(ex_cellType)));
 
@@ -68,10 +68,10 @@ void main() {
     texHSV.x = targetHSV.x;
     vec3 tinted = hsv2rgb(texHSV);
 
-    vec3 finalColor = tinted/*mix(texColor.rgb, tinted, u_colorScale)*/;
+    vec3 finalColor = tinted;
 
     // === ЧЕРНЫЙ КРУЖОЧЕК ===
-    float dist = length(diff);
+    float dist = ex_R_norm * ex_R;   // было length(diff)
 
     float edgeWidth = ex_R * 0.018;
     float energyRadius = max(ex_Energy, 0.0);
@@ -86,7 +86,4 @@ void main() {
     finalColor = mix(finalColor, vec3(0.0), blackStrength);
 
     fragColor = vec4(finalColor, 1.0);
-
-    // === DEPTH ===
-    gl_FragDepth = 1.0 - (z / ex_R);
 }

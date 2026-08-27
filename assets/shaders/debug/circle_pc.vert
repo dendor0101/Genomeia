@@ -1,27 +1,66 @@
 #version 300 es
 precision highp float;
 precision highp int;
-precision highp usampler2D;
 
-layout(location = 0) in vec2 a_position;
+// Базовая геометрия клетки — веер треугольников, одна на все инстансы.
+//   xy — точка на диске в долях радиуса
+//   z  — d/R в этой вершине: 0 в центре, 1 на ободе
+//
+// ЗАЧЕМ ВЕЕР, А НЕ КВАД
+// ---------------------
+// Раньше клетка рисовалась квадом, силуэт вырезался через discard, а глубина писалась
+// из фрагментного шейдера:
+//
+//     gl_FragDepth = 0.5 * d*d / (R*R);
+//
+// Смысл этой глубины — не 3D, а отбор: с GL_LESS буфер глубины считает per-pixel argmin
+// по инстансам от d²/R², то есть строит мультипликативно взвешенную диаграмму Вороного.
+// Граница между клетками — там, где d_A/R_A = d_B/R_B. Ради этого эффекта всё и затевалось.
+//
+// Беда в том, что discard и запись gl_FragDepth по отдельности отключают early-Z, а вместе
+// гарантируют, что КАЖДЫЙ фрагмент КАЖДОЙ клетки пройдёт фрагментный шейдер целиком —
+// включая полностью перекрытые. А шейдер там тяжёлый: два перевода RGB↔HSV плюс выборка
+// из массива текстур. На плотных колониях это доминирующая стоимость кадра, и хуже всего
+// на мобильных тайловых GPU.
+//
+// Ключевое наблюдение: x ↦ x² строго возрастает при x ≥ 0, поэтому
+//
+//     argmin( d²/R² )  ≡  argmin( d/R )
+//
+// Границы Вороного попиксельно те же. А d/R — это конус, и конус растеризатор умеет
+// интерполировать сам, бесплатно. Отсюда веер: в центре z = 0, на ободе z = 1, между ними
+// линейная интерполяция. Глубина пишется обычным путём, силуэт задан геометрией.
+// Ни discard, ни gl_FragDepth больше нет — early-Z работает на сто процентов.
+//
+// Цена — многоугольник вместо круга: интерполированное d/R отличается от истинного не
+// более чем в 1/cos(π/N) раз. При N = 32 это 0.48 %, то есть доли пикселя.
+layout(location = 0) in vec3 a_corner;
+
+// Инстансные атрибуты, делитель 1. Раскладка — в CellInstanceBuffer (20 байт).
+//
+// Все три четвёрки объявлены как GL_UNSIGNED_BYTE с normalized = true, поэтому байт
+// 0..255 приезжает сюда уже как float 0..1. Раньше эти же байты ехали одним uint через
+// текстуру RGBA32UI и распаковывались руками (unpackRGBA8 + сдвиги) — теперь это делает
+// железо выборки атрибутов, бесплатно.
+layout(location = 1) in vec2 a_center;
+layout(location = 2) in vec4 a_color;   // r, g, b, a
+layout(location = 3) in vec4 a_shape;   // cos, sin, радиус, энергия
+layout(location = 4) in vec4 a_type;    // тип клетки, ключ шума (младший байт), ключ (старший), —
 
 uniform mat4 u_projTrans;
 
-// RGBA32UI data texture: 2 texels per particle
-// texel0: x_bits, y_bits, color, packed1
-// texel1: packed2, pad, pad, pad
-uniform usampler2D u_data;
-uniform int u_texWidth;
+/**
+ * d/R в этом фрагменте. Единственная величина, ради которой раньше считались
+ * ex_Quad, ex_Centroid, ex_R_2, dot() и деление.
+ */
+out float ex_R_norm;
 
-out vec2 ex_Quad;
-flat out vec2 ex_Centroid;
+out vec2 ex_UV;
 flat out vec3 ex_Color;
 flat out float ex_R;
-flat out float ex_R_2;
-out vec2 ex_UV;
+flat out float ex_Energy;
 flat out float ex_AngleCos;
 flat out float ex_AngleSin;
-flat out float ex_Energy;
 flat out int ex_cellType;
 flat out vec2 ex_Refract;   // ← случайный вектор рефракции
 
@@ -29,63 +68,41 @@ float hash(float n) {
     return fract(sin(n) * 43758.5453123);
 }
 
-// Manual RGBA8 unpack — unpackUnorm4x8 is GLSL ES 3.10+ only
-vec4 unpackRGBA8(uint c) {
-    return vec4(
-        float(c & 0xFFu),
-        float((c >> 8u) & 0xFFu),
-        float((c >> 16u) & 0xFFu),
-        float((c >> 24u) & 0xFFu)
-    ) * (1.0 / 255.0);
+// Нормализованный байт обратно в целое. round, а не приведение: b/255 не всегда точно
+// представимо во float, и без округления тип клетки и ключ шума разъезжались бы на
+// единицу — то есть клетка брала бы чужой слой текстуры.
+float byteValue(float normalized) {
+    return floor(normalized * 255.0 + 0.5);
 }
 
 void main() {
-    int id = gl_InstanceID;
+    float cosA = a_shape.x * 2.0 - 1.0;
+    float sinA = a_shape.y * 2.0 - 1.0;
 
-    // 2 texels per particle, tightly packed row-major
-    int base = id * 2;
-    int texY0 = base / u_texWidth;
-    int texX0 = base - texY0 * u_texWidth;
-    // second texel is always base+1; width is even so it stays on the same row
-    int texX1 = texX0 + 1;
+    ex_R = 0.05 + a_shape.z * 0.7;
+    float energy = a_shape.w * 0.5;
 
-    uvec4 t0 = texelFetch(u_data, ivec2(texX0, texY0), 0);
-    uvec4 t1 = texelFetch(u_data, ivec2(texX1, texY0), 0);
+    vec2 worldPos = a_corner.xy * ex_R + a_center;
 
-    vec2 pos = vec2(uintBitsToFloat(t0.x), uintBitsToFloat(t0.y));
-    uint color   = t0.z;
-    uint packed1 = t0.w;
-    uint packed2 = t1.x;
-
-    vec4 v1 = unpackRGBA8(packed1);
-    vec4 v2 = unpackRGBA8(packed2);
-
-    float cosA = v1.x * 2.0 - 1.0;
-    float sinA = v1.y * 2.0 - 1.0;
-
-    ex_R = 0.05 + v1.w * 0.7;
-    float energy   = v2.x * 0.5;
-    int   cellType = int(round(v2.y * 255.0));
-
-    vec2 worldPos = a_position * ex_R + pos;
-
-    ex_Quad = worldPos;
-    ex_Centroid = pos;
-    ex_Color = unpackRGBA8(color).rgb;
-    ex_R_2 = ex_R * ex_R;
+    ex_R_norm = a_corner.z;
+    ex_Color = a_color.rgb;
     ex_Energy = energy * energy;
-    ex_UV = a_position * 0.5 + 0.5;
-    ex_cellType = cellType;
+    ex_UV = a_corner.xy * 0.5 + 0.5;
+    ex_cellType = int(byteValue(a_type.x));
 
     // === СЛУЧАЙНАЯ РЕФРАКЦИЯ ===
     //
-    // Ключ шума берётся из packed2 (старшие 16 бит), а НЕ из gl_InstanceID.
+    // Ключ шума берётся из инстансных данных, а НЕ из gl_InstanceID.
     //
     // gl_InstanceID это позиция в буфере, а порядок сборки буфера задаётся аренами
     // организмов: рождение клетки в более раннем слоте сдвигает все последующие.
     // Пока организм рос, доворот текстуры пересчитывался каждый кадр у всего тела.
-    // Ключ из packed2 закреплён за клеткой на всю жизнь.
-    float seed = float((packed2 >> 16u) & 0xFFFFu);
+    // Ключ из атрибута закреплён за клеткой на всю жизнь.
+    //
+    // Шестнадцать бит приезжают двумя нормализованными байтами и собираются обратно
+    // точно — hash() на sin() крайне чувствителен к аргументу, и ошибка даже в единицу
+    // дала бы другой узор.
+    float seed = byteValue(a_type.y) + byteValue(a_type.z) * 256.0;
 
     float hx = hash(seed * 12.9898);
     float hy = hash(seed * 78.233);
@@ -103,4 +120,14 @@ void main() {
     ex_AngleSin = ny;
 
     gl_Position = u_projTrans * vec4(worldPos, 0.0, 1.0);
+
+    // Глубина — линейно по конусу, поверх того, что дала матрица.
+    //
+    // Камера ортографическая, значит w = 1, и записанное сюда значение попадает в NDC
+    // как есть: окно получает (z + 1) / 2, то есть ровно d/R с коэффициентом.
+    //
+    // Множитель 0.99, а не 1.0, не косметика: буфер глубины чистится единицей, а тест
+    // стоит GL_LESS — фрагменты обода с глубиной ровно 1.0 не прошли бы его и по краю
+    // каждой клетки появилось бы кольцо дыр.
+    gl_Position.z = 2.0 * a_corner.z * 0.99 - 1.0;
 }

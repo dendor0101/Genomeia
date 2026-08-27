@@ -222,13 +222,13 @@ class RenderBufferManager(
 
             // Углы намеренно нулевые: у не-клетки направления нет. В шейдере нулевой байт
             // распаковывается в -1, то есть доворот получается постоянный, а не случайный.
-            back.packed1[writeIndex] = CellInstanceBuffer.packed1(
+            back.shape[writeIndex] = CellInstanceBuffer.shape(
                 cosByte = 0,
                 sinByte = 0,
-                radiusByte = CellInstanceBuffer.radiusByte(pRadius[particleIndex])
+                radiusByte = CellInstanceBuffer.radiusByte(pRadius[particleIndex]),
+                energyByte = 0
             )
-            back.packed2[writeIndex] = CellInstanceBuffer.packed2(
-                energyByte = 0,
+            back.type[writeIndex] = CellInstanceBuffer.type(
                 cellType = nonCellType,
                 noiseSeed = particleIndex
             )
@@ -264,10 +264,11 @@ class RenderBufferManager(
 
         val visibleRadius = pRadius[particleIndex] * cellEntity.degreeOfShortening[cellIndex]
 
-        back.packed1[writeIndex] = CellInstanceBuffer.packed1(
+        back.shape[writeIndex] = CellInstanceBuffer.shape(
             cosByte = CellInstanceBuffer.angleByte(angleCos),
             sinByte = CellInstanceBuffer.angleByte(angleSin),
-            radiusByte = CellInstanceBuffer.radiusByte(visibleRadius)
+            radiusByte = CellInstanceBuffer.radiusByte(visibleRadius),
+            energyByte = CellInstanceBuffer.energyByte(cellEntity.energy[cellIndex])
         )
         // Старшие 16 бит — устойчивый ключ шума для шейдера.
         //
@@ -280,8 +281,7 @@ class RenderBufferManager(
         //
         // Индекс частицы это слот арены: он закреплён за клеткой на всю жизнь и от
         // порядка сборки буфера не зависит вообще.
-        back.packed2[writeIndex] = CellInstanceBuffer.packed2(
-            energyByte = CellInstanceBuffer.energyByte(cellEntity.energy[cellIndex]),
+        back.type[writeIndex] = CellInstanceBuffer.type(
             cellType = cellType,
             noiseSeed = particleIndex
         )
@@ -479,8 +479,8 @@ class RenderCellBufferData(initialCapacity: Int) {
     var x = FloatArray(capacity)
     var y = FloatArray(capacity)
     var color = IntArray(capacity)
-    var packed1 = IntArray(capacity)
-    var packed2 = IntArray(capacity)
+    var shape = IntArray(capacity)
+    var type = IntArray(capacity)
     var directedAngleCos = FloatArray(capacity)
     var directedAngleSin = FloatArray(capacity)
 
@@ -492,8 +492,8 @@ class RenderCellBufferData(initialCapacity: Int) {
             x = x.copyOf(newCapacity)
             y = y.copyOf(newCapacity)
             color = color.copyOf(newCapacity)
-            packed1 = packed1.copyOf(newCapacity)
-            packed2 = packed2.copyOf(newCapacity)
+            shape = shape.copyOf(newCapacity)
+            type = type.copyOf(newCapacity)
             directedAngleCos = directedAngleCos.copyOf(newCapacity)
             directedAngleSin = directedAngleSin.copyOf(newCapacity)
         }

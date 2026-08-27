@@ -143,7 +143,7 @@ class RenderSystem(
      * массовой гибели — снимок старше), запись уходила за границу буфера и кадр падал
      * с BufferOverflowException.
      *
-     * packed1/packed2 уже посчитаны потоком симуляции — здесь только перекладывание
+     * shape/type уже посчитаны потоком симуляции — здесь только перекладывание
      * байт, без арифметики. См. пояснение в CellInstanceBuffer.
      */
     private fun packCells(cellBuf: RenderCellBufferData) {
@@ -154,8 +154,8 @@ class RenderSystem(
                     x = x[i],
                     y = y[i],
                     color = color[i],
-                    packed1 = packed1[i],
-                    packed2 = packed2[i]
+                    shape = shape[i],
+                    type = type[i]
                 )
             }
         }
