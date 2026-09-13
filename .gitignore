@@ -172,3 +172,6 @@ ios-moe/xcode/native/
 ## You should delete or comment out the next line if you have configuration in a different resource-config.json .
 **/resource-config.json
 /sim_profile.csv
+
+# Журнал игрока: перезаписывается при каждом запуске демо, разбор — gradlew :lwjgl3:playerReplay
+/player-log.txt

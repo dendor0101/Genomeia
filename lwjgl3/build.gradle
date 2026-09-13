@@ -315,3 +315,92 @@ tasks.register('dragReplay', JavaExec) {
   args = [project.findProperty('log') ?: 'drag-log.txt']
   jvmArgs '-Dfile.encoding=UTF-8'
 }
+
+// Стенд столкновений: много сцен, каждая числом. См. CollisionBench.kt.
+//   gradlew :lwjgl3:collisionBench
+//   gradlew :lwjgl3:collisionBench -Pbody=body-export-кирпич.txt
+//   gradlew :lwjgl3:collisionBench -Pscene=бассейн
+tasks.register('collisionBench', JavaExec) {
+  group = 'verification'
+  description = 'Столкновения по сценам: дребезг, застревание, выброс скорости'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.demo.CollisionBenchKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('body') ?: 'body-export.txt',
+          project.findProperty('scene') ?: '',
+          project.findProperty('hunt') ?: '']
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+// Физический стенд с окном: то же тело и тот же решатель, что в collisionBench,
+// но видно глазами. Сцены столкновений — клавиша N выбрать, M запустить.
+//   gradlew :lwjgl3:realBodyDemo
+//   gradlew :lwjgl3:realBodyDemo -Pbody=body-export-кирпич.txt
+// Стенд чистой мягкой ткани: решётка 10x10 без костей и мышц, треть связей убита.
+//   gradlew :lwjgl3:softGridLab
+//   gradlew :lwjgl3:softGridLab -Pseed=12345
+tasks.register('softGridLab', JavaExec) {
+  group = 'application'
+  description = 'Окно: мягкая решётка 10x10, треть связей убита, сид печатается'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.demo.SoftGridLabKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('seed') ?: '', project.findProperty('kill') ?: '']
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+tasks.register('perfBench', JavaExec) {
+  group = 'verification'
+  description = 'Время тика на настоящем теле, без окна'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.demo.PerfBenchKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('body') ?: 'body-export.txt']
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+tasks.register('softGridBench', JavaExec) {
+  group = 'verification'
+  description = 'Безоконный замер мягкой решётки: тяга из ничего'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.demo.SoftGridBenchKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('seed') ?: '', project.findProperty('kill') ?: '']
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+// Разбор журнала игрока: воспроизводит сессию из окна и печатает помеченные клетки.
+// Журнал пишут realBodyDemo и softGridLab всегда, перезаписывая при каждом запуске.
+//   gradlew :lwjgl3:playerReplay
+//   gradlew :lwjgl3:playerReplay -Plog=player-log.txt -Phistory=90
+tasks.register('playerReplay', JavaExec) {
+  group = 'verification'
+  description = 'Воспроизводит player-log.txt и разбирает клетки, помеченные средней кнопкой'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.demo.PlayerReplayKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('log') ?: 'player-log.txt', project.findProperty('history') ?: '']
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+
+// Самопроверка журнала: пишет сессию без окна, воспроизводит и сверяет побитово.
+tasks.register('playerLogSelfTest', JavaExec) {
+  group = 'verification'
+  description = 'Запись и воспроизведение журнала игрока сходятся побитово; порча ловится'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.demo.PlayerLogSelfTestKt'
+  workingDir = rootProject.projectDir
+  // -Pkeep=путь сохраняет записанный журнал, чтобы прогнать по нему playerReplay.
+  args = [project.findProperty('body') ?: 'body-export.txt', project.findProperty('keep') ?: '']
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+
+tasks.register('realBodyDemo', JavaExec) {
+  group = 'application'
+  description = 'Окно физического стенда: сцены столкновений на N/M'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.demo.RealBodyDemoKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('body') ?: 'body-export.txt']
+  jvmArgs '-Dfile.encoding=UTF-8'
+}

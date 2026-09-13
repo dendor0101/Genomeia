@@ -421,9 +421,25 @@ import kotlin.math.sqrt
  * K - самоконтакт граничного контура,
  * R - сброс (включая камеру),
  * B - жёсткость костей, C - режим отрисовки,
- * ПКМ или средняя кнопка - панорама, колесо - зум к точке под курсором.
+ * ПКМ - панорама, колесо - зум к точке под курсором,
+ * средняя кнопка - пометить проблемную клетку (в журнал игрока, см. PlayerLog).
  */
-class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
+class RealBodyDemo(private val bodyPath: String,
+    /**
+     * Сколько копий тела класть на сцену и сколько свободных частиц добавлять.
+     *
+     * Параметрами, а не константами, ровно ради стенда мягкой решётки: там нужно ОДНО
+     * тело и ни одной свободной частицы, иначе опыт мерит не решётку, а её
+     * столкновение с копией самой себя.
+     */
+    private val copies: Int = ORGANISMS,
+    private val freeParticles: Int = FREE_PARTICLES,
+    /** Стенд мягкой решётки: доля связей, убиваемых при сбросе, и сид. См. applyLabDamage. */
+    private val labKillFraction: Double = 0.0,
+    private val labKillSeed: Long = 0L,
+    /** Стенд: убивать клетку, чей центр зашёл внутрь чужого радиуса. */
+    private val killOnDeep: Boolean = false,
+) : ApplicationAdapter() {
 
     companion object {
         private const val DT = 1.0 / 30.0
@@ -504,6 +520,12 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * float32 при большом числе подшагов — это усилитель собственного шума, а не
          * «максимальная жёсткость даром».
          */
+        /**
+         * Податливость угла лоскута. Мягче обычной связи: это не форма тела, а
+         * страховка от схлопывания в точку, и жёсткой ей быть незачем.
+         */
+        private const val FLAP_COMPLIANCE = 1.0e-4
+
         private const val SOFT_COMPLIANCE = 1.0e-5
 
         /**
@@ -820,6 +842,92 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          * а не окраски.
          */
         private const val LINK_TEAR_STRAIN = 0.25
+
+        /**
+         * РАЗРЫВ НА СЖАТИИ: связь, сжатая короче этой доли своей цели, рвётся.
+         *
+         * Раньше ткань рвалась только растяжением, а при ударе она СЖИМАЕТСЯ. Журнал
+         * игрока, таран двух тел: на тике удара граница останавливается контактом, тело
+         * за ней летит дальше и сминается — связи сжаты до 0.64 цели, тиком позже до
+         * 0.19. Растяжение пробивает порог только следом, и за эти два тика в чужую
+         * ткань входило 387 клеток при нуле порванных связей. Тысяча связей рвалась
+         * потом, полсотни тиков, уже внутри перепутанных тел.
+         *
+         * Цель — с мышцей (conRest * muscleScale): сокращённая мышца сжата законно.
+         *
+         * ПОРОГ ЗАЖАТ С ДВУХ СТОРОН, и обе стороны измерены:
+         *   - сверху — отрыв куска гребком (сцена «оторванный кусок»): при 0.5 рвалось
+         *     уже там, без всякого удара, и кусок дребезжал (импульс покоя 4955 против
+         *     0.6, проникновение 0.096 против 0); при 0.35 — 1.6 и 0;
+         *   - снизу — таран из журнала игрока: при 0.25 рвётся позже, в чужой ткани
+         *     держится около 20 клеток; при 0.35 пик 34 и к концу удара 9.
+         * В обычной игре до тарана связи сжимались не сильнее 0.975. После удара на
+         * всей записи, 4000 тиков, порог сработал один раз — на куске, который сам
+         * сминался до 0.14.
+         */
+        private const val LINK_CRUSH_RATIO = 0.35
+
+        /**
+         * ПЕРЕСБОРКА ТОПОЛОГИИ СРАЗУ ПОСЛЕ РАЗРЫВА, внутри подшага, до контактов.
+         *
+         * Раньше порванная связь только помечалась, пересборка шла в начале следующего
+         * тика. На ударе 12.8 клетки за тик это целый тик, в который связь ещё тянет, а
+         * открывшаяся граница не сталкивается — и тела проходят друг в друга до того,
+         * как разрыв начнёт действовать.
+         */
+        private const val TEAR_IMMEDIATE = true
+
+        /**
+         * ПЛАСТИЧНОСТЬ ТКАНИ: длина покоя и площадь покоя МЕДЛЕННО ТЕКУТ за формой.
+         *
+         * ЗАЧЕМ. Смятый кусок ткани ПЕРЕОПРЕДЕЛЁН: одновременно выполнить «все связи в
+         * длине покоя», «все треугольники в площади покоя» и «границы не перекрываются»
+         * в такой конфигурации НЕВОЗМОЖНО — решения просто не существует. Один проход
+         * Гаусса-Зейделя за подшаг не сходится, невязка остаётся и колеблется, и это
+         * тот самый дребезг, который видно на оторванных кусках.
+         *
+         * Замер: доля дребезжащих пар по расстоянию в графе ткани — 47% между разными
+         * кусками, 31% на 2..3 шага, 13% дальше шести. Механизм исключений restTouching
+         * не покрывает из них НИ ОДНОЙ (0.0%), то есть дело не в порогах контакта.
+         *
+         * Пластичность убирает не невязку, а саму несовместимость: ткань принимает
+         * новую форму вместо вечного спора о старой. Для порванного и смятого куска это
+         * и физически честнее — он не обязан помнить исходную форму вечно.
+         *
+         * ПРЕДЕЛ ТЕКУЧЕСТИ обязателен, иначе тело поплывёт от обычного плавания. Ниже
+         * него ткань чисто упругая и форму помнит точно. Растяжению течь почти нечем:
+         * LINK_MAX_STRETCH держит связь в пределах 5% сверх покоя, то есть до предела
+         * 15% она не дотягивается никогда. Течёт в основном СЖАТИЕ, которое ничем не
+         * ограничено, — ровно то, что происходит в смятом куске.
+         *
+         * СКОРОСТЬ в долях избытка за секунду. Медленно намеренно: пластичность обязана
+         * быть незаметна на масштабе гребка (период около 0.3 с) и работать на масштабе
+         * секунд, иначе она превратится в мягкость ткани.
+         *
+         * ЦЕНА: один проход по связям и треугольникам РАЗ В ТИК, не за подшаг. Против
+         * 16 подшагов решателя это меньше процента.
+         */
+        private const val PLASTIC_RATE = 1.0
+        private const val PLASTIC_YIELD = 0.15
+
+        /**
+         * СКОЛЬКО ТИКОВ ДЕФОРМАЦИЯ ДОЛЖНА ДЕРЖАТЬСЯ, ЧТОБЫ ТКАНЬ ПОТЕКЛА.
+         *
+         * Одной величины деформации мало: у сокращающейся мышцы соседняя пассивная
+         * ткань сминается сильно, но КРАТКОВРЕМЕННО, и течь ей нельзя — иначе тело
+         * медленно расползается от собственного плавания. Проверка ловила это сразу:
+         * без выдержки тело переставало останавливаться (замедление 1.1x вместо 364x).
+         *
+         * Поднимать вместо этого порог текучести не выходит: при 0.35 плавание цело,
+         * но и дребезг возвращается к исходным 794 из 789, то есть пластика не делает
+         * ничего. Различает эти два случая не величина, а ДЛИТЕЛЬНОСТЬ.
+         *
+         * Гребок держит ткань смятой около девяти тиков (GAIT_PERIOD), смятый обломок —
+         * секундами. Тридцать тиков это ровно секунда и лежит между ними с запасом.
+         *
+         * Это и есть ползучесть в обычном смысле: течёт то, что деформировано ДОЛГО.
+         */
+        private const val PLASTIC_HOLD = 90
 
         /**
          * Рвать ли ткань на самом деле, или только красить синим. Клавиша X.
@@ -1206,6 +1314,65 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
          */
         private const val CANCEL_INTERNAL_DRIFT = false
 
+        /**
+         * Снимать ли импульс и момент, внесённые внутренними стадиями. См.
+         * cancelInternalSpin: там же замеры, из-за которых это появилось.
+         */
+        private const val CANCEL_INTERNAL_SPIN = false
+
+        /**
+         * Сколько раз за подшаг прогнать связи и контакт ВМЕСТЕ. См. общий цикл.
+         *
+         * ЧТО ЭТО СТОИТ, замер perfBench на теле 1900 клеток, без окна, с прогревом:
+         *
+         *     заходов   мс на тик   тиков/с   дрожь в покое   самопроникновение
+         *        1         4.84       207         2.64              0.331
+         *        2         6.79       147         0.088             0.486
+         *        4        10.39        96         0.079             0.243
+         *
+         * То есть просадка в 2.15 раза, а не в четыре: решатель ограничений занимает
+         * около 1.85 мс из 4.84, остальное это широкая фаза контактов с сеткой и CCD,
+         * среда, интегрирование и восстановление скоростей. Каждый лишний заход
+         * добавляет ровно 1.85 мс.
+         *
+         * Два захода дают почти всю пользу по дрожи за +40% времени, но оставляют
+         * самопроникновение 0.486 при пороге 0.5, то есть без запаса вовсе.
+         *
+         * КУДА ЖАТЬ, ЕСЛИ ПОНАДОБИТСЯ ВЕРНУТЬ ВРЕМЯ. По убыванию отдачи:
+         *
+         *   1. Не гонять ВСЕ стадии каждый заход. Сходимости мешает пара
+         *      «связи против контакта», а площади, изгиб и проекция кости внутри
+         *      одного подшага меняются мало. Если оставить в повторениях только
+         *      solveConstraints и solveContacts, а остальное звать один раз, заход
+         *      подешевеет заметно: площадей 3402 против 4924 связей.
+         *   2. Повторять только там, где есть контакты. Клетки без единого контакта
+         *      сходятся с первого раза; список затронутых уже собирается в frcList.
+         *   3. Ранний выход по невязке. Если за заход наибольшая поправка меньше
+         *      порога, дальше идти незачем; в покое это оборвёт цикл на втором заходе.
+         *   4. Широкая фаза раз в несколько подшагов вместо каждого. Она уже вынесена
+         *      из цикла заходов, но всё ещё идёт каждый подшаг, а это сетка, DDA и CCD,
+         *      то есть худшая локальность во всём тике.
+         */
+        private const val SOLVER_ITERS = 4
+
+        /**
+         * Порог смерти клетки в долях контактного радиуса соседа.
+         *
+         * Единица означает буквально «центр зашёл внутрь чужого радиуса». Меньше —
+         * умирать будут только совсем провалившиеся, больше — начнут гибнуть просто
+         * при сильном сжатии.
+         */
+        private const val KILL_DEPTH = 1.0
+
+        /**
+         * ГЛАВНЫЙ ВЫКЛЮЧАТЕЛЬ СМЕРТИ ОТ ПРОНИКНОВЕНИЯ. false — не умирает никто нигде,
+         * даже там, где стенд просит об этом через killOnDeep. Порог см. KILL_DEPTH.
+         */
+        private const val KILL_ON_DEEP_OVERLAP = false
+
+        /** Прикладывать контакт к скорости до интегрирования. См. toVelocity. */
+        private const val CONTACT_BEFORE_INTEGRATE = false
+
         /** Тяга — ограничение с потолком, а не телепорт (см. SoftBodyWithBoneDemo). */
         /**
          * Потолок на скорость тяги мышью, мировых единиц В СЕКУНДУ.
@@ -1378,6 +1545,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         private val HUD_TEXT      = Color.valueOf("EAF0F8FF")
         private val HUD_MUTED     = Color.valueOf("76818FFF")
         private val HUD_WARN      = Color.valueOf("E8A33DFF")
+        private val MARK_COLOR    = Color.valueOf("FF4FD8FF")
         private val BOUNDARY_COLOR = Color.valueOf("4BE08AFF")
         private val BEND_COLOR     = Color.valueOf("E8A33D88")
         private val CONTACT_COLOR  = Color.valueOf("4BE08A22")
@@ -1400,11 +1568,24 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
 
     // --- самоконтакт границы ---
     private var contacts: BoundaryContacts? = null
+    /** Связи ЦЕЛОГО тела: снимается один раз и переживает все пересборки. */
+    private var everLinked: Set<Long>? = null
     private var contactsOn = CONTACTS_ON
     private lateinit var radius: DoubleArray
 
     /** Клетка без единой связи — свободная частица, см. FREE_PARTICLES. */
     private lateinit var isFree: BooleanArray
+
+    /**
+     * УМЕРШИЕ КЛЕТКИ: центр зашёл внутрь радиуса чужой. См. killOnDeep в контактах.
+     *
+     * Смерть тут окончательная и означает три вещи: все связи клетки объявлены
+     * мёртвыми, из контактного множества она исключена, и её не рисуют. Физически
+     * она остаётся в массивах — выкидывать клетку из середины значило бы
+     * перенумеровать всё тело, а на это завязаны кости, мышцы и организмы.
+     */
+    private lateinit var cellDead: BooleanArray
+    private var deadCount = 0
     /** Максимальная длина каждой связи: LINK_MAX_STRETCH * длина покоя. */
     private lateinit var conMaxLen: DoubleArray
     private lateinit var matchWeight: DoubleArray
@@ -1660,8 +1841,9 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
     // =================================================================
 
     private fun buildFromFile() {
-        body = BodyFile.load(bodyPath, copies = ORGANISMS, freeParticles = FREE_PARTICLES)
+        body = BodyFile.load(bodyPath, copies = copies, freeParticles = freeParticles)
         n = body.count
+        cellDead = BooleanArray(n)
 
         px = DoubleArray(n); py = DoubleArray(n)
         prevX = DoubleArray(n); prevY = DoubleArray(n)
@@ -1721,7 +1903,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         triInverted = BooleanArray(triCount)
 
         buildBoundary()
-        buildBend()
+        buildBend(); buildFlaps()
         buildMasses()
         buildOrganisms()
         buildContacts()
@@ -1816,7 +1998,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         flowVY = DoubleArray(comp)
         comAccX = DoubleArray(comp)
         comAccY = DoubleArray(comp)
-        println("[RealBodyDemo] organisms = $comp (own flow reservoir each)")
+        if (!rebuilding) println("[RealBodyDemo] organisms = $comp (own flow reservoir each)")
     }
 
     private fun buildContacts() {
@@ -1836,13 +2018,18 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             val b = maxOf(conA[c], conB[c]).toLong()
             linkOfPair[a * 1000003L + b] = c
         }
+        if (everLinked == null) everLinked = BoundaryContacts.linkedPairs(conA, conB, conCount)
         contacts = BoundaryContacts.build(
             n, conA, conB, conCount, boundA, boundB, boundCount, radius,
             CONTACT_SCALE, CCD_CORE, CONTACT_RESTITUTION, CONTACT_FRICTION,
             body.x, body.y,
-            body.meanLinkLength.toDouble(), CONTACT_MAX_STEP, isFree,
-        )
-        println("[RealBodyDemo] contact particles = ${boundCount} boundary edges, " +
+            body.meanLinkLength.toDouble(), CONTACT_MAX_STEP, isFree, everLinked,
+            cellDead,
+        ).also {
+            it.killOnDeep = killOnDeep && KILL_ON_DEEP_OVERLAP
+            it.killDepth = KILL_DEPTH
+        }
+        if (!rebuilding) println("[RealBodyDemo] contact particles = ${boundCount} boundary edges, " +
             "contact radius from boundary edges, seal margin")
     }
 
@@ -1858,6 +2045,116 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             val r = body.radius[i].toDouble()
             val m = if (meanArea > 0.0) (r * r) / meanArea else 1.0
             restInvMass[i] = if (m > 1e-12) 1.0 / m else 1.0
+        }
+    }
+
+    /**
+     * УГОЛ ЛОСКУТА: единственное, что мешает тонкому отростку сложиться сам на себя.
+     *
+     * ЗАЧЕМ ОТДЕЛЬНАЯ СТАДИЯ, А НЕ ИЗГИБ. Изгиб по умолчанию выключен (bendLevel = 0
+     * даёт податливость -1, и solveBend выходит на первой строке), да и строится он
+     * только для клеток ровно с двумя граничными рёбрами, то есть развилку контура
+     * пропускает. А связь ЛОСКУТА не входит ни в один треугольник, поэтому её угол не
+     * держит и площадь. В итоге не держит вообще ничто.
+     *
+     * ЧТО ЭТО ЛОМАЛО. Замер на оторвавшемся куске: клетки #939 и #940, у каждой по
+     * одной связи, обе в одну и ту же клетку #566, треугольников на этих связях ноль.
+     * Лоскуты свободно сложились друг на друга и сошлись на 0.014 средней связи, то
+     * есть перекрылись на 99% контактного диаметра. Дальше контакт упирался в свой
+     * предохранительный потолок, расталкивал их каждый подшаг на 4 клетки за тик,
+     * связи тянули обратно на 7.7, и кусок дребезжал вечно, а среда превращала эту
+     * пилу в тягу. Это же и есть «маятник, который от касания резко отскакивает»:
+     * делить контактную поправку такой клетке не с кем.
+     *
+     * ОГРАНИЧЕНИЕ ОДНОСТОРОННЕЕ. Оно мешает лоскутам СХОДИТЬСЯ ближе, чем в позе
+     * покоя, и не мешает им расходиться. Поэтому тело не становится жёстче нигде:
+     * там, где ткань цела, лоскутов нет вовсе, а где есть — они просто не могут
+     * сложиться в точку.
+     *
+     * Пар тут единицы: нужны ДВЕ связи одной клетки, и обе без треугольника.
+     */
+    /**
+     * Сколько треугольников у каждого ребра — отсортированным массивом ключей, а не
+     * картой. Считается один раз на пересборку и нужен и контуру, и лоскутам: раньше
+     * каждый строил свою HashMap<Long, Int> с упаковкой, и при разрыве, когда пересборка
+     * идёт внутри подшага, это была заметная доля её цены.
+     */
+    private var triEdgeKeys = LongArray(0)
+
+    private fun edgeKey(a: Int, b: Int): Long = (minOf(a, b).toLong() shl 32) or maxOf(a, b).toLong()
+
+    private fun buildTriEdgeKeys() {
+        val k = LongArray(triCount * 3)
+        for (t in 0 until triCount) {
+            k[3 * t] = edgeKey(triA[t], triB[t])
+            k[3 * t + 1] = edgeKey(triB[t], triC[t])
+            k[3 * t + 2] = edgeKey(triC[t], triA[t])
+        }
+        k.sort()
+        triEdgeKeys = k
+    }
+
+    private fun triEdgeUse(a: Int, b: Int): Int {
+        val key = edgeKey(a, b)
+        val arr = triEdgeKeys
+        var lo = 0; var hi = arr.size
+        while (lo < hi) { val m = (lo + hi) ushr 1; if (arr[m] < key) lo = m + 1 else hi = m }
+        var c = 0
+        while (lo < arr.size && arr[lo] == key) { c++; lo++ }
+        return c
+    }
+
+    /** Идёт пересборка после разрыва: печатать нельзя, она бывает десятки раз за тик. */
+    private var rebuilding = false
+
+    private fun buildFlaps() {
+        // Ключи рёбер уже посчитаны контуром: buildFlaps всегда зовут после buildBoundary.
+        val bare = HashMap<Int, MutableList<Int>>()
+        for (c in 0 until conCount) {
+            val i = conA[c]; val j = conB[c]
+            if (triEdgeUse(i, j) > 0) continue
+            bare.getOrPut(i) { ArrayList() }.add(j)
+            bare.getOrPut(j) { ArrayList() }.add(i)
+        }
+        val a = ArrayList<Int>(); val b = ArrayList<Int>(); val r = ArrayList<Double>()
+        for ((_, list) in bare) {
+            if (list.size < 2) continue
+            for (p in list.indices) for (q in p + 1 until list.size) {
+                val i = list[p]; val j = list[q]
+                if (i == j) continue
+                val dx = (body.x[i] - body.x[j]).toDouble()
+                val dy = (body.y[i] - body.y[j]).toDouble()
+                a.add(i); b.add(j); r.add(sqrt(dx * dx + dy * dy))
+            }
+        }
+        flapCount = a.size
+        flapA = a.toIntArray(); flapB = b.toIntArray(); flapRest = r.toDoubleArray()
+        if (!rebuilding) println("[RealBodyDemo] flap angles = $flapCount")
+    }
+
+    private var flapCount = 0
+    private var flapA = IntArray(0)
+    private var flapB = IntArray(0)
+    private var flapRest = DoubleArray(0)
+
+    /** Односторонняя: только не даёт сойтись ближе позы покоя. */
+    private fun solveFlaps(h: Double) {
+        if (flapCount == 0) return
+        val alpha = FLAP_COMPLIANCE / (h * h)
+        for (c in 0 until flapCount) {
+            val i = flapA[c]; val j = flapB[c]
+            val wi = invMass[i]; val wj = invMass[j]
+            val w = wi + wj
+            if (w == 0.0) continue
+            var dx = px[i] - px[j]
+            var dy = py[i] - py[j]
+            val len = sqrt(dx * dx + dy * dy)
+            val rest = flapRest[c]
+            if (len >= rest || len < 1e-12) continue
+            dx /= len; dy /= len
+            val dL = -(len - rest) / (w + alpha)
+            px[i] += dx * dL * wi; py[i] += dy * dL * wi
+            px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
         }
     }
 
@@ -1883,7 +2180,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         }
         bendCount = a.size
         bendA = a.toIntArray(); bendB = b.toIntArray(); bendRest = r.toDoubleArray()
-        println("[RealBodyDemo] bend pairs = $bendCount on $boundCount boundary edges")
+        if (!rebuilding) println("[RealBodyDemo] bend pairs = $bendCount on $boundCount boundary edges")
     }
 
     /**
@@ -1934,18 +2231,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
      * связей мы не создаём, но поверхность кости средой омывается точно так же.
      */
     private fun buildBoundary() {
-        val useCount = HashMap<Long, Int>(triCount * 3)
-        fun key(a: Int, b: Int): Long {
-            val lo = minOf(a, b).toLong()
-            val hi = maxOf(a, b).toLong()
-            return (lo shl 32) or hi
-        }
-        for (t in 0 until triCount) {
-            val i0 = triA[t]; val i1 = triB[t]; val i2 = triC[t]
-            useCount.merge(key(i0, i1), 1, Int::plus)
-            useCount.merge(key(i1, i2), 1, Int::plus)
-            useCount.merge(key(i2, i0), 1, Int::plus)
-        }
+        buildTriEdgeKeys()
         // Обход идёт по ВСЕМ связям, а не по ключам карты треугольников. Связь в тонком
         // отростке (шириной в одну клетку) не входит НИ В ОДИН треугольник, в карту не
         // попадает вовсе — и, считая только по карте, я терял такие рёбра целиком.
@@ -1953,11 +2239,11 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         val a = ArrayList<Int>(); val b = ArrayList<Int>()
         for (k in 0 until lnkCount) {
             val i = lnkA[k]; val j = lnkB[k]
-            if ((useCount[key(i, j)] ?: 0) <= 1) { a.add(i); b.add(j) }
+            if (triEdgeUse(i, j) <= 1) { a.add(i); b.add(j) }
         }
         boundCount = a.size
         boundA = a.toIntArray(); boundB = b.toIntArray()
-        println("[RealBodyDemo] boundary edges = $boundCount")
+        if (!rebuilding) println("[RealBodyDemo] boundary edges = $boundCount")
     }
 
     private fun reset() {
@@ -1975,10 +2261,13 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         hoveredMuscle = -1
         hoverId = -1
         dragId = -1
-        // Зум под число копий: две рядом в исходный кадр не влезают.
-        camera.zoom = ORGANISMS.toFloat()
-        camera.position.set(viewCenterX(), 0.85f, 0f)
-        camera.update()
+        // Зум под число копий: две рядом в исходный кадр не влезают. Без окна камеры
+        // нет вовсе — сброс зовёт и воспроизведение журнала.
+        if (::camera.isInitialized) {
+            camera.zoom = ORGANISMS.toFloat()
+            camera.position.set(viewCenterX(), 0.85f, 0f)
+            camera.update()
+        }
         invertedPeak = 0
         boneCapHits = 0
         linkCapHits = 0
@@ -1989,6 +2278,68 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         stepsAvg = 1f
         startCx = comX()
         startCy = comY()
+        applyLabDamage()
+    }
+
+    /**
+     * РАЗРУШЕНИЕ ДЛЯ СТЕНДА: убить долю связей случайно, но ТЕМ ЖЕ ПУТЁМ, что в игре.
+     *
+     * Зачем не проще. Сначала я убивал связи прямо в файле тела, и это оказалось
+     * неверно по существу: движок тогда считает, что такие пары НИКОГДА не были
+     * связаны. А исключение из контактов даётся ровно таким парам — перекрытым в позе
+     * покоя и никогда не связанным, — иначе соседи на 0.6 связи при контактном
+     * диаметре 1.0 были бы в вечном контакте и тело распирало бы само себя. В итоге
+     * ни одна пара по краям дыр не сталкивалась вовсе, что сразу и было замечено
+     * глазами.
+     *
+     * Здесь связи умирают ПОСЛЕ загрузки целого тела и после того, как список
+     * «когда-либо связанных» уже снят с целого графа. Тогда такие пары от исключения
+     * защищены и сталкиваются, ровно как после настоящего разрыва.
+     *
+     * Зовётся из reset, поэтому клавиша сброса не возвращает целую решётку молча.
+     */
+    private fun applyLabDamage() {
+        if (labKillFraction <= 0.0 || conCount == 0) return
+        val rnd = java.util.Random(labKillSeed)
+        val before = conCount
+        val target = (conCount * labKillFraction).toInt()
+        var killed = 0
+        var guard = 0
+        while (killed < target && guard < conCount * 64) {
+            guard++
+            val c = rnd.nextInt(conCount)
+            if (conDead[c]) continue
+            conDead[c] = true; killed++
+        }
+        tearsPending = true
+        rebuildAfterTear()
+        println("[SoftGridLab] убито связей $killed из $before, осталось $conCount, тел $organismCount, сид $labKillSeed")
+    }
+
+    /**
+     * Применить заявки на смерть, накопленные контактом за проход.
+     *
+     * Смерть клетки это смерть всех её связей: тогда её треугольники распадаются сами,
+     * компоненты пересобираются, и кусок вокруг дыры живёт дальше по обычным правилам
+     * разрушения. Отдельного механизма для этого не нужно вовсе.
+     *
+     * Заявки применяются ПОСЛЕ прохода, а не внутри: список контактов и смежность
+     * собраны на текущую топологию, и менять её посреди обхода нельзя.
+     */
+    private fun applyKills(ct: BoundaryContacts) {
+        var any = false
+        for (k in 0 until ct.killN) {
+            val v = ct.killList[k]
+            if (cellDead[v]) continue
+            cellDead[v] = true
+            deadCount++
+            any = true
+            for (c in 0 until conCount) {
+                if (conA[c] == v || conB[c] == v) conDead[c] = true
+            }
+            vx[v] = 0.0; vy[v] = 0.0
+        }
+        if (any) { tearsPending = true; rebuildTimed() }
     }
 
     private fun comX(): Double { var s = 0.0; for (i in 0 until n) s += px[i]; return s / n }
@@ -2015,6 +2366,8 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         // Направление обхода ЧЕРЕДУЕТСЯ. См. sweepBackwards.
         val order = if (sweepBackwards) (conCount - 1) downTo 0 else 0 until conCount
         for (c in order) {
+            // Порванная связь не тянет ни мгновения — даже до пересборки топологии.
+            if (conDead[c]) continue
             val i = conA[c]; val j = conB[c]
             val wi = invMass[i]; val wj = invMass[j]
             val w = wi + wj
@@ -2046,8 +2399,89 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
      * В движке ровно это условие — сигнал к разрыву связи. Здесь рвать нечем, поэтому
      * связь просто бесконечно крепкая.
      */
+    /**
+     * ПЛАСТИЧЕСКОЕ ТЕЧЕНИЕ ТКАНИ. Зовётся РАЗ В ТИК, см. PLASTIC_RATE.
+     *
+     * Деформация сверх предела текучести медленно переезжает в длину покоя, то есть
+     * перестаёт быть деформацией. Ниже предела не делается ничего — ткань упругая.
+     *
+     * ДЕФОРМАЦИЯ СЧИТАЕТСЯ ОТ ТЕКУЩЕЙ ЦЕЛИ, а не от conRest: у мышцы цель короче на
+     * muscleScale, и мерить от conRest значило бы считать сокращение мышцы пластикой.
+     * Тогда сокращённая мышца за несколько секунд «забывала» бы свою длину покоя и
+     * переставала тянуть вовсе.
+     *
+     * Площади текут ВМЕСТЕ с длинами и отдельно от них. Отпустить только длины нельзя:
+     * несжимаемая площадь удержит смятый треугольник в прежнем виде, и несовместимость
+     * останется — просто переедет со связей на площади.
+     */
+    private var conHold = ByteArray(0)
+    private var triHold = ByteArray(0)
+
+    private fun applyPlasticity(dt: Double) {
+        if (PLASTIC_RATE <= 0.0) return
+        var k = PLASTIC_RATE * dt
+        if (k > 1.0) k = 1.0
+        // Счётчики выдержки живут ровно столько же, сколько топология: после разрыва
+        // размеры меняются, и старые значения относились бы к другим связям.
+        if (conHold.size != conCount) conHold = ByteArray(conCount)
+        if (triHold.size != triCount) triHold = ByteArray(triCount)
+
+        for (c in 0 until conCount) {
+            // МЫШЦЫ НЕ ТЕКУТ, и это не осторожность, а необходимость.
+            //
+            // У сокращённой мышцы цель короче в пять раз (MUSCLE_CONTRACTION = 0.2), а
+            // окружающая ткань дотянуться не даёт. Деформация относительно цели выходит
+            // в сотни процентов — не потому что ткань смялась, а потому что мышца
+            // работает. Пластика на этом разносит длину покоя, мышца «забывает» свою
+            // длину и тянуть перестаёт. Проверка ловила это сразу: тело переставало
+            // останавливаться вовсе (замедление 1.0x вместо 20x за минуту), потому что
+            // ползущая длина покоя вечно шевелила границу, а среда это выпрямляла в тягу.
+            if (conMuscle[c] >= 0) continue
+            val target = conRest[c]
+            if (target < 1e-12) continue
+            val dx = px[conA[c]] - px[conB[c]]
+            val dy = py[conA[c]] - py[conB[c]]
+            val len = sqrt(dx * dx + dy * dy)
+            val strain = len / target - 1.0
+            val over = when {
+                strain > PLASTIC_YIELD -> strain - PLASTIC_YIELD
+                strain < -PLASTIC_YIELD -> strain + PLASTIC_YIELD
+                else -> 0.0
+            }
+            if (over == 0.0) { conHold[c] = 0; continue }
+            if (conHold[c] < PLASTIC_HOLD) { conHold[c]++; continue }
+            conRest[c] *= 1.0 + over * k
+            // Предел длины идёт ЗА длиной покоя: иначе потёкшая связь окажется
+            // растянутой по старой мерке и стадия предела начнёт с ней воевать.
+            conMaxLen[c] = LINK_MAX_STRETCH * conRest[c]
+        }
+
+        for (t in 0 until triCount) {
+            if (triMuscle[t] >= 0) continue          // мышечные — по той же причине
+            val rest2 = triRestArea2[t].toDouble()
+            if (abs(rest2) < 1e-18) continue
+            val i0 = triA[t]; val i1 = triB[t]; val i2 = triC[t]
+            val area2 = (px[i1] - px[i0]) * (py[i2] - py[i0]) -
+                (py[i1] - py[i0]) * (px[i2] - px[i0])
+            // ВЫВЕРНУТЫМ ТЕЧЬ НЕЛЬЗЯ: подогнав площадь покоя под сложенное состояние,
+            // пластика УЗАКОНИТ складку, и та не разойдётся уже никогда. Проверка
+            // ловила это прямо: складка 50% и 75% переставали расходиться за 8 секунд.
+            if (area2 <= 0.0) continue
+            val strain = area2 / rest2 - 1.0
+            val over = when {
+                strain > PLASTIC_YIELD -> strain - PLASTIC_YIELD
+                strain < -PLASTIC_YIELD -> strain + PLASTIC_YIELD
+                else -> 0.0
+            }
+            if (over == 0.0) { triHold[t] = 0; continue }
+            if (triHold[t] < PLASTIC_HOLD) { triHold[t]++; continue }
+            triRestArea2[t] = (triRestArea2[t] * (1.0 + over * k)).toFloat()
+        }
+    }
+
     private fun solveLinkMaxLength() {
         for (c in 0 until conCount) {
+            if (conDead[c]) continue
             val i = conA[c]; val j = conB[c]
             val wi = invMass[i]; val wj = invMass[j]
             val w = wi + wj
@@ -2055,8 +2489,15 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             var dx = px[i] - px[j]
             var dy = py[i] - py[j]
             val len = sqrt(dx * dx + dy * dy)
+            // РАЗДАВЛЕННАЯ СВЯЗЬ РВЁТСЯ ТАК ЖЕ, КАК ПЕРЕРАСТЯНУТАЯ. См. LINK_CRUSH_RATIO.
+            if (tearingOn && len < LINK_CRUSH_RATIO * conRest[c] * muscleScale(conMuscle[c])) {
+                linkTorn[c] = true; conDead[c] = true; tearsPending = true
+                continue
+            }
             val max = conMaxLen[c]
             if (len <= max || len < 1e-12) continue
+            val overStrain = (len - max) / conRest[c]
+            if (overStrain > dbgMaxOverStrain) dbgMaxOverStrain = overStrain
             // Пик недобора за всё время: сколько связь хотела сверх предела.
             if (len - max > LINK_TEAR_STRAIN * conRest[c]) {
                 linkTorn[c] = true
@@ -2079,6 +2520,24 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
 
     /** Сколько раз предел длины связи сработал с последнего сброса. Видно в HUD. */
     private var linkCapHits = 0
+
+    /** Разбор: наибольший недобор связи сверх предела, в долях покоя. Сбрасывает читатель. */
+    internal var dbgMaxOverStrain = 0.0
+
+    /** Контакты пересобраны посреди подшага — список пар надо строить заново. */
+    private var contactsStale = false
+
+    /** Цена пересборки после разрыва: суммарное время и число вызовов. */
+    internal var dbgRebuildNs = 0L
+    internal var dbgRebuildN = 0
+
+    private fun rebuildTimed() {
+        val t0 = System.nanoTime()
+        rebuilding = true
+        try { rebuildAfterTear() } finally { rebuilding = false }
+        dbgRebuildNs += System.nanoTime() - t0
+        dbgRebuildN++
+    }
 
     /** Связь хоть раз требовала растяжения сверх порога разрыва. См. LINK_TEAR_STRAIN. */
     private lateinit var linkTorn: BooleanArray
@@ -2149,68 +2608,96 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
 
         tearsPending = false
         tornTotal = 0
-        buildBoundary(); buildBend(); buildOrganisms(); buildContacts()
+        buildBoundary(); buildBend(); buildFlaps(); buildOrganisms(); buildContacts()
     }
 
     private fun rebuildAfterTear() {
         tearsPending = false
+        var t = System.nanoTime()
+        fun lap(k: Int) { val now = System.nanoTime(); dbgRebuildSec[k] += now - t; t = now }
 
         // Мёртвые пары — по КОНЦАМ, потому что дальше их надо вычеркнуть и из
         // полного списка связей, где нумерация другая.
-        val dead = HashSet<Long>()
-        for (c in 0 until conCount) {
-            if (!conDead[c]) continue
-            dead.add(minOf(conA[c], conB[c]).toLong() * 1000003L + maxOf(conA[c], conB[c]).toLong())
-        }
-        if (dead.isEmpty()) return
-        tornTotal += dead.size
-
+        //
+        // МАССИВАМИ, А НЕ ХЕШАМИ. Пересборка идёт внутри подшага прямо на ударе, и
+        // HashSet<Long> с HashMap<Long, Double> на каждую связь были её дорогой частью.
+        // Порядок элементов сохранён тот же, что давали списки, поэтому результат
+        // побитово прежний — проверено контрольной суммой на журнале игрока.
         fun key(a: Int, b: Int) = minOf(a, b).toLong() * 1000003L + maxOf(a, b).toLong()
+        var nd = 0
+        for (c in 0 until conCount) if (conDead[c]) nd++
+        if (nd == 0) return
+        val deadKeys = LongArray(nd)
+        run { var q = 0; for (c in 0 until conCount) if (conDead[c]) deadKeys[q++] = key(conA[c], conB[c]) }
+        deadKeys.sort()
+        var uniq = 0
+        for (k in deadKeys.indices) if (k == 0 || deadKeys[k] != deadKeys[k - 1]) uniq++
+        tornTotal += uniq
+        fun isDead(a: Int, b: Int) = java.util.Arrays.binarySearch(deadKeys, key(a, b)) >= 0
 
         // 1. Полный список связей
-        val la = ArrayList<Int>(lnkCount); val lb = ArrayList<Int>(lnkCount)
-        for (k in 0 until lnkCount) {
-            if (dead.contains(key(lnkA[k], lnkB[k]))) continue
-            la.add(lnkA[k]); lb.add(lnkB[k])
+        run {
+            val na = IntArray(lnkCount); val nb = IntArray(lnkCount)
+            var m = 0
+            for (k in 0 until lnkCount) {
+                if (isDead(lnkA[k], lnkB[k])) continue
+                na[m] = lnkA[k]; nb[m] = lnkB[k]; m++
+            }
+            lnkCount = m
+            lnkA = na.copyOf(m); lnkB = nb.copyOf(m)
         }
-        lnkCount = la.size
-        lnkA = la.toIntArray(); lnkB = lb.toIntArray()
 
         // 2. Треугольники: умирают вместе с любым своим ребром
-        val ta = ArrayList<Int>(triCount); val tb = ArrayList<Int>(triCount)
-        val tc = ArrayList<Int>(triCount); val tr = ArrayList<Float>(triCount)
-        val tm = ArrayList<Int>(triCount)
-        for (t in 0 until triCount) {
-            val i0 = triA[t]; val i1 = triB[t]; val i2 = triC[t]
-            if (dead.contains(key(i0, i1)) || dead.contains(key(i1, i2)) || dead.contains(key(i0, i2))) continue
-            ta.add(i0); tb.add(i1); tc.add(i2); tr.add(triRestArea2[t]); tm.add(triMuscle[t])
+        run {
+            val na = IntArray(triCount); val nb = IntArray(triCount); val nc = IntArray(triCount)
+            val nr = FloatArray(triCount); val nm = IntArray(triCount)
+            var m = 0
+            for (k in 0 until triCount) {
+                val i0 = triA[k]; val i1 = triB[k]; val i2 = triC[k]
+                if (isDead(i0, i1) || isDead(i1, i2) || isDead(i0, i2)) continue
+                na[m] = i0; nb[m] = i1; nc[m] = i2; nr[m] = triRestArea2[k]; nm[m] = triMuscle[k]; m++
+            }
+            triCount = m
+            triA = na.copyOf(m); triB = nb.copyOf(m); triC = nc.copyOf(m)
+            triRestArea2 = nr.copyOf(m); triMuscle = nm.copyOf(m)
+            triInverted = BooleanArray(triCount)
         }
-        triCount = ta.size
-        triA = ta.toIntArray(); triB = tb.toIntArray(); triC = tc.toIntArray()
-        triRestArea2 = tr.toFloatArray(); triMuscle = tm.toIntArray()
-        triInverted = BooleanArray(triCount)
 
-        // 3. Рабочие связи решателя — тем же правилом, что при загрузке
-        val a = ArrayList<Int>(lnkCount); val b = ArrayList<Int>(lnkCount)
-        val rest = ArrayList<Double>(lnkCount); val mus = ArrayList<Int>(lnkCount)
-        for (k in 0 until lnkCount) {
-            val i = lnkA[k]; val j = lnkB[k]
-            if (boneOf[i] != -1 && boneOf[i] == boneOf[j]) continue
-            val dx = body.x[i] - body.x[j]; val dy = body.y[i] - body.y[j]
-            a.add(i); b.add(j); rest.add(sqrt((dx * dx + dy * dy).toDouble()))
-            mus.add(if (muscleOf[i] != -1 && muscleOf[i] == muscleOf[j]) muscleOf[i] else -1)
+        // 3. Рабочие связи решателя — тем же правилом, что при загрузке.
+        //
+        // ДЛИНА ПОКОЯ ПЕРЕЕЗЖАЕТ, А НЕ СЧИТАЕТСЯ ЗАНОВО. При пластичности она уже не
+        // равна длине в позе покоя: ткань текла. Пересчёт из body.x стирал бы всё
+        // накопленное течение на каждом разрыве, то есть ровно там, где оно и нужно.
+        // Треугольникам это уже сделано выше — их площадь покоя переносится из старого
+        // массива, а не берётся из файла.
+        //
+        // Рабочие связи — это полный список без внутрикостных, в том же порядке. Новый
+        // полный список — старый без мёртвых, значит новые рабочие связи — ровно старые
+        // рабочие без мёртвых, в том же порядке. Их и оставляем, вместе с длиной покоя.
+        run {
+            val na = IntArray(conCount); val nb = IntArray(conCount)
+            val nr = DoubleArray(conCount); val nm = IntArray(conCount)
+            var m = 0
+            for (c in 0 until conCount) {
+                if (isDead(conA[c], conB[c])) continue
+                na[m] = conA[c]; nb[m] = conB[c]; nr[m] = conRest[c]; nm[m] = conMuscle[c]; m++
+            }
+            conCount = m
+            conA = na.copyOf(m); conB = nb.copyOf(m)
+            conRest = nr.copyOf(m); conMuscle = nm.copyOf(m)
         }
-        conCount = a.size
-        conA = a.toIntArray(); conB = b.toIntArray()
-        conRest = rest.toDoubleArray(); conMuscle = mus.toIntArray()
 
         // 4. Всё производное — теми же функциями, что и при загрузке. Контур,
         //    изгиб, организмы (тело могло распасться надвое) и контакты.
-        buildBoundary()
-        buildBend()
-        buildOrganisms()
-        buildContacts()
+        lap(0)
+        buildBoundary(); lap(1)
+        buildBend(); buildFlaps(); lap(2)
+        buildOrganisms(); lap(3)
+        buildContacts(); lap(4)
     }
+
+    /** Разбор цены пересборки по частям: списки, контур, изгиб+лоскуты, организмы, контакты. */
+    internal val dbgRebuildSec = LongArray(5)
     private var linkOfPair = HashMap<Long, Int>()
 
     /** Срабатывания потолка на момент захвата — строка DRAG показывает разницу. */
@@ -2236,6 +2723,57 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
      * Импульс задаётся КАЖДОЙ частице организма, а не одной: тело должно лететь
      * целиком, как брошенное, а не растягиваться за разогнанным краем.
      */
+    // ================================================================
+    //  СЦЕНЫ СТЕНДА ПРЯМО В ДЕМО: N выбрать, M запустить.
+    //
+    //  Зачем. Стенд считает числа без окна, но собирает топологию САМ: рассыпал тело,
+    //  разложил клетки. В живой симуляции та же куча получается ИНАЧЕ — из разрушения,
+    //  с пересборкой контура, смежности и списка исключений. Если стенд спокоен, а в
+    //  демо та же сцена дребезжит, значит ломается не решатель контактов, а пересборка
+    //  после разрушения. Ровно так уже находилась ошибка, из-за которой бывшие соседи
+    //  переставали сталкиваться.
+    //
+    //  Расстановка берётся из BenchScenes, ОДНА на стенд и на демо: две копии молча
+    //  разъехались бы, и картинка перестала бы отвечать за числа.
+    // ================================================================
+    private var sceneIndex = 0
+    private val scenes = BenchScenes.all()
+
+    private fun sceneCtx() = SceneCtx(
+        n = n, px = px, py = py, prevX = prevX, prevY = prevY, vx = vx, vy = vy,
+        organismOfCell = { i -> organismOf[i] },
+        organismSizeOf = { o -> organismSize[o] },
+        organismCount = { organismCount },
+        isFreeOf = { i -> isFree[i] },
+        invMass = invMass,
+        contactRadiusOf = { i -> contacts?.contactRadiusOf(i) ?: (radius[i] * CONTACT_SCALE) },
+        meanLink = body.meanLinkLength.toDouble(),
+        dt = DT,
+        vmax = MAX_SPEED_CELLS_PER_TICK,
+        shatter = { o ->
+            for (c in 0 until conCount) if (organismOf[conA[c]] == o) conDead[c] = true
+            tearsPending = true
+            simulate()
+        },
+        step = { stepOnce() },
+        stepContract = { gait = true; stepOnce() },
+        inBoneOf = { i -> boneOf[i] >= 0 },
+        focus = { x, y ->
+            if (::camera.isInitialized) { camera.position.set(x.toFloat(), y.toFloat(), 0f); camera.update() }
+        },
+    )
+
+    /** Поставить выбранную сцену. Сброс обязателен: сцены стартуют от целых тел. */
+    private fun runScene() {
+        reset()
+        tearingOn = true
+        scenes[sceneIndex].setup(sceneCtx(), 0.0, 0.0)
+        // Гребок гасится ПОСЛЕ расстановки. Сцена с оторванным куском включает его
+        // сама на своё окно, и без этой строки он оставался бы включённым дальше —
+        // тогда глазами видно одно, а стенд считает другое.
+        gait = false; gaitFrame = 0
+    }
+
     private fun slamOrganisms() {
         // ЗАХВАТ ОТПУСКАЕТСЯ. Держать клетку и одновременно бить тараном —
         // противоречивая пара действий: таран НАЗНАЧАЕТ скорость всем частицам, а
@@ -2316,7 +2854,11 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
      * иначе DDA упрётся в размер буфера, а оценка «широкую фазу можно строить раз в
      * тик» перестанет быть верхней границей.
      */
+    /** Диагностика: выключить потолок скорости. Он правит частицы ПО ОДНОЙ. */
+    var dbgNoClamp = false
+
     private fun clampSpeed() {
+        if (dbgNoClamp) return
         val maxV = MAX_SPEED_CELLS_PER_TICK * body.meanLinkLength / DT
         val maxV2 = maxV * maxV
         for (i in 0 until n) {
@@ -2652,6 +3194,201 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
      * сохранять центр масс точно, поэтому вся разница (за вычетом честного вклада
      * мыши) — это округление float32, и её можно вычесть без всякой физики.
      */
+    // --- ЗАМЕР ПО СТАДИЯМ: кто сколько двигает позиции и во сколько скорости ---
+    //
+    // Смысл в одном: скорость здесь не интегрируется, а восстанавливается из
+    // позиций как (px - prevX) / h. Значит любая позиционная поправка, чья угодно,
+    // умножается на 480 и становится скоростью. Замер отвечает, чья именно.
+    // Выключен по умолчанию: стоит копирования позиций на каждую стадию.
+    var dbgStages = false
+    val dbgStageMove = DoubleArray(9)
+    /**
+     * Сколько МОМЕНТА ИМПУЛЬСА внесла стадия. Считается как сумма m * (r x dp) / h.
+     *
+     * Парная поправка вдоль линии между клетками даёт тождественный ноль, и то же
+     * верно для площади: сумма r x grad по трём вершинам треугольника сокращается
+     * тождественно. Поэтому ненулевое число здесь сразу называет виновника, и гадать
+     * по списку стадий больше не нужно.
+     */
+    val dbgStageL = DoubleArray(9)
+    /** Сколько ЛИНЕЙНОГО импульса внесла стадия, вектором. Тяга берётся отсюда. */
+    val dbgStagePx = DoubleArray(9)
+    val dbgStagePy = DoubleArray(9)
+    val dbgStageHits = IntArray(9)
+    /** Если задан, замер идёт только по этим клеткам. */
+    var dbgOnly: BooleanArray? = null
+    private var dbgSnapX = DoubleArray(0)
+    private var dbgSnapY = DoubleArray(0)
+
+    private fun dbgMark() {
+        if (!dbgStages) return
+        if (dbgSnapX.size < n) { dbgSnapX = DoubleArray(n); dbgSnapY = DoubleArray(n) }
+        System.arraycopy(px, 0, dbgSnapX, 0, n)
+        System.arraycopy(py, 0, dbgSnapY, 0, n)
+    }
+
+    private var dbgSnapVx = DoubleArray(0)
+    private var dbgSnapVy = DoubleArray(0)
+
+    /** То же для проходов по СКОРОСТЯМ: импульс берётся прямо из vx, vy. */
+    private fun dbgMarkV() {
+        if (!dbgStages) return
+        if (dbgSnapVx.size < n) { dbgSnapVx = DoubleArray(n); dbgSnapVy = DoubleArray(n) }
+        System.arraycopy(vx, 0, dbgSnapVx, 0, n)
+        System.arraycopy(vy, 0, dbgSnapVy, 0, n)
+    }
+
+    private fun dbgMeasureV(k: Int) {
+        if (!dbgStages) return
+        var dpx = 0.0; var dpy = 0.0; var hits = 0
+        for (i in 0 until n) {
+            if (invMass[i] <= 0.0) continue
+            val m = 1.0 / invMass[i]
+            val ddx = vx[i] - dbgSnapVx[i]; val ddy = vy[i] - dbgSnapVy[i]
+            if (ddx != 0.0 || ddy != 0.0) hits++
+            dpx += m * ddx; dpy += m * ddy
+        }
+        dbgStageHits[k] += hits
+        dbgStagePx[k] += dpx; dbgStagePy[k] += dpy
+    }
+
+    private fun dbgMeasure(k: Int, h: Double) {
+        if (!dbgStages) return
+        var worst = 0.0
+        var hits = 0
+        val only = dbgOnly
+        for (i in 0 until n) {
+            if (invMass[i] <= 0.0) continue
+            if (only != null && !only[i]) continue
+            val dx = px[i] - dbgSnapX[i]; val dy = py[i] - dbgSnapY[i]
+            val d = Math.sqrt(dx * dx + dy * dy)
+            if (d > 1e-12) hits++
+            if (d > worst) worst = d
+        }
+        if (worst / h > dbgStageMove[k]) dbgStageMove[k] = worst / h
+        dbgStageHits[k] += hits
+        // Момент считается от общего центра масс замеряемых клеток. Начало отсчёта
+        // роли не играет, пока суммарный импульс стадии нулевой, но так надёжнее.
+        var m0 = 0.0; var cx = 0.0; var cy = 0.0
+        for (i in 0 until n) {
+            if (invMass[i] <= 0.0) continue
+            if (only != null && !only[i]) continue
+            val m = 1.0 / invMass[i]
+            m0 += m; cx += m * dbgSnapX[i]; cy += m * dbgSnapY[i]
+        }
+        if (m0 <= 0.0) return
+        cx /= m0; cy /= m0
+        var dl = 0.0
+        var dpx = 0.0; var dpy = 0.0
+        for (i in 0 until n) {
+            if (invMass[i] <= 0.0) continue
+            if (only != null && !only[i]) continue
+            val m = 1.0 / invMass[i]
+            val rx = dbgSnapX[i] - cx; val ry = dbgSnapY[i] - cy
+            val ddx = px[i] - dbgSnapX[i]; val ddy = py[i] - dbgSnapY[i]
+            dl += m * (rx * ddy - ry * ddx)
+            dpx += m * ddx; dpy += m * ddy
+        }
+        dbgStageL[k] += dl / h
+        dbgStagePx[k] += dpx / h; dbgStagePy[k] += dpy / h
+    }
+
+    /**
+     * СНЯТИЕ ИМПУЛЬСА И МОМЕНТА, КОТОРЫЕ ВНЕСЛИ ВНУТРЕННИЕ ПОЗИЦИОННЫЕ СТАДИИ.
+     *
+     * ПОЧЕМУ ЭТО ЗАКОННО. Связи, площади, лоскуты, предел длины и проекция кости —
+     * все внутренние. Они обязаны сохранять и импульс, и момент импульса точно.
+     * Значит всё, что они внесли, это численный остаток, и его можно вычесть, не
+     * трогая физику: убирается жёсткий сдвиг и жёсткий поворот, а форма при этом
+     * не меняется вовсе.
+     *
+     * ОТКУДА ОСТАТОК БЕРЁТСЯ. Каждая парная поправка идёт вдоль линии между двумя
+     * клетками и момента не даёт — но только относительно того положения, в котором
+     * её приложили. Обход идёт по очереди, и следующая поправка ложится уже на
+     * сдвинутые клетки. Перекрёстные члены по отдельности второго порядка малости, но
+     * их шестьсот тысяч за прогон.
+     *
+     * МЫШЦА ДЕЛАЕТ ИХ СОГЛАСОВАННЫМИ, и в этом вся беда. Пока она сокращается, длины
+     * покоя меняются каждый тик, невязка не сходится к нулю и у всех мышечных связей
+     * смотрит в одну сторону. Остатки перестают гасить друг друга и складываются в
+     * момент. Замер на оторванном куске, контакты и среда выключены, 300 тиков
+     * сокращения: момент 0.167 -> -2.29, то есть перевернулся и вырос вдесятеро.
+     * Отпустили мышцу — момент честно затухает до 0.028.
+     *
+     * По стадиям вклад такой: связи -6.73, площади +2.74, предел длины -3.65,
+     * проекция кости РОВНО НОЛЬ. Потолок скорости тоже ни при чём: с выключенным
+     * потолком утечка осталась.
+     *
+     * Чередование направления обхода (sweepBackwards) стоит против этого же и гасит
+     * часть, но не всё.
+     *
+     * СЧИТАЕТСЯ ПО ОРГАНИЗМАМ, а не по миру: у разных кусков законно разные импульсы,
+     * и снимать общий сдвиг значило бы перекачивать импульс между ними.
+     *
+     * ЗОВЁТСЯ ДО КОНТАКТОВ. Контакт внешний для организма и передаёт импульс между
+     * телами законно, его трогать нельзя.
+     */
+    private var spinSnapX = DoubleArray(0)
+    private var spinSnapY = DoubleArray(0)
+    private var orgM = DoubleArray(0)
+    private var orgCx = DoubleArray(0)
+    private var orgCy = DoubleArray(0)
+    private var orgDx = DoubleArray(0)
+    private var orgDy = DoubleArray(0)
+    private var orgL = DoubleArray(0)
+    private var orgI = DoubleArray(0)
+    private var orgPinned = BooleanArray(0)
+
+    private fun markInternal() {
+        if (spinSnapX.size < n) { spinSnapX = DoubleArray(n); spinSnapY = DoubleArray(n) }
+        System.arraycopy(px, 0, spinSnapX, 0, n)
+        System.arraycopy(py, 0, spinSnapY, 0, n)
+    }
+
+    private fun cancelInternalSpin() {
+        val c = organismCount
+        if (c <= 0) return
+        if (orgM.size < c) {
+            orgM = DoubleArray(c); orgCx = DoubleArray(c); orgCy = DoubleArray(c)
+            orgDx = DoubleArray(c); orgDy = DoubleArray(c)
+            orgL = DoubleArray(c); orgI = DoubleArray(c); orgPinned = BooleanArray(c)
+        }
+        java.util.Arrays.fill(orgM, 0, c, 0.0)
+        java.util.Arrays.fill(orgCx, 0, c, 0.0); java.util.Arrays.fill(orgCy, 0, c, 0.0)
+        java.util.Arrays.fill(orgDx, 0, c, 0.0); java.util.Arrays.fill(orgDy, 0, c, 0.0)
+        java.util.Arrays.fill(orgL, 0, c, 0.0); java.util.Arrays.fill(orgI, 0, c, 0.0)
+        java.util.Arrays.fill(orgPinned, 0, c, false)
+        for (i in 0 until n) {
+            val o = organismOf[i]
+            if (o < 0 || o >= c) continue
+            // Закреплённая клетка это внешняя опора: у такого организма импульс
+            // сохраняться не обязан, и снимать с него ничего нельзя.
+            if (invMass[i] <= 0.0) { orgPinned[o] = true; continue }
+            val m = 1.0 / invMass[i]
+            orgM[o] += m; orgCx[o] += m * spinSnapX[i]; orgCy[o] += m * spinSnapY[i]
+        }
+        for (o in 0 until c) if (orgM[o] > 0.0) { orgCx[o] /= orgM[o]; orgCy[o] /= orgM[o] }
+        for (i in 0 until n) {
+            val o = organismOf[i]
+            if (o < 0 || o >= c || invMass[i] <= 0.0 || orgPinned[o]) continue
+            val m = 1.0 / invMass[i]
+            val dx = px[i] - spinSnapX[i]; val dy = py[i] - spinSnapY[i]
+            val rx = spinSnapX[i] - orgCx[o]; val ry = spinSnapY[i] - orgCy[o]
+            orgDx[o] += m * dx; orgDy[o] += m * dy
+            orgL[o] += m * (rx * dy - ry * dx)
+            orgI[o] += m * (rx * rx + ry * ry)
+        }
+        for (i in 0 until n) {
+            val o = organismOf[i]
+            if (o < 0 || o >= c || invMass[i] <= 0.0 || orgPinned[o] || orgM[o] <= 0.0) continue
+            val tx = orgDx[o] / orgM[o]; val ty = orgDy[o] / orgM[o]
+            val w = if (orgI[o] > 1e-18) orgL[o] / orgI[o] else 0.0
+            val rx = spinSnapX[i] - orgCx[o]; val ry = spinSnapY[i] - orgCy[o]
+            px[i] -= tx - w * ry
+            py[i] -= ty + w * rx
+        }
+    }
+
     private fun cancelInternalDrift(beforeX: Double, beforeY: Double) {
         var afterX = 0.0
         var afterY = 0.0
@@ -2841,7 +3578,11 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
      *
      * Это ВНЕШНЯЯ сила, она осознанно не сохраняет импульс — среда его и уносит.
      */
+    /** Диагностика: выключить анизотропное сопротивление среды, то есть тягу. */
+    var dbgDragOff = false
+
     private fun applyNormalDrag(h: Double) {
+        if (dbgDragOff) return
         var kd = FLOW_DECAY * h
         if (kd > 1.0) kd = 1.0
 
@@ -2974,7 +3715,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         //
         // Ровно один раз за тик: внутри подшагов контур и контакты пересобирались бы
         // по шестнадцать раз, а рвётся обычно пучок связей за один удар.
-        if (tearsPending) rebuildAfterTear()
+        if (tearsPending) rebuildTimed()
         val h = DT / SUBSTEPS
         // Нулевой слот — состояние на НАЧАЛО тика. Промежуточные пишутся ТОЛЬКО когда
         // их кто-то будет читать: в обычном режиме это лишние 242 КБ копирования за
@@ -2984,6 +3725,14 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         histCount = SUBSTEPS + 1
         histHasSubsteps = keepSubsteps
         for (step in 0 until SUBSTEPS) {
+            // КОНТАКТ ПРИКЛАДЫВАЕТСЯ К СКОРОСТИ ДО ИНТЕГРИРОВАНИЯ, как гравитация.
+            // Почему именно так и что было раньше — см. toVelocity в solveContacts.
+            if (contacts != null && contactsOn && CONTACT_BEFORE_INTEGRATE) {
+                contacts!!.prepare(px, py, prevX, prevY, vx, vy, invMass)
+                contacts!!.updateBones(px, py, invMass,
+                    if (bonesRigid) boneOf else null, rigidBones)
+                contacts!!.solveContacts(px, py, vx, vy, invMass, h, 1.0, toVelocity = true)
+            }
             integrate(h)
 
             // Скобка вокруг ВНУТРЕННИХ стадий: центр масс до и после. Внешние силы
@@ -3001,15 +3750,47 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             // Обход связей меняет направление КАЖДЫЙ подшаг — см. sweepBackwards.
             // Ставится здесь, а не внутри solveConstraints, чтобы фаза шла ровно по
             // подшагам и не зависела от того, сколько раз стадию позвали снаружи.
-            val ct = contacts
 
             sweepBackwards = !sweepBackwards
-            solveConstraints(h)
-            solveLinkMaxLength()
-            solveAreas(h)
-            solveBend(h)
-            if (bonesRigid) for (b in rigidBones.indices) projectBone(b)
-
+            // Снимок ДО внутренних стадий: всё, что они внесут сверх формы, снимется
+            // перед контактами. См. cancelInternalSpin.
+            if (CANCEL_INTERNAL_SPIN) markInternal()
+            // ЦИКЛ ПО ВСЕМ ОГРАНИЧЕНИЯМ СРАЗУ, ВКЛЮЧАЯ КОНТАКТ.
+            //
+            // Смысл в накоплении множителя. Сила при повторении просто умножается на
+            // число заходов, и общий цикл с ней делал только хуже (0.096, 0.25, 0.92,
+            // 6.25 при одном, двух, четырёх и восьми). Ограничение с накопленным
+            // множителем ведёт себя наоборот: повторения его СХОДЯТ, и в равновесии
+            // приращение обращается в ноль само. А в скорость идёт именно приращение.
+            //
+            // Поэтому здесь связи и контакт стоят в одном цикле и делят между собой
+            // одну и ту же невязку, вместо того чтобы переписывать работу друг друга.
+            for (iter in 0 until SOLVER_ITERS) {
+                dbgMark(); solveConstraints(h); dbgMeasure(0, h)
+                solveFlaps(h)
+                dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h)
+                dbgMark(); solveAreas(h); dbgMeasure(1, h)
+                dbgMark(); solveBend(h); dbgMeasure(2, h)
+                dbgMark()
+                if (bonesRigid) for (b in rigidBones.indices) projectBone(b)
+                dbgMeasure(3, h)
+                solveLinkMaxLength()
+                // РАЗРЫВ СРАЗУ, А НЕ В НАЧАЛЕ СЛЕДУЮЩЕГО ТИКА. См. TEAR_IMMEDIATE.
+                if (TEAR_IMMEDIATE && tearsPending) { rebuildTimed(); contactsStale = true }
+                val ci = contacts
+                if (ci != null && contactsOn) {
+                    // Список пар строится на первом заходе — и заново после пересборки:
+                    // у нового объекта контактов списка ещё нет.
+                    if (iter == 0 || contactsStale) {
+                        dbgMark(); ci.prepare(px, py, prevX, prevY, vx, vy, invMass); dbgMeasure(6, h)
+                        contactsStale = false
+                    }
+                    ci.updateBones(px, py, invMass,
+                        if (bonesRigid) boneOf else null, rigidBones)
+                    dbgMark(); ci.solveContacts(px, py, vx, vy, invMass, h); dbgMeasure(5, h)
+                    if (ci.killN > 0) { applyKills(ci); contactsStale = true }
+                }
+            }
             // ПРЕДЕЛ ДЛИНЫ ПОВТОРНО, УЖЕ ПОСЛЕ КОСТИ.
             //
             // Первый вызов стоит после solveConstraints, но проекция кости идёт ПОЗЖЕ
@@ -3019,7 +3800,11 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             // только пока расстояние между ними не больше суммы радиусов. Растянутая
             // костью связь оставляет в мембране щель, и сквозь неё можно воткнуть
             // чужое тело — что и наблюдалось при резком рывке за кость.
-            solveLinkMaxLength()
+            dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h)
+
+            // Снять внесённые внутренними стадиями импульс и момент — ДО контактов:
+            // контакт внешний для организма и передаёт импульс между телами законно.
+            if (CANCEL_INTERNAL_SPIN) cancelInternalSpin()
 
             // КОНТАКТЫ ПОСЛЕДНИМИ СРЕДИ ПОЗИЦИОННЫХ, и это принципиально.
             // projectBone перезаписывает позиции жёсткой позой; поставь контакты
@@ -3043,29 +3828,27 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             // prevX/prevY по-прежнему держат начало подшага, поэтому DDA заметает
             // весь настоящий путь клетки за подшаг, включая ту часть, которую добавили
             // перетаскивание и кость. Это ровно то, ради чего свип и делался.
-            if (ct != null && contactsOn) {
-                ct.prepare(px, py, prevX, prevY, vx, vy)
-                // Кластеры пересчитываются КАЖДЫЙ подшаг: центр и момент инерции
-                // едут вместе с телом. Их десятки, это дёшево. Если кости выключены,
-                // передаём null и контакт считает по клеткам, как раньше.
-                ct.updateBones(px, py, invMass,
-                    if (bonesRigid) boneOf else null, rigidBones)
-                ct.solvePositions(px, py, invMass)
-            }
 
             if (cancel) cancelInternalDrift(beforeX, beforeY)
 
             updateVelocities(h)
+            // Отскок: позиционная часть удар гасит целиком, см. solveRestitution.
+            dbgMarkV()
+            val cr = contacts
+            if (cr != null && contactsOn && !contactsStale) cr.solveRestitution(px, py, vx, vy, invMass)
+            dbgMeasureV(7); dbgMarkV()
             applyDragVelocity(h)
-            // Отскок и трение — по скоростям, поэтому только после их восстановления.
-            if (ct != null && contactsOn) ct.solveVelocities(vx, vy, invMass, h)
             applyViscosity(h)
             applyNormalDrag(h)
             applyRestitution()
             applyMediumDrag(h)
             clampSpeed()
+            dbgMeasureV(8)
             if (keepSubsteps || step == SUBSTEPS - 1) histSnap(step + 1)
         }
+        // Пластика — РАЗ В ТИК, после всех подшагов: течение медленное, внутри тика
+        // ему делать нечего, а стоить оно будет в шестнадцать раз дороже.
+        applyPlasticity(DT)
     }
 
     /**
@@ -3077,13 +3860,270 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
      * другой режим, чем тот, который мерил стенд.
      */
     private fun stepOnce() {
-        updateMuscleTargets()
+        // Цели мышц при воспроизведении берутся из журнала, а не из клавиатуры и
+        // наведения: окна там нет, а записано ровно то, что получилось в игре.
+        if (replay != null) replayTickInputs() else { updateMuscleTargets(); recordTickInputs() }
         recordMuscles()
         updateMuscles(DT)
         recordDrag()
         simulate()
         simTime += DT
         logTick++
+        playTick++
+        if (playTick % PlayerLog.HASH_EVERY == 0) tickHash()
+    }
+
+    // ================================================================
+    //  ЖУРНАЛ ИГРОКА — пишется ВСЕГДА, формат см. PlayerLog
+    //
+    //  Всё, что меняет физику, проходит через act(). Он же пишет строку в журнал, и
+    //  он же исполняет строку при воспроизведении. Двух реализаций одного действия
+    //  нет, поэтому и расходиться им не в чем: старая запись по L держала свою копию
+    //  захвата и однажды забыла про вес shape matching.
+    //
+    //  Что в журнал НЕ попадает и почему это не нужно:
+    //    - положение мыши без захвата. Физика читает курсор только у схваченной
+    //      клетки (applyDragVelocity), а наведение на мышцу пишется результатом —
+    //      строкой M;
+    //    - пауза, скорость, ускорение, интерполяция, камера. Они меняют число тиков в
+    //      секунду и картинку, но не сами тики.
+    //
+    //  Файл перезаписывается при каждом открытии окна. Без окна (стенды, разбор)
+    //  create() не зовётся, и журнал не пишется вовсе.
+    // ================================================================
+    private var plog: java.io.BufferedWriter? = null
+    /** Тиков с запуска окна. В отличие от logTick, сбросом не обнуляется. */
+    private var playTick = 0
+    private var plogMuscles = DoubleArray(0)
+    private var plogCurX = Double.NaN
+    private var plogCurY = Double.NaN
+
+    /** Помеченные средней кнопкой клетки. Только для глаз и журнала. */
+    private val marks = LinkedHashSet<Int>()
+    private var wasMiddle = false
+
+    private fun openPlayerLog(path: String = PlayerLog.FILE) {
+        val f = java.io.File(path)
+        try {
+            val w = java.io.BufferedWriter(java.io.OutputStreamWriter(
+                java.io.FileOutputStream(f, false), Charsets.UTF_8))
+            val bf = java.io.File(bodyPath)
+            w.write("# GENOMEIA PLAYER LOG v1\n")
+            w.write("# разбор: gradlew :lwjgl3:playerReplay\n")
+            w.write("# начат ${java.time.LocalDateTime.now()}\n")
+            w.write("HDR body ${bf.absolutePath}\n")
+            w.write("HDR bodyCrc ${PlayerLog.crc(bf)}\n")
+            w.write("HDR copies $copies\n")
+            w.write("HDR free $freeParticles\n")
+            w.write("HDR killFraction $labKillFraction\n")
+            w.write("HDR killSeed $labKillSeed\n")
+            w.write("HDR killOnDeep ${if (killOnDeep) 1 else 0}\n")
+            w.write("HDR ups ${Math.round(1.0 / DT)}\n")
+            w.write("HDR substeps $SUBSTEPS\n")
+            w.flush()
+            plog = w
+            println("[RealBodyDemo] журнал игрока: ${f.absolutePath}")
+        } catch (e: java.io.IOException) {
+            println("[RealBodyDemo] журнал игрока не открылся: ${e.message}")
+        }
+    }
+
+    private fun closePlayerLog() {
+        val w = plog ?: return
+        plog = null
+        try { w.write("$playTick END\n"); w.close() } catch (_: java.io.IOException) { }
+    }
+
+    private fun plogWrite(s: String, flush: Boolean) {
+        val w = plog ?: return
+        try {
+            w.write(s); w.write("\n")
+            if (flush) w.flush()
+        } catch (e: java.io.IOException) {
+            println("[RealBodyDemo] журнал игрока: запись оборвалась, ${e.message}")
+            plog = null
+        }
+    }
+
+    /**
+     * ЕДИНСТВЕННАЯ ТОЧКА входа для действий, меняющих физику. Значения передаются
+     * уже новые, а не «переключить»: так строка журнала читается сама по себе.
+     */
+    private fun act(op: Char, a: Int = 0) {
+        // Сначала строка, потом исполнение: сцена внутри себя крутит тики, и их
+        // строки обязаны лечь ПОСЛЕ строки самой сцены.
+        plogWrite(if (op in "BDEGKNX") "$playTick $op $a" else "$playTick $op", flush = true)
+        when (op) {
+            'R' -> reset()
+            'B' -> bonesRigid = a == 1
+            'G' -> { gait = a == 1; gaitFrame = 0 }
+            'K' -> contactsOn = a == 1
+            'X' -> tearingOn = a == 1
+            'E' -> bendLevel = a
+            'N' -> sceneIndex = a
+            'S' -> runScene()
+            'P' -> fireBullet()
+            'O' -> slamOrganisms()
+            'D' -> {
+                dragId = a; matchWeight[a] = DRAG_MATCH_WEIGHT
+                // Курсор обязан попасть в журнал на первом же тике захвата.
+                plogCurX = Double.NaN
+                // Отсечка счётчиков на момент захвата: строка DRAG обязана
+                // показывать, что натворила ИМЕННО ЭТА тяга. Счётчики
+                // накопительные и обнуляются только по R, поэтому таран через O
+                // красил строку у следующей же тяги, хотя она ни при чём.
+                dragCapBase = speedCapHits
+                // Пик именно ОБНУЛЯЕТСЯ, а не запоминается: это максимум, и
+                // вычитать из максимума базу бессмысленно.
+                peakSpeed2 = 0.0
+            }
+            'U' -> if (dragId >= 0) { matchWeight[dragId] = 1.0; dragId = -1 }
+        }
+    }
+
+    /**
+     * Входы, которые физика читает КАЖДЫЙ тик: цели мышц и курсор схваченной клетки.
+     * Пишутся только при изменении — «держу гребок» это одна строка, а не тысяча.
+     * Пишутся здесь, а не в handleInput: за кадр может пройти и ноль тиков, и десять,
+     * а значение имеет только то, что увидел тик.
+     */
+    private fun recordTickInputs() {
+        if (plog == null) return
+        var changed = plogMuscles.size != muscleTarget.size
+        if (!changed) for (m in muscleTarget.indices) if (muscleTarget[m] != plogMuscles[m]) { changed = true; break }
+        if (changed) {
+            plogMuscles = muscleTarget.copyOf()
+            val sb = StringBuilder().append(playTick).append(" M ")
+            var any = false
+            for (m in muscleTarget.indices) {
+                if (muscleTarget[m] == 0.0) continue
+                if (any) sb.append(',')
+                sb.append(m).append(':').append(muscleTarget[m])
+                any = true
+            }
+            if (!any) sb.append('-')
+            plogWrite(sb.toString(), flush = false)
+        }
+        if (dragId >= 0 && (mouseX != plogCurX || mouseY != plogCurY)) {
+            plogCurX = mouseX; plogCurY = mouseY
+            plogWrite("$playTick C $mouseX $mouseY", flush = false)
+        }
+    }
+
+    private fun tickHash() {
+        if (plog != null) {
+            val h = PlayerLog.stateHash(n, px, py, vx, vy)
+            plogWrite("$playTick H ${java.lang.Long.toHexString(h)}", flush = true)
+            return
+        }
+        // При воспроизведении сумма сверяется здесь же: внутри сцены до разбора
+        // журнала в replayRun дело не дойдёт, пока сцена не кончится.
+        val lines = replay ?: return
+        while (replayAt < lines.size) {
+            val ln = lines[replayAt]
+            if (ln.tick != playTick || ln.op != "H") break
+            replayAt++
+            replayCheckHash(ln)
+        }
+    }
+
+    private fun toggleMark(i: Int) {
+        if (marks.remove(i)) {
+            plogWrite("$playTick UNMARK $i", flush = true)
+            println("[МЕТКА] снята: клетка #$i, тик $playTick")
+            return
+        }
+        marks.add(i)
+        // Рядом с номером — где клетка была НАРИСОВАНА и в каком режиме смотрели:
+        // на замедлении картинка отстаёт от физики на долю тика, и это надо видеть.
+        plogWrite("$playTick MARK $i ${fx(i)} ${fy(i)} paused=${if (paused) 1 else 0} " +
+            "scale=${controls.timeScale} alpha=$renderAlpha interp=$interpMode", flush = true)
+        println("[МЕТКА] клетка #$i, тик $playTick (%.2f с)".format(playTick * DT))
+    }
+
+    // --- воспроизведение без окна, см. PlayerReplay ---
+    private var replay: List<PlayerLog.Line>? = null
+    private var replayAt = 0
+    private var replayMuscle = DoubleArray(0)
+    internal var replayHashOk = 0
+        private set
+    internal var replayHashBad = 0
+        private set
+    internal var replayFirstBadTick = -1
+        private set
+    internal val currentTick: Int get() = playTick
+
+    /** То же, что create(), но без окна: тело, затем сброс. */
+    internal fun replayBoot() {
+        buildFromFile()
+        reset()
+    }
+
+    /**
+     * Исполнить журнал. onEvent зовётся ПОСЛЕ исполнения каждой строки-события —
+     * для MARK это ровно то состояние, при котором игрок нажал кнопку.
+     */
+    internal fun replayRun(lines: List<PlayerLog.Line>, onEvent: (PlayerLog.Line) -> Unit,
+                           onTick: () -> Unit) {
+        replay = lines
+        replayAt = 0
+        replayMuscle = DoubleArray(muscleTarget.size)
+        try {
+            while (replayAt < lines.size) {
+                val ln = lines[replayAt]
+                if (ln.tick < playTick) {
+                    println("[воспроизведение] РАССИНХРОН: строка «${ln.raw}» пришла на тике $playTick")
+                    replayAt++
+                    continue
+                }
+                if (ln.tick > playTick || ln.op == "M" || ln.op == "C") {
+                    stepOnce(); onTick()
+                    continue
+                }
+                replayAt++
+                when (ln.op) {
+                    "R", "B", "G", "K", "X", "E", "N", "S", "P", "O", "D", "U" ->
+                        act(ln.op[0], ln.args.getOrNull(0)?.toInt() ?: 0)
+                    "H" -> replayCheckHash(ln)
+                }
+                onEvent(ln)
+                if (ln.op == "END") break
+            }
+        } finally {
+            replay = null
+        }
+    }
+
+    private fun replayTickInputs() {
+        val lines = replay!!
+        while (replayAt < lines.size) {
+            val ln = lines[replayAt]
+            if (ln.tick != playTick) break
+            if (ln.op == "M") {
+                replayMuscle.fill(0.0)
+                val spec = ln.args.getOrNull(0) ?: "-"
+                if (spec != "-") for (part in spec.split(',')) {
+                    val k = part.indexOf(':')
+                    val m = part.substring(0, k).toInt()
+                    if (m < replayMuscle.size) replayMuscle[m] = part.substring(k + 1).toDouble()
+                }
+            } else if (ln.op == "C") {
+                mouseX = ln.args[0].toDouble(); mouseY = ln.args[1].toDouble()
+            } else break
+            replayAt++
+        }
+        System.arraycopy(replayMuscle, 0, muscleTarget, 0, muscleTarget.size)
+    }
+
+    private fun replayCheckHash(ln: PlayerLog.Line) {
+        val want = java.lang.Long.parseUnsignedLong(ln.args[0], 16)
+        if (PlayerLog.stateHash(n, px, py, vx, vy) == want) { replayHashOk++; return }
+        replayHashBad++
+        if (replayFirstBadTick < 0) {
+            replayFirstBadTick = ln.tick
+            println("[воспроизведение] КОНТРОЛЬНАЯ СУММА НЕ СОШЛАСЬ на тике ${ln.tick}: " +
+                "дальше состояние уже не то, что видел игрок")
+        }
     }
 
     // ================================================================
@@ -3117,7 +4157,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
     private fun toggleDragLog() {
         val log = dragLog
         if (log == null) {
-            reset()
+            // Сброс уже сделан снаружи через act('R'), чтобы попасть в журнал игрока.
             logTick = 0
             logLastId = -2
             val sb = StringBuilder()
@@ -3322,16 +4362,14 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         // тела, одновременно хватал бы вершину под ним.
         val uiTookMouse = controls.handleInput(Gdx.graphics.width, Gdx.graphics.height)
         if (uiTookMouse) {
-            if (dragId >= 0) { matchWeight[dragId] = 1.0; dragId = -1 }
+            if (dragId >= 0) act('U')
             wasTouched = true
         }
 
-        // Панорама средней или правой кнопкой. ЛЕВАЯ остаётся за перетаскиванием вершины,
-        // поэтому ниже проверяется именно она, а не isTouched: тот истинен для любой
-        // кнопки и панорама воровала бы захват.
-        if (Gdx.input.isButtonPressed(Input.Buttons.RIGHT) ||
-            Gdx.input.isButtonPressed(Input.Buttons.MIDDLE)
-        ) {
+        // Панорама правой кнопкой. ЛЕВАЯ остаётся за перетаскиванием вершины, СРЕДНЯЯ —
+        // за пометкой клеток, поэтому ниже проверяется именно кнопка, а не isTouched:
+        // тот истинен для любой кнопки и панорама воровала бы захват.
+        if (Gdx.input.isButtonPressed(Input.Buttons.RIGHT)) {
             // Сколько мира приходится на пиксель — зависит от зума, поэтому считается
             // каждый кадр, иначе на приближении панорама была бы рывками.
             val unitsPerPixel = viewport.worldWidth * camera.zoom / viewport.screenWidth
@@ -3343,39 +4381,50 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         val touched = Gdx.input.isButtonPressed(Input.Buttons.LEFT) && !uiTookMouse
         if (touched && !wasTouched) {
             val i = nearestParticle()
-            if (i >= 0) {
-                dragId = i; matchWeight[i] = DRAG_MATCH_WEIGHT
-                // Отсечка счётчиков на момент захвата: строка DRAG обязана
-                // показывать, что натворила ИМЕННО ЭТА тяга. Счётчики
-                // накопительные и обнуляются только по R, поэтому таран через O
-                // красил строку у следующей же тяги, хотя она ни при чём.
-                dragCapBase = speedCapHits
-                // Пик именно ОБНУЛЯЕТСЯ, а не запоминается: это максимум, и
-                // вычитать из максимума базу бессмысленно.
-                peakSpeed2 = 0.0
-            }
+            if (i >= 0) act('D', i)
         }
-        if (!touched && wasTouched && dragId >= 0) { matchWeight[dragId] = 1.0; dragId = -1 }
+        if (!touched && wasTouched && dragId >= 0) act('U')
         wasTouched = touched
+
+        // ПОМЕТКА СРЕДНЕЙ КНОПКОЙ: клетка, которую игрок считает проблемной. Повторный
+        // клик снимает. На физику не влияет, только ложится в журнал с номером тика.
+        val middle = Gdx.input.isButtonPressed(Input.Buttons.MIDDLE) && !uiTookMouse
+        if (middle && !wasMiddle) {
+            val i = nearestParticle()
+            if (i >= 0) toggleMark(i)
+        }
+        wasMiddle = middle
 
         hoverId = if (dragId >= 0) dragId else nearestParticle()
         hoveredMuscle = muscleUnderMouse()
 
         if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) paused = !paused
-        if (Gdx.input.isKeyJustPressed(Input.Keys.R)) reset()
-        if (Gdx.input.isKeyJustPressed(Input.Keys.B)) bonesRigid = !bonesRigid
+        if (Gdx.input.isKeyJustPressed(Input.Keys.R)) act('R')
+        if (Gdx.input.isKeyJustPressed(Input.Keys.B)) act('B', if (bonesRigid) 0 else 1)
         if (Gdx.input.isKeyJustPressed(Input.Keys.C)) viewMode = (viewMode + 1) % 3
-        if (Gdx.input.isKeyJustPressed(Input.Keys.G)) { gait = !gait; gaitFrame = 0 }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.G)) act('G', if (gait) 0 else 1)
         if (Gdx.input.isKeyJustPressed(Input.Keys.F)) fastForward = !fastForward
-        if (Gdx.input.isKeyJustPressed(Input.Keys.E)) bendLevel = (bendLevel + 1) % BEND_LEVELS.size
+        if (Gdx.input.isKeyJustPressed(Input.Keys.E)) act('E', (bendLevel + 1) % BEND_LEVELS.size)
         if (Gdx.input.isKeyJustPressed(Input.Keys.T)) controls.toggle()
         if (Gdx.input.isKeyJustPressed(Input.Keys.Y)) controls.reset()
         if (Gdx.input.isKeyJustPressed(Input.Keys.I)) interpMode = (interpMode + 1) % 3
-        if (Gdx.input.isKeyJustPressed(Input.Keys.K)) contactsOn = !contactsOn
-        if (Gdx.input.isKeyJustPressed(Input.Keys.P)) fireBullet()
-        if (Gdx.input.isKeyJustPressed(Input.Keys.O)) slamOrganisms()
-        if (Gdx.input.isKeyJustPressed(Input.Keys.L)) toggleDragLog()
-        if (Gdx.input.isKeyJustPressed(Input.Keys.X)) tearingOn = !tearingOn
+        if (Gdx.input.isKeyJustPressed(Input.Keys.K)) act('K', if (contactsOn) 0 else 1)
+        if (Gdx.input.isKeyJustPressed(Input.Keys.P)) act('P')
+        if (Gdx.input.isKeyJustPressed(Input.Keys.O)) act('O')
+        if (Gdx.input.isKeyJustPressed(Input.Keys.L)) {
+            // Старая запись начинается со сброса — сброс идёт через журнал игрока.
+            if (dragLog == null) act('R')
+            toggleDragLog()
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.X)) act('X', if (tearingOn) 0 else 1)
+        // J просит у стенда мягкой решётки новый сид разрушения. В обычном демо
+        // окно просто закроется — стенда, который откроет следующее, там нет.
+        if (Gdx.input.isKeyJustPressed(Input.Keys.J)) {
+            LabControl.restartRequested = true
+            Gdx.app.exit()
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.N)) act('N', (sceneIndex + 1) % scenes.size)
+        if (Gdx.input.isKeyJustPressed(Input.Keys.M)) act('S')
         // ESC сначала закрывает диалог и только потом выходит: иначе из него не выйти
         // иначе как повторным T, а рефлекс у всех один.
         if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
@@ -3468,6 +4517,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
 
         buildFromFile()
         reset()
+        openPlayerLog()
     }
 
     override fun resize(width: Int, height: Int) {
@@ -3586,7 +4636,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         shapes.color = DOT
         // Точки рисуются СВОИМ радиусом, а не общим: иначе разница масс между клетками
         // не видна глазами, а она теперь влияет на физику.
-        for (i in 0 until n) shapes.circle(fx(i), fy(i), body.radius[i] * 0.22f, 6)
+        for (i in 0 until n) if (!cellDead[i]) shapes.circle(fx(i), fy(i), body.radius[i] * 0.22f, 6)
 
         // РЕЖИМ 2: НАСТОЯЩИЕ РАДИУСЫ КЛЕТОК.
         //
@@ -3611,7 +4661,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         if (viewMode == 2) {
             val ctR = contacts
             shapes.color = DOT
-            for (i in 0 until n) shapes.circle(fx(i), fy(i), body.radius[i], 14)
+            for (i in 0 until n) if (!cellDead[i]) shapes.circle(fx(i), fy(i), body.radius[i], 14)
             if (ctR != null) {
                 shapes.color = CONTACT_COLOR
                 for (i in 0 until n) {
@@ -3669,6 +4719,19 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
             }
         }
         shapes.end()
+
+        // Метки средней кнопкой — поверх всего, двойным кольцом, чтобы не спутать с
+        // подсветкой под курсором.
+        if (marks.isNotEmpty()) {
+            shapes.begin(ShapeRenderer.ShapeType.Line)
+            shapes.color = MARK_COLOR
+            val r = body.meanLinkLength * 0.6f
+            for (i in marks) {
+                shapes.circle(fx(i), fy(i), r, 20)
+                shapes.circle(fx(i), fy(i), r * 1.25f, 20)
+            }
+            shapes.end()
+        }
 
         drawHud()
     }
@@ -3795,8 +4858,15 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
         font.color = HUD_MUTED
         font.draw(batch, "LMB drag   HOVER a muscle edge   1..9 hold a muscle   0 hold ALL   " +
             "G auto-gait" + if (gait) " [ON, period $GAIT_PERIOD]" else "", 16f, y); y -= line
-        font.draw(batch, "SPACE pause   F fast   E bend   R reset   B bones   C view (норма/кости/радиусы)   P bullet   O slam   L rec   X tear   RMB/MMB pan   wheel zoom",
+        font.color = HUD_TEXT
+        font.draw(batch, "СЦЕНА [N выбрать, M запустить]: %d/%d  %s".format(
+            sceneIndex + 1, scenes.size, scenes[sceneIndex].name), 16f, y); y -= line
+        font.draw(batch, "SPACE pause   F fast   E bend   R reset   B bones   C view (норма/кости/радиусы)   P bullet   O slam   L rec   X tear   RMB pan   MMB mark   wheel zoom",
             16f, y); y -= line
+        font.color = if (marks.isNotEmpty()) MARK_COLOR else HUD_MUTED
+        font.draw(batch, "LOG %s  tick %d   MARKS [MMB] = %s".format(
+            if (plog != null) PlayerLog.FILE else "OFF", playTick,
+            if (marks.isEmpty()) "none" else marks.joinToString(" ") { "#$it" }), 16f, y); y -= line
         if (paused) { font.color = HUD_WARN; font.draw(batch, "PAUSED", 16f, y) }
         batch.end()
 
@@ -3806,6 +4876,7 @@ class RealBodyDemo(private val bodyPath: String) : ApplicationAdapter() {
     }
 
     override fun dispose() {
+        closePlayerLog()
         shapes.dispose(); batch.dispose(); font.dispose()
     }
 }

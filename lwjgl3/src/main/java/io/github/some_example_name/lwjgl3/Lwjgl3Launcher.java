@@ -109,12 +109,12 @@ public class Lwjgl3Launcher {
 //        configuration.setForegroundFPS(60);
         // Размер окна можно задать снаружи: -Dgenomeia.width=1280 -Dgenomeia.height=720.
         // Нужно для проверки вёрстки на разных разрешениях без правки кода.
-        int windowWidth = Integer.getInteger("genomeia.width", 1300);
-        int windowHeight = Integer.getInteger("genomeia.height", 1300);
+        int windowWidth = Integer.getInteger("genomeia.width", 900);
+        int windowHeight = Integer.getInteger("genomeia.height", 900);
         configuration.setWindowedMode(windowWidth, windowHeight);
 //        configuration.setFullscreenMode(Lwjgl3ApplicationConfiguration.getDisplayMode());
         // GLES 3.0 feature set (no SSBO). Desktop GL 3.3 for uintBitsToFloat / core profile.
-        configuration.setOpenGLEmulation(Lwjgl3ApplicationConfiguration.GLEmulation.GL30, 3, 0);
+        configuration.setOpenGLEmulation(Lwjgl3ApplicationConfiguration.GLEmulation.GL30, 3, 3);
 //        configuration.setOpenGLEmulation(Lwjgl3ApplicationConfiguration.GLEmulation.GL32, 3, 2);
 
         //// You can change these files; they are in lwjgl3/src/main/resources/ .

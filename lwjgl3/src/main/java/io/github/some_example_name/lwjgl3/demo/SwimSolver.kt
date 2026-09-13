@@ -250,7 +250,15 @@ internal object DemoConst {
         RealBodyDemo::class.java.getDeclaredField(name)
             .apply { isAccessible = true }.getInt(null)
 
+    private fun b(name: String): Boolean =
+        RealBodyDemo::class.java.getDeclaredField(name)
+            .apply { isAccessible = true }.getBoolean(null)
+
     val DT = d("DT")
+    /** Податливость угла лоскута и выключатель снятия момента — берутся из демо. */
+    val FLAP_COMPLIANCE = d("FLAP_COMPLIANCE")
+    val CANCEL_INTERNAL_SPIN = b("CANCEL_INTERNAL_SPIN")
+    val SOLVER_ITERS = i("SOLVER_ITERS")
     val SUBSTEPS = i("SUBSTEPS")
     val NORMAL_DRAG = d("NORMAL_DRAG")
     val NORMAL_DRAG_QUADRATIC = d("NORMAL_DRAG_QUADRATIC")
@@ -272,6 +280,9 @@ internal object DemoConst {
     val CONTACT_SCALE = d("CONTACT_SCALE")
     val CCD_CORE = d("CCD_CORE")
     val CONTACT_MAX_STEP = d("CONTACT_MAX_STEP")
+    val PLASTIC_RATE = d("PLASTIC_RATE")
+    val PLASTIC_YIELD = d("PLASTIC_YIELD")
+    val PLASTIC_HOLD = i("PLASTIC_HOLD")
     val CONTACT_RESTITUTION = d("CONTACT_RESTITUTION")
     val CONTACT_FRICTION = d("CONTACT_FRICTION")
     val MAX_SPEED_CELLS_PER_TICK = d("MAX_SPEED_CELLS_PER_TICK")
@@ -334,6 +345,9 @@ data class SwimParams(
     val contactScale: Double = DemoConst.CONTACT_SCALE,
     val ccdCore: Double = DemoConst.CCD_CORE,
     val contactMaxStep: Double = DemoConst.CONTACT_MAX_STEP,
+    val plasticRate: Double = DemoConst.PLASTIC_RATE,
+    val plasticYield: Double = DemoConst.PLASTIC_YIELD,
+    val plasticHold: Int = DemoConst.PLASTIC_HOLD,
     val contactRestitution: Double = DemoConst.CONTACT_RESTITUTION,
     val contactFriction: Double = DemoConst.CONTACT_FRICTION,
     val maxSpeedCellsPerTick: Double = DemoConst.MAX_SPEED_CELLS_PER_TICK,
@@ -408,8 +422,15 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     private val organismMass = DoubleArray(topo.organismCount).also { a ->
         for (i in 0 until n) if (invMass[i] > 0.0) a[topo.organismOf[i]] += 1.0 / invMass[i]
     }
+    /**
+     * СВОИ копии длин и площадей покоя: пластичность их МЕНЯЕТ, а Topology общая на
+     * все потоки подбора и только для чтения. См. applyPlasticity.
+     */
+    private val conRest = topo.conRest.copyOf()
+    private val triRestArea2 = topo.triRestArea2.copyOf()
+
     private val conMaxLen = DoubleArray(topo.conCount) { c ->
-        p.linkMaxStretch * topo.conRest[c]
+        p.linkMaxStretch * conRest[c]
     }
     val contacts = BoundaryContacts.build(
         n, topo.conA, topo.conB, topo.conCount,
@@ -418,6 +439,122 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         topo.restX, topo.restY,
         topo.meanLinkLength.toDouble(), p.contactMaxStep, topo.isFree,
     )
+
+    /**
+     * УГОЛ ЛОСКУТА. Зеркало демо, см. RealBodyDemo.buildFlaps — там же и замеры,
+     * из-за которых это появилось. Здесь топология неизменна, поэтому список
+     * строится один раз.
+     */
+    private val flapA: IntArray
+    private val flapB: IntArray
+    private val flapRest: DoubleArray
+
+    init {
+        val use = HashMap<Long, Int>(topo.triA.size * 3)
+        fun key(a: Int, b: Int): Long {
+            val lo = minOf(a, b).toLong(); val hi = maxOf(a, b).toLong()
+            return (lo shl 32) or hi
+        }
+        for (t in topo.triA.indices) {
+            use.merge(key(topo.triA[t], topo.triB[t]), 1, Int::plus)
+            use.merge(key(topo.triB[t], topo.triC[t]), 1, Int::plus)
+            use.merge(key(topo.triC[t], topo.triA[t]), 1, Int::plus)
+        }
+        val bare = HashMap<Int, MutableList<Int>>()
+        for (c in topo.conA.indices) {
+            val i = topo.conA[c]; val j = topo.conB[c]
+            if ((use[key(i, j)] ?: 0) > 0) continue
+            bare.getOrPut(i) { ArrayList() }.add(j)
+            bare.getOrPut(j) { ArrayList() }.add(i)
+        }
+        val a = ArrayList<Int>(); val b = ArrayList<Int>(); val r = ArrayList<Double>()
+        for ((_, list) in bare) {
+            if (list.size < 2) continue
+            for (p in list.indices) for (q in p + 1 until list.size) {
+                val i = list[p]; val j = list[q]
+                if (i == j) continue
+                val dx = (topo.restX[i] - topo.restX[j]).toDouble()
+                val dy = (topo.restY[i] - topo.restY[j]).toDouble()
+                a.add(i); b.add(j); r.add(kotlin.math.sqrt(dx * dx + dy * dy))
+            }
+        }
+        flapA = a.toIntArray(); flapB = b.toIntArray(); flapRest = r.toDoubleArray()
+    }
+
+    /** Зеркало демо: снятие импульса и момента внутренних стадий. См. демо. */
+    private var spinSnapX = DoubleArray(0)
+    private var spinSnapY = DoubleArray(0)
+    private val orgM = DoubleArray(topo.organismCount)
+    private val orgCx = DoubleArray(topo.organismCount)
+    private val orgCy = DoubleArray(topo.organismCount)
+    private val orgDx = DoubleArray(topo.organismCount)
+    private val orgDy = DoubleArray(topo.organismCount)
+    private val orgL = DoubleArray(topo.organismCount)
+    private val orgI = DoubleArray(topo.organismCount)
+    private val orgPinned = BooleanArray(topo.organismCount)
+
+    private fun markInternal() {
+        if (spinSnapX.size < n) { spinSnapX = DoubleArray(n); spinSnapY = DoubleArray(n) }
+        System.arraycopy(px, 0, spinSnapX, 0, n)
+        System.arraycopy(py, 0, spinSnapY, 0, n)
+    }
+
+    private fun cancelInternalSpin() {
+        val c = topo.organismCount
+        if (c <= 0) return
+        java.util.Arrays.fill(orgM, 0.0)
+        java.util.Arrays.fill(orgCx, 0.0); java.util.Arrays.fill(orgCy, 0.0)
+        java.util.Arrays.fill(orgDx, 0.0); java.util.Arrays.fill(orgDy, 0.0)
+        java.util.Arrays.fill(orgL, 0.0); java.util.Arrays.fill(orgI, 0.0)
+        java.util.Arrays.fill(orgPinned, false)
+        for (i in 0 until n) {
+            val o = topo.organismOf[i]
+            if (o < 0 || o >= c) continue
+            if (invMass[i] <= 0.0) { orgPinned[o] = true; continue }
+            val m = 1.0 / invMass[i]
+            orgM[o] += m; orgCx[o] += m * spinSnapX[i]; orgCy[o] += m * spinSnapY[i]
+        }
+        for (o in 0 until c) if (orgM[o] > 0.0) { orgCx[o] /= orgM[o]; orgCy[o] /= orgM[o] }
+        for (i in 0 until n) {
+            val o = topo.organismOf[i]
+            if (o < 0 || o >= c || invMass[i] <= 0.0 || orgPinned[o]) continue
+            val m = 1.0 / invMass[i]
+            val dx = px[i] - spinSnapX[i]; val dy = py[i] - spinSnapY[i]
+            val rx = spinSnapX[i] - orgCx[o]; val ry = spinSnapY[i] - orgCy[o]
+            orgDx[o] += m * dx; orgDy[o] += m * dy
+            orgL[o] += m * (rx * dy - ry * dx)
+            orgI[o] += m * (rx * rx + ry * ry)
+        }
+        for (i in 0 until n) {
+            val o = topo.organismOf[i]
+            if (o < 0 || o >= c || invMass[i] <= 0.0 || orgPinned[o] || orgM[o] <= 0.0) continue
+            val tx = orgDx[o] / orgM[o]; val ty = orgDy[o] / orgM[o]
+            val w = if (orgI[o] > 1e-18) orgL[o] / orgI[o] else 0.0
+            val rx = spinSnapX[i] - orgCx[o]; val ry = spinSnapY[i] - orgCy[o]
+            px[i] -= tx - w * ry
+            py[i] -= ty + w * rx
+        }
+    }
+
+    private fun solveFlaps(h: Double) {
+        if (flapA.isEmpty()) return
+        val alpha = DemoConst.FLAP_COMPLIANCE / (h * h)
+        for (c in flapA.indices) {
+            val i = flapA[c]; val j = flapB[c]
+            val wi = invMass[i]; val wj = invMass[j]
+            val w = wi + wj
+            if (w == 0.0) continue
+            var dx = px[i] - px[j]
+            var dy = py[i] - py[j]
+            val len = kotlin.math.sqrt(dx * dx + dy * dy)
+            val rest = flapRest[c]
+            if (len >= rest || len < 1e-12) continue
+            dx /= len; dy /= len
+            val dL = -(len - rest) / (w + alpha)
+            px[i] += dx * dL * wi; py[i] += dy * dL * wi
+            px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
+        }
+    }
 
     private fun solveLinkMaxLength() {
         for (c in 0 until topo.conCount) {
@@ -519,7 +656,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             val len = sqrt(dx * dx + dy * dy)
             if (len < 1e-9) continue
             dx /= len; dy /= len
-            val rest = topo.conRest[c] * muscleScale(topo.conMuscle[c])
+            val rest = conRest[c] * muscleScale(topo.conMuscle[c])
             val dL = -(len - rest) / (w + alpha)
             px[i] += dx * dL * wi; py[i] += dy * dL * wi
             px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
@@ -573,7 +710,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             if (denom < 1e-12) continue
 
             val s = muscleScale(topo.triMuscle[t])
-            val restArea2 = topo.triRestArea2[t].toDouble() * s * s
+            val restArea2 = triRestArea2[t].toDouble() * s * s
             val area2 = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0)
             // Плавный переход убирает ступеньку жёсткости ровно на нулевой площади.
             val a = if (p.areaSmoothRamp) {
@@ -822,25 +959,86 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             integrate(h)
             // Фаза чередования идёт ровно по подшагам, как в демо.
             sweepBackwards = !sweepBackwards
-            solveConstraints(h)
-            solveLinkMaxLength()
-            solveAreas(h)
-            solveBend(h)
-            for (b in topo.rigidBones.indices) projectBone(b)
-            // Предел длины повторно, уже после кости — см. демо.
-            solveLinkMaxLength()
-            // Контакты последними среди позиционных — см. демо.
-            if (p.contactsOn) {
-                contacts.prepare(px, py, prevX, prevY, vx, vy)
-                contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
-                contacts.solvePositions(px, py, invMass)
+            if (DemoConst.CANCEL_INTERNAL_SPIN) markInternal()
+            // Цикл по всем ограничениям сразу, включая контакт — зеркало демо.
+            for (iter in 0 until DemoConst.SOLVER_ITERS) {
+                solveConstraints(h)
+                solveFlaps(h)
+                solveLinkMaxLength()
+                solveAreas(h)
+                solveBend(h)
+                for (b in topo.rigidBones.indices) projectBone(b)
+                solveLinkMaxLength()
+                if (p.contactsOn) {
+                    if (iter == 0) contacts.prepare(px, py, prevX, prevY, vx, vy, invMass)
+                    contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
+                    contacts.solveContacts(px, py, vx, vy, invMass, h)
+                }
             }
+            // Предел длины ещё раз, уже после контактов — зеркало демо: проекция
+            // кости способна растянуть связь, а от него зависит непроницаемость.
+            solveLinkMaxLength()
+            if (DemoConst.CANCEL_INTERNAL_SPIN) cancelInternalSpin()
             updateVelocities(h)
-            if (p.contactsOn) contacts.solveVelocities(vx, vy, invMass, h)
+            // Отскок — зеркало демо, см. solveRestitution.
+            if (p.contactsOn) contacts.solveRestitution(px, py, vx, vy, invMass)
             applyViscosity(h)
             applyNormalDrag(h)
             applyMediumDrag(h)
             clampSpeed(dt)
+        }
+        applyPlasticity(dt)
+    }
+
+    /**
+     * ПЛАСТИЧЕСКОЕ ТЕЧЕНИЕ ТКАНИ. Копия стадии из демо, см. RealBodyDemo.applyPlasticity.
+     * Зовётся раз в тик, после всех подшагов.
+     */
+    private val conHold = ByteArray(topo.conCount)
+    private val triHold = ByteArray(topo.triCount)
+
+    private fun applyPlasticity(dt: Double) {
+        if (p.plasticRate <= 0.0) return
+        var k = p.plasticRate * dt
+        if (k > 1.0) k = 1.0
+        for (c in 0 until topo.conCount) {
+            if (topo.conMuscle[c] >= 0) continue
+            val target = conRest[c]
+            if (target < 1e-12) continue
+            val dx = px[topo.conA[c]] - px[topo.conB[c]]
+            val dy = py[topo.conA[c]] - py[topo.conB[c]]
+            val len = sqrt(dx * dx + dy * dy)
+            val strain = len / target - 1.0
+            val over = when {
+                strain > p.plasticYield -> strain - p.plasticYield
+                strain < -p.plasticYield -> strain + p.plasticYield
+                else -> 0.0
+            }
+            if (over == 0.0) { conHold[c] = 0; continue }
+            if (conHold[c] < p.plasticHold) { conHold[c]++; continue }
+            conRest[c] *= 1.0 + over * k
+            conMaxLen[c] = p.linkMaxStretch * conRest[c]
+        }
+        for (t in 0 until topo.triCount) {
+            if (topo.triMuscle[t] >= 0) continue
+            val rest2 = triRestArea2[t].toDouble()
+            if (kotlin.math.abs(rest2) < 1e-18) continue
+            val i0 = topo.triA[t]; val i1 = topo.triB[t]; val i2 = topo.triC[t]
+            val area2 = (px[i1] - px[i0]) * (py[i2] - py[i0]) -
+                (py[i1] - py[i0]) * (px[i2] - px[i0])
+            // ВЫВЕРНУТЫМ ТЕЧЬ НЕЛЬЗЯ: подогнав площадь покоя под сложенное состояние,
+            // пластика УЗАКОНИТ складку, и та не разойдётся уже никогда. Проверка
+            // ловила это прямо: складка 50% и 75% переставали расходиться за 8 секунд.
+            if (area2 <= 0.0) continue
+            val strain = area2 / rest2 - 1.0
+            val over = when {
+                strain > p.plasticYield -> strain - p.plasticYield
+                strain < -p.plasticYield -> strain + p.plasticYield
+                else -> 0.0
+            }
+            if (over == 0.0) { triHold[t] = 0; continue }
+            if (triHold[t] < p.plasticHold) { triHold[t]++; continue }
+            triRestArea2[t] = (triRestArea2[t] * (1.0 + over * k)).toFloat()
         }
     }
 
@@ -860,26 +1058,35 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             integrate(h)
             // Фаза чередования идёт ровно по подшагам, как в демо.
             sweepBackwards = !sweepBackwards
-            solveConstraints(h)
-            solveLinkMaxLength()
-            solveAreas(h)
-            solveBend(h)
-            for (b in topo.rigidBones.indices) projectBone(b)
-            // Предел длины повторно, уже после кости — см. демо.
-            solveLinkMaxLength()
-            // Контакты последними среди позиционных — см. демо.
-            if (p.contactsOn) {
-                contacts.prepare(px, py, prevX, prevY, vx, vy)
-                contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
-                contacts.solvePositions(px, py, invMass)
+            if (DemoConst.CANCEL_INTERNAL_SPIN) markInternal()
+            // Цикл по всем ограничениям сразу, включая контакт — зеркало демо.
+            for (iter in 0 until DemoConst.SOLVER_ITERS) {
+                solveConstraints(h)
+                solveFlaps(h)
+                solveLinkMaxLength()
+                solveAreas(h)
+                solveBend(h)
+                for (b in topo.rigidBones.indices) projectBone(b)
+                solveLinkMaxLength()
+                if (p.contactsOn) {
+                    if (iter == 0) contacts.prepare(px, py, prevX, prevY, vx, vy, invMass)
+                    contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
+                    contacts.solveContacts(px, py, vx, vy, invMass, h)
+                }
             }
+            // Предел длины ещё раз, уже после контактов — зеркало демо: проекция
+            // кости способна растянуть связь, а от него зависит непроницаемость.
+            solveLinkMaxLength()
+            if (DemoConst.CANCEL_INTERNAL_SPIN) cancelInternalSpin()
             updateVelocities(h)
-            if (p.contactsOn) contacts.solveVelocities(vx, vy, invMass, h)
+            // Отскок — зеркало демо, см. solveRestitution.
+            if (p.contactsOn) contacts.solveRestitution(px, py, vx, vy, invMass)
             applyViscosity(h)
             applyNormalDrag(h)
             applyMediumDrag(h)
             clampSpeed(dt)
         }
+        applyPlasticity(dt)
     }
 
     /** Жёстко поставить тело в повёрнутую позу покоя с твердотельной скоростью. */
@@ -944,7 +1151,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         for (c in 0 until topo.conCount) {
             val i = topo.conA[c]; val j = topo.conB[c]
             val dx = px[i] - px[j]; val dy = py[i] - py[j]
-            val d = sqrt(dx * dx + dy * dy) - topo.conRest[c] * muscleScale(topo.conMuscle[c])
+            val d = sqrt(dx * dx + dy * dy) - conRest[c] * muscleScale(topo.conMuscle[c])
             s += d * d
         }
         return sqrt(s / topo.conCount) / topo.meanLinkLength

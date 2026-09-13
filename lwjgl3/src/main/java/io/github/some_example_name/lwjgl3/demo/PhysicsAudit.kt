@@ -37,6 +37,14 @@ object Probe {
     lateinit var boundB: IntArray
     var boundCount = 0
     var conCount = 0
+    lateinit var conA: IntArray
+    lateinit var conRest: DoubleArray
+    lateinit var triA: IntArray
+    lateinit var triMuscle: IntArray
+    lateinit var triB: IntArray
+    lateinit var triC: IntArray
+    var triCount = 0
+    lateinit var conB: IntArray
 
     private val methods = HashMap<String, Method>()
 
@@ -87,9 +95,28 @@ object Probe {
         return f.getInt(null)
     }
 
-    fun boot(path: String) {
-        demo = RealBodyDemo(path)
+    fun boot(path: String, copies: Int = 2, freeParticles: Int = 6,
+             killFraction: Double = 0.0, killSeed: Long = 0L) {
+        demo = RealBodyDemo(path, copies, freeParticles, killFraction, killSeed)
         m("buildFromFile").invoke(demo)
+        attachFields()
+        setField("dragId", -1)
+    }
+
+    /**
+     * Смотреть в уже собранное демо, ничего в нём не трогая. Нужно разбору журнала
+     * игрока: там демо собирает и сбрасывает себя само, ровно как окно.
+     */
+    fun attach(d: RealBodyDemo) {
+        demo = d
+        methods.clear()
+        attachFields()
+    }
+
+    /** Любое поле демо по имени — для разборов, которым мало готовых измерителей. */
+    fun <T> get(name: String): T = field(name)
+
+    private fun attachFields() {
         body = field("body")
         n = field("n")
         px = field("px"); py = field("py")
@@ -104,7 +131,11 @@ object Probe {
         boundA = field("boundA"); boundB = field("boundB")
         boundCount = field("boundCount")
         conCount = field("conCount")
-        setField("dragId", -1)
+        conA = field("conA"); conB = field("conB")
+        conRest = field("conRest")
+        triA = field("triA"); triB = field("triB"); triC = field("triC")
+        triMuscle = field("triMuscle")
+        triCount = field("triCount")
     }
 
     /** Перечитать массивы, которые пересборка топологии могла заменить. */
@@ -112,6 +143,11 @@ object Probe {
         boundA = field("boundA"); boundB = field("boundB")
         boundCount = field("boundCount")
         conCount = field("conCount")
+        conA = field("conA"); conB = field("conB")
+        conRest = field("conRest")
+        triA = field("triA"); triB = field("triB"); triC = field("triC")
+        triMuscle = field("triMuscle")
+        triCount = field("triCount")
         organismOf = field("organismOf"); organismCount = field("organismCount")
     }
 
@@ -186,6 +222,22 @@ object Probe {
     fun frameWithMuscles(dt: Double, targets: DoubleArray) {
         muscleTarget.fill(0.0)
         for (m in targets.indices) if (m < muscleTarget.size) muscleTarget[m] = targets[m]
+        updateMuscles(dt)
+        simulate()
+    }
+
+    /**
+     * Тик с АВТОМАТИЧЕСКИМ ГРЕБКОМ — то же, что клавиша G в демо.
+     *
+     * Отдельно от frame(contract = true): та включает одну мышцу, а гребок включает
+     * все и с тем же периодом и скважностью, что в демо. Именно на нём от тела
+     * отваливаются куски, а разговор идёт про них.
+     */
+    fun frameGait(dt: Double, frame: Int) {
+        val period = constInt("GAIT_PERIOD")
+        val duty = (period * const("GAIT_DUTY")).toInt().coerceAtLeast(1)
+        muscleTarget.fill(0.0)
+        if (frame % period < duty) muscleTarget.fill(1.0)
         updateMuscles(dt)
         simulate()
     }
@@ -291,6 +343,50 @@ object Probe {
             j += w * (rx * rx + ry * ry)
         }
         return if (j > 0.0) l / j else 0.0
+    }
+
+    /** Число тел СЕЙЧАС, а не на момент запуска: разрыв его меняет. */
+    fun organismCountNow(): Int {
+        organismCount = field("organismCount")
+        organismOf = field("organismOf")
+        return organismCount
+    }
+
+    /** Перечитать топологию после разрыва: связи и треугольники заменяются целиком. */
+    /** Замер по стадиям: включить/выключить. */
+    fun setStageProbe(on: Boolean) { setField("dbgStages", on) }
+
+    /** Выключить анизотропное сопротивление среды: без него тяги нет вовсе. */
+    fun setDragOff(on: Boolean) { setField("dbgDragOff", on) }
+
+    /** Выключить потолок скорости: он масштабирует каждую частицу отдельно. */
+    fun setClampOff(on: Boolean) { setField("dbgNoClamp", on) }
+
+    /** Ограничить замер по стадиям подмножеством клеток. */
+    fun setStageMask(mask: BooleanArray?) {
+        val f = RealBodyDemo::class.java.getDeclaredField("dbgOnly").apply { isAccessible = true }
+        f.set(demo, mask)
+    }
+
+    /** Наибольшая скорость, внесённая стадией, и число сдвинутых ею клеток. */
+    fun stageMove(): DoubleArray = field("dbgStageMove")
+    fun stageHits(): IntArray = field("dbgStageHits")
+    fun stageL(): DoubleArray = field("dbgStageL")
+    fun stagePx(): DoubleArray = field("dbgStagePx")
+    fun stagePy(): DoubleArray = field("dbgStagePy")
+
+    /** Стенд решётки: убить долю связей тем же путём, что разрыв в игре. */
+    fun applyLabDamage() { m("applyLabDamage").invoke(demo) }
+
+    fun refreshTopology() {
+        conCount = field("conCount")
+        conA = field("conA"); conB = field("conB")
+        conRest = field("conRest")
+        triA = field("triA"); triB = field("triB"); triC = field("triC")
+        triMuscle = field("triMuscle")
+        triCount = field("triCount")
+        boundA = field("boundA"); boundB = field("boundB")
+        boundCount = field("boundCount")
     }
 
     fun organismSize(o: Int): Int {
