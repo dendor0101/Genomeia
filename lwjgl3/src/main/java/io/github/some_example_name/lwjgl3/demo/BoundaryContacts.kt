@@ -179,6 +179,17 @@ class BoundaryContacts(
     var killOnDeep = false
     var killDepth = 1.0
 
+    /** Сколько пар в списке контактов этого подшага и какие. Нужно снятию остатка по группам. */
+    /**
+     * ДАВЛЕНИЕ КОНТАКТА НА КЛЕТКУ: сумма модулей толчков, которые контакты дали клетке,
+     * в единицах смещения. Копится, пока хозяин не обнулит. Null — не копить.
+     */
+    var pressure: DoubleArray? = null
+
+    val contactCount: Int get() = cN
+    fun contactI(c: Int): Int = cI[c]
+    fun contactJ(c: Int): Int = cJ[c]
+
     private var toVelocity = false
     private var velH = 1.0
     /** Перенесённые множители: при XPBD_WARM_START или в старом режиме abLegacy. */
@@ -277,6 +288,9 @@ class BoundaryContacts(
 
     fun restTouchingCount(): Int = restTouching.size
 
+    /** Разбор журнала игрока: расстояние упора пары (сумма радиусов или расстояние покоя). */
+    fun contactDistanceOf(i: Int, j: Int): Double = contactDistance(i, j)
+
     /** Разбор журнала игрока: исключена ли пара из столкновений (связь или касание в покое). */
     fun isBonded(i: Int, j: Int): Boolean = bonded(i, j)
 
@@ -348,7 +362,12 @@ class BoundaryContacts(
         }
     }
 
+    /** Разбор: пара последнего maxPenetration. */
+    var worstI = -1
+    var worstJ = -1
+
     fun maxPenetration(px: DoubleArray, py: DoubleArray): Double {
+        worstI = -1; worstJ = -1
         var worst = 0.0
         for (a in verts.indices) {
             val i = verts[a]
@@ -360,7 +379,7 @@ class BoundaryContacts(
                 val d2 = dx * dx + dy * dy
                 if (d2 >= rr * rr) continue
                 val pen = 1.0 - sqrt(d2) / rr
-                if (pen > worst) worst = pen
+                if (pen > worst) { worst = pen; worstI = i; worstJ = j }
             }
         }
         return worst
@@ -1180,6 +1199,11 @@ class BoundaryContacts(
             if (s <= 0.0) continue
             frcX[i] += ax * s; frcY[i] += ay * s
             frcX[j] -= ax * s; frcY[j] -= ay * s
+            val pr = pressure
+            if (pr != null) {
+                val push = sqrt(ax * ax + ay * ay) * s
+                pr[i] += push * invMass[i]; pr[j] += push * invMass[j]
+            }
         }
         for (k in 0 until frcN) {
             val i = frcList[k]
@@ -1399,6 +1423,9 @@ class BoundaryContacts(
             if (isolated != null) for (i in 0 until n) {
                 if (isolated[i]) contactRadius[i] = radius[i] * contactScale
             }
+            // У мёртвой клетки контакта нет вовсе, и радиуса тоже: иначе отрисовка рисует
+            // его кружком, и лопнувшая клетка остаётся на экране неподвижной частицей.
+            if (dead != null) for (i in 0 until n) if (dead[i]) contactRadius[i] = 0.0
 
             for (v in verts) if (contactRadius[v] > maxR) maxR = contactRadius[v]
             val cell = maxOf(2.0 * maxR, 1e-6)

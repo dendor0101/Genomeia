@@ -481,59 +481,15 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         flapA = a.toIntArray(); flapB = b.toIntArray(); flapRest = r.toDoubleArray()
     }
 
-    /** Зеркало демо: снятие импульса и момента внутренних стадий. См. демо. */
-    private var spinSnapX = DoubleArray(0)
-    private var spinSnapY = DoubleArray(0)
-    private val orgM = DoubleArray(topo.organismCount)
-    private val orgCx = DoubleArray(topo.organismCount)
-    private val orgCy = DoubleArray(topo.organismCount)
-    private val orgDx = DoubleArray(topo.organismCount)
-    private val orgDy = DoubleArray(topo.organismCount)
-    private val orgL = DoubleArray(topo.organismCount)
-    private val orgI = DoubleArray(topo.organismCount)
-    private val orgPinned = BooleanArray(topo.organismCount)
+    /** Зеркало демо: снятие импульса и момента внутренних стадий. См. InternalMomentum. */
+    private val internalMom = InternalMomentum(n)
 
     private fun markInternal() {
-        if (spinSnapX.size < n) { spinSnapX = DoubleArray(n); spinSnapY = DoubleArray(n) }
-        System.arraycopy(px, 0, spinSnapX, 0, n)
-        System.arraycopy(py, 0, spinSnapY, 0, n)
+        internalMom.mark(px, py, topo.organismOf, topo.organismCount)
     }
 
     private fun cancelInternalSpin() {
-        val c = topo.organismCount
-        if (c <= 0) return
-        java.util.Arrays.fill(orgM, 0.0)
-        java.util.Arrays.fill(orgCx, 0.0); java.util.Arrays.fill(orgCy, 0.0)
-        java.util.Arrays.fill(orgDx, 0.0); java.util.Arrays.fill(orgDy, 0.0)
-        java.util.Arrays.fill(orgL, 0.0); java.util.Arrays.fill(orgI, 0.0)
-        java.util.Arrays.fill(orgPinned, false)
-        for (i in 0 until n) {
-            val o = topo.organismOf[i]
-            if (o < 0 || o >= c) continue
-            if (invMass[i] <= 0.0) { orgPinned[o] = true; continue }
-            val m = 1.0 / invMass[i]
-            orgM[o] += m; orgCx[o] += m * spinSnapX[i]; orgCy[o] += m * spinSnapY[i]
-        }
-        for (o in 0 until c) if (orgM[o] > 0.0) { orgCx[o] /= orgM[o]; orgCy[o] /= orgM[o] }
-        for (i in 0 until n) {
-            val o = topo.organismOf[i]
-            if (o < 0 || o >= c || invMass[i] <= 0.0 || orgPinned[o]) continue
-            val m = 1.0 / invMass[i]
-            val dx = px[i] - spinSnapX[i]; val dy = py[i] - spinSnapY[i]
-            val rx = spinSnapX[i] - orgCx[o]; val ry = spinSnapY[i] - orgCy[o]
-            orgDx[o] += m * dx; orgDy[o] += m * dy
-            orgL[o] += m * (rx * dy - ry * dx)
-            orgI[o] += m * (rx * rx + ry * ry)
-        }
-        for (i in 0 until n) {
-            val o = topo.organismOf[i]
-            if (o < 0 || o >= c || invMass[i] <= 0.0 || orgPinned[o] || orgM[o] <= 0.0) continue
-            val tx = orgDx[o] / orgM[o]; val ty = orgDy[o] / orgM[o]
-            val w = if (orgI[o] > 1e-18) orgL[o] / orgI[o] else 0.0
-            val rx = spinSnapX[i] - orgCx[o]; val ry = spinSnapY[i] - orgCy[o]
-            px[i] -= tx - w * ry
-            py[i] -= ty + w * rx
-        }
+        internalMom.cancel(topo.organismOf, topo.organismCount, px, py, prevX, prevY, invMass)
     }
 
     private fun solveFlaps(h: Double) {
@@ -970,7 +926,10 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
                 for (b in topo.rigidBones.indices) projectBone(b)
                 solveLinkMaxLength()
                 if (p.contactsOn) {
-                    if (iter == 0) contacts.prepare(px, py, prevX, prevY, vx, vy, invMass)
+                    if (iter == 0) {
+                        contacts.prepare(px, py, prevX, prevY, vx, vy, invMass)
+                        if (DemoConst.CANCEL_INTERNAL_SPIN) internalMom.noteContacts(contacts)
+                    }
                     contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
                     contacts.solveContacts(px, py, vx, vy, invMass, h)
                 }
@@ -1069,7 +1028,10 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
                 for (b in topo.rigidBones.indices) projectBone(b)
                 solveLinkMaxLength()
                 if (p.contactsOn) {
-                    if (iter == 0) contacts.prepare(px, py, prevX, prevY, vx, vy, invMass)
+                    if (iter == 0) {
+                        contacts.prepare(px, py, prevX, prevY, vx, vy, invMass)
+                        if (DemoConst.CANCEL_INTERNAL_SPIN) internalMom.noteContacts(contacts)
+                    }
                     contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
                     contacts.solveContacts(px, py, vx, vy, invMass, h)
                 }

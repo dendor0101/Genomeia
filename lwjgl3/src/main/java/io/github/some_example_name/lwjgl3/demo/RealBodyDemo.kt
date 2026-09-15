@@ -442,6 +442,9 @@ class RealBodyDemo(private val bodyPath: String,
 ) : ApplicationAdapter() {
 
     companion object {
+        /** Число стадий в замере по стадиям. См. dbgStages. */
+        const val DBG_STAGES = 13
+
         private const val DT = 1.0 / 30.0
 
         /**
@@ -876,6 +879,81 @@ class RealBodyDemo(private val bodyPath: String,
          * как разрыв начнёт действовать.
          */
         private const val TEAR_IMMEDIATE = true
+
+        /**
+         * КЛЕТКА ЛОПАЕТСЯ ОТ ДАВЛЕНИЯ КОНТАКТОВ: сумма толчков за тик больше порога, в
+         * связях смещения. 0 — выключено.
+         *
+         * Замер на трёх журналах с таранами: в спокойной игре давление на клетку почти
+         * всегда меньше 1; клетки, протолкнутые внутрь чужого тела, в момент входа
+         * получали 16–25; удар даёт сотни клеток выше 2. Застрявших в чужой ткани к концу
+         * записи без порога 31 / 54 / 24, с порогом 16 — 16 / 27 / 7, 12 — 8 / 16 / 19,
+         * 8 — 19 / 8 / 10 (удары хаотичны, разница между порогами в шуме).
+         *
+         * Гребок без таранов: порог 12 лопает 6 клеток на первых ударах мышц — мышца сейчас
+         * разгоняет ткань до 4 клеток/тик и сама рвёт 10 связей (отложенная задача).
+         */
+        private const val PRESSURE_BURST_LINKS = 12.0
+
+        /**
+         * Клетка, оставшаяся без связей после разрыва на сжатии, лопается. См. burstByPressure.
+         *
+         * Вместе с PRESSURE_BURST_LINKS = 12, застрявших к концу журналов с таранами:
+         * без обоих 31 / 54 / 24, только давление 8 / 16 / 19, оба 12 / 11 / 9. Стенд
+         * столкновений на медузе, медиана по 9, без обоих — с обоими: бассейн 48 — 44, куча
+         * плотнее 26 — 16, куча в теле 25 — 23 (дребезг 8692 — 4102), оторванный кусок 3 — 0;
+         * «два толчка», выброс 0.29 — 1.0 клетки/тик. Первый замер давал «куча в теле 25 — 1»
+         * и «ёмкость битком, дребезг 6382 — 0»: сброс тогда не оживлял мёртвых, и они копились
+         * от сцены к сцене. См. restoreTopology.
+         */
+        private const val CRUSH_BURST = true
+
+        /**
+         * ЗАСТРЯВШАЯ В ЧУЖОЙ ТКАНИ КЛЕТКА ЛОПАЕТСЯ через столько тиков подряд. См. scanTrapped.
+         *
+         * Порог по времени, а не сразу: на ударе центры на миг заходят в чужие треугольники и
+         * выходят сами. Сколько тиков клетка была в чужой ткани, прежде чем вышла сама,
+         * журнал 15.09 12:17: 1–5 тиков — 21 клетка, 6–10 — ни одной, дольше — 20 (эти
+         * сидели часами и выталкивались медленно). Гребок без таранов: ни одной.
+         *
+         * Застрявших к концу журналов с таранами (13:01 / 09:47 / 10:21 / 12:17): было
+         * 12 / 11 / 9 / 24, стало 0 / 0 / 0 / 0, лопнуло 14 / 37 / 7 / 35. Стенд столкновений
+         * на медузе, медиана по 9: бассейн 44 — 0, куча плотнее 16 — 0, куча в теле 23 — 0;
+         * дребезг и выброс прежние, в спокойной фазе не умирает никто.
+         *
+         * Цена: обход раз в тик около 0.13 мс на 1900 клеток (2600 треугольников).
+         */
+        private const val TRAP_KILL_TICKS = 10
+
+        /**
+         * СКЛАДКА СВОЕЙ ТКАНИ ТОЖЕ ЛОПАЕТСЯ: клетка столько же тиков в своём треугольнике, где
+         * она не вершина. При гребке складки живут ровно 1 тик (215 за 100 с), после таранов
+         * есть держащиеся минутами — например, #412 на одной связи у края, журнал 12:17.
+         * Журналы с таранами: лопнуло 1 / 16 / 2 / 8, стенд без изменений.
+         */
+        private const val TRAP_KILL_FOLDS = true
+
+        /**
+         * МЕМБРАНА ХРУПЧЕ ТКАНИ: связь на контуре рвётся, когда недобор сверх предела длины
+         * больше этой доли покоя (у остальных связей — LINK_TEAR_STRAIN). Меньше нуля —
+         * выключено, общий порог.
+         *
+         * Откуда. Разбор журнала 14.09 09:47: клетка #923 прошла в чужое тело через ребро,
+         * растянутое до 1.167 длины, а рвалась такая связь только при 1.30. Первой пробовали
+         * «щель в мембране» — рвать граничную связь, если после предела длины круги её
+         * концов не сомкнулись. Настоящая щель после предела не бывает больше 0.003 связи:
+         * 143 разрыва из 159 были на щели меньше 1e-6, на округлении там, где шов совпал с
+         * пределом 1.05. Работало, выходит, именно «рвать граничную связь при перерастяжении».
+         *
+         * ВЫКЛЮЧЕНО: проигрывает. Журналы с таранами (застрявших к концу / порвано связей):
+         * выкл 12/11/9 при 297/799/763; 0.10 — 3/15/5 при 314/1049/1255; 0.05 — 3/14/2 при
+         * 509/1535/1331; 0 — тела раскрошены целиком (2200 связей). Гребок без таранов: 0 рвёт
+         * 914 связей, 0.05 — 402, 0.10 — 26, выкл — 45. Стенд столкновений на медузе, медиана
+         * по 9 (замер до исправления сброса, мёртвые копились между сценами — сравнение
+         * ненадёжно): 0.10 против выкл — бассейн 34/30, куча плотнее 20/18, куча в теле 19/1,
+         * оторванный кусок 29/3. Меньше застревания только ценой крошева.
+         */
+        private const val MEMBRANE_TEAR_STRAIN = -1.0
 
         /**
          * ПЛАСТИЧНОСТЬ ТКАНИ: длина покоя и площадь покоя МЕДЛЕННО ТЕКУТ за формой.
@@ -1318,7 +1396,7 @@ class RealBodyDemo(private val bodyPath: String,
          * Снимать ли импульс и момент, внесённые внутренними стадиями. См.
          * cancelInternalSpin: там же замеры, из-за которых это появилось.
          */
-        private const val CANCEL_INTERNAL_SPIN = false
+        private const val CANCEL_INTERNAL_SPIN = true
 
         /**
          * Сколько раз за подшаг прогнать связи и контакт ВМЕСТЕ. См. общий цикл.
@@ -2028,6 +2106,17 @@ class RealBodyDemo(private val bodyPath: String,
         ).also {
             it.killOnDeep = killOnDeep && KILL_ON_DEEP_OVERLAP
             it.killDepth = KILL_DEPTH
+            if (internalMom?.n != n) internalMom = InternalMomentum(n)
+            if (contactPressure.size != n) contactPressure = DoubleArray(n)
+            it.pressure = contactPressure
+            if (crushedCell.size != n) crushedCell = BooleanArray(n)
+            // Связи на контуре: у них свой порог разрыва, см. MEMBRANE_TEAR_STRAIN.
+            conBoundary = BooleanArray(conCount)
+            val bk = LongArray(boundCount) { e -> edgeKey(boundA[e], boundB[e]) }
+            bk.sort()
+            for (c in 0 until conCount) {
+                conBoundary[c] = java.util.Arrays.binarySearch(bk, edgeKey(conA[c], conB[c])) >= 0
+            }
         }
         if (!rebuilding) println("[RealBodyDemo] contact particles = ${boundCount} boundary edges, " +
             "contact radius from boundary edges, seal margin")
@@ -2254,6 +2343,7 @@ class RealBodyDemo(private val bodyPath: String,
             vx[i] = 0.0; vy[i] = 0.0
             invMass[i] = restInvMass[i]; matchWeight[i] = 1.0
         }
+        trapTicks.fill(0); foldTicks.fill(0)
         flowVX.fill(0.0); flowVY.fill(0.0)
         muscleActivation.fill(0.0)
         muscleTarget.fill(0.0)
@@ -2492,6 +2582,7 @@ class RealBodyDemo(private val bodyPath: String,
             // РАЗДАВЛЕННАЯ СВЯЗЬ РВЁТСЯ ТАК ЖЕ, КАК ПЕРЕРАСТЯНУТАЯ. См. LINK_CRUSH_RATIO.
             if (tearingOn && len < LINK_CRUSH_RATIO * conRest[c] * muscleScale(conMuscle[c])) {
                 linkTorn[c] = true; conDead[c] = true; tearsPending = true
+                crushedCell[i] = true; crushedCell[j] = true
                 continue
             }
             val max = conMaxLen[c]
@@ -2502,6 +2593,12 @@ class RealBodyDemo(private val bodyPath: String,
             if (len - max > LINK_TEAR_STRAIN * conRest[c]) {
                 linkTorn[c] = true
                 if (tearingOn) { conDead[c] = true; tearsPending = true }
+            }
+            // МЕМБРАНА ХРУПЧЕ ТКАНИ. См. MEMBRANE_TEAR_STRAIN.
+            if (tearingOn && membraneTearStrain >= 0.0 && conBoundary[c] && !conDead[c] &&
+                len - max > membraneTearStrain * conRest[c]) {
+                linkTorn[c] = true; conDead[c] = true; tearsPending = true
+                membraneTearCount++
             }
             dx /= len; dy /= len
             // Тот же потолок поправки за подшаг, что и у контакта, и по той же
@@ -2581,6 +2678,13 @@ class RealBodyDemo(private val bodyPath: String,
      * идут подряд по одному экземпляру.
      */
     fun restoreTopology() {
+        // Целое тело — это и живые клетки. Без этого лопнувшие при сбросе оставались
+        // мёртвыми: не рисовались, не сталкивались, а первое же лопание снова рвало все
+        // их восстановленные связи — в свежем теле появлялись дыры. Стенд столкновений
+        // сбрасывается перед каждой вариацией, и мёртвые копились там от сцены к сцене.
+        cellDead.fill(false)
+        deadCount = 0
+        crushedCell.fill(false)
         lnkCount = body.linkCount
         lnkA = body.linkA.copyOf(); lnkB = body.linkB.copyOf()
         triCount = body.triCount
@@ -3201,7 +3305,13 @@ class RealBodyDemo(private val bodyPath: String,
     // умножается на 480 и становится скоростью. Замер отвечает, чья именно.
     // Выключен по умолчанию: стоит копирования позиций на каждую стадию.
     var dbgStages = false
-    val dbgStageMove = DoubleArray(9)
+    /**
+     * Стадии: 0 связи, 1 площади, 2 изгиб, 3 кость, 4 предел длины, 5 контакты,
+     * 6 широкая фаза+CCD, 7 отскок, 8 мышь+вязкость, 9 лоскуты, 10 анизотропная среда,
+     * 11 изотропная среда+пол+потолок скорости, 12 снятие дрейфа.
+     */
+
+    val dbgStageMove = DoubleArray(DBG_STAGES)
     /**
      * Сколько МОМЕНТА ИМПУЛЬСА внесла стадия. Считается как сумма m * (r x dp) / h.
      *
@@ -3210,11 +3320,13 @@ class RealBodyDemo(private val bodyPath: String,
      * тождественно. Поэтому ненулевое число здесь сразу называет виновника, и гадать
      * по списку стадий больше не нужно.
      */
-    val dbgStageL = DoubleArray(9)
+    val dbgStageL = DoubleArray(DBG_STAGES)
     /** Сколько ЛИНЕЙНОГО импульса внесла стадия, вектором. Тяга берётся отсюда. */
-    val dbgStagePx = DoubleArray(9)
-    val dbgStagePy = DoubleArray(9)
-    val dbgStageHits = IntArray(9)
+    val dbgStagePx = DoubleArray(DBG_STAGES)
+    val dbgStagePy = DoubleArray(DBG_STAGES)
+    val dbgStageHits = IntArray(DBG_STAGES)
+    /** Сумма модулей смещений стадии по замеряемым клеткам — сколько она РАБОТАЕТ. */
+    val dbgStageAbs = DoubleArray(DBG_STAGES)
     /** Если задан, замер идёт только по этим клеткам. */
     var dbgOnly: BooleanArray? = null
     private var dbgSnapX = DoubleArray(0)
@@ -3240,16 +3352,28 @@ class RealBodyDemo(private val bodyPath: String,
 
     private fun dbgMeasureV(k: Int) {
         if (!dbgStages) return
-        var dpx = 0.0; var dpy = 0.0; var hits = 0
+        val only = dbgOnly
+        var m0 = 0.0; var cx = 0.0; var cy = 0.0
         for (i in 0 until n) {
             if (invMass[i] <= 0.0) continue
+            if (only != null && !only[i]) continue
+            val m = 1.0 / invMass[i]
+            m0 += m; cx += m * px[i]; cy += m * py[i]
+        }
+        if (m0 > 0.0) { cx /= m0; cy /= m0 }
+        var dpx = 0.0; var dpy = 0.0; var dl = 0.0; var hits = 0
+        for (i in 0 until n) {
+            if (invMass[i] <= 0.0) continue
+            if (only != null && !only[i]) continue
             val m = 1.0 / invMass[i]
             val ddx = vx[i] - dbgSnapVx[i]; val ddy = vy[i] - dbgSnapVy[i]
             if (ddx != 0.0 || ddy != 0.0) hits++
             dpx += m * ddx; dpy += m * ddy
+            dl += m * ((px[i] - cx) * ddy - (py[i] - cy) * ddx)
         }
         dbgStageHits[k] += hits
         dbgStagePx[k] += dpx; dbgStagePy[k] += dpy
+        dbgStageL[k] += dl
     }
 
     private fun dbgMeasure(k: Int, h: Double) {
@@ -3264,6 +3388,7 @@ class RealBodyDemo(private val bodyPath: String,
             val d = Math.sqrt(dx * dx + dy * dy)
             if (d > 1e-12) hits++
             if (d > worst) worst = d
+            dbgStageAbs[k] += d
         }
         if (worst / h > dbgStageMove[k]) dbgStageMove[k] = worst / h
         dbgStageHits[k] += hits
@@ -3294,99 +3419,19 @@ class RealBodyDemo(private val bodyPath: String,
     }
 
     /**
-     * СНЯТИЕ ИМПУЛЬСА И МОМЕНТА, КОТОРЫЕ ВНЕСЛИ ВНУТРЕННИЕ ПОЗИЦИОННЫЕ СТАДИИ.
-     *
-     * ПОЧЕМУ ЭТО ЗАКОННО. Связи, площади, лоскуты, предел длины и проекция кости —
-     * все внутренние. Они обязаны сохранять и импульс, и момент импульса точно.
-     * Значит всё, что они внесли, это численный остаток, и его можно вычесть, не
-     * трогая физику: убирается жёсткий сдвиг и жёсткий поворот, а форма при этом
-     * не меняется вовсе.
-     *
-     * ОТКУДА ОСТАТОК БЕРЁТСЯ. Каждая парная поправка идёт вдоль линии между двумя
-     * клетками и момента не даёт — но только относительно того положения, в котором
-     * её приложили. Обход идёт по очереди, и следующая поправка ложится уже на
-     * сдвинутые клетки. Перекрёстные члены по отдельности второго порядка малости, но
-     * их шестьсот тысяч за прогон.
-     *
-     * МЫШЦА ДЕЛАЕТ ИХ СОГЛАСОВАННЫМИ, и в этом вся беда. Пока она сокращается, длины
-     * покоя меняются каждый тик, невязка не сходится к нулю и у всех мышечных связей
-     * смотрит в одну сторону. Остатки перестают гасить друг друга и складываются в
-     * момент. Замер на оторванном куске, контакты и среда выключены, 300 тиков
-     * сокращения: момент 0.167 -> -2.29, то есть перевернулся и вырос вдесятеро.
-     * Отпустили мышцу — момент честно затухает до 0.028.
-     *
-     * По стадиям вклад такой: связи -6.73, площади +2.74, предел длины -3.65,
-     * проекция кости РОВНО НОЛЬ. Потолок скорости тоже ни при чём: с выключенным
-     * потолком утечка осталась.
-     *
-     * Чередование направления обхода (sweepBackwards) стоит против этого же и гасит
-     * часть, но не всё.
-     *
-     * СЧИТАЕТСЯ ПО ОРГАНИЗМАМ, а не по миру: у разных кусков законно разные импульсы,
-     * и снимать общий сдвиг значило бы перекачивать импульс между ними.
-     *
-     * ЗОВЁТСЯ ДО КОНТАКТОВ. Контакт внешний для организма и передаёт импульс между
-     * телами законно, его трогать нельзя.
+     * СНЯТИЕ ИМПУЛЬСА И МОМЕНТА ВНУТРЕННИХ СТАДИЙ — см. InternalMomentum, там и замеры.
+     * Контакты копят свои смещения в extDx/extDy, и из снимаемого они вычитаются.
      */
-    private var spinSnapX = DoubleArray(0)
-    private var spinSnapY = DoubleArray(0)
-    private var orgM = DoubleArray(0)
-    private var orgCx = DoubleArray(0)
-    private var orgCy = DoubleArray(0)
-    private var orgDx = DoubleArray(0)
-    private var orgDy = DoubleArray(0)
-    private var orgL = DoubleArray(0)
-    private var orgI = DoubleArray(0)
-    private var orgPinned = BooleanArray(0)
+    internal var internalMom: InternalMomentum? = null
+    /** Включено ли снятие. Переменной, а не константой, — ради A/B на журнале игрока. */
+    internal var cancelSpinOn = CANCEL_INTERNAL_SPIN
 
     private fun markInternal() {
-        if (spinSnapX.size < n) { spinSnapX = DoubleArray(n); spinSnapY = DoubleArray(n) }
-        System.arraycopy(px, 0, spinSnapX, 0, n)
-        System.arraycopy(py, 0, spinSnapY, 0, n)
+        internalMom?.mark(px, py, organismOf, organismCount)
     }
 
     private fun cancelInternalSpin() {
-        val c = organismCount
-        if (c <= 0) return
-        if (orgM.size < c) {
-            orgM = DoubleArray(c); orgCx = DoubleArray(c); orgCy = DoubleArray(c)
-            orgDx = DoubleArray(c); orgDy = DoubleArray(c)
-            orgL = DoubleArray(c); orgI = DoubleArray(c); orgPinned = BooleanArray(c)
-        }
-        java.util.Arrays.fill(orgM, 0, c, 0.0)
-        java.util.Arrays.fill(orgCx, 0, c, 0.0); java.util.Arrays.fill(orgCy, 0, c, 0.0)
-        java.util.Arrays.fill(orgDx, 0, c, 0.0); java.util.Arrays.fill(orgDy, 0, c, 0.0)
-        java.util.Arrays.fill(orgL, 0, c, 0.0); java.util.Arrays.fill(orgI, 0, c, 0.0)
-        java.util.Arrays.fill(orgPinned, 0, c, false)
-        for (i in 0 until n) {
-            val o = organismOf[i]
-            if (o < 0 || o >= c) continue
-            // Закреплённая клетка это внешняя опора: у такого организма импульс
-            // сохраняться не обязан, и снимать с него ничего нельзя.
-            if (invMass[i] <= 0.0) { orgPinned[o] = true; continue }
-            val m = 1.0 / invMass[i]
-            orgM[o] += m; orgCx[o] += m * spinSnapX[i]; orgCy[o] += m * spinSnapY[i]
-        }
-        for (o in 0 until c) if (orgM[o] > 0.0) { orgCx[o] /= orgM[o]; orgCy[o] /= orgM[o] }
-        for (i in 0 until n) {
-            val o = organismOf[i]
-            if (o < 0 || o >= c || invMass[i] <= 0.0 || orgPinned[o]) continue
-            val m = 1.0 / invMass[i]
-            val dx = px[i] - spinSnapX[i]; val dy = py[i] - spinSnapY[i]
-            val rx = spinSnapX[i] - orgCx[o]; val ry = spinSnapY[i] - orgCy[o]
-            orgDx[o] += m * dx; orgDy[o] += m * dy
-            orgL[o] += m * (rx * dy - ry * dx)
-            orgI[o] += m * (rx * rx + ry * ry)
-        }
-        for (i in 0 until n) {
-            val o = organismOf[i]
-            if (o < 0 || o >= c || invMass[i] <= 0.0 || orgPinned[o] || orgM[o] <= 0.0) continue
-            val tx = orgDx[o] / orgM[o]; val ty = orgDy[o] / orgM[o]
-            val w = if (orgI[o] > 1e-18) orgL[o] / orgI[o] else 0.0
-            val rx = spinSnapX[i] - orgCx[o]; val ry = spinSnapY[i] - orgCy[o]
-            px[i] -= tx - w * ry
-            py[i] -= ty + w * rx
-        }
+        internalMom?.cancel(organismOf, organismCount, px, py, prevX, prevY, invMass)
     }
 
     private fun cancelInternalDrift(beforeX: Double, beforeY: Double) {
@@ -3701,7 +3746,17 @@ class RealBodyDemo(private val bodyPath: String,
      * Изотропное сопротивление среды. Нормировано на h, поэтому от числа подшагов
      * не зависит. Тягу не создаёт — см. комментарий у MEDIUM_DRAG.
      */
+    /** Давление контактов на клетку за текущий тик, мировые единицы смещения. Обнуляется в начале тика. */
+    internal var contactPressure = DoubleArray(0)
+
+    /** Разбор: зовётся в конце каждого подшага с его номером. */
+    internal var dbgSubstepHook: ((Int) -> Unit)? = null
+
+    /** Диагностика: выключить и изотропное сопротивление среды. */
+    var dbgIsoDragOff = false
+
     private fun applyMediumDrag(h: Double) {
+        if (dbgIsoDragOff) return
         var keep = 1.0 - MEDIUM_DRAG * h
         if (keep < 0.0) keep = 0.0
         for (i in 0 until n) { vx[i] *= keep; vy[i] *= keep }
@@ -3715,6 +3770,8 @@ class RealBodyDemo(private val bodyPath: String,
         //
         // Ровно один раз за тик: внутри подшагов контур и контакты пересобирались бы
         // по шестнадцать раз, а рвётся обычно пучок связей за один удар.
+        java.util.Arrays.fill(contactPressure, 0.0)
+        java.util.Arrays.fill(crushedCell, false)
         if (tearsPending) rebuildTimed()
         val h = DT / SUBSTEPS
         // Нулевой слот — состояние на НАЧАЛО тика. Промежуточные пишутся ТОЛЬКО когда
@@ -3754,7 +3811,7 @@ class RealBodyDemo(private val bodyPath: String,
             sweepBackwards = !sweepBackwards
             // Снимок ДО внутренних стадий: всё, что они внесут сверх формы, снимется
             // перед контактами. См. cancelInternalSpin.
-            if (CANCEL_INTERNAL_SPIN) markInternal()
+            if (cancelSpinOn) markInternal()
             // ЦИКЛ ПО ВСЕМ ОГРАНИЧЕНИЯМ СРАЗУ, ВКЛЮЧАЯ КОНТАКТ.
             //
             // Смысл в накоплении множителя. Сила при повторении просто умножается на
@@ -3767,14 +3824,14 @@ class RealBodyDemo(private val bodyPath: String,
             // одну и ту же невязку, вместо того чтобы переписывать работу друг друга.
             for (iter in 0 until SOLVER_ITERS) {
                 dbgMark(); solveConstraints(h); dbgMeasure(0, h)
-                solveFlaps(h)
+                dbgMark(); solveFlaps(h); dbgMeasure(9, h)
                 dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h)
                 dbgMark(); solveAreas(h); dbgMeasure(1, h)
                 dbgMark(); solveBend(h); dbgMeasure(2, h)
                 dbgMark()
                 if (bonesRigid) for (b in rigidBones.indices) projectBone(b)
                 dbgMeasure(3, h)
-                solveLinkMaxLength()
+                dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h)
                 // РАЗРЫВ СРАЗУ, А НЕ В НАЧАЛЕ СЛЕДУЮЩЕГО ТИКА. См. TEAR_IMMEDIATE.
                 if (TEAR_IMMEDIATE && tearsPending) { rebuildTimed(); contactsStale = true }
                 val ci = contacts
@@ -3783,6 +3840,7 @@ class RealBodyDemo(private val bodyPath: String,
                     // у нового объекта контактов списка ещё нет.
                     if (iter == 0 || contactsStale) {
                         dbgMark(); ci.prepare(px, py, prevX, prevY, vx, vy, invMass); dbgMeasure(6, h)
+                        if (cancelSpinOn) internalMom?.noteContacts(ci)
                         contactsStale = false
                     }
                     ci.updateBones(px, py, invMass,
@@ -3802,9 +3860,10 @@ class RealBodyDemo(private val bodyPath: String,
             // чужое тело — что и наблюдалось при резком рывке за кость.
             dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h)
 
-            // Снять внесённые внутренними стадиями импульс и момент — ДО контактов:
-            // контакт внешний для организма и передаёт импульс между телами законно.
-            if (CANCEL_INTERNAL_SPIN) cancelInternalSpin()
+            // Снять импульс и момент, внесённые ВНУТРЕННИМИ стадиями. Контакты стоят в том
+            // же цикле, но их смещения копятся отдельно и не снимаются: контакт внешний
+            // для организма и передаёт импульс между телами законно. См. InternalMomentum.
+            dbgMark(); if (cancelSpinOn) cancelInternalSpin(); dbgMeasure(12, h)
 
             // КОНТАКТЫ ПОСЛЕДНИМИ СРЕДИ ПОЗИЦИОННЫХ, и это принципиально.
             // projectBone перезаписывает позиции жёсткой позой; поставь контакты
@@ -3829,7 +3888,7 @@ class RealBodyDemo(private val bodyPath: String,
             // весь настоящий путь клетки за подшаг, включая ту часть, которую добавили
             // перетаскивание и кость. Это ровно то, ради чего свип и делался.
 
-            if (cancel) cancelInternalDrift(beforeX, beforeY)
+            dbgMark(); if (cancel) cancelInternalDrift(beforeX, beforeY); dbgMeasure(12, h)
 
             updateVelocities(h)
             // Отскок: позиционная часть удар гасит целиком, см. solveRestitution.
@@ -3839,16 +3898,194 @@ class RealBodyDemo(private val bodyPath: String,
             dbgMeasureV(7); dbgMarkV()
             applyDragVelocity(h)
             applyViscosity(h)
+            dbgMeasureV(8); dbgMarkV()
             applyNormalDrag(h)
+            dbgMeasureV(10); dbgMarkV()
             applyRestitution()
             applyMediumDrag(h)
             clampSpeed()
-            dbgMeasureV(8)
+            dbgMeasureV(11)
             if (keepSubsteps || step == SUBSTEPS - 1) histSnap(step + 1)
+            dbgSubstepHook?.invoke(step)
         }
         // Пластика — РАЗ В ТИК, после всех подшагов: течение медленное, внутри тика
         // ему делать нечего, а стоить оно будет в шестнадцать раз дороже.
         applyPlasticity(DT)
+        burstByPressure()
+    }
+
+    /**
+     * КЛЕТКА ЛОПАЕТСЯ ОТ ДАВЛЕНИЯ: если контакты за тик толкали её сильнее порога, она
+     * умирает, как смерть от проникновения — связи рвутся, из контактов и отрисовки она
+     * уходит. Кости бессмертны. Раз в тик, чтобы пересборка была одна на всех погибших.
+     * Порог в связях смещения за тик, см. PRESSURE_BURST_LINKS; ноль — выключено.
+     */
+    internal var pressureBurst = System.getenv("RB_BURST")?.toDoubleOrNull() ?: PRESSURE_BURST_LINKS
+    internal var pressureBurstCount = 0
+    /** Клетки, у которых на этом тике связь порвалась на сжатии. См. CRUSH_BURST. */
+    private var crushedCell = BooleanArray(0)
+    internal var crushBurstCount = 0
+    /** Связь лежит на контуре тела. См. MEMBRANE_TEAR_STRAIN. */
+    private var conBoundary = BooleanArray(0)
+    internal var membraneTearCount = 0
+    internal var membraneTearStrain = System.getenv("RB_MEMBRANE")?.toDoubleOrNull() ?: MEMBRANE_TEAR_STRAIN
+    internal var crushBurstOn = CRUSH_BURST && System.getenv("RB_CRUSH_OFF") == null
+
+    /**
+     * ЗАСТРЯВШАЯ В ЧУЖОЙ ТКАНИ КЛЕТКА ЛОПАЕТСЯ: центр внутри живого треугольника другого
+     * организма столько тиков подряд. 0 — не убивать, меньше нуля — не искать вовсе.
+     */
+    internal var trapKillTicks = System.getenv("RB_TRAP")?.toIntOrNull() ?: TRAP_KILL_TICKS
+    internal var trapKillCount = 0
+    /** Сколько тиков подряд центр клетки в чужой ткани. См. scanTrapped. */
+    private var trapTicks = IntArray(0)
+    private var trapGridStart = IntArray(0)
+    private var trapTriBox = IntArray(0)
+    private var trapGridItems = IntArray(0)
+    private var trapGridCount = IntArray(0)
+    /** Разбор последнего обхода: в чужой ткани, из них в треугольнике без граничных вершин, костей, своих складок. */
+    internal var dbgTrapNow = 0
+    internal var dbgTrapDeep = 0
+    internal var dbgTrapBone = 0
+    internal var dbgTrapFold = 0
+    internal var dbgTrapNs = 0L
+    /** Разбор: сколько тиков клетка пробыла в чужой ткани, прежде чем вышла сама. Корзины — dbgTrapEdges. */
+    internal val dbgTrapExit = IntArray(8)
+    internal val dbgTrapEdges = intArrayOf(1, 2, 5, 10, 30, 90, 300, Int.MAX_VALUE)
+    internal val dbgFoldExit = IntArray(8)
+    private fun dbgTrapBin(k: Int): Int { var b = 0; while (k > dbgTrapEdges[b]) b++; return b }
+    /** Складки своей ткани тоже лопаются. См. scanTrapped. */
+    internal var trapKillFolds = System.getenv("RB_TRAP_FOLD")?.let { it != "0" } ?: TRAP_KILL_FOLDS
+    internal var foldKillCount = 0
+    private var foldTicks = IntArray(0)
+
+    /**
+     * Кто сидит в чужой ткани. Раз в тик.
+     *
+     * ДЁШЕВО, ПОТОМУ ЧТО СМОТРЯТСЯ ТОЛЬКО КЛЕТКИ С КОНТАКТОМ — граница и мелкие куски.
+     * Внутренняя клетка тела в чужую ткань без своей границы не попадёт, а целиком
+     * проглоченный кусок теряет границу слой за слоем: после каждой смерти пересборка
+     * делает граничными следующих. Треугольники раскладываются по плотной сетке массивами
+     * (без хешей), клетка проверяет только треугольники своей ячейки.
+     */
+    internal fun scanTrapped() {
+        val ct = contacts ?: return
+        val t0 = System.nanoTime()
+        val n = n
+        if (trapTicks.size != n) trapTicks = IntArray(n)
+        if (foldTicks.size != n) foldTicks = IntArray(n)
+        // Всё в локальные: поле lateinit проверяется на каждом обращении.
+        val px = px; val py = py; val dead = cellDead; val org = organismOf; val ticks = trapTicks
+        val ta = triA; val tb = triB; val tc = triC; val tn = triCount
+        dbgTrapNow = 0; dbgTrapDeep = 0; dbgTrapBone = 0; dbgTrapFold = 0
+        // ХЕШ ЯЧЕЕК, А НЕ ПЛОТНАЯ СЕТКА НА РАМКУ. Осколки разлетаются, рамка всех клеток
+        // растягивается до миллиона ячеек, и почти каждое обращение к такой сетке — промах
+        // кэша: 200 мкс на обход. Таблица на ~2 треугольника на корзину целиком лежит в
+        // кэше. Совпадение корзин у разных ячеек даёт лишь лишних кандидатов — сама
+        // проверка «центр в треугольнике» точная.
+        var h = 1024
+        while (h < tn * 2) h = h shl 1
+        val mask = h - 1
+        if (trapGridStart.size < h + 1) { trapGridStart = IntArray(h + 1); trapGridCount = IntArray(h + 1) }
+        val start = trapGridStart; val cur = trapGridCount
+        java.util.Arrays.fill(start, 0, h + 1, 0)
+        val inv = 1.0 / (2.0 * body.meanLinkLength)
+        val off = 1048576.0         // сдвиг, чтобы отбросить дробь без floor у отрицательных
+        if (trapTriBox.size < tn * 4) trapTriBox = IntArray(tn * 8)
+        val box = trapTriBox
+        // 1. Ячейки каждого треугольника и сколько записей в корзине.
+        for (t in 0 until tn) {
+            val a = ta[t]; val b = tb[t]; val c = tc[t]
+            val ax = px[a]; val bx = px[b]; val cx = px[c]
+            val ay = py[a]; val by = py[b]; val cy = py[c]
+            val x0 = (minOf(ax, bx, cx) * inv + off).toInt(); var x1 = (maxOf(ax, bx, cx) * inv + off).toInt()
+            val y0 = (minOf(ay, by, cy) * inv + off).toInt(); val y1 = (maxOf(ay, by, cy) * inv + off).toInt()
+            // Вытянутый в нитку треугольник — уже не ткань, а раскладывать его дорого.
+            if ((x1 - x0 + 1) * (y1 - y0 + 1) > 16) x1 = x0 - 1
+            val o = t * 4
+            box[o] = x0; box[o + 1] = x1; box[o + 2] = y0; box[o + 3] = y1
+            for (yy in y0..y1) for (xx in x0..x1) start[((xx * 73856093) xor (yy * 19349663)) and mask]++
+        }
+        // 2. Начала корзин и раскладка.
+        var run = 0
+        for (k in 0..h) { val c = start[k]; start[k] = run; cur[k] = run; run += c }
+        if (trapGridItems.size < run) trapGridItems = IntArray(run * 2)
+        val items = trapGridItems
+        for (t in 0 until tn) {
+            val o = t * 4
+            for (yy in box[o + 2]..box[o + 3]) for (xx in box[o]..box[o + 1])
+                items[cur[((xx * 73856093) xor (yy * 19349663)) and mask]++] = t
+        }
+        // 3. Клетки с контактом: центр в чужом треугольнике своей корзины.
+        for (i in 0 until n) {
+            if (dead[i] || ct.contactRadiusOf(i) <= 0.0) { ticks[i] = 0; foldTicks[i] = 0; continue }
+            val x = px[i]; val y = py[i]
+            val xx = (x * inv + off).toInt(); val yy = (y * inv + off).toInt()
+            val k = ((xx * 73856093) xor (yy * 19349663)) and mask
+            val oi = org[i]
+            var foreign = -1; var fold = false
+            for (s in start[k] until cur[k]) {
+                val t = items[s]
+                val a = ta[t]; val b = tb[t]; val c = tc[t]
+                if (a == i || b == i || c == i) continue
+                val ax = px[a]; val ay = py[a]; val bx = px[b]; val by = py[b]; val cx = px[c]; val cy = py[c]
+                val d1 = (bx - ax) * (y - ay) - (by - ay) * (x - ax)
+                val d2 = (cx - bx) * (y - by) - (cy - by) * (x - bx)
+                val d3 = (ax - cx) * (y - cy) - (ay - cy) * (x - cx)
+                if ((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0)) continue
+                if (org[a] == oi) { fold = true; continue }
+                foreign = t
+                break
+            }
+            // Складка — центр в СВОЁМ треугольнике, где клетка не вершина: ткань налезла на
+            // себя. Считается отдельно, см. trapKillFolds.
+            if (fold && foreign < 0) {
+                foldTicks[i]++; dbgTrapFold++
+            } else {
+                if (foldTicks[i] > 0) dbgFoldExit[dbgTrapBin(foldTicks[i])]++
+                foldTicks[i] = 0
+            }
+            if (foreign < 0) {
+                if (ticks[i] > 0) dbgTrapExit[dbgTrapBin(ticks[i])]++
+                ticks[i] = 0
+                continue
+            }
+            ticks[i]++
+            dbgTrapNow++
+            if (boneOf[i] >= 0) dbgTrapBone++
+            if (ct.contactRadiusOf(ta[foreign]) <= 0.0 && ct.contactRadiusOf(tb[foreign]) <= 0.0 &&
+                ct.contactRadiusOf(tc[foreign]) <= 0.0) dbgTrapDeep++
+        }
+        dbgTrapNs += System.nanoTime() - t0
+    }
+
+    private fun burstByPressure() {
+        if (!tearingOn || contactPressure.size != n) return
+        // Порванное в последнем проходе предела длины ещё не пересобрано, а признак
+        // «осталась без связей» берётся из пересборки.
+        if ((crushBurstOn || trapKillTicks >= 0) && tearsPending) rebuildTimed()
+        if (trapKillTicks >= 0) scanTrapped()
+        val lim = pressureBurst * body.meanLinkLength
+        var any = false
+        for (i in 0 until n) {
+            if (cellDead[i] || boneOf[i] >= 0 || invMass[i] <= 0.0) continue
+            val byPressure = pressureBurst > 0.0 && contactPressure[i] > lim
+            // РАЗДАВЛЕННАЯ КЛЕТКА ЛОПАЕТСЯ: связь порвалась на сжатии, и клетка осталась
+            // совсем без связей. Иначе она свободной частицей остаётся внутри своей же
+            // смятой ткани, где с ней ничто не сталкивается.
+            val byCrush = crushBurstOn && crushedCell[i] && isFree[i]
+            val byTrap = trapKillTicks > 0 && trapTicks.size == n && trapTicks[i] >= trapKillTicks
+            val byFold = trapKillTicks > 0 && trapKillFolds && foldTicks.size == n && foldTicks[i] >= trapKillTicks
+            if (!byPressure && !byCrush && !byTrap && !byFold) continue
+            cellDead[i] = true; deadCount++
+            when { byPressure -> pressureBurstCount++; byCrush -> crushBurstCount++; byTrap -> trapKillCount++; else -> foldKillCount++ }
+            vx[i] = 0.0; vy[i] = 0.0
+            any = true
+        }
+        if (!any) return
+        for (c in 0 until conCount) if (cellDead[conA[c]] || cellDead[conB[c]]) conDead[c] = true
+        tearsPending = true
+        rebuildTimed()
     }
 
     /**
@@ -4452,6 +4689,8 @@ class RealBodyDemo(private val bodyPath: String,
         var best = -1
         var bestD2 = (pickRadius * pickRadius).toDouble()
         for (i in 0 until n) {
+            // Мёртвую не схватить и не пометить: на экране её нет.
+            if (cellDead[i]) continue
             val dx = fx(i) - mouseX; val dy = fy(i) - mouseY
             val d2 = dx * dx + dy * dy
             if (d2 < bestD2) { bestD2 = d2; best = i }
@@ -4697,7 +4936,7 @@ class RealBodyDemo(private val bodyPath: String,
             // Свободные частицы рисуем отдельно: они не лежат ни на одном граничном
             // ребре, и цикл выше их просто не видит.
             for (i in 0 until n) {
-                if (!isFree[i]) continue
+                if (!isFree[i] || cellDead[i]) continue
                 shapes.circle(fx(i), fy(i), ctDraw.contactRadiusOf(i).toFloat(), 12)
             }
         }

@@ -91,7 +91,7 @@ fun main(args: Array<String>) {
             .format(label, a1[0], a1[1], moved / meanLink, pen, att, ccd, cap, trail))
         if (stages) {
             P.setStageProbe(false)
-            val names = arrayOf("svyazi", "ploshadi", "izgib", "kost", "predel_dliny", "kontakty", "prepare_ccd", "otskok_v", "sreda_v")
+            val names = arrayOf("svyazi", "ploshadi", "izgib", "kost", "predel_dliny", "kontakty", "prepare_ccd", "otskok_v", "mysh_vyazk", "loskuty", "sreda_aniz", "sreda_izo", "snyat_dreif")
             val lp = P.stageL(); val sx = P.stagePx(); val sy = P.stagePy()
             for (k in names.indices) println("      STAGE%d %-13s | dP %12.5f | dL %12.5f"
                 .format(k, names[k], sqrt(sx[k] * sx[k] + sy[k] * sy[k]), lp[k]))

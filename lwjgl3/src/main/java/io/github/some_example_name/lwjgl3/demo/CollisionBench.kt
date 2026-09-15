@@ -252,6 +252,8 @@ fun main(args: Array<String>) {
      */
     fun trapped(): DoubleArray {
         val boneOf = demoField("boneOf") as IntArray
+        // Лопнувшая клетка лежит, где умерла, но её уже нет: застрявшей она не считается.
+        val dead = demoField("cellDead") as BooleanArray
         val bigs = (0 until P.organismCount)
             .filter { P.organismSize(it) > 20 }
             .sortedByDescending { P.organismSize(it) }
@@ -271,7 +273,7 @@ fun main(args: Array<String>) {
                 }
             }
             for (i in 0 until P.n) {
-                if (P.organismOf[i] == o) continue
+                if (P.organismOf[i] == o || dead[i]) continue
                 val x = P.px[i]; val y = P.py[i]
                 if (x < minX || x > maxX || y < minY || y > maxY) continue
                 if (!insideOf(o, x, y, ba, bb)) continue
@@ -405,14 +407,15 @@ fun main(args: Array<String>) {
 
     println("тело: $path,  клеток ${P.n},  средняя связь %.4f".format(meanLink))
     println()
-    println("%-20s %9s %8s %8s %8s %8s %8s".format(
-        "сцена", "дребезг", "выброс", "внутри", "в кости", "проник", "|P|"))
+    println("%-20s %9s %8s %8s %8s %8s %8s %8s".format(
+        "сцена", "дребезг", "выброс", "внутри", "в кости", "проник", "|P|", "умерло"))
 
     for (s in scenes) {
         if (only != null && !s.name.startsWith(only)) continue
         val ch = ArrayList<Double>(); val fl = ArrayList<Double>()
         val tr = ArrayList<Double>(); val bn = ArrayList<Double>()
         val pn = ArrayList<Double>(); val pp = ArrayList<Double>()
+        val dd = ArrayList<Double>()
 
         // 3x3 = 9 вариаций: медиана уже устойчива, а прогон втрое короче.
         val angles = if (s.vary) doubleArrayOf(0.0, 45.0, 90.0) else doubleArrayOf(0.0)
@@ -428,6 +431,7 @@ fun main(args: Array<String>) {
             // Спокойная фаза: вот тут любая работа контактов — патология.
             val ct = P.contactsObj()!!
             ct.impulseAccum = 0.0
+            val dead0 = demoField("deadCount") as Int
             var flail = 0.0
             for (fr in 1..(6.0 / dt).toInt()) {
                 P.frame(dt, sub, contract = false)
@@ -439,10 +443,23 @@ fun main(args: Array<String>) {
             tr.add(t[0]); bn.add(t[1])
             pn.add(P.contactsObj()!!.maxPenetration(P.px, P.py))
             pp.add(sqrt(P.pX() * P.pX() + P.pY() * P.pY()))
+            dd.add(((demoField("deadCount") as Int) - dead0).toDouble())
+            if (System.getenv("CB_DIAG") != null) {
+                val c2 = P.contactsObj()!!
+                val wi = c2.worstI; val wj = c2.worstJ
+                val dm = demoField("cellDead") as BooleanArray
+                val im = demoField("invMass") as DoubleArray
+                println("    [%s угол %.0f сдвиг %.0f] умерло всего %d (давл %d разд %d застр %d), проник %.3f: #%d орг %d m=%s своб %s  #%d орг %d m=%s своб %s, d=%.3f св".format(
+                    s.name, angle, off, demoField("deadCount") as Int,
+                    demoField("pressureBurstCount") as Int, demoField("crushBurstCount") as Int, demoField("trapKillCount") as Int,
+                    pn.last(), wi, if (wi >= 0) P.organismOf[wi] else -1, if (wi >= 0) (if (im[wi] == 0.0) "0" else "1") else "-", if (wi >= 0) P.isFree(wi) else false,
+                    wj, if (wj >= 0) P.organismOf[wj] else -1, if (wj >= 0) (if (im[wj] == 0.0) "0" else "1") else "-", if (wj >= 0) P.isFree(wj) else false,
+                    if (wi >= 0) Math.hypot(P.px[wi] - P.px[wj], P.py[wi] - P.py[wj]) / meanLink else 0.0))
+            }
         }
         fun med(v: List<Double>) = if (v.isEmpty()) 0.0 else v.sorted()[v.size / 2]
-        println("%-20s %9.1f %8.2f %8.0f %8.0f %8.3f %8.2f".format(
-            s.name, med(ch), med(fl), med(tr), med(bn), med(pn), med(pp)))
+        println("%-20s %9.1f %8.2f %8.0f %8.0f %8.3f %8.2f %8.0f".format(
+            s.name, med(ch), med(fl), med(tr), med(bn), med(pn), med(pp), med(dd)))
     }
 
     // ------------------------------------------------------------------

@@ -20,6 +20,7 @@ fun main(args: Array<String>) {
     val dt = P.const("DT")
     val sub = P.constInt("SUBSTEPS")
     P.setContacts(true)
+    if (System.getenv("PERF_NOSPIN") != null) P.demo.cancelSpinOn = false
     P.resetState()
 
     val warm = 300

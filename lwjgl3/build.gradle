@@ -329,7 +329,7 @@ tasks.register('collisionBench', JavaExec) {
   args = [project.findProperty('body') ?: 'body-export.txt',
           project.findProperty('scene') ?: '',
           project.findProperty('hunt') ?: '']
-  jvmArgs '-Dfile.encoding=UTF-8'
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
 }
 
 // Физический стенд с окном: то же тело и тот же решатель, что в collisionBench,

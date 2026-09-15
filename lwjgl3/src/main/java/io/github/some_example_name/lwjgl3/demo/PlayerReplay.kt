@@ -214,6 +214,7 @@ fun main(args: Array<String>) {
         return when {
             c != null && c < conDead.size && !conDead[c] -> "жива"
             c != null -> "порвана"
+            P.get<Set<Long>?>("everLinked")?.contains(minOf(i, j).toLong() * 1000003L + maxOf(i, j).toLong()) == true -> "порвана"
             ct != null && ct.isBonded(i, j) -> "касание в покое, исключена"
             else -> "не было"
         }
@@ -259,6 +260,18 @@ fun main(args: Array<String>) {
             insideOwn -> "  ЦЕНТР В СВОЕЙ ЖЕ ТКАНИ (складка), до края %.2f связи\n".format(insideDepth / meanLink)
             else -> "  ЦЕНТР В ТКАНИ ЧУЖОГО ОРГАНИЗМА $ins, до её края %.2f связи\n".format(insideDepth / meanLink)
         })
+        // ИЗ КАКОГО ИСХОДНОГО ТЕЛА клетка и её «хозяин». Копии тела лежат в массивах
+        // подряд, свободные частицы — в конце; организм после разрыва перенумеровывается,
+        // а номер копии остаётся честным ответом, своя это ткань или чужая.
+        if (ins >= 0 && !insideOwn) {
+            val copies = hdr["copies"]?.toInt() ?: 2
+            val free = hdr["free"]?.toInt() ?: 6
+            val per = (P.n - free) / copies
+            fun copyOf(c: Int) = if (c >= per * copies) "свободная частица" else "тело ${c / per}"
+            val hostCells = (0 until P.n).filter { org[it] == ins }
+            val hostCopies = hostCells.groupingBy { copyOf(it) }.eachCount()
+            t.append("  исходно: клетка — ${copyOf(i)}, хозяин — $hostCopies\n")
+        }
 
         // Соседи в пределах 1.3 суммы радиусов — и связанные, и нет: прилипание часто
         // сидит как раз в паре, которую исключили из столкновений.
@@ -365,15 +378,297 @@ fun main(args: Array<String>) {
             if (v > vmax) vmax = v
         }
         val pen = P.contactsObj()?.maxPenetration(P.px, P.py) ?: 0.0
-        println("  %6d | %5d | %4d | %5d (%4d) | %6.3f | %5.3f | %5.3f | %5.2f | пересборок %d за %.1f мс | h=%x".format(
+        println("  %6d | %5d | %4d | %5d (%4d) | %6.3f | %5.3f | %5.3f | %5.2f | пересборок %d за %.1f мс | лопнуло давл %d разд %d | мембрана %d | ловушка %d (глуб %d, кость %d, складок %d) убито %d, %.0f мкс | h=%x".format(
             tk, P.killedLinks(), P.get<Int>("organismCount"), inside, deep,
-            demo.dbgMaxOverStrain, minRatio, pen, vmax, demo.dbgRebuildN, demo.dbgRebuildNs / 1e6,
+            demo.dbgMaxOverStrain, minRatio, pen, vmax, demo.dbgRebuildN, demo.dbgRebuildNs / 1e6, demo.pressureBurstCount, demo.crushBurstCount, demo.membraneTearCount,
+            demo.dbgTrapNow, demo.dbgTrapDeep, demo.dbgTrapBone, demo.dbgTrapFold, demo.trapKillCount, demo.dbgTrapNs / 1e3,
             PlayerLog.stateHash(P.n, P.px, P.py, P.vx, P.vy)))
         if (demo.dbgRebuildN > 0) println("         части пересборки, мс: " +
             demo.dbgRebuildSec.joinToString(" ") { "%.1f".format(it / 1e6) })
         demo.dbgRebuildSec.fill(0L)
-        demo.dbgRebuildN = 0; demo.dbgRebuildNs = 0L
+        demo.dbgRebuildN = 0; demo.dbgRebuildNs = 0L; demo.dbgTrapNs = 0L
     }
+
+    // ------------------------------------------------------------------
+    //  РАСКРУТКА КУСКА: PR_SPIN=клетка,тикС,тикПо,окно
+    //
+    //  Кусок — организм, в котором клетка сейчас. Каждый тик замер по стадиям идёт
+    //  только по его клеткам (dbgOnly), и печатается, какая стадия сколько угловой
+    //  скорости ему добавила за окно, рядом с тем, сколько добавилось на самом деле.
+    //  Внутренние стадии обязаны давать ноль: парная сила вдоль линии центров и
+    //  градиент площади момента не создают. Законно крутить кусок могут только
+    //  контакты с чужими телами и среда.
+    // ------------------------------------------------------------------
+    val spinSpec = System.getenv("PR_SPIN")?.split(',')?.map { it.trim().toInt() }
+    val stageNames = arrayOf("связи", "площади", "изгиб", "кость", "предел", "контакты", "CCD",
+        "отскок", "мышь+вязк", "лоскуты", "среда аниз", "среда изо", "дрейф")
+    var spinMask: BooleanArray? = null
+    var spinL0 = 0.0
+    val spinAcc = DoubleArray(stageNames.size)
+    var spinActual = 0.0
+    var spinHeader = false
+    val spinWork = DoubleArray(stageNames.size)
+    val spinPx = DoubleArray(stageNames.size)
+    val spinPy = DoubleArray(stageNames.size)
+    var spinP0x = 0.0; var spinP0y = 0.0
+    var spinActPx = 0.0; var spinActPy = 0.0
+
+    /** Импульс и масса клеток маски. */
+    fun maskP(mask: BooleanArray): DoubleArray {
+        var m0 = 0.0; var sx = 0.0; var sy = 0.0
+        for (i in 0 until P.n) {
+            if (!mask[i] || P.invMass[i] <= 0.0) continue
+            val m = 1.0 / P.invMass[i]
+            m0 += m; sx += m * P.vx[i]; sy += m * P.vy[i]
+        }
+        return doubleArrayOf(sx, sy, m0)
+    }
+    var spinTicks = 0
+
+    /** Что внутри куска держит напряжение: перерастянутые связи, свои контакты, кости. */
+    fun fragmentReport(mask: BooleanArray) {
+        val conCount: Int = P.get("conCount")
+        val conA: IntArray = P.get("conA"); val conB: IntArray = P.get("conB")
+        val conRest: DoubleArray = P.get("conRest"); val conMaxLen: DoubleArray = P.get("conMaxLen")
+        val conDead: BooleanArray = P.get("conDead")
+        val conMuscle: IntArray = P.get("conMuscle")
+        val boneOf: IntArray = P.get("boneOf")
+        var links = 0; var atMax = 0; var minR = 9.0; var maxR = 0.0
+        val top = ArrayList<Pair<Int, Double>>()
+        for (c in 0 until conCount) {
+            if (!mask[conA[c]] || c < conDead.size && conDead[c]) continue
+            links++
+            val dx = P.px[conA[c]] - P.px[conB[c]]; val dy = P.py[conA[c]] - P.py[conB[c]]
+            val len = sqrt(dx * dx + dy * dy)
+            val r = len / conRest[c]
+            if (len >= conMaxLen[c] * 0.999) atMax++
+            if (r < minR) minR = r
+            if (r > maxR) maxR = r
+            top.add(Pair(c, r))
+        }
+        top.sortByDescending { it.second }
+        println("       КУСОК: связей $links, на пределе длины $atMax, длина/покой от %.3f до %.3f".format(minR, maxR))
+        println("       самые растянутые: " + top.take(8).joinToString("  ") { (c, r) ->
+            "#%d-#%d %.3f%s%s".format(conA[c], conB[c], r,
+                if (conMuscle[c] >= 0) " мышца" else "",
+                if (boneOf[conA[c]] >= 0 || boneOf[conB[c]] >= 0) " у кости" else "")
+        })
+        val bones = HashSet<Int>()
+        for (i in 0 until P.n) if (mask[i] && boneOf[i] >= 0) bones.add(boneOf[i])
+        val ct = P.contactsObj()
+        var own = 0; var ownDeep = 0.0
+        val lines = ArrayList<String>()
+        val lop: HashMap<Long, Int> = P.get("linkOfPair")
+        if (ct != null) {
+            val ids = (0 until P.n).filter { mask[it] && ct.contactRadiusOf(it) > 0.0 }
+            for (a in ids.indices) for (b in a + 1 until ids.size) {
+                val i = ids[a]; val j = ids[b]
+                if (ct.isBonded(i, j)) continue
+                val dx = P.px[i] - P.px[j]; val dy = P.py[i] - P.py[j]
+                val rc = ct.contactDistanceOf(i, j)
+                val d = sqrt(dx * dx + dy * dy)
+                if (d >= rc) continue
+                own++
+                if (1 - d / rc > ownDeep) ownDeep = 1 - d / rc
+                val rr = ct.contactRadiusOf(i) + ct.contactRadiusOf(j)
+                val rdx = (P.body.x[i] - P.body.x[j]).toDouble(); val rdy = (P.body.y[i] - P.body.y[j]).toDouble()
+                val restD = sqrt(rdx * rdx + rdy * rdy)
+                val pk = minOf(i, j).toLong() * 1000003L + maxOf(i, j).toLong()
+                val wasLinked = lop.containsKey(pk) || P.get<Set<Long>?>("everLinked")?.contains(pk) == true
+                lines.add("         #%d-#%d  d/упор %.3f  упор %s  в позе покоя d/(ri+rj) %.3f  %s%s".format(
+                    i, j, d / rc, if (rc < rr) "расстояние покоя" else "сумма радиусов", restD / rr,
+                    if (wasLinked) "бывшие соседи" else "связаны не были",
+                    if (boneOf[i] >= 0 || boneOf[j] >= 0) ", у кости" else ""))
+            }
+        }
+        println("       костей в куске ${bones.size} ${bones.sorted()}, своих перекрытых пар $own (глубже всего %.3f от упора)".format(ownDeep))
+        for (s in lines.take(30)) println(s)
+    }
+
+    /** Момент импульса клеток маски относительно их центра масс и момент инерции. */
+    fun maskLJ(mask: BooleanArray): DoubleArray {
+        var m0 = 0.0; var cx = 0.0; var cy = 0.0
+        for (i in 0 until P.n) {
+            if (!mask[i] || P.invMass[i] <= 0.0) continue
+            val m = 1.0 / P.invMass[i]
+            m0 += m; cx += m * P.px[i]; cy += m * P.py[i]
+        }
+        if (m0 <= 0.0) return doubleArrayOf(0.0, 0.0)
+        cx /= m0; cy /= m0
+        var l = 0.0; var j = 0.0
+        for (i in 0 until P.n) {
+            if (!mask[i] || P.invMass[i] <= 0.0) continue
+            val m = 1.0 / P.invMass[i]
+            val rx = P.px[i] - cx; val ry = P.py[i] - cy
+            l += m * (rx * P.vy[i] - ry * P.vx[i])
+            j += m * (rx * rx + ry * ry)
+        }
+        return doubleArrayOf(l, j)
+    }
+
+    fun spinTick(tk: Int) {
+        val sp = spinSpec ?: return
+        val cell = sp[0]; val from = sp[1]; val to = sp[2]; val every = sp.getOrElse(3) { 1 }
+        val mask = spinMask
+        if (mask != null && tk in from..to) {
+            val lj = maskLJ(mask)
+            spinActual += lj[0] - spinL0
+            for (k in spinAcc.indices) spinAcc[k] += demo.dbgStageL[k]
+            for (k in spinWork.indices) spinWork[k] += demo.dbgStageAbs[k]
+            for (k in spinPx.indices) { spinPx[k] += demo.dbgStagePx[k]; spinPy[k] += demo.dbgStagePy[k] }
+            val pNow = maskP(mask)
+            spinActPx += pNow[0] - spinP0x; spinActPy += pNow[1] - spinP0y
+            spinTicks++
+            if ((tk - from) % every == every - 1 || tk == to) {
+                if (!spinHeader) {
+                    spinHeader = true
+                    println("  РАСКРУТКА клетки #$cell: прирост угловой скорости куска за окно, рад/с (ΔL / J)")
+                    println("     тик  орг  клеток  ω рад/с |  всего  | " + stageNames.joinToString(" | "))
+                    fragmentReport(mask)
+                }
+                println("       работа стадий, связей смещения за тик на клетку: " + stageNames.indices.joinToString("  ") {
+                    "%s %.4f".format(stageNames[it], spinWork[it] / spinTicks / meanLink / maxOf(1, mask.count { m -> m }))
+                })
+                spinWork.fill(0.0); spinTicks = 0
+                val j = if (lj[1] > 0.0) lj[1] else 1.0
+                val org: IntArray = P.get("organismOf")
+                var size = 0
+                for (i in 0 until P.n) if (mask[i]) size++
+                println("   %5d %4d %6d %+8.3f | %+7.3f | %s".format(tk, org[cell], size, lj[0] / j, spinActual / j,
+                    spinAcc.joinToString(" | ") { "%+7.3f".format(it / j) }))
+                demo.internalMom?.let { im ->
+                    val hh = dt / P.constInt("SUBSTEPS")
+                    println("       снятие: остаток группы %+.3f рад/с".format(im.dbgLint / hh / j))
+                    im.dbgLint = 0.0
+                    im.dbgCell = cell
+                }
+                // ТЯГА: прирост скорости центра масс за окно, клеток/тик. Вдоль — по текущему
+                // направлению движения куска, поперёк — то, что гнёт траекторию.
+                val pm = maskP(mask)
+                val mm = if (pm[2] > 0.0) pm[2] else 1.0
+                val k2 = dt / meanLink / mm
+                val vcx = pm[0] * k2; val vcy = pm[1] * k2
+                val vl = sqrt(vcx * vcx + vcy * vcy)
+                val ux = if (vl > 1e-12) vcx / vl else 1.0; val uy = if (vl > 1e-12) vcy / vl else 0.0
+                fun along(x: Double, y: Double) = (x * ux + y * uy) * k2 * 1000.0
+                fun across(x: Double, y: Double) = (-x * uy + y * ux) * k2 * 1000.0
+                println("       ДВИЖЕНИЕ: скорость центра масс %.4f кл/тик; прирост за окно, 1e-3 кл/тик, вдоль/поперёк: всего %+.2f/%+.2f | %s".format(
+                    vl, along(spinActPx, spinActPy), across(spinActPx, spinActPy),
+                    stageNames.indices.filter { kk -> Math.abs(spinPx[kk]) + Math.abs(spinPy[kk]) > 0.0 }.joinToString(" | ") { kk ->
+                        "%s %+.2f/%+.2f".format(stageNames[kk], along(spinPx[kk], spinPy[kk]), across(spinPx[kk], spinPy[kk]))
+                    }))
+                spinPx.fill(0.0); spinPy.fill(0.0); spinActPx = 0.0; spinActPy = 0.0
+                spinAcc.fill(0.0); spinActual = 0.0
+            }
+        }
+        if (tk >= from - 1 && tk < to) {
+            val org: IntArray = P.get("organismOf")
+            val o = org[cell]
+            val m = BooleanArray(P.n) { org[it] == o }
+            // Пятый параметр 1 — вся группа тел, соединённых контактами с этим куском.
+            if (sp.getOrElse(4) { 0 } == 1) {
+                val ct = P.contactsObj()
+                val inG = HashSet<Int>(); inG.add(o)
+                var grew = true
+                while (grew && ct != null) {
+                    grew = false
+                    for (k in 0 until ct.contactCount) {
+                        val a = org[ct.contactI(k)]; val b = org[ct.contactJ(k)]
+                        if (a in inG && b !in inG) { inG.add(b); grew = true }
+                        if (b in inG && a !in inG) { inG.add(a); grew = true }
+                    }
+                }
+                for (i in 0 until P.n) m[i] = org[i] in inG
+                if (tk == from - 1) println("       ГРУППА: " + inG.sorted().joinToString("  ") { g ->
+                    val cells = (0 until P.n).filter { org[it] == g }
+                    val first = cells.first()
+                    val ins = insideTissue(first)
+                    "орг $g: клеток ${cells.size}, клетка #$first" +
+                        (if (ins >= 0 && !insideOwn) ", внутри ткани орг $ins на %.2f св".format(insideDepth / meanLink) else "")
+                })
+            }
+            demo.dbgOnly = m; demo.dbgStages = true
+            demo.dbgStageL.fill(0.0); demo.dbgStagePx.fill(0.0); demo.dbgStagePy.fill(0.0)
+            demo.dbgStageAbs.fill(0.0)
+            spinMask = m
+            spinL0 = maskLJ(m)[0]
+            val p0 = maskP(m); spinP0x = p0[0]; spinP0y = p0[1]
+        } else {
+            demo.dbgStages = false; demo.dbgOnly = null; spinMask = null
+        }
+    }
+
+    // ------------------------------------------------------------------
+    //  ПОШАГОВЫЙ СЛЕД КЛЕТКИ: PR_TRACE=клетка,тикС,тикПо
+    //
+    //  Каждый подшаг: где клетка, в чьей ткани, ближайшая чужая клетка и ближайшее
+    //  чужое граничное ребро — расстояние до него, с какой стороны, и есть ли зазор в
+    //  мембране (длина ребра против суммы контактных радиусов его концов). Этим видно,
+    //  КАК клетка попала внутрь: протиснулась в щель, влетела в дыру разрыва или
+    //  перескочила ребро за подшаг.
+    // ------------------------------------------------------------------
+    val traceSpec = System.getenv("PR_TRACE")?.split(',')?.map { it.trim().toInt() }
+    var traceTick = 0
+    fun traceSubstep(step: Int) {
+        val sp = traceSpec ?: return
+        val i = sp[0]
+        val ct = P.contactsObj() ?: return
+        val org: IntArray = P.get("organismOf")
+        val dead: BooleanArray = P.get("cellDead")
+        val isFree: BooleanArray = P.get("isFree")
+        val ba: IntArray = P.get("boundA"); val bb: IntArray = P.get("boundB"); val bc: Int = P.get("boundCount")
+        val x = P.px[i]; val y = P.py[i]
+        val ri = ct.contactRadiusOf(i)
+        val v = sqrt(P.vx[i] * P.vx[i] + P.vy[i] * P.vy[i]) * dt / meanLink
+        val ins = insideTissue(i)
+        // ближайшая чужая клетка
+        var nj = -1; var nd = Double.MAX_VALUE
+        for (j in 0 until P.n) {
+            if (j == i || dead[j] || org[j] == org[i]) continue
+            val dx = P.px[j] - x; val dy = P.py[j] - y
+            val d = sqrt(dx * dx + dy * dy)
+            if (d < nd) { nd = d; nj = j }
+        }
+        // ближайшее чужое граничное ребро
+        var be = -1; var bd = Double.MAX_VALUE; var bs = 0.0
+        for (e in 0 until bc) {
+            val a = ba[e]; val b = bb[e]
+            if (org[a] == org[i] || dead[a] || dead[b]) continue
+            val ax = P.px[a]; val ay = P.py[a]
+            val ex = P.px[b] - ax; val ey = P.py[b] - ay
+            val len2 = ex * ex + ey * ey
+            var s = if (len2 < 1e-18) 0.0 else ((x - ax) * ex + (y - ay) * ey) / len2
+            if (s < 0.0) s = 0.0 else if (s > 1.0) s = 1.0
+            val qx = ax + ex * s - x; val qy = ay + ey * s - y
+            val d = sqrt(qx * qx + qy * qy)
+            if (d < bd) { bd = d; be = e; bs = ex * (y - ay) - ey * (x - ax) }
+        }
+        val edgeStr = if (be < 0) "нет" else {
+            val a = ba[be]; val b = bb[be]
+            val ex = P.px[b] - P.px[a]; val ey = P.py[b] - P.py[a]
+            val len = sqrt(ex * ex + ey * ey)
+            val seal = ct.contactRadiusOf(a) + ct.contactRadiusOf(b)
+            "#%d-#%d орг %d: до ребра %.3f св, сторона %s, длина %.3f св, щель %+.3f св".format(
+                a, b, org[a], bd / meanLink, if (bs > 0) "+" else "-", len / meanLink, (len - seal) / meanLink)
+        }
+        var cc = 0; var cmin = 9.0
+        for (k in 0 until ct.contactCount) {
+            val a = ct.contactI(k); val b = ct.contactJ(k)
+            if (a != i && b != i) continue
+            val j = if (a == i) b else a
+            val dx = P.px[j] - x; val dy = P.py[j] - y
+            val q = sqrt(dx * dx + dy * dy) / ct.contactDistanceOf(i, j)
+            cc++; if (q < cmin) cmin = q
+        }
+        println("   %d.%02d  орг %d%s r=%.2f  v=%.2f кл/тик  %s  | ближайшая чужая #%d (орг %d, r=%.2f) на %.3f св | ребро %s | контактов %d%s | пересборок %d".format(
+            traceTick, step, org[i], if (isFree[i]) " своб" else "", ri / meanLink, v,
+            if (ins >= 0 && !insideOwn) "В ТКАНИ орг $ins" else "снаружи",
+            nj, if (nj >= 0) org[nj] else -1, if (nj >= 0) ct.contactRadiusOf(nj) / meanLink else 0.0, nd / meanLink,
+            edgeStr, cc, if (cc > 0) " (мин d/упор %.3f)".format(cmin) else "", demo.dbgRebuildN))
+    }
+
+    val pressureThresholds = doubleArrayOf(4.0, 8.0, 12.0, 16.0, 20.0)
+    val pressureOver = Array(pressureThresholds.size) { HashSet<Int>() }
 
     var markNo = 0
     val eventNames = mapOf(
@@ -381,6 +676,12 @@ fun main(args: Array<String>) {
         "E" to "изгиб", "N" to "выбрана сцена", "S" to "запуск сцены", "P" to "пуля", "O" to "таран",
         "D" to "схватил клетку", "U" to "отпустил", "UNMARK" to "метка снята", "END" to "окно закрыто")
 
+    // Опыт: клетка лопается от давления контактов выше PR_BURST связей за тик.
+    System.getenv("PR_BURST")?.toDoubleOrNull()?.let { demo.pressureBurst = it; println("  ОПЫТ: лопание от давления > $it связей/тик") }
+    if (System.getenv("PR_CRUSH_OFF") != null) { demo.crushBurstOn = false; println("  ОПЫТ: раздавленная клетка НЕ лопается") }
+    System.getenv("PR_MEMBRANE")?.toDoubleOrNull()?.let { demo.membraneTearStrain = it; println("  ОПЫТ: порог разрыва мембраны $it (меньше нуля — общий)") }
+    // Старт с выключенным снятием момента — включить с тика через PR_OFF_AT=тик,+spincancel.
+    if (System.getenv("PR_SPINCANCEL_OFF") != null) demo.cancelSpinOn = false
     System.getenv("PR_AB")?.toIntOrNull()?.let { at ->
         BoundaryContacts.abLegacy = at > 0
         println("  A/B: до тика $at контакт старый, дальше нынешний")
@@ -413,6 +714,67 @@ fun main(args: Array<String>) {
             }
         },
         onTick = {
+            // ДАВЛЕНИЕ КОНТАКТОВ: PR_PRESSURE=тикС,тикПо[,клетка...] — наибольшее за тик,
+            // сколько клеток выше порогов и давление перечисленных клеток. В связях.
+            System.getenv("PR_PRESSURE")?.split(',')?.map { it.trim().toInt() }?.let { ps ->
+                val tk = demo.currentTick
+                if (tk in ps[0]..ps[1]) {
+                    val pr = demo.contactPressure
+                    val boneOf: IntArray = P.get("boneOf")
+                    var mx = 0.0; var mi = -1; var c1 = 0; var c2 = 0; var c4 = 0; var mxSoft = 0.0
+                    for (i in 0 until P.n) {
+                        val p = pr[i] / meanLink
+                        if (p > mx) { mx = p; mi = i }
+                        if (boneOf[i] < 0 && p > mxSoft) mxSoft = p
+                        if (p > 1.0) c1++; if (p > 2.0) c2++; if (p > 4.0) c4++
+                    }
+                    for (i in 0 until P.n) {
+                        if (boneOf[i] >= 0) continue
+                        val p = pr[i] / meanLink
+                        for ((k, th) in pressureThresholds.withIndex()) if (p > th) pressureOver[k].add(i)
+                    }
+                    if (System.getenv("PR_PRESSURE_QUIET") == null) println("  ДАВЛЕНИЕ тик %d: макс %.3f (клетка #%d%s), мягкие макс %.3f, >1: %d, >2: %d, >4: %d%s".format(
+                        tk, mx, mi, if (mi >= 0 && boneOf[mi] >= 0) " кость" else "", mxSoft, c1, c2, c4,
+                        ps.drop(2).joinToString("") { c -> "  #%d=%.3f".format(c, pr[c] / meanLink) }))
+                }
+            }
+            traceSpec?.let { tr ->
+                val tk = demo.currentTick
+                if (tk >= tr[1] && tk < tr[2]) {
+                    traceTick = tk
+                    demo.dbgRebuildN = 0
+                    demo.dbgSubstepHook = { s -> traceSubstep(s) }
+                } else demo.dbgSubstepHook = null
+            }
+            // Эксперимент поверх журнала: PR_OFF_AT=тик,что — с тика выключить среду
+            // (medium) или контакты (contacts). Контрольные суммы после этого, конечно,
+            // расходятся — это уже не сессия игрока, а опыт на её состоянии.
+            System.getenv("PR_OFF_AT")?.split(',')?.let { spec ->
+                val at = spec[0].trim().toInt()
+                if (demo.currentTick == at) for (what in spec.drop(1)) when (what.trim()) {
+                    "medium" -> { P.setDragOff(true); demo.dbgIsoDragOff = true }
+                    "aniso" -> P.setDragOff(true)
+                    "bones" -> P.setBonesRigid(false)
+                    "spincancel" -> demo.cancelSpinOn = false
+                    "+spincancel" -> demo.cancelSpinOn = true
+                    "contacts" -> P.setContacts(false)
+                }
+            }
+            // Опыт: PR_REMOVE_AT=тик,клетка,клетка... — унести организмы этих клеток далеко и
+            // остановить. Проверка «виноваты ли именно они».
+            System.getenv("PR_REMOVE_AT")?.split(',')?.map { it.trim().toInt() }?.let { rm ->
+                if (demo.currentTick == rm[0]) {
+                    val org: IntArray = P.get("organismOf")
+                    val orgs = rm.drop(1).map { org[it] }.toSet()
+                    var k = 0
+                    for (i in 0 until P.n) if (org[i] in orgs) {
+                        P.px[i] += 500.0 + 3.0 * (k % 50); P.py[i] += 500.0 + 3.0 * (k / 50); k++
+                        P.prevX[i] = P.px[i]; P.prevY[i] = P.py[i]; P.vx[i] = 0.0; P.vy[i] = 0.0
+                    }
+                    println("  ОПЫТ: унесено клеток $k из организмов $orgs")
+                }
+            }
+            spinTick(demo.currentTick)
             // Хронология удара: PR_TIMELINE=тикС,тикПо
             System.getenv("PR_TIMELINE")?.split(',')?.map { it.trim().toInt() }?.let { tl ->
                 val tk = demo.currentTick
@@ -475,8 +837,32 @@ fun main(args: Array<String>) {
     }
 
     println()
+    if (System.getenv("PR_PRESSURE") != null) {
+        println("--- давление: сколько мягких клеток хоть раз превысили порог (связей за тик) ---")
+        for ((k, th) in pressureThresholds.withIndex()) println("  > %.0f: %d клеток".format(th, pressureOver[k].size) +
+            if (watched.isNotEmpty()) ", из помеченных " + watched.count { it in pressureOver[k] } + " из " + watched.size else "")
+    }
+    System.getenv("PR_TRAP_BENCH")?.let {
+        for (k in 0 until 300) demo.scanTrapped()
+        val reps = 2000
+        val t0 = System.nanoTime()
+        for (k in 0 until reps) demo.scanTrapped()
+        val per = (System.nanoTime() - t0) / 1e3 / reps
+        val tn: Int = P.get("triCount")
+        println("--- обход застрявших отдельно: %.1f мкс за вызов, треугольников %d, клеток %d ---".format(per, tn, P.n))
+    }
     println("--- итог ---")
     println("  тиков воспроизведено ${demo.currentTick} (${sec(demo.currentTick)}) за %.1f с".format(secs))
+    println("  в чужой ткани и вышли сами, по длительности (тиков): " + demo.dbgTrapEdges.indices.joinToString("  ") { b ->
+        val lo = if (b == 0) 1 else demo.dbgTrapEdges[b - 1] + 1
+        val hi = demo.dbgTrapEdges[b]
+        (if (hi == Int.MAX_VALUE) "$lo+" else if (lo == hi) "$lo" else "$lo-$hi") + ": " + demo.dbgTrapExit[b]
+    } + "  | убито застрявших ${demo.trapKillCount}")
+    println("  складки своей ткани и вышли сами, по длительности (тиков): " + demo.dbgTrapEdges.indices.joinToString("  ") { b ->
+        val lo = if (b == 0) 1 else demo.dbgTrapEdges[b - 1] + 1
+        val hi = demo.dbgTrapEdges[b]
+        (if (hi == Int.MAX_VALUE) "$lo+" else if (lo == hi) "$lo" else "$lo-$hi") + ": " + demo.dbgFoldExit[b]
+    } + "  | убито складок ${demo.foldKillCount}")
     val ok = demo.replayHashOk; val bad = demo.replayHashBad
     if (ok + bad == 0) println("  контрольных сумм в журнале нет — совпадение с игрой не проверено")
     else if (bad == 0) println("  контрольные суммы: все $ok сошлись — воспроизведение побитово то же, что видел игрок")
