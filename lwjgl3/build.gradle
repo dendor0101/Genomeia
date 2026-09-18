@@ -356,7 +356,7 @@ tasks.register('perfBench', JavaExec) {
   mainClass = 'io.github.some_example_name.lwjgl3.demo.PerfBenchKt'
   workingDir = rootProject.projectDir
   args = [project.findProperty('body') ?: 'body-export.txt']
-  jvmArgs '-Dfile.encoding=UTF-8'
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
 }
 
 tasks.register('softGridBench', JavaExec) {

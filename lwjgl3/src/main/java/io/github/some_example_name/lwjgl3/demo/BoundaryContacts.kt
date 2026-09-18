@@ -43,13 +43,13 @@ import kotlin.math.sqrt
 class BoundaryContacts(
     private val n: Int,
     /** Индексы граничных клеток. Только они участвуют в контактах. */
-    private val verts: IntArray,
+    private var verts: IntArray,
     /** Смежность в формате CSR: adjStart[i]..adjStart[i+1] — соседи клетки i. */
     private val adjStart: IntArray,
-    private val adj: IntArray,
+    private var adj: IntArray,
     private val radius: DoubleArray,
     /** Сторона ячейки сетки. Должна быть не меньше наибольшего диаметра контакта. */
-    private val cellSize: Double,
+    private var cellSize: Double,
     private val contactScale: Double,
     private val ccdCore: Double,
     /**
@@ -89,11 +89,26 @@ class BoundaryContacts(
      */
     private val contactRadius: DoubleArray,
 ) {
-    // --- сетка ---
-    private val grid = HashMap<Long, IntArray>(verts.size * 4)
-    private val usedKeys = LongArray(verts.size * 64)
-    private var usedN = 0
-
+    // --- сетка широкой фазы ---
+    //
+    // ОТКРЫТАЯ АДРЕСАЦИЯ НА МАССИВАХ, А НЕ HashMap<Long, IntArray>. Сетка пересобирается
+    // на КАЖДОМ подшаге (16 за тик), и каждая вставка с каждым запросом упаковывали ключ
+    // в Long и шли в хеш-карту. Замер на теле из 1900 клеток: подготовка контактов —
+    // пятая часть тика.
+    //
+    // Ячейка занята, если её метка равна метке этого подшага: чистить таблицу между
+    // подшагами не нужно вовсе. Клетки ячейки лежат односвязным списком в общих массивах,
+    // и новая цепляется В ХВОСТ — порядок обхода ячейки прежний, а от него зависит порядок
+    // пар и, через него, результат.
+    private var gKey = LongArray(0)
+    private var gStamp = IntArray(0)
+    private var gHead = IntArray(0)
+    private var gTail = IntArray(0)
+    private var gMask = 0
+    private var gStampNow = 0
+    private var gNext = IntArray(4096)
+    private var gId = IntArray(4096)
+    private var gN = 0
     // --- пары-кандидаты ---
     private var pairA = IntArray(4096)
     private var pairB = IntArray(4096)
@@ -196,18 +211,38 @@ class BoundaryContacts(
     private val lam = HashMap<Long, Double>()
 
 
-    /** Пары, перекрытые уже в позе покоя. См. bonded. */
-    private val restTouching = HashSet<Long>()
-    /** Бывшие соседи, перекрытые в позе покоя: расстояние покоя вместо суммы радиусов. */
-    private val restSpacing = HashMap<Long, Double>()
+    /** Пары, которые могут касаться в позе покоя, — запечены на тело. См. RestPairs. */
+    private var rest = RestPairs.EMPTY
+    /**
+     * Что сейчас с каждой записью rest: REST_NONE; REST_TOUCH — перекрыта в покое и из
+     * контактов исключена (см. bonded); REST_SPACING — бывшие соседи, упор на расстоянии
+     * покоя вместо суммы радиусов (см. CONTACT_REST_SPACING).
+     */
+    private var restState = ByteArray(0)
+    private var restTouchN = 0
+    private var restSpacingN = 0
+    /** Клетка в контактах на этой топологии. */
+    private val onBound = BooleanArray(n)
     /** Расстояние упора каждого контакта этого подшага. */
     private var cRR = DoubleArray(4096)
 
+    private fun restStateOf(i: Int, j: Int): Int {
+        val rp = rest
+        for (s in rp.start[i] until rp.start[i + 1]) if (rp.other[s] == j) return restState[s].toInt()
+        return REST_NONE
+    }
+
     private fun contactDistance(i: Int, j: Int): Double {
         val rr = contactRadius[i] + contactRadius[j]
-        if (!CONTACT_REST_SPACING || abLegacy || restSpacing.isEmpty()) return rr
-        val s = restSpacing[pairKey(i, j)] ?: return rr
-        return if (s < rr) s else rr
+        if (!CONTACT_REST_SPACING || abLegacy || restSpacingN == 0) return rr
+        val rp = rest
+        for (s in rp.start[i] until rp.start[i + 1]) {
+            if (rp.other[s] != j) continue
+            if (restState[s].toInt() != REST_SPACING) return rr
+            val d = rp.dist[s]
+            return if (d < rr) d else rr
+        }
+        return rr
     }
 
     // --- жёсткие кластеры: масса, центр, момент инерции на подшаг ---
@@ -286,7 +321,7 @@ class BoundaryContacts(
 
     fun contactRadiusOf(i: Int): Double = contactRadius[i]
 
-    fun restTouchingCount(): Int = restTouching.size
+    fun restTouchingCount(): Int = restTouchN
 
     /** Разбор журнала игрока: расстояние упора пары (сумма радиусов или расстояние покоя). */
     fun contactDistanceOf(i: Int, j: Int): Double = contactDistance(i, j)
@@ -307,60 +342,136 @@ class BoundaryContacts(
     var dbgPairLam = 0.0
     fun pairKeyOf(i: Int, j: Int): Long = pairKey(i, j)
 
-    /** Запоминает пары, перекрытые в позе покоя. Зовётся один раз при сборке. */
-    fun markRestTouching(restX: FloatArray, restY: FloatArray, everLinked: Set<Long>) {
-        restTouching.clear()
-        restSpacing.clear()
-        // ПЕРЕБОР ПО СЕТКЕ, А НЕ ВСЕХ ПАР. Касаться в позе покоя могут только соседи
-        // по пространству, а полный перебор граничных клеток — квадрат их числа с
-        // поиском в хеше на каждую пару. После разрыва пересборка идёт внутри подшага,
-        // и на ударе этот перебор был самой дорогой её частью.
+    /**
+     * Какие пары перекрыты в позе покоя на ЭТОЙ топологии. Зовётся при каждой сборке.
+     *
+     * Условие прежнее: обе клетки в контактах, в позе покоя ближе суммы их нынешних
+     * контактных радиусов и не связаны сейчас. Бывшие соседи сталкиваются с упором на
+     * расстоянии покоя, остальные из контактов исключаются — см. bonded.
+     *
+     * ПЕРЕБОР ЗАПЕЧЁННЫХ КАНДИДАТОВ, А НЕ СЕТКИ. Раньше клетки контура раскладывались по
+     * хеш-сетке позы покоя, а пары складывались в HashSet и HashMap — и так на каждой
+     * пересборке после разрыва, то есть десятки раз за тик на ударе. Кандидаты — все пары,
+     * которые могут перекрыться при каком-нибудь контуре, — от разрывов не зависят и
+     * считаются один раз, см. bakeRestPairs.
+     */
+    private fun applyRestPairs(rp: RestPairs) {
+        rest = rp
+        if (restState.size != rp.other.size) restState = ByteArray(rp.other.size) else restState.fill(0)
+        restTouchN = 0; restSpacingN = 0
         var maxR = 0.0
         for (v in verts) if (contactRadius[v] > maxR) maxR = contactRadius[v]
         if (maxR <= 0.0) return
-        val cs = 2.0 * maxR
-        fun ck(x: Int, y: Int): Long = (x.toLong() shl 32) xor (y.toLong() and 0xffffffffL)
-        val cells = HashMap<Long, IntArray>(verts.size * 2)
-        val cellX = IntArray(verts.size); val cellY = IntArray(verts.size)
-        for (a in verts.indices) {
-            val v = verts[a]
-            cellX[a] = Math.floor(restX[v] / cs).toInt(); cellY[a] = Math.floor(restY[v] / cs).toInt()
-            val key = ck(cellX[a], cellY[a])
-            val old = cells[key]
-            if (old == null) cells[key] = intArrayOf(v)
-            else cells[key] = old.copyOf(old.size + 1).also { it[old.size] = v }
-        }
-        for (a in verts.indices) {
-            val i = verts[a]
-            for (ox in -1..1) for (oy in -1..1) {
-                val bucket = cells[ck(cellX[a] + ox, cellY[a] + oy)] ?: continue
-                for (j in bucket) {
-                    if (j <= i) continue
-                    val dx = (restX[i] - restX[j]).toDouble()
-                    val dy = (restY[i] - restY[j]).toDouble()
-                    val rr = contactRadius[i] + contactRadius[j]
-                    val d2 = dx * dx + dy * dy
-                    if (d2 >= rr * rr) continue
-                    var linked = false
-                    for (k in adjStart[i] until adjStart[i + 1]) if (adj[k] == j) { linked = true; break }
-                    if (linked) continue
-                    // ПАРА, КОТОРАЯ КОГДА-ЛИБО БЫЛА СВЯЗАНА, ОСВОБОЖДЕНИЯ НЕ ПОЛУЧАЕТ.
-                    // Список считается по ИСХОДНОЙ позе покоя, где связь ещё цела. После
-                    // разрыва такая пара перестаёт быть «связанной», в позе покоя стоит
-                    // вплотную — и попадала в исключения, то есть столкновения выключались
-                    // ровно на свежем изломе. Замер: 704 из 751 порванной пары (94%).
-                    val key = pairKey(i, j)
-                    if (everLinked.contains(key)) {
-                        // Бывшие соседи сталкиваются, но упор у них — расстояние покоя. См.
-                        // CONTACT_REST_SPACING.
-                        restSpacing[key] = sqrt(d2)
-                        continue
-                    }
-                    restTouching.add(key)
-                }
+        for (i in verts) {
+            for (s in rp.start[i] until rp.start[i + 1]) {
+                val j = rp.other[s]
+                if (j <= i || !onBound[j]) continue
+                val rr = contactRadius[i] + contactRadius[j]
+                if (rp.d2[s] >= rr * rr) continue
+                var linked = false
+                for (k in adjStart[i] until adjStart[i + 1]) if (adj[k] == j) { linked = true; break }
+                if (linked) continue
+                // ПАРА, КОТОРАЯ КОГДА-ЛИБО БЫЛА СВЯЗАНА, ОСВОБОЖДЕНИЯ НЕ ПОЛУЧАЕТ.
+                // Кандидаты считаются по ИСХОДНОЙ позе покоя, где связь ещё цела. После
+                // разрыва такая пара перестаёт быть «связанной», в позе покоя стоит
+                // вплотную — и попадала в исключения, то есть столкновения выключались
+                // ровно на свежем изломе. Замер: 704 из 751 порванной пары (94%).
+                val st = if (rp.ever[s]) REST_SPACING else REST_TOUCH
+                restState[s] = st.toByte(); restState[rp.mirror[s]] = st.toByte()
+                if (st == REST_SPACING) restSpacingN++ else restTouchN++
             }
         }
     }
+
+    /**
+     * ПЕРЕСОБРАТЬ ПОД НОВУЮ ТОПОЛОГИЮ НА МЕСТЕ, не заводя объект заново.
+     *
+     * После разрыва меняются связи и контур, а всё остальное — массивы на клетку, буферы
+     * контактов, сетка — остаётся. Новый объект на каждой пересборке заводил их заново,
+     * вместе с сеткой широкой фазы, и это было заметной долей цены разрыва. Результат тот же, что у нового объекта: всё, что
+     * переживает подшаг, живёт на метках прохода (stamp, pass) и к старой топологии не
+     * привязано, а счётчики разбора обнуляются здесь, как обнулялись у нового.
+     */
+    fun reconfigure(
+        conA: IntArray, conB: IntArray, conCount: Int,
+        boundA: IntArray, boundB: IntArray, boundCount: Int,
+        restX: FloatArray, restY: FloatArray,
+        /** Клетки без единой связи в ПОЛНОМ графе связей. */
+        isolated: BooleanArray?,
+        /** Умершие клетки в контактах не участвуют вовсе. См. cellDead в демо. */
+        dead: BooleanArray?,
+        /** Запечённые кандидаты касания в покое. Null — запечь по нынешним радиусам, см. build. */
+        restPairs: RestPairs?,
+        /** Пары, связанные на ЦЕЛОМ теле. Нужны, только если restPairs не передан. */
+        everLinked: Set<Long>?,
+    ) {
+        val deg = cfgDeg
+        java.util.Arrays.fill(deg, 0)
+        for (c in 0 until conCount) { deg[conA[c]]++; deg[conB[c]]++ }
+        adjStart[0] = 0
+        for (i in 0 until n) adjStart[i + 1] = adjStart[i] + deg[i]
+        if (adj.size < adjStart[n]) adj = IntArray(adjStart[n] * 2)
+        System.arraycopy(adjStart, 0, deg, 0, n)
+        for (c in 0 until conCount) {
+            adj[deg[conA[c]]++] = conB[c]
+            adj[deg[conB[c]]++] = conA[c]
+        }
+
+        java.util.Arrays.fill(onBound, false)
+        for (e in 0 until boundCount) { onBound[boundA[e]] = true; onBound[boundB[e]] = true }
+        // Одиночные клетки тоже участвуют в контактах, хотя ни на каком контуре
+        // не лежат: связей у них нет вовсе, поэтому граничным ребром их не поймать.
+        //
+        // Признак приходит СНАРУЖИ и не выводится из смежности выше. Смежность
+        // построена по conA/conB, а там намеренно НЕТ внутрикостных связей, и
+        // «степень ноль» пометила бы всю внутренность костей — они полезли бы в
+        // контакты со своим же телом. На этом уже спотыкались, когда по conA/conB
+        // считали связные компоненты и получили 126 организмов вместо двух.
+        if (isolated != null) for (i in 0 until n) if (isolated[i]) onBound[i] = true
+        if (dead != null) for (i in 0 until n) if (dead[i]) onBound[i] = false
+        var nv = 0
+        for (i in 0 until n) if (onBound[i]) nv++
+        if (verts.size != nv) verts = IntArray(nv)
+        run { var k = 0; for (i in 0 until n) if (onBound[i]) verts[k++] = i }
+
+        // Радиус контакта — половина самого длинного граничного ребра клетки,
+        // с запасом. См. contactRadius: круги соседей по контуру обязаны
+        // перекрываться, иначе в мембране остаётся щель.
+        java.util.Arrays.fill(contactRadius, 0.0)
+        for (e in 0 until boundCount) {
+            val a = boundA[e]; val b = boundB[e]
+            val dx = (restX[a] - restX[b]).toDouble()
+            val dy = (restY[a] - restY[b]).toDouble()
+            val half = 0.5 * Math.sqrt(dx * dx + dy * dy) * CONTACT_SEAL
+            if (half > contactRadius[a]) contactRadius[a] = half
+            if (half > contactRadius[b]) contactRadius[b] = half
+        }
+        // Одиночные клетки граничных рёбер не имеют вовсе — им остаётся
+        // собственный радиус: они не мембрана, а пробники.
+        if (isolated != null) for (i in 0 until n) {
+            if (isolated[i]) contactRadius[i] = radius[i] * contactScale
+        }
+        // У мёртвой клетки контакта нет вовсе, и радиуса тоже: иначе отрисовка рисует
+        // его кружком, и лопнувшая клетка остаётся на экране неподвижной частицей.
+        if (dead != null) for (i in 0 until n) if (dead[i]) contactRadius[i] = 0.0
+
+        // Сторона ячейки — наибольший диаметр контакта. Меньше нельзя: пара из
+        // соседних ячеек тогда могла бы не попасть в перебор 3x3.
+        var maxR = 0.0
+        for (v in verts) if (contactRadius[v] > maxR) maxR = contactRadius[v]
+        cellSize = maxOf(2.0 * maxR, 1e-6)
+
+        // Как у нового объекта: списков этого подшага нет, счётчики разбора с нуля.
+        cN = 0; pairN = 0; killN = 0; attractN = 0
+        lastContacts = 0; lastToiClamps = 0; impulseAccum = 0.0
+        dbgCcdTotal = 0L; dbgCcdWorst = 0.0; dbgCcdI = -1; dbgCcdJ = -1; dbgCcdMoveA = 0.0; dbgCcdMoveJ = 0.0
+        dbgPair = -1L; dbgPairPush = 0.0; dbgPairPull = 0.0; dbgPairLam = 0.0
+
+        applyRestPairs(restPairs ?: bakeRestPairs(n, contactRadius, restX, restY,
+            everLinked ?: linkedPairs(conA, conB, conCount)))
+    }
+
+    private val cfgDeg = IntArray(n + 1)
 
     /** Разбор: пара последнего maxPenetration. */
     var worstI = -1
@@ -388,23 +499,46 @@ class BoundaryContacts(
     private fun key(ix: Int, iy: Int): Long =
         ((ix + BIAS).toLong() shl 32) or ((iy + BIAS).toLong() and 0xFFFFFFFFL)
 
-    private fun gridClear() {
-        for (k in 0 until usedN) grid[usedKeys[k]]!![0] = 0
-        usedN = 0
+    /** Начало подшага: метка новая, значит все ячейки пусты. Таблица растёт по надобности. */
+    private fun gridBegin() {
+        // Ячеек бывает от одной на клетку до нескольких: свип-путь быстрой клетки задевает
+        // их пачку. Размер берётся с запасом вчетверо от прошлого подшага, чтобы таблица
+        // оставалась редкой и проба не вырождалась в перебор.
+        var want = 64
+        val need = maxOf(verts.size * 2, gN) * 4
+        while (want < need) want = want shl 1
+        if (gKey.size < want) {
+            gKey = LongArray(want); gStamp = IntArray(want); gHead = IntArray(want); gTail = IntArray(want)
+            gMask = want - 1; gStampNow = 0
+        }
+        gStampNow++
+        gN = 0
+    }
+
+    /** Ячейка по ключу: индекс слота. Занят он или свободен, видно по метке. */
+    private fun gridSlot(k: Long): Int {
+        var s = ((k * -0x61c8864680b583ebL) ushr 40).toInt() and gMask
+        while (gStamp[s] == gStampNow && gKey[s] != k) s = (s + 1) and gMask
+        return s
     }
 
     private fun gridInsert(k: Long, id: Int) {
-        var arr = grid[k]
-        if (arr == null) { arr = IntArray(9); grid[k] = arr }
-        if (arr[0] == 0 && usedN < usedKeys.size) { usedKeys[usedN] = k; usedN++ }
-        if (arr[0] + 1 >= arr.size) {
-            val bigger = IntArray(arr.size * 2)
-            arr.copyInto(bigger)
-            arr = bigger
-            grid[k] = arr
+        val s = gridSlot(k)
+        if (gN == gNext.size) { gNext = gNext.copyOf(gN * 2); gId = gId.copyOf(gN * 2) }
+        gId[gN] = id; gNext[gN] = -1
+        if (gStamp[s] != gStampNow) { gStamp[s] = gStampNow; gKey[s] = k; gHead[s] = gN } else gNext[gTail[s]] = gN
+        gTail[s] = gN
+        gN++
+    }
+
+    /** Первая запись ячейки или -1. Дальше по gNext. */
+    private fun gridFirst(k: Long): Int {
+        var s = ((k * -0x61c8864680b583ebL) ushr 40).toInt() and gMask
+        while (gStamp[s] == gStampNow) {
+            if (gKey[s] == k) return gHead[s]
+            s = (s + 1) and gMask
         }
-        arr[0]++
-        arr[arr[0]] = id
+        return -1
     }
 
     /**
@@ -464,7 +598,7 @@ class BoundaryContacts(
      */
     private fun bonded(i: Int, j: Int): Boolean {
         for (k in adjStart[i] until adjStart[i + 1]) if (adj[k] == j) return true
-        return restTouching.contains(pairKey(i, j))
+        return restTouchN > 0 && restStateOf(i, j) == REST_TOUCH
     }
 
     private fun pairKey(i: Int, j: Int): Long =
@@ -480,7 +614,7 @@ class BoundaryContacts(
 
     /** Широкая фаза по свип-путям. prevX/prevY — позиция на начало подшага. */
     private fun broadphase(px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray) {
-        gridClear()
+        gridBegin()
         for (v in verts) {
             val c = dda(qx[v], qy[v], px[v], py[v])
             for (k in 0 until c) gridInsert(key(ddaX[k], ddaY[k]), v)
@@ -493,9 +627,10 @@ class BoundaryContacts(
             for (k in 0 until c) {
                 val cx = ddaX[k]; val cy = ddaY[k]
                 for (ox in -1..1) for (oy in -1..1) {
-                    val bucket = grid[key(cx + ox, cy + oy)] ?: continue
-                    for (b in 1..bucket[0]) {
-                        val j = bucket[b]
+                    var e = gridFirst(key(cx + ox, cy + oy))
+                    while (e >= 0) {
+                        val j = gId[e]
+                        e = gNext[e]
                         if (mark[j] == stamp) continue
                         mark[j] = stamp
                         if (j < v) continue           // пара берётся ровно один раз
@@ -1346,6 +1481,7 @@ class BoundaryContacts(
          *
          * Смежность берётся по ВСЕМ связям, а не только граничным: связанные клетки не
          * сталкиваются независимо от того, лежит связь на контуре или уходит внутрь.
+         * Всё считает reconfigure — тем же путём идёт и пересборка после разрыва.
          */
         fun build(
             n: Int,
@@ -1362,18 +1498,9 @@ class BoundaryContacts(
             everLinked: Set<Long>? = null,
             /** Умершие клетки в контактах не участвуют вовсе. См. cellDead в демо. */
             dead: BooleanArray? = null,
+            /** Запечённые кандидаты касания в покое, если тело рвётся. См. bakeRestPairs. */
+            restPairs: RestPairs? = null,
         ): BoundaryContacts {
-            val deg = IntArray(n)
-            for (c in 0 until conCount) { deg[conA[c]]++; deg[conB[c]]++ }
-            val start = IntArray(n + 1)
-            for (i in 0 until n) start[i + 1] = start[i] + deg[i]
-            val fill = start.copyOf()
-            val adj = IntArray(start[n])
-            for (c in 0 until conCount) {
-                adj[fill[conA[c]]++] = conB[c]
-                adj[fill[conB[c]]++] = conA[c]
-            }
-
             // ОСВОБОЖДАТЬ ОТ КОНТАКТА СОСЕДЕЙ ЧЕРЕЗ ОДНУ КЛЕТКУ ПРОБОВАЛИ — НЕЛЬЗЯ.
             //
             // Соблазн большой: у оторвавшегося куска из 29 клеток 19 из 31 ложной
@@ -1388,58 +1515,17 @@ class BoundaryContacts(
             //
             // Причина ложных контактов не здесь, а в том, что ЛЮБАЯ позиционная
             // поправка превращается в скорость делением на крошечный подшаг.
-
-            val onBound = BooleanArray(n)
-            for (e in 0 until boundCount) { onBound[boundA[e]] = true; onBound[boundB[e]] = true }
-            // Одиночные клетки тоже участвуют в контактах, хотя ни на каком контуре
-            // не лежат: связей у них нет вовсе, поэтому граничным ребром их не поймать.
-            //
-            // Признак приходит СНАРУЖИ и не выводится из смежности выше. Смежность
-            // построена по conA/conB, а там намеренно НЕТ внутрикостных связей, и
-            // «степень ноль» пометила бы всю внутренность костей — они полезли бы в
-            // контакты со своим же телом. На этом уже спотыкались, когда по conA/conB
-            // считали связные компоненты и получили 126 организмов вместо двух.
-            if (isolated != null) for (i in 0 until n) if (isolated[i]) onBound[i] = true
-            if (dead != null) for (i in 0 until n) if (dead[i]) onBound[i] = false
-            val verts = (0 until n).filter { onBound[it] }.toIntArray()
-
-            // Сторона ячейки — наибольший диаметр контакта. Меньше нельзя: пара из
-            // соседних ячеек тогда могла бы не попасть в перебор 3x3.
-            var maxR = 0.0
-            // Радиус контакта — половина самого длинного граничного ребра клетки,
-            // с запасом. См. contactRadius: круги соседей по контуру обязаны
-            // перекрываться, иначе в мембране остаётся щель.
-            val contactRadius = DoubleArray(n)
-            for (e in 0 until boundCount) {
-                val a = boundA[e]; val b = boundB[e]
-                val dx = (restX[a] - restX[b]).toDouble()
-                val dy = (restY[a] - restY[b]).toDouble()
-                val half = 0.5 * Math.sqrt(dx * dx + dy * dy) * CONTACT_SEAL
-                if (half > contactRadius[a]) contactRadius[a] = half
-                if (half > contactRadius[b]) contactRadius[b] = half
-            }
-            // Одиночные клетки граничных рёбер не имеют вовсе — им остаётся
-            // собственный радиус: они не мембрана, а пробники.
-            if (isolated != null) for (i in 0 until n) {
-                if (isolated[i]) contactRadius[i] = radius[i] * contactScale
-            }
-            // У мёртвой клетки контакта нет вовсе, и радиуса тоже: иначе отрисовка рисует
-            // его кружком, и лопнувшая клетка остаётся на экране неподвижной частицей.
-            if (dead != null) for (i in 0 until n) if (dead[i]) contactRadius[i] = 0.0
-
-            for (v in verts) if (contactRadius[v] > maxR) maxR = contactRadius[v]
-            val cell = maxOf(2.0 * maxR, 1e-6)
-
             val bc = BoundaryContacts(
-                n, verts, start, adj, radius, cell,
+                n, IntArray(0), IntArray(n + 1), IntArray(0), radius, 1e-6,
                 contactScale, ccdCore, restitution, friction, meanLink, contactMaxStep,
-                contactRadius,
+                DoubleArray(n),
             )
-            bc.markRestTouching(restX, restY, everLinked ?: linkedPairs(conA, conB, conCount))
+            bc.reconfigure(conA, conB, conCount, boundA, boundB, boundCount, restX, restY,
+                isolated, dead, restPairs, everLinked)
             return bc
         }
 
-        /** Пары концов связей, ключами как в pairKey. См. markRestTouching. */
+        /** Пары концов связей, ключами как в pairKey. См. applyRestPairs. */
         fun linkedPairs(conA: IntArray, conB: IntArray, conCount: Int): HashSet<Long> {
             val s = HashSet<Long>(conCount * 2)
             for (c in 0 until conCount) {
@@ -1448,5 +1534,111 @@ class BoundaryContacts(
             }
             return s
         }
+
+        private const val REST_NONE = 0
+        private const val REST_TOUCH = 1
+        private const val REST_SPACING = 2
+
+        /**
+         * Наибольший контактный радиус, какой клетка может получить при ЛЮБОМ контуре:
+         * половина самой длинной её связи с запасом шва или собственный радиус пробника.
+         * Та же формула, что в reconfigure, — сверху это оценка точная.
+         */
+        fun maxContactRadius(
+            n: Int, linkA: IntArray, linkB: IntArray, linkCount: Int,
+            radius: DoubleArray, contactScale: Double, restX: FloatArray, restY: FloatArray,
+        ): DoubleArray {
+            val r = DoubleArray(n) { radius[it] * contactScale }
+            for (k in 0 until linkCount) {
+                val a = linkA[k]; val b = linkB[k]
+                val dx = (restX[a] - restX[b]).toDouble()
+                val dy = (restY[a] - restY[b]).toDouble()
+                val half = 0.5 * Math.sqrt(dx * dx + dy * dy) * CONTACT_SEAL
+                if (half > r[a]) r[a] = half
+                if (half > r[b]) r[b] = half
+            }
+            return r
+        }
+
+        /**
+         * ЗАПЕЧЬ КАНДИДАТОВ КАСАНИЯ В ПОКОЕ: все пары, которые перекрываются в позе покоя
+         * при наибольших возможных радиусах [maxR]. Один раз на тело; какие из них касаются
+         * на нынешней топологии, решает applyRestPairs.
+         */
+        fun bakeRestPairs(n: Int, maxR: DoubleArray, restX: FloatArray, restY: FloatArray,
+                          everLinked: Set<Long>): RestPairs {
+            var gmax = 0.0
+            for (i in 0 until n) if (maxR[i] > gmax) gmax = maxR[i]
+            if (gmax <= 0.0) return RestPairs(IntArray(n + 1), IntArray(0), IntArray(0), DoubleArray(0), DoubleArray(0), BooleanArray(0))
+            val cs = 2.0 * gmax
+            fun ck(x: Int, y: Int): Long = (x.toLong() shl 32) xor (y.toLong() and 0xffffffffL)
+            val cells = HashMap<Long, IntArray>(n * 2)
+            val cellX = IntArray(n); val cellY = IntArray(n)
+            for (i in 0 until n) {
+                if (maxR[i] <= 0.0) continue
+                cellX[i] = Math.floor(restX[i] / cs).toInt(); cellY[i] = Math.floor(restY[i] / cs).toInt()
+                val key = ck(cellX[i], cellY[i])
+                val old = cells[key]
+                cells[key] = if (old == null) intArrayOf(i) else old.copyOf(old.size + 1).also { it[old.size] = i }
+            }
+            var pa = IntArray(1024); var pb = IntArray(1024); var pn = 0
+            for (i in 0 until n) {
+                if (maxR[i] <= 0.0) continue
+                for (ox in -1..1) for (oy in -1..1) {
+                    val bucket = cells[ck(cellX[i] + ox, cellY[i] + oy)] ?: continue
+                    for (j in bucket) {
+                        if (j <= i) continue
+                        val dx = (restX[i] - restX[j]).toDouble()
+                        val dy = (restY[i] - restY[j]).toDouble()
+                        // Запас на округление: лишний кандидат безвреден, настоящее
+                        // условие проверяется при сборке.
+                        val lim = (maxR[i] + maxR[j]) * (1.0 + 1e-9)
+                        if (dx * dx + dy * dy >= lim * lim) continue
+                        if (pn == pa.size) { pa = pa.copyOf(pn * 2); pb = pb.copyOf(pn * 2) }
+                        pa[pn] = i; pb[pn] = j; pn++
+                    }
+                }
+            }
+            val start = IntArray(n + 1)
+            for (p in 0 until pn) { start[pa[p] + 1]++; start[pb[p] + 1]++ }
+            for (i in 0 until n) start[i + 1] += start[i]
+            val fill = start.copyOf()
+            val other = IntArray(2 * pn); val mirror = IntArray(2 * pn)
+            val d2 = DoubleArray(2 * pn); val dist = DoubleArray(2 * pn); val ever = BooleanArray(2 * pn)
+            for (p in 0 until pn) {
+                val i = pa[p]; val j = pb[p]
+                val dx = (restX[i] - restX[j]).toDouble()
+                val dy = (restY[i] - restY[j]).toDouble()
+                val q = dx * dx + dy * dy
+                val e = everLinked.contains(i.toLong() * 1000003L + j.toLong())
+                val si = fill[i]++; val sj = fill[j]++
+                other[si] = j; other[sj] = i
+                mirror[si] = sj; mirror[sj] = si
+                d2[si] = q; d2[sj] = q
+                dist[si] = sqrt(q); dist[sj] = dist[si]
+                ever[si] = e; ever[sj] = e
+            }
+            return RestPairs(start, other, mirror, d2, dist, ever)
+        }
+    }
+}
+
+/**
+ * КАНДИДАТЫ КАСАНИЯ В ПОКОЕ, запечённые на тело: для каждой клетки — соседи, с которыми она
+ * может перекрыться в позе покоя при каком-нибудь контуре. Записи парные: пара (i, j) лежит
+ * и у i, и у j, mirror указывает на вторую половину.
+ */
+class RestPairs(
+    val start: IntArray,
+    val other: IntArray,
+    val mirror: IntArray,
+    /** Квадрат расстояния в позе покоя — как считала прежняя сетка, из разности float. */
+    val d2: DoubleArray,
+    val dist: DoubleArray,
+    /** Пара связана на целом теле — после разрыва это бывшие соседи. */
+    val ever: BooleanArray,
+) {
+    companion object {
+        val EMPTY = RestPairs(IntArray(1), IntArray(0), IntArray(0), DoubleArray(0), DoubleArray(0), BooleanArray(0))
     }
 }

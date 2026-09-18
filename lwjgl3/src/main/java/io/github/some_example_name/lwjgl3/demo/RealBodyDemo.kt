@@ -442,6 +442,10 @@ class RealBodyDemo(private val bodyPath: String,
 ) : ApplicationAdapter() {
 
     companion object {
+        /** Прогревать ли код разрушения при запуске окна. См. startWarmUp. */
+        private const val WARMUP_ON_START = true
+        private const val WARMUP_TICKS = 40
+
         /** Число стадий в замере по стадиям. См. dbgStages. */
         const val DBG_STAGES = 13
 
@@ -1281,6 +1285,38 @@ class RealBodyDemo(private val bodyPath: String,
         private const val NORMAL_DRAG_QUADRATIC = 71.8//135.6
 
         /**
+         * КАСАТЕЛЬНОЕ ТРЕНИЕ РЕБРА — вторая половина сопротивления среды.
+         *
+         * NORMAL_DRAG — это сопротивление ДАВЛЕНИЯ: ребро гребёт поперёк себя. Оно и даёт
+         * тягу, и быстро гасит поступательное движение. Но вдоль ребра среда не мешала
+         * вовсе, а в жидкости вдоль стенки есть трение о поверхность.
+         *
+         * ЧТО ЭТО ЧИНИТ. Оторвавшийся кусочек, раскрученный ударом, не останавливался почти
+         * никогда. Журнал 17.09 18:04, метка на клетке #846: кусок из трёх клеток —
+         * равносторонний треугольник, у него радиус до середины ребра перпендикулярен
+         * ребру, поэтому при вращении вокруг центра середина ребра движется ВДОЛЬ ребра, и
+         * нормальная составляющая равна нулю ТОЧНО. Вращение гасила одна изотропная среда:
+         * 36.5 -> 0.8 рад/с за 42 секунды, постоянная времени 10.9 с — ровно 1/MEDIUM_DRAG.
+         *
+         * ВЕЛИЧИНА. В жидкости трение о поверхность на порядок-два слабее сопротивления
+         * давления: для пластины коэффициент трения около 0.01 против 1-2 у плохо
+         * обтекаемого тела. Поэтому здесь доля от NORMAL_DRAG, а не своё число.
+         *
+         * ЗАМЕР (стенд PERF_SPIN на теле body-spin-test.txt — тот самый треугольник,
+         * раскрученный до 30 рад/с; доля начальной ω через 10 секунд):
+         * выкл 0.398, 0.01 — 0.385, 0.05 — 0.335, 0.20 — 0.200. Гребок на журнале
+         * плавания (скорость тела, клеток/тик): 0.0360, 0.0359, 0.0350, 0.0332.
+         * Тик на игровом теле: 10.61 мс выкл, 10.82 мс при 0.05.
+         *
+         * ПО УМОЛЧАНИЮ ВЫКЛЮЧЕНО, и вот почему. Вечное вращение мелкого куска трение не
+         * лечит: при правдоподобной величине затухание меняется на проценты, потому что
+         * вращение гасит почти одна изотропная среда (MEDIUM_DRAG, постоянная времени
+         * 10.9 с). Пользы не видно, а тяга и время тика страдают — включать незачем.
+         * Механизм оставлен готовым: число здесь, зеркало в SwimSolver, ручка у тюнера.
+         */
+        private const val TANGENT_DRAG = 0.0
+
+        /**
          * УВЛЕЧЁННЫЙ ПОТОК (присоединённая масса), 1/сек. 0 — выключено.
          *
          * Проблема, которую это решает: в чисто резистивной модели сопротивление считается
@@ -1782,6 +1818,23 @@ class RealBodyDemo(private val bodyPath: String,
     private lateinit var triRestArea2: FloatArray
     private var triCount = 0
 
+    /**
+     * Запечённая топология целого тела и что в ней ещё живо. Живые списки выше — её
+     * сжатые копии в исходном порядке; рядом с каждым лежит номер в запечённой. См.
+     * BakedTopology и rebuildAfterTear.
+     */
+    private lateinit var baked: BakedTopology
+    /** Ребро каждой связи полного списка. */
+    private var lnkEdge = IntArray(0)
+    /** Номер каждого живого треугольника в выгрузке. */
+    private var triId = IntArray(0)
+    /** Ребро каждой рабочей связи решателя. */
+    private var conEdge = IntArray(0)
+    /** Рабочая связь на ребре, -1 — нет. Отрисовке порванного и разбору журнала. */
+    private var conOfEdge = IntArray(0)
+    /** Кандидаты касания в позе покоя: запекаются один раз на тело. */
+    private var restPairs: RestPairs? = null
+
     // --- треугольники ---
     private lateinit var triMuscle: IntArray
     private lateinit var triInverted: BooleanArray
@@ -1942,6 +1995,7 @@ class RealBodyDemo(private val bodyPath: String,
 
         body.muscleClusters.forEachIndexed { m, ids -> for (i in ids) muscleOf[i] = m }
         muscleActivation = DoubleArray(body.muscleClusters.size)
+        muscleScaleOf = DoubleArray(body.muscleClusters.size) { 1.0 }
         muscleTarget = DoubleArray(body.muscleClusters.size)
 
         // Свои копии топологии: дальше они живут отдельно от выгрузки и меняются
@@ -1949,6 +2003,9 @@ class RealBodyDemo(private val bodyPath: String,
         lnkCount = body.linkCount
         lnkA = body.linkA.copyOf(); lnkB = body.linkB.copyOf()
         triCount = body.triCount
+        baked = BakedTopology(body)
+        lnkEdge = baked.linkEdge.copyOf()
+        triId = IntArray(triCount) { it }
         triA = body.triA.copyOf(); triB = body.triB.copyOf(); triC = body.triC.copyOf()
         triRestArea2 = body.triRestArea2.copyOf()
 
@@ -1958,13 +2015,14 @@ class RealBodyDemo(private val bodyPath: String,
         val b = ArrayList<Int>(lnkCount)
         val rest = ArrayList<Double>(lnkCount)
         val mus = ArrayList<Int>(lnkCount)
+        val ed = ArrayList<Int>(lnkCount)
         for (k in 0 until lnkCount) {
             val i = lnkA[k]
             val j = lnkB[k]
             if (boneOf[i] != -1 && boneOf[i] == boneOf[j]) continue
             val dx = body.x[i] - body.x[j]
             val dy = body.y[i] - body.y[j]
-            a.add(i); b.add(j); rest.add(sqrt((dx * dx + dy * dy).toDouble()))
+            a.add(i); b.add(j); rest.add(sqrt((dx * dx + dy * dy).toDouble())); ed.add(lnkEdge[k])
             // Мышца — только если ОБА конца в одном кластере. Связь от мышцы к обычной
             // ткани или к кости длину не меняет: она и передаёт тягу наружу.
             mus.add(if (muscleOf[i] != -1 && muscleOf[i] == muscleOf[j]) muscleOf[i] else -1)
@@ -1972,6 +2030,7 @@ class RealBodyDemo(private val bodyPath: String,
         conCount = a.size
         conA = a.toIntArray(); conB = b.toIntArray()
         conRest = rest.toDoubleArray(); conMuscle = mus.toIntArray()
+        conEdge = ed.toIntArray()
 
         triMuscle = IntArray(triCount) { t ->
             val i0 = triA[t]; val i1 = triB[t]; val i2 = triC[t]
@@ -1991,8 +2050,8 @@ class RealBodyDemo(private val bodyPath: String,
         pickRadius = body.meanLinkLength * PICK_FACTOR
         edgePickRadius = body.meanLinkLength * EDGE_PICK_FACTOR
 
-        println("[RealBodyDemo] " + body.describe())
-        println("[RealBodyDemo] rigid bones = ${rigidBones.size}, degenerate clusters dropped = $degenerateBones" +
+        if (!quiet) println("[RealBodyDemo] " + body.describe())
+        if (!quiet) println("[RealBodyDemo] rigid bones = ${rigidBones.size}, degenerate clusters dropped = $degenerateBones" +
             ", largest = ${rigidBones.maxOfOrNull { it.size } ?: 0} cells (drag on it is that many times weaker)")
     }
 
@@ -2029,96 +2088,178 @@ class RealBodyDemo(private val bodyPath: String,
      * Предел длины считается на КАЖДУЮ связь отдельно, а не общим числом: радиусы у
      * клеток разные, и общий предел был бы неверен для обеих сторон сразу.
      */
-    /** Связные компоненты графа связей — это и есть отдельные организмы. */
-    private fun buildOrganisms() {
-        organismOf = IntArray(n) { -1 }
-        val adjHead = IntArray(n) { -1 }
-        // По ПОЛНОМУ списку связей из файла, а не по conA/conB: внутрикостные связи
-        // в решатель намеренно не попадают (их держит проекция кости), и по ним кости
-        // распались бы на отдельные компоненты. На двух телах это давало 126
-        // «организмов» вместо двух.
-        val adjNext = IntArray(lnkCount * 2)
-        val adjTo = IntArray(lnkCount * 2)
-        var e = 0
-        for (c in 0 until lnkCount) {
-            val a = lnkA[c]; val b = lnkB[c]
-            adjTo[e] = b; adjNext[e] = adjHead[a]; adjHead[a] = e; e++
-            adjTo[e] = a; adjNext[e] = adjHead[b]; adjHead[b] = e; e++
+    /**
+     * Связные компоненты графа связей — это и есть отдельные организмы.
+     *
+     * ПОЛНЫЙ ОБХОД ТОЛЬКО ПРИ РАСПАДЕ. Разрыв чаще всего ничего не разделяет: концы
+     * порванного ребра остаются связаны через соседний треугольник. Поэтому сначала
+     * дешёвая проверка (см. splits), и лишь если кусок действительно отвалился —
+     * разметка заново. Смежность берётся из запечённой топологии, строить её на каждую
+     * пересборку больше не нужно.
+     *
+     * Смежность по ПОЛНОМУ списку связей, а не по conA/conB: внутрикостные связи в
+     * решатель намеренно не попадают (их держит проекция кости), и по ним кости
+     * распались бы на отдельные компоненты. На двух телах это давало 126 «организмов»
+     * вместо двух.
+     */
+    private fun buildOrganisms(relabel: Boolean = true) {
+        if (!::organismOf.isInitialized || organismOf.size != n) {
+            organismOf = IntArray(n); orgQueue = IntArray(n)
         }
-        val queue = IntArray(n)
-        var comp = 0
-        for (s in 0 until n) {
-            if (organismOf[s] != -1) continue
-            var head = 0; var tail = 0
-            organismOf[s] = comp; queue[tail++] = s
-            while (head < tail) {
-                val v = queue[head++]
-                var k = adjHead[v]
-                while (k != -1) {
-                    val u = adjTo[k]
-                    if (organismOf[u] == -1) { organismOf[u] = comp; queue[tail++] = u }
-                    k = adjNext[k]
+        var comp = organismCount
+        if (relabel) {
+            java.util.Arrays.fill(organismOf, -1)
+            val vs = baked.vertStart; val vo = baked.vertOther; val ve = baked.vertEdge
+            val dead = baked.edgeDead
+            val queue = orgQueue
+            comp = 0
+            for (s in 0 until n) {
+                if (organismOf[s] != -1) continue
+                var head = 0; var tail = 0
+                organismOf[s] = comp; queue[tail++] = s
+                while (head < tail) {
+                    val v = queue[head++]
+                    for (k in vs[v] until vs[v + 1]) {
+                        if (dead[ve[k]]) continue
+                        val u = vo[k]
+                        if (organismOf[u] == -1) { organismOf[u] = comp; queue[tail++] = u }
+                    }
                 }
+                comp++
             }
-            comp++
+            organismCount = comp
         }
-        organismCount = comp
-        organismSize = IntArray(comp)
+        // Ёмкость держится по числу клеток: больше компонент, чем клеток, не бывает.
+        // Запас среды у каждого организма свой и разрывом обнуляется — так было и когда
+        // эти массивы заводились заново.
+        if (!::organismSize.isInitialized || organismSize.size < n) {
+            organismSize = IntArray(n); organismMass = DoubleArray(n)
+            flowVX = DoubleArray(n); flowVY = DoubleArray(n)
+            comAccX = DoubleArray(n); comAccY = DoubleArray(n)
+        }
+        java.util.Arrays.fill(organismSize, 0, comp, 0)
+        java.util.Arrays.fill(organismMass, 0, comp, 0.0)
+        java.util.Arrays.fill(flowVX, 0, comp, 0.0)
+        java.util.Arrays.fill(flowVY, 0, comp, 0.0)
+        java.util.Arrays.fill(comAccX, 0, comp, 0.0)
+        java.util.Arrays.fill(comAccY, 0, comp, 0.0)
         for (i in 0 until n) organismSize[organismOf[i]]++
         // МАССА организма, а не число клеток: запас среды заряжается от скорости
         // ЦЕНТРА МАСС, а она есть сумма m*v делённая на сумму m. См. applyNormalDrag.
-        organismMass = DoubleArray(comp)
         for (i in 0 until n) {
             if (restInvMass[i] <= 0.0) continue
             organismMass[organismOf[i]] += 1.0 / restInvMass[i]
         }
-        flowVX = DoubleArray(comp)
-        flowVY = DoubleArray(comp)
-        comAccX = DoubleArray(comp)
-        comAccY = DoubleArray(comp)
-        if (!rebuilding) println("[RealBodyDemo] organisms = $comp (own flow reservoir each)")
+        if (!rebuilding && !quiet) println("[RealBodyDemo] organisms = $comp (own flow reservoir each)")
     }
 
-    private fun buildContacts() {
-        radius = DoubleArray(n) { body.radius[it].toDouble() }
-        isFree = BooleanArray(n) { true }
-        for (k in 0 until lnkCount) { isFree[lnkA[k]] = false; isFree[lnkB[k]] = false }
-        conMaxLen = DoubleArray(conCount) { c ->
-            LINK_MAX_STRETCH * conRest[c]
+    /**
+     * РАЗДЕЛИЛ ЛИ РАЗРЫВ ХОТЬ ОДИН КУСОК: встречный обход от концов каждого порванного
+     * ребра. Обходы растут по одной клетке по очереди и останавливаются, как только
+     * встретились, — цена выходит по МЕНЬШЕЙ из сторон, а при обычном разрыве внутри
+     * ткани они встречаются через два-три шага.
+     */
+    private fun splits(edges: IntArray, count: Int): Boolean {
+        val vs = baked.vertStart; val vo = baked.vertOther; val ve = baked.vertEdge
+        val dead = baked.edgeDead
+        if (orgSeen.size != n) { orgSeen = IntArray(n); orgFrontA = IntArray(n); orgFrontB = IntArray(n) }
+        val seen = orgSeen
+        for (e in 0 until count) {
+            val u = baked.edgeU(edges[e]); val v = baked.edgeV(edges[e])
+            orgStamp += 2
+            val markA = orgStamp; val markB = orgStamp + 1
+            seen[u] = markA; seen[v] = markB
+            var ah = 0; var at = 0; var bh = 0; var bt = 0
+            orgFrontA[at++] = u; orgFrontB[bt++] = v
+            var met = false
+            while (!met && (ah < at || bh < bt)) {
+                if (ah >= at || bh >= bt) break      // одна сторона исчерпана — это распад
+                var x = orgFrontA[ah++]
+                for (k in vs[x] until vs[x + 1]) {
+                    if (dead[ve[k]]) continue
+                    val w = vo[k]
+                    if (seen[w] == markB) { met = true; break }
+                    if (seen[w] == markA) continue
+                    seen[w] = markA; orgFrontA[at++] = w
+                }
+                if (met) break
+                x = orgFrontB[bh++]
+                for (k in vs[x] until vs[x + 1]) {
+                    if (dead[ve[k]]) continue
+                    val w = vo[k]
+                    if (seen[w] == markA) { met = true; break }
+                    if (seen[w] == markB) continue
+                    seen[w] = markB; orgFrontB[bt++] = w
+                }
+            }
+            if (!met) return true
         }
-        linkTorn = BooleanArray(conCount)
-        conDead = BooleanArray(conCount)
-        // Карта пары вершин в номер связи: нужна отрисовке, чтобы покрасить
-        // ТРЕУГОЛЬНИК по его рёбрам. Строится один раз, в кадре только чтение.
-        linkOfPair = HashMap(conCount * 2)
+        return false
+    }
+
+    private var orgQueue = IntArray(0)
+    private var orgSeen = IntArray(0)
+    private var orgFrontA = IntArray(0)
+    private var orgFrontB = IntArray(0)
+    private var orgStamp = 0
+
+    private fun buildContacts() {
+        if (!::radius.isInitialized) radius = DoubleArray(n) { body.radius[it].toDouble() }
+        if (!::isFree.isInitialized) isFree = BooleanArray(n)
+        isFree.fill(true)
+        for (k in 0 until lnkCount) { isFree[lnkA[k]] = false; isFree[lnkB[k]] = false }
+        // Ёмкость по целому телу, длина — в conCount: после разрыва списки сжимаются на месте.
+        val cap = conA.size
+        if (!::conMaxLen.isInitialized || conMaxLen.size != cap) {
+            conMaxLen = DoubleArray(cap); linkTorn = BooleanArray(cap); conDead = BooleanArray(cap)
+            conBoundary = BooleanArray(cap)
+        } else {
+            linkTorn.fill(false); conDead.fill(false)
+        }
+        // Рабочая связь каждого ребра нужна отрисовке, чтобы покрасить ТРЕУГОЛЬНИК по его
+        // рёбрам. Раньше это была HashMap пар на пять тысяч записей, заново на каждой пересборке.
+        // Связи на контуре (свой порог разрыва, см. MEMBRANE_TEAR_STRAIN) — рёбра не больше чем
+        // с одним живым треугольником. Всё это заполняется ОДНИМ проходом по связям.
+        if (conOfEdge.size != baked.edgeCount) { conOfEdge = IntArray(baked.edgeCount); conOfEdge.fill(-1) }
+        val use = baked.triUse
         for (c in 0 until conCount) {
-            val a = minOf(conA[c], conB[c]).toLong()
-            val b = maxOf(conA[c], conB[c]).toLong()
-            linkOfPair[a * 1000003L + b] = c
+            conMaxLen[c] = LINK_MAX_STRETCH * conRest[c]
+            val e = conEdge[c]
+            conOfEdge[e] = c
+            conBoundary[c] = use[e] <= 1
         }
         if (everLinked == null) everLinked = BoundaryContacts.linkedPairs(conA, conB, conCount)
-        contacts = BoundaryContacts.build(
-            n, conA, conB, conCount, boundA, boundB, boundCount, radius,
-            CONTACT_SCALE, CCD_CORE, CONTACT_RESTITUTION, CONTACT_FRICTION,
-            body.x, body.y,
-            body.meanLinkLength.toDouble(), CONTACT_MAX_STEP, isFree, everLinked,
-            cellDead,
-        ).also {
+        // Кандидаты касания в позе покоя считаются по ЦЕЛОМУ телу и от разрывов не зависят:
+        // радиус контакта клетки не бывает больше половины её самой длинной связи с запасом шва.
+        if (restPairs == null) restPairs = BoundaryContacts.bakeRestPairs(
+            n,
+            BoundaryContacts.maxContactRadius(n, body.linkA, body.linkB, body.linkCount,
+                radius, CONTACT_SCALE, body.x, body.y),
+            body.x, body.y, everLinked!!)
+        val ct = contacts
+        if (ct == null) {
+            contacts = BoundaryContacts.build(
+                n, conA, conB, conCount, boundA, boundB, boundCount, radius,
+                CONTACT_SCALE, CCD_CORE, CONTACT_RESTITUTION, CONTACT_FRICTION,
+                body.x, body.y,
+                body.meanLinkLength.toDouble(), CONTACT_MAX_STEP, isFree, everLinked,
+                cellDead, restPairs,
+            )
+        } else {
+            // Объект переиспользуется: заводить его заново на каждой пересборке стоило
+            // дороже всего остального разрыва вместе взятого. См. reconfigure.
+            ct.reconfigure(conA, conB, conCount, boundA, boundB, boundCount,
+                body.x, body.y, isFree, cellDead, restPairs, everLinked)
+        }
+        contacts!!.also {
             it.killOnDeep = killOnDeep && KILL_ON_DEEP_OVERLAP
             it.killDepth = KILL_DEPTH
             if (internalMom?.n != n) internalMom = InternalMomentum(n)
             if (contactPressure.size != n) contactPressure = DoubleArray(n)
             it.pressure = contactPressure
             if (crushedCell.size != n) crushedCell = BooleanArray(n)
-            // Связи на контуре: у них свой порог разрыва, см. MEMBRANE_TEAR_STRAIN.
-            conBoundary = BooleanArray(conCount)
-            val bk = LongArray(boundCount) { e -> edgeKey(boundA[e], boundB[e]) }
-            bk.sort()
-            for (c in 0 until conCount) {
-                conBoundary[c] = java.util.Arrays.binarySearch(bk, edgeKey(conA[c], conB[c])) >= 0
-            }
         }
-        if (!rebuilding) println("[RealBodyDemo] contact particles = ${boundCount} boundary edges, " +
+        if (!rebuilding && !quiet) println("[RealBodyDemo] contact particles = ${boundCount} boundary edges, " +
             "contact radius from boundary edges, seal margin")
     }
 
@@ -2162,46 +2303,16 @@ class RealBodyDemo(private val bodyPath: String,
      *
      * Пар тут единицы: нужны ДВЕ связи одной клетки, и обе без треугольника.
      */
-    /**
-     * Сколько треугольников у каждого ребра — отсортированным массивом ключей, а не
-     * картой. Считается один раз на пересборку и нужен и контуру, и лоскутам: раньше
-     * каждый строил свою HashMap<Long, Int> с упаковкой, и при разрыве, когда пересборка
-     * идёт внутри подшага, это была заметная доля её цены.
-     */
-    private var triEdgeKeys = LongArray(0)
-
-    private fun edgeKey(a: Int, b: Int): Long = (minOf(a, b).toLong() shl 32) or maxOf(a, b).toLong()
-
-    private fun buildTriEdgeKeys() {
-        val k = LongArray(triCount * 3)
-        for (t in 0 until triCount) {
-            k[3 * t] = edgeKey(triA[t], triB[t])
-            k[3 * t + 1] = edgeKey(triB[t], triC[t])
-            k[3 * t + 2] = edgeKey(triC[t], triA[t])
-        }
-        k.sort()
-        triEdgeKeys = k
-    }
-
-    private fun triEdgeUse(a: Int, b: Int): Int {
-        val key = edgeKey(a, b)
-        val arr = triEdgeKeys
-        var lo = 0; var hi = arr.size
-        while (lo < hi) { val m = (lo + hi) ushr 1; if (arr[m] < key) lo = m + 1 else hi = m }
-        var c = 0
-        while (lo < arr.size && arr[lo] == key) { c++; lo++ }
-        return c
-    }
 
     /** Идёт пересборка после разрыва: печатать нельзя, она бывает десятки раз за тик. */
     private var rebuilding = false
 
     private fun buildFlaps() {
-        // Ключи рёбер уже посчитаны контуром: buildFlaps всегда зовут после buildBoundary.
+        val use = baked.triUse
         val bare = HashMap<Int, MutableList<Int>>()
         for (c in 0 until conCount) {
             val i = conA[c]; val j = conB[c]
-            if (triEdgeUse(i, j) > 0) continue
+            if (use[conEdge[c]] > 0) continue
             bare.getOrPut(i) { ArrayList() }.add(j)
             bare.getOrPut(j) { ArrayList() }.add(i)
         }
@@ -2218,7 +2329,7 @@ class RealBodyDemo(private val bodyPath: String,
         }
         flapCount = a.size
         flapA = a.toIntArray(); flapB = b.toIntArray(); flapRest = r.toDoubleArray()
-        if (!rebuilding) println("[RealBodyDemo] flap angles = $flapCount")
+        if (!rebuilding && !quiet) println("[RealBodyDemo] flap angles = $flapCount")
     }
 
     private var flapCount = 0
@@ -2248,9 +2359,9 @@ class RealBodyDemo(private val bodyPath: String,
     }
 
     private fun buildBend() {
-        val nb0 = IntArray(n) { -1 }
-        val nb1 = IntArray(n) { -1 }
-        val deg = IntArray(n)
+        if (bendNb0.size != n) { bendNb0 = IntArray(n); bendNb1 = IntArray(n); bendDeg = IntArray(n) }
+        val nb0 = bendNb0; val nb1 = bendNb1; val deg = bendDeg
+        java.util.Arrays.fill(nb0, -1); java.util.Arrays.fill(nb1, -1); java.util.Arrays.fill(deg, 0)
         for (e in 0 until boundCount) {
             val i = boundA[e]; val j = boundB[e]
             if (deg[i] == 0) nb0[i] = j else if (deg[i] == 1) nb1[i] = j
@@ -2258,19 +2369,25 @@ class RealBodyDemo(private val bodyPath: String,
             if (deg[j] == 0) nb0[j] = i else if (deg[j] == 1) nb1[j] = i
             deg[j]++
         }
-        val a = ArrayList<Int>(); val b = ArrayList<Int>(); val r = ArrayList<Double>()
+        if (!::bendA.isInitialized || bendA.size < n) {
+            bendA = IntArray(n); bendB = IntArray(n); bendRest = DoubleArray(n)
+        }
+        var m = 0
         for (v in 0 until n) {
             if (deg[v] != 2) continue
             val i = nb0[v]; val j = nb1[v]
             if (i < 0 || j < 0 || i == j) continue
             val dx = (body.x[i] - body.x[j]).toDouble()
             val dy = (body.y[i] - body.y[j]).toDouble()
-            a.add(i); b.add(j); r.add(sqrt(dx * dx + dy * dy))
+            bendA[m] = i; bendB[m] = j; bendRest[m] = sqrt(dx * dx + dy * dy); m++
         }
-        bendCount = a.size
-        bendA = a.toIntArray(); bendB = b.toIntArray(); bendRest = r.toDoubleArray()
-        if (!rebuilding) println("[RealBodyDemo] bend pairs = $bendCount on $boundCount boundary edges")
+        bendCount = m
+        if (!rebuilding && !quiet) println("[RealBodyDemo] bend pairs = $bendCount on $boundCount boundary edges")
     }
+
+    private var bendNb0 = IntArray(0)
+    private var bendNb1 = IntArray(0)
+    private var bendDeg = IntArray(0)
 
     /**
      * Поза покоя костей: смещения от центроида кластера, один раз и навсегда.
@@ -2320,19 +2437,21 @@ class RealBodyDemo(private val bodyPath: String,
      * связей мы не создаём, но поверхность кости средой омывается точно так же.
      */
     private fun buildBoundary() {
-        buildTriEdgeKeys()
+        val use = baked.triUse
         // Обход идёт по ВСЕМ связям, а не по ключам карты треугольников. Связь в тонком
         // отростке (шириной в одну клетку) не входит НИ В ОДИН треугольник, в карту не
         // попадает вовсе — и, считая только по карте, я терял такие рёбра целиком.
         // А это как раз хвост и плавники, то есть основная гребущая поверхность.
-        val a = ArrayList<Int>(); val b = ArrayList<Int>()
-        for (k in 0 until lnkCount) {
-            val i = lnkA[k]; val j = lnkB[k]
-            if (triEdgeUse(i, j) <= 1) { a.add(i); b.add(j) }
+        if (!::boundA.isInitialized || boundA.size < lnkCount) {
+            boundA = IntArray(lnkCount); boundB = IntArray(lnkCount)
         }
-        boundCount = a.size
-        boundA = a.toIntArray(); boundB = b.toIntArray()
-        if (!rebuilding) println("[RealBodyDemo] boundary edges = $boundCount")
+        var m = 0
+        for (k in 0 until lnkCount) {
+            if (use[lnkEdge[k]] > 1) continue
+            boundA[m] = lnkA[k]; boundB[m] = lnkB[k]; m++
+        }
+        boundCount = m
+        if (!rebuilding && !quiet) println("[RealBodyDemo] boundary edges = $boundCount")
     }
 
     private fun reset() {
@@ -2403,7 +2522,7 @@ class RealBodyDemo(private val bodyPath: String,
         }
         tearsPending = true
         rebuildAfterTear()
-        println("[SoftGridLab] убито связей $killed из $before, осталось $conCount, тел $organismCount, сид $labKillSeed")
+        if (!quiet) println("[SoftGridLab] убито связей $killed из $before, осталось $conCount, тел $organismCount, сид $labKillSeed")
     }
 
     /**
@@ -2448,17 +2567,41 @@ class RealBodyDemo(private val bodyPath: String,
      * чтобы дотащить ткань до новой длины, и упирается, если ей мешают. Прямой аналог
      * degreeOfShortening в движке.
      */
-    private fun muscleScale(m: Int) =
-        if (m < 0) 1.0 else 1.0 - muscleActivation[m] * (1.0 - MUSCLE_CONTRACTION)
+    private fun muscleScale(m: Int) = if (m < 0) 1.0 else muscleScaleOf[m]
+
+    /**
+     * Во сколько раз сжат каждый кластер мышцы — считается РАЗ В ТИК.
+     *
+     * Активации внутри тика не меняются (updateMuscles зовётся до simulate), а связей и
+     * треугольников с мышцей тысячи, и каждый спрашивал это на каждой из 64 итераций
+     * решателя. Формула та же, поэтому число тоже то же.
+     */
+    private var muscleScaleOf = DoubleArray(0)
+
+    private fun updateMuscleScale() {
+        if (muscleScaleOf.size != muscleActivation.size) muscleScaleOf = DoubleArray(muscleActivation.size)
+        for (m in muscleActivation.indices) muscleScaleOf[m] = 1.0 - muscleActivation[m] * (1.0 - MUSCLE_CONTRACTION)
+    }
 
     private fun solveConstraints(h: Double) {
         val alpha = SOFT_COMPLIANCE / (h * h)
-        // Направление обхода ЧЕРЕДУЕТСЯ. См. sweepBackwards.
-        val order = if (sweepBackwards) (conCount - 1) downTo 0 else 0 until conCount
-        for (c in order) {
+        // ВСЁ В ЛОКАЛЬНЫЕ. Стадия идёт 64 раза за тик по пяти тысячам связей, и на таком
+        // числе проходов заметно даже обращение к полю: у lateinit оно с проверкой.
+        val px = px; val py = py; val invMass = invMass
+        val conA = conA; val conB = conB; val conRest = conRest; val conMuscle = conMuscle
+        val conDead = conDead; val ms = muscleScaleOf
+        // Направление обхода ЧЕРЕДУЕТСЯ. См. sweepBackwards. Индексом, а не диапазоном:
+        // диапазон с переменным направлением — объект с итератором на каждый шаг.
+        val step = if (sweepBackwards) -1 else 1
+        var c = if (sweepBackwards) conCount - 1 else 0
+        var left = conCount
+        while (left > 0) {
+            left--
+            val cc = c
+            c += step
             // Порванная связь не тянет ни мгновения — даже до пересборки топологии.
-            if (conDead[c]) continue
-            val i = conA[c]; val j = conB[c]
+            if (conDead[cc]) continue
+            val i = conA[cc]; val j = conB[cc]
             val wi = invMass[i]; val wj = invMass[j]
             val w = wi + wj
             if (w == 0.0) continue
@@ -2467,7 +2610,8 @@ class RealBodyDemo(private val bodyPath: String,
             val len = sqrt(dx * dx + dy * dy)
             if (len < 1e-12) continue
             dx /= len; dy /= len
-            val rest = conRest[c] * muscleScale(conMuscle[c])
+            val m = conMuscle[cc]
+            val rest = conRest[cc] * (if (m < 0) 1.0 else ms[m])
             val dL = -(len - rest) / (w + alpha)
             px[i] += dx * dL * wi; py[i] += dy * dL * wi
             px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
@@ -2570,6 +2714,11 @@ class RealBodyDemo(private val bodyPath: String,
     }
 
     private fun solveLinkMaxLength() {
+        // Всё в локальные: стадия идёт 80 раз за тик по пяти тысячам связей.
+        val px = px; val py = py; val invMass = invMass
+        val conA = conA; val conB = conB; val conRest = conRest; val conMuscle = conMuscle
+        val conDead = conDead; val conMaxLen = conMaxLen; val ms = muscleScaleOf
+        val meanLink = body.meanLinkLength
         for (c in 0 until conCount) {
             if (conDead[c]) continue
             val i = conA[c]; val j = conB[c]
@@ -2580,7 +2729,8 @@ class RealBodyDemo(private val bodyPath: String,
             var dy = py[i] - py[j]
             val len = sqrt(dx * dx + dy * dy)
             // РАЗДАВЛЕННАЯ СВЯЗЬ РВЁТСЯ ТАК ЖЕ, КАК ПЕРЕРАСТЯНУТАЯ. См. LINK_CRUSH_RATIO.
-            if (tearingOn && len < LINK_CRUSH_RATIO * conRest[c] * muscleScale(conMuscle[c])) {
+            val mus = conMuscle[c]
+            if (tearingOn && len < LINK_CRUSH_RATIO * conRest[c] * (if (mus < 0) 1.0 else ms[mus])) {
                 linkTorn[c] = true; conDead[c] = true; tearsPending = true
                 crushedCell[i] = true; crushedCell[j] = true
                 continue
@@ -2607,7 +2757,7 @@ class RealBodyDemo(private val bodyPath: String,
             // связи растягиваются сильно, и отсюда шёл остаток выброса скорости.
             // Делится по паре в тех же долях, поэтому импульс пары сохраняется.
             var dL = -(len - max) / w
-            val capL = CONTACT_MAX_STEP * body.meanLinkLength / w
+            val capL = CONTACT_MAX_STEP * meanLink / w
             if (dL < -capL) dL = -capL
             px[i] += dx * dL * wi; py[i] += dy * dL * wi
             px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
@@ -2688,6 +2838,9 @@ class RealBodyDemo(private val bodyPath: String,
         lnkCount = body.linkCount
         lnkA = body.linkA.copyOf(); lnkB = body.linkB.copyOf()
         triCount = body.triCount
+        baked.restore()
+        lnkEdge = baked.linkEdge.copyOf()
+        triId = IntArray(triCount) { it }
         triA = body.triA.copyOf(); triB = body.triB.copyOf(); triC = body.triC.copyOf()
         triRestArea2 = body.triRestArea2.copyOf()
         triMuscle = IntArray(triCount) { t ->
@@ -2697,6 +2850,7 @@ class RealBodyDemo(private val bodyPath: String,
         }
         triInverted = BooleanArray(triCount)
 
+        val ed = ArrayList<Int>(lnkCount)
         val a = ArrayList<Int>(lnkCount); val b = ArrayList<Int>(lnkCount)
         val rest = ArrayList<Double>(lnkCount); val mus = ArrayList<Int>(lnkCount)
         for (k in 0 until lnkCount) {
@@ -2704,11 +2858,13 @@ class RealBodyDemo(private val bodyPath: String,
             if (boneOf[i] != -1 && boneOf[i] == boneOf[j]) continue
             val dx = body.x[i] - body.x[j]; val dy = body.y[i] - body.y[j]
             a.add(i); b.add(j); rest.add(sqrt((dx * dx + dy * dy).toDouble()))
+            ed.add(lnkEdge[k])
             mus.add(if (muscleOf[i] != -1 && muscleOf[i] == muscleOf[j]) muscleOf[i] else -1)
         }
         conCount = a.size
         conA = a.toIntArray(); conB = b.toIntArray()
         conRest = rest.toDoubleArray(); conMuscle = mus.toIntArray()
+        conEdge = ed.toIntArray()
 
         tearsPending = false
         tornTotal = 0
@@ -2720,51 +2876,46 @@ class RealBodyDemo(private val bodyPath: String,
         var t = System.nanoTime()
         fun lap(k: Int) { val now = System.nanoTime(); dbgRebuildSec[k] += now - t; t = now }
 
-        // Мёртвые пары — по КОНЦАМ, потому что дальше их надо вычеркнуть и из
-        // полного списка связей, где нумерация другая.
-        //
-        // МАССИВАМИ, А НЕ ХЕШАМИ. Пересборка идёт внутри подшага прямо на ударе, и
-        // HashSet<Long> с HashMap<Long, Double> на каждую связь были её дорогой частью.
-        // Порядок элементов сохранён тот же, что давали списки, поэтому результат
-        // побитово прежний — проверено контрольной суммой на журнале игрока.
-        fun key(a: Int, b: Int) = minOf(a, b).toLong() * 1000003L + maxOf(a, b).toLong()
+        // Мёртвые рёбра гасятся в запечённой топологии: треугольники на них умирают сами,
+        // счётчики треугольников у соседних рёбер уменьшаются. Раньше мёртвые пары
+        // сортировались, и каждая связь и каждый треугольник искались среди них двоичным
+        // поиском. Ребро — пара клеток, поэтому все связи одной пары умирают вместе, как и
+        // тогда. Порядок живых списков прежний, результат побитово тот же — проверено
+        // контрольными суммами по каждому тику шести журналов игрока.
+        if (deadEdges.size < conA.size) deadEdges = IntArray(conA.size)
         var nd = 0
-        for (c in 0 until conCount) if (conDead[c]) nd++
+        for (c in 0 until conCount) {
+            if (!conDead[c] || !baked.kill(conEdge[c])) continue
+            conOfEdge[conEdge[c]] = -1
+            deadEdges[nd++] = conEdge[c]
+        }
         if (nd == 0) return
-        val deadKeys = LongArray(nd)
-        run { var q = 0; for (c in 0 until conCount) if (conDead[c]) deadKeys[q++] = key(conA[c], conB[c]) }
-        deadKeys.sort()
-        var uniq = 0
-        for (k in deadKeys.indices) if (k == 0 || deadKeys[k] != deadKeys[k - 1]) uniq++
-        tornTotal += uniq
-        fun isDead(a: Int, b: Int) = java.util.Arrays.binarySearch(deadKeys, key(a, b)) >= 0
+        tornTotal += nd
+        val edgeDead = baked.edgeDead
 
-        // 1. Полный список связей
+        // 1. Полный список связей. Сжатие НА МЕСТЕ: пишущий индекс никогда не обгоняет
+        //    читающий, а массивы остаются прежней ёмкости — длина живёт в счётчике.
         run {
-            val na = IntArray(lnkCount); val nb = IntArray(lnkCount)
             var m = 0
             for (k in 0 until lnkCount) {
-                if (isDead(lnkA[k], lnkB[k])) continue
-                na[m] = lnkA[k]; nb[m] = lnkB[k]; m++
+                if (edgeDead[lnkEdge[k]]) continue
+                lnkA[m] = lnkA[k]; lnkB[m] = lnkB[k]; lnkEdge[m] = lnkEdge[k]; m++
             }
             lnkCount = m
-            lnkA = na.copyOf(m); lnkB = nb.copyOf(m)
         }
 
-        // 2. Треугольники: умирают вместе с любым своим ребром
+        // 2. Треугольники: умерли вместе с любым своим ребром — см. BakedTopology.kill
         run {
-            val na = IntArray(triCount); val nb = IntArray(triCount); val nc = IntArray(triCount)
-            val nr = FloatArray(triCount); val nm = IntArray(triCount)
+            val alive = baked.triAlive
             var m = 0
             for (k in 0 until triCount) {
-                val i0 = triA[k]; val i1 = triB[k]; val i2 = triC[k]
-                if (isDead(i0, i1) || isDead(i1, i2) || isDead(i0, i2)) continue
-                na[m] = i0; nb[m] = i1; nc[m] = i2; nr[m] = triRestArea2[k]; nm[m] = triMuscle[k]; m++
+                if (!alive[triId[k]]) continue
+                triA[m] = triA[k]; triB[m] = triB[k]; triC[m] = triC[k]
+                triRestArea2[m] = triRestArea2[k]; triMuscle[m] = triMuscle[k]; triId[m] = triId[k]
+                m++
             }
             triCount = m
-            triA = na.copyOf(m); triB = nb.copyOf(m); triC = nc.copyOf(m)
-            triRestArea2 = nr.copyOf(m); triMuscle = nm.copyOf(m)
-            triInverted = BooleanArray(triCount)
+            java.util.Arrays.fill(triInverted, false)
         }
 
         // 3. Рабочие связи решателя — тем же правилом, что при загрузке.
@@ -2779,16 +2930,13 @@ class RealBodyDemo(private val bodyPath: String,
         // полный список — старый без мёртвых, значит новые рабочие связи — ровно старые
         // рабочие без мёртвых, в том же порядке. Их и оставляем, вместе с длиной покоя.
         run {
-            val na = IntArray(conCount); val nb = IntArray(conCount)
-            val nr = DoubleArray(conCount); val nm = IntArray(conCount)
             var m = 0
             for (c in 0 until conCount) {
-                if (isDead(conA[c], conB[c])) continue
-                na[m] = conA[c]; nb[m] = conB[c]; nr[m] = conRest[c]; nm[m] = conMuscle[c]; m++
+                if (edgeDead[conEdge[c]]) continue
+                conA[m] = conA[c]; conB[m] = conB[c]; conRest[m] = conRest[c]
+                conMuscle[m] = conMuscle[c]; conEdge[m] = conEdge[c]; m++
             }
             conCount = m
-            conA = na.copyOf(m); conB = nb.copyOf(m)
-            conRest = nr.copyOf(m); conMuscle = nm.copyOf(m)
         }
 
         // 4. Всё производное — теми же функциями, что и при загрузке. Контур,
@@ -2796,13 +2944,15 @@ class RealBodyDemo(private val bodyPath: String,
         lap(0)
         buildBoundary(); lap(1)
         buildBend(); buildFlaps(); lap(2)
-        buildOrganisms(); lap(3)
+        buildOrganisms(relabel = splits(deadEdges, nd)); lap(3)
         buildContacts(); lap(4)
     }
 
+    /** Рёбра, порванные последней пересборкой. См. splits. */
+    private var deadEdges = IntArray(0)
+
     /** Разбор цены пересборки по частям: списки, контур, изгиб+лоскуты, организмы, контакты. */
     internal val dbgRebuildSec = LongArray(5)
-    private var linkOfPair = HashMap<Long, Int>()
 
     /** Срабатывания потолка на момент захвата — строка DRAG показывает разницу. */
     private var dragCapBase = 0
@@ -2914,7 +3064,7 @@ class RealBodyDemo(private val bodyPath: String,
                 b -> { vx[i] = -dx * speed; vy[i] = -dy * speed }
             }
         }
-        println("[RealBodyDemo] таран: организмы $a и $b, по " +
+        if (!quiet) println("[RealBodyDemo] таран: организмы $a и $b, по " +
             "%.1f клеток/тик навстречу".format(speed * DT / body.meanLinkLength))
     }
 
@@ -2943,12 +3093,21 @@ class RealBodyDemo(private val bodyPath: String,
     }
 
     /** Порвалась ли хоть одна из трёх сторон треугольника. */
-    private fun triTorn(i0: Int, i1: Int, i2: Int): Boolean =
-        pairTorn(i0, i1) || pairTorn(i1, i2) || pairTorn(i0, i2)
+    private fun triTorn(t: Int): Boolean {
+        val te = baked.triEdge; val o = 3 * triId[t]
+        for (k in 0..2) {
+            val e = te[o + k]
+            if (e < 0) continue
+            val c = conOfEdge[e]
+            if (c >= 0 && linkTorn[c]) return true
+        }
+        return false
+    }
 
-    private fun pairTorn(a: Int, b: Int): Boolean {
-        val c = linkOfPair[minOf(a, b).toLong() * 1000003L + maxOf(a, b).toLong()] ?: return false
-        return linkTorn[c]
+    /** Рабочая связь пары клеток или -1. Разбору журнала. */
+    internal fun conIndexOf(i: Int, j: Int): Int {
+        val e = baked.edgeOf(i, j)
+        return if (e < 0) -1 else conOfEdge[e]
     }
 
     /**
@@ -3006,8 +3165,12 @@ class RealBodyDemo(private val bodyPath: String,
         // Вывернутым треугольникам своя, нулевая — см. AREA_COMPLIANCE_INVERTED.
         val alphaInverted = AREA_COMPLIANCE_INVERTED / (h * h)
         val maxStep = AREA_MAX_STEP * body.meanLinkLength
+        // Всё в локальные: стадия идёт 64 раза за тик по трём тысячам треугольников.
+        val px = px; val py = py; val invMass = invMass
+        val ta = triA; val tb = triB; val tc = triC
+        val rest2 = triRestArea2; val tm = triMuscle; val ms = muscleScaleOf
         for (t in 0 until triCount) {
-            val i0 = triA[t]; val i1 = triB[t]; val i2 = triC[t]
+            val i0 = ta[t]; val i1 = tb[t]; val i2 = tc[t]
             val x0 = px[i0]; val y0 = py[i0]
             val x1 = px[i1]; val y1 = py[i1]
             val x2 = px[i2]; val y2 = py[i2]
@@ -3024,13 +3187,14 @@ class RealBodyDemo(private val bodyPath: String,
 
             // Площадь покоя едет вместе с длинами: иначе мышца тянет треугольник вниз,
             // а несжимаемая площадь держит его на месте, и ткань запирает.
-            val s = muscleScale(triMuscle[t])
-            val restArea2 = triRestArea2[t].toDouble() * s * s
+            val m = tm[t]
+            val s = if (m < 0) 1.0 else ms[m]
+            val restArea2 = rest2[t].toDouble() * s * s
             val area2 = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0)
             // Плавный переход вместо ступеньки — см. AREA_SMOOTH_RAMP.
             val a = if (AREA_SMOOTH_RAMP) {
-                val t = (area2 / restArea2).coerceIn(0.0, 1.0)
-                alphaInverted + (alpha - alphaInverted) * t * t
+                val q = (area2 / restArea2).coerceIn(0.0, 1.0)
+                alphaInverted + (alpha - alphaInverted) * q * q
             } else if (area2 < 0.0) alphaInverted else alpha
             var dL = -(area2 - restArea2) / (denom + a)
             // Потолок на длину поправки — см. AREA_MAX_STEP.
@@ -3332,6 +3496,23 @@ class RealBodyDemo(private val bodyPath: String,
     private var dbgSnapX = DoubleArray(0)
     private var dbgSnapY = DoubleArray(0)
 
+    /**
+     * ЗАМЕР ВРЕМЕНИ ПО СТАДИЯМ: включается на время опыта, см. PerfBench.
+     *
+     * Отдельно от замера по импульсу (dbgStages): тот отвечает на вопрос «кто добавил
+     * движение», этот — «кто съел время». Имена стадий в dbgTimeNames.
+     */
+    internal var dbgTimeOn = false
+    internal val dbgTimeNs = LongArray(12)
+    internal val dbgTimeNames = arrayOf(
+        "связи", "лоскуты", "предел длины", "площади", "изгиб", "кость",
+        "подготовка контактов", "решатель контактов", "снятие момента",
+        "скорости и среда", "ловушка", "пересборка")
+    private var dbgTimeT0 = 0L
+
+    private fun tick0() { if (dbgTimeOn) dbgTimeT0 = System.nanoTime() }
+    private fun tick1(k: Int) { if (dbgTimeOn) dbgTimeNs[k] += System.nanoTime() - dbgTimeT0 }
+
     private fun dbgMark() {
         if (!dbgStages) return
         if (dbgSnapX.size < n) { dbgSnapX = DoubleArray(n); dbgSnapY = DoubleArray(n) }
@@ -3626,6 +3807,9 @@ class RealBodyDemo(private val bodyPath: String,
     /** Диагностика: выключить анизотропное сопротивление среды, то есть тягу. */
     var dbgDragOff = false
 
+    /** Доля касательного трения от нормального. См. TANGENT_DRAG. */
+    internal var tangentDrag = System.getenv("RB_TANGENT")?.toDoubleOrNull() ?: TANGENT_DRAG
+
     private fun applyNormalDrag(h: Double) {
         if (dbgDragOff) return
         var kd = FLOW_DECAY * h
@@ -3728,6 +3912,17 @@ class RealBodyDemo(private val bodyPath: String,
             val dv = -vn * k
             vx[i] += dv * nx; vy[i] += dv * ny
             vx[j] += dv * nx; vy[j] += dv * ny
+
+            // Трение ВДОЛЬ ребра. См. TANGENT_DRAG.
+            if (tangentDrag > 0.0) {
+                val tx = ex / len; val ty = ey / len
+                val vt = vmx * tx + vmy * ty
+                var kt = tangentDrag * NORMAL_DRAG * len * h
+                if (kt > 0.5) kt = 0.5
+                val dvt = -vt * kt
+                vx[i] += dvt * tx; vy[i] += dvt * ty
+                vx[j] += dvt * tx; vy[j] += dvt * ty
+            }
         }
     }
 
@@ -3770,9 +3965,10 @@ class RealBodyDemo(private val bodyPath: String,
         //
         // Ровно один раз за тик: внутри подшагов контур и контакты пересобирались бы
         // по шестнадцать раз, а рвётся обычно пучок связей за один удар.
+        updateMuscleScale()
         java.util.Arrays.fill(contactPressure, 0.0)
         java.util.Arrays.fill(crushedCell, false)
-        if (tearsPending) rebuildTimed()
+        if (tearsPending) { tick0(); rebuildTimed(); tick1(11) }
         val h = DT / SUBSTEPS
         // Нулевой слот — состояние на НАЧАЛО тика. Промежуточные пишутся ТОЛЬКО когда
         // их кто-то будет читать: в обычном режиме это лишние 242 КБ копирования за
@@ -3823,29 +4019,29 @@ class RealBodyDemo(private val bodyPath: String,
             // Поэтому здесь связи и контакт стоят в одном цикле и делят между собой
             // одну и ту же невязку, вместо того чтобы переписывать работу друг друга.
             for (iter in 0 until SOLVER_ITERS) {
-                dbgMark(); solveConstraints(h); dbgMeasure(0, h)
-                dbgMark(); solveFlaps(h); dbgMeasure(9, h)
-                dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h)
-                dbgMark(); solveAreas(h); dbgMeasure(1, h)
-                dbgMark(); solveBend(h); dbgMeasure(2, h)
-                dbgMark()
+                tick0(); dbgMark(); solveConstraints(h); dbgMeasure(0, h); tick1(0)
+                tick0(); dbgMark(); solveFlaps(h); dbgMeasure(9, h); tick1(1)
+                tick0(); dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h); tick1(2)
+                tick0(); dbgMark(); solveAreas(h); dbgMeasure(1, h); tick1(3)
+                tick0(); dbgMark(); solveBend(h); dbgMeasure(2, h); tick1(4)
+                tick0(); dbgMark()
                 if (bonesRigid) for (b in rigidBones.indices) projectBone(b)
-                dbgMeasure(3, h)
-                dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h)
+                dbgMeasure(3, h); tick1(5)
+                tick0(); dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h); tick1(2)
                 // РАЗРЫВ СРАЗУ, А НЕ В НАЧАЛЕ СЛЕДУЮЩЕГО ТИКА. См. TEAR_IMMEDIATE.
-                if (TEAR_IMMEDIATE && tearsPending) { rebuildTimed(); contactsStale = true }
+                if (TEAR_IMMEDIATE && tearsPending) { tick0(); rebuildTimed(); tick1(11); contactsStale = true }
                 val ci = contacts
                 if (ci != null && contactsOn) {
                     // Список пар строится на первом заходе — и заново после пересборки:
                     // у нового объекта контактов списка ещё нет.
                     if (iter == 0 || contactsStale) {
-                        dbgMark(); ci.prepare(px, py, prevX, prevY, vx, vy, invMass); dbgMeasure(6, h)
+                        tick0(); dbgMark(); ci.prepare(px, py, prevX, prevY, vx, vy, invMass); dbgMeasure(6, h); tick1(6)
                         if (cancelSpinOn) internalMom?.noteContacts(ci)
                         contactsStale = false
                     }
                     ci.updateBones(px, py, invMass,
                         if (bonesRigid) boneOf else null, rigidBones)
-                    dbgMark(); ci.solveContacts(px, py, vx, vy, invMass, h); dbgMeasure(5, h)
+                    tick0(); dbgMark(); ci.solveContacts(px, py, vx, vy, invMass, h); dbgMeasure(5, h); tick1(7)
                     if (ci.killN > 0) { applyKills(ci); contactsStale = true }
                 }
             }
@@ -3863,7 +4059,7 @@ class RealBodyDemo(private val bodyPath: String,
             // Снять импульс и момент, внесённые ВНУТРЕННИМИ стадиями. Контакты стоят в том
             // же цикле, но их смещения копятся отдельно и не снимаются: контакт внешний
             // для организма и передаёт импульс между телами законно. См. InternalMomentum.
-            dbgMark(); if (cancelSpinOn) cancelInternalSpin(); dbgMeasure(12, h)
+            tick0(); dbgMark(); if (cancelSpinOn) cancelInternalSpin(); dbgMeasure(12, h); tick1(8)
 
             // КОНТАКТЫ ПОСЛЕДНИМИ СРЕДИ ПОЗИЦИОННЫХ, и это принципиально.
             // projectBone перезаписывает позиции жёсткой позой; поставь контакты
@@ -3890,6 +4086,7 @@ class RealBodyDemo(private val bodyPath: String,
 
             dbgMark(); if (cancel) cancelInternalDrift(beforeX, beforeY); dbgMeasure(12, h)
 
+            tick0()
             updateVelocities(h)
             // Отскок: позиционная часть удар гасит целиком, см. solveRestitution.
             dbgMarkV()
@@ -3904,7 +4101,7 @@ class RealBodyDemo(private val bodyPath: String,
             applyRestitution()
             applyMediumDrag(h)
             clampSpeed()
-            dbgMeasureV(11)
+            dbgMeasureV(11); tick1(9)
             if (keepSubsteps || step == SUBSTEPS - 1) histSnap(step + 1)
             dbgSubstepHook?.invoke(step)
         }
@@ -4064,7 +4261,7 @@ class RealBodyDemo(private val bodyPath: String,
         // Порванное в последнем проходе предела длины ещё не пересобрано, а признак
         // «осталась без связей» берётся из пересборки.
         if ((crushBurstOn || trapKillTicks >= 0) && tearsPending) rebuildTimed()
-        if (trapKillTicks >= 0) scanTrapped()
+        if (trapKillTicks >= 0) { tick0(); scanTrapped(); tick1(10) }
         val lim = pressureBurst * body.meanLinkLength
         var any = false
         for (i in 0 until n) {
@@ -4096,7 +4293,11 @@ class RealBodyDemo(private val bodyPath: String,
      * гребок относительно физики замедлился бы в десять раз, и наблюдал бы ты совсем
      * другой режим, чем тот, который мерил стенд.
      */
+    /** Разбор: сколько наносекунд занял последний тик целиком. */
+    internal var dbgTickNs = 0L
+
     private fun stepOnce() {
+        val tickT0 = System.nanoTime()
         // Цели мышц при воспроизведении берутся из журнала, а не из клавиатуры и
         // наведения: окна там нет, а записано ровно то, что получилось в игре.
         if (replay != null) replayTickInputs() else { updateMuscleTargets(); recordTickInputs() }
@@ -4108,6 +4309,7 @@ class RealBodyDemo(private val bodyPath: String,
         logTick++
         playTick++
         if (playTick % PlayerLog.HASH_EVERY == 0) tickHash()
+        dbgTickNs = System.nanoTime() - tickT0
     }
 
     // ================================================================
@@ -4755,6 +4957,7 @@ class RealBodyDemo(private val bodyPath: String,
         }
 
         buildFromFile()
+        startWarmUp()
         reset()
         openPlayerLog()
     }
@@ -4853,7 +5056,7 @@ class RealBodyDemo(private val bodyPath: String,
             val act = if (m >= 0) muscleActivation[m] else 0.0
             shapes.color = when {
                 triInverted[t] -> INVERTED_FILL
-                triTorn(i0, i1, i2) -> TEAR_FILL
+                triTorn(t) -> TEAR_FILL
                 boneOf[i0] != -1 && boneOf[i0] == boneOf[i1] && boneOf[i0] == boneOf[i2] ->
                     if (bonesRigid) BONE_FILL else BONE_FILL_OFF
                 m >= 0 -> if (act > 0.002) tmpColor.set(MUSCLE_IDLE).lerp(MUSCLE_FILL, act.toFloat()) else MUSCLE_IDLE
@@ -5112,6 +5315,54 @@ class RealBodyDemo(private val bodyPath: String,
         // Диалог рисуется ПОСЛЕДНИМ, поверх всего: он и логически сверху, и свои
         // begin/end у него собственные — рисовать его внутри чужой пары нельзя.
         controls.render(shapes, batch, font, Gdx.graphics.width)
+    }
+
+    /** Идёт прогрев: печатать нечего, окна у этой копии нет. */
+    internal var quiet = false
+
+    /**
+     * ПРОГРЕВ КОДА РАЗРУШЕНИЯ ПРИ ЗАПУСКЕ.
+     *
+     * ЗАЧЕМ. Первое же столкновение в игре заметно подлагивает, и это не работа, а
+     * компиляция: пути разрыва, пересборки и контактов до первого удара не исполнялись ни
+     * разу и идут в интерпретаторе. Замер на журнале 12:17 (тик первого тарана): в холодном
+     * процессе 78–107 мс, в прогретом — 22–28 мс при том же объёме работы.
+     *
+     * КАК. Отдельная копия тела в фоновом потоке получает таран и несколько тиков живёт с
+     * разрушением. Общего состояния с игрой у неё нет вовсе — только скомпилированный код,
+     * а он в JVM общий на процесс. Поэтому на результат симуляции прогрев не влияет:
+     * контрольные суммы шести журналов игрока после него те же.
+     *
+     * Поток фоновый и с низким приоритетом: он не должен отбирать время у отрисовки.
+     */
+    private fun startWarmUp() {
+        if (!WARMUP_ON_START) return
+        val t = Thread({ warmUpBlocking(WARMUP_TICKS) }, "warmup")
+        t.isDaemon = true
+        t.priority = Thread.MIN_PRIORITY
+        t.start()
+    }
+
+    /** Сам прогрев. Отдельно от потока, чтобы его можно было позвать из замера. */
+    internal fun warmUpBlocking(ticks: Int) {
+        val t0 = System.nanoTime()
+        try {
+            val w = RealBodyDemo(bodyPath, copies, freeParticles, labKillFraction, labKillSeed, killOnDeep)
+            w.quiet = true
+            w.replayBoot()
+            // Через воспроизведение журнала, а не через обычный тик: тот опрашивает
+            // клавиатуру, а прогрев идёт в чужом потоке и до появления окна.
+            val script = listOf(
+                PlayerLog.Line(1, "O", emptyList(), "1 O"),
+                PlayerLog.Line(ticks, "END", emptyList(), "$ticks END"),
+            )
+            w.replayRun(script, onEvent = {}, onTick = {})
+        } catch (e: Throwable) {
+            println("[RealBodyDemo] прогрев не удался: $e")
+            return
+        }
+        if (!quiet) println("[RealBodyDemo] прогрев разрушения: %d тиков за %.0f мс".format(
+            ticks, (System.nanoTime() - t0) / 1e6))
     }
 
     override fun dispose() {

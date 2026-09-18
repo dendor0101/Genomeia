@@ -85,6 +85,8 @@ fun main(args: Array<String>) {
         labKillSeed = hdr["killSeed"]?.toLong() ?: 0L,
         killOnDeep = hdr["killOnDeep"] == "1")
     demo.replayBoot()
+    // Прогрев кода разрушения, как в окне: PR_WARM=тиков. См. startWarmUp.
+    System.getenv("PR_WARM")?.toIntOrNull()?.let { demo.warmUpBlocking(it) }
     val P = Probe
     P.attach(demo)
     val dt = P.const("DT")
@@ -208,9 +210,8 @@ fun main(args: Array<String>) {
 
     fun linkStatus(i: Int, j: Int): String {
         val ct = P.contactsObj()
-        val lop: HashMap<Long, Int> = P.get("linkOfPair")
         val conDead: BooleanArray = P.get("conDead")
-        val c = lop[minOf(i, j).toLong() * 1000003L + maxOf(i, j).toLong()]
+        val c = demo.conIndexOf(i, j).takeIf { it >= 0 }
         return when {
             c != null && c < conDead.size && !conDead[c] -> "жива"
             c != null -> "порвана"
@@ -378,9 +379,9 @@ fun main(args: Array<String>) {
             if (v > vmax) vmax = v
         }
         val pen = P.contactsObj()?.maxPenetration(P.px, P.py) ?: 0.0
-        println("  %6d | %5d | %4d | %5d (%4d) | %6.3f | %5.3f | %5.3f | %5.2f | пересборок %d за %.1f мс | лопнуло давл %d разд %d | мембрана %d | ловушка %d (глуб %d, кость %d, складок %d) убито %d, %.0f мкс | h=%x".format(
+        println("  %6d | %5d | %4d | %5d (%4d) | %6.3f | %5.3f | %5.3f | %5.2f | тик %.1f мс | пересборок %d за %.1f мс | лопнуло давл %d разд %d | мембрана %d | ловушка %d (глуб %d, кость %d, складок %d) убито %d, %.0f мкс | h=%x".format(
             tk, P.killedLinks(), P.get<Int>("organismCount"), inside, deep,
-            demo.dbgMaxOverStrain, minRatio, pen, vmax, demo.dbgRebuildN, demo.dbgRebuildNs / 1e6, demo.pressureBurstCount, demo.crushBurstCount, demo.membraneTearCount,
+            demo.dbgMaxOverStrain, minRatio, pen, vmax, demo.dbgTickNs / 1e6, demo.dbgRebuildN, demo.dbgRebuildNs / 1e6, demo.pressureBurstCount, demo.crushBurstCount, demo.membraneTearCount,
             demo.dbgTrapNow, demo.dbgTrapDeep, demo.dbgTrapBone, demo.dbgTrapFold, demo.trapKillCount, demo.dbgTrapNs / 1e3,
             PlayerLog.stateHash(P.n, P.px, P.py, P.vx, P.vy)))
         if (demo.dbgRebuildN > 0) println("         части пересборки, мс: " +
@@ -458,7 +459,6 @@ fun main(args: Array<String>) {
         val ct = P.contactsObj()
         var own = 0; var ownDeep = 0.0
         val lines = ArrayList<String>()
-        val lop: HashMap<Long, Int> = P.get("linkOfPair")
         if (ct != null) {
             val ids = (0 until P.n).filter { mask[it] && ct.contactRadiusOf(it) > 0.0 }
             for (a in ids.indices) for (b in a + 1 until ids.size) {
@@ -474,7 +474,7 @@ fun main(args: Array<String>) {
                 val rdx = (P.body.x[i] - P.body.x[j]).toDouble(); val rdy = (P.body.y[i] - P.body.y[j]).toDouble()
                 val restD = sqrt(rdx * rdx + rdy * rdy)
                 val pk = minOf(i, j).toLong() * 1000003L + maxOf(i, j).toLong()
-                val wasLinked = lop.containsKey(pk) || P.get<Set<Long>?>("everLinked")?.contains(pk) == true
+                val wasLinked = demo.conIndexOf(i, j) >= 0 || P.get<Set<Long>?>("everLinked")?.contains(pk) == true
                 lines.add("         #%d-#%d  d/упор %.3f  упор %s  в позе покоя d/(ri+rj) %.3f  %s%s".format(
                     i, j, d / rc, if (rc < rr) "расстояние покоя" else "сумма радиусов", restD / rr,
                     if (wasLinked) "бывшие соседи" else "связаны не были",
@@ -850,6 +850,76 @@ fun main(args: Array<String>) {
         val per = (System.nanoTime() - t0) / 1e3 / reps
         val tn: Int = P.get("triCount")
         println("--- обход застрявших отдельно: %.1f мкс за вызов, треугольников %d, клеток %d ---".format(per, tn, P.n))
+    }
+    // ПРОГРЕВ: тот же журнал прогоняется ещё раз на свежем демо, и печатается, во что
+    // обошлись те же тики уже прогретому JIT. PR_TWICE=тик1,тик2,...
+    System.getenv("PR_TWICE")?.let { spec ->
+        val marks = spec.split(',').mapNotNull { it.trim().toIntOrNull() }.toSet()
+        for (pass in 1..2) {
+            val d2 = RealBodyDemo(bodyPath,
+                copies = hdr["copies"]?.toInt() ?: 2,
+                freeParticles = hdr["free"]?.toInt() ?: 6,
+                labKillFraction = hdr["killFraction"]?.toDouble() ?: 0.0,
+                labKillSeed = hdr["killSeed"]?.toLong() ?: 0L,
+                killOnDeep = hdr["killOnDeep"] == "1")
+            d2.replayBoot()
+            var worst = 0.0; var worstTick = -1
+            val shown = StringBuilder()
+            var sum = 0.0
+            d2.replayRun(log.lines, onEvent = {}, onTick = {
+                val ms = d2.dbgTickNs / 1e6
+                sum += ms
+                if (ms > worst) { worst = ms; worstTick = d2.currentTick }
+                if (d2.currentTick in marks) shown.append("  тик %d: %.1f мс".format(d2.currentTick, ms))
+            })
+            println("  проход %d: худший тик %d — %.1f мс, всего %.0f мс%s".format(pass, worstTick, worst, sum, shown))
+        }
+    }
+    // КТО ЕЩЁ КРУТИТСЯ К КОНЦУ ЗАПИСИ: PR_SPINS=1. Считается по КАЖДОМУ организму, а не по
+    // помеченной клетке, — с изменённой физикой журнал расходится с записью, и следить за
+    // конкретным куском бессмысленно, а «остался ли в мире вечно крутящийся кусок» — нет.
+    if (System.getenv("PR_SPINS") != null) {
+        val org: IntArray = P.get("organismOf")
+        val dead: BooleanArray = P.get("cellDead")
+        val count: Int = P.get("organismCount")
+        val cx = DoubleArray(count); val cy = DoubleArray(count); val mm = DoubleArray(count)
+        val vxs = DoubleArray(count); val vys = DoubleArray(count); val cells = IntArray(count)
+        for (i in 0 until P.n) {
+            if (dead[i] || P.invMass[i] <= 0.0) continue
+            val o = org[i]; val m = 1.0 / P.invMass[i]
+            mm[o] += m; cx[o] += m * P.px[i]; cy[o] += m * P.py[i]
+            vxs[o] += m * P.vx[i]; vys[o] += m * P.vy[i]; cells[o]++
+        }
+        for (o in 0 until count) if (mm[o] > 0.0) { cx[o] /= mm[o]; cy[o] /= mm[o]; vxs[o] /= mm[o]; vys[o] /= mm[o] }
+        val lj = DoubleArray(count); val jj = DoubleArray(count)
+        for (i in 0 until P.n) {
+            if (dead[i] || P.invMass[i] <= 0.0) continue
+            val o = org[i]; val m = 1.0 / P.invMass[i]
+            val rx = P.px[i] - cx[o]; val ry = P.py[i] - cy[o]
+            lj[o] += m * (rx * (P.vy[i] - vys[o]) - ry * (P.vx[i] - vxs[o]))
+            jj[o] += m * (rx * rx + ry * ry)
+        }
+        var fast = 0
+        val rows = ArrayList<String>()
+        for (o in 0 until count) {
+            if (cells[o] < 2 || jj[o] <= 1e-18) continue
+            val w = lj[o] / jj[o]
+            if (Math.abs(w) > 1.0) fast++
+            rows.add("%9.3f|%d|%d".format(Math.abs(w), cells[o], o))
+        }
+        rows.sortDescending()
+        println("--- вращение кусков в конце записи ---")
+        println("  кусков с |ω| > 1 рад/с: $fast из ${rows.size}")
+        for (r in rows.take(6)) {
+            val p = r.split('|')
+            println("    орг %s, клеток %s: |ω| %.3f рад/с".format(p[2], p[1], p[0].trim().toDouble()))
+        }
+        // Сколько проплыл самый крупный организм: столько же тяги, сколько и было?
+        var big = 0
+        for (o in 0 until count) if (cells[o] > cells[big]) big = o
+        println("  самый крупный кусок: орг %d, клеток %d, центр масс (%.3f, %.3f), скорость %.4f кл/тик".format(
+            big, cells[big], cx[big], cy[big],
+            Math.hypot(vxs[big], vys[big]) * dt / meanLink))
     }
     println("--- итог ---")
     println("  тиков воспроизведено ${demo.currentTick} (${sec(demo.currentTick)}) за %.1f с".format(secs))

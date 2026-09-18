@@ -32,18 +32,21 @@ object Probe {
     lateinit var muscleTarget: DoubleArray
     lateinit var rigidBones: Array<IntArray>
     lateinit var organismOf: IntArray
-    var organismCount = 0
     lateinit var boundA: IntArray
     lateinit var boundB: IntArray
-    var boundCount = 0
-    var conCount = 0
+    // Длины списков читаются ЖИВЫМИ, а не запоминаются: разрыв их меняет, а массивы
+    // теперь держат ёмкость целого тела и по длине ничего не скажут. Раньше стенд мерил
+    // «выброс» и «внутри» по разбивке на организмы с момента сброса — то есть по старой.
+    val organismCount: Int get() = field("organismCount")
+    val boundCount: Int get() = field("boundCount")
+    val conCount: Int get() = field("conCount")
     lateinit var conA: IntArray
     lateinit var conRest: DoubleArray
     lateinit var triA: IntArray
     lateinit var triMuscle: IntArray
     lateinit var triB: IntArray
     lateinit var triC: IntArray
-    var triCount = 0
+    val triCount: Int get() = field("triCount")
     lateinit var conB: IntArray
 
     private val methods = HashMap<String, Method>()
@@ -127,28 +130,22 @@ object Probe {
         muscleActivation = field("muscleActivation")
         muscleTarget = field("muscleTarget")
         rigidBones = field("rigidBones")
-        organismOf = field("organismOf"); organismCount = field("organismCount")
+        organismOf = field("organismOf")
         boundA = field("boundA"); boundB = field("boundB")
-        boundCount = field("boundCount")
-        conCount = field("conCount")
         conA = field("conA"); conB = field("conB")
         conRest = field("conRest")
         triA = field("triA"); triB = field("triB"); triC = field("triC")
         triMuscle = field("triMuscle")
-        triCount = field("triCount")
     }
 
     /** Перечитать массивы, которые пересборка топологии могла заменить. */
     private fun refresh() {
         boundA = field("boundA"); boundB = field("boundB")
-        boundCount = field("boundCount")
-        conCount = field("conCount")
         conA = field("conA"); conB = field("conB")
         conRest = field("conRest")
         triA = field("triA"); triB = field("triB"); triC = field("triC")
         triMuscle = field("triMuscle")
-        triCount = field("triCount")
-        organismOf = field("organismOf"); organismCount = field("organismCount")
+        organismOf = field("organismOf")
     }
 
     /** Позиции и скорости в начальное состояние (аналог reset без камеры). */
@@ -347,7 +344,6 @@ object Probe {
 
     /** Число тел СЕЙЧАС, а не на момент запуска: разрыв его меняет. */
     fun organismCountNow(): Int {
-        organismCount = field("organismCount")
         organismOf = field("organismOf")
         return organismCount
     }
@@ -379,14 +375,12 @@ object Probe {
     fun applyLabDamage() { m("applyLabDamage").invoke(demo) }
 
     fun refreshTopology() {
-        conCount = field("conCount")
         conA = field("conA"); conB = field("conB")
         conRest = field("conRest")
         triA = field("triA"); triB = field("triB"); triC = field("triC")
         triMuscle = field("triMuscle")
-        triCount = field("triCount")
         boundA = field("boundA"); boundB = field("boundB")
-        boundCount = field("boundCount")
+        organismOf = field("organismOf")
     }
 
     fun organismSize(o: Int): Int {

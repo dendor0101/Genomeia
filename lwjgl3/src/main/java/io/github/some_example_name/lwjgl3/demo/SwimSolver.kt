@@ -104,8 +104,9 @@ class Topology private constructor(
             // у которой ровно ДВА граничных ребра, лежит внутри гладкого участка контура,
             // и её соседи через одну и образуют пару. Вершины развилок (три и более
             // граничных ребра) пропускаются: там «изгиб» не определён.
-            val bA: IntArray = f("boundA")
-            val bB: IntArray = f("boundB")
+            val bc: Int = f("boundCount")
+            val bA: IntArray = f<IntArray>("boundA").copyOf(bc)
+            val bB: IntArray = f<IntArray>("boundB").copyOf(bc)
             val nb0 = IntArray(body.count) { -1 }
             val nb1 = IntArray(body.count) { -1 }
             val deg = IntArray(body.count)
@@ -131,11 +132,14 @@ class Topology private constructor(
             return Topology(
                 n = f("n"),
                 restX = body.x, restY = body.y, restR = body.radius,
-                conA = f("conA"), conB = f("conB"),
-                conRest = f("conRest"), conMuscle = f("conMuscle"),
+                // Списки живут в массивах постоянной ёмкости, длина берётся из счётчиков.
+                conA = f<IntArray>("conA").copyOf(f("conCount")), conB = f<IntArray>("conB").copyOf(f("conCount")),
+                conRest = f<DoubleArray>("conRest").copyOf(f("conCount")),
+                conMuscle = f<IntArray>("conMuscle").copyOf(f("conCount")),
                 triA = body.triA, triB = body.triB, triC = body.triC,
                 triRestArea2 = body.triRestArea2, triMuscle = f("triMuscle"),
-                boundA = f("boundA"), boundB = f("boundB"),
+                boundA = f<IntArray>("boundA").copyOf(f("boundCount")),
+                boundB = f<IntArray>("boundB").copyOf(f("boundCount")),
                 rigidBones = f("rigidBones"),
                 boneRestQx = f("boneRestQx"), boneRestQy = f("boneRestQy"),
                 muscleCount = body.muscleClusters.size,
@@ -261,6 +265,7 @@ internal object DemoConst {
     val SOLVER_ITERS = i("SOLVER_ITERS")
     val SUBSTEPS = i("SUBSTEPS")
     val NORMAL_DRAG = d("NORMAL_DRAG")
+    val TANGENT_DRAG = d("TANGENT_DRAG")
     val NORMAL_DRAG_QUADRATIC = d("NORMAL_DRAG_QUADRATIC")
     val MEDIUM_DRAG = d("MEDIUM_DRAG")
     val VISCOSITY = d("VISCOSITY")
@@ -295,6 +300,8 @@ internal object DemoConst {
 data class SwimParams(
     val normalDrag: Double = DemoConst.NORMAL_DRAG,
     val normalDragQuadratic: Double = DemoConst.NORMAL_DRAG_QUADRATIC,
+    /** Трение ВДОЛЬ ребра, долей от normalDrag. См. TANGENT_DRAG в RealBodyDemo. */
+    val tangentDrag: Double = DemoConst.TANGENT_DRAG,
     val mediumDrag: Double = DemoConst.MEDIUM_DRAG,
     val viscosity: Double = DemoConst.VISCOSITY,
 
@@ -870,6 +877,19 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             vx[j] += dv * nx; vy[j] += dv * ny
             impX += 2 * dv * nx
             impY += 2 * dv * ny
+
+            // Трение ВДОЛЬ ребра. См. TANGENT_DRAG в RealBodyDemo.
+            if (p.tangentDrag > 0.0) {
+                val tx = ex / len; val ty = ey / len
+                val vt = (vmx - flowVX[topo.organismOf[i]]) * tx + (vmy - flowVY[topo.organismOf[i]]) * ty
+                var kt = p.tangentDrag * p.normalDrag * len * h
+                if (kt > 0.5) kt = 0.5
+                val dvt = -vt * kt
+                vx[i] += dvt * tx; vy[i] += dvt * ty
+                vx[j] += dvt * tx; vy[j] += dvt * ty
+                impX += 2 * dvt * tx
+                impY += 2 * dvt * ty
+            }
         }
 
         if (global) {
