@@ -230,9 +230,19 @@ object Probe {
      * все и с тем же периодом и скважностью, что в демо. Именно на нём от тела
      * отваливаются куски, а разговор идёт про них.
      */
+    /** Одна мышца держится сокращённой — как при наведении мышью в окне. */
+    fun frameHold(dt: Double, muscle: Int) {
+        muscleTarget.fill(0.0)
+        if (muscle in muscleTarget.indices) muscleTarget[muscle] = 1.0
+        updateMuscles(dt)
+        simulate()
+    }
+
     fun frameGait(dt: Double, frame: Int) {
-        val period = constInt("GAIT_PERIOD")
-        val duty = (period * const("GAIT_DUTY")).toInt().coerceAtLeast(1)
+        // Период и доля берутся У ДЕМО, а не из констант: их можно подменить на время
+        // замера, см. RB_PERIOD в RealBodyDemo.
+        val period = demo.gaitPeriod
+        val duty = (period * demo.gaitDuty).toInt().coerceAtLeast(1)
         muscleTarget.fill(0.0)
         if (frame % period < duty) muscleTarget.fill(1.0)
         updateMuscles(dt)

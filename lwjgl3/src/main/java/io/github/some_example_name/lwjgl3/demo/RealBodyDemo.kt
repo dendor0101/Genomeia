@@ -930,6 +930,32 @@ class RealBodyDemo(private val bodyPath: String,
         private const val TRAP_KILL_TICKS = 10
 
         /**
+         * СУХОЖИЛИЕ: во сколько раз связь мышцы с костью крепче обычной на разрыв.
+         *
+         * ЗАЧЕМ. Мышца тянет, кость не поддаётся, и всю деформацию берёт на себя связь между
+         * ними. Журнал 19.09 06:07: игрок навёл мышь на одну мышцу медузы (при наведении она
+         * сокращается одна, без остальных), и через восемь тиков порвались ровно две связи —
+         * #203–#80 и #194–#79, обе растяжением 1.302 и 1.320 при пороге 1.30, обе одним
+         * концом в кости. Гребок, где работают все мышцы разом, ткань не рвёт: там тело
+         * деформируется согласованно.
+         *
+         * У медузы 68 из 72 стыковых связей мышцы идут прямо в кость — это и есть место,
+         * которое рвётся первым.
+         *
+         * ПОЧЕМУ ЭТО НЕ ПОДПОРКА. В живом теле мышца крепится к кости сухожилием, и оно
+         * прочнее и мышцы, и обычной ткани: рвётся обычно мышца, а не сухожилие. Здесь то же
+         * самое, только выражено порогом разрыва.
+         *
+         * ЗАМЕР (медуза, удержание одной мышцы 10 с / гребок 30 с):
+         * ×1.0 — рвётся 2 связи, растяжение 1.320 / 0 разрывов, 436 связей пути;
+         * ×1.5 — 0 разрывов, 1.307 / 0 разрывов, 436 связей;
+         * ×2.0 — то же самое. Тяга не меняется вовсе: сухожилие не тянет, оно только держит.
+         * Альтернатива «ослабить сокращение до 0.50» стоила бы трети пути: 308 вместо 436.
+         */
+        private const val TENDON_TEAR_FACTOR = 1.5
+
+
+        /**
          * СКЛАДКА СВОЕЙ ТКАНИ ТОЖЕ ЛОПАЕТСЯ: клетка столько же тиков в своём треугольнике, где
          * она не вершина. При гребке складки живут ровно 1 тик (215 за 100 с), после таранов
          * есть держащиеся минутами — например, #412 на одной связи у края, журнал 12:17.
@@ -1531,7 +1557,88 @@ class RealBodyDemo(private val bodyPath: String,
          */
         private const val DRAG_COMPLIANCE = 1e-5
 
-        private const val MUSCLE_CONTRACTION = 0.200
+        /**
+         * ГЛУБИНА СОКРАЩЕНИЯ МЫШЦЫ: во сколько раз укорачивается связь при полной активации.
+         *
+         * Было 0.200 — укорочение на 80%, и это рвало ткань собственной тягой. Стенд
+         * PERF_GAIT на медузе: 226 порванных связей за 30 секунд, тело распадалось на 62
+         * куска, соседние связи сжимались до 0.006 длины покоя при пороге разрыва 0.35
+         * (LINK_CRUSH_RATIO). Все разрывы приходились на ПЕРВОЕ сокращение.
+         *
+         * Такие константы выбрал прежний подбор: зеркало SwimSolver топологию не меняет и
+         * рвать не умеет, так что наказывать за разрыв было нечем. Теперь зеркало считает
+         * худшее сжатие и растяжение (worstCrush, worstStretch), а тюнер бракует варианты
+         * за порогами разрыва — и ищет ТОЛЬКО мышечные параметры, среда заморожена.
+         *
+         * Подбор дал 0.363 при скорости 15, но на настоящем теле это всё ещё рвало 70
+         * связей: зеркало не знает ни разрыва, ни лопающихся от давления клеток. Дальше
+         * искалось перебором прямо на настоящей физике, стендом PERF_GAIT.
+         *
+         * Медуза, 30 секунд гребка (порвано связей / проплыл крупнейший кусок, в связях):
+         * было 226 / 12.9; 0.363 при 15 — 70 / 508; 0.45 при 15 — 2 / 687;
+         * 0.46 при 12 — 0 / 436; 0.50 при 12 — 0 / 306; 0.55 при 15 — 0 / 335.
+         * На 90 секундах выбранный набор держит запас: сжатие 0.627 при пороге 0.35,
+         * растяжение 1.265 при пороге 1.30.
+         *
+         * ВТОРОЕ ТЕЛО (body-export) с этим набором тоже перестало рваться: было 42 связи и
+         * 14 кусков, стало 0. Плывёт оно медленнее — 6.6 связи против 25.5, — но прежние
+         * 25.5 оно и набирало, разрывая себя: ни один набор без разрывов не дал ему больше
+         * 8.8. Мышцы у тел разные (2 кластера против 12), и общий набор для обоих —
+         * компромисс; когда параметры станут свойством генома, каждому телу достанется своё.
+         *
+         * ПОСЛЕ ЗАХВАТА КРАЯ (MUSCLE_TOUCH = 1) мышца стала больше — у медузы 294
+         * сокращающихся связи вместо 216, у body-export 1036 вместо 314, — и прежние 0.46
+         * оказались для неё слишком глубокими: body-export рвал 26 связей. Развёртка на
+         * настоящей физике, 30 секунд гребка, медуза / body-export (проплыл, в связях;
+         * порвано): 0.46 — 760 / 63, 0 и 26; 0.47 — 735 / 67, 0 и 16; 0.48 — 709 / 55,
+         * 0 и 26; 0.49 — 681 / 55, 0 и 16; 0.50 — 654 / 52, 0 и 4; 0.52 — 596 / 38,
+         * 0 и 4; 0.58 — 385 / 21; 0.64 — 200 / 2.
+         *
+         * Выбрано 0.50: оба тела плывут кратно дальше прежнего (654 против 436 и 52
+         * против 6.6), медуза не рвётся вовсе, а у body-export остаются ровно две пары
+         * связей — вырожденные, см. ниже.
+         *
+         * ЧТО ИМЕННО РВЁТСЯ У body-export. Связи #929-#926 и #930-#927 (и их зеркала):
+         * длина 0.125 при средней 0.593 — самая короткая и третья с конца из 2617 связей
+         * выгрузки, клетки радиусом 0.5 стоят почти друг на друге. Порог считается в
+         * ДОЛЯХ длины покоя, поэтому такой паре хватает разойтись на 0.04, то есть на 7%
+         * средней связи. Это свойство самого тела, а не правила: та же пара рвётся и без
+         * захвата края, стоит сделать сокращение чуть глубже (0.40 — рвётся она одна).
+         * Чинить это в физике нечем, чинится в редакторе тела.
+         */
+        private const val MUSCLE_CONTRACTION = 0.50
+        /**
+         * МЫШЦА ЗАХВАТЫВАЕТ КРАЙ. 0 — нет, 1 — кластер растёт на кольцо треугольников,
+         * 2 — бахрома. Переменная окружения RB_TOUCH.
+         *
+         * Связь сокращается, когда ОБА её конца в одном кластере, треугольник — когда все
+         * три вершины. Из-за этого стык мышцы с костью оставался обычной тканью: мышца
+         * тянула не кость, а шов, который тянул кость. Шов и рвался — см.
+         * TENDON_TEAR_FACTOR. На экране мышца тоже выглядела уже, чем в редакторе.
+         *
+         * 1 — КЛАСТЕР РАСТЁТ. Треугольник, у которого хотя бы одна вершина мышечная,
+         * целиком уходит в кластер: его вершины становятся клетками мышцы, и дальше всё
+         * считается прежним правилом. Мышца остаётся сплошной областью, просто на кольцо
+         * шире, и кость на её краю тянется мышцей напрямую.
+         *
+         * 2 — БАХРОМА: мышечным считается само ограничение, если мышечная хотя бы одна
+         * его клетка. Звучит так же, но это НЕСОГЛАСОВАННО. У треугольника с одной
+         * мышечной вершиной сокращаются две стороны из трёх, а площадь — как у целой
+         * мышцы: третья сторона длину держит, и треугольнику остаётся только схлопнуться
+         * по высоте. Первый замер на body-export: 36 связей рвалось на нулевом же тике,
+         * худшая сжата до 0.132 длины покоя при пороге 0.35. Оставлено для сравнения.
+         *
+         * СКОЛЬКО ДАЁТ. 30 секунд гребка, проплыл крупнейший кусок (в связях) / порвано,
+         * при сокращении 0.46: медуза 436 / 0 без захвата, 760 / 0 режимом 1, 767 / 0
+         * режимом 2; body-export 6.6 / 0 без захвата, 63 / 26 режимом 1, 13 / 8 режимом 2.
+         * Режим 1 быстрее режима 2 там, где мышц много и они сходятся вплотную, и он же
+         * согласован по построению. Со сжатием 0.50 разрывы уходят, см. MUSCLE_CONTRACTION.
+         *
+         * ТРИ МЕЛОЧИ, БЕЗ КОТОРЫХ РЕЖИМ 1 РВЁТ ТЕЛО, — каждая измерена отдельно:
+         * площадь у кости не сокращается (см. muscleOfTri), шов между соседними мышцами
+         * сокращается (см. muscleOfPair), и само сжатие уменьшено с 0.46 до 0.50.
+         */
+        private const val MUSCLE_TOUCH = 1
         /**
          * Скорость сокращения и РАСПРЯМЛЕНИЯ, 1/сек — намеренно разные.
          *
@@ -1580,11 +1687,15 @@ class RealBodyDemo(private val bodyPath: String,
         // 43 кадра при 60 UPS = 0.722 с — тот же период В СЕКУНДАХ, при котором тюнер
         // искал остальные константы. Задан в КАДРАХ, поэтому при смене DT его надо
         // пересчитывать, иначе молча меняется само существо, а не настройки решателя.
-        private const val GAIT_PERIOD = 9
-        private const val GAIT_DUTY = 0.615
+        // Период и рабочая доля подобраны там же, см. MUSCLE_CONTRACTION. При периоде 8 доли
+        // 0.40 и 0.47 дают одно и то же: рабочая фаза округляется до трёх тиков.
+        private const val GAIT_PERIOD = 8
+        private const val GAIT_DUTY = 0.45
 
-        private const val MUSCLE_RATE_CONTRACT = 12.59
-        private const val MUSCLE_RATE_RELAX = 15.0
+        // Скорость сокращения 15 (потолок) рвала медузу даже при мягкой глубине: первый взмах
+        // слишком резкий. 12 — граница, на которой разрывов уже нет. См. MUSCLE_CONTRACTION.
+        private const val MUSCLE_RATE_CONTRACT = 12.0
+        private const val MUSCLE_RATE_RELAX = 8.546
 
         /** Радиусы захвата масштабируются от средней связи: тело мельче синтетического. */
         private const val PICK_FACTOR = 1.2f
@@ -1957,6 +2068,7 @@ class RealBodyDemo(private val bodyPath: String,
     private lateinit var hudCamera: OrthographicCamera
     private val tmp = Vector3()
     private val tmpColor = Color()
+    private val tmpColor2 = Color()
 
     private var dragId = -1
     private var hoverId = -1
@@ -1994,6 +2106,7 @@ class RealBodyDemo(private val bodyPath: String,
         buildBoneRestPose()
 
         body.muscleClusters.forEachIndexed { m, ids -> for (i in ids) muscleOf[i] = m }
+        growMuscles()
         muscleActivation = DoubleArray(body.muscleClusters.size)
         muscleScaleOf = DoubleArray(body.muscleClusters.size) { 1.0 }
         muscleTarget = DoubleArray(body.muscleClusters.size)
@@ -2023,20 +2136,14 @@ class RealBodyDemo(private val bodyPath: String,
             val dx = body.x[i] - body.x[j]
             val dy = body.y[i] - body.y[j]
             a.add(i); b.add(j); rest.add(sqrt((dx * dx + dy * dy).toDouble())); ed.add(lnkEdge[k])
-            // Мышца — только если ОБА конца в одном кластере. Связь от мышцы к обычной
-            // ткани или к кости длину не меняет: она и передаёт тягу наружу.
-            mus.add(if (muscleOf[i] != -1 && muscleOf[i] == muscleOf[j]) muscleOf[i] else -1)
+            mus.add(muscleOfPair(i, j))
         }
         conCount = a.size
         conA = a.toIntArray(); conB = b.toIntArray()
         conRest = rest.toDoubleArray(); conMuscle = mus.toIntArray()
         conEdge = ed.toIntArray()
 
-        triMuscle = IntArray(triCount) { t ->
-            val i0 = triA[t]; val i1 = triB[t]; val i2 = triC[t]
-            if (muscleOf[i0] != -1 && muscleOf[i0] == muscleOf[i1] && muscleOf[i0] == muscleOf[i2])
-                muscleOf[i0] else -1
-        }
+        triMuscle = IntArray(triCount) { t -> muscleOfTri(triA[t], triB[t], triC[t]) }
         triInverted = BooleanArray(triCount)
 
         buildBoundary()
@@ -2053,6 +2160,16 @@ class RealBodyDemo(private val bodyPath: String,
         if (!quiet) println("[RealBodyDemo] " + body.describe())
         if (!quiet) println("[RealBodyDemo] rigid bones = ${rigidBones.size}, degenerate clusters dropped = $degenerateBones" +
             ", largest = ${rigidBones.maxOfOrNull { it.size } ?: 0} cells (drag on it is that many times weaker)")
+        if (!quiet) {
+            var mc = 0
+            for (i in 0 until n) if (muscleOf[i] >= 0) mc++
+            var cm = 0
+            for (c in 0 until conCount) if (conMuscle[c] >= 0) cm++
+            var tm = 0
+            for (t in 0 until triCount) if (triMuscle[t] >= 0) tm++
+            println("[RealBodyDemo] muscle cells = $mc (grown from ${body.muscleClusters.sumOf { it.size }}, edge grab $muscleTouch)" +
+                ", contracting links = $cm, contracting triangles = $tm")
+        }
     }
 
     /**
@@ -2212,7 +2329,7 @@ class RealBodyDemo(private val bodyPath: String,
         val cap = conA.size
         if (!::conMaxLen.isInitialized || conMaxLen.size != cap) {
             conMaxLen = DoubleArray(cap); linkTorn = BooleanArray(cap); conDead = BooleanArray(cap)
-            conBoundary = BooleanArray(cap)
+            conBoundary = BooleanArray(cap); conTendon = BooleanArray(cap)
         } else {
             linkTorn.fill(false); conDead.fill(false)
         }
@@ -2227,6 +2344,10 @@ class RealBodyDemo(private val bodyPath: String,
             val e = conEdge[c]
             conOfEdge[e] = c
             conBoundary[c] = use[e] <= 1
+            // СУХОЖИЛИЕ: связь мышцы с костью. Мышца тянет, кость не поддаётся, и всю
+            // деформацию берёт на себя эта связь. См. TENDON_TEAR_FACTOR.
+            val a = conA[c]; val b = conB[c]
+            conTendon[c] = (muscleOf[a] >= 0) != (muscleOf[b] >= 0)
         }
         if (everLinked == null) everLinked = BoundaryContacts.linkedPairs(conA, conB, conCount)
         // Кандидаты касания в позе покоя считаются по ЦЕЛОМУ телу и от разрывов не зависят:
@@ -2567,6 +2688,99 @@ class RealBodyDemo(private val bodyPath: String,
      * чтобы дотащить ткань до новой длины, и упирается, если ей мешают. Прямой аналог
      * degreeOfShortening в движке.
      */
+    /**
+     * МЫШЕЧНЫЕ ПАРАМЕТРЫ ЖИВУТ ПЕРЕМЕННЫМИ, а не только константами.
+     *
+     * Подбор идёт на зеркале (`swimTune`), а зеркало рвать не умеет, поэтому найденное
+     * обязательно проверяется на настоящем теле с разрывом — стенд `PERF_GAIT`. Чтобы
+     * прогнать кандидата, не пересобирая проект, значения берутся из окружения:
+     * RB_CONTRACTION, RB_RATE_CONTRACT, RB_RATE_RELAX, RB_PERIOD, RB_DUTY.
+     * Без переменных это ровно константы выше.
+     */
+    internal var muscleContraction = System.getenv("RB_CONTRACTION")?.toDoubleOrNull() ?: MUSCLE_CONTRACTION
+    internal var muscleRateContract = System.getenv("RB_RATE_CONTRACT")?.toDoubleOrNull() ?: MUSCLE_RATE_CONTRACT
+    internal var muscleRateRelax = System.getenv("RB_RATE_RELAX")?.toDoubleOrNull() ?: MUSCLE_RATE_RELAX
+    internal var gaitPeriod = System.getenv("RB_PERIOD")?.toIntOrNull() ?: GAIT_PERIOD
+    internal var gaitDuty = System.getenv("RB_DUTY")?.toDoubleOrNull() ?: GAIT_DUTY
+
+    /** Захватывает ли мышца край: 0/1/2. См. MUSCLE_TOUCH. Окружение RB_TOUCH. */
+    internal var muscleTouch = System.getenv("RB_TOUCH")?.toIntOrNull() ?: MUSCLE_TOUCH
+
+    /**
+     * Кластер мышцы у связи и у треугольника. См. MUSCLE_TOUCH.
+     *
+     * Строгое правило: оба конца связи и все три вершины треугольника в ОДНОМ кластере.
+     * Кольцо вокруг мышцы попадает внутрь не здесь, а раньше — расширением самого списка
+     * клеток, см. growMuscles(). Бахрома (режим 2) считается прямо тут.
+     *
+     * Когда клетки в РАЗНЫХ кластерах, побеждает большинство вершин, а при равенстве —
+     * меньший номер. Правило не зависит от того, в каком порядке записаны концы связи и
+     * вершины треугольника: иначе физика зависела бы от порядка строк в выгрузке.
+     */
+    private fun muscleOfPair(i: Int, j: Int): Int {
+        val a = muscleOf[i]; val b = muscleOf[j]
+        if (a == b) return a
+        if (muscleTouch == 0) return -1
+        // ШОВ МЕЖДУ СОСЕДНИМИ МЫШЦАМИ ТОЖЕ СОКРАЩАЕТСЯ. Пока между кластерами лежала
+        // обычная ткань, шва не было; после роста они сходятся вплотную, и связь на стыке
+        // осталась бы единственной, кто держит длину, пока обе стороны от неё уходят. На
+        // body-export таких связей 92, и все они рвались растяжением на нулевом же тике.
+        if (a >= 0 && b >= 0) return if (a < b) a else b
+        if (muscleTouch != 2) return -1
+        return if (a < 0) b else a
+    }
+
+    private fun muscleOfTri(i0: Int, i1: Int, i2: Int): Int {
+        // ПЛОЩАДЬ У КОСТИ НЕ СОКРАЩАЕТСЯ. Кость жёсткая, её сторона треугольника длину не
+        // меняет, а площадь просят уменьшить в s^2 раз — выполнить это можно только
+        // уронив вершину на кость. Связи при этом тянут её же на s, и стадии дерутся:
+        // на body-export это рвало 52 связи на нулевом тике, худшая связь сжималась до
+        // 0.111 длины покоя. Тянет кость СВЯЗЬ, ей для этого площадь не нужна.
+        if (boneOf[i0] >= 0 || boneOf[i1] >= 0 || boneOf[i2] >= 0) return -1
+        val a = muscleOf[i0]; val b = muscleOf[i1]; val c = muscleOf[i2]
+        if (a >= 0 && a == b && a == c) return a
+        if (muscleTouch == 0) return -1
+        // Все три вершины мышечные, но кластеры разные — см. шов у muscleOfPair.
+        if (muscleTouch != 2 && (a < 0 || b < 0 || c < 0)) return -1
+        var best = -1
+        var votes = 0
+        if (a >= 0) { val v = 1 + (if (b == a) 1 else 0) + (if (c == a) 1 else 0)
+            if (v > votes || (v == votes && a < best)) { best = a; votes = v } }
+        if (b >= 0) { val v = 1 + (if (a == b) 1 else 0) + (if (c == b) 1 else 0)
+            if (v > votes || (v == votes && b < best)) { best = b; votes = v } }
+        if (c >= 0) { val v = 1 + (if (a == c) 1 else 0) + (if (b == c) 1 else 0)
+            if (v > votes || (v == votes && c < best)) { best = c; votes = v } }
+        return best
+    }
+
+    /**
+     * КОЛЬЦО ВОКРУГ МЫШЦЫ УХОДИТ В МЫШЦУ. Режим 1, см. MUSCLE_TOUCH.
+     *
+     * Треугольник с хотя бы одной мышечной вершиной отдаёт кластеру все три свои клетки.
+     * Спорную клетку — ту, что граничит сразу с двумя мышцами, — забирает кластер с
+     * меньшим номером: правило должно быть одинаковым при любом порядке треугольников.
+     * Смотрим на ИСХОДНЫЙ список клеток, а не на растущий, иначе мышца расползлась бы по
+     * телу на столько колец, сколько треугольников попадётся по дороге.
+     */
+    private fun growMuscles() {
+        if (muscleTouch != 1) return
+        val core = muscleOf
+        val grown = core.copyOf()
+        for (t in 0 until body.triCount) {
+            val i0 = body.triA[t]; val i1 = body.triB[t]; val i2 = body.triC[t]
+            val a = core[i0]; val b = core[i1]; val c = core[i2]
+            var m = -1
+            if (a >= 0) m = a
+            if (b >= 0 && (m < 0 || b < m)) m = b
+            if (c >= 0 && (m < 0 || c < m)) m = c
+            if (m < 0) continue
+            if (a < 0 && (grown[i0] < 0 || m < grown[i0])) grown[i0] = m
+            if (b < 0 && (grown[i1] < 0 || m < grown[i1])) grown[i1] = m
+            if (c < 0 && (grown[i2] < 0 || m < grown[i2])) grown[i2] = m
+        }
+        muscleOf = grown
+    }
+
     private fun muscleScale(m: Int) = if (m < 0) 1.0 else muscleScaleOf[m]
 
     /**
@@ -2580,7 +2794,7 @@ class RealBodyDemo(private val bodyPath: String,
 
     private fun updateMuscleScale() {
         if (muscleScaleOf.size != muscleActivation.size) muscleScaleOf = DoubleArray(muscleActivation.size)
-        for (m in muscleActivation.indices) muscleScaleOf[m] = 1.0 - muscleActivation[m] * (1.0 - MUSCLE_CONTRACTION)
+        for (m in muscleActivation.indices) muscleScaleOf[m] = 1.0 - muscleActivation[m] * (1.0 - muscleContraction)
     }
 
     private fun solveConstraints(h: Double) {
@@ -2663,7 +2877,7 @@ class RealBodyDemo(private val bodyPath: String,
         for (c in 0 until conCount) {
             // МЫШЦЫ НЕ ТЕКУТ, и это не осторожность, а необходимость.
             //
-            // У сокращённой мышцы цель короче в пять раз (MUSCLE_CONTRACTION = 0.2), а
+            // У сокращённой мышцы цель заметно короче (MUSCLE_CONTRACTION = 0.50), а
             // окружающая ткань дотянуться не даёт. Деформация относительно цели выходит
             // в сотни процентов — не потому что ткань смялась, а потому что мышца
             // работает. Пластика на этом разносит длину покоя, мышца «забывает» свою
@@ -2730,9 +2944,17 @@ class RealBodyDemo(private val bodyPath: String,
             val len = sqrt(dx * dx + dy * dy)
             // РАЗДАВЛЕННАЯ СВЯЗЬ РВЁТСЯ ТАК ЖЕ, КАК ПЕРЕРАСТЯНУТАЯ. См. LINK_CRUSH_RATIO.
             val mus = conMuscle[c]
-            if (tearingOn && len < LINK_CRUSH_RATIO * conRest[c] * (if (mus < 0) 1.0 else ms[mus])) {
+            val scale = if (mus < 0) 1.0 else ms[mus]
+            // Запас до разрыва за прогон: видно, насколько близко ткань подошла к порогам.
+            val cr = len / (conRest[c] * scale)
+            if (cr < dbgWorstCrush) dbgWorstCrush = cr
+            val st = len / conRest[c]
+            if (st > dbgWorstStretch) dbgWorstStretch = st
+            if (tearingOn && len < LINK_CRUSH_RATIO * conRest[c] * scale) {
                 linkTorn[c] = true; conDead[c] = true; tearsPending = true
                 crushedCell[i] = true; crushedCell[j] = true
+                dbgTornCrush++; if (mus >= 0) dbgTornCrushMuscle++
+                dbgTear(c, i, j, "сжатие", len / (conRest[c] * scale))
                 continue
             }
             val max = conMaxLen[c]
@@ -2740,9 +2962,12 @@ class RealBodyDemo(private val bodyPath: String,
             val overStrain = (len - max) / conRest[c]
             if (overStrain > dbgMaxOverStrain) dbgMaxOverStrain = overStrain
             // Пик недобора за всё время: сколько связь хотела сверх предела.
-            if (len - max > LINK_TEAR_STRAIN * conRest[c]) {
+            val tear = if (conTendon[c]) LINK_TEAR_STRAIN * tendonTear else LINK_TEAR_STRAIN
+            if (len - max > tear * conRest[c]) {
                 linkTorn[c] = true
                 if (tearingOn) { conDead[c] = true; tearsPending = true }
+                dbgTornPull++; if (mus >= 0) dbgTornPullMuscle++
+                dbgTear(c, i, j, "растяжение", len / conRest[c])
             }
             // МЕМБРАНА ХРУПЧЕ ТКАНИ. См. MEMBRANE_TEAR_STRAIN.
             if (tearingOn && membraneTearStrain >= 0.0 && conBoundary[c] && !conDead[c] &&
@@ -2767,6 +2992,28 @@ class RealBodyDemo(private val bodyPath: String,
 
     /** Сколько раз предел длины связи сработал с последнего сброса. Видно в HUD. */
     private var linkCapHits = 0
+
+    /** Разбор: журнал разрывов — кто, когда и почему. Включает читатель, см. PR_TEARS. */
+    internal var dbgTearLog: StringBuilder? = null
+
+    private fun dbgTear(c: Int, i: Int, j: Int, why: String, ratio: Double) {
+        val log = dbgTearLog ?: return
+        if (log.length > 20000) return
+        log.append("    тик %d: связь #%d-#%d %s %.3f, связь мышцы %d, клетки: мышцы %d/%d, кости %d/%d, сухожилие %s".format(
+            playTick, i, j, why, ratio, conMuscle[c], muscleOf[i], muscleOf[j], boneOf[i], boneOf[j],
+            if (conTendon[c]) "да" else "нет"))
+        log.append(10.toChar())
+    }
+
+    /** Разбор: самая смятая и самая растянутая связь за прогон, в долях длины покоя. */
+    internal var dbgWorstCrush = 1.0
+    internal var dbgWorstStretch = 1.0
+
+    /** Разбор: чем порвано — сжатием или растяжением, и сколько из этого мышечные связи. */
+    internal var dbgTornCrush = 0
+    internal var dbgTornCrushMuscle = 0
+    internal var dbgTornPull = 0
+    internal var dbgTornPullMuscle = 0
 
     /** Разбор: наибольший недобор связи сверх предела, в долях покоя. Сбрасывает читатель. */
     internal var dbgMaxOverStrain = 0.0
@@ -2843,11 +3090,7 @@ class RealBodyDemo(private val bodyPath: String,
         triId = IntArray(triCount) { it }
         triA = body.triA.copyOf(); triB = body.triB.copyOf(); triC = body.triC.copyOf()
         triRestArea2 = body.triRestArea2.copyOf()
-        triMuscle = IntArray(triCount) { t ->
-            val i0 = triA[t]; val i1 = triB[t]; val i2 = triC[t]
-            if (muscleOf[i0] != -1 && muscleOf[i0] == muscleOf[i1] && muscleOf[i0] == muscleOf[i2])
-                muscleOf[i0] else -1
-        }
+        triMuscle = IntArray(triCount) { t -> muscleOfTri(triA[t], triB[t], triC[t]) }
         triInverted = BooleanArray(triCount)
 
         val ed = ArrayList<Int>(lnkCount)
@@ -2859,7 +3102,7 @@ class RealBodyDemo(private val bodyPath: String,
             val dx = body.x[i] - body.x[j]; val dy = body.y[i] - body.y[j]
             a.add(i); b.add(j); rest.add(sqrt((dx * dx + dy * dy).toDouble()))
             ed.add(lnkEdge[k])
-            mus.add(if (muscleOf[i] != -1 && muscleOf[i] == muscleOf[j]) muscleOf[i] else -1)
+            mus.add(muscleOfPair(i, j))
         }
         conCount = a.size
         conA = a.toIntArray(); conB = b.toIntArray()
@@ -3807,6 +4050,9 @@ class RealBodyDemo(private val bodyPath: String,
     /** Диагностика: выключить анизотропное сопротивление среды, то есть тягу. */
     var dbgDragOff = false
 
+    /** Во сколько раз крепче на разрыв связь мышцы с костью. См. TENDON_TEAR_FACTOR. */
+    internal var tendonTear = System.getenv("RB_TENDON")?.toDoubleOrNull() ?: TENDON_TEAR_FACTOR
+
     /** Доля касательного трения от нормального. См. TANGENT_DRAG. */
     internal var tangentDrag = System.getenv("RB_TANGENT")?.toDoubleOrNull() ?: TANGENT_DRAG
 
@@ -4124,6 +4370,8 @@ class RealBodyDemo(private val bodyPath: String,
     internal var crushBurstCount = 0
     /** Связь лежит на контуре тела. См. MEMBRANE_TEAR_STRAIN. */
     private var conBoundary = BooleanArray(0)
+    /** Связь мышцы с костью — сухожилие. См. TENDON_TEAR_FACTOR. */
+    private var conTendon = BooleanArray(0)
     internal var membraneTearCount = 0
     internal var membraneTearStrain = System.getenv("RB_MEMBRANE")?.toDoubleOrNull() ?: MEMBRANE_TEAR_STRAIN
     internal var crushBurstOn = CRUSH_BURST && System.getenv("RB_CRUSH_OFF") == null
@@ -4772,8 +5020,8 @@ class RealBodyDemo(private val bodyPath: String,
         // при коротком периоде округление вниз может дать ноль, и гребка не будет вовсе.
         if (gait) {
             gaitFrame++
-            val duty = (GAIT_PERIOD * GAIT_DUTY).toInt().coerceAtLeast(1)
-            if (gaitFrame % GAIT_PERIOD < duty) muscleTarget.fill(1.0)
+            val duty = (gaitPeriod * gaitDuty).toInt().coerceAtLeast(1)
+            if (gaitFrame % gaitPeriod < duty) muscleTarget.fill(1.0)
         }
     }
 
@@ -4781,7 +5029,7 @@ class RealBodyDemo(private val bodyPath: String,
         for (m in muscleActivation.indices) {
             val target = muscleTarget[m]
             // Сокращение и распрямление идут с РАЗНОЙ скоростью — см. константы.
-            val rate = if (target > muscleActivation[m]) MUSCLE_RATE_CONTRACT else MUSCLE_RATE_RELAX
+            val rate = if (target > muscleActivation[m]) muscleRateContract else muscleRateRelax
             var k = rate * dt
             if (k > 1.0) k = 1.0
             muscleActivation[m] += (target - muscleActivation[m]) * k
@@ -5054,12 +5302,36 @@ class RealBodyDemo(private val bodyPath: String,
             val i0 = triA[t]; val i1 = triB[t]; val i2 = triC[t]
             val m = triMuscle[t]
             val act = if (m >= 0) muscleActivation[m] else 0.0
+            // ТРЕУГОЛЬНИК НА КРАЮ МЫШЦЫ КРАСИТСЯ ЧАСТИЧНО — по доле мышечных вершин.
+            //
+            // Площадь сокращает только тот, у которого все три вершины в одном кластере и
+            // ни одной кости, см. muscleOfTri. Остальные, кто мышцу задевает, — это либо
+            // следующее кольцо за выросшим кластером (см. MUSCLE_TOUCH), либо треугольник
+            // с костью в углу: его клетки мышечные и связи сокращаются, а площадь нет.
+            // Без этой заливки край мышцы выглядел бы обычной тканью, хотя в редакторе
+            // там мышца, — из-за чего и пришёл вопрос, почему мышца у кости не мышца.
+            val mv = if (m >= 0) -1 else {
+                var k = 0; var any = -1
+                if (muscleOf[i0] >= 0) { k++; any = muscleOf[i0] }
+                if (muscleOf[i1] >= 0) { k++; any = muscleOf[i1] }
+                if (muscleOf[i2] >= 0) { k++; any = muscleOf[i2] }
+                if (k == 0) -1 else any
+            }
             shapes.color = when {
                 triInverted[t] -> INVERTED_FILL
                 triTorn(t) -> TEAR_FILL
                 boneOf[i0] != -1 && boneOf[i0] == boneOf[i1] && boneOf[i0] == boneOf[i2] ->
                     if (bonesRigid) BONE_FILL else BONE_FILL_OFF
                 m >= 0 -> if (act > 0.002) tmpColor.set(MUSCLE_IDLE).lerp(MUSCLE_FILL, act.toFloat()) else MUSCLE_IDLE
+                mv >= 0 -> {
+                    val a2 = muscleActivation[mv]
+                    var share = 0
+                    if (muscleOf[i0] == mv) share++
+                    if (muscleOf[i1] == mv) share++
+                    if (muscleOf[i2] == mv) share++
+                    tmpColor2.set(MUSCLE_IDLE).lerp(MUSCLE_FILL, a2.toFloat())
+                    tmpColor.set(SOFT_FILL).lerp(tmpColor2, share / 3f)
+                }
                 else -> SOFT_FILL
             }
             shapes.triangle(fx(i0), fy(i0), fx(i1), fy(i1), fx(i2), fy(i2))
@@ -5299,7 +5571,7 @@ class RealBodyDemo(private val bodyPath: String,
 
         font.color = HUD_MUTED
         font.draw(batch, "LMB drag   HOVER a muscle edge   1..9 hold a muscle   0 hold ALL   " +
-            "G auto-gait" + if (gait) " [ON, period $GAIT_PERIOD]" else "", 16f, y); y -= line
+            "G auto-gait" + if (gait) " [ON, period $gaitPeriod]" else "", 16f, y); y -= line
         font.color = HUD_TEXT
         font.draw(batch, "СЦЕНА [N выбрать, M запустить]: %d/%d  %s".format(
             sceneIndex + 1, scenes.size, scenes[sceneIndex].name), 16f, y); y -= line
@@ -5374,7 +5646,7 @@ class RealBodyDemo(private val bodyPath: String,
 /** Запуск: зелёная стрелка. Путь к выгрузке можно передать аргументом. */
 fun main(args: Array<String>) {
     if (StartupHelper.startNewJvmIfRequired()) return
-    val path = if (args.isNotEmpty()) args[0] else "body-export.txt"
+    val path = if (args.isNotEmpty()) args[0] else "body-export-медуза.txt"
     val config = Lwjgl3ApplicationConfiguration().apply {
         setTitle("Организм из редактора — XPBD + shape matching")
         setWindowedMode(1100, 720)

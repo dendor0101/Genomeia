@@ -6,6 +6,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.ln
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -121,6 +122,21 @@ private val SUBSTEPS: Int = DemoConst.SUBSTEPS
  */
 private val MUSCLE_RATE_MAX: Double = 0.5 / DT
 
+/**
+ * ЧТО ИМЕННО ПОДБИРАЕМ.
+ *
+ * По умолчанию — ТОЛЬКО МЫШЦЫ: глубина сокращения, скорости сокращения и расслабления,
+ * период и рабочая доля гребка. Среда, вязкость и податливости заморожены на значениях
+ * демо, и это не лень, а урок: однажды поиск получил их на откуп и вытащил тягу за счёт
+ * гигантского наката — медуза разгонялась с трёх взмахов и потом не могла остановиться.
+ * Гидродинамика подбирается отдельно и своими стендами, а здесь ищется ДВИЖЕНИЕ существа.
+ *
+ * Разморозить всё: --all.
+ */
+private val MUSCLE_GENES = setOf("muscleContraction", "muscleRateContract", "muscleRateRelax",
+    "gaitPeriod", "gaitDuty")
+private var SEARCH_ALL = false
+
 private val GENES = listOf(
     Gene("normalDrag", 1.0, 400.0),
     Gene("normalDragQuadratic", 0.2, 30000.0),
@@ -154,6 +170,9 @@ private val GENES = listOf(
  * поймали бы, но проверять устойчивость штрафов лучше отдельно, а не смешивая с
  * подбором гидродинамики.
  */
+/** Ищется ли этот ген сейчас. Замороженные держат значение демо, см. MUSCLE_GENES. */
+private fun searchable(k: Int): Boolean = SEARCH_ALL || GENES[k].name in MUSCLE_GENES
+
 private fun decode(g: DoubleArray): SwimParams {
     fun v(i: Int) = GENES[i].decode(g[i])
     return SwimParams(
@@ -206,13 +225,24 @@ private class Metrics(
     val swing: Double,
     /** Доля ВЫВЕРНУТЫХ треугольников на пике. Порча формы, назад не выворачивается. */
     val inverted: Double,
+    /** Самая смятая связь за прогон, в долях своей нынешней длины покоя. См. worstCrush. */
+    val crush: Double,
+    /** Самая растянутая связь, в долях длины покоя без поправки на мышцу. */
+    val stretch: Double,
     val valid: Boolean,
 ) {
     fun score(w: Weights): Double {
         if (!valid) return 0.0
+        // ТКАНЬ, КОТОРУЮ ПОРВЁТ, НЕ СЧИТАЕТСЯ РЕШЕНИЕМ ВОВСЕ. Пороги — те же, при которых
+        // рвёт настоящий движок: сжатие ниже LINK_CRUSH_RATIO и растяжение выше
+        // LINK_MAX_STRETCH + LINK_TEAR_STRAIN. Зеркало рвать не умеет, поэтому смотрит
+        // на напряжение.
+        if (crush < DemoConst.LINK_CRUSH_RATIO || stretch > DemoConst.LINK_TEAR_TOTAL) return 0.0
         val bonus = 1.0 + w.glide * min(glide, 1.5)
+        // Запас до разрыва: у самой границы оценка падает, и поиск отходит от неё сам.
+        val margin = max(0.0, 0.45 - crush) / 0.10 + max(0.0, stretch - 1.22) / 0.08
         val penalty = 1.0 + w.residual * residualP + w.rest * restDrift + w.rot * rotKick +
-            w.inverted * inverted
+            w.inverted * inverted + w.stress * margin
         return speed * bonus / penalty
     }
 }
@@ -224,6 +254,8 @@ private class Weights(
     val rot: Double = 1.0,
     /** Вес вывернутых треугольников. Большой намеренно: это порча формы, а не шум. */
     val inverted: Double = 50.0,
+    /** Вес запаса до разрыва ткани. См. score. */
+    val stress: Double = 20.0,
 )
 
 
@@ -253,6 +285,8 @@ private class Evaluator(val topo: Topology) {
         val measureFrames = measureCycles * period
 
         s.reset()
+        // Напряжение считается с ПЕРВОГО взмаха: медузу рвёт именно он, дальше уже нечему.
+        s.resetStress()
         for (fr in 1..warmupFrames) {
             s.frame(DT, SUBSTEPS, gait = true)
             if (fr % 256 == 0 && s.checkDiverged()) return invalid()
@@ -274,6 +308,7 @@ private class Evaluator(val topo: Topology) {
             if (fr % 256 == 0 && s.checkDiverged()) return invalid()
         }
         if (s.checkDiverged()) return invalid()
+        val crush = s.worstCrush; val stretch = s.worstStretch
         val swimDx = s.comX() - sx; val swimDy = s.comY() - sy
         val speed = sqrt(swimDx * swimDx + swimDy * swimDy) / (measureFrames * DT)
         val swing = actMax - actMin
@@ -333,10 +368,11 @@ private class Evaluator(val topo: Topology) {
             restDrift.isNaN() || rotKick.isNaN() || swing.isNaN()
         ) return invalid()
 
-        return Metrics(speed, glide, residualP, residualP25, restDrift, rotKick, swing, inverted, valid = true)
+        return Metrics(speed, glide, residualP, residualP25, restDrift, rotKick, swing, inverted,
+            crush, stretch, valid = true)
     }
 
-    private fun invalid() = Metrics(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, valid = false)
+    private fun invalid() = Metrics(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, valid = false)
 }
 
 // =====================================================================
@@ -350,6 +386,11 @@ private class Evaluator(val topo: Topology) {
 private fun verifyAgainstDemo(topo: Topology, path: String): Double {
     val P = Probe
     P.boot(path)
+    // РАЗРЫВ НА ВРЕМЯ СВЕРКИ ВЫКЛЮЧЕН. Зеркало топологию не меняет вовсе, поэтому рвущееся
+    // демо разошлось бы с ним законно, а сверка ловит ошибки ПЕРЕНОСА стадий. На медузе
+    // это и вышло: мышца рвёт ткань на первом же кадре, и проверка объявляла зеркало
+    // сломанным, хотя стадии совпадают.
+    P.setTearing(false)
     P.resetState()
 
     val ref = SwimParams(
@@ -413,13 +454,13 @@ private fun sci(v: Double) = String.format(Locale.ROOT, "%.3e", v)
 
 private fun reportRow(tag: String, m: Metrics, score: Double): String = String.format(
     Locale.ROOT,
-    "%-26s | %8.5f | %6.3f | %9.3e | %9.3e | %9.3e | %9.3e | %5.3f | %5.1f%% | %9.5f",
+    "%-26s | %8.5f | %6.3f | %9.3e | %9.3e | %9.3e | %9.3e | %5.3f | %5.1f%% | %5.3f | %5.3f | %9.5f",
     tag, m.speed, m.glide, m.residualP25, m.residualP, m.restDrift, m.rotKick, m.swing,
-    m.inverted * 100.0, score
+    m.inverted * 100.0, m.crush, m.stretch, score
 )
 
 private const val HEADER =
-    "                           |   скор.  | накат |  |P| 25c  |  |P| 50c  | покой дрф | пов.толч. | размх | вывер |    оценка"
+    "                           |   скор.  | накат |  |P| 25c  |  |P| 50c  | покой дрф | пов.толч. | размх | вывер | сжат  | растяж|    оценка"
 
 fun main(args: Array<String>) {
     var path = "body-export.txt"
@@ -428,6 +469,7 @@ fun main(args: Array<String>) {
     var seed = 12345L
     val w = run {
         var glide = 0.5; var residual = 3.0; var rest = 10.0; var rot = 1.0; var inverted = 50.0
+        var stress = 20.0
         var i = 0
         while (i < args.size) {
             when (args[i]) {
@@ -439,12 +481,14 @@ fun main(args: Array<String>) {
                 "--w-rest" -> rest = args[++i].toDouble()
                 "--w-rot" -> rot = args[++i].toDouble()
                 "--w-inverted" -> inverted = args[++i].toDouble()
+                "--w-stress" -> stress = args[++i].toDouble()
                 "--flow" -> SEARCH_FLOW_MODEL = FlowModel.valueOf(args[++i].uppercase())
+                "--all" -> SEARCH_ALL = true
                 else -> if (!args[i].startsWith("--")) path = args[i]
             }
             i++
         }
-        Weights(glide, residual, rest, rot, inverted)
+        Weights(glide, residual, rest, rot, inverted, stress)
     }
 
     val topo = Topology.load(path)
@@ -526,11 +570,15 @@ fun main(args: Array<String>) {
 
     // --- эволюция ---
     val rnd = Random(seed)
+    val demoGenes = encode(demoParams.copy(flowModel = SEARCH_FLOW_MODEL))
+    println("подбираются гены: " + GENES.indices.filter { searchable(it) }.joinToString(", ") { GENES[it].name })
     var population = ArrayList<Individual>(pop)
     // Нулевое поколение включает точку демо, чтобы поиск заведомо стартовал не хуже неё.
     population.add(Individual(encode(demoParams.copy(flowModel = SEARCH_FLOW_MODEL))))
     while (population.size < pop) {
-        population.add(Individual(DoubleArray(GENES.size) { rnd.nextDouble() }))
+        // Замороженные гены берутся у демо: случайное значение там было бы тихой правкой
+        // физики, которую никто не просил.
+        population.add(Individual(DoubleArray(GENES.size) { k -> if (searchable(k)) rnd.nextDouble() else demoGenes[k] }))
     }
     evaluateAll(population)
 
@@ -559,6 +607,7 @@ fun main(args: Array<String>) {
             val p1 = tournament(); val p2 = tournament()
             val child = DoubleArray(GENES.size)
             for (k in child.indices) {
+                if (!searchable(k)) { child[k] = demoGenes[k]; continue }
                 // BLX-0.5: потомок берётся из интервала родителей, расширенного наружу.
                 val lo = minOf(p1.g[k], p2.g[k]); val hi = maxOf(p1.g[k], p2.g[k])
                 val d = hi - lo

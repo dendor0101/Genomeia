@@ -292,6 +292,9 @@ internal object DemoConst {
     val CONTACT_FRICTION = d("CONTACT_FRICTION")
     val MAX_SPEED_CELLS_PER_TICK = d("MAX_SPEED_CELLS_PER_TICK")
     val LINK_MAX_STRETCH = d("LINK_MAX_STRETCH")
+    val LINK_CRUSH_RATIO = d("LINK_CRUSH_RATIO")
+    /** При каком растяжении от длины покоя связь рвётся: предел длины плюс запас. */
+    val LINK_TEAR_TOTAL = d("LINK_MAX_STRETCH") + d("LINK_TEAR_STRAIN")
     val CONTACTS_ON = RealBodyDemo::class.java.getDeclaredField("CONTACTS_ON")
         .apply { isAccessible = true }.getBoolean(null)
 }
@@ -605,6 +608,38 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
      * задаёт знак углового дрейфа.
      */
     private var sweepBackwards = false
+
+    /**
+     * САМАЯ СМЯТАЯ И САМАЯ РАСТЯНУТАЯ СВЯЗЬ ЗА ПРОГОН. По ним видно, порвало бы тело в
+     * настоящем движке или нет: там связь рвётся при сжатии ниже LINK_CRUSH_RATIO своей
+     * НЫНЕШНЕЙ длины покоя (с поправкой на сокращение мышцы) и при растяжении выше
+     * LINK_MAX_STRETCH + LINK_TEAR_STRAIN от длины покоя БЕЗ поправки.
+     *
+     * Зеркало само не рвётся: топология в нём неизменна, иначе оно перестало бы быть
+     * зеркалом одной сцены. Поэтому подбор смотрит на эти два числа, а окончательная
+     * проверка «не рвётся» всё равно делается на настоящем теле, см. PERF_GAIT.
+     */
+    var worstCrush = 1.0
+        private set
+    var worstStretch = 1.0
+        private set
+
+    fun resetStress() { worstCrush = 1.0; worstStretch = 1.0 }
+
+    /** Зовётся раз в подшаг, после позиционных стадий. */
+    private fun trackStress() {
+        for (c in 0 until topo.conCount) {
+            val i = topo.conA[c]; val j = topo.conB[c]
+            val dx = px[i] - px[j]; val dy = py[i] - py[j]
+            val len = sqrt(dx * dx + dy * dy)
+            val rest = conRest[c]
+            if (rest < 1e-12) continue
+            val crush = len / (rest * muscleScale(topo.conMuscle[c]))
+            if (crush < worstCrush) worstCrush = crush
+            val stretch = len / rest
+            if (stretch > worstStretch) worstStretch = stretch
+        }
+    }
 
     private fun solveConstraints(h: Double) {
         val alpha = p.softCompliance / (h * h)
@@ -957,6 +992,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             // Предел длины ещё раз, уже после контактов — зеркало демо: проекция
             // кости способна растянуть связь, а от него зависит непроницаемость.
             solveLinkMaxLength()
+            trackStress()
             if (DemoConst.CANCEL_INTERNAL_SPIN) cancelInternalSpin()
             updateVelocities(h)
             // Отскок — зеркало демо, см. solveRestitution.
@@ -1059,6 +1095,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             // Предел длины ещё раз, уже после контактов — зеркало демо: проекция
             // кости способна растянуть связь, а от него зависит непроницаемость.
             solveLinkMaxLength()
+            trackStress()
             if (DemoConst.CANCEL_INTERNAL_SPIN) cancelInternalSpin()
             updateVelocities(h)
             // Отскок — зеркало демо, см. solveRestitution.

@@ -234,7 +234,7 @@ tasks.register('swimTune', JavaExec) {
   classpath = sourceSets.main.runtimeClasspath
   mainClass = 'io.github.some_example_name.lwjgl3.demo.SwimTunerKt'
   workingDir = rootProject.projectDir
-  jvmArgs '-Dfile.encoding=UTF-8'
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
 }
 
 

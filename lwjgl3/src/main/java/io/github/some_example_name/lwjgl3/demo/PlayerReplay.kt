@@ -85,6 +85,8 @@ fun main(args: Array<String>) {
         labKillSeed = hdr["killSeed"]?.toLong() ?: 0L,
         killOnDeep = hdr["killOnDeep"] == "1")
     demo.replayBoot()
+    // Журнал разрывов: PR_TEARS=1 — кто, когда и почему порвался.
+    if (System.getenv("PR_TEARS") != null) demo.dbgTearLog = StringBuilder()
     // Прогрев кода разрушения, как в окне: PR_WARM=тиков. См. startWarmUp.
     System.getenv("PR_WARM")?.toIntOrNull()?.let { demo.warmUpBlocking(it) }
     val P = Probe
@@ -921,6 +923,7 @@ fun main(args: Array<String>) {
             big, cells[big], cx[big], cy[big],
             Math.hypot(vxs[big], vys[big]) * dt / meanLink))
     }
+    demo.dbgTearLog?.let { if (it.isNotEmpty()) { println("--- разрывы ---"); print(it) } }
     println("--- итог ---")
     println("  тиков воспроизведено ${demo.currentTick} (${sec(demo.currentTick)}) за %.1f с".format(secs))
     println("  в чужой ткани и вышли сами, по длительности (тиков): " + demo.dbgTrapEdges.indices.joinToString("  ") { b ->
