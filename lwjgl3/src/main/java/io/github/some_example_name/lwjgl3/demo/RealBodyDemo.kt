@@ -1494,6 +1494,43 @@ class RealBodyDemo(private val bodyPath: String,
          *      то есть худшая локальность во всём тике.
          */
         private const val SOLVER_ITERS = 4
+        /**
+         * КАК ЧАСТО МЕНЯТЬ НАПРАВЛЕНИЕ ОБХОДА СВЯЗЕЙ: 0 — никогда, 1 — раз в подшаг,
+         * 2 — каждый проход решателя. Переменная окружения RB_SWEEP.
+         *
+         * Чередовать нужно обязательно, иначе порядок связей сам по себе крутит тело —
+         * подробности у sweepBackwards. Но ЧЕРЕДОВАНИЕ РАЗ В ПОДШАГ даёт свою беду:
+         * у обхода вперёд и назад разные точки равновесия, и там, где связи между собой
+         * не сходятся, вершина прыгает между ними каждый подшаг. Медуза с зажатой мышцей:
+         * тело стоит (центр масс 0.0005 клетки/тик), а клетка #178 вечно скачет на 0.183
+         * связи туда-сюда — 2.80 клетки/тик, то есть 84 клетки в секунду на месте.
+         * Проходами это не лечится (8 проходов — 3.16, 16 — 3.01): дело не в сходимости,
+         * а в том, что точек равновесия две.
+         *
+         * А дальше дрожание ВЫПРЯМЛЯЕТСЯ В ТЯГУ на контакте. Контакт односторонний: он
+         * толкает и никогда не тянет, поэтому вершина, которая дёргается туда-сюда у
+         * чужого тела, за каждый период отдаёт наружу чуть больше, чем получает. Игрок
+         * это и увидел: две медузы едва коснулись — и разлетелись. По журналу, 17 эпизодов
+         * касания: в 9 тела УСКОРЯЛИСЬ, пока касались, суммарно +0.031 клетки/тик из
+         * ничего.
+         *
+         * 2 — МЕНЯТЬ НАПРАВЛЕНИЕ КАЖДЫЙ ПРОХОД. Внутри подшага получается симметричный
+         * Гаусс-Зейдель: четыре прохода идут вперёд-назад-вперёд-назад, перекос порядка
+         * гасится там же, где возникает, и между подшагами прыгать уже нечему. Стоит
+         * ровно ноль — проходов столько же, просто индекс идёт в другую сторону.
+         *
+         * ЗАМЕРЫ (было при 1 / стало при 2):
+         *   дрожание при зажатой мышце, медуза  2.796 -> 0.013 клетки/тик
+         *   то же, body-export                  1.651 -> 0.000
+         *   касания в журнале, ускорились       9 из 17 -> 0 из 13; сумма +0.031 -> -0.403
+         *   самый долгий контакт                41 тик -> 413 тиков (тела лежат, а не бьются)
+         *   самораскрутка за 30..90 с           замедление 273x -> 20533x
+         *   внутренний импульс                  8.4e-10 -> 1.1e-11 рад/с
+         *   гребок медузы                       653.6 -> 653.1 связи за 30 с
+         *   гребок body-export                  52.4 -> 48.8 связи, порвано 4 -> 2
+         * Зеркало SwimSolver держит тот же порядок — иначе тюнер считал бы другое тело.
+         */
+        private const val SWEEP_FLIP = 2
 
         /**
          * Порог смерти клетки в долях контактного радиуса соседа.
@@ -1605,6 +1642,12 @@ class RealBodyDemo(private val bodyPath: String,
          * средней связи. Это свойство самого тела, а не правила: та же пара рвётся и без
          * захвата края, стоит сделать сокращение чуть глубже (0.40 — рвётся она одна).
          * Чинить это в физике нечем, чинится в редакторе тела.
+         *
+         * ПЕРЕПРОВЕРЕНО после SWEEP_FLIP = 2 и сглаживания длины покоя по подшагам (см.
+         * muscleScaleOf), 30 секунд гребка, медуза / body-export (проплыл; порвано):
+         * 0.44 — 802 / 70, 0 и 12; 0.46 — 752 / 59, 0 и 14; 0.48 — 699 / 44, 0 и 12;
+         * 0.50 — 643 / 30, 0 и 0. Глубже 0.50 второе тело снова рвётся и распадается на
+         * 10 кусков вместо 8, поэтому 0.50 остаётся.
          */
         private const val MUSCLE_CONTRACTION = 0.50
         /**
@@ -1904,6 +1947,11 @@ class RealBodyDemo(private val bodyPath: String,
 
     private lateinit var flowVX: DoubleArray
     private lateinit var flowVY: DoubleArray
+    /** Номера организмов и их запас ДО перенумерации — по ним куски наследуют накат. */
+    private var orgPrev = IntArray(0)
+    private var orgSeed = IntArray(0)
+    private var orgFlowX = DoubleArray(0)
+    private var orgFlowY = DoubleArray(0)
     /** Черновик под сумму скоростей организма. Заводится один раз, в цикле не аллоцируется. */
     private lateinit var comAccX: DoubleArray
     private lateinit var comAccY: DoubleArray
@@ -2225,6 +2273,9 @@ class RealBodyDemo(private val bodyPath: String,
         }
         var comp = organismCount
         if (relabel) {
+            // Кто чем был ДО перенумерации — по этому куски унаследуют запас среды.
+            if (orgPrev.size != n) { orgPrev = IntArray(n); orgSeed = IntArray(n) }
+            System.arraycopy(organismOf, 0, orgPrev, 0, n)
             java.util.Arrays.fill(organismOf, -1)
             val vs = baked.vertStart; val vo = baked.vertOther; val ve = baked.vertEdge
             val dead = baked.edgeDead
@@ -2232,6 +2283,7 @@ class RealBodyDemo(private val bodyPath: String,
             comp = 0
             for (s in 0 until n) {
                 if (organismOf[s] != -1) continue
+                orgSeed[comp] = s
                 var head = 0; var tail = 0
                 organismOf[s] = comp; queue[tail++] = s
                 while (head < tail) {
@@ -2247,17 +2299,39 @@ class RealBodyDemo(private val bodyPath: String,
             organismCount = comp
         }
         // Ёмкость держится по числу клеток: больше компонент, чем клеток, не бывает.
-        // Запас среды у каждого организма свой и разрывом обнуляется — так было и когда
-        // эти массивы заводились заново.
-        if (!::organismSize.isInitialized || organismSize.size < n) {
+        val fresh = !::organismSize.isInitialized || organismSize.size < n
+        if (fresh) {
             organismSize = IntArray(n); organismMass = DoubleArray(n)
             flowVX = DoubleArray(n); flowVY = DoubleArray(n)
             comAccX = DoubleArray(n); comAccY = DoubleArray(n)
         }
+        // КУСОК УНАСЛЕДУЕТ ЗАПАС СРЕДЫ У ТОГО, ИЗ КОГО ВЫШЕЛ.
+        //
+        // Раньше запас здесь просто обнулялся всем. А зовётся эта разметка при ЛЮБОМ
+        // разрыве, и обнуление стояло вне проверки на распад, поэтому одна порванная
+        // связь где угодно в сцене стирала накат у ВСЕХ тел, включая целые и далёкие.
+        // Замер (стенд PERF_FLOW): медуза после 10 с гребка, запас 0.663; рвём одну
+        // связь, ничего не распадается, организмов как было 8 — запас 0.068, и 2.4
+        // секунды обратно. Тело вдруг снова чувствует полное сопротивление и тормозит
+        // из-за события, к нему не относящегося.
+        //
+        // Запас — это СКОРОСТЬ увлечённой воды, а не её импульс: за разгон среды тело уже
+        // заплатило (см. FLOW_MASS в applyNormalDrag), и ничего не дублируется оттого, что
+        // обе половины получат одну и ту же скорость. Сразу после распада половины и
+        // движутся примерно с прежней скоростью, так что это как раз непрерывное
+        // продолжение, а обнуление было разрывом.
+        if (relabel && !fresh) {
+            if (orgFlowX.size < n) { orgFlowX = DoubleArray(n); orgFlowY = DoubleArray(n) }
+            System.arraycopy(flowVX, 0, orgFlowX, 0, n)
+            System.arraycopy(flowVY, 0, orgFlowY, 0, n)
+            for (o in 0 until comp) {
+                val was = orgPrev[orgSeed[o]]
+                if (was < 0) { flowVX[o] = 0.0; flowVY[o] = 0.0 }
+                else { flowVX[o] = orgFlowX[was]; flowVY[o] = orgFlowY[was] }
+            }
+        }
         java.util.Arrays.fill(organismSize, 0, comp, 0)
         java.util.Arrays.fill(organismMass, 0, comp, 0.0)
-        java.util.Arrays.fill(flowVX, 0, comp, 0.0)
-        java.util.Arrays.fill(flowVY, 0, comp, 0.0)
         java.util.Arrays.fill(comAccX, 0, comp, 0.0)
         java.util.Arrays.fill(comAccY, 0, comp, 0.0)
         for (i in 0 until n) organismSize[organismOf[i]]++
@@ -2784,17 +2858,32 @@ class RealBodyDemo(private val bodyPath: String,
     private fun muscleScale(m: Int) = if (m < 0) 1.0 else muscleScaleOf[m]
 
     /**
-     * Во сколько раз сжат каждый кластер мышцы — считается РАЗ В ТИК.
+     * Во сколько раз сжат каждый кластер мышцы — считается РАЗ В ПОДШАГ.
      *
-     * Активации внутри тика не меняются (updateMuscles зовётся до simulate), а связей и
-     * треугольников с мышцей тысячи, и каждый спрашивал это на каждой из 64 итераций
-     * решателя. Формула та же, поэтому число тоже то же.
+     * Связей и треугольников с мышцей тысячи, и каждая спрашивала это на каждой из 64
+     * итераций решателя, поэтому значение считается заранее. Кластеров при этом единицы,
+     * так что подшаг вместо тика ничего не стоит.
+     *
+     * ПОЧЕМУ ПОДШАГ, А НЕ ТИК. updateMuscles двигает активацию раз в тик, и длина покоя
+     * прыгала ступенькой: весь шаг мышцы решатель отрабатывал в ПЕРВОМ же подшаге, а
+     * updateVelocities делит смещение на h = DT/16. Скорость выходила вшестнадцатеро
+     * больше настоящей, и эта вспышка успевала уйти в среду настоящим импульсом —
+     * рывок при отпускании мышцы как раз оттуда. Теперь активация проходит свой шаг
+     * РОВНО за тик, но по подшагам: доля f = (step + 1) / SUBSTEPS. За тик изменение то
+     * же самое, только размазано, как оно и происходит на самом деле.
      */
     private var muscleScaleOf = DoubleArray(0)
 
-    private fun updateMuscleScale() {
+    /** Активация на НАЧАЛО тика — между ней и текущей идёт разгон по подшагам. */
+    private var muscleActivationPrev = DoubleArray(0)
+
+    private fun updateMuscleScale(f: Double) {
         if (muscleScaleOf.size != muscleActivation.size) muscleScaleOf = DoubleArray(muscleActivation.size)
-        for (m in muscleActivation.indices) muscleScaleOf[m] = 1.0 - muscleActivation[m] * (1.0 - muscleContraction)
+        if (muscleActivationPrev.size != muscleActivation.size) muscleActivationPrev = DoubleArray(muscleActivation.size)
+        for (m in muscleActivation.indices) {
+            val a = muscleActivationPrev[m] + (muscleActivation[m] - muscleActivationPrev[m]) * f
+            muscleScaleOf[m] = 1.0 - a * (1.0 - muscleContraction)
+        }
     }
 
     private fun solveConstraints(h: Double) {
@@ -3699,6 +3788,12 @@ class RealBodyDemo(private val bodyPath: String,
     private var sweepBackwards = false
 
     /**
+     * Как часто менять направление обхода: 0 — никогда, 1 — раз в подшаг, 2 — каждый
+     * проход решателя. Переменная окружения RB_SWEEP. См. SWEEP_FLIP.
+     */
+    internal var sweepFlip = System.getenv("RB_SWEEP")?.toIntOrNull() ?: SWEEP_FLIP
+
+    /**
      * Убирает смещение центра масс, накопленное ВНУТРЕННИМИ стадиями подшага.
      *
      * [beforeX]/[beforeY] — сумма координат до них. Внутренние ограничения обязаны
@@ -4211,7 +4306,6 @@ class RealBodyDemo(private val bodyPath: String,
         //
         // Ровно один раз за тик: внутри подшагов контур и контакты пересобирались бы
         // по шестнадцать раз, а рвётся обычно пучок связей за один удар.
-        updateMuscleScale()
         java.util.Arrays.fill(contactPressure, 0.0)
         java.util.Arrays.fill(crushedCell, false)
         if (tearsPending) { tick0(); rebuildTimed(); tick1(11) }
@@ -4224,6 +4318,9 @@ class RealBodyDemo(private val bodyPath: String,
         histCount = SUBSTEPS + 1
         histHasSubsteps = keepSubsteps
         for (step in 0 until SUBSTEPS) {
+            // Длина покоя мышцы доезжает до своего значения за тик, а не прыгает в первом
+            // же подшаге — см. muscleScaleOf.
+            updateMuscleScale((step + 1).toDouble() / SUBSTEPS)
             // КОНТАКТ ПРИКЛАДЫВАЕТСЯ К СКОРОСТИ ДО ИНТЕГРИРОВАНИЯ, как гравитация.
             // Почему именно так и что было раньше — см. toVelocity в solveContacts.
             if (contacts != null && contactsOn && CONTACT_BEFORE_INTEGRATE) {
@@ -4250,7 +4347,8 @@ class RealBodyDemo(private val bodyPath: String,
             // Ставится здесь, а не внутри solveConstraints, чтобы фаза шла ровно по
             // подшагам и не зависела от того, сколько раз стадию позвали снаружи.
 
-            sweepBackwards = !sweepBackwards
+            // См. SWEEP_FLIP: раз в подшаг или каждый проход.
+            if (sweepFlip == 1) sweepBackwards = !sweepBackwards
             // Снимок ДО внутренних стадий: всё, что они внесут сверх формы, снимется
             // перед контактами. См. cancelInternalSpin.
             if (cancelSpinOn) markInternal()
@@ -4265,6 +4363,7 @@ class RealBodyDemo(private val bodyPath: String,
             // Поэтому здесь связи и контакт стоят в одном цикле и делят между собой
             // одну и ту же невязку, вместо того чтобы переписывать работу друг друга.
             for (iter in 0 until SOLVER_ITERS) {
+                if (sweepFlip == 2) sweepBackwards = !sweepBackwards
                 tick0(); dbgMark(); solveConstraints(h); dbgMeasure(0, h); tick1(0)
                 tick0(); dbgMark(); solveFlaps(h); dbgMeasure(9, h); tick1(1)
                 tick0(); dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h); tick1(2)
@@ -5026,6 +5125,8 @@ class RealBodyDemo(private val bodyPath: String,
     }
 
     private fun updateMuscles(dt: Double) {
+        if (muscleActivationPrev.size != muscleActivation.size) muscleActivationPrev = DoubleArray(muscleActivation.size)
+        System.arraycopy(muscleActivation, 0, muscleActivationPrev, 0, muscleActivation.size)
         for (m in muscleActivation.indices) {
             val target = muscleTarget[m]
             // Сокращение и распрямление идут с РАЗНОЙ скоростью — см. константы.

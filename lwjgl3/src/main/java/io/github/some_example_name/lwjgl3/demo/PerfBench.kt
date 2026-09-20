@@ -120,6 +120,164 @@ fun main(args: Array<String>) {
         println("  СОКРАЩАЮТСЯ: связей %d, треугольников %d".format(conMus, triMus))
         return
     }
+    // ЗАПАС СРЕДЫ ПРИ РАЗРЫВЕ: PERF_FLOW=секунд. Разгоняем тело гребком, смотрим запас,
+    // затем рвём ОДНУ связь и смотрим, что с запасом стало и за сколько тиков он вернулся.
+    // Вопрос игрока: что происходит с flowVX/flowVY, когда тело распадается надвое.
+    System.getenv("PERF_FLOW")?.toDoubleOrNull()?.let { secs ->
+        P.resetState()
+        P.setTearing(true)
+        val frames = Math.round(secs / dt).toInt()
+        for (fr in 0 until frames) P.frameGait(dt, fr)
+        fun comSpeed(): Double {
+            var m = 0.0; var vx = 0.0; var vy = 0.0
+            for (i in 0 until P.n) {
+                if (P.invMass[i] <= 0.0) continue
+                val w = 1.0 / P.invMass[i]; m += w; vx += w * P.vx[i]; vy += w * P.vy[i]
+            }
+            return Math.hypot(vx / m, vy / m) * dt / P.body.meanLinkLength
+        }
+        val before = P.flowPeak(); val comBefore = comSpeed()
+        println("ЗАПАС СРЕДЫ на %s после %.0f с гребка: %.6f, скорость центра масс %.4f клетки/тик, организмов %d"
+            .format(path, secs, before, comBefore, P.organismCount))
+        // Рвём одну живую связь подальше от края — этого хватает, чтобы пошла пересборка.
+        val conDead: BooleanArray = P.get("conDead")
+        val linkTorn: BooleanArray = P.get("linkTorn")
+        val conCount: Int = P.get("conCount")
+        var killed = -1
+        for (c in 0 until conCount) if (!conDead[c]) { conDead[c] = true; linkTorn[c] = true; killed = c; break }
+        P.setField("tearsPending", true)
+        var fr = frames
+        P.frameGait(dt, fr); fr++
+        val after = P.flowPeak()
+        println("  порвали связь #%d — запас стал %.6f (было %.6f), организмов %d"
+            .format(killed, after, before, P.organismCount))
+        var back = -1
+        for (k in 0 until 120) {
+            P.frameGait(dt, fr); fr++
+            if (back < 0 && P.flowPeak() >= before * 0.9) { back = k + 1; break }
+        }
+        println("  вернулся к 90%% прежнего за %s тиков (%.2f с)"
+            .format(if (back < 0) "более 120" else back.toString(), if (back < 0) 4.0 else back * dt))
+
+        // А теперь НАСТОЯЩИЙ распад: отрезаем клетку от тела целиком и смотрим, с каким
+        // запасом среды поехал новый кусок.
+        val conA: IntArray = P.get("conA"); val conB: IntArray = P.get("conB")
+        val orgBefore: IntArray = P.get("organismOf")
+        // Клетка должна быть НЕ костью и иметь живые связи: внутрикостные в conA/conB не
+        // попадают, и «отрезав» такую, мы ничего бы не отрезали.
+        val boneOf: IntArray = P.get("boneOf")
+        val deadCell: BooleanArray = P.get("cellDead")
+        var cut = -1
+        for (i in 0 until P.n) {
+            if (deadCell[i] || boneOf[i] >= 0) continue
+            var deg = 0
+            for (c in 0 until conCount) if (!conDead[c] && (conA[c] == i || conB[c] == i)) deg++
+            if (deg >= 2) { cut = i; break }
+        }
+        val orgOfCut = orgBefore[cut]
+        val flowParent = P.flowOf(orgOfCut)
+        var n2 = 0
+        for (c in 0 until conCount) if (!conDead[c] && (conA[c] == cut || conB[c] == cut)) {
+            conDead[c] = true; linkTorn[c] = true; n2++
+        }
+        P.setField("tearsPending", true)
+        val orgsBefore = P.organismCount
+        P.frameGait(dt, fr)
+        val orgAfter: IntArray = P.get("organismOf")
+        println("  отрезали клетку #%d (%d связей): организмов %d -> %d; запас родителя был %.6f, "
+            .format(cut, n2, orgsBefore, P.organismCount, flowParent) +
+            "стал у куска %.6f, у остатка %.6f"
+                .format(P.flowOf(orgAfter[cut]), P.flowOf(orgAfter[if (cut == 0) P.n - 1 else 0])))
+        return
+    }
+    // ОТПУСКАНИЕ МЫШЦЫ: PERF_RELEASE=секунд[,номер]. Держим одну мышцу сокращённой
+    // столько секунд, отпускаем и смотрим, каким толчком это отдаётся. Вопрос от игрока:
+    // «слегка коснулся другой медузы при сжатой мышце — сильный толчок». Держать нужно
+    // РАЗНОЕ время: если рывок растёт с выдержкой, значит ткань вокруг мышцы успевает
+    // потечь (см. PLASTIC_HOLD) и запасает деформацию, а если не растёт — это просто
+    // работа мышцы на распрямлении, и тогда вопрос только к её скорости.
+    System.getenv("PERF_RELEASE")?.split(',')?.let { spec ->
+        val secs = spec[0].trim().toDoubleOrNull() ?: return@let
+        val which = spec.getOrNull(1)?.trim()?.toIntOrNull() ?: 0
+        P.resetState()
+        P.setTearing(true)
+        val hold = Math.round(secs / dt).toInt()
+        fun comSpeed(): Double {
+            var m = 0.0; var vx = 0.0; var vy = 0.0
+            for (i in 0 until P.n) {
+                if (P.invMass[i] <= 0.0) continue
+                val w = 1.0 / P.invMass[i]; m += w; vx += w * P.vx[i]; vy += w * P.vy[i]
+            }
+            return Math.hypot(vx / m, vy / m) * dt / P.body.meanLinkLength
+        }
+        var peakWho = -1
+        fun peakCell(): Double {
+            var v = 0.0
+            for (i in 0 until P.n) {
+                val s = Math.hypot(P.vx[i], P.vy[i]) * dt / P.body.meanLinkLength
+                if (s > v) { v = s; peakWho = i }
+            }
+            return v
+        }
+        val isFree: BooleanArray = P.get("isFree")
+        fun who() = if (peakWho < 0) "" else
+            " (#%d%s)".format(peakWho, if (isFree[peakWho]) ", свободная" else "")
+        for (f in 0 until hold) P.frameHold(dt, which)
+        val comHeld = comSpeed(); val cellHeld = peakCell(); val whoHeld = who()
+        // ДРЕБЕЗГ ПОД НАГРУЗКОЙ: PERF_RELEASE_TRACE=1 — по подшагам за два тика, где
+        // самая быстрая клетка и что её держит. Тело при этом стоит (центр масс ~0),
+        // поэтому всё, что тут видно, — чистое дрожание на месте.
+        if (System.getenv("PERF_RELEASE_TRACE") != null) {
+            val i = peakWho
+            val ct = P.contactsObj()
+            val muscleOf: IntArray = P.get("muscleOf")
+            val boneOf: IntArray = P.get("boneOf")
+            val conA: IntArray = P.get("conA"); val conB: IntArray = P.get("conB")
+            val conRest: DoubleArray = P.get("conRest"); val conCount: Int = P.get("conCount")
+            val conDead: BooleanArray = P.get("conDead")
+            val conMuscle: IntArray = P.get("conMuscle")
+            val ml = P.body.meanLinkLength
+            println("  клетка #%d: мышца %d, кость %d, свободная %s"
+                .format(i, muscleOf[i], boneOf[i], if (isFree[i]) "да" else "нет"))
+            for (c in 0 until conCount) {
+                if (conDead[c] || (conA[c] != i && conB[c] != i)) continue
+                val j = if (conA[c] == i) conB[c] else conA[c]
+                val d = Math.hypot(P.px[i] - P.px[j], P.py[i] - P.py[j])
+                println("    связь с #%d: длина %.3f покоя (мышца %d, покой %.3f св)"
+                    .format(j, d / conRest[c], conMuscle[c], conRest[c] / ml))
+            }
+            if (ct != null) for (k in 0 until ct.contactCount) {
+                val a = ct.contactI(k); val b = ct.contactJ(k)
+                if (a != i && b != i) continue
+                val j = if (a == i) b else a
+                val d = Math.hypot(P.px[i] - P.px[j], P.py[i] - P.py[j])
+                println("    контакт с #%d: %.3f упора".format(j, d / ct.contactDistanceOf(i, j)))
+            }
+            var sub2 = 0
+            P.demo.dbgSubstepHook = { st ->
+                println("    подшаг %d.%02d: x %+.5f y %+.5f  v %.4f кл/тик"
+                    .format(sub2, st, P.px[i] / ml, P.py[i] / ml,
+                        Math.hypot(P.vx[i], P.vy[i]) * dt / ml))
+            }
+            for (f in 0 until 2) { sub2 = f; P.frameHold(dt, which) }
+            P.demo.dbgSubstepHook = null
+            return
+        }
+        var comPeak = 0.0; var cellPeak = 0.0; var atCom = 0
+        // Отпускаем: цель нулевая, дальше только распрямление и среда.
+        for (f in 0 until Math.round(3.0 / dt).toInt()) {
+            P.frame(dt, sub, contract = false)
+            val c = comSpeed(); if (c > comPeak) { comPeak = c; atCom = f }
+            val q = peakCell(); if (q > cellPeak) cellPeak = q
+        }
+        println("ОТПУСКАНИЕ мышцы %d на %s после %.1f с удержания:".format(which, path, secs))
+        println("  под нагрузкой: центр масс %.4f, самая быстрая клетка %.4f клетки/тик%s"
+            .format(comHeld, cellHeld, whoHeld))
+        println("  после отпускания: центр масс МАКС %.4f (через %d тиков), самая быстрая клетка %.4f%s"
+            .format(comPeak, atCom, cellPeak, who()))
+        println("  порвано связей %d".format(P.killedLinks()))
+        return
+    }
     // ГРЕБОК НА НАСТОЯЩЕЙ ФИЗИКЕ: PERF_GAIT=секунд. Печатает, рвёт ли тело само себя
     // мышцами и с какой скоростью плывёт. Зеркало SwimSolver разрывов не знает вовсе,
     // поэтому «не рвётся» проверяется только здесь.
@@ -136,6 +294,8 @@ fun main(args: Array<String>) {
         // PERF_HOLD=номер — держать одну мышцу сокращённой, как при наведении мышью.
         val hold = System.getenv("PERF_HOLD")?.toIntOrNull() ?: -1
         var first = -1
+        // Пик скорости КЛЕТКИ за прогон: с чем сравнивать рывок при отпускании мышцы.
+        var vPeak = 0.0; var vWho = -1
         val marks = intArrayOf(Math.round(1.0 / dt).toInt(), Math.round(5.0 / dt).toInt())
         val at = IntArray(marks.size)
         for (fr in 0 until frames) {
@@ -143,6 +303,10 @@ fun main(args: Array<String>) {
             else if (hold >= 0) P.frameHold(dt, hold)
             else P.frameGait(dt, fr)
             if (first < 0 && P.killedLinks() > 0) first = fr
+            for (i in 0 until P.n) {
+                val v = Math.hypot(P.vx[i], P.vy[i]) * dt / P.body.meanLinkLength
+                if (v > vPeak) { vPeak = v; vWho = i }
+            }
             for (k in marks.indices) if (fr == marks[k]) at[k] = P.killedLinks()
         }
         // ПЕРЕМЕЩЕНИЕ САМОГО КРУПНОГО КУСКА, а не всех клеток: у рвущегося тела в общий
@@ -176,6 +340,7 @@ fun main(args: Array<String>) {
                 d.dbgWorstStretch, P.const("LINK_MAX_STRETCH") + P.const("LINK_TEAR_STRAIN")))
         println("  крупнейший кусок: %d клеток из %d, проплыл %.2f связи за %.0f с (%.4f клетки/тик), организмов %d"
             .format(sizes[big], P.n, dist / meanLink, secs, dist / meanLink / frames, P.organismCount))
+        println("  пик скорости клетки за прогон %.4f клетки/тик (#%d)".format(vPeak, vWho))
         d.dbgTearLog?.let { if (it.isNotEmpty()) print(it) }
         return
     }

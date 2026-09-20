@@ -62,7 +62,7 @@ object Probe {
         return f.get(demo) as T
     }
 
-    private fun setField(name: String, v: Any) {
+    fun setField(name: String, v: Any) {
         val f = RealBodyDemo::class.java.getDeclaredField(name)
         f.isAccessible = true
         f.set(demo, v)
@@ -584,6 +584,14 @@ object Probe {
         var mx = 0.0
         for (o in fx.indices) mx = maxOf(mx, sqrt(fx[o] * fx[o] + fy[o] * fy[o]))
         return mx
+    }
+
+    /** Запас среды одного организма. */
+    fun flowOf(o: Int): Double {
+        val fx = flowField("flowVX").get(demo) as DoubleArray
+        val fy = flowField("flowVY").get(demo) as DoubleArray
+        if (o < 0 || o >= fx.size) return 0.0
+        return sqrt(fx[o] * fx[o] + fy[o] * fy[o])
     }
 
     private fun flowField(name: String) =

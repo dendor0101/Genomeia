@@ -380,10 +380,15 @@ fun main(args: Array<String>) {
             val v = sqrt(P.vx[i] * P.vx[i] + P.vy[i] * P.vy[i]) * dt / meanLink
             if (v > vmax) vmax = v
         }
-        val pen = P.contactsObj()?.maxPenetration(P.px, P.py) ?: 0.0
-        println("  %6d | %5d | %4d | %5d (%4d) | %6.3f | %5.3f | %5.3f | %5.2f | тик %.1f мс | пересборок %d за %.1f мс | лопнуло давл %d разд %d | мембрана %d | ловушка %d (глуб %d, кость %d, складок %d) убито %d, %.0f мкс | h=%x".format(
+        val ctp = P.contactsObj()
+        val pen = ctp?.maxPenetration(P.px, P.py) ?: 0.0
+        // КТО ИМЕННО УПИРАЕТСЯ. Без пары «перекрытие 0.011» ничего не говорит: в сцене
+        // восемь организмов и свободные частицы, и упираться могут любые двое.
+        val penWho = if (ctp == null || ctp.worstI < 0) "" else
+            " (#%d орг %d — #%d орг %d)".format(ctp.worstI, org[ctp.worstI], ctp.worstJ, org[ctp.worstJ])
+        println("  %6d | %5d | %4d | %5d (%4d) | %6.3f | %5.3f | %5.3f%s | %5.2f | тик %.1f мс | пересборок %d за %.1f мс | лопнуло давл %d разд %d | мембрана %d | ловушка %d (глуб %d, кость %d, складок %d) убито %d, %.0f мкс | h=%x".format(
             tk, P.killedLinks(), P.get<Int>("organismCount"), inside, deep,
-            demo.dbgMaxOverStrain, minRatio, pen, vmax, demo.dbgTickNs / 1e6, demo.dbgRebuildN, demo.dbgRebuildNs / 1e6, demo.pressureBurstCount, demo.crushBurstCount, demo.membraneTearCount,
+            demo.dbgMaxOverStrain, minRatio, pen, penWho, vmax, demo.dbgTickNs / 1e6, demo.dbgRebuildN, demo.dbgRebuildNs / 1e6, demo.pressureBurstCount, demo.crushBurstCount, demo.membraneTearCount,
             demo.dbgTrapNow, demo.dbgTrapDeep, demo.dbgTrapBone, demo.dbgTrapFold, demo.trapKillCount, demo.dbgTrapNs / 1e3,
             PlayerLog.stateHash(P.n, P.px, P.py, P.vx, P.vy)))
         if (demo.dbgRebuildN > 0) println("         части пересборки, мс: " +
@@ -758,6 +763,12 @@ fun main(args: Array<String>) {
                     "aniso" -> P.setDragOff(true)
                     "bones" -> P.setBonesRigid(false)
                     "spincancel" -> demo.cancelSpinOn = false
+                    // Направление обхода связей: см. SWEEP_FLIP. Переключается ПОСРЕДИ
+                    // журнала, чтобы сравнивать на одной и той же расстановке тел.
+                    "sweep0" -> demo.sweepFlip = 0
+                    "sweep2" -> demo.sweepFlip = 2
+                    // Мышца перестаёт укорачивать: глубина сокращения ровно 1.
+                    "muscleoff" -> demo.muscleContraction = 1.0
                     "+spincancel" -> demo.cancelSpinOn = true
                     "contacts" -> P.setContacts(false)
                 }
@@ -782,6 +793,40 @@ fun main(args: Array<String>) {
                 val tk = demo.currentTick
                 if (tk >= tl[0] && tk <= tl[1]) timelineRow(tk)
                 demo.dbgMaxOverStrain = 0.0
+            }
+            // КАСАНИЯ МЕЖДУ РАЗНЫМИ ОРГАНИЗМАМИ ЗА ВСЮ СЕССИЮ: PR_CROSS=1[,клетка].
+            //
+            // Ищем не «где помечено», а ГДЕ ВООБЩЕ два тела упёрлись друг в друга: пара
+            // контакта, у которой концы в разных организмах. Печатаем тик, самую глубокую
+            // такую пару и скорости центров масс обоих тел — сразу видно, толкнуло ли.
+            System.getenv("PR_CROSS")?.split(',')?.let { cs ->
+                val ct = P.contactsObj()
+                if (ct != null) {
+                    val org: IntArray = P.get("organismOf")
+                    val dead: BooleanArray = P.get("cellDead")
+                    var wi = -1; var wj = -1; var worst = 9.0
+                    for (k in 0 until ct.contactCount) {
+                        val a = ct.contactI(k); val b = ct.contactJ(k)
+                        if (dead[a] || dead[b] || org[a] == org[b]) continue
+                        val q = Math.hypot(P.px[a] - P.px[b], P.py[a] - P.py[b]) / ct.contactDistanceOf(a, b)
+                        if (q < worst) { worst = q; wi = a; wj = b }
+                    }
+                    if (wi >= 0 && worst < 1.0) {
+                        fun com(o: Int): Double {
+                            var m = 0.0; var vx = 0.0; var vy = 0.0
+                            for (i in 0 until P.n) {
+                                if (dead[i] || org[i] != o || P.invMass[i] <= 0.0) continue
+                                val w = 1.0 / P.invMass[i]; m += w; vx += w * P.vx[i]; vy += w * P.vy[i]
+                            }
+                            return if (m <= 0.0) 0.0 else Math.hypot(vx / m, vy / m) * dt / meanLink
+                        }
+                        val watch = cs.getOrNull(1)?.trim()?.toIntOrNull()
+                        println("  КАСАНИЕ тик %d: #%d орг %d — #%d орг %d, %.3f упора; центры масс %.4f и %.4f клетки/тик%s".format(
+                            demo.currentTick, wi, org[wi], wj, org[wj], worst, com(org[wi]), com(org[wj]),
+                            if (watch == null) "" else ", клетка #%d %.4f".format(
+                                watch, Math.hypot(P.vx[watch], P.vy[watch]) * dt / meanLink)))
+                    }
+                }
             }
             // A/B: PR_AB=тик — до этого тика контакт старый (BoundaryContacts.abLegacy).
             System.getenv("PR_AB")?.toIntOrNull()?.let { at ->

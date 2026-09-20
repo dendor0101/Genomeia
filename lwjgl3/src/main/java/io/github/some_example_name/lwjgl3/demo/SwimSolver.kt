@@ -263,6 +263,7 @@ internal object DemoConst {
     val FLAP_COMPLIANCE = d("FLAP_COMPLIANCE")
     val CANCEL_INTERNAL_SPIN = b("CANCEL_INTERNAL_SPIN")
     val SOLVER_ITERS = i("SOLVER_ITERS")
+    val SWEEP_FLIP = i("SWEEP_FLIP")
     val SUBSTEPS = i("SUBSTEPS")
     val NORMAL_DRAG = d("NORMAL_DRAG")
     val TANGENT_DRAG = d("TANGENT_DRAG")
@@ -576,6 +577,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         flowEx.fill(0.0); flowEy.fill(0.0)
         flowVX.fill(0.0); flowVY.fill(0.0)
         muscleActivation.fill(0.0); muscleTarget.fill(0.0)
+        muscleActivationPrev.fill(0.0); muscleFrac = 1.0
         gaitFrame = 0
         diverged = false
     }
@@ -584,8 +586,15 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     //  СТАДИИ. Порядок и арифметика — как в RealBodyDemo.simulate().
     // =================================================================
 
-    private fun muscleScale(m: Int) =
-        if (m < 0) 1.0 else 1.0 - muscleActivation[m] * (1.0 - p.muscleContraction)
+    /** Активация на начало тика: длина покоя доезжает по подшагам, зеркало демо. */
+    private val muscleActivationPrev = DoubleArray(topo.muscleCount)
+    private var muscleFrac = 1.0
+
+    private fun muscleScale(m: Int): Double {
+        if (m < 0) return 1.0
+        val a = muscleActivationPrev[m] + (muscleActivation[m] - muscleActivationPrev[m]) * muscleFrac
+        return 1.0 - a * (1.0 - p.muscleContraction)
+    }
 
     /**
      * Гравитации и пола здесь нет НАМЕРЕННО, и на побитовую сверку это не влияет:
@@ -957,6 +966,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             if (gaitFrame % p.gaitPeriod < duty) muscleTarget.fill(1.0)
             gaitFrame++
         }
+        System.arraycopy(muscleActivation, 0, muscleActivationPrev, 0, muscleActivation.size)
         for (m in muscleActivation.indices) {
             val target = muscleTarget[m]
             val rate = if (target > muscleActivation[m]) p.muscleRateContract else p.muscleRateRelax
@@ -967,12 +977,14 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
 
         val h = dt / substeps
         for (s in 0 until substeps) {
+            muscleFrac = (s + 1).toDouble() / substeps
             integrate(h)
-            // Фаза чередования идёт ровно по подшагам, как в демо.
-            sweepBackwards = !sweepBackwards
+            // Фаза чередования — как в демо, см. SWEEP_FLIP.
+            if (DemoConst.SWEEP_FLIP == 1) sweepBackwards = !sweepBackwards
             if (DemoConst.CANCEL_INTERNAL_SPIN) markInternal()
             // Цикл по всем ограничениям сразу, включая контакт — зеркало демо.
             for (iter in 0 until DemoConst.SOLVER_ITERS) {
+                if (DemoConst.SWEEP_FLIP == 2) sweepBackwards = !sweepBackwards
                 solveConstraints(h)
                 solveFlaps(h)
                 solveLinkMaxLength()
@@ -1061,6 +1073,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     fun frameHoldMuscle0(dt: Double, substeps: Int, hold: Boolean) {
         muscleTarget.fill(0.0)
         if (hold && muscleTarget.isNotEmpty()) muscleTarget[0] = 1.0
+        System.arraycopy(muscleActivation, 0, muscleActivationPrev, 0, muscleActivation.size)
         for (m in muscleActivation.indices) {
             val target = muscleTarget[m]
             val rate = if (target > muscleActivation[m]) p.muscleRateContract else p.muscleRateRelax
@@ -1070,12 +1083,14 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         }
         val h = dt / substeps
         for (s in 0 until substeps) {
+            muscleFrac = (s + 1).toDouble() / substeps
             integrate(h)
-            // Фаза чередования идёт ровно по подшагам, как в демо.
-            sweepBackwards = !sweepBackwards
+            // Фаза чередования — как в демо, см. SWEEP_FLIP.
+            if (DemoConst.SWEEP_FLIP == 1) sweepBackwards = !sweepBackwards
             if (DemoConst.CANCEL_INTERNAL_SPIN) markInternal()
             // Цикл по всем ограничениям сразу, включая контакт — зеркало демо.
             for (iter in 0 until DemoConst.SOLVER_ITERS) {
+                if (DemoConst.SWEEP_FLIP == 2) sweepBackwards = !sweepBackwards
                 solveConstraints(h)
                 solveFlaps(h)
                 solveLinkMaxLength()
