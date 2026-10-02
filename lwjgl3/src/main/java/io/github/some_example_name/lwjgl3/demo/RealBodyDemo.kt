@@ -848,6 +848,17 @@ class RealBodyDemo(private val bodyPath: String,
          * ПРИ ПЕРЕНОСЕ: в движке это же число — условие настоящего РАЗРЫВА связи,
          * а не окраски.
          */
+        /**
+         * РАЗВЁРТКА ПОРОГА (22.09), 30 секунд гребка, порвано связей медуза / body-export:
+         *   1.30 (0.25, сейчас) — 0 / 0
+         *   1.25 (0.20)         — 0 / 0      даром слабее на 4%
+         *   1.20 (0.15)         — 0 / 4      рвётся вырожденная пара, см. раздел 2
+         *   1.15 (0.10)         — 16 / 74    мышцы начинают рвать сами себя
+         * Оставлено 0.25: 0.20 ничего не стоит по гребку, но на стенде переводит сцену
+         * «бассейн одиночных» в её плохой режим (дребезг 5 -> 1045, проникновение 0 ->
+         * 0.05) — сцена двуустойчива и срывается от любой мелочи. Подкрутить под руку
+         * можно на живом окне переменной RB_TEAR, не пересобирая.
+         */
         private const val LINK_TEAR_STRAIN = 0.25
 
         /**
@@ -927,7 +938,19 @@ class RealBodyDemo(private val bodyPath: String,
          *
          * Цена: обход раз в тик около 0.13 мс на 1900 клеток (2600 треугольников).
          */
-        private const val TRAP_KILL_TICKS = 10
+        /**
+         * ОТЛОВ ЗАСТРЯВШИХ ВЫКЛЮЧЕН по решению пользователя (01.10): смотрим руками, что
+         * именно будет проникать. Включить обратно — RB_TRAP=10. Замер перед выключением
+         * (body-export, стенд): без отлова «куча плотнее» 16 застрявших вместо 0, «куча в
+         * теле» 23 вместо 5.
+         */
+        private const val TRAP_KILL_TICKS = -1
+        /** Считать поверхностью и клетки, вокруг которых углы треугольников не сходятся в 2pi. */
+        private const val PROBE_UNCOVERED = true
+        /** Допуск на сумму углов: меньше 2pi на столько — уже поверхность. */
+        private const val PROBE_ANGLE_EPS = 0.05
+        /** Рвать связь контура, когда щель стала проходимой. См. membranePassTear. */
+        private const val MEMBRANE_PASS_TEAR = false
 
         /**
          * СУХОЖИЛИЕ: во сколько раз связь мышцы с костью крепче обычной на разрыв.
@@ -1058,7 +1081,7 @@ class RealBodyDemo(private val bodyPath: String,
          * тик» — этого хватает, чтобы таскать тело живо, и мало, чтобы продавить
          * мембрану: контакт снимает такую скорость за один подшаг.
          */
-        private const val DRAG_ACCEL = 64.0
+        val DRAG_ACCEL = System.getenv("RB_DRAG_ACCEL")?.toDoubleOrNull() ?: 256.0
 
         /**
          * Потолок скорости для тяги, в долях общего MAX_SPEED_CELLS_PER_TICK.
@@ -1109,7 +1132,26 @@ class RealBodyDemo(private val bodyPath: String,
          */
         private const val DRAG_MATCH_WEIGHT = 1.0
 
-        private const val DRAG_SPEED_LIMIT = 0.25
+        /**
+         * ПОТОЛОК СКОРОСТИ ТЯГИ, в долях общего MAX_SPEED_CELLS_PER_TICK. Может быть
+         * БОЛЬШЕ единицы: схваченная клетка освобождена от общего потолка, см. clampSpeed.
+         *
+         * Было 0.25, и при этом оторвать клетку мышью было невозможно В ПРИНЦИПЕ. Рвётся
+         * связь по НЕДОБОРУ сверх предела длины внутри подшага, порог 0.25 покоя. Замер
+         * (стенд PERF_PULL, тянем крайнюю клетку контура три секунды):
+         *   потолок 0.25, ускорение  64 — недобор 0.044, не рвётся
+         *   потолок 1.0,  ускорение  64 — 0.122
+         *   потолок 1.0,  ускорение 128 — 0.198 и дальше НЕ РАСТЁТ ни при 256, ни при 1024
+         * Упиралось в общий потолок скорости: 8 клеток за тик дают за подшаг полклетки, и
+         * половина уходит в соседа. С освобождением от общего потолка:
+         *   потолок 2.0, ускорение 128 — 0.219, ещё не рвётся
+         *   потолок 3.0, ускорение 256 — 0.362, рвётся 3 связи
+         *   потолок 4.0, ускорение 512 — 0.360, столько же
+         * Выбрано 3.0 и 256: рука рвёт ткань уверенным рывком и не рвёт при обычном
+         * перетаскивании. Общий потолок для остальных клеток не тронут — он про
+         * устойчивость своих стадий, а рука сила внешняя.
+         */
+        val DRAG_SPEED_LIMIT = System.getenv("RB_DRAG_SPEED")?.toDoubleOrNull() ?: 3.0
 
         /**
          * ПОСТОЯННАЯ ВРЕМЕНИ ТЯГИ, в секундах: за сколько сервотяга РАССЧИТЫВАЕТ
@@ -1843,6 +1885,15 @@ class RealBodyDemo(private val bodyPath: String,
 
     /** Клетка без единой связи — свободная частица, см. FREE_PARTICLES. */
     private lateinit var isFree: BooleanArray
+    /**
+     * Клетка участвует в контактах СВОИМ радиусом: либо ни с кем не связана, либо ткань
+     * её не закрывает. См. buildProbes.
+     */
+    private var probe = BooleanArray(0)
+    private var probeAngle = DoubleArray(0)
+    /** Зонды по признаку угла можно выключить: RB_PROBE=0 — только свободные клетки. */
+    internal var probeOn = System.getenv("RB_PROBE")?.let { it != "0" } ?: PROBE_UNCOVERED
+    private fun probeCells(): BooleanArray = if (probeOn) probe else isFree
 
     /**
      * УМЕРШИЕ КЛЕТКИ: центр зашёл внутрь радиуса чужой. См. killOnDeep в контактах.
@@ -1855,7 +1906,15 @@ class RealBodyDemo(private val bodyPath: String,
     private lateinit var cellDead: BooleanArray
     private var deadCount = 0
     /** Максимальная длина каждой связи: LINK_MAX_STRETCH * длина покоя. */
-    private lateinit var conMaxLen: DoubleArray
+    /**
+     * ПРЕДЕЛА ДЛИНЫ КАК МАССИВА БОЛЬШЕ НЕТ.
+     *
+     * Он всегда был равен LINK_MAX_STRETCH * conRest: так его ставила сборка, так же его
+     * обновляла пластичность, когда меняла длину покоя. То есть восемь байт на связь и
+     * отдельный поток из кэша тратились на значение, которое считается одним умножением.
+     * У body-export это 39 КБ, которые читались 144 раза за тик — стадия предела длины
+     * зовётся чаще всех. Осталось умножение на месте.
+     */
     private lateinit var matchWeight: DoubleArray
     private lateinit var inContact: BooleanArray
 
@@ -1943,6 +2002,8 @@ class RealBodyDemo(private val bodyPath: String,
     private lateinit var organismOf: IntArray
     private var organismCount = 0
     private lateinit var organismSize: IntArray
+    /** Размеры и массы организмов уже посчитаны для нынешней разметки. */
+    private var organismsCounted = false
     private lateinit var organismMass: DoubleArray
 
     private lateinit var flowVX: DoubleArray
@@ -2172,24 +2233,10 @@ class RealBodyDemo(private val bodyPath: String,
 
         // --- связи: внутрикостные не создаются, их держит проекция ---
 
-        val a = ArrayList<Int>(lnkCount)
-        val b = ArrayList<Int>(lnkCount)
-        val rest = ArrayList<Double>(lnkCount)
-        val mus = ArrayList<Int>(lnkCount)
-        val ed = ArrayList<Int>(lnkCount)
-        for (k in 0 until lnkCount) {
-            val i = lnkA[k]
-            val j = lnkB[k]
-            if (boneOf[i] != -1 && boneOf[i] == boneOf[j]) continue
-            val dx = body.x[i] - body.x[j]
-            val dy = body.y[i] - body.y[j]
-            a.add(i); b.add(j); rest.add(sqrt((dx * dx + dy * dy).toDouble())); ed.add(lnkEdge[k])
-            mus.add(muscleOfPair(i, j))
-        }
-        conCount = a.size
-        conA = a.toIntArray(); conB = b.toIntArray()
-        conRest = rest.toDoubleArray(); conMuscle = mus.toIntArray()
-        conEdge = ed.toIntArray()
+        conA = IntArray(lnkCount); conB = IntArray(lnkCount)
+        conRest = DoubleArray(lnkCount); conMuscle = IntArray(lnkCount)
+        conEdge = IntArray(lnkCount)
+        conCount = fillConstraints()
 
         triMuscle = IntArray(triCount) { t -> muscleOfTri(triA[t], triB[t], triC[t]) }
         triInverted = BooleanArray(triCount)
@@ -2330,10 +2377,15 @@ class RealBodyDemo(private val bodyPath: String,
                 else { flowVX[o] = orgFlowX[was]; flowVY[o] = orgFlowY[was] }
             }
         }
-        java.util.Arrays.fill(organismSize, 0, comp, 0)
-        java.util.Arrays.fill(organismMass, 0, comp, 0.0)
         java.util.Arrays.fill(comAccX, 0, comp, 0.0)
         java.util.Arrays.fill(comAccY, 0, comp, 0.0)
+        // БЕЗ ПЕРЕНУМЕРАЦИИ РАЗМЕРЫ И МАССЫ НЕ МЕНЯЮТСЯ: кто в каком организме — то же
+        // самое, массы берутся из позы покоя. Значит и считать нечего. Раньше два прохода
+        // по всем клеткам шли на КАЖДУЮ пересборку, а их бывает под два десятка за тик.
+        if (!relabel && organismsCounted) return
+        organismsCounted = true
+        java.util.Arrays.fill(organismSize, 0, comp, 0)
+        java.util.Arrays.fill(organismMass, 0, comp, 0.0)
         for (i in 0 until n) organismSize[organismOf[i]]++
         // МАССА организма, а не число клеток: запас среды заряжается от скорости
         // ЦЕНТРА МАСС, а она есть сумма m*v делённая на сумму m. См. applyNormalDrag.
@@ -2399,11 +2451,13 @@ class RealBodyDemo(private val bodyPath: String,
         if (!::isFree.isInitialized) isFree = BooleanArray(n)
         isFree.fill(true)
         for (k in 0 until lnkCount) { isFree[lnkA[k]] = false; isFree[lnkB[k]] = false }
+        buildProbes()
         // Ёмкость по целому телу, длина — в conCount: после разрыва списки сжимаются на месте.
         val cap = conA.size
-        if (!::conMaxLen.isInitialized || conMaxLen.size != cap) {
-            conMaxLen = DoubleArray(cap); linkTorn = BooleanArray(cap); conDead = BooleanArray(cap)
+        if (linkTorn.size != cap) {
+            linkTorn = BooleanArray(cap); conDead = BooleanArray(cap)
             conBoundary = BooleanArray(cap); conTendon = BooleanArray(cap)
+            conSealGap = DoubleArray(cap)
         } else {
             linkTorn.fill(false); conDead.fill(false)
         }
@@ -2414,7 +2468,6 @@ class RealBodyDemo(private val bodyPath: String,
         if (conOfEdge.size != baked.edgeCount) { conOfEdge = IntArray(baked.edgeCount); conOfEdge.fill(-1) }
         val use = baked.triUse
         for (c in 0 until conCount) {
-            conMaxLen[c] = LINK_MAX_STRETCH * conRest[c]
             val e = conEdge[c]
             conOfEdge[e] = c
             conBoundary[c] = use[e] <= 1
@@ -2437,14 +2490,31 @@ class RealBodyDemo(private val bodyPath: String,
                 n, conA, conB, conCount, boundA, boundB, boundCount, radius,
                 CONTACT_SCALE, CCD_CORE, CONTACT_RESTITUTION, CONTACT_FRICTION,
                 body.x, body.y,
-                body.meanLinkLength.toDouble(), CONTACT_MAX_STEP, isFree, everLinked,
+                body.meanLinkLength.toDouble(), CONTACT_MAX_STEP, probeCells(), everLinked,
                 cellDead, restPairs,
             )
         } else {
             // Объект переиспользуется: заводить его заново на каждой пересборке стоило
             // дороже всего остального разрыва вместе взятого. См. reconfigure.
             ct.reconfigure(conA, conB, conCount, boundA, boundB, boundCount,
-                body.x, body.y, isFree, cellDead, restPairs, everLinked)
+                body.x, body.y, probeCells(), cellDead, restPairs, everLinked)
+        }
+        // Наименьший радиус контакта в сцене — мерка «кто вообще способен пролезть».
+        // См. dbgSeal. Свободная частица меньше мембранной клетки в разы, поэтому мерить
+        // проходимость щели надо именно по ней.
+        contacts!!.let { c ->
+            var mn = Double.MAX_VALUE
+            for (i in 0 until n) {
+                val r = c.contactRadiusOf(i)
+                if (r > 0.0 && r < mn) mn = r
+            }
+            dbgSealMinR = if (mn == Double.MAX_VALUE) 0.0 else mn
+            // Порог проходимости для каждой связи контура, см. membranePassTear.
+            val need = 2.0 * dbgSealMinR
+            for (k in 0 until conCount) {
+                conSealGap[k] = if (!conBoundary[k]) Double.MAX_VALUE
+                else c.contactRadiusOf(conA[k]) + c.contactRadiusOf(conB[k]) + need
+            }
         }
         contacts!!.also {
             it.killOnDeep = killOnDeep && KILL_ON_DEEP_OVERLAP
@@ -2456,6 +2526,52 @@ class RealBodyDemo(private val bodyPath: String,
         }
         if (!rebuilding && !quiet) println("[RealBodyDemo] contact particles = ${boundCount} boundary edges, " +
             "contact radius from boundary edges, seal margin")
+    }
+
+    /**
+     * КЛЕТКИ, КОТОРЫЕ ТКАНЬ НЕ ЗАКРЫВАЕТ, — ЗОНДЫ. См. probe.
+     *
+     * Контур выводится из рёбер: ребро с одним живым треугольником — граница. На
+     * ПРАВИЛЬНОЙ сетке этого достаточно, но выгрузка правильной не бывает: у body-export
+     * 118 рёбер несут ТРИ треугольника, потому что мелкие клетки (радиус 0.2 против 0.5)
+     * вшиты в сетку крупных, и крупный треугольник проходит поверх мелкой клетки. Для
+     * рёберной проверки такая клетка «внутри», и контакта у неё нет вовсе — а лежит она
+     * СНАРУЖИ контура, до 2.7 средней связи от него. Игрок это и поймал: чужие клетки
+     * проходят сквозь мелкие, как через воздух, и только потом упираются в настоящий
+     * контур (журнал 30.09, 24 метки — все с радиусом 0.2, все снаружи контура).
+     *
+     * Второй, независимый признак поверхности: СУММА УГЛОВ треугольников вокруг клетки.
+     * У клетки внутри сплошной ткани она равна 2pi, у клетки на краю — меньше. Признак
+     * не опирается на манифольдность и ловит 18 из 24 помеченных, а всего добавляет к
+     * контуру 26 клеток из 947 — то есть дёшево.
+     *
+     * Шесть клеток не ловит и он: у них сумма углов БОЛЬШЕ 2pi (до 137%), потому что
+     * налегающие треугольники накрывают их с запасом. Это уже поломка сетки, и чинить её
+     * надо в редакторе — здесь остаётся записать, что такие клетки существуют.
+     */
+    private fun buildProbes() {
+        if (probe.size != n) probe = BooleanArray(n)
+        if (probeAngle.size != n) probeAngle = DoubleArray(n)
+        java.util.Arrays.fill(probeAngle, 0.0)
+        for (t in 0 until triCount) {
+            val a = triA[t]; val b = triB[t]; val c = triC[t]
+            probeAngle[a] += angleAt(a, b, c)
+            probeAngle[b] += angleAt(b, a, c)
+            probeAngle[c] += angleAt(c, a, b)
+        }
+        val full = 2.0 * Math.PI - PROBE_ANGLE_EPS
+        for (i in 0 until n) probe[i] = isFree[i] || probeAngle[i] < full
+    }
+
+    /** Угол при вершине v в треугольнике (v, p, q) в позе ПОКОЯ: топология, не движение. */
+    private fun angleAt(v: Int, p: Int, q: Int): Double {
+        val ax = (body.x[p] - body.x[v]).toDouble(); val ay = (body.y[p] - body.y[v]).toDouble()
+        val bx = (body.x[q] - body.x[v]).toDouble(); val by = (body.y[q] - body.y[v]).toDouble()
+        val na = sqrt(ax * ax + ay * ay); val nb = sqrt(bx * bx + by * by)
+        if (na < 1e-12 || nb < 1e-12) return 0.0
+        var c = (ax * bx + ay * by) / (na * nb)
+        if (c > 1.0) c = 1.0 else if (c < -1.0) c = -1.0
+        return Math.acos(c)
     }
 
     private fun buildMasses() {
@@ -2502,28 +2618,74 @@ class RealBodyDemo(private val bodyPath: String,
     /** Идёт пересборка после разрыва: печатать нельзя, она бывает десятки раз за тик. */
     private var rebuilding = false
 
+    /** Списки голых соседей: степени, начала, сами соседи. Заводятся один раз. */
+    private var flapDeg = IntArray(0)
+    private var flapStart = IntArray(0)
+    private var flapNb = IntArray(0)
+
+    /**
+     * ПОСЛЕДНЯЯ HashMap УБРАНА. Здесь стояла HashMap<Int, MutableList<Int>> со списком
+     * голых соседей у каждой клетки: на каждую такую связь — Integer в куче, ArrayList на
+     * клетку, и всё это заново на каждой пересборке, а их бывают десятки за тик. Заменено
+     * на обычные CSR-массивы: степени, префиксные суммы, соседи подряд.
+     *
+     * Порядок ИЗМЕНИЛСЯ и не мог не измениться: обход HashMap идёт по корзинам, а теперь
+     * клетки идут строго по возрастанию номера. Пары внутри клетки по-прежнему в порядке
+     * связей. На нынешних телах лоскутов нет вовсе (их заводит только разрыв), а после
+     * разрыва проверки и журналы сходятся.
+     */
     private fun buildFlaps() {
-        val use = baked.triUse
-        val bare = HashMap<Int, MutableList<Int>>()
-        for (c in 0 until conCount) {
-            val i = conA[c]; val j = conB[c]
-            if (use[conEdge[c]] > 0) continue
-            bare.getOrPut(i) { ArrayList() }.add(j)
-            bare.getOrPut(j) { ArrayList() }.add(i)
+        // Ни одного голого ребра — лоскутов нет по определению, искать нечего.
+        // См. BakedTopology.bareEdges: проход по всем связям стоил семь миллисекунд
+        // из сорока на тяжёлом прогоне, и почти всегда впустую.
+        if (baked.bareEdges == 0) {
+            flapCount = 0
+            if (!rebuilding && !quiet) println("[RealBodyDemo] flap angles = 0")
+            return
         }
-        val a = ArrayList<Int>(); val b = ArrayList<Int>(); val r = ArrayList<Double>()
-        for ((_, list) in bare) {
-            if (list.size < 2) continue
-            for (p in list.indices) for (q in p + 1 until list.size) {
-                val i = list[p]; val j = list[q]
+        val use = baked.triUse
+        if (flapDeg.size != n) { flapDeg = IntArray(n); flapStart = IntArray(n + 1) }
+        java.util.Arrays.fill(flapDeg, 0)
+        var bare = 0
+        for (c in 0 until conCount) {
+            if (use[conEdge[c]] > 0) continue
+            flapDeg[conA[c]]++; flapDeg[conB[c]]++; bare++
+        }
+        if (bare == 0) {
+            flapCount = 0
+            if (!rebuilding && !quiet) println("[RealBodyDemo] flap angles = 0")
+            return
+        }
+        flapStart[0] = 0
+        for (i in 0 until n) flapStart[i + 1] = flapStart[i] + flapDeg[i]
+        val total = flapStart[n]
+        if (flapNb.size < total) flapNb = IntArray(total)
+        System.arraycopy(flapStart, 0, flapDeg, 0, n)   // курсоры записи
+        for (c in 0 until conCount) {
+            if (use[conEdge[c]] > 0) continue
+            val i = conA[c]; val j = conB[c]
+            flapNb[flapDeg[i]++] = j
+            flapNb[flapDeg[j]++] = i
+        }
+        var m = 0
+        for (v in 0 until n) {
+            val d = flapStart[v + 1] - flapStart[v]
+            if (d >= 2) m += d * (d - 1) / 2
+        }
+        if (flapA.size < m) { flapA = IntArray(m); flapB = IntArray(m); flapRest = DoubleArray(m) }
+        var k = 0
+        for (v in 0 until n) {
+            val s = flapStart[v]; val e = flapStart[v + 1]
+            if (e - s < 2) continue
+            for (p in s until e) for (q in p + 1 until e) {
+                val i = flapNb[p]; val j = flapNb[q]
                 if (i == j) continue
                 val dx = (body.x[i] - body.x[j]).toDouble()
                 val dy = (body.y[i] - body.y[j]).toDouble()
-                a.add(i); b.add(j); r.add(sqrt(dx * dx + dy * dy))
+                flapA[k] = i; flapB[k] = j; flapRest[k] = sqrt(dx * dx + dy * dy); k++
             }
         }
-        flapCount = a.size
-        flapA = a.toIntArray(); flapB = b.toIntArray(); flapRest = r.toDoubleArray()
+        flapCount = k
         if (!rebuilding && !quiet) println("[RealBodyDemo] flap angles = $flapCount")
     }
 
@@ -2675,7 +2837,7 @@ class RealBodyDemo(private val bodyPath: String,
         invertedPeak = 0
         boneCapHits = 0
         linkCapHits = 0
-        if (::linkTorn.isInitialized) linkTorn.fill(false)
+        linkTorn.fill(false)
         speedCapHits = 0
         simTime = 0.0
         accumulator = 0.0
@@ -2791,6 +2953,28 @@ class RealBodyDemo(private val bodyPath: String,
      * меньший номер. Правило не зависит от того, в каком порядке записаны концы связи и
      * вершины треугольника: иначе физика зависела бы от порядка строк в выгрузке.
      */
+    /**
+     * Связи решателя из полного списка рёбер: внутрикостные пропускаются, их держит
+     * проекция кости. Раньше это место было списками ArrayList<Int> и ArrayList<Double>
+     * — то есть на каждую связь по Integer и Double в куче, пять тысяч коробок на сборку,
+     * и всё это сразу в мусор. Массивы заводятся по числу рёбер (больше связей не
+     * бывает) и переиспользуются между сборками.
+     */
+    private fun fillConstraints(): Int {
+        var m = 0
+        for (k in 0 until lnkCount) {
+            val i = lnkA[k]; val j = lnkB[k]
+            if (boneOf[i] != -1 && boneOf[i] == boneOf[j]) continue
+            val dx = body.x[i] - body.x[j]; val dy = body.y[i] - body.y[j]
+            conA[m] = i; conB[m] = j
+            conRest[m] = sqrt((dx * dx + dy * dy).toDouble())
+            conEdge[m] = lnkEdge[k]
+            conMuscle[m] = muscleOfPair(i, j)
+            m++
+        }
+        return m
+    }
+
     private fun muscleOfPair(i: Int, j: Int): Int {
         val a = muscleOf[i]; val b = muscleOf[j]
         if (a == b) return a
@@ -2987,10 +3171,9 @@ class RealBodyDemo(private val bodyPath: String,
             }
             if (over == 0.0) { conHold[c] = 0; continue }
             if (conHold[c] < PLASTIC_HOLD) { conHold[c]++; continue }
+            // Предел длины идёт ЗА длиной покоя сам собой: он и есть
+            // LINK_MAX_STRETCH * conRest, считается на месте. См. conMaxLen.
             conRest[c] *= 1.0 + over * k
-            // Предел длины идёт ЗА длиной покоя: иначе потёкшая связь окажется
-            // растянутой по старой мерке и стадия предела начнёт с ней воевать.
-            conMaxLen[c] = LINK_MAX_STRETCH * conRest[c]
         }
 
         for (t in 0 until triCount) {
@@ -3017,10 +3200,11 @@ class RealBodyDemo(private val bodyPath: String,
     }
 
     private fun solveLinkMaxLength() {
+        if (tearingOn) SealStats.tearingOnTicks++ else SealStats.tearingOffTicks++
         // Всё в локальные: стадия идёт 80 раз за тик по пяти тысячам связей.
         val px = px; val py = py; val invMass = invMass
         val conA = conA; val conB = conB; val conRest = conRest; val conMuscle = conMuscle
-        val conDead = conDead; val conMaxLen = conMaxLen; val ms = muscleScaleOf
+        val conDead = conDead; val ms = muscleScaleOf
         val meanLink = body.meanLinkLength
         for (c in 0 until conCount) {
             if (conDead[c]) continue
@@ -3040,28 +3224,38 @@ class RealBodyDemo(private val bodyPath: String,
             val st = len / conRest[c]
             if (st > dbgWorstStretch) dbgWorstStretch = st
             if (tearingOn && len < LINK_CRUSH_RATIO * conRest[c] * scale) {
-                linkTorn[c] = true; conDead[c] = true; tearsPending = true
+                linkTorn[c] = true; conDead[c] = true; tearsPending = true; killEdgeNow(conEdge[c])
                 crushedCell[i] = true; crushedCell[j] = true
                 dbgTornCrush++; if (mus >= 0) dbgTornCrushMuscle++
                 dbgTear(c, i, j, "сжатие", len / (conRest[c] * scale))
                 continue
             }
-            val max = conMaxLen[c]
+            if (dbgSealOn && conBoundary[c]) dbgSeal(c, i, j, len)
+            // ЩЕЛЬ СТАЛА ПРОХОДИМОЙ — РВЁМ. Проверка идёт ДО выхода по пределу длины:
+            // щель открывается раньше, чем связь дотягивается до своего потолка.
+            // См. membranePassTear.
+            if (tearingOn && membranePassTear && len > conSealGap[c]) {
+                linkTorn[c] = true; conDead[c] = true; tearsPending = true; killEdgeNow(conEdge[c])
+                membranePassCount++; SealStats.torn++
+                dbgTear(c, i, j, "щель", len / conRest[c])
+                continue
+            }
+            val max = LINK_MAX_STRETCH * conRest[c]
             if (len <= max || len < 1e-12) continue
             val overStrain = (len - max) / conRest[c]
             if (overStrain > dbgMaxOverStrain) dbgMaxOverStrain = overStrain
             // Пик недобора за всё время: сколько связь хотела сверх предела.
-            val tear = if (conTendon[c]) LINK_TEAR_STRAIN * tendonTear else LINK_TEAR_STRAIN
+            val tear = if (conTendon[c]) linkTearStrain * tendonTear else linkTearStrain
             if (len - max > tear * conRest[c]) {
                 linkTorn[c] = true
-                if (tearingOn) { conDead[c] = true; tearsPending = true }
+                if (tearingOn) { conDead[c] = true; tearsPending = true; killEdgeNow(conEdge[c]) }
                 dbgTornPull++; if (mus >= 0) dbgTornPullMuscle++
                 dbgTear(c, i, j, "растяжение", len / conRest[c])
             }
             // МЕМБРАНА ХРУПЧЕ ТКАНИ. См. MEMBRANE_TEAR_STRAIN.
             if (tearingOn && membraneTearStrain >= 0.0 && conBoundary[c] && !conDead[c] &&
                 len - max > membraneTearStrain * conRest[c]) {
-                linkTorn[c] = true; conDead[c] = true; tearsPending = true
+                linkTorn[c] = true; conDead[c] = true; tearsPending = true; killEdgeNow(conEdge[c])
                 membraneTearCount++
             }
             dx /= len; dy /= len
@@ -3076,6 +3270,55 @@ class RealBodyDemo(private val bodyPath: String,
             px[i] += dx * dL * wi; py[i] += dy * dL * wi
             px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
             linkCapHits++
+        }
+    }
+
+    /**
+     * ЩЕЛЬ В МЕМБРАНЕ: НАСКОЛЬКО ОНА ВООБЩЕ ПРОХОДИМА. Считается при `dbgSealOn`.
+     *
+     * Круги контакта двух соседей по контуру перекрываются, пока ребро короче суммы их
+     * радиусов. Растянутое ребро открывает коридор шириной L - (ra + rb). Чужая клетка
+     * радиуса r сквозь него НЕ пройдёт, пока коридор уже 2r: её центр не может миновать
+     * обе запретные зоны. Значит мембрана дырява ровно тогда, когда
+     *
+     *     L > ra + rb + 2 * rМИН,   rМИН — наименьший радиус контакта в сцене.
+     *
+     * Здесь копится, как далеко дело заходило: наибольшее отношение коридора к 2*rМИН и
+     * сколько раз оно переваливало за единицу. Если единицу оно не переходит никогда, то
+     * ткань протыкают не через щель, и рвать связь по этому признаку бессмысленно.
+     */
+    internal var dbgSealOn = System.getenv("RB_SEAL") != null
+    internal var dbgSealMinR = 0.0
+
+    private fun dbgSeal(c: Int, i: Int, j: Int, len: Double) {
+        val ct = contacts ?: return
+        val ra = ct.contactRadiusOf(i); val rb = ct.contactRadiusOf(j)
+        if (ra <= 0.0 || rb <= 0.0) return
+        val need = 2.0 * dbgSealMinR
+        if (need <= 0.0) return
+        val q = (len - ra - rb) / need
+        SealStats.checks++
+        SealStats.minR = dbgSealMinR / body.meanLinkLength
+        if (q > SealStats.worst) {
+            SealStats.worst = q; SealStats.worstI = i; SealStats.worstJ = j
+            SealStats.worstStretch = len / conRest[c]
+        }
+        if (q > 1.0) {
+            SealStats.over++
+            if (tearingOn) SealStats.overTearing++ else SealStats.overNoTear++
+        }
+        if (q > 2.0) SealStats.over2++
+        if (q > 5.0) SealStats.over5++
+        // Отдельно — ЖИВАЯ мембрана: связь, которая ещё не должна была порваться. Стенд
+        // ставит сцены, перенося клетки, и связь через такой перенос растянута в сотни
+        // раз — по ней о проходимости судить нельзя.
+        val st = len / conRest[c]
+        if (st < LINK_MAX_STRETCH + LINK_TEAR_STRAIN) {
+            SealStats.liveChecks++
+            if (q > SealStats.liveWorst) {
+                SealStats.liveWorst = q; SealStats.liveI = i; SealStats.liveJ = j; SealStats.liveStretch = st
+            }
+            if (q > 1.0) SealStats.liveOver++
         }
     }
 
@@ -3123,7 +3366,7 @@ class RealBodyDemo(private val bodyPath: String,
     }
 
     /** Связь хоть раз требовала растяжения сверх порога разрыва. См. LINK_TEAR_STRAIN. */
-    private lateinit var linkTorn: BooleanArray
+    private var linkTorn = BooleanArray(0)
 
     // ================================================================
     //  НАСТОЯЩИЙ РАЗРЫВ ТКАНИ [X]
@@ -3145,6 +3388,34 @@ class RealBodyDemo(private val bodyPath: String,
     private var tearingOn = TEARING_DEFAULT
     private lateinit var conDead: BooleanArray
     private var tearsPending = false
+
+    /**
+     * ПЕРЕСБОРКА ОДНА НА ТИК, А НЕ НА КАЖДЫЙ РАЗРЫВ.
+     *
+     * Было так: порвалась связь — сразу полная пересборка. На ударе это выходило до
+     * СЕМНАДЦАТИ пересборок за один тик (замер стенда PERF_GAIT при глубоком сокращении),
+     * каждая по всему телу, и ровно это видно как рывок. При этом немедленно нужно очень
+     * мало: порванная связь перестаёт тянуть сама (conDead), а треугольник обязан
+     * перестать держать площадь — вот и всё, остальное (контур, организмы, контакты,
+     * сжатие списков) спокойно ждёт конца тика.
+     *
+     * Поэтому разрыв теперь СРАЗУ гасит ребро в запечённой топологии: треугольники на нём
+     * умирают тут же, и стадия площадей их пропускает по triAlive. Номер ребра падает в
+     * очередь, а пересборка разбирает всю очередь один раз в конце тика.
+     *
+     * Это ещё и защищает широкую фазу: любая смена топологии сбрасывает её список пар, и
+     * семнадцать пересборок за тик означали семнадцать перестроек списка — то есть
+     * отменяли экономию, ради которой список и научили жить дольше подшага.
+     */
+    private var tearQueue = IntArray(64)
+    private var tearQueueN = 0
+
+    /** Погасить ребро немедленно и запомнить для пересборки в конце тика. */
+    private fun killEdgeNow(e: Int) {
+        if (!baked.kill(e)) return
+        if (tearQueueN == tearQueue.size) tearQueue = tearQueue.copyOf(tearQueue.size * 2)
+        tearQueue[tearQueueN++] = e
+    }
     private var tornTotal = 0
 
     /**
@@ -3182,23 +3453,15 @@ class RealBodyDemo(private val bodyPath: String,
         triMuscle = IntArray(triCount) { t -> muscleOfTri(triA[t], triB[t], triC[t]) }
         triInverted = BooleanArray(triCount)
 
-        val ed = ArrayList<Int>(lnkCount)
-        val a = ArrayList<Int>(lnkCount); val b = ArrayList<Int>(lnkCount)
-        val rest = ArrayList<Double>(lnkCount); val mus = ArrayList<Int>(lnkCount)
-        for (k in 0 until lnkCount) {
-            val i = lnkA[k]; val j = lnkB[k]
-            if (boneOf[i] != -1 && boneOf[i] == boneOf[j]) continue
-            val dx = body.x[i] - body.x[j]; val dy = body.y[i] - body.y[j]
-            a.add(i); b.add(j); rest.add(sqrt((dx * dx + dy * dy).toDouble()))
-            ed.add(lnkEdge[k])
-            mus.add(muscleOfPair(i, j))
+        if (conA.size < lnkCount) {
+            conA = IntArray(lnkCount); conB = IntArray(lnkCount)
+            conRest = DoubleArray(lnkCount); conMuscle = IntArray(lnkCount)
+            conEdge = IntArray(lnkCount)
         }
-        conCount = a.size
-        conA = a.toIntArray(); conB = b.toIntArray()
-        conRest = rest.toDoubleArray(); conMuscle = mus.toIntArray()
-        conEdge = ed.toIntArray()
+        conCount = fillConstraints()
 
         tearsPending = false
+        tearQueueN = 0
         tornTotal = 0
         buildBoundary(); buildBend(); buildFlaps(); buildOrganisms(); buildContacts()
     }
@@ -3206,7 +3469,11 @@ class RealBodyDemo(private val bodyPath: String,
     private fun rebuildAfterTear() {
         tearsPending = false
         var t = System.nanoTime()
-        fun lap(k: Int) { val now = System.nanoTime(); dbgRebuildSec[k] += now - t; t = now }
+        fun lap(k: Int) {
+            val now = System.nanoTime()
+            dbgRebuildSec[k] += now - t; dbgRebuildTot[k] += now - t; t = now
+        }
+        dbgRebuildCount++
 
         // Мёртвые рёбра гасятся в запечённой топологии: треугольники на них умирают сами,
         // счётчики треугольников у соседних рёбер уменьшаются. Раньше мёртвые пары
@@ -3214,8 +3481,12 @@ class RealBodyDemo(private val bodyPath: String,
         // поиском. Ребро — пара клеток, поэтому все связи одной пары умирают вместе, как и
         // тогда. Порядок живых списков прежний, результат побитово тот же — проверено
         // контрольными суммами по каждому тику шести журналов игрока.
+        // Очередь уже погашенных рёбер — её набрал killEdgeNow по ходу тика. Плюс
+        // добиваем те связи, которые пометили мёртвыми не через него (лопнувшие клетки).
         if (deadEdges.size < conA.size) deadEdges = IntArray(conA.size)
-        var nd = 0
+        var nd = tearQueueN
+        for (k in 0 until tearQueueN) { deadEdges[k] = tearQueue[k]; conOfEdge[tearQueue[k]] = -1 }
+        tearQueueN = 0
         for (c in 0 until conCount) {
             if (!conDead[c] || !baked.kill(conEdge[c])) continue
             conOfEdge[conEdge[c]] = -1
@@ -3227,11 +3498,20 @@ class RealBodyDemo(private val bodyPath: String,
 
         // 1. Полный список связей. Сжатие НА МЕСТЕ: пишущий индекс никогда не обгоняет
         //    читающий, а массивы остаются прежней ёмкости — длина живёт в счётчике.
+        //
+        // НАЧИНАЕМ С ПЕРВОГО МЁРТВОГО, А НЕ С НУЛЯ. До него список не меняется вовсе:
+        // ни один элемент не сдвигается, и переписывать их на самих себя незачем. Рвётся
+        // за раз одна-две связи, так что в среднем это половина прохода, а при разрыве
+        // в хвосте — почти ничего. Результат тот же до бита.
         run {
             var m = 0
-            for (k in 0 until lnkCount) {
-                if (edgeDead[lnkEdge[k]]) continue
-                lnkA[m] = lnkA[k]; lnkB[m] = lnkB[k]; lnkEdge[m] = lnkEdge[k]; m++
+            while (m < lnkCount && !edgeDead[lnkEdge[m]]) m++
+            var k = m
+            while (k < lnkCount) {
+                if (!edgeDead[lnkEdge[k]]) {
+                    lnkA[m] = lnkA[k]; lnkB[m] = lnkB[k]; lnkEdge[m] = lnkEdge[k]; m++
+                }
+                k++
             }
             lnkCount = m
         }
@@ -3240,11 +3520,15 @@ class RealBodyDemo(private val bodyPath: String,
         run {
             val alive = baked.triAlive
             var m = 0
-            for (k in 0 until triCount) {
-                if (!alive[triId[k]]) continue
-                triA[m] = triA[k]; triB[m] = triB[k]; triC[m] = triC[k]
-                triRestArea2[m] = triRestArea2[k]; triMuscle[m] = triMuscle[k]; triId[m] = triId[k]
-                m++
+            while (m < triCount && alive[triId[m]]) m++
+            var k = m
+            while (k < triCount) {
+                if (alive[triId[k]]) {
+                    triA[m] = triA[k]; triB[m] = triB[k]; triC[m] = triC[k]
+                    triRestArea2[m] = triRestArea2[k]; triMuscle[m] = triMuscle[k]; triId[m] = triId[k]
+                    m++
+                }
+                k++
             }
             triCount = m
             java.util.Arrays.fill(triInverted, false)
@@ -3263,10 +3547,14 @@ class RealBodyDemo(private val bodyPath: String,
         // рабочие без мёртвых, в том же порядке. Их и оставляем, вместе с длиной покоя.
         run {
             var m = 0
-            for (c in 0 until conCount) {
-                if (edgeDead[conEdge[c]]) continue
-                conA[m] = conA[c]; conB[m] = conB[c]; conRest[m] = conRest[c]
-                conMuscle[m] = conMuscle[c]; conEdge[m] = conEdge[c]; m++
+            while (m < conCount && !edgeDead[conEdge[m]]) m++
+            var c = m
+            while (c < conCount) {
+                if (!edgeDead[conEdge[c]]) {
+                    conA[m] = conA[c]; conB[m] = conB[c]; conRest[m] = conRest[c]
+                    conMuscle[m] = conMuscle[c]; conEdge[m] = conEdge[c]; m++
+                }
+                c++
             }
             conCount = m
         }
@@ -3285,6 +3573,9 @@ class RealBodyDemo(private val bodyPath: String,
 
     /** Разбор цены пересборки по частям: списки, контур, изгиб+лоскуты, организмы, контакты. */
     internal val dbgRebuildSec = LongArray(5)
+    /** То же, но НАКОПИТЕЛЬНО за весь прогон: хронология обнуляет посекундные. */
+    internal val dbgRebuildTot = LongArray(5)
+    internal var dbgRebuildCount = 0L
 
     /** Срабатывания потолка на момент захвата — строка DRAG показывает разницу. */
     private var dragCapBase = 0
@@ -3456,7 +3747,25 @@ class RealBodyDemo(private val bodyPath: String,
         if (dbgNoClamp) return
         val maxV = MAX_SPEED_CELLS_PER_TICK * body.meanLinkLength / DT
         val maxV2 = maxV * maxV
+        // СХВАЧЕННОЙ КЛЕТКЕ ПОТОЛОК ВЫШЕ. Общий потолок стоит ради устойчивости своих
+        // стадий, а рука — сила ВНЕШНЯЯ, и её ограничивает собственный DRAG_SPEED_LIMIT.
+        // Пока потолок был общим, оторвать клетку мышью было НЕВОЗМОЖНО по построению:
+        // недобор сверх предела упирался в 0.198 покоя при пороге разрыва 0.25, сколько
+        // ни поднимай силу (замер 01.10, стенд PERF_PULL).
+        val dragMaxV = DRAG_SPEED_LIMIT * maxV
+        val dragMaxV2 = dragMaxV * dragMaxV
+        val held = dragId
         for (i in 0 until n) {
+            if (i == held) {
+                val v2h = vx[i] * vx[i] + vy[i] * vy[i]
+                if (v2h > peakSpeed2) peakSpeed2 = v2h
+                if (v2h > dragMaxV2) {
+                    val sh = dragMaxV / sqrt(v2h)
+                    vx[i] *= sh; vy[i] *= sh
+                    speedCapHits++
+                }
+                continue
+            }
             val v2 = vx[i] * vx[i] + vy[i] * vy[i]
             if (v2 > peakSpeed2) peakSpeed2 = v2
             if (v2 <= maxV2) continue
@@ -3501,7 +3810,11 @@ class RealBodyDemo(private val bodyPath: String,
         val px = px; val py = py; val invMass = invMass
         val ta = triA; val tb = triB; val tc = triC
         val rest2 = triRestArea2; val tm = triMuscle; val ms = muscleScaleOf
+        val alive = baked.triAlive; val tid = triId
         for (t in 0 until triCount) {
+            // Треугольник умирает вместе с любым своим ребром И СРАЗУ, ещё до пересборки:
+            // держать площадь ткани, которой уже нет, он не должен. См. tearQueue.
+            if (!alive[tid[t]]) continue
             val i0 = ta[t]; val i1 = tb[t]; val i2 = tc[t]
             val x0 = px[i0]; val y0 = py[i0]
             val x1 = px[i1]; val y1 = py[i1]
@@ -3610,6 +3923,7 @@ class RealBodyDemo(private val bodyPath: String,
         }
 
         val force = DRAG_ACCEL * body.meanLinkLength / (DT * DT)
+        // Потолок тяги СВОЙ и может быть выше общего: см. clampSpeed.
         val vLimit = DRAG_SPEED_LIMIT * MAX_SPEED_CELLS_PER_TICK * body.meanLinkLength / DT
 
         // ЦЕЛЬ ОБЯЗАНА БЫТЬ ДОСТИЖИМОЙ, иначе сервотяга превращается в ракету.
@@ -4147,6 +4461,8 @@ class RealBodyDemo(private val bodyPath: String,
 
     /** Во сколько раз крепче на разрыв связь мышцы с костью. См. TENDON_TEAR_FACTOR. */
     internal var tendonTear = System.getenv("RB_TENDON")?.toDoubleOrNull() ?: TENDON_TEAR_FACTOR
+    /** Запас до разрыва сверх предела длины, в долях покоя. См. LINK_TEAR_STRAIN. */
+    internal var linkTearStrain = System.getenv("RB_TEAR")?.toDoubleOrNull() ?: LINK_TEAR_STRAIN
 
     /** Доля касательного трения от нормального. См. TANGENT_DRAG. */
     internal var tangentDrag = System.getenv("RB_TANGENT")?.toDoubleOrNull() ?: TANGENT_DRAG
@@ -4373,8 +4689,8 @@ class RealBodyDemo(private val bodyPath: String,
                 if (bonesRigid) for (b in rigidBones.indices) projectBone(b)
                 dbgMeasure(3, h); tick1(5)
                 tick0(); dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h); tick1(2)
-                // РАЗРЫВ СРАЗУ, А НЕ В НАЧАЛЕ СЛЕДУЮЩЕГО ТИКА. См. TEAR_IMMEDIATE.
-                if (TEAR_IMMEDIATE && tearsPending) { tick0(); rebuildTimed(); tick1(11); contactsStale = true }
+                // ПЕРЕСБОРКИ ЗДЕСЬ БОЛЬШЕ НЕТ: ребро гаснет сразу (killEdgeNow), а
+                // структура перестраивается один раз в конце тика. См. tearQueue.
                 val ci = contacts
                 if (ci != null && contactsOn) {
                     // Список пар строится на первом заходе — и заново после пересборки:
@@ -4471,6 +4787,8 @@ class RealBodyDemo(private val bodyPath: String,
     private var conBoundary = BooleanArray(0)
     /** Связь мышцы с костью — сухожилие. См. TENDON_TEAR_FACTOR. */
     private var conTendon = BooleanArray(0)
+    /** Длина, при которой щель контура становится проходимой. См. membranePassTear. */
+    private var conSealGap = DoubleArray(0)
     internal var membraneTearCount = 0
     internal var membraneTearStrain = System.getenv("RB_MEMBRANE")?.toDoubleOrNull() ?: MEMBRANE_TEAR_STRAIN
     internal var crushBurstOn = CRUSH_BURST && System.getenv("RB_CRUSH_OFF") == null
@@ -4480,6 +4798,34 @@ class RealBodyDemo(private val bodyPath: String,
      * организма столько тиков подряд. 0 — не убивать, меньше нуля — не искать вовсе.
      */
     internal var trapKillTicks = System.getenv("RB_TRAP")?.toIntOrNull() ?: TRAP_KILL_TICKS
+
+    /**
+     * РВАТЬ МЕМБРАНУ, КОГДА ЩЕЛЬ СТАЛА ПРОХОДИМОЙ. Переменная окружения RB_PASS.
+     *
+     * Круги контакта двух соседей по контуру перекрываются, пока ребро короче суммы их
+     * радиусов. Растянутое ребро открывает коридор L - (ra + rb), и чужая клетка радиуса
+     * r пройдёт в него, когда коридор шире 2r: её центр минует обе запретные зоны.
+     * Рвать надо ровно тогда, когда это стало возможно: дырявая мембрана уже не мембрана,
+     * а пролезшую клетку потом приходится ловить отдельным обходом.
+     *
+     * Радиус контакта — половина САМОГО ДЛИННОГО граничного ребра клетки, поэтому у
+     * клетки с короткими соседними рёбрами он мал, и её длинное ребро открывается
+     * задолго до порога разрыва. Замер на стенде столкновений (RB_SEAL=1, только живые
+     * связи): проходимы 2 574 630 проверок из 742 919 534, худший коридор впятеро шире
+     * нужного при растяжении всего 1.299 — то есть щель успевала открыться, а связь
+     * ещё держалась.
+     *
+     * И ВСЁ ЖЕ ПО УМОЛЧАНИЮ ВЫКЛЮЧЕНО. Разбивка тех же проверок по состоянию разрыва:
+     * при ВКЛЮЧЁННОМ разрыве проходимых 0 из 1 795 104 проходов, все 5 113 084 случая —
+     * в сценах стенда, где разрыв намеренно выключён, чтобы мерить одни контакты. На
+     * журнале игрока то же самое: худший коридор 0.378 от нужного, то есть и близко нет.
+     * Значит связь всегда успевает порваться раньше, чем щель станет проходимой, и
+     * заменить этим отлов застрявших (scanTrapped) НЕЛЬЗЯ: клетки попадают внутрь не
+     * через щель, а прошивая мембрану на скорости — в разборе журнала 8 клеток за тик
+     * при радиусе 0.5. Лечится это в CCD, а не в пороге разрыва.
+     */
+    internal var membranePassTear = System.getenv("RB_PASS")?.let { it != "0" } ?: MEMBRANE_PASS_TEAR
+    internal var membranePassCount = 0
     internal var trapKillCount = 0
     /** Сколько тиков подряд центр клетки в чужой ткани. См. scanTrapped. */
     private var trapTicks = IntArray(0)
@@ -5646,7 +5992,7 @@ class RealBodyDemo(private val bodyPath: String,
         font.draw(batch, if (contactsOn)
             "CONTACTS [K] on   now = %d   ccd clamps = %d   link cap = %d   speed cap = %d   torn = %d   TEAR[X] %s, killed = %d"
                 .format(ct?.lastContacts ?: 0, ct?.lastToiClamps ?: 0, linkCapHits, speedCapHits,
-                    if (::linkTorn.isInitialized) linkTorn.count { it } else 0,
+                    linkTorn.count { it },
                     if (tearingOn) "on" else "OFF", tornTotal)
         else "K -- self-contact (OFF)", 16f, y); y -= line
 
@@ -5747,7 +6093,7 @@ class RealBodyDemo(private val bodyPath: String,
 /** Запуск: зелёная стрелка. Путь к выгрузке можно передать аргументом. */
 fun main(args: Array<String>) {
     if (StartupHelper.startNewJvmIfRequired()) return
-    val path = if (args.isNotEmpty()) args[0] else "body-export-медуза.txt"
+    val path = if (args.isNotEmpty()) args[0] else "body-export.txt"
     val config = Lwjgl3ApplicationConfiguration().apply {
         setTitle("Организм из редактора — XPBD + shape matching")
         setWindowedMode(1100, 720)
@@ -5755,4 +6101,28 @@ fun main(args: Array<String>) {
         setForegroundFPS(144)
     }
     Lwjgl3Application(RealBodyDemo(path), config)
+}
+
+/** Счётчики проходимости мембраны — общие на все экземпляры стенда. См. dbgSeal. */
+object SealStats {
+    var minR = 0.0
+    var checks = 0L
+    var over = 0L
+    var worst = 0.0
+    var worstI = -1
+    var worstJ = -1
+    var worstStretch = 0.0
+    var over2 = 0L
+    var over5 = 0L
+    var liveChecks = 0L
+    var liveOver = 0L
+    var liveWorst = 0.0
+    var liveI = -1
+    var liveJ = -1
+    var liveStretch = 0.0
+    var torn = 0L
+    var tearingOnTicks = 0L
+    var tearingOffTicks = 0L
+    var overTearing = 0L
+    var overNoTear = 0L
 }

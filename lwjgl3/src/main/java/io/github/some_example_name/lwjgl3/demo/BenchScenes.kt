@@ -190,6 +190,13 @@ object BenchScenes {
      * их же контактного радиуса, чтобы круги соседей ПЕРЕКРЫВАЛИСЬ — иначе частицы
      * начнут просачиваться наружу и сцена перестанет быть замкнутой.
      */
+    /** Последняя построенная ёмкость — чтобы стенд мог посчитать, кто из неё удрал. */
+    var lastCx = 0.0
+    var lastCy = 0.0
+    var lastRadius = -1.0
+    var lastFill = 0
+    var lastInside: List<Int> = emptyList()
+
     fun container(c: SceneCtx, cells: List<Int>, cx: Double, cy: Double,
                   fillCells: Int, packStep: Double) {
         val free = cells.filter { c.isFreeOf(it) }
@@ -207,10 +214,37 @@ object BenchScenes {
         // Под стенку резервируется столько, сколько ей реально нужно, а не половина всех
         // клеток: кольцу хватает пары сотен, а остальное должно уйти в засыпку — иначе
         // ёмкость стоит полупустой при полном запасе частиц.
-        val wallBudget = 240
-        val fill = minOf(fillCells, maxOf(1, free.size - wallBudget))
+        // СТЕНКА ОБЯЗАНА ЗАМКНУТЬСЯ, ИНАЧЕ СЦЕНА НЕ ТА.
+        //
+        // Раньше под кольцо резервировалось ровно 240 клеток, а сколько ему нужно —
+        // никто не проверял: нужное число растёт вместе с радиусом засыпки. На медузе
+        // хватало, а на body-export нет, и кольцо выходило с дырами. Засыпка через них
+        // разбегалась: круг оказывался ПУСТ, дребезг 621 529 против 6 789 на медузе,
+        // выброс 3.30 клетки за тик. Мерили не «давление в замкнутой ёмкости», а утечку.
+        //
+        // Теперь наоборот: под стенку берётся столько, сколько ей нужно при выбранной
+        // засыпке, а размер засыпки подбирается так, чтобы на кольцо осталось.
+        val wallR0 = c.contactRadiusOf(free[free.size - 1])
+        val stC = packStep * c.meanLink
+        val rowHC = stC * sqrt(3.0) / 2.0
+        fun wallNeed(f: Int): Int {
+            val fr = sqrt(f * stC * rowHC / Math.PI)
+            return Math.ceil(2.0 * Math.PI * (fr + 2.0 * wallR0) / wallR0).toInt()
+        }
+        var lo = 1
+        var hi = minOf(fillCells, maxOf(1, free.size - 1))
+        while (lo < hi) {
+            val mid = (lo + hi + 1) / 2
+            if (free.size - mid >= wallNeed(mid)) lo = mid else hi = mid - 1
+        }
+        val fill = lo
         val inside = free.take(fill)
         val rest = free.drop(fill)
+        if (rest.size < wallNeed(fill)) {
+            println("  ВНИМАНИЕ: на кольцо не хватает клеток (%d при нужных %d) — сцена пропущена"
+                .format(rest.size, wallNeed(fill)))
+            return
+        }
 
         // ЗАСЫПКА ЗАПОЛНЯЕТ КРУГ, А НЕ ВПИСАННЫЙ В НЕГО КВАДРАТ.
         //
@@ -233,7 +267,16 @@ object BenchScenes {
         // прижатой к стенке — иначе сцена начинается с контакта, которого не задумывали.
         val radius = fillRadius + 2.0 * wallR
         val stepLen = wallR
-        val wallCount = minOf(rest.size, Math.ceil(2.0 * Math.PI * radius / stepLen).toInt())
+        val wallCount = Math.ceil(2.0 * Math.PI * radius / stepLen).toInt()
+        if (wallCount > rest.size) {
+            println("  ВНИМАНИЕ: кольцо не замкнулось (%d точек при %d клетках)".format(wallCount, rest.size))
+            return
+        }
+        lastCx = cx; lastCy = cy; lastRadius = radius; lastFill = fill; lastInside = inside
+        // Печатается ВСЕГДА, в том числе из окна: пустая на вид ёмкость должна сразу
+        // отличаться от ёмкости, из которой всё удрало по ходу дела.
+        println("  ёмкость: засыпка %d, кольцо %d, в парке %d, радиус %.1f связи"
+            .format(fill, wallCount, rest.size - wallCount, radius / c.meanLink))
         for (w in 0 until wallCount) {
             val k = rest[w]
             val a = 2.0 * Math.PI * w / wallCount
@@ -344,44 +387,49 @@ object BenchScenes {
             launch(c, oa, ax[0], ax[1], 0.8 * c.vmax)
             launch(c, ob, -ax[0], -ax[1], 0.8 * c.vmax)
         },
-        BenchScene("бассейн одиночных", false) { c, _, _ ->
+        // СЦЕНЫ С ЗАСЫПКОЙ ТОЖЕ ВАРЬИРУЮТСЯ. Они оказались ДВУУСТОЙЧИВЫМИ: «бассейн»
+        // давал дребезг то около 5, то около 1045 от любой мелочи — порога разрыва,
+        // раннего выхода CCD, размера ячейки сетки. По одному прогону такую сцену
+        // сравнивать нельзя, поэтому центр засыпки дрожит на долю связи, и стенд берёт
+        // медиану, как у сцен с ударом.
+        BenchScene("бассейн одиночных", true) { c, _, off ->
             val (oa, ob) = twoLargest(c).let { it[0] to it[1] }
             val cells = cellsOf(c, ob)
             val ctr = com(c, oa)
             c.shatter(ob)
-            packFree(c, cells, ctr[0] + 14.0 * c.meanLink, ctr[1], 0.6)
+            packFree(c, cells, ctr[0] + (14.0 + off * 0.05) * c.meanLink, ctr[1], 0.6)
         },
-        BenchScene("куча плотнее", false) { c, _, _ ->
+        BenchScene("куча плотнее", true) { c, _, off ->
             val (oa, ob) = twoLargest(c).let { it[0] to it[1] }
             val cells = cellsOf(c, ob)
             val ctr = com(c, oa)
             c.shatter(ob)
-            packFree(c, cells, ctr[0] + 14.0 * c.meanLink, ctr[1], 0.4)
+            packFree(c, cells, ctr[0] + (14.0 + off * 0.05) * c.meanLink, ctr[1], 0.4)
         },
-        BenchScene("куча в теле", false) { c, _, _ ->
+        BenchScene("куча в теле", true) { c, _, off ->
             val (oa, ob) = twoLargest(c).let { it[0] to it[1] }
             val cells = cellsOf(c, ob)
             val ctr = com(c, oa)
             c.shatter(ob)
-            packFree(c, cells, ctr[0], ctr[1], 0.6)
+            packFree(c, cells, ctr[0] + off * 0.05 * c.meanLink, ctr[1], 0.6)
         },
         // Замкнутая ёмкость: давлению уйти некуда, дребезг виден сразу. См. container.
-        BenchScene("ёмкость, плотно", false) { c, _, _ ->
+        BenchScene("ёмкость, плотно", true) { c, _, off ->
             val (oa, ob) = twoLargest(c).let { it[0] to it[1] }
             val cells = cellsOf(c, ob)
             val ctr = com(c, oa)
             c.shatter(ob)
             // Шаг 1.15 связи — чуть БОЛЬШЕ порога пары (он около 1.01 связи), то есть
             // частицы стоят вплотную, но без начального перекрытия.
-            container(c, cells, ctr[0] + 26.0 * c.meanLink, ctr[1], 550, 1.15)
+            container(c, cells, ctr[0] + (26.0 + off * 0.05) * c.meanLink, ctr[1], 550, 1.15)
         },
-        BenchScene("ёмкость, битком", false) { c, _, _ ->
+        BenchScene("ёмкость, битком", true) { c, _, off ->
             val (oa, ob) = twoLargest(c).let { it[0] to it[1] }
             val cells = cellsOf(c, ob)
             val ctr = com(c, oa)
             c.shatter(ob)
             // Шаг 0.85 связи — заметно ниже порога, засыпка стартует сжатой.
-            container(c, cells, ctr[0] + 26.0 * c.meanLink, ctr[1], 550, 0.85)
+            container(c, cells, ctr[0] + (26.0 + off * 0.05) * c.meanLink, ctr[1], 550, 0.85)
         },
         /**
          * ОТОРВАВШИЙСЯ КУСОК, ПОЛУЧЕННЫЙ НАСТОЯЩИМ РАЗРУШЕНИЕМ.

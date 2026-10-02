@@ -85,6 +85,11 @@ fun main(args: Array<String>) {
         labKillSeed = hdr["killSeed"]?.toLong() ?: 0L,
         killOnDeep = hdr["killOnDeep"] == "1")
     demo.replayBoot()
+    // Стадии на НАСТОЯЩЕЙ сессии: PR_STAGES=1. В perfBench тела не сталкиваются, поэтому
+    // доля контактов там заниженная; здесь она такая, какая была у игрока.
+    if (System.getenv("PR_STAGES") != null) demo.dbgTimeOn = true
+    // Проходимость мембраны: PR_SEAL=1. См. dbgSeal.
+    if (System.getenv("PR_SEAL") != null) demo.dbgSealOn = true
     // Журнал разрывов: PR_TEARS=1 — кто, когда и почему порвался.
     if (System.getenv("PR_TEARS") != null) demo.dbgTearLog = StringBuilder()
     // Прогрев кода разрушения, как в окне: PR_WARM=тиков. См. startWarmUp.
@@ -437,7 +442,8 @@ fun main(args: Array<String>) {
     fun fragmentReport(mask: BooleanArray) {
         val conCount: Int = P.get("conCount")
         val conA: IntArray = P.get("conA"); val conB: IntArray = P.get("conB")
-        val conRest: DoubleArray = P.get("conRest"); val conMaxLen: DoubleArray = P.get("conMaxLen")
+        val conRest: DoubleArray = P.get("conRest")
+        val maxStretch = P.const("LINK_MAX_STRETCH")
         val conDead: BooleanArray = P.get("conDead")
         val conMuscle: IntArray = P.get("conMuscle")
         val boneOf: IntArray = P.get("boneOf")
@@ -449,7 +455,7 @@ fun main(args: Array<String>) {
             val dx = P.px[conA[c]] - P.px[conB[c]]; val dy = P.py[conA[c]] - P.py[conB[c]]
             val len = sqrt(dx * dx + dy * dy)
             val r = len / conRest[c]
-            if (len >= conMaxLen[c] * 0.999) atMax++
+            if (len >= maxStretch * conRest[c] * 0.999) atMax++
             if (r < minR) minR = r
             if (r > maxR) maxR = r
             top.add(Pair(c, r))
@@ -969,6 +975,30 @@ fun main(args: Array<String>) {
             Math.hypot(vxs[big], vys[big]) * dt / meanLink))
     }
     demo.dbgTearLog?.let { if (it.isNotEmpty()) { println("--- разрывы ---"); print(it) } }
+    if (demo.dbgTimeOn) {
+        val ns = demo.dbgTimeNs
+        val tot = ns.sum().toDouble()
+        P.contactsObj()?.let { ct ->
+            println("--- широкая фаза: перестроек %d на %d вызовов (%.2f на подшаг), пропущено пар %d ---"
+                .format(ct.bpBuilds, ct.bpCalls, if (ct.bpCalls == 0L) 0.0 else ct.bpBuilds.toDouble() / ct.bpCalls, ct.bpMissed))
+        }
+        println("--- стадии за всю сессию, доля ---")
+        for (k in ns.indices.sortedByDescending { ns[it] }) {
+            if (ns[k] == 0L) continue
+            println("    %-22s %5.1f%%  (%.0f мс)".format(demo.dbgTimeNames[k], ns[k] / tot * 100, ns[k] / 1e6))
+        }
+    }
+    if (System.getenv("PR_REBUILD") != null) {
+        val r = demo.dbgRebuildTot
+        println("--- пересборка за сессию: всего %d штук, %.0f мс ---".format(demo.dbgRebuildCount, r.sum() / 1e6))
+        val names = arrayOf("списки", "контур", "изгиб+лоскуты", "организмы", "контакты")
+        for (k in names.indices) println("    %-16s %.0f мс".format(names[k], r[k] / 1e6))
+    }
+    if (demo.dbgSealOn) {
+        println(("--- мембрана: наименьший радиус контакта %.4f связи, проверок %d, " +
+            "коридор шире 2r у %d, худший %.3f от нужного (#%d-#%d) ---")
+            .format(SealStats.minR, SealStats.checks, SealStats.over, SealStats.worst, SealStats.worstI, SealStats.worstJ))
+    }
     println("--- итог ---")
     println("  тиков воспроизведено ${demo.currentTick} (${sec(demo.currentTick)}) за %.1f с".format(secs))
     println("  в чужой ткани и вышли сами, по длительности (тиков): " + demo.dbgTrapEdges.indices.joinToString("  ") { b ->

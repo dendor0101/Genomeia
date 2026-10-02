@@ -120,6 +120,89 @@ fun main(args: Array<String>) {
         println("  СОКРАЩАЮТСЯ: связей %d, треугольников %d".format(conMus, triMus))
         return
     }
+    // ВЫГРУЗКА ТОПОЛОГИИ ДЛЯ РАЗБОРА ЛОКАЛЬНОСТИ: PERF_DUMP=путь. Пишет настоящие массивы
+    // решателя — связи, треугольники, контур, — чтобы считать промахи кэша не на догадках
+    // о порядке, а на том, что решатель и обходит.
+    System.getenv("PERF_DUMP")?.let { outPath ->
+        val conA: IntArray = P.get("conA"); val conB: IntArray = P.get("conB")
+        val conCount: Int = P.get("conCount")
+        val triA: IntArray = P.get("triA"); val triB: IntArray = P.get("triB"); val triC: IntArray = P.get("triC")
+        val triCount: Int = P.get("triCount")
+        val boundA: IntArray = P.get("boundA"); val boundB: IntArray = P.get("boundB")
+        val boundCount: Int = P.get("boundCount")
+        val bendA: IntArray = P.get("bendA"); val bendB: IntArray = P.get("bendB")
+        val bendCount: Int = P.get("bendCount")
+        val w = java.io.PrintWriter(java.io.BufferedWriter(java.io.FileWriter(outPath)))
+        w.println("n ${P.n}")
+        for (c in 0 until conCount) w.println("C ${conA[c]} ${conB[c]}")
+        for (t in 0 until triCount) w.println("T ${triA[t]} ${triB[t]} ${triC[t]}")
+        for (e in 0 until boundCount) w.println("B ${boundA[e]} ${boundB[e]}")
+        for (e in 0 until bendCount) w.println("D ${bendA[e]} ${bendB[e]}")
+        w.close()
+        println("выгружено в $outPath: клеток ${P.n}, связей $conCount, треугольников $triCount, контур $boundCount, изгибов $bendCount")
+        return
+    }
+    // ОТРЫВ МЫШЬЮ: PERF_PULL=секунд. Хватаем клетку контура и ведём курсор прочь от тела с
+    // постоянной скоростью. Вопрос игрока: почему мышью не удаётся отрывать клетки, как в
+    // основной симуляции. Печатаем, порвалось ли, за сколько и как далеко клетка ушла от
+    // тела — если она просто тащит тело за собой, не порвётся никогда.
+    System.getenv("PERF_PULL")?.toDoubleOrNull()?.let { secs ->
+        P.resetState()
+        P.setTearing(true)
+        val ml = P.body.meanLinkLength
+        // Берём клетку контура подальше от центра масс: её легче оторвать, чем внутреннюю.
+        val boundA: IntArray = P.get("boundA")
+        val boundCount: Int = P.get("boundCount")
+        var cx = 0.0; var cy = 0.0; var m = 0.0
+        for (i in 0 until P.n) {
+            if (P.invMass[i] <= 0.0) continue
+            val w = 1.0 / P.invMass[i]; m += w; cx += w * P.px[i]; cy += w * P.py[i]
+        }
+        cx /= m; cy /= m
+        var grab = -1; var far = -1.0
+        for (e in 0 until boundCount) {
+            val i = boundA[e]
+            val d = Math.hypot(P.px[i] - cx, P.py[i] - cy)
+            if (d > far) { far = d; grab = i }
+        }
+        val dirX = (P.px[grab] - cx) / far
+        val dirY = (P.py[grab] - cy) / far
+        val frames = Math.round(secs / dt).toInt()
+        // Курсор уходит от тела ровно со скоростью потолка тяги: быстрее тяга всё равно
+        // не пойдёт, а медленнее — не проверка.
+        val step = P.const("DRAG_SPEED_LIMIT") * P.const("MAX_SPEED_CELLS_PER_TICK") * ml
+        var tx = P.px[grab]; var ty = P.py[grab]
+        var tornAt = -1
+        var peakStretch = 0.0
+        val conA: IntArray = P.get("conA"); val conB: IntArray = P.get("conB")
+        val conRest: DoubleArray = P.get("conRest"); val conDead: BooleanArray = P.get("conDead")
+        for (fr in 0 until frames) {
+            tx += dirX * step; ty += dirY * step
+            P.dragTo(grab, tx, ty)
+            P.frame(dt, sub, contract = false)
+            val cc: Int = P.get("conCount")
+            for (c in 0 until cc) {
+                if (conDead[c]) continue
+                if (conA[c] != grab && conB[c] != grab) continue
+                val s = Math.hypot(P.px[conA[c]] - P.px[conB[c]], P.py[conA[c]] - P.py[conB[c]]) / conRest[c]
+                if (s > peakStretch) peakStretch = s
+            }
+            if (tornAt < 0 && P.killedLinks() > 0) tornAt = fr
+        }
+        P.dragRelease()
+        val gap = Math.hypot(P.px[grab] - tx, P.py[grab] - ty) / ml
+        println("ТЯГА МЫШЬЮ на %s: тянем клетку #%d %.1f с, ускорение %.0f, потолок скорости %.2f"
+            .format(path, grab, secs, P.const("DRAG_ACCEL"), P.const("DRAG_SPEED_LIMIT")))
+        println("  порвано связей %d%s; пиковое растяжение связи схваченной клетки %.3f (рвёт выше %.2f)"
+            .format(P.killedLinks(), if (tornAt < 0) ", не рвалось" else " (первый разрыв на кадре $tornAt)",
+                peakStretch, P.const("LINK_MAX_STRETCH") + P.const("LINK_TEAR_STRAIN")))
+        println("  клетка отстала от курсора на %.2f связи, организмов %d".format(gap, P.organismCount))
+        // Главное число: насколько связь ХОТЕЛА вытянуться сверх предела внутри подшага.
+        // Рвётся она ровно по этому, а не по длине в конце тика.
+        println("  пик недобора сверх предела %.4f покоя (рвёт выше %.2f)"
+            .format(P.demo.dbgMaxOverStrain, P.const("LINK_TEAR_STRAIN")))
+        return
+    }
     // ЗАПАС СРЕДЫ ПРИ РАЗРЫВЕ: PERF_FLOW=секунд. Разгоняем тело гребком, смотрим запас,
     // затем рвём ОДНУ связь и смотрим, что с запасом стало и за сколько тиков он вернулся.
     // Вопрос игрока: что происходит с flowVX/flowVY, когда тело распадается надвое.
@@ -296,6 +379,7 @@ fun main(args: Array<String>) {
         var first = -1
         // Пик скорости КЛЕТКИ за прогон: с чем сравнивать рывок при отпускании мышцы.
         var vPeak = 0.0; var vWho = -1
+        var worstTick = 0.0; var worstTickFr = -1; var worstTickReb = 0; var worstReb = 0
         val marks = intArrayOf(Math.round(1.0 / dt).toInt(), Math.round(5.0 / dt).toInt())
         val at = IntArray(marks.size)
         for (fr in 0 until frames) {
@@ -303,6 +387,11 @@ fun main(args: Array<String>) {
             else if (hold >= 0) P.frameHold(dt, hold)
             else P.frameGait(dt, fr)
             if (first < 0 && P.killedLinks() > 0) first = fr
+            // Худший тик: именно он и виден как рывок, среднее тут ничего не говорит.
+            val ms = P.demo.dbgTickNs / 1e6
+            if (ms > worstTick) { worstTick = ms; worstTickFr = fr; worstTickReb = P.demo.dbgRebuildN }
+            if (P.demo.dbgRebuildN > worstReb) worstReb = P.demo.dbgRebuildN
+            P.demo.dbgRebuildN = 0
             for (i in 0 until P.n) {
                 val v = Math.hypot(P.vx[i], P.vy[i]) * dt / P.body.meanLinkLength
                 if (v > vPeak) { vPeak = v; vWho = i }
@@ -341,6 +430,18 @@ fun main(args: Array<String>) {
         println("  крупнейший кусок: %d клеток из %d, проплыл %.2f связи за %.0f с (%.4f клетки/тик), организмов %d"
             .format(sizes[big], P.n, dist / meanLink, secs, dist / meanLink / frames, P.organismCount))
         println("  пик скорости клетки за прогон %.4f клетки/тик (#%d)".format(vPeak, vWho))
+        run {
+            val r = d.dbgRebuildTot
+            println("  пересборок %d, всего %.0f мс: списки %.0f, контур %.0f, изгиб+лоскуты %.0f, организмы %.0f, контакты %.0f"
+                .format(d.dbgRebuildCount, r.sum() / 1e6, r[0] / 1e6, r[1] / 1e6, r[2] / 1e6, r[3] / 1e6, r[4] / 1e6))
+        }
+        println("  худший тик %.1f мс (кадр %d, пересборок в нём %d); больше всего пересборок за тик %d"
+            .format(worstTick, worstTickFr, worstTickReb, worstReb))
+        P.contactsObj()?.let { ct ->
+            val c = ct.cfgNs
+            println("    из них внутри контактов: смежность %.0f мс, контур %.0f, радиусы %.0f, пары покоя %.0f"
+                .format(c[0] / 1e6, c[1] / 1e6, c[2] / 1e6, c[3] / 1e6))
+        }
         d.dbgTearLog?.let { if (it.isNotEmpty()) print(it) }
         return
     }

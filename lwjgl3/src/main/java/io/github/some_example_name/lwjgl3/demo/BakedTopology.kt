@@ -40,6 +40,17 @@ internal class BakedTopology(body: BodyFile) {
     /** Сколько живых треугольников опирается на ребро: 0 — голая связь, 1 — граница, 2 — внутри ткани. */
     val triUse: IntArray
 
+    /**
+     * СКОЛЬКО ЖИВЫХ РЁБЕР ОСТАЛОСЬ БЕЗ ЕДИНОГО ТРЕУГОЛЬНИКА.
+     *
+     * Ровно из таких рёбер и берутся лоскуты (см. buildFlaps в демо). Пока их нет,
+     * искать нечего, а поиск шёл проходом по всем связям на каждую пересборку — семь
+     * миллисекунд из сорока на тяжёлом прогоне. Счётчик ведётся здесь, потому что
+     * только здесь известно, когда у ребра умер последний треугольник.
+     */
+    var bareEdges = 0
+        private set
+
     init {
         val n = body.count
         val lc = body.linkCount
@@ -90,6 +101,7 @@ internal class BakedTopology(body: BodyFile) {
         edgeDead = BooleanArray(m)
         triAlive = BooleanArray(tc) { true }
         triUse = useInit.copyOf()
+        for (e in triUse.indices) if (triUse[e] == 0) bareEdges++
     }
 
     /** Топология снова целая. */
@@ -97,6 +109,8 @@ internal class BakedTopology(body: BodyFile) {
         edgeDead.fill(false)
         triAlive.fill(true)
         useInit.copyInto(triUse)
+        bareEdges = 0
+        for (e in triUse.indices) if (triUse[e] == 0) bareEdges++
     }
 
     /**
@@ -110,7 +124,10 @@ internal class BakedTopology(body: BodyFile) {
             val t = edgeTris[s]
             if (!triAlive[t]) continue
             triAlive[t] = false
-            for (k in 0..2) { val e2 = triEdge[3 * t + k]; if (e2 >= 0) triUse[e2]-- }
+            for (k in 0..2) {
+                val e2 = triEdge[3 * t + k]
+                if (e2 >= 0 && --triUse[e2] == 0) bareEdges++
+            }
         }
         return true
     }

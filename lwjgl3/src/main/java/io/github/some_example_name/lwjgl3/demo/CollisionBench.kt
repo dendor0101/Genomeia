@@ -418,7 +418,11 @@ fun main(args: Array<String>) {
         val dd = ArrayList<Double>()
 
         // 3x3 = 9 вариаций: медиана уже устойчива, а прогон втрое короче.
-        val angles = if (s.vary) doubleArrayOf(0.0, 45.0, 90.0) else doubleArrayOf(0.0)
+        // Сцены с засыпкой углом не вращаются (вращать россыпь бессмысленно), им нужен
+        // только сдвиг — поэтому углов у них один, а сдвигов три. См. BenchScenes.
+        val spin = s.name.startsWith("лобовой") || s.name.startsWith("вскользь") ||
+            s.name.startsWith("мягкое") || s.name.startsWith("два толчка")
+        val angles = if (spin) doubleArrayOf(0.0, 45.0, 90.0) else doubleArrayOf(0.0)
         val offs = if (s.vary) doubleArrayOf(0.0, 6.0, 12.0) else doubleArrayOf(0.0)
         for (angle in angles) for (off in offs) {
             P.setTearing(true)
@@ -436,6 +440,17 @@ fun main(args: Array<String>) {
             for (fr in 1..(6.0 / dt).toInt()) {
                 P.frame(dt, sub, contract = false)
                 if (fr % 10 == 0) { val f = worstFlail(); if (f > flail) flail = f }
+            }
+            // УДРАЛИ ЛИ ЧАСТИЦЫ ИЗ ЁМКОСТИ. Круг на экране бывает пуст — значит мерили
+            // не давление, а утечку. Считаем в конце спокойной фазы.
+            if (BenchScenes.lastRadius > 0.0 && System.getenv("CB_SCENE_INFO") != null) {
+                var stay = 0
+                for (k in BenchScenes.lastInside) {
+                    val dx = P.px[k] - BenchScenes.lastCx; val dy = P.py[k] - BenchScenes.lastCy
+                    if (dx * dx + dy * dy <= BenchScenes.lastRadius * BenchScenes.lastRadius) stay++
+                }
+                println("  в ёмкости осталось %d из %d".format(stay, BenchScenes.lastFill))
+                BenchScenes.lastRadius = -1.0
             }
             val t = trapped()
             ch.add(P.contactsObj()!!.impulseAccum / meanLink)
@@ -1435,4 +1450,20 @@ fun main(args: Array<String>) {
     println("выброс  — быстрейшая клетка относительно своего тела, клеток/тик")
     println("внутри  — клеток застряло в чужом контуре; «в кости» — из них у кости")
     println("медиана по 9 вариациям (3 угла x 3 сдвига), кроме контроля")
+    // Проходимость мембраны за весь стенд: CB_SEAL=1. См. dbgSeal в RealBodyDemo.
+    if (System.getenv("CB_SEAL") != null) println(
+        "мембрана: наименьший радиус контакта %.4f связи, проверок %d, коридор шире 2r у %d, худший %.3f от нужного"
+            .format(SealStats.minR, SealStats.checks, SealStats.over, SealStats.worst) +
+        "; шире 2r у %d, вдвое у %d, впятеро у %d"
+            .format(SealStats.over, SealStats.over2, SealStats.over5))
+    if (System.getenv("CB_SEAL") != null) println(
+        ("  по ЖИВЫМ связям (растяжение ниже порога разрыва): проверок %d, "
+            + "проходимых %d, худший коридор %.3f от нужного (#%d-#%d при %.3f)")
+            .format(SealStats.liveChecks, SealStats.liveOver, SealStats.liveWorst,
+                SealStats.liveI, SealStats.liveJ, SealStats.liveStretch))
+    if (System.getenv("CB_SEAL") != null) println(
+        ("  порвано по щели %d; проходимых при ВКЛЮЧЁННОМ разрыве %d, при выключенном %d; "
+            + "проходов предела длины с разрывом %d, без разрыва %d")
+            .format(SealStats.torn, SealStats.overTearing, SealStats.overNoTear,
+                SealStats.tearingOnTicks, SealStats.tearingOffTicks))
 }
