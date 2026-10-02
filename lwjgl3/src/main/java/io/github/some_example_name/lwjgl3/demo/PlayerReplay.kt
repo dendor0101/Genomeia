@@ -999,6 +999,20 @@ fun main(args: Array<String>) {
             "коридор шире 2r у %d, худший %.3f от нужного (#%d-#%d) ---")
             .format(SealStats.minR, SealStats.checks, SealStats.over, SealStats.worst, SealStats.worstI, SealStats.worstJ))
     }
+    // ЧТО С ЁМКОСТЬЮ В КОНЦЕ СЕССИИ: сколько засыпки живо и сколько осталось внутри
+    // кольца. Пустой на вид круг должен отличаться от круга, из которого всё удрало или
+    // в котором всё полопалось.
+    if (BenchScenes.lastRadius > 0.0) {
+        val dead: BooleanArray = P.get("cellDead")
+        var alive = 0; var inside = 0
+        for (k in BenchScenes.lastInside) {
+            if (!dead[k]) alive++
+            val dx = P.px[k] - BenchScenes.lastCx; val dy = P.py[k] - BenchScenes.lastCy
+            if (!dead[k] && dx * dx + dy * dy <= BenchScenes.lastRadius * BenchScenes.lastRadius) inside++
+        }
+        println("--- ёмкость: засыпка %d, из них живы %d, внутри кольца %d ---"
+            .format(BenchScenes.lastFill, alive, inside))
+    }
     println("--- итог ---")
     println("  тиков воспроизведено ${demo.currentTick} (${sec(demo.currentTick)}) за %.1f с".format(secs))
     println("  в чужой ткани и вышли сами, по длительности (тиков): " + demo.dbgTrapEdges.indices.joinToString("  ") { b ->

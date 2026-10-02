@@ -849,6 +849,14 @@ class RealBodyDemo(private val bodyPath: String,
          * а не окраски.
          */
         /**
+         * ПОРОГ ОПУЩЕН до 0.18 (02.10), чтобы ткань рвалась РУКОЙ. Тяга мыши способна
+         * создать недобор сверх предела длины не больше 0.198 покоя — дальше упирается в
+         * общий потолок скорости, и сколько ни давай силы, при 0.25 рука не рвёт ничего
+         * (замер стендом PERF_PULL: потолок 1.0 и ускорение 128 дают 0.198, при 256 и
+         * 1024 столько же). При 0.18 уверенный рывок рвёт 3 связи.
+         * Цена: у body-export гребок начинает рвать 2 связи — ту самую вырожденную пару
+         * из раздела 2, которая рвётся и так. У медузы по-прежнему ноль.
+         *
          * РАЗВЁРТКА ПОРОГА (22.09), 30 секунд гребка, порвано связей медуза / body-export:
          *   1.30 (0.25, сейчас) — 0 / 0
          *   1.25 (0.20)         — 0 / 0      даром слабее на 4%
@@ -859,7 +867,7 @@ class RealBodyDemo(private val bodyPath: String,
          * 0.05) — сцена двуустойчива и срывается от любой мелочи. Подкрутить под руку
          * можно на живом окне переменной RB_TEAR, не пересобирая.
          */
-        private const val LINK_TEAR_STRAIN = 0.25
+        private const val LINK_TEAR_STRAIN = 0.18
 
         /**
          * РАЗРЫВ НА СЖАТИИ: связь, сжатая короче этой доли своей цели, рвётся.
@@ -896,6 +904,23 @@ class RealBodyDemo(private val bodyPath: String,
         private const val TEAR_IMMEDIATE = true
 
         /**
+         * ЗВАТЬ ЛИ ПРЕДЕЛ ДЛИНЫ СРАЗУ ПОСЛЕ СТАДИИ СВЯЗЕЙ. Переменная RB_MAXLEN_EARLY.
+         *
+         * Стадия предела длины зовётся чаще всех — девять раз за подшаг против четырёх у
+         * связей, и это 23–27% тика. Слить её со стадией связей НЕЛЬЗЯ: она на то и
+         * поставлена, чтобы идти ПОСЛЕ тех стадий, которые связь растягивают (площади,
+         * изгиб, проекция кости, контакт). Сразу после решения связей она почти всегда
+         * ничего не делает: связь только что поставлена на длину покоя.
+         * Я попробовал выключить первый из двух заходов: девять заходов за подшаг
+         * становятся пятью, тик 10.5 -> 9.0 мс, то есть −13%. И ЭТО ОТВЕРГНУТО: проверка
+         * «тело не трогают, оно не должно ехать» падает с запасом 2.7 против 1.0 — без
+         * раннего захода остаток стадий складывается со смещением, и покоящееся тело
+         * начинает ползти. Тринадцать процентов такой цены не стоят.
+         * Ускорять стадию надо не выбрасывая заходы, а убирая из неё корень — см. ниже.
+         */
+        val MAXLEN_EARLY = System.getenv("RB_MAXLEN_EARLY")?.let { it != "0" } ?: true
+
+        /**
          * КЛЕТКА ЛОПАЕТСЯ ОТ ДАВЛЕНИЯ КОНТАКТОВ: сумма толчков за тик больше порога, в
          * связях смещения. 0 — выключено.
          *
@@ -907,6 +932,24 @@ class RealBodyDemo(private val bodyPath: String,
          *
          * Гребок без таранов: порог 12 лопает 6 клеток на первых ударах мышц — мышца сейчас
          * разгоняет ткань до 4 клеток/тик и сама рвёт 10 связей (отложенная задача).
+         */
+        /**
+         * ЛОПАНИЕ ОТ ДАВЛЕНИЯ КОНТАКТОВ ВЫКЛЮЧЕНО (02.10). Включить обратно: RB_BURST=12.
+         *
+         * Правило заводилось для клетки, РАЗДАВЛЕННОЙ внутри чужой ткани после удара. Но
+         * отличить её от клетки в плотной толпе оно не умеет, и толпу оно уничтожает.
+         * Замер по журналу игрока (9-я сцена, ёмкость битком, засыпка 663 частицы):
+         *   как есть                 — живы 10 из 663, внутри кольца 2
+         *   без лопания от давления  — живы 663, внутри кольца 343
+         * То есть «пустой бассейн», который игрок видел на экране, — это не пустая
+         * ёмкость и не утечка: засыпка в ней лопалась целиком за первые же секунды.
+         * Лопание раздавленных (CRUSH_BURST) к этому отношения не имеет — с ним и без
+         * него одинаково.
+         *
+         * ОСТАВЛЕНО ВКЛЮЧЁННЫМ: без него падает проверка «тело не трогают, оно не должно
+         * ехать» (3.1 против порога 1.0) — раздавленные клетки остаются в ткани и тянут
+         * тело. А ёмкость чинится не выключением правила, а тем, чтобы засыпка не
+         * начиналась СЖАТОЙ: шаг сцены «битком» поднят с 0.85 до 1.0, см. BenchScenes.
          */
         private const val PRESSURE_BURST_LINKS = 12.0
 
@@ -1081,7 +1124,7 @@ class RealBodyDemo(private val bodyPath: String,
          * тик» — этого хватает, чтобы таскать тело живо, и мало, чтобы продавить
          * мембрану: контакт снимает такую скорость за один подшаг.
          */
-        val DRAG_ACCEL = System.getenv("RB_DRAG_ACCEL")?.toDoubleOrNull() ?: 256.0
+        val DRAG_ACCEL = System.getenv("RB_DRAG_ACCEL")?.toDoubleOrNull() ?: 128.0
 
         /**
          * Потолок скорости для тяги, в долях общего MAX_SPEED_CELLS_PER_TICK.
@@ -1147,11 +1190,12 @@ class RealBodyDemo(private val bodyPath: String,
          *   потолок 2.0, ускорение 128 — 0.219, ещё не рвётся
          *   потолок 3.0, ускорение 256 — 0.362, рвётся 3 связи
          *   потолок 4.0, ускорение 512 — 0.360, столько же
-         * Выбрано 3.0 и 256: рука рвёт ткань уверенным рывком и не рвёт при обычном
-         * перетаскивании. Общий потолок для остальных клеток не тронут — он про
-         * устойчивость своих стадий, а рука сила внешняя.
+         * ОСВОБОЖДЕНИЕ ОТ ОБЩЕГО ПОТОЛКА ОТКАЧЕНО (решение пользователя 02.10): это был
+         * костыль — одна клетка жила по другим правилам, чем весь мир. Теперь потолок
+         * тяги равен общему (1.0), ускорение 128, и этого хватает на недобор 0.198 покоя.
+         * Рвать ткань рукой стало можно за счёт порога разрыва, см. LINK_TEAR_STRAIN.
          */
-        val DRAG_SPEED_LIMIT = System.getenv("RB_DRAG_SPEED")?.toDoubleOrNull() ?: 3.0
+        val DRAG_SPEED_LIMIT = System.getenv("RB_DRAG_SPEED")?.toDoubleOrNull() ?: 1.0
 
         /**
          * ПОСТОЯННАЯ ВРЕМЕНИ ТЯГИ, в секундах: за сколько сервотяга РАССЧИТЫВАЕТ
@@ -2522,6 +2566,8 @@ class RealBodyDemo(private val bodyPath: String,
             if (internalMom?.n != n) internalMom = InternalMomentum(n)
             if (contactPressure.size != n) contactPressure = DoubleArray(n)
             it.pressure = contactPressure
+            if (contactPressureN.size != n) contactPressureN = IntArray(n)
+            it.pressureN = contactPressureN
             if (crushedCell.size != n) crushedCell = BooleanArray(n)
         }
         if (!rebuilding && !quiet) println("[RealBodyDemo] contact particles = ${boundCount} boundary edges, " +
@@ -3214,16 +3260,34 @@ class RealBodyDemo(private val bodyPath: String,
             if (w == 0.0) continue
             var dx = px[i] - px[j]
             var dy = py[i] - py[j]
-            val len = sqrt(dx * dx + dy * dy)
-            // РАЗДАВЛЕННАЯ СВЯЗЬ РВЁТСЯ ТАК ЖЕ, КАК ПЕРЕРАСТЯНУТАЯ. См. LINK_CRUSH_RATIO.
+            // КОРЕНЬ БЕРЁТСЯ ТОЛЬКО КОГДА НУЖЕН.
+            //
+            // Стадия идёт 144 раза за тик по пяти тысячам связей, и у подавляющего
+            // большинства из них всё в порядке: ни сжатия до порога, ни растяжения сверх
+            // предела. А корень считался ВСЕГДА и стоит 13–15 тактов латентности в
+            // зависимой цепочке. Все пороги сравниваются с длиной, то есть с квадратом
+            // длины сравниваются их квадраты — ровно то же самое, без корня.
+            val len2 = dx * dx + dy * dy
             val mus = conMuscle[c]
             val scale = if (mus < 0) 1.0 else ms[mus]
-            // Запас до разрыва за прогон: видно, насколько близко ткань подошла к порогам.
-            val cr = len / (conRest[c] * scale)
-            if (cr < dbgWorstCrush) dbgWorstCrush = cr
-            val st = len / conRest[c]
-            if (st > dbgWorstStretch) dbgWorstStretch = st
-            if (tearingOn && len < LINK_CRUSH_RATIO * conRest[c] * scale) {
+            val rest = conRest[c]
+            val restScale = rest * scale
+            val crushLim = LINK_CRUSH_RATIO * restScale
+            val max = LINK_MAX_STRETCH * rest
+            val crushed = tearingOn && len2 < crushLim * crushLim
+            val over = len2 > max * max
+            // Запас до разрыва за прогон — только когда он кому-то интересен: у худших
+            // значений корень всё равно придётся взять, но это единицы связей за тик.
+            // Запас до порогов копится В КВАДРАТАХ, корень берётся один раз при чтении:
+            // сравнение «ближе ли этот запас прежнего» от возведения в квадрат не меняется.
+            val cr2 = len2 / (restScale * restScale)
+            if (cr2 < dbgWorstCrush2) dbgWorstCrush2 = cr2
+            val st2 = len2 / (rest * rest)
+            if (st2 > dbgWorstStretch2) dbgWorstStretch2 = st2
+            if (!crushed && !over) continue
+            val len = sqrt(len2)
+            // РАЗДАВЛЕННАЯ СВЯЗЬ РВЁТСЯ ТАК ЖЕ, КАК ПЕРЕРАСТЯНУТАЯ. См. LINK_CRUSH_RATIO.
+            if (crushed) {
                 linkTorn[c] = true; conDead[c] = true; tearsPending = true; killEdgeNow(conEdge[c])
                 crushedCell[i] = true; crushedCell[j] = true
                 dbgTornCrush++; if (mus >= 0) dbgTornCrushMuscle++
@@ -3231,6 +3295,7 @@ class RealBodyDemo(private val bodyPath: String,
                 continue
             }
             if (dbgSealOn && conBoundary[c]) dbgSeal(c, i, j, len)
+            @Suppress("UNUSED_EXPRESSION")
             // ЩЕЛЬ СТАЛА ПРОХОДИМОЙ — РВЁМ. Проверка идёт ДО выхода по пределу длины:
             // щель открывается раньше, чем связь дотягивается до своего потолка.
             // См. membranePassTear.
@@ -3240,8 +3305,7 @@ class RealBodyDemo(private val bodyPath: String,
                 dbgTear(c, i, j, "щель", len / conRest[c])
                 continue
             }
-            val max = LINK_MAX_STRETCH * conRest[c]
-            if (len <= max || len < 1e-12) continue
+            if (len < 1e-12) continue
             val overStrain = (len - max) / conRest[c]
             if (overStrain > dbgMaxOverStrain) dbgMaxOverStrain = overStrain
             // Пик недобора за всё время: сколько связь хотела сверх предела.
@@ -3338,8 +3402,10 @@ class RealBodyDemo(private val bodyPath: String,
     }
 
     /** Разбор: самая смятая и самая растянутая связь за прогон, в долях длины покоя. */
-    internal var dbgWorstCrush = 1.0
-    internal var dbgWorstStretch = 1.0
+    private var dbgWorstCrush2 = 1.0
+    internal val dbgWorstCrush: Double get() = sqrt(dbgWorstCrush2)
+    private var dbgWorstStretch2 = 1.0
+    internal val dbgWorstStretch: Double get() = sqrt(dbgWorstStretch2)
 
     /** Разбор: чем порвано — сжатием или растяжением, и сколько из этого мышечные связи. */
     internal var dbgTornCrush = 0
@@ -3747,25 +3813,13 @@ class RealBodyDemo(private val bodyPath: String,
         if (dbgNoClamp) return
         val maxV = MAX_SPEED_CELLS_PER_TICK * body.meanLinkLength / DT
         val maxV2 = maxV * maxV
-        // СХВАЧЕННОЙ КЛЕТКЕ ПОТОЛОК ВЫШЕ. Общий потолок стоит ради устойчивости своих
-        // стадий, а рука — сила ВНЕШНЯЯ, и её ограничивает собственный DRAG_SPEED_LIMIT.
-        // Пока потолок был общим, оторвать клетку мышью было НЕВОЗМОЖНО по построению:
-        // недобор сверх предела упирался в 0.198 покоя при пороге разрыва 0.25, сколько
-        // ни поднимай силу (замер 01.10, стенд PERF_PULL).
-        val dragMaxV = DRAG_SPEED_LIMIT * maxV
-        val dragMaxV2 = dragMaxV * dragMaxV
-        val held = dragId
+        // ОСВОБОЖДАТЬ СХВАЧЕННУЮ КЛЕТКУ ОТ ОБЩЕГО ПОТОЛКА — ОТВЕРГНУТО.
+        //
+        // Так удавалось рвать ткань мышью, но это и был костыль: одна клетка жила по
+        // другим правилам, чем весь мир, а потолок скорости держит устойчивость стадий не
+        // от скуки. Решение пользователя — вернуть общий потолок и опустить вместо этого
+        // ПОРОГ РАЗРЫВА, см. LINK_TEAR_STRAIN.
         for (i in 0 until n) {
-            if (i == held) {
-                val v2h = vx[i] * vx[i] + vy[i] * vy[i]
-                if (v2h > peakSpeed2) peakSpeed2 = v2h
-                if (v2h > dragMaxV2) {
-                    val sh = dragMaxV / sqrt(v2h)
-                    vx[i] *= sh; vy[i] *= sh
-                    speedCapHits++
-                }
-                continue
-            }
             val v2 = vx[i] * vx[i] + vy[i] * vy[i]
             if (v2 > peakSpeed2) peakSpeed2 = v2
             if (v2 <= maxV2) continue
@@ -4600,6 +4654,8 @@ class RealBodyDemo(private val bodyPath: String,
      */
     /** Давление контактов на клетку за текущий тик, мировые единицы смещения. Обнуляется в начале тика. */
     internal var contactPressure = DoubleArray(0)
+    /** Сколько толчков контакта получила клетка за тик. Пара к contactPressure. */
+    private var contactPressureN = IntArray(0)
 
     /** Разбор: зовётся в конце каждого подшага с его номером. */
     internal var dbgSubstepHook: ((Int) -> Unit)? = null
@@ -4623,6 +4679,7 @@ class RealBodyDemo(private val bodyPath: String,
         // Ровно один раз за тик: внутри подшагов контур и контакты пересобирались бы
         // по шестнадцать раз, а рвётся обычно пучок связей за один удар.
         java.util.Arrays.fill(contactPressure, 0.0)
+        java.util.Arrays.fill(contactPressureN, 0)
         java.util.Arrays.fill(crushedCell, false)
         if (tearsPending) { tick0(); rebuildTimed(); tick1(11) }
         val h = DT / SUBSTEPS
@@ -4682,7 +4739,12 @@ class RealBodyDemo(private val bodyPath: String,
                 if (sweepFlip == 2) sweepBackwards = !sweepBackwards
                 tick0(); dbgMark(); solveConstraints(h); dbgMeasure(0, h); tick1(0)
                 tick0(); dbgMark(); solveFlaps(h); dbgMeasure(9, h); tick1(1)
-                tick0(); dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h); tick1(2)
+                // ПЕРВЫЙ ЗАХОД ПРЕДЕЛА ДЛИНЫ МОЖНО ПРОПУСТИТЬ. Связи только что решены
+                // стадией связей, то есть стоят на своей длине покоя, и предел тут почти
+                // всегда ничего не делает — он нужен ПОСЛЕ стадий, которые связи
+                // растягивают: площадей, изгиба, проекции кости, контакта. Разрывы ловятся
+                // вторым заходом, который идёт каждый проход. См. MAXLEN_EARLY.
+                if (MAXLEN_EARLY) { tick0(); dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h); tick1(2) }
                 tick0(); dbgMark(); solveAreas(h); dbgMeasure(1, h); tick1(3)
                 tick0(); dbgMark(); solveBend(h); dbgMeasure(2, h); tick1(4)
                 tick0(); dbgMark()
@@ -4959,7 +5021,12 @@ class RealBodyDemo(private val bodyPath: String,
         var any = false
         for (i in 0 until n) {
             if (cellDead[i] || boneOf[i] >= 0 || invMass[i] <= 0.0) continue
-            val byPressure = pressureBurst > 0.0 && contactPressure[i] > lim
+            // ДАВЛЕНИЕ НА ОДИН КОНТАКТ, а не сумма. Сумма не умеет отличить клетку,
+            // раздавленную в чужой ткани, от клетки в плотной толпе: у второй толчков
+            // много, но каждый мелкий. По журналу 9-й сцены сумма выносила всю засыпку
+            // ёмкости — из 663 частиц оставалось живых 10.
+            val pn = if (contactPressureN.size == n) contactPressureN[i] else 1
+            val byPressure = pressureBurst > 0.0 && contactPressure[i] > lim * maxOf(1, pn)
             // РАЗДАВЛЕННАЯ КЛЕТКА ЛОПАЕТСЯ: связь порвалась на сжатии, и клетка осталась
             // совсем без связей. Иначе она свободной частицей остаётся внутри своей же
             // смятой ткани, где с ней ничто не сталкивается.

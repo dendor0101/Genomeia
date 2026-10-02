@@ -16,7 +16,9 @@ package io.github.some_example_name.lwjgl3.demo
 fun main(args: Array<String>) {
     val path = args.getOrNull(0)?.takeIf { it.isNotEmpty() } ?: "body-export.txt"
     val P = Probe
-    P.boot(path)
+    // PERF_COPIES=число — сколько копий тела в мире. Нужно, чтобы измерить, как время
+    // тика растёт с числом частиц, и оценить потолок при распараллеливании.
+    P.boot(path, copies = System.getenv("PERF_COPIES")?.toIntOrNull() ?: 2)
     val dt = P.const("DT")
     val sub = P.constInt("SUBSTEPS")
     P.setContacts(true)
@@ -140,6 +142,160 @@ fun main(args: Array<String>) {
         for (e in 0 until bendCount) w.println("D ${bendA[e]} ${bendB[e]}")
         w.close()
         println("выгружено в $outPath: клеток ${P.n}, связей $conCount, треугольников $triCount, контур $boundCount, изгибов $bendCount")
+        return
+    }
+    // ПРОДАВЛИВАНИЕ ДВУХ КЛЕТОК: PERF_SQUASH=скорость в клетках за тик.
+    //
+    // Вопрос игрока: «мягкость не замечаю, две отдельные частицы как абсолютно твёрдые».
+    // Берём две клетки из РАЗНЫХ организмов, уносим их в пустое место, сводим лбами с
+    // заданной скоростью и смотрим, насколько глубоко они вошли друг в друга. Глубина
+    // печатается в долях контактного расстояния: 0 — абсолютно твёрдые, 0.1 — вошли на
+    // десятую часть. Так видно саму мягкость, а не её следствия на куче.
+    System.getenv("PERF_SQUASH")?.toDoubleOrNull()?.let { speed ->
+        P.resetState()
+        P.setTearing(false)
+        // Берём две клетки и ОТРЕЗАЕМ их от тела: иначе, унеся их в пустое место, мы
+        // растянули бы их связи на пять тысяч длин, и стенд мерил бы борьбу предела длины,
+        // а не контакт.
+        val conA: IntArray = P.get("conA"); val conB: IntArray = P.get("conB")
+        val conDead: BooleanArray = P.get("conDead")
+        val linkTorn: BooleanArray = P.get("linkTorn")
+        val boundA: IntArray = P.get("boundA"); val boundCount: Int = P.get("boundCount")
+        var a = if (boundCount > 0) boundA[0] else 0
+        var b = -1
+        val orgBefore: IntArray = P.get("organismOf")
+        for (e in 0 until boundCount) {
+            val i = boundA[e]
+            if (orgBefore[i] != orgBefore[a]) { b = i; break }
+        }
+        if (b < 0) { println("ПРОДАВЛИВАНИЕ: не нашлось двух клеток контура в разных организмах"); return }
+        run {
+            val cc: Int = P.get("conCount")
+            for (c in 0 until cc) if (conA[c] == a || conB[c] == a || conA[c] == b || conB[c] == b) {
+                conDead[c] = true; linkTorn[c] = true
+            }
+            P.setField("tearsPending", true)
+            P.frame(dt, sub, contract = false)
+        }
+        val ct0 = P.contactsObj()!!
+        if (ct0.contactRadiusOf(a) <= 0.0 || ct0.contactRadiusOf(b) <= 0.0) {
+            println("ПРОДАВЛИВАНИЕ: у отрезанных клеток нет контактного радиуса"); return
+        }
+        val ml = P.body.meanLinkLength
+        val rr = ct0.contactRadiusOf(a) + ct0.contactRadiusOf(b)
+        // Уносим пару далеко от всех, чтобы мешать было некому, и ставим на расстоянии
+        // в три контактных диаметра друг от друга.
+        val cx = 5000.0 * ml; val cy = 5000.0 * ml
+        val v = speed * ml / dt
+        P.px[a] = cx - 1.5 * rr; P.py[a] = cy
+        P.px[b] = cx + 1.5 * rr; P.py[b] = cy
+        P.prevX[a] = P.px[a]; P.prevY[a] = P.py[a]
+        P.prevX[b] = P.px[b]; P.prevY[b] = P.py[b]
+        var deepest = 0.0
+        var atFrame = -1
+        var deepestSub = 0.0
+        // Смотрим и ПО ПОДШАГАМ: отрисовка интерполирует по ним, значит игрок видит
+        // именно эти положения, а не только состояние на границе тика.
+        P.demo.dbgSubstepHook = { _ ->
+            val dd = Math.hypot(P.px[b] - P.px[a], P.py[b] - P.py[a])
+            val o = 1.0 - dd / rr
+            if (o > deepestSub) deepestSub = o
+        }
+        // Вторую клетку держим неподвижной — это упор, в который давит рука.
+        val holdInv = P.invMass[b]
+        P.invMass[b] = 0.0
+        for (fr in 0 until 240) {
+            // ДАВИМ РУКОЙ, а не подменой скорости. Рука прикладывает силу КАЖДЫЙ
+            // подшаг (applyDragVelocity), и только так выходит настоящая постоянная
+            // нагрузка: подменённая раз в тик скорость гаснет в первом же подшаге,
+            // контакт разводит пару, и к границе тика перекрытия не остаётся вовсе.
+            P.dragTo(a, P.px[b], P.py[b])
+            P.frame(dt, sub, contract = false)
+            val dd = Math.hypot(P.px[b] - P.px[a], P.py[b] - P.py[a])
+            val overlap = 1.0 - dd / rr
+            if (overlap > deepest) { deepest = overlap; atFrame = fr }
+        }
+        P.dragRelease()
+        P.invMass[b] = holdInv
+        P.demo.dbgSubstepHook = null
+        println("ПРОДАВЛИВАНИЕ на %s: клетки #%d и #%d, упор %.4f связи, скорость сближения %.1f клетки/тик"
+            .format(path, a, b, rr / ml, 2.0 * speed))
+        println("  вошли друг в друга на %.4f упора на границе тика и на %.4f внутри подшагов; ω·h пары %.2f"
+            .format(deepest, deepestSub, ct0.omegaPair))
+        return
+    }
+    // ПРОТАСКИВАНИЕ ЧАСТИЦЫ СКВОЗЬ ТЕЛО: PERF_PUSH=секунд.
+    //
+    // Жалоба игрока: свободную частицу мышью можно провести через всё тело, хотя она
+    // обязана либо упереться, либо порвать ткань. Берём свободную клетку, ставим её
+    // снаружи и ведём курсором прямо на центр масс тела. Печатаем, оказалась ли она
+    // внутри контура, сколько связей при этом порвалось и как глубоко она залезла.
+    System.getenv("PERF_PUSH")?.toDoubleOrNull()?.let { secs ->
+        P.resetState()
+        P.setTearing(true)
+        val ml = P.body.meanLinkLength
+        var free = -1
+        for (i in 0 until P.n) if (P.isFree(i)) { free = i; break }
+        if (free < 0) { println("ПРОТАСКИВАНИЕ: в теле нет свободных частиц"); return }
+        // Центр масс САМОГО КРУПНОГО организма — туда и ведём.
+        val org: IntArray = P.get("organismOf")
+        val sizes = IntArray(P.organismCount)
+        for (i in 0 until P.n) sizes[org[i]]++
+        var big = 0
+        for (o in sizes.indices) if (sizes[o] > sizes[big]) big = o
+        var cx = 0.0; var cy = 0.0; var m = 0.0
+        for (i in 0 until P.n) {
+            if (org[i] != big || P.invMass[i] <= 0.0) continue
+            val w = 1.0 / P.invMass[i]; m += w; cx += w * P.px[i]; cy += w * P.py[i]
+        }
+        cx /= m; cy /= m
+        // ВЕДЁМ НАСКВОЗЬ, а не в центр масс: у подковообразного тела центр масс лежит в
+        // пустоте, и частица туда долетает, ни во что не упёршись.
+        //
+        // Берём самую широкую горизонталь тела: по ней и тащим слева направо.
+        var minX = Double.MAX_VALUE; var maxX = -Double.MAX_VALUE
+        var bestY = cy; var bestSpan = -1.0
+        run {
+            val step = 2.0 * ml
+            var y = cy - 20.0 * ml
+            while (y < cy + 20.0 * ml) {
+                var lo = Double.MAX_VALUE; var hi = -Double.MAX_VALUE; var cnt = 0
+                for (i in 0 until P.n) {
+                    if (org[i] != big) continue
+                    if (Math.abs(P.py[i] - y) > ml) continue
+                    if (P.px[i] < lo) lo = P.px[i]
+                    if (P.px[i] > hi) hi = P.px[i]
+                    cnt++
+                }
+                if (cnt > 10 && hi - lo > bestSpan) { bestSpan = hi - lo; bestY = y; minX = lo; maxX = hi }
+                y += step
+            }
+        }
+        if (bestSpan <= 0.0) { println("ПРОТАСКИВАНИЕ: не нашлось горизонтали через тело"); return }
+        val startX = minX - 5.0 * ml
+        val endX = maxX + 5.0 * ml
+        P.px[free] = startX; P.py[free] = bestY
+        P.prevX[free] = P.px[free]; P.prevY[free] = P.py[free]
+        P.vx[free] = 0.0; P.vy[free] = 0.0
+        val frames = Math.round(secs / dt).toInt()
+        var inside = 0
+        var deepest = 0.0
+        for (fr in 0 until frames) {
+            P.dragTo(free, endX, bestY)
+            P.frame(dt, sub, contract = false)
+            val depth = (P.px[free] - startX) / ml
+            if (depth > deepest) deepest = depth
+            if (insideAny(P, free)) inside++
+        }
+        P.dragRelease()
+        val total = (endX - startX) / ml
+        println("ПРОТАСКИВАНИЕ на %s: свободная клетка #%d, вели %.1f с НАСКВОЗЬ (ширина тела %.1f связи)"
+            .format(path, free, secs, bestSpan / ml))
+        println("  внутри чужой ткани была %d кадров из %d; прошла %.1f из %.1f связи пути"
+            .format(inside, frames, deepest, total))
+        println("  порвано связей %d; %s"
+            .format(P.killedLinks(),
+                if (deepest > total - 1.0) "ПРОШЛА НАСКВОЗЬ" else "застряла"))
         return
     }
     // ОТРЫВ МЫШЬЮ: PERF_PULL=секунд. Хватаем клетку контура и ведём курсор прочь от тела с
@@ -470,4 +626,27 @@ fun main(args: Array<String>) {
             println("    %-22s %5.1f%%".format(P.demo.dbgTimeNames[k], ns[k] / total * 100))
         }
     }
+}
+
+/** Внутри ли клетка какого-нибудь ЖИВОГО треугольника чужого организма. */
+private fun insideAny(P: Probe, i: Int): Boolean {
+    val org: IntArray = P.get("organismOf")
+    val dead: BooleanArray = P.get("cellDead")
+    val ta: IntArray = P.get("triA"); val tb: IntArray = P.get("triB"); val tc: IntArray = P.get("triC")
+    val tn: Int = P.get("triCount")
+    val x = P.px[i]; val y = P.py[i]
+    for (t in 0 until tn) {
+        val a = ta[t]; val b = tb[t]; val c = tc[t]
+        if (a == i || b == i || c == i || dead[a] || dead[b] || dead[c]) continue
+        if (org[a] == org[i]) continue
+        val ax = P.px[a]; val ay = P.py[a]; val bx = P.px[b]; val by = P.py[b]
+        val cx = P.px[c]; val cy = P.py[c]
+        if (x < minOf(ax, bx, cx) || x > maxOf(ax, bx, cx) || y < minOf(ay, by, cy) || y > maxOf(ay, by, cy)) continue
+        val d1 = (bx - ax) * (y - ay) - (by - ay) * (x - ax)
+        val d2 = (cx - bx) * (y - by) - (cy - by) * (x - bx)
+        val d3 = (ax - cx) * (y - cy) - (ay - cy) * (x - cx)
+        if ((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0)) continue
+        return true
+    }
+    return false
 }
