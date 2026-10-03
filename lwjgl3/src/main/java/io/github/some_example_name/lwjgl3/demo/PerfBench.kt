@@ -280,6 +280,24 @@ fun main(args: Array<String>) {
         val frames = Math.round(secs / dt).toInt()
         var inside = 0
         var deepest = 0.0
+        // СКОЛЬКО РАЗ ЧАСТИЦА ПЕРЕСЕКЛА КОНТУР. Отрезок пути за подшаг против каждого
+        // граничного ребра: это и есть проверка, которую предлагается сделать правилом
+        // разрыва. Считаем здесь, чтобы знать, сработала бы она и сколько раз.
+        val bndA: IntArray = P.get("boundA"); val bndB: IntArray = P.get("boundB")
+        var crossings = 0
+        var prevX = P.px[free]; var prevY = P.py[free]
+        P.demo.dbgSubstepHook = { _ ->
+            val nx = P.px[free]; val ny = P.py[free]
+            val bc: Int = P.get("boundCount")
+            var hit = false
+            for (e in 0 until bc) {
+                if (segCross(prevX, prevY, nx, ny, P.px[bndA[e]], P.py[bndA[e]], P.px[bndB[e]], P.py[bndB[e]])) {
+                    hit = true; break
+                }
+            }
+            if (hit) crossings++
+            prevX = nx; prevY = ny
+        }
         for (fr in 0 until frames) {
             P.dragTo(free, endX, bestY)
             P.frame(dt, sub, contract = false)
@@ -287,15 +305,17 @@ fun main(args: Array<String>) {
             if (depth > deepest) deepest = depth
             if (insideAny(P, free)) inside++
         }
+        P.demo.dbgSubstepHook = null
         P.dragRelease()
         val total = (endX - startX) / ml
         println("ПРОТАСКИВАНИЕ на %s: свободная клетка #%d, вели %.1f с НАСКВОЗЬ (ширина тела %.1f связи)"
             .format(path, free, secs, bestSpan / ml))
         println("  внутри чужой ткани была %d кадров из %d; прошла %.1f из %.1f связи пути"
             .format(inside, frames, deepest, total))
-        println("  порвано связей %d; %s"
+        println("  порвано связей %d; %s; ЦЕНТР ПЕРЕСЁК КОНТУР %d раз за %d подшагов"
             .format(P.killedLinks(),
-                if (deepest > total - 1.0) "ПРОШЛА НАСКВОЗЬ" else "застряла"))
+                if (deepest > total - 1.0) "ПРОШЛА НАСКВОЗЬ" else "застряла",
+                crossings, frames * sub))
         return
     }
     // ОТРЫВ МЫШЬЮ: PERF_PULL=секунд. Хватаем клетку контура и ведём курсор прочь от тела с
@@ -649,4 +669,14 @@ private fun insideAny(P: Probe, i: Int): Boolean {
         return true
     }
     return false
+}
+
+/** Пересекает ли отрезок (x1,y1)-(x2,y2) отрезок (x3,y3)-(x4,y4). */
+private fun segCross(x1: Double, y1: Double, x2: Double, y2: Double,
+                     x3: Double, y3: Double, x4: Double, y4: Double): Boolean {
+    val d1 = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1)
+    val d2 = (x2 - x1) * (y4 - y1) - (y2 - y1) * (x4 - x1)
+    val d3 = (x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)
+    val d4 = (x4 - x3) * (y2 - y3) - (y4 - y3) * (x2 - x3)
+    return ((d1 > 0) != (d2 > 0)) && ((d3 > 0) != (d4 > 0))
 }

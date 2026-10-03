@@ -205,6 +205,115 @@ class BoundaryContacts(
         private set
 
     /**
+     * ПРОБИТАЯ МЕМБРАНА: рёбра контура, сквозь которые ПРОШЁЛ центр чужой клетки.
+     *
+     * Исходная посылка «контур непроницаем» оказалась неверной: контакт — сила, а силу
+     * всегда можно пересилить. Рукой свободную частицу протаскивало сквозь медузу
+     * насквозь, не порвав ни одной связи (стенд PERF_PUSH). Значит мембрана должна не
+     * «не пускать», а ЛИБО не пустить, ЛИБО порваться — и последнее надо ловить прямо,
+     * геометрией, а не надеяться на силу.
+     *
+     * Проверка точная: отрезок пути клетки за подшаг против отрезка граничного ребра.
+     * Центр не может оказаться внутри, не пересёкши контур. Замер на том же стенде:
+     * за 3840 подшагов пересечение случилось РОВНО ОДИН раз — в момент входа. То есть
+     * правило срабатывает по делу и не сыплет разрывами.
+     *
+     * Складываем пары клеток ребра, хозяин тела сам найдёт связь и порвёт её: рвать
+     * посреди обхода нельзя, список контактов собран на текущую топологию.
+     */
+    var pierceN = 0
+        private set
+    var pierceA = IntArray(16)
+        private set
+    var pierceB = IntArray(16)
+        private set
+
+    /** Граничные рёбра каждой клетки: bndStart[i]..bndStart[i+1] — номера в bndOther. */
+    private var bndStart = IntArray(0)
+    private var bndOther = IntArray(0)
+
+    /** Хозяин тела разобрал пробои — список можно чистить. */
+    fun clearPierce() { pierceN = 0 }
+
+    private fun pierce(a: Int, b: Int) {
+        for (k in 0 until pierceN) if ((pierceA[k] == a && pierceB[k] == b) || (pierceA[k] == b && pierceB[k] == a)) return
+        if (pierceN == pierceA.size) { pierceA = pierceA.copyOf(pierceN * 2); pierceB = pierceB.copyOf(pierceN * 2) }
+        pierceA[pierceN] = a; pierceB[pierceN] = b; pierceN++
+    }
+
+    /**
+     * ПРОШЛА ЛИ КЛЕТКА СКВОЗЬ РЕБРО. Отрезок пути (1->2) против отрезка ребра (3-4).
+     *
+     * Мало пересечься — надо УЙТИ ЗА ребро на заметную глубину. На покоящемся стыке двух
+     * кусков клетки стоят вплотную к чужому контуру и дрожат около его линии в последнем
+     * знаке: голое пересечение отрезков там срабатывает постоянно, и тело рвёт само себя
+     * (проверка «тело не должно ехать» падала на 6.5 при пороге 1). Поэтому требуем, чтобы
+     * конец пути отстоял от линии ребра не меньше чем на `depth`.
+     */
+    private fun segCross(x1: Double, y1: Double, x2: Double, y2: Double,
+                         x3: Double, y3: Double, x4: Double, y4: Double, depth: Double): Boolean {
+        val d1 = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1)
+        val d2 = (x2 - x1) * (y4 - y1) - (y2 - y1) * (x4 - x1)
+        if ((d1 > 0.0) == (d2 > 0.0)) return false
+        val ex = x4 - x3; val ey = y4 - y3
+        val d3 = ex * (y1 - y3) - ey * (x1 - x3)
+        val d4 = ex * (y2 - y3) - ey * (x2 - x3)
+        if ((d3 > 0.0) == (d4 > 0.0)) return false
+        val len2 = ex * ex + ey * ey
+        if (len2 < 1e-18) return false
+        // |d4| / |ребро| — это и есть расстояние от конца пути до линии ребра.
+        return d4 * d4 > depth * depth * len2
+    }
+
+    /**
+     * ПОИСК ПРОБОЯ. Идёт по УЖЕ ГОТОВОМУ списку пар-кандидатов, поэтому почти ничего не
+     * стоит: у клетки контура не больше пары граничных рёбер, то есть на пару приходится
+     * до четырёх проверок отрезков по двадцать операций каждая.
+     *
+     * Полный перебор (каждая вершина против всех 436 рёбер) обошёлся бы в 190 тысяч
+     * проверок за подшаг, три миллиона за тик — вот это было бы дорого. По кандидатам
+     * выходит порядка тысячи за подшаг.
+     */
+    private fun findPierce(px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray) {
+        if (bndStart.size != n + 1) return
+        val org = organismOf ?: return
+        // ДВА ОГРАНИЧИТЕЛЯ, без которых правило рвёт тело само по себе.
+        //
+        // Первый: пробить можно только ЧУЖУЮ мембрану. Своя клетка лежит у своего же
+        // контура вплотную (круги соседей по контуру обязаны перекрываться, см.
+        // CONTACT_SEAL), то есть почти на линии соседнего ребра, и любое дрожание в
+        // последнем знаке переставляет её с одной стороны прямой на другую. Проверка
+        // «тело не трогают, оно не должно ехать» падала на 127 при пороге 1: мембрана
+        // шинковала сама себя.
+        //
+        // Второй: клетка должна ЗАМЕТНО сдвинуться. Пересечение на нулевом отрезке —
+        // всегда про округление, а не про движение.
+        val minMove = 1e-3 * meanLink
+        val minMove2 = minMove * minMove
+        for (p in 0 until pairN) {
+            val i = pairA[p]; val j = pairB[p]
+            if (org[i] == org[j]) continue
+            val mi = (px[i] - qx[i]) * (px[i] - qx[i]) + (py[i] - qy[i]) * (py[i] - qy[i])
+            val mj = (px[j] - qx[j]) * (px[j] - qx[j]) + (py[j] - qy[j]) * (py[j] - qy[j])
+            if (mi > minMove2) for (s2 in bndStart[j] until bndStart[j + 1]) {
+                val o = bndOther[s2]
+                if (o == i || org[o] != org[j]) continue
+                if (segCross(qx[i], qy[i], px[i], py[i], px[j], py[j], px[o], py[o],
+                        PIERCE_DEPTH * contactRadius[i])) pierce(j, o)
+            }
+            if (mj > minMove2) for (s2 in bndStart[i] until bndStart[i + 1]) {
+                val o = bndOther[s2]
+                if (o == j || org[o] != org[i]) continue
+                if (segCross(qx[j], qy[j], px[j], py[j], px[i], py[i], px[o], py[o],
+                        PIERCE_DEPTH * contactRadius[j])) pierce(i, o)
+            }
+        }
+    }
+
+    /** Кто в каком организме — ставит хозяин тела. Нужно поиску пробоя. */
+    var organismOf: IntArray? = null
+
+    /**
      * Сколько раз контакт ПРИТЯНУЛ пару вместо того, чтобы оттолкнуть.
      *
      * У ограничения с накопленным множителем это возможно: пока пара ещё перекрыта,
@@ -538,6 +647,22 @@ class BoundaryContacts(
         // Радиус контакта — половина самого длинного граничного ребра клетки,
         // с запасом. См. contactRadius: круги соседей по контуру обязаны
         // перекрываться, иначе в мембране остаётся щель.
+        // Граничные рёбра каждой клетки — для поиска пробоя, см. findPierce.
+        if (bndStart.size != n + 1) bndStart = IntArray(n + 1)
+        java.util.Arrays.fill(bndStart, 0)
+        for (e in 0 until boundCount) { bndStart[boundA[e]]++; bndStart[boundB[e]]++ }
+        run {
+            var acc = 0
+            for (i in 0 until n) { val d = bndStart[i]; bndStart[i] = acc; acc += d }
+            bndStart[n] = acc
+            if (bndOther.size < acc) bndOther = IntArray(acc)
+            val fill = IntArray(n + 1)
+            System.arraycopy(bndStart, 0, fill, 0, n + 1)
+            for (e in 0 until boundCount) {
+                bndOther[fill[boundA[e]]++] = boundB[e]
+                bndOther[fill[boundB[e]]++] = boundA[e]
+            }
+        }
         cfgLap(1)
         java.util.Arrays.fill(contactRadius, 0.0)
         for (e in 0 until boundCount) {
@@ -572,7 +697,7 @@ class BoundaryContacts(
         bpValid = false
 
         // Как у нового объекта: списков этого подшага нет, счётчики разбора с нуля.
-        cN = 0; pairN = 0; killN = 0; attractN = 0
+        cN = 0; pairN = 0; killN = 0; attractN = 0; pierceN = 0
         lastContacts = 0; lastToiClamps = 0; impulseAccum = 0.0
         dbgCcdTotal = 0L; dbgCcdWorst = 0.0; dbgCcdI = -1; dbgCcdJ = -1; dbgCcdMoveA = 0.0; dbgCcdMoveJ = 0.0
         dbgPair = -1L; dbgPairPush = 0.0; dbgPairPull = 0.0; dbgPairLam = 0.0
@@ -1041,6 +1166,7 @@ class BoundaryContacts(
             }
         }
         ccdClamp(px, py, qx, qy, invMass)
+        if (PIERCE_TEAR) findPierce(px, py, qx, qy)
         buildContacts(px, py, vx, vy)
     }
 
@@ -1728,6 +1854,41 @@ class BoundaryContacts(
          * контакту, быстрее — режется по времени удара. Переменная CT_CCD_GATE.
          */
         val CCD_GATE = System.getenv("CT_CCD_GATE")?.toDoubleOrNull() ?: 1.0
+
+        /**
+         * РВАТЬ РЕБРО КОНТУРА, СКВОЗЬ КОТОРОЕ ПРОШЁЛ ЦЕНТР ЧУЖОЙ КЛЕТКИ. Переменная
+         * CT_PIERCE. ПО УМОЛЧАНИЮ ВЫКЛЮЧЕНО, и вот почему.
+         *
+         * Сама мысль верна: посылка «контур непроницаем» неверна, потому что контакт —
+         * сила, а силу можно пересилить; значит мембрана должна либо не пустить, либо
+         * порваться. И стоит это почти ничего: проверка идёт по уже готовому списку пар,
+         * у клетки контура не больше двух граничных рёбер, то есть до четырёх проверок
+         * отрезков на пару — около тысячи за подшаг. Полный перебор (каждая вершина
+         * против всех 436 рёбер) стоил бы 190 тысяч за подшаг, три миллиона за тик, вот
+         * это было бы дорого. Время тика с включённым правилом не изменилось: 9.94 мс.
+         *
+         * НЕ РАБОТАЕТ ПРИЗНАК. «Центр пересёк отрезок ребра» стоит на уровне шума: шов
+         * контакта специально держит круги соседей перекрытыми (CONTACT_SEAL), поэтому у
+         * покоящегося стыка двух кусков клетка лежит почти НА линии чужого ребра и дрожит
+         * около неё в последнем знаке. Проверка «тело не трогают, оно не должно ехать»
+         * (порог 1.0):
+         *   без ограничителей                       — 127.9, мембрана шинкует сама себя
+         *   только чужой организм и заметный сдвиг  — 6.55
+         *   плюс глубина захода 0.25 радиуса        — 1.37, и настоящий пробой уже НЕ ловится
+         * То есть зазор между дрожанием и настоящим проникновением по этому признаку
+         * слишком узок.
+         *
+         * ЧТО ДЕЛАТЬ ВМЕСТО. Признак должен быть не «пересёк ребро», а «центр ВНУТРИ
+         * чужого контура» — он устойчив и уже реализован в scanTrapped (точка в
+         * треугольнике по сетке треугольников). Правильный ход: оставить обнаружение
+         * scanTrapped, но вместо того чтобы убивать клетку через десять тиков, РВАТЬ
+         * мембрану в первый же тик, когда клетка найдена внутри. Тогда отлов перестаёт
+         * быть костылём и становится причиной разрушения, а новой цены не появляется.
+         */
+        val PIERCE_TEAR = System.getenv("CT_PIERCE") == "1"
+
+        /** Насколько глубоко за ребро надо уйти, чтобы это считалось пробоем. */
+        val PIERCE_DEPTH = System.getenv("CT_PIERCE_DEPTH")?.toDoubleOrNull() ?: 0.25
         /** Пересчитывать пары покоя целиком, а не по задетым. Для сверки. См. applyRestPairs. */
         val REST_FULL = System.getenv("CT_RESTFULL") == "1"
         /** Полная проверка списка кандидатов перебором. Дорого, только для разбора. */
@@ -1819,7 +1980,7 @@ class BoundaryContacts(
          */
         val CONTACT_OMEGA_PAIR = System.getenv("CT_OMEGA_PAIR")?.toDoubleOrNull() ?: 2.0
 
-        private const val CONTACT_SEAL = 1.05
+        val CONTACT_SEAL = System.getenv("CT_SEAL")?.toDoubleOrNull() ?: 1.05
 
         /**
          * Строит CSR-смежность и список граничных вершин из рёбер границы и связей.
