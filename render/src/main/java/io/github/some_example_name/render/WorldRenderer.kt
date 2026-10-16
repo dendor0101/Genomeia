@@ -12,6 +12,7 @@ import com.badlogic.gdx.math.Matrix4
 import io.github.some_example_name.render.components.BlurPostProcessRenderer
 import io.github.some_example_name.render.components.CellGeometry
 import io.github.some_example_name.render.components.DebugRenderer
+import io.github.some_example_name.render.components.DeferredModeRenderer
 import io.github.some_example_name.render.components.DistortRenderer
 import io.github.some_example_name.render.components.NostalgicRenderer
 import io.github.some_example_name.render.components.ParticleRenderer
@@ -115,8 +116,8 @@ class WorldRenderer(
 
         // Порядок в списке = порядок проходов.
         components.add(ParticleRenderer(texturePaths, cellGeometry))
-        components.add(DebugRenderer(cellGeometry))
-        components.add(NostalgicRenderer(cellGeometry))
+        components.add(DeferredModeRenderer(RenderMode.DEBUG) { DebugRenderer(cellGeometry) })
+        components.add(DeferredModeRenderer(RenderMode.NOSTALGIC) { NostalgicRenderer(cellGeometry) })
         components.add(PostProcessRenderer())
         components.add(DistortRenderer())
         components.add(BlurPostProcessRenderer())

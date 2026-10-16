@@ -13,6 +13,7 @@ import io.github.some_example_name.old.commands.GoSettings
 import io.github.some_example_name.old.commands.GoSimulation
 import io.github.some_example_name.old.commands.GoSupport
 import io.github.some_example_name.old.commands.GoWorldEditor
+import io.github.some_example_name.old.commands.PlayerCommand
 import io.github.some_example_name.old.commands.UserCommandManager
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.DISingleThreadSimulationContainer
@@ -20,18 +21,20 @@ import io.github.some_example_name.old.core.GameFiles
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer
 import io.github.some_example_name.old.features.worldeditor.WorldEditorIntent
 import io.github.some_example_name.old.features.worldeditor.WorldGenerator
+import io.github.some_example_name.old.features.worldeditor.WorldSpec
 import io.github.some_example_name.old.features.worldeditor.WorldTerrainManager
 import io.github.some_example_name.old.journal.CommandSource
 import io.github.some_example_name.old.journal.SessionAttachments
 import io.github.some_example_name.old.journal.SessionJournal
-import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.genomics.library.GenomeCatalog
 import io.github.some_example_name.old.systems.genomics.library.GenomeImport
+import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.maps.MapSave
 import io.github.some_example_name.old.systems.maps.SavedMap
 import io.github.some_example_name.old.systems.render.RenderSystem
 import io.github.some_example_name.old.systems.simulation.SingleThreadSimulationSystem
 import kotlinx.serialization.Serializable
+import kotlin.random.Random
 
 /**
  * Что игрок хочет сделать в главном меню.
@@ -123,6 +126,9 @@ class MenuViewModel(
     val worldGenerator: WorldGenerator = WorldGenerator(),
     val genomeManager: GenomeManager = DISingleThreadSimulationContainer.genomeManager
 ) {
+
+    // Состав фоновой сцены: имя встроенного генома и число организмов.
+    private val sceneGenomes = listOf("bundled/Leech" to 5)
 
     private val navigation = DIGameGlobalContainer.navigationCommandsManager
 
@@ -240,40 +246,37 @@ class MenuViewModel(
     }
 
     fun startMenuSimulation() {
-//        val map = worldGenerator.generateWorld(
-//            width = DISingleThreadSimulationContainer.gridWidth,
-//            height = DISingleThreadSimulationContainer.gridHeight,
-//            seed = Random.nextLong()
-//        )
-//        worldTerrainManager.map = map
-//        worldTerrainManager.initWorld(
-//            gridWith = DISingleThreadSimulationContainer.gridWidth,
-//            gridHeight = DISingleThreadSimulationContainer.gridHeight,
-//        )
+        // Контейнер переживает экраны: новый вход в меню не должен добавлять ещё одну сцену.
+        simulationSystem.dispose()
+        userCommandManager.startSession(SCENE_SEED)
+        val width = DISingleThreadSimulationContainer.gridWidth
+        val height = DISingleThreadSimulationContainer.gridHeight
+        val scale = WorldSpec.MAP_CELLS_PER_WORLD_CELL
+        val map = worldGenerator.generateWorld(
+            width = (width * scale).toInt(),
+            height = (height * scale).toInt(),
+            seed = SCENE_SEED
+        )
+        worldTerrainManager.map = map
+        worldTerrainManager.initWorld(gridWidth = width, gridHeight = height)
 
-        genomeManager.loadGenomes()
-
-//        repeat(5) {
-//            genomeManager.genomes.forEachIndexed { index, _ ->
-//                userCommandManager.push(
-//                    cmd = PlayerCommand.Tap(
-//                        x = Random.nextFloat() * DISingleThreadSimulationContainer.gridWidth,
-//                        y = Random.nextFloat() * DISingleThreadSimulationContainer.gridHeight,
-//                        isLeftButton = true,
-//                        genomeIndex = index
-//                    )
-//                )
-//            }
-//        }
-
-//        userCommandManager.push(
-//            cmd = PlayerCommand.Tap(
-//                x = /*Random.nextFloat()*/0.5f * DISingleThreadSimulationContainer.gridWidth,
-//                y = /*Random.nextFloat()*/0.5f * DISingleThreadSimulationContainer.gridHeight,
-//                isLeftButton = true,
-//                genomeIndex = 0
-//            )
-//        )
+        // Только список меню: файлы игрока и остальные встроенные геномы здесь не нужны.
+        genomeManager.genomes.clear()
+        val random = Random(SCENE_SEED)
+        for ((name, count) in sceneGenomes) {
+            val index = genomeManager.addSavedGenome(GenomeCatalog.load(name))
+            repeat(count) {
+                var x: Float
+                var y: Float
+                var attempts = 0
+                do {
+                    check(attempts++ < 1024) { "В фоновой сцене нет свободного места для $name" }
+                    x = width * (0.2f + random.nextFloat() * 0.6f)
+                    y = height * (0.2f + random.nextFloat() * 0.6f)
+                } while (map[(y * scale).toInt()][(x * scale).toInt()])
+                userCommandManager.pushInternal(PlayerCommand.Tap(x, y, true, index))
+            }
+        }
     }
 
     fun updateFrame() {
@@ -319,5 +322,6 @@ class MenuViewModel(
 
     private companion object {
         const val TAG = "GenomeImport"
+        const val SCENE_SEED = 12L
     }
 }

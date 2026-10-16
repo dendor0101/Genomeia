@@ -33,24 +33,23 @@ object SessionAttachments {
     private val attachedMaps = HashSet<String>()
     private var importCounter = 0
 
-    /** Начало записи: снимки геномов и настроек такими, какими они были до первой команды. */
+    /** Начало записи: настройки до контейнеров; геномы снимаются после переноса старых файлов. */
     fun startSession(target: FileHandle) {
         dir = target.apply { mkdirs() }
         writtenMaps.clear()
         attachedMaps.clear()
         importCounter = 0
 
-        copyDirectory(GameFiles.genomesDir(), target.child(GameFiles.GENOMES)) { it.extension().equals("genome", true) }
         val settings = GameFiles.settingsDir().child(SubstrateSettings.FILE_NAME)
         if (settings.exists()) settings.copyTo(target.child(GameFiles.SETTINGS).child(settings.name()))
     }
 
     /**
-     * Снять геномы ещё раз: игра при запуске сама дополнила папку (встроенные геномы,
-     * перенос старых JSON — GenomeLibrary), а первый снимок сделан раньше, до контейнеров.
-     * Команд к этому моменту ещё нет, так что снимок остаётся «папкой до первой команды».
+     * Единственный снимок геномов: после GenomeLibrary.prepare, до первой команды.
+     * Ранний снимок пришлось бы переписывать после миграции; два копирования всей папки
+     * замедляли каждый запуск даже тогда, когда ни один геном не изменился.
      */
-    fun retakeGenomes() {
+    fun captureGenomes() {
         val target = dir ?: return
         copyDirectory(GameFiles.genomesDir(), target.child(GameFiles.GENOMES)) { it.extension().equals("genome", true) }
     }

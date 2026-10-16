@@ -85,12 +85,12 @@ class MyGame(
         DIGameGlobalContainer.game = this
         DISimulationContainer
         DIGenomeEditorContainer
-        // Перенос старых JSON и запекание старых .genome — до первого экрана: меню сразу
-        // читает папку геномов. После контейнеров: запекание идёт в мире редактора.
+        // Перенос старых JSON и запекание старых .genome — до первого экрана и снимка
+        // геномов для .bug. После контейнеров: запекание идёт в мире редактора.
         // При повторе бага папка геномов — снимок из .bug, уже прошедший этот шаг у игрока.
         if (!BugReplay.isActive) {
             GenomeLibrary.prepare(DIGenomeEditorContainer.genomeBaker)
-            SessionAttachments.retakeGenomes()
+            SessionAttachments.captureGenomes()
         }
 
         Gdx.input.setCatchKey(Input.Keys.BACK, true)
