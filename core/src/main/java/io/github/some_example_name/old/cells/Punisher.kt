@@ -15,16 +15,16 @@ class Punisher(cellTypeId: Int) : Cell(
         if (particleEntity.isCell[particleIndexCollided]) {
             val collidedCellIndex = particleEntity.holderEntityIndex[particleIndexCollided]
             val cell = cellList[cellType[collidedCellIndex].toInt()]
-            if (organIndex[cellIndex] != organIndex[collidedCellIndex]/* && cell !is Bone */&& cell !is Punisher) {
-//                val maxEnergy = substrateSettings.cellsSettings[cellType[cellIndex].toInt()].maxEnergy
-//                if (energy[cellIndex] >= maxEnergy) {
-//                    energy[cellIndex] -= maxEnergy
+            if (organIndex[cellIndex] != organIndex[collidedCellIndex] && cell !is Bone && cell !is Punisher) {
+                val maxEnergy = substrateSettings.cellsSettings[cellType[cellIndex].toInt()].maxEnergy
+                if (energy[cellIndex] >= maxEnergy) {
+                    energy[cellIndex] -= maxEnergy
 
                     worldCommandsManager.worldCommandBuffer[threadId].push(
                         type = WorldCommandType.DELETE_CELL,
                         ints = intArrayOf(collidedCellIndex, getGeneration(collidedCellIndex))
                     )
-//                }
+                }
             }
         }
     }

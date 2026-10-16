@@ -59,7 +59,7 @@ class CellTypesTest {
     @Test
     fun `данные новой клетки — у тех, кому они нужны`() {
         val withData = cells.filter { it.createSpecialData(Cell.NO_GENOME_ACTION) != null }.map { it.key }.toSet()
-        assertEquals(setOf("eye", "tail", "producer", "pheromone_emitter", "controller"), withData)
+        assertEquals(setOf("eye", "tail", "producer", "pheromone_emitter", "controller", "chameleon"), withData)
     }
 
     @Test

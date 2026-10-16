@@ -66,8 +66,10 @@ class CellPalette private constructor(
         /**
          * Формулы, выведенные из игры. "identity" нужна только старым геномам с номером
          * формулы вне списка (см. LegacyTypeIds) — предлагать её незачем, есть y = ax + b.
+         * "red", "green", "blue" (r(x), g(x), b(x)) кодировали цвет числом для хамелеона;
+         * теперь он сам берёт яркость выбранных каналов из сигнала 0..1 (ChameleonData).
          */
-        val RETIRED_FORMULAS: Set<String> = setOf(LegacyTypeIds.IDENTITY_FORMULA)
+        val RETIRED_FORMULAS: Set<String> = setOf(LegacyTypeIds.IDENTITY_FORMULA, "red", "green", "blue")
 
         /** Всё, кроме выведенного из игры. */
         val FULL = CellPalette(cells = null, formulas = null)

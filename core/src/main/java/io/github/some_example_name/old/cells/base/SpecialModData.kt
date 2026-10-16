@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.cells.base
 
+import io.github.some_example_name.old.cells.ChameleonData
 import io.github.some_example_name.old.cells.ControllerData
 import io.github.some_example_name.old.cells.EyeData
 import io.github.some_example_name.old.cells.PheromoneEmitterState
@@ -88,6 +89,7 @@ object SpecialModDataTypes {
 
     private val types = mutableListOf<Registration<*>>(
         Registration(ControllerData::class, ControllerData.serializer()),
+        Registration(ChameleonData::class, ChameleonData.serializer()),
         Registration(EyeData::class, EyeData.serializer()),
         Registration(TailState::class, TailState.serializer()),
         Registration(ProducerState::class, ProducerState.serializer()),
