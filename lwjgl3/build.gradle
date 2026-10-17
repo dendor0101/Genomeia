@@ -31,13 +31,12 @@ if (JavaVersion.current().isJava9Compatible()) {
 kotlin.compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
 
 dependencies {
-  testImplementation "junit:junit:4.13.2"
   implementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion"
   implementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
   implementation "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-desktop"
   implementation project(':core')
   // Сущности симуляции держат списки fastutil, а у core он implementation — без этой строки
-  // проверки из demo (saveRoundTrip) не видят типов aliveList. В сборку не добавляет ничего:
+  // проверки из verification (saveRoundTrip) не видят типов aliveList. В сборку не добавляет ничего:
   // в рантайме он и так приходит через core.
   implementation "it.unimi.dsi:fastutil:8.5.16"
 
@@ -219,84 +218,21 @@ if(enableGraalNative == 'true') {
   apply from: file("nativeimage.gradle")
 }
 
-// Стенд честности физики RealBodyDemo: gradlew :lwjgl3:physicsAudit
-// Считает сохранение импульса и момента по стадиям решателя и печатает таблицы.
-// Опорные числа — в комментариях PhysicsAudit.kt и у констант RealBodyDemo.
-tasks.register('physicsAudit', JavaExec) {
-  group = 'verification'
-  description = 'Проверка XPBD-решателя RealBodyDemo на сохранение импульса и момента'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.PhysicsAuditKt'
-  workingDir = rootProject.projectDir
-  jvmArgs '-Dfile.encoding=UTF-8'
+
+// Лаунчеры стенда компилируются отдельно: библиотека и её проверки не входят в JAR игры.
+// main.output даёт StartupHelper, но не подтягивает зависимости основной игры в стенд.
+sourceSets {
+  lab {
+    compileClasspath += sourceSets.main.output
+    runtimeClasspath += sourceSets.main.output + files(rootProject.file('assets'))
+  }
+}
+dependencies {
+  labImplementation project(':physics-lab')
+  labImplementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion"
+  labRuntimeOnly "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
 }
 
-// Подбор параметров плавания эволюционным поиском: gradlew :lwjgl3:swimTune
-// Аргументы: --pop 64 --gen 60 --seed 7 --w-residual 5
-tasks.register('swimTune', JavaExec) {
-  group = 'verification'
-  description = 'Ищет параметры, при которых тело плывёт быстро и не блуждает'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.SwimTunerKt'
-  workingDir = rootProject.projectDir
-  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
-}
-
-
-// Цена double в производительности: gradlew :lwjgl3:solverBench
-tasks.register('solverBench', JavaExec) {
-  group = 'verification'
-  description = 'Меряет один и тот же конвейер во float и в double при разном размере арены'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.SolverBenchKt'
-  workingDir = rootProject.projectDir
-  jvmArgs '-Dfile.encoding=UTF-8'
-}
-
-// Точность против масштаба мира: gradlew :lwjgl3:precisionScale
-tasks.register('precisionScale', JavaExec) {
-  group = 'verification'
-  description = 'Утечка решателя в зависимости от координаты тела в мире и способа хранения позиций'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.PrecisionScaleKt'
-  workingDir = rootProject.projectDir
-  jvmArgs '-Dfile.encoding=UTF-8'
-}
-
-// Застревание вывернутой ткани: gradlew :lwjgl3:foldRecovery
-tasks.register('foldRecovery', JavaExec) {
-  group = 'verification'
-  description = 'Складывает ткань насильно и смотрит, распрямляется ли она сама'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.FoldRecoveryKt'
-  workingDir = rootProject.projectDir
-  jvmArgs '-Dfile.encoding=UTF-8'
-}
-
-// Подбор UPS и SUBSTEPS: gradlew :lwjgl3:tickRate
-tasks.register('tickRate', JavaExec) {
-  group = 'verification'
-  description = 'Сходимость и цена при разных UPS и числе подшагов'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.TickRateKt'
-  workingDir = rootProject.projectDir
-  jvmArgs '-Dfile.encoding=UTF-8'
-}
-
-// Регрессионная проверка физики одной командой: gradlew :lwjgl3:physicsCheck
-// Возвращает ненулевой код при выходе за опорные значения — годится для CI и хуков.
-tasks.register('physicsCheck', JavaExec) {
-  group = 'verification'
-  description = 'PASS/FAIL по законам сохранения; ненулевой код при регрессии'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.PhysicsCheckKt'
-  workingDir = rootProject.projectDir
-  // Тело задаётся так: gradlew :lwjgl3:physicsCheck -Pbody=body-export-кирпич.txt
-  // Проверки одни и те же, тела разные — на кирпиче из чистой кости вылезает
-  // то, чего на мягком теле не видно вовсе.
-  args = [project.findProperty('body') ?: 'body-export.txt']
-  jvmArgs '-Dfile.encoding=UTF-8'
-}
 
 // Регрессия рецепта мира: gradlew :lwjgl3:worldSpecCheck
 // Ненулевой код, если карта по WorldSpec разошлась с картой редактора.
@@ -304,7 +240,7 @@ tasks.register('worldSpecCheck', JavaExec) {
   group = 'verification'
   description = 'Совпадает ли карта по рецепту с картой на экране редактора'
   classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.WorldSpecCheckKt'
+  mainClass = 'io.github.some_example_name.lwjgl3.verification.WorldSpecCheckKt'
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8'
 }
@@ -316,7 +252,7 @@ tasks.register('saveRoundTrip', JavaExec) {
   group = 'verification'
   description = 'Сохранение и загрузка мира восстанавливают его состояние побайтно'
   classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.SaveRoundTripKt'
+  mainClass = 'io.github.some_example_name.lwjgl3.verification.SaveRoundTripKt'
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
   if (project.hasProperty('keep')) systemProperty 'keep', 'true'
@@ -330,7 +266,7 @@ tasks.register('genomeJsonCheck', JavaExec) {
   group = 'verification'
   description = 'Старые JSON-геномы переводятся в .genome так же, как их сохранил бы редактор'
   classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.GenomeJsonCheckKt'
+  mainClass = 'io.github.some_example_name.lwjgl3.verification.GenomeJsonCheckKt'
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
   args = [project.findProperty('from') ?: 'core/src/test/resources/legacy-genomes', project.findProperty('to') ?: 'lwjgl3/build/genomeJsonCheck']
@@ -343,7 +279,7 @@ tasks.register('bugReplayCheckRecord', JavaExec) {
   group = 'verification'
   description = 'Сценарий игрока через команды и .bug в конце (первая половина bugReplayCheck)'
   classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.BugReplayCheckKt'
+  mainClass = 'io.github.some_example_name.lwjgl3.verification.BugReplayCheckKt'
   args 'record'
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
@@ -359,7 +295,7 @@ tasks.register('bugReplayCheck', JavaExec) {
   description = 'Повтор .bug совпадает с записью: команды, контрольные суммы, хэши состояния мира'
   dependsOn 'bugReplayCheckRecord'
   classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.BugReplayCheckKt'
+  mainClass = 'io.github.some_example_name.lwjgl3.verification.BugReplayCheckKt'
   args 'replay'
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
@@ -377,40 +313,12 @@ tasks.register('debugViewShot', JavaExec) {
   group = 'verification'
   description = 'Снимки отладочного режима: организмы из папки genomes, PNG и дамп сцены'
   classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.DebugViewShotKt'
+  mainClass = 'io.github.some_example_name.lwjgl3.verification.DebugViewShotKt'
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
   if (project.hasProperty('shotTicks')) systemProperty 'debugViewShot.ticks', project.property('shotTicks')
   if (project.hasProperty('shotZoom')) systemProperty 'debugViewShot.zoom', project.property('shotZoom')
   if (project.hasProperty('shotDir')) systemProperty 'debugViewShot.dir', project.property('shotDir')
-}
-
-// Воспроизведение записанных мышиных действий: gradlew :lwjgl3:dragReplay -Plog=drag-log.txt
-// Лог пишется в самом демо по клавише L (запись начинается со сброса тела).
-tasks.register('dragReplay', JavaExec) {
-  group = 'verification'
-  description = 'Прогоняет записанный лог перетаскивания и печатает, где тело срывается'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.DragReplayKt'
-  workingDir = rootProject.projectDir
-  args = [project.findProperty('log') ?: 'drag-log.txt']
-  jvmArgs '-Dfile.encoding=UTF-8'
-}
-
-// Стенд столкновений: много сцен, каждая числом. См. CollisionBench.kt.
-//   gradlew :lwjgl3:collisionBench
-//   gradlew :lwjgl3:collisionBench -Pbody=body-export-кирпич.txt
-//   gradlew :lwjgl3:collisionBench -Pscene=бассейн
-tasks.register('collisionBench', JavaExec) {
-  group = 'verification'
-  description = 'Столкновения по сценам: дребезг, застревание, выброс скорости'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.CollisionBenchKt'
-  workingDir = rootProject.projectDir
-  args = [project.findProperty('body') ?: 'body-export.txt',
-          project.findProperty('scene') ?: '',
-          project.findProperty('hunt') ?: '']
-  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
 }
 
 // Физический стенд с окном: то же тело и тот же решатель, что в collisionBench,
@@ -423,105 +331,17 @@ tasks.register('collisionBench', JavaExec) {
 tasks.register('softGridLab', JavaExec) {
   group = 'application'
   description = 'Окно: мягкая решётка 10x10, треть связей убита, сид печатается'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.SoftGridLabKt'
+  classpath = sourceSets.lab.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.demo.SoftGridLauncherKt'
   workingDir = rootProject.projectDir
   args = [project.findProperty('seed') ?: '', project.findProperty('kill') ?: '']
   jvmArgs '-Dfile.encoding=UTF-8'
-}
-
-tasks.register('perfBench', JavaExec) {
-  group = 'verification'
-  description = 'Время тика на настоящем теле, без окна'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.PerfBenchKt'
-  workingDir = rootProject.projectDir
-  args = [project.findProperty('body') ?: 'body-export.txt']
-  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
-}
-
-// Один связный организм до 102400 клеток и мир из копий; два повтора с хэшами.
-tasks.register('scaleBench', JavaExec) {
-  group = 'verification'
-  description = 'Масштаб реального решателя, память и локальность без окна'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.ScaleBenchKt'
-  workingDir = rootProject.projectDir
-  args = [project.findProperty('body') ?: 'body-export.txt',
-          project.findProperty('scaleTicks') ?: '48', project.findProperty('scaleWarm') ?: '32',
-          project.findProperty('scaleScene') ?: 'all']
-  jvmArgs '-Xmx3g', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
-}
-
-tasks.register('layoutBench', JavaExec) {
-  group = 'verification'
-  description = 'Локальность настоящих проходов связей и площадей, побитовая сверка'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.LayoutBenchKt'
-  workingDir = rootProject.projectDir
-  args = [project.findProperty('body') ?: 'body-export.txt', project.findProperty('copies') ?: '108']
-  jvmArgs '-Xmx3g', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
-}
-
-tasks.register('softGridBench', JavaExec) {
-  group = 'verification'
-  description = 'Безоконный замер мягкой решётки: тяга из ничего'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.SoftGridBenchKt'
-  workingDir = rootProject.projectDir
-  args = [project.findProperty('seed') ?: '', project.findProperty('kill') ?: '']
-  jvmArgs '-Dfile.encoding=UTF-8'
-}
-
-// Разбор журнала игрока: воспроизводит сессию из окна и печатает помеченные клетки.
-// Журнал пишут realBodyDemo и softGridLab всегда, перезаписывая при каждом запуске.
-//   gradlew :lwjgl3:playerReplay
-//   gradlew :lwjgl3:playerReplay -Plog=player-log.txt -Phistory=90
-tasks.register('playerReplay', JavaExec) {
-  group = 'verification'
-  description = 'Воспроизводит player-log.txt и разбирает клетки, помеченные средней кнопкой'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.PlayerReplayKt'
-  workingDir = rootProject.projectDir
-  args = [project.findProperty('log') ?: 'player-log.txt', project.findProperty('history') ?: '']
-  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
-}
-
-// Самопроверка журнала: пишет сессию без окна, воспроизводит и сверяет побитово.
-// ОХОТА НА ПРОНИКНОВЕНИЕ: столкновения всем перебором, падение на каждом прорыве.
-//   gradlew :lwjgl3:trapHunt
-//   gradlew :lwjgl3:trapHunt -Pplan=quick
-//   gradlew :lwjgl3:trapHunt -Pcase=57
-tasks.register('trapHunt', JavaExec) {
-  group = 'verification'
-  description = 'Stalkivaet tela i padaet na kazhdom proniknovenii kletki v chuzhuyu tkan'
-  dependsOn 'classes'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.TrapHuntKt'
-  workingDir = rootProject.projectDir
-  jvmArgs = ['-Xss16m']
-  args = [
-    project.hasProperty('plan') ? project.property('plan').toString() : '',
-    project.hasProperty('case') ? project.property('case').toString() : '',
-    project.hasProperty('trace') ? project.property('trace').toString() : '',
-  ]
-}
-
-tasks.register('playerLogSelfTest', JavaExec) {
-  group = 'verification'
-  description = 'Запись и воспроизведение журнала игрока сходятся побитово; порча ловится'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.demo.PlayerLogSelfTestKt'
-  workingDir = rootProject.projectDir
-  // -Pkeep=путь сохраняет записанный журнал, чтобы прогнать по нему playerReplay.
-  args = [project.findProperty('body') ?: 'body-export.txt', project.findProperty('keep') ?: '']
-  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
 }
 
 tasks.register('realBodyDemo', JavaExec) {
   group = 'application'
   description = 'Окно физического стенда: сцены столкновений на N/M'
-  classpath = sourceSets.main.runtimeClasspath
+  classpath = sourceSets.lab.runtimeClasspath
   mainClass = 'io.github.some_example_name.lwjgl3.demo.RealBodyDemoKt'
   workingDir = rootProject.projectDir
   // -Pplay=player-log.txt — воспроизвести журнал В ОКНЕ: тело и параметры берутся из его
@@ -536,4 +356,19 @@ tasks.register('realBodyDemo', JavaExec) {
   // Вылет на проникновении по умолчанию ВЫКЛЮЧЕН: он не даёт поставить метку на
   // проникшую клетку. Включить: -Pcrash=1
   if (project.hasProperty('crash')) environment 'RB_TRAP_CRASH', '1'
+}
+
+// Старые команды сохранены для записанных инструкций; реализация задач теперь в :physics-lab.
+// Для --args используйте задачу непосредственно в :physics-lab.
+[
+  'physicsAudit', 'swimTune', 'solverBench', 'precisionScale', 'foldRecovery',
+  'tickRate', 'physicsCheck', 'dragReplay', 'collisionBench', 'perfBench',
+  'scaleBench', 'layoutBench', 'refactorCheck', 'scaleParityCheck', 'softGridBench',
+  'playerReplay', 'trapHunt', 'playerLogSelfTest', 'demoWindowCheck'
+].each { tool ->
+  tasks.register(tool) {
+    group = 'verification'
+    description = "Совместимый вызов :physics-lab:${tool}"
+    dependsOn(":physics-lab:${tool}")
+  }
 }

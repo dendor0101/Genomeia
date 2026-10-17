@@ -1,0 +1,256 @@
+// Инструменты разработчика. Обратной зависимости из :physics и :render нет.
+dependencies {
+  implementation project(':physics')
+  implementation project(':render')
+  implementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion"
+  runtimeOnly "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
+  testImplementation "junit:junit:4.13.2"
+  // Те же версии, что у прежнего лаунчера: перенос не должен менять native-бэкенд.
+  constraints {
+    implementation "org.lwjgl:lwjgl:$lwjgl3Version"
+    implementation "org.lwjgl:lwjgl-glfw:$lwjgl3Version"
+    implementation "org.lwjgl:lwjgl-jemalloc:$lwjgl3Version"
+    implementation "org.lwjgl:lwjgl-openal:$lwjgl3Version"
+    implementation "org.lwjgl:lwjgl-opengl:$lwjgl3Version"
+    implementation "org.lwjgl:lwjgl-stb:$lwjgl3Version"
+  }
+}
+
+sourceSets.main.runtimeClasspath += files(rootProject.file('assets'))
+tasks.withType(JavaExec).configureEach {
+  environment('__GL_THREADED_OPTIMIZATIONS', '0')
+  if (System.properties['os.name'].toLowerCase(Locale.ROOT).contains('mac')) {
+    jvmArgs '-XstartOnFirstThread'
+  }
+}
+// Стенд честности физики RealBodyDemo: gradlew :physics-lab:physicsAudit
+// Считает сохранение импульса и момента по стадиям решателя и печатает таблицы.
+// Опорные числа — в комментариях PhysicsAudit.kt и у констант RealBodyDemo.
+tasks.register('physicsAudit', JavaExec) {
+  group = 'verification'
+  description = 'Проверка XPBD-решателя RealBodyDemo на сохранение импульса и момента'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.checks.PhysicsAuditKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+// Подбор параметров плавания эволюционным поиском: gradlew :physics-lab:swimTune
+// Аргументы: --pop 64 --gen 60 --seed 7 --w-residual 5
+tasks.register('swimTune', JavaExec) {
+  group = 'verification'
+  description = 'Ищет параметры, при которых тело плывёт быстро и не блуждает'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.tuning.SwimTunerKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+
+
+// Цена double в производительности: gradlew :physics-lab:solverBench
+tasks.register('solverBench', JavaExec) {
+  group = 'verification'
+  description = 'Меряет один и тот же конвейер во float и в double при разном размере арены'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.bench.SolverBenchKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+// Точность против масштаба мира: gradlew :physics-lab:precisionScale
+tasks.register('precisionScale', JavaExec) {
+  group = 'verification'
+  description = 'Утечка решателя в зависимости от координаты тела в мире и способа хранения позиций'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.bench.PrecisionScaleKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+// Застревание вывернутой ткани: gradlew :physics-lab:foldRecovery
+tasks.register('foldRecovery', JavaExec) {
+  group = 'verification'
+  description = 'Складывает ткань насильно и смотрит, распрямляется ли она сама'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.tuning.FoldRecoveryKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+// Подбор UPS и SUBSTEPS: gradlew :physics-lab:tickRate
+tasks.register('tickRate', JavaExec) {
+  group = 'verification'
+  description = 'Сходимость и цена при разных UPS и числе подшагов'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.tuning.TickRateKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+// Регрессионная проверка физики одной командой: gradlew :physics-lab:physicsCheck
+// Возвращает ненулевой код при выходе за опорные значения — годится для CI и хуков.
+tasks.register('physicsCheck', JavaExec) {
+  group = 'verification'
+  description = 'PASS/FAIL по законам сохранения; ненулевой код при регрессии'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.checks.PhysicsCheckKt'
+  workingDir = rootProject.projectDir
+  // Тело задаётся так: gradlew :physics-lab:physicsCheck -Pbody=body-export-кирпич.txt
+  // Проверки одни и те же, тела разные — на кирпиче из чистой кости вылезает
+  // то, чего на мягком теле не видно вовсе.
+  args = [project.findProperty('body') ?: 'body-export.txt']
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+// Воспроизведение записанных мышиных действий: gradlew :physics-lab:dragReplay -Plog=drag-log.txt
+// Лог пишется в самом демо по клавише L (запись начинается со сброса тела).
+tasks.register('dragReplay', JavaExec) {
+  group = 'verification'
+  description = 'Прогоняет записанный лог перетаскивания и печатает, где тело срывается'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.replay.DragReplayKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('log') ?: 'drag-log.txt']
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+// Стенд столкновений: много сцен, каждая числом. См. CollisionBench.kt.
+//   gradlew :physics-lab:collisionBench
+//   gradlew :physics-lab:collisionBench -Pbody=body-export-кирпич.txt
+//   gradlew :physics-lab:collisionBench -Pscene=бассейн
+tasks.register('collisionBench', JavaExec) {
+  group = 'verification'
+  description = 'Столкновения по сценам: дребезг, застревание, выброс скорости'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.bench.CollisionBenchKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('body') ?: 'body-export.txt',
+          project.findProperty('scene') ?: '',
+          project.findProperty('hunt') ?: '']
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+
+tasks.register('perfBench', JavaExec) {
+  group = 'verification'
+  description = 'Время тика на настоящем теле, без окна'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.bench.PerfBenchKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('body') ?: 'body-export.txt']
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+
+// Один связный организм до 102400 клеток и мир из копий; два повтора с хэшами.
+tasks.register('scaleBench', JavaExec) {
+  group = 'verification'
+  description = 'Масштаб реального решателя, память и локальность без окна'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.bench.ScaleBenchKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('body') ?: 'body-export.txt',
+          project.findProperty('scaleTicks') ?: '48', project.findProperty('scaleWarm') ?: '32',
+          project.findProperty('scaleScene') ?: 'all']
+  jvmArgs '-Xmx3g', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+
+tasks.register('layoutBench', JavaExec) {
+  group = 'verification'
+  description = 'Локальность настоящих проходов связей и площадей, побитовая сверка'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.bench.LayoutBenchKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('body') ?: 'body-export.txt', project.findProperty('copies') ?: '108']
+  jvmArgs '-Xmx3g', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+
+// Эталон создаётся до извлечения ядра; check никогда его не переписывает.
+tasks.register('refactorCheck', JavaExec) {
+  group = 'verification'
+  description = 'Старый PlayerLog, скрытое состояние и три замера одной записи'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.checks.RefactorCheckKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('log') ?: 'player-log.txt',
+          project.findProperty('checkpoint') ?: 'build/refactor-state.txt',
+          project.findProperty('checkpointMode') ?: 'check',
+          project.findProperty('perfTicks') ?: '1200']
+  jvmArgs '-Xmx2g', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+
+tasks.register('scaleParityCheck', JavaExec) {
+  group = 'verification'
+  description = 'Старые и новые классы в одном JVM: чередование тиков, CPU и побитовая сверка'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.bench.ScaleParityCheckKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('baseline') ?: '', project.findProperty('body') ?: 'body-export.txt',
+          project.findProperty('copies') ?: '108', project.findProperty('scaleWarm') ?: '32',
+          project.findProperty('scaleTicks') ?: '48', project.findProperty('scaleOrder') ?: 'old-first']
+  jvmArgs '-Xmx3g', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+
+tasks.register('softGridBench', JavaExec) {
+  group = 'verification'
+  description = 'Безоконный замер мягкой решётки: тяга из ничего'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.bench.SoftGridBenchKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('seed') ?: '', project.findProperty('kill') ?: '']
+  jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+// Разбор журнала игрока: воспроизводит сессию из окна и печатает помеченные клетки.
+// Журнал пишут realBodyDemo и softGridLab всегда, перезаписывая при каждом запуске.
+//   gradlew :physics-lab:playerReplay
+//   gradlew :physics-lab:playerReplay -Plog=player-log.txt -Phistory=90
+tasks.register('playerReplay', JavaExec) {
+  group = 'verification'
+  description = 'Воспроизводит player-log.txt и разбирает клетки, помеченные средней кнопкой'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.replay.PlayerReplayKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('log') ?: 'player-log.txt', project.findProperty('history') ?: '']
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+
+// Самопроверка журнала: пишет сессию без окна, воспроизводит и сверяет побитово.
+// ОХОТА НА ПРОНИКНОВЕНИЕ: столкновения всем перебором, падение на каждом прорыве.
+//   gradlew :physics-lab:trapHunt
+//   gradlew :physics-lab:trapHunt -Pplan=quick
+//   gradlew :physics-lab:trapHunt -Pcase=57
+tasks.register('trapHunt', JavaExec) {
+  group = 'verification'
+  description = 'Stalkivaet tela i padaet na kazhdom proniknovenii kletki v chuzhuyu tkan'
+  dependsOn 'classes'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.checks.TrapHuntKt'
+  workingDir = rootProject.projectDir
+  jvmArgs = ['-Xss16m']
+  args = [
+    project.hasProperty('plan') ? project.property('plan').toString() : '',
+    project.hasProperty('case') ? project.property('case').toString() : '',
+    project.hasProperty('trace') ? project.property('trace').toString() : '',
+  ]
+}
+
+tasks.register('playerLogSelfTest', JavaExec) {
+  group = 'verification'
+  description = 'Запись и воспроизведение журнала игрока сходятся побитово; порча ловится'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.checks.PlayerLogSelfTestKt'
+  workingDir = rootProject.projectDir
+  // -Pkeep=путь сохраняет записанный журнал, чтобы прогнать по нему playerReplay.
+  args = [project.findProperty('body') ?: 'body-export.txt', project.findProperty('keep') ?: '']
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+
+tasks.register('demoWindowCheck', JavaExec) {
+  group = 'verification'
+  description = 'Скрытое окно: повтор O/тяги/сброса, пауза и три режима интерполяции'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.checks.DemoWindowCheckKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('body') ?: 'body-export.txt',
+          project.findProperty('windowReport') ?: 'build/reports/demo-window-check']
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}

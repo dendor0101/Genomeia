@@ -1,0 +1,5 @@
+// Чистый Kotlin/JDK. Ни libGDX, ни :core, ни файлы стенда сюда не входят.
+dependencies {
+  api "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
+  testImplementation "junit:junit:4.13.2"
+}

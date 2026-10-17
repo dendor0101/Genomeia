@@ -36,8 +36,8 @@ import io.github.some_example_name.old.systems.simulation.SingleThreadSimulation
 
 object DISingleThreadSimulationContainer:  DIContext, Disposable {
 
-    override var gridWidth = 36
-    override var gridHeight = 36
+    override var gridWidth = 48
+    override var gridHeight = 48
 
     var gridSize = gridWidth * gridHeight
     override var threadCount = 1

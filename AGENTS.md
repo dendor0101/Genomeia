@@ -22,8 +22,11 @@
 - `:core`, пакет `io.github.some_example_name.old` (имя историческое, попутно не переименовывать):
   симуляция (`systems/`, `entities/`, `cells/`), команды (`commands/`), журнал и отчёты
   (`journal/`, `bug/`), редактор генома (`editor/`), экраны (`features/`), DI-контейнеры (`core/DI*`).
-- `:lwjgl3` — лаунчер и `demo/`: стенды новой XPBD-физики (`RealBodyDemo` и соседи) и
-  программы-проверки (`physicsCheck`, `bugReplayCheck`, `saveRoundTrip`, …).
+- `:physics` — новая XPBD-физика без зависимостей на Gdx, игру, файлы и окно.
+  `:physics-lab` — её сессии, окно, записи, проверки и замеры; зависит от physics/render.
+- `:lwjgl3` — лаунчер игры; в `src/lab/kotlin/.../demo` только запуск физического стенда.
+  Проверки основной игры (`bugReplayCheck`, `saveRoundTrip`, …) — в `verification/`.
+  Source set `lab` не входит в JAR игры. Карта каталогов — в README двух модулей физики.
 - `:core` обязан работать на Android и iOS: никаких `java.awt`, LWJGL и прочих десктопных API.
   Платформенное — через поле или интерфейс, который выставляет лаунчер (образец —
   `core/PlatformTuning.kt`). Не вызывать методы JDK 21 у `java.util.List`
@@ -141,15 +144,16 @@
 - Никаких `throw`, `try` и сборки строк сообщений внутри горячих циклов — только под `DEBUG_CHECKS`.
 
 ## Физика
-- Физик две: текущая в игре (`core/.../systems/physics`) и новая XPBD на стенде
-  (`lwjgl3/demo/RealBodyDemo.kt`), которую позже перенесут в игру. Без просьбы стенд не
+- Физик две: текущая в игре (`core/.../systems/physics`) и новая XPBD в `:physics`,
+  которую проверяет `:physics-lab` и позже подключат к игре как библиотеку. Без просьбы стенд не
   переносить и не дробить; над ним одновременно работает один агент. План уборки и
   разделения — `TODO.md`, разделы 3–4.
 - Чинить причину, а не маскировать следствие. Энергия и импульс не берутся из ниоткуда.
 - Правка стадий решателя повторяется в `SwimSolver`, пока он жив, иначе сверка в
   `physicsCheck` падает.
-- После правки физики: `:lwjgl3:physicsCheck` (и `-Pbody=body-export-кирпич.txt`) плюс A/B
-  на записи игрока через `:lwjgl3:playerReplay`. Выводы делать, только если напечатано
+- После правки физики: `:physics-lab:physicsCheck` (и `-Pbody=body-export-кирпич.txt`) плюс A/B
+  на записи игрока через `:physics-lab:playerReplay`. Старые задачи `:lwjgl3` перенаправляют сюда.
+  Выводы делать, только если напечатано
   «контрольные суммы: все N сошлись».
 - Пороги проверок не поднимать молча. Законно ухудшил — записать решение рядом с проверкой;
   улучшил — ужать порог.
@@ -168,6 +172,8 @@
 JDK 21. Если `JAVA_HOME` не задан — взять JBR из Android Studio.
 - Быстрая проверка после любой правки:
   `./gradlew -q :core:compileKotlin :render:compileKotlin :render:compileLabKotlin :lwjgl3:compileKotlin :core:test :render:test`
+- После правок новой физики/стенда дополнительно:
+  `./gradlew -q :physics:test :physics-lab:test :lwjgl3:compileLabKotlin`.
 - Тронул симуляцию, команды или журнал → `:lwjgl3:bugReplayCheck`
   (опции `-Pworkers=N -PgrowTicks=3000 -PspawnGrid=4 -PhashPeriod=1`).
 - Тронул сущности или сохранение → `:lwjgl3:saveRoundTrip`; генерацию карт → `:lwjgl3:worldSpecCheck`.
