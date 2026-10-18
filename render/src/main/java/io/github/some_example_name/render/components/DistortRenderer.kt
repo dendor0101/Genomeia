@@ -40,6 +40,7 @@ class DistortRenderer : RenderComponent {
         distortShader.bind()
         distortShader.setUniformi("u_texture", 0)
         distortShader.setUniformf("u_resolution", blurFbo.width.toFloat(), blurFbo.height.toFloat())
+        distortShader.setUniformf("u_caAmount", context.chromaticAberration)
 
         Gdx.gl.glActiveTexture(GL20.GL_TEXTURE0)
         inputTexture.bind()

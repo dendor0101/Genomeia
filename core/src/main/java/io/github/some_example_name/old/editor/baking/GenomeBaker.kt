@@ -8,8 +8,9 @@ import io.github.some_example_name.old.systems.genomics.genome.Genome
 import io.github.some_example_name.old.systems.genomics.library.Baker
 
 /**
- * Запекание генома — размеры взрослого тела и раскладка арен (см. Genome.cellsAmount,
- * [RCMSort]). Снимается с тела, выращенного в мире редактора.
+ * Запекание генома — размеры взрослого тела, раскладка арен и снимок для превью (см.
+ * Genome.cellsAmount, [RCMSort], [GenomePreviewCapture]). Снимается с тела, выращенного в
+ * мире редактора.
  *
  * Один код на два пути, чтобы импортированный геном ничем не отличался от сохранённого:
  *  - [bakeGrown] — кнопка «Сохранить»: тело уже выращено на экране редактора;
@@ -23,6 +24,7 @@ import io.github.some_example_name.old.systems.genomics.library.Baker
 class GenomeBaker(
     private val editorSimulationSystem: EditorSimulationSystem,
     private val rcmSort: RCMSort,
+    private val previewCapture: GenomePreviewCapture,
     private val cellEntity: CellEntity,
     private val linkEntity: LinkEntity,
     private val neuralLinkEntity: NeuralLinkEntity
@@ -49,7 +51,8 @@ class GenomeBaker(
             cellsAmount = cellEntity.aliveList.size,
             linksAmount = linkEntity.aliveList.size,
             neuralLinksAmount = neuralLinkEntity.aliveList.size,
-            sortedGraph = layout
+            sortedGraph = layout,
+            preview = previewCapture.capture()
         )
     }
 }

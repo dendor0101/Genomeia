@@ -20,6 +20,7 @@ import io.github.some_example_name.render.components.PheromoneRenderer
 import io.github.some_example_name.render.components.PostProcessRenderer
 import io.github.some_example_name.render.components.RenderComponent
 import io.github.some_example_name.render.components.RenderContext
+import io.github.some_example_name.render.components.SCREEN_CHROMATIC_ABERRATION
 import io.github.some_example_name.render.components.VignetteRenderer
 import io.github.some_example_name.render.pack.CellInstanceBuffer
 import io.github.some_example_name.render.pack.OverlayInstanceBuffer
@@ -36,7 +37,8 @@ import io.github.some_example_name.render.pack.PheromoneInstanceBuffer
  *  5. DistortRenderer       — хроматическая аберрация
  *  6. BlurPostProcessRenderer — гауссов блюр
  *  7. PheromoneRenderer     — феромоны поверх
- *  8. VignetteRenderer      — виньетка, единственный проход прямо в экран
+ *  8. VignetteRenderer      — виньетка, единственный проход прямо в экран (или в буфер
+ *                             превью, см. [renderOffscreen])
  *
  * Какие из них работают, решает [RenderFrame.mode]: проход, которому в этом режиме делать
  * нечего, сразу возвращается. В реалистичном режиме идут все, кроме второго и третьего;
@@ -80,6 +82,13 @@ class WorldRenderer(
     private lateinit var fbo: FrameBuffer
     private lateinit var blurFbo: FrameBuffer
     private lateinit var distortFbo: FrameBuffer
+
+    /** Промежуточные FBO превью, см. [renderOffscreen]. null — превью ещё не рисовали. */
+    private var offscreenScene: FrameBuffer? = null
+    private var offscreenBlur: FrameBuffer? = null
+    private var offscreenDistort: FrameBuffer? = null
+    private var offscreenWidth = 0
+    private var offscreenHeight = 0
 
     /** Переиспользуется между кадрами: на кадр не должно быть ни одной аллокации. */
     private val renderContext = RenderContext()
@@ -195,6 +204,81 @@ class WorldRenderer(
     }
 
     fun render(frame: RenderFrame) {
+        draw(
+            frame, fbo, blurFbo, distortFbo, output = null,
+            pixelWidth = Gdx.graphics.backBufferWidth,
+            chromaticAberration = SCREEN_CHROMATIC_ABERRATION
+        )
+    }
+
+    /**
+     * Кадр не в экран, а в [output]: превью генома в списках. Конвейер тот же, что у
+     * [render], — превью выглядит ровно как организм в игре, — но промежуточные FBO свои,
+     * размером с [output]: экранные трогать нельзя, превью рисуется между кадрами живого
+     * экрана (список геномов в симуляции).
+     *
+     * Свои FBO заводятся при первом вызове и пересоздаются, только когда меняется размер:
+     * все превью одного списка одного размера, так что на список это одно создание.
+     * Объём: три буфера RGBA8 и один D24S8, на 256×256 — около 1 МБ видеопамяти.
+     *
+     * Отладочный режим не поддерживается: DebugRenderer держит свой буфер размером с
+     * экран и читает его по gl_FragCoord.
+     *
+     * Звать из потока рендера вне [render] (между кадрами). Геометрия клеток общая с
+     * экраном, но экран перезаливает её каждый кадр (uploadCells), так что превью ему не
+     * мешает. После вызова привязан экранный буфер.
+     */
+    fun renderOffscreen(frame: RenderFrame, output: FrameBuffer) {
+        require(frame.mode != RenderMode.DEBUG) { "превью в отладочном режиме не рисуется" }
+        val width = output.width
+        val height = output.height
+        if (offscreenWidth != width || offscreenHeight != height) createOffscreenFbos(width, height)
+
+        // Фон превью свой, а не тот, что оставил экран: реалистичный режим чистит сцену
+        // текущим цветом очистки.
+        Gdx.gl.glClearColor(0f, 0f, 0f, 1f)
+        // Превью — уменьшенный экран: аберрация в той же доле кадра, что на экране. Без этого
+        // на картинке в 100 пикселей каналы расходились на 5% её ширины — цветные ореолы.
+        val screenWidth = Gdx.graphics.backBufferWidth.coerceAtLeast(width)
+        draw(
+            frame, offscreenScene!!, offscreenBlur!!, offscreenDistort!!, output,
+            pixelWidth = width,
+            chromaticAberration = SCREEN_CHROMATIC_ABERRATION * width / screenWidth
+        )
+    }
+
+    private fun createOffscreenFbos(width: Int, height: Int) {
+        disposeOffscreenFbos()
+        offscreenScene = createSceneFbo(width, height)
+        offscreenBlur = FrameBuffer(Pixmap.Format.RGBA8888, width, height, false)
+        offscreenDistort = FrameBuffer(Pixmap.Format.RGBA8888, width, height, false)
+        listOf(offscreenScene!!, offscreenBlur!!, offscreenDistort!!).forEach {
+            it.colorBufferTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
+        }
+        offscreenWidth = width
+        offscreenHeight = height
+    }
+
+    private fun disposeOffscreenFbos() {
+        offscreenScene?.dispose()
+        offscreenBlur?.dispose()
+        offscreenDistort?.dispose()
+        offscreenScene = null
+        offscreenBlur = null
+        offscreenDistort = null
+        offscreenWidth = 0
+        offscreenHeight = 0
+    }
+
+    private fun draw(
+        frame: RenderFrame,
+        scene: FrameBuffer,
+        blur: FrameBuffer,
+        distort: FrameBuffer,
+        output: FrameBuffer?,
+        pixelWidth: Int,
+        chromaticAberration: Float
+    ) {
         val cells = frame.cells
 
         // Один раз за кадр и до всех проходов: сколько бы их ни рисовало клетки, байты
@@ -219,16 +303,18 @@ class WorldRenderer(
             numOverlayInstances =
                 frame.overlay?.let { it.remaining() / OverlayInstanceBuffer.STRUCT_SIZE } ?: 0
             time = frame.time
-            pixelWorld = pixelWorld(frame.cameraProjection)
+            pixelWorld = pixelWorld(frame.cameraProjection, pixelWidth)
 
             blurAmount = frame.blurAmount
             zoom = frame.zoom
             vignetteEnabled = frame.vignetteEnabled
+            this.chromaticAberration = chromaticAberration
             mode = frame.mode
 
-            sceneFbo = fbo
-            this.blurFbo = this@WorldRenderer.blurFbo
-            this.distortFbo = this@WorldRenderer.distortFbo
+            sceneFbo = scene
+            blurFbo = blur
+            distortFbo = distort
+            outputFbo = output
             currentTexture = null
         }
 
@@ -240,15 +326,15 @@ class WorldRenderer(
     }
 
     /**
-     * Единиц мира на пиксель экранного буфера.
+     * Единиц мира на пиксель буфера, в который рисуем.
      *
-     * Камера ортографическая: M00 = 2 / ширина_видимого_мира, а экран — backBufferWidth
-     * пикселей. Буфер берётся экранный, а не логический размер окна: на экране с
+     * Камера ортографическая: M00 = 2 / ширина_видимого_мира, а буфер — [pixelWidth]
+     * пикселей. Для экрана это backBufferWidth, а не логический размер окна: на экране с
      * масштабом (HiDPI) они различаются, а растеризуются фигуры именно в пикселях буфера.
      */
-    private fun pixelWorld(projection: Matrix4): Float {
+    private fun pixelWorld(projection: Matrix4, pixelWidth: Int): Float {
         val scaleX = projection.`val`[Matrix4.M00]
-        val width = Gdx.graphics.backBufferWidth.coerceAtLeast(1)
+        val width = pixelWidth.coerceAtLeast(1)
         if (scaleX == 0f) return 1f
         return kotlin.math.abs(2f / (scaleX * width))
     }
@@ -325,6 +411,7 @@ class WorldRenderer(
         if (::fbo.isInitialized) fbo.dispose()
         if (::blurFbo.isInitialized) blurFbo.dispose()
         if (::distortFbo.isInitialized) distortFbo.dispose()
+        disposeOffscreenFbos()
     }
 
     // === Управление конвейером ===

@@ -8,6 +8,7 @@ import io.github.some_example_name.old.commands.GoBack
 import io.github.some_example_name.old.commands.GoEcoSystem
 import io.github.some_example_name.old.commands.GoExit
 import io.github.some_example_name.old.commands.GoGenomeEditor
+import io.github.some_example_name.old.commands.GoGenomes
 import io.github.some_example_name.old.commands.GoMenu
 import io.github.some_example_name.old.commands.GoReplace
 import io.github.some_example_name.old.commands.GoSettings
@@ -40,6 +41,7 @@ import io.github.some_example_name.old.editor.system.logic.TryToDivide
 import io.github.some_example_name.old.editor.system.logic.TryToMutate
 import io.github.some_example_name.old.editor.system.logic.TryToRemove
 import io.github.some_example_name.old.features.devsupport.SupportIntent
+import io.github.some_example_name.old.features.genomes.GenomesIntent
 import io.github.some_example_name.old.features.menu.MenuIntent
 import io.github.some_example_name.old.features.settings.SettingsIntent
 import io.github.some_example_name.old.features.simulation.SimulationIntent
@@ -91,6 +93,7 @@ object CommandRegistry {
         t<GoSimulation>(109),
         t<EcoSystemScreenGlobalSettings>(110),
         t<EcoSystemScreenCellsSettings>(111),
+        t<GoGenomes>(112),
 
         // --- Главное меню ---
         t<MenuIntent.OpenWorldEditor>(200),
@@ -102,6 +105,7 @@ object CommandRegistry {
         t<MenuIntent.ImportGenome>(206),
         t<MenuIntent.GenomeImported>(207),
         t<MenuIntent.MapImported>(208),
+        t<MenuIntent.OpenGenomes>(209),
 
         // --- Настройки ---
         t<SettingsIntent.SelectTab>(300),
@@ -186,6 +190,15 @@ object CommandRegistry {
         t<SimRestarted>(902),
         t<StateHashed>(903),
         t<WorldSaveCommitted>(904),
+
+        // --- Экран «Геномы» ---
+        t<GenomesIntent.SelectTab>(1000),
+        t<GenomesIntent.OpenEditor>(1001),
+        t<GenomesIntent.ImportGenome>(1002),
+        t<GenomesIntent.GenomeImported>(1003),
+        t<GenomesIntent.Delete>(1004),
+        t<GenomesIntent.Rename>(1005),
+        t<GenomesIntent.Share>(1006),
     )
 
     private val byClass: Map<KClass<*>, Type<*>> = types.associateBy { it.kClass }

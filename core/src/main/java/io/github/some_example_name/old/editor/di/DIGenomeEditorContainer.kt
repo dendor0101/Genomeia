@@ -27,6 +27,7 @@ import io.github.some_example_name.old.editor.system.render.DrawingHelperElement
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.editor.baking.BodyExport
 import io.github.some_example_name.old.editor.baking.GenomeBaker
+import io.github.some_example_name.old.editor.baking.GenomePreviewCapture
 import io.github.some_example_name.old.editor.baking.RCMSort
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.NeuralEntity
@@ -157,6 +158,12 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
         linkEntity = linkEntity,
         cellEntity = cellEntity,
         neuralLinkEntity = neuralLinkEntity
+    )
+
+    /** Снимок выращенного тела для превью генома; снимается при запекании, как и раскладка. */
+    val genomePreviewCapture = GenomePreviewCapture(
+        cellEntity = cellEntity,
+        particleEntity = particleEntity
     )
 
     /**
@@ -313,6 +320,7 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
     val genomeBaker = GenomeBaker(
         editorSimulationSystem = editorSimulationSystem,
         rcmSort = rcmSort,
+        previewCapture = genomePreviewCapture,
         cellEntity = cellEntity,
         linkEntity = linkEntity,
         neuralLinkEntity = neuralLinkEntity

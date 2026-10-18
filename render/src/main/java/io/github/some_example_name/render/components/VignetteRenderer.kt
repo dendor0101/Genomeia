@@ -6,7 +6,7 @@ import com.badlogic.gdx.graphics.glutils.ShaderProgram
 
 /**
  * Applies vignette effect as the final post-processing pass.
- * Renders directly to screen.
+ * Renders to screen, or to RenderContext.outputFbo when it is set (genome previews).
  */
 class VignetteRenderer : RenderComponent {
 
@@ -32,7 +32,8 @@ class VignetteRenderer : RenderComponent {
         val inputTexture = context.currentTexture ?: return
         val blurFbo = context.blurFbo ?: return
 
-        // Final pass renders directly to screen (no FBO begin)
+        // Последний проход: в экран или в буфер превью (context.outputFbo).
+        context.beginOutput()
 
         vignetteShader.bind()
         vignetteShader.setUniformi("u_texture", 0)
@@ -45,6 +46,8 @@ class VignetteRenderer : RenderComponent {
         context.fullscreenMesh.bind(vignetteShader)
         Gdx.gl.glDrawArrays(GL20.GL_TRIANGLE_STRIP, 0, 4)
         context.fullscreenMesh.unbind(vignetteShader)
+
+        context.endOutput()
     }
 
     override fun dispose() {

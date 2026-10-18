@@ -22,27 +22,26 @@ import io.github.some_example_name.old.game.applyCustomFont
 import io.github.some_example_name.old.game.applyCustomFontMedium
 import io.github.some_example_name.old.core.ui.makeStyledButton
 import io.github.some_example_name.old.core.ui.setupTitleSize
+import io.github.some_example_name.old.features.genomes.GenomePreviewCache
+import com.badlogic.gdx.scenes.scene2d.ui.Image
+import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
+import com.badlogic.gdx.utils.Scaling
 
+/**
+ * Выбор генома в симуляции: список с превью, «Новый» и «Выбрать». Геномами здесь не
+ * управляют — переименование, удаление и прочее живут на экране «Геномы» (GenomesScreen).
+ */
 class GenomeListDialog(
     val genomesList: List<String>,
     val selectedGenomeIndex: Int?,
     title: String,
     val new: String,
     val select: String,
-    val import: String,
-    /** Кнопка «Новый». null — кнопки нет (список встроенных геномов). */
+    /** Кнопка «Новый». null — кнопки нет. */
     val onNew: (() -> Unit)?,
     val onNext: (String) -> Unit,
     val game: MyGame,
     val onResize: (() -> Unit) -> Unit,
-    /**
-     * Импорт файлов генома. null — кнопки нет (платформа не умеет выбирать файлы). Сам
-     * импорт делает обработчик команды; что показать по его окончании — забота того, кто
-     * открыл диалог.
-     */
-    val onImport: (() -> Unit)? = null,
-    /** Подсказка под кнопками (на ПК — что файлы можно перетащить в окно). null — без неё. */
-    val hint: String? = null,
     /** Что показать вместо имени из списка: у встроенных геномов — без приставки. */
     val displayName: (String) -> String = { it },
     /**
@@ -50,16 +49,18 @@ class GenomeListDialog(
      * встроенные геномы отделены от своих. -1 — одним списком.
      */
     val sectionStart: Int = -1,
-    val sectionTitle: String? = null,
-    /** Кнопка, открывающая список встроенных геномов (редактор). null — кнопки нет. */
-    val bundled: String? = null,
-    val onBundled: (() -> Unit)? = null,
-    /** Надпись вместо пустого списка. */
-    val emptyText: String? = null
+    val sectionTitle: String? = null
 ) : VisDialog(title) {
     var selectedIndex = if (genomesList.isEmpty()) -1 else selectedGenomeIndex ?: 0
     val scrollPane: ScrollPane
     private val textures = mutableListOf<Texture>()
+
+    /**
+     * Превью геномов списка. Рисуются в [act] по нескольку за кадр (см. GenomePreviewCache),
+     * освобождаются, когда окно уходит со сцены ([remove]).
+     */
+    private val previews = GenomePreviewCache((PREVIEW_DP * Gdx.graphics.density).toInt().coerceIn(32, 256))
+    private val previewBackground = VisUI.getSkin().newDrawable("white", PREVIEW_FILL)
 
     init {
         isModal = true
@@ -136,17 +137,12 @@ class GenomeListDialog(
 
         val content = VisTable(true)
 
-        if (genomesList.isEmpty() && emptyText != null) {
-            val emptyLabel = VisLabel(emptyText)
-            game.applyCustomFontMedium(emptyLabel)
-            content.add(emptyLabel).left().row()
-        }
-
         genomesList.forEachIndexed { index, string ->
             if (index == sectionStart) addSection(content, density)
             val rb = VisRadioButton(displayName(string), radioStyle)
             game.applyCustomFont(rb)
             group.add(rb)
+            content.add(previewImage(string)).size(PREVIEW_DP * density).left()
             content.add(rb).left().row()
             if (selectedIndex == index) rb.isChecked = true
 
@@ -194,58 +190,51 @@ class GenomeListDialog(
             }
         }
 
-        // Встроенные и импорт — вторым рядом: четыре кнопки в ряд не влезают в телефон.
-        if (bundled != null && onBundled != null || onImport != null) bottomButtonTable.row().padTop(8f * density)
-
-        if (bundled != null && onBundled != null) {
-            makeStyledButton(bundled, game, textures).also {
-                it.addListener(object : ClickListener() {
-                    override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                        onBundled.invoke()
-                    }
-                })
-                bottomButtonTable.add(it).height(btnH)
-            }
-        }
-
-        if (onImport != null) {
-            makeStyledButton(import, game, textures).also {
-                it.addListener(object : ClickListener() {
-                    override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                        onImport.invoke()
-                    }
-                })
-                bottomButtonTable.add(it).height(btnH)
-            }
-        }
-
         scrollContentTable.add(bottomButtonTable).center().padTop(8f * density)
-
-        if (hint != null) {
-            scrollContentTable.row()
-            val hintLabel = VisLabel(hint)
-            game.applyCustomFontMedium(hintLabel)
-            scrollContentTable.add(hintLabel).center().padTop(8f * density)
-        }
     }
 
-    /** Черта и подпись раздела перед номером [sectionStart]. */
+    /** Квадрат превью: тёмная заглушка, пока картинка не нарисована или снимка нет. */
+    private fun previewImage(name: String): Image {
+        val image = Image(previewBackground).apply { setScaling(Scaling.fit) }
+        previews.request(name) { region -> if (region != null) image.drawable = TextureRegionDrawable(region) }
+        return image
+    }
+
+    /** Черта и подпись раздела перед номером [sectionStart]. Строка списка — в два столбца. */
     private fun addSection(content: VisTable, density: Float) {
-        content.add(Separator()).growX().padTop(8f * density).row()
+        content.add(Separator()).colspan(2).growX().padTop(8f * density).row()
         if (sectionTitle != null) {
             val label = VisLabel(sectionTitle, Color.LIGHT_GRAY)
             game.applyCustomFontMedium(label)
-            content.add(label).left().row()
+            content.add(label).colspan(2).left().row()
         }
     }
 
-    // Открыт наружу: меню закрывает список, когда после импорта открывает его заново.
-    public override fun close() {
+    override fun act(delta: Float) {
+        super.act(delta)
+        // Между кадрами мира: превью рисуются в свои буферы, экран им не нужен.
+        previews.update()
+    }
+
+    /** Окно ушло со сцены (выбрали, закрыли, «Новый») — картинки больше не нужны. */
+    override fun remove(): Boolean {
+        previews.dispose()
+        return super.remove()
+    }
+
+    override fun close() {
         super.close()
         onResize.invoke {}
         addAction(Actions.sequence(
             Actions.delay(0.3f),
             Actions.run { textures.forEach { it.dispose() }; textures.clear() }
         ))
+    }
+
+    private companion object {
+        /** Сторона превью в строке списка. */
+        const val PREVIEW_DP = 56f
+
+        val PREVIEW_FILL = Color(0.03f, 0.03f, 0.04f, 1f)
     }
 }

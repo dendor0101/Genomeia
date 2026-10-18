@@ -60,6 +60,12 @@ class GoGenomeEditor(val genomeName: String?) : Menu() {
     override val detail get() = genomeName ?: "new"
 }
 
+/** Экран «Геномы»: свои и встроенные геномы с превью, переход в редактор, импорт. */
+@Serializable
+object GoGenomes : Menu() {
+    override val name get() = "GoGenomes"
+}
+
 @Serializable
 object GoSettings : Menu() {
     override val name get() = "GoSettings"
@@ -113,6 +119,7 @@ fun navigationCommandByName(name: String): NavigationCommands? = when (name.trim
     GoEcoSystem.name -> GoEcoSystem
     GoSupport.name -> GoSupport
     "GoGenomeEditor" -> GoGenomeEditor(null)
+    GoGenomes.name -> GoGenomes
     GoBack.name -> GoBack
     GoExit.name -> GoExit
     else -> null

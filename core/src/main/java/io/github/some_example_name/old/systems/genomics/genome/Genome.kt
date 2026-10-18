@@ -48,7 +48,13 @@ data class Genome(
      * Порядок укладки сущностей в арены. null — геном не запечён, порядок будет обычный
      * (по мере роста). См. [BakedLayout].
      */
-    @ProtoNumber(8) val sortedGraph: BakedLayout? = null
+    @ProtoNumber(8) val sortedGraph: BakedLayout? = null,
+
+    /**
+     * Снимок взрослого тела для превью в списке и карточке геномов. null — геном ещё не
+     * снимали: его допекает GenomeImport.withBaking. См. [GenomePreview].
+     */
+    @ProtoNumber(9) val preview: GenomePreview? = null
 ) {
     @Transient
     var genomeStageInstruction: List<GenomeStage> = stageInstruction

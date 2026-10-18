@@ -10,6 +10,7 @@ import com.badlogic.gdx.utils.Json
 import com.kotcrab.vis.ui.VisUI
 import com.kotcrab.vis.ui.widget.VisTextButton
 import io.github.some_example_name.old.cells.base.CellListBuilder
+import io.github.some_example_name.old.cells.base.CellTypeList
 import io.github.some_example_name.old.commands.NavigationCommandsManager
 import io.github.some_example_name.old.core.log.ActionLog
 import io.github.some_example_name.old.core.DISimulationContainer.gridHeight
@@ -61,6 +62,12 @@ object DIGameGlobalContainer {
     val genomeJsonReader = GenomeJsonReader()
 
     private val cellListBuilder = CellListBuilder()
+
+    /**
+     * Типы клеток в порядке слоёв [particleTexturePaths]: номер типа — номер слоя текстуры.
+     * По нему превью генома переводит ключ типа из снимка в слой (GenomePreviewCache).
+     */
+    val cellTypes: CellTypeList get() = cellListBuilder.instances
 
     /** Текстуры по номеру типа клетки и последней — пустая (CellTypeList.emptyTextureLayer). */
     val particleTexturePaths: List<String> = cellListBuilder.instances.map {

@@ -7,7 +7,8 @@ import io.github.some_example_name.old.systems.genomics.genome.encodeGenome
 import io.github.some_example_name.old.systems.genomics.genome.isGenomeFile
 
 /**
- * Запекание генома: вырастить тело и снять с него размеры и раскладку арен — то же, что
+ * Запекание генома: вырастить тело и снять с него размеры, раскладку арен и снимок для
+ * превью — то же, что
  * делает кнопка «Сохранить» в редакторе. Живёт в редакторе (GenomeBaker), а сюда приходит
  * параметром: импорт не тянет за собой контейнер редактора и проверяется тестами без Gdx.
  *
@@ -23,7 +24,7 @@ fun interface Baker {
  * Формат определяется по содержимому, а не по расширению: на Android выбранный файл приходит
  * временной копией, и имя у неё может быть любым.
  *  - .genome кладётся как есть, байт в байт, только после проверки, что он читается. Кроме
- *    сохранённого до появления запекания: такой допекается ([withBaking]);
+ *    недопечённого — без раскладки или без снимка для превью: такой допекается ([withBaking]);
  *  - старый JSON переводится в геном ([LegacyGenomeJson]) и запекается ([Baker]) — после
  *    импорта он ничем не отличается от сохранённого в редакторе.
  *
@@ -75,24 +76,32 @@ object GenomeImport {
     }
 
     /**
-     * Геном .genome, сохранённый до появления запекания (cellsAmount == 0), — запечённым.
-     * null — запекать не нужно.
+     * Геном .genome, в котором не хватает запечённого, — допечённым. null — печь нечего.
      *
-     * Без запекания организм получает арену нулевой ёмкости и падает на первой же клетке
-     * (UserCommandManager, «арена клеток организма исчерпана (ёмкость 0)»): так падала игра,
-     * когда в мир ставили старый геном.
+     * Не хватать может двух вещей:
+     *  - размеров тела и раскладки (cellsAmount == 0) — геном сохранён до появления
+     *    запекания. Без них организм получает арену нулевой ёмкости и падает на первой же
+     *    клетке (UserCommandManager, «арена клеток организма исчерпана (ёмкость 0)»): так
+     *    падала игра, когда в мир ставили старый геном;
+     *  - снимка для превью (preview == null) — геном сохранён до появления превью.
      *
-     * Сам геном не трогается — берутся только размеры тела и раскладка, остальное как в
-     * файле: имя, версия, порядок стадий.
+     * Сам геном не трогается — берётся только недостающее, остальное как в файле: имя,
+     * версия, порядок стадий. В том числе уже лежащая раскладка: от неё зависит, как
+     * организм ляжет в арены, и перепекать её ради картинки незачем.
      */
     fun withBaking(genome: Genome, baker: Baker): Genome? {
-        if (genome.cellsAmount > 0 || genome.stageInstruction.isEmpty()) return null
+        if (genome.stageInstruction.isEmpty()) return null
+        val needsLayout = genome.cellsAmount <= 0
+        if (!needsLayout && genome.preview != null) return null
+
         val baked = baker.bake(genome, genome.name)
+        if (!needsLayout) return genome.copy(preview = baked.preview)
         return genome.copy(
             cellsAmount = baked.cellsAmount,
             linksAmount = baked.linksAmount,
             neuralLinksAmount = baked.neuralLinksAmount,
-            sortedGraph = baked.sortedGraph
+            sortedGraph = baked.sortedGraph,
+            preview = baked.preview
         )
     }
 
