@@ -92,8 +92,9 @@ sealed interface SimulationIntent : GameCommand {
     }
 
     /**
-     * Сохранить мир в [slot]. Слот решается при нажатии (SimulationViewModel.saveWorldIntent):
-     * новый слот выбирается по списку файлов, а при повторе бага он другой.
+     * Сохранить мир под именем [slot] — это имя файла, см. MapNames. Имя вводит игрок
+     * (SaveWorldDialog), и согласие перезаписать чужой мир с тем же именем спрошено ДО
+     * команды: при повторе бага папка миров другая, и вопрос по ней дал бы другой ответ.
      */
     @Serializable
     data class SaveWorld(val slot: String) : SimulationIntent {
@@ -202,9 +203,17 @@ class SimulationViewModel(
 
     fun handle(intent: SimulationIntent) = SessionJournal.execute(CommandSource.SIMULATION, intent) { apply(it) }
 
-    /** Команда кнопки «Сохранить»: в старый слот мира, а если его нет — в новый. */
-    fun saveWorldIntent(): SimulationIntent.SaveWorld =
-        SimulationIntent.SaveWorld(saveSlot ?: DISimulationContainer.mapSave.nextSlot())
+    /**
+     * Имя в окне сохранения: под каким мир уже лежит, а новый — первое свободное «[base]»,
+     * «[base] (2)»… Запрос, а не команда: в команду уйдёт то, что игрок оставит в поле.
+     */
+    fun suggestedSaveName(base: String): String = saveSlot ?: MapSave.uniqueSlot(base)
+
+    /**
+     * Сохранение под [name] затрёт ДРУГОЙ мир — надо спросить. Свой мир (из которого
+     * загрузились или куда уже сохраняли) перезаписывается молча: это обычное «Сохранить».
+     */
+    fun wouldOverwrite(name: String): Boolean = name != saveSlot && MapSave.exists(name)
 
     private fun apply(intent: SimulationIntent) {
         when (intent) {

@@ -121,6 +121,7 @@ class MenuScreen : VisDslScreen(
             worlds = worlds,
             newWorld = bundle.get("button.newWorld"),
             onLoad = { slot -> menuViewModel.handle(MenuIntent.OpenSavedWorld(slot)) },
+            onDelete = { slot -> menuViewModel.handle(MenuIntent.DeleteWorld(slot)) },
             onNew = { menuViewModel.handle(MenuIntent.openWorldEditor()) },
             onResize = { h -> onResize = if (h == {}) null else h }
         ).show(stage)

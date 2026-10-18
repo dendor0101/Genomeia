@@ -102,6 +102,7 @@ object CommandRegistry {
         t<MenuIntent.ImportGenome>(206),
         t<MenuIntent.GenomeImported>(207),
         t<MenuIntent.MapImported>(208),
+        t<MenuIntent.DeleteWorld>(210),
 
         // --- Настройки ---
         t<SettingsIntent.SelectTab>(300),
