@@ -587,7 +587,6 @@ class SimulationScreen(
             title = bundle.get("button.selectGenome"),
             new = bundle.get("button.new"),
             select = bundle.get("button.select"),
-            import = bundle.get("button.import"),
             onNew = {
                 DIGameGlobalContainer.navigationCommandsManager.performCommand(
                     GoReplace(GoGenomeEditor(null))

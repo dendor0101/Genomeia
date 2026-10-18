@@ -26,6 +26,9 @@ import io.github.some_example_name.old.editor.system.logic.GoToEndOfTimeLine
 import io.github.some_example_name.old.editor.system.logic.NextTickButtonTap
 import io.github.some_example_name.old.editor.system.logic.SetNeuralLinkColor
 import io.github.some_example_name.old.editor.system.logic.SetSymmetry
+import io.github.some_example_name.old.features.genomes.GenomesIntent
+import io.github.some_example_name.old.features.genomes.GenomesScreen
+import io.github.some_example_name.old.features.genomes.GenomesTab
 import io.github.some_example_name.old.features.menu.MenuIntent
 import io.github.some_example_name.old.features.simulation.SimulationIntent
 import io.github.some_example_name.old.features.worldeditor.WorldEdit
@@ -120,6 +123,9 @@ private const val CONTROLLER_NAME = "bugReplayCheck-controller"
  * потомки за 120 тиков не вырастают и сами не рожают.
  */
 private const val PRODUCER_NAME = "bugReplayCheck-producer"
+
+/** Геном, который на экране «Геномы» переименовывают и удаляют. */
+private const val TEMPORARY_NAME = "bugReplayCheck-temporary"
 
 private fun producerGenome(): Genome {
     val toZygote = mapOf(0 to LinkData(length = 0.6f))
@@ -225,7 +231,10 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 controllers.writeBytes(encodeGenome(controllerGenome()))
                 val producers = File(pathFile.parentFile, "$PRODUCER_NAME.genome")
                 producers.writeBytes(encodeGenome(producerGenome()))
-                game.filesDropped(listOf(dropped.absolutePath, controllers.absolutePath, producers.absolutePath))
+                // Ещё один — его на экране «Геномы» переименуют и удалят (шаг 1).
+                val temporary = File(pathFile.parentFile, "$TEMPORARY_NAME.genome")
+                temporary.writeBytes(encodeGenome(producerGenome().copy(name = TEMPORARY_NAME)))
+                game.filesDropped(listOf(dropped.absolutePath, controllers.absolutePath, producers.absolutePath, temporary.absolutePath))
                 check(IMPORT_NAME in GenomeCatalog.playerNames()) {
                     "перетащенный $IMPORT_SOURCE не появился среди геномов"
                 }
@@ -234,11 +243,21 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 pause(10)
             }
 
-            // Редактор генома: первый встроенный геном (он читается из ассетов, а не из папки),
-            // листаем стадии, симметрия, цвет связей.
+            // Меню отдало перетащенные файлы экрану «Геномы» — он и открыт. Здесь же
+            // переименование и удаление: повтор обязан проделать их с файлами песочницы.
+            // Потом вкладка встроенных и редактор генома: первый встроенный геном (он читается
+            // из ассетов, а не из папки), листаем стадии, симметрия, цвет связей.
             1 -> {
-                val genome = GenomeCatalog.bundledNames().first()
-                screen(MenuIntent.OpenGenomeEditor(genome))
+                check(DIGameGlobalContainer.game.screen is GenomesScreen) {
+                    "после перетаскивания геномов открыт ${DIGameGlobalContainer.game.screen}, а не экран «Геномы»"
+                }
+                screen(GenomesIntent.Rename(TEMPORARY_NAME, "$TEMPORARY_NAME-renamed"))
+                screen(GenomesIntent.Delete("$TEMPORARY_NAME-renamed"))
+                check(GenomeCatalog.playerNames().none { it.startsWith(TEMPORARY_NAME) }) {
+                    "переименованный и удалённый геном остался в папке"
+                }
+                screen(GenomesIntent.SelectTab(GenomesTab.BUNDLED))
+                screen(GenomesIntent.OpenEditor(GenomeCatalog.bundledNames().first()))
                 pause(5)
             }
             2 -> {

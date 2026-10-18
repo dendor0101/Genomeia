@@ -272,6 +272,19 @@ tasks.register('genomeJsonCheck', JavaExec) {
   args = [project.findProperty('from') ?: 'core/src/test/resources/legacy-genomes', project.findProperty('to') ?: 'lwjgl3/build/genomeJsonCheck']
 }
 
+// Допекание встроенных геномов (снимок для превью и т.п.) тем же кодом, что свои при запуске:
+// gradlew :lwjgl3:bakeBundledGenomes [-Pdir=каталог]. Ненулевой код — не допёкся или снимок
+// не повторился при втором выращивании.
+tasks.register('bakeBundledGenomes', JavaExec) {
+  group = 'verification'
+  description = 'Встроенные геномы допекаются, как свои при запуске игры, и снимок превью повторяется'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.verification.BakeBundledGenomesKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+  args = [project.findProperty('dir') ?: 'assets/genomes']
+}
+
 // Запись и повтор бага целиком: gradlew :lwjgl3:bugReplayCheck
 // Первый запуск игры проходит сценарий через команды и собирает .bug, второй проигрывает его и
 // сверяет контрольные суммы журнала и хэши состояния мира; ненулевой код — повтор разошёлся.

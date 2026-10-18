@@ -2,6 +2,7 @@ package io.github.some_example_name.old.systems.genomics.library
 
 import com.badlogic.gdx.files.FileHandle
 import io.github.some_example_name.old.systems.genomics.genome.Genome
+import io.github.some_example_name.old.systems.genomics.genome.GenomePreview
 import io.github.some_example_name.old.systems.genomics.genome.decodeGenome
 import io.github.some_example_name.old.systems.genomics.genome.encodeGenome
 import java.io.File
@@ -12,6 +13,7 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -25,11 +27,24 @@ class GenomeImportTest {
     private val genomes = FileHandle(File(root, "genomes"))
     private val outside = FileHandle(File(root, "outside")).apply { mkdirs() }
 
+    /** Снимок, который «снимает» поддельное запекание. */
+    private val bakedPreview = GenomePreview(
+        cellTypeKeys = listOf("leaf"),
+        cellType = intArrayOf(0, 0),
+        x = floatArrayOf(-0.5f, 0.5f),
+        y = floatArrayOf(0f, 0f),
+        radius = floatArrayOf(0.5f, 0.5f),
+        angleCos = floatArrayOf(1f, 1f),
+        angleSin = floatArrayOf(0f, 0f),
+        colorBytes = GenomePreview.colorBytesOf(intArrayOf(-1, -1)),
+        cellGenomeId = intArrayOf(0, 1)
+    )
+
     /** Поддельное запекание: помечает геном так, чтобы было видно, что его пекли и под каким именем. */
     private val bakedNames = mutableListOf<String>()
     private val baker = Baker { genome, name ->
         bakedNames += name
-        genome.copy(name = name, cellsAmount = genome.stageInstruction.size, linksAmount = 7)
+        genome.copy(name = name, cellsAmount = genome.stageInstruction.size, linksAmount = 7, preview = bakedPreview)
     }
 
     private val json = """
@@ -58,6 +73,7 @@ class GenomeImportTest {
         assertEquals("Hypha", genome.name)
         assertEquals(2, genome.cellsAmount)
         assertEquals(7, genome.linksAmount)
+        assertEquals(bakedPreview, genome.preview)
         assertEquals(24f / 40f, genome.stageInstruction[0].cellActions.getValue(0).divide!!.physicalLink.getValue(0)!!.length)
     }
 
@@ -87,7 +103,8 @@ class GenomeImportTest {
     }
 
     /** Уже запечённый .genome — как его сохраняет редактор. */
-    private fun bakedGenome(name: String) = LegacyGenomeJson.parse(json, name).copy(cellsAmount = 3, linksAmount = 2)
+    private fun bakedGenome(name: String) =
+        LegacyGenomeJson.parse(json, name).copy(cellsAmount = 3, linksAmount = 2, preview = bakedPreview)
 
     @Test
     fun `запечённый genome кладётся байт в байт и без запекания`() {
@@ -121,7 +138,19 @@ class GenomeImportTest {
         assertEquals(listOf("Внутреннее имя"), bakedNames)
         assertEquals(2, genome.cellsAmount)
         assertEquals(7, genome.linksAmount)
-        assertEquals(unbaked.copy(cellsAmount = 2, linksAmount = 7), genome)
+        assertEquals(unbaked.copy(cellsAmount = 2, linksAmount = 7, preview = bakedPreview), genome)
+    }
+
+    @Test
+    fun `genome без снимка получает только снимок, раскладка и размеры остаются из файла`() {
+        val withoutPreview = bakedGenome("Без превью").copy(preview = null)
+        val source = outside.child("Без превью.genome").apply { writeBytes(encodeGenome(withoutPreview), false) }
+
+        val genome = decodeGenome(GenomeImport.importFile(source, genomes, baker).readBytes())
+
+        assertEquals(listOf(withoutPreview.name), bakedNames)
+        // Поддельное запекание дало бы cellsAmount = 2 и linksAmount = 7 — их брать нельзя.
+        assertEquals(withoutPreview.copy(preview = bakedPreview), genome)
     }
 
     @Test
@@ -136,6 +165,7 @@ class GenomeImportTest {
         assertEquals(listOf("Старый.genome"), done.map { it.name() })
         assertEquals(listOf("Битый.genome"), failed.map { it.first.name() })
         assertEquals(2, decodeGenome(unbaked.readBytes()).cellsAmount)
+        assertNotNull(decodeGenome(unbaked.readBytes()).preview)
         assertContentEquals(bakedBytes, baked.readBytes())
         assertTrue(broken.exists())
 

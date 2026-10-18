@@ -195,9 +195,10 @@ class NostalgicRenderer(private val cells: CellGeometry) : RenderComponent {
         context.fullscreenMesh.unbind(planeShader)
     }
 
-    /** Готовый кадр — на экран. */
+    /** Готовый кадр — на экран или в буфер превью (RenderContext.outputFbo). */
     private fun present(context: RenderContext, frame: Texture) {
         val gl = Gdx.gl
+        context.beginOutput()
         gl.glDisable(GL20.GL_DEPTH_TEST)
         gl.glDisable(GL20.GL_BLEND)
 
@@ -209,6 +210,7 @@ class NostalgicRenderer(private val cells: CellGeometry) : RenderComponent {
         context.fullscreenMesh.bind(presentShader)
         gl.glDrawArrays(GL20.GL_TRIANGLE_STRIP, 0, 4)
         context.fullscreenMesh.unbind(presentShader)
+        context.endOutput()
     }
 
     override fun dispose() {

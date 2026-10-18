@@ -52,6 +52,13 @@ class RenderContext {
     var blurAmount: Float = 0f
     var zoom: Float = 1f
     var vignetteEnabled: Float = 0f
+
+    /**
+     * Хроматическая аберрация: на сколько пикселей расходятся каналы у края кадра
+     * (DistortRenderer). Сдвиг в пикселях, а не в долях кадра, поэтому на маленьком кадре
+     * превью он во столько же раз сильнее — WorldRenderer.renderOffscreen его уменьшает.
+     */
+    var chromaticAberration: Float = SCREEN_CHROMATIC_ABERRATION
     var mode: RenderMode = RenderMode.REALISTIC
 
     /** Короткая запись для проходов постпроцесса: все они рисуют только в этом случае. */
@@ -64,7 +71,25 @@ class RenderContext {
     var sceneFbo: FrameBuffer? = null
     var blurFbo: FrameBuffer? = null
     var distortFbo: FrameBuffer? = null
+
+    /**
+     * Куда выводит готовый кадр последний проход (виньетка, вывод ностальгического режима).
+     * null — в экран, как в игре; буфер — превью генома (WorldRenderer.renderOffscreen).
+     */
+    var outputFbo: FrameBuffer? = null
+
+    /** Начать вывод готового кадра — в [outputFbo] или в экран. Парный вызов — [endOutput]. */
+    fun beginOutput() {
+        outputFbo?.begin()
+    }
+
+    fun endOutput() {
+        outputFbo?.end()
+    }
 }
+
+/** Аберрация экранного кадра — сколько было зашито в ca_distort.frag до превью. */
+const val SCREEN_CHROMATIC_ABERRATION = 4.5f
 
 /**
  * Interface for all rendering components in the pipeline.

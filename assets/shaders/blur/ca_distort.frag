@@ -5,15 +5,14 @@ in vec2 v_texCoord;
 
 uniform sampler2D u_texture;
 uniform vec2 u_resolution;
-// uniform float u_chromaticAberration;
+// Сдвиг каналов у края кадра, в пикселях этого кадра (DistortRenderer, RenderContext.chromaticAberration).
+uniform float u_caAmount;
 
 out vec4 fragColor;
 
 void main() {
     vec2 texelSize = 1.0 / u_resolution;
-    float caAmount = 4.5;
-
-    vec2 caDir = (v_texCoord - vec2(0.5)) * (caAmount * 2.0) * texelSize;
+    vec2 caDir = (v_texCoord - vec2(0.5)) * (u_caAmount * 2.0) * texelSize;
 
     vec2 uvRed   = v_texCoord + caDir;
     vec2 uvGreen = v_texCoord;
