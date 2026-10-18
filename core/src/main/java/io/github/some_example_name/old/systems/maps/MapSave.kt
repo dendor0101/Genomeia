@@ -28,14 +28,14 @@ import java.io.File
 import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 
-/** Сохранённый мир в списке: [slot] — имя файла без расширения. */
+/** Сохранённый мир в списке: [slot] — имя файла без расширения, оно же имя мира (см. MapNames). */
 class SavedMap(val slot: String, val lastModified: Long)
 
 /**
  * Сохранение мира целиком: сущности, геномы организмов, время симуляции, рецепт рельефа
  * и превью для списка миров.
  *
- * Мир лежит в maps/<номер>.map:
+ * Мир лежит в maps/<имя>.map (имя выбирает игрок, см. MapNames; старые сохранения — номера):
  *  - preview.png        превью, первым — чтобы список миров читал его, не распаковывая остальное;
  *  - meta.bin           версия формата, размер сетки, время, рецепт рельефа (для «Перезапуска»);
  *  - genomes.bin        геномы, на которые ссылаются организмы;
@@ -434,6 +434,14 @@ class MapSave(
         private fun mapsDir(): FileHandle = GameFiles.mapsDir()
 
         fun mapFile(slot: String): FileHandle = mapsDir().child("$slot$EXTENSION")
+
+        fun exists(slot: String): Boolean = mapFile(slot).exists()
+
+        /** Свободное имя на основе [base]: «Мир», «Мир (2)»… — см. MapNames.unique. */
+        fun uniqueSlot(base: String): String = MapNames.unique(base, ::exists)
+
+        /** Удалить мир. false — файла не было (при повторе бага не снятый в .bug мир). */
+        fun delete(slot: String): Boolean = mapFile(slot).delete()
 
         /** Проверка внешнего контейнера до помещения в библиотеку и до изменения мира. */
         fun validateImport(file: FileHandle) {

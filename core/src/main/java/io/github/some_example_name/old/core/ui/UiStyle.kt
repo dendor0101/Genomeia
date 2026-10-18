@@ -19,7 +19,9 @@ import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
 import com.badlogic.gdx.utils.FloatArray
+import com.badlogic.gdx.utils.Scaling
 import com.kotcrab.vis.ui.VisUI
+import com.kotcrab.vis.ui.widget.VisImageButton
 import com.kotcrab.vis.ui.widget.VisSlider
 import com.kotcrab.vis.ui.widget.VisTextField
 import com.kotcrab.vis.ui.widget.VisTextButton
@@ -84,6 +86,22 @@ fun makeStyledButton(text: String, game: MyGame, textures: MutableList<Texture>,
     }
     val d = Gdx.graphics.density
     return VisTextButton(text, style).also { it.pad(10f * d, 24f * d, 10f * d, 24f * d) }
+}
+
+/**
+ * Кнопка-значок в рамке makeStyledButton. [icon] — имя значка из скина VisUI ("icon-trash"),
+ * он красится в цвет надписей кнопок, а при наведении и нажатии белеет, как их текст.
+ */
+fun makeStyledIconButton(icon: String, textures: MutableList<Texture>): VisImageButton {
+    val skin = VisUI.getSkin()
+    val style = VisImageButton.VisImageButtonStyle()
+    style.up   = makeStyledNP(BTN_UP,  Color(STYLE_BEIGE).also { it.a = 0.75f }, textures)
+    style.over = makeStyledNP(BTN_OVR, Color(STYLE_BEIGE), textures)
+    style.down = makeStyledNP(BTN_DWN, Color.WHITE, textures)
+    style.imageUp   = skin.newDrawable(icon, STYLE_BEIGE)
+    style.imageOver = skin.newDrawable(icon, Color.WHITE)
+    style.imageDown = style.imageOver
+    return VisImageButton(style).also { it.image.setScaling(Scaling.fit) }
 }
 
 // ── Dialog window rounded corners ───────────────────────────────────────────

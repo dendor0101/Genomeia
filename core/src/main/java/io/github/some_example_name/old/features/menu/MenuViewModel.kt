@@ -28,6 +28,7 @@ import io.github.some_example_name.old.journal.SessionAttachments
 import io.github.some_example_name.old.journal.SessionJournal
 import io.github.some_example_name.old.systems.genomics.library.GenomeCatalog
 import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
+import io.github.some_example_name.old.systems.maps.MapNames
 import io.github.some_example_name.old.systems.maps.MapSave
 import io.github.some_example_name.old.systems.maps.SavedMap
 import io.github.some_example_name.old.systems.render.RenderSystem
@@ -54,6 +55,16 @@ sealed interface MenuIntent : GameCommand {
     @Serializable
     data class OpenSavedWorld(val slot: String) : MenuIntent {
         override val name get() = "OpenSavedWorld"
+        override val detail get() = slot
+    }
+
+    /**
+     * Удалить сохранённый мир. Это команда, а не просто стёртый файл: следующие команды
+     * записи («открыть мир X», «сохранить в X») при повторе должны видеть ту же папку миров.
+     */
+    @Serializable
+    data class DeleteWorld(val slot: String) : MenuIntent {
+        override val name get() = "DeleteWorld"
         override val detail get() = slot
     }
 
@@ -163,6 +174,12 @@ class MenuViewModel(
                 GoSimulation(world = null, genomeName = null, savedWorld = intent.slot)
             )
 
+            is MenuIntent.DeleteWorld -> {
+                // При повторе мира может не быть в песочнице: в .bug снимаются только
+                // загруженные миры (SessionAttachments), а этот, возможно, не открывали.
+                if (!MapSave.delete(intent.slot)) Gdx.app.log(TAG_MAPS, "мира ${intent.slot} нет — удалять нечего")
+            }
+
             is MenuIntent.OpenGenomeEditor -> navigation.performCommand(GoGenomeEditor(intent.genomeName))
 
             is MenuIntent.OpenGenomes -> navigation.performCommand(GoGenomes)
@@ -191,16 +208,20 @@ class MenuViewModel(
         }
     }
 
-    /** Карта открывается через команду, внешний файл остаётся нетронутым. */
+    /**
+     * Карта открывается через команду, внешний файл остаётся нетронутым. Имя мира — имя
+     * файла (занято — «имя (2)»), а если из него не вышло имени — следующий номер.
+     */
     fun importMapFile(file: FileHandle) {
         if (BugReplay.isActive) return
         try {
             MapSave.validateImport(file)
-            val slot = ((MapSave.listMaps().maxOfOrNull { it.slot.toIntOrNull() ?: 0 } ?: 0) + 1).toString()
+            val slot = MapNames.fromFileName(file.nameWithoutExtension())?.let(MapSave::uniqueSlot)
+                ?: ((MapSave.listMaps().maxOfOrNull { it.slot.toIntOrNull() ?: 0 } ?: 0) + 1).toString()
             val attachment = SessionAttachments.attachImported(file)
             handle(MenuIntent.MapImported(slot, attachment))
         } catch (e: Exception) {
-            Gdx.app.error("MapImport", "не удалось открыть ${file.path()}", e)
+            Gdx.app.error(TAG_MAPS, "не удалось открыть ${file.path()}", e)
             onMapImportFailed?.invoke(file.name())
         }
     }
@@ -281,6 +302,7 @@ class MenuViewModel(
     }
 
     private companion object {
+        const val TAG_MAPS = "MapImport"
         const val SCENE_SEED = 12L
     }
 }

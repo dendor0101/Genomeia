@@ -377,10 +377,11 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 untilTick(data.tickCounter + GROW_TICKS)
             }
 
-            // Внешняя .map: новый слот и снимок во вложении, затем продолжение мира.
-            // Проверяет именно путь лаунчера и команду MapImported, а не только ZIP-кодек.
+            // Внешняя .map: мир под именем файла (оно занято — «имя (2)») и снимок во
+            // вложении, затем продолжение мира. Проверяет именно путь лаунчера и команду
+            // MapImported, а не только ZIP-кодек.
             14 -> {
-                importedMapSlot = DISimulationContainer.mapSave.nextSlot()
+                importedMapSlot = MapSave.uniqueSlot(savedSlot!!)
                 game.openFiles(listOf(MapSave.mapFile(savedSlot!!).file().absolutePath))
                 check(MapSave.mapFile(importedMapSlot!!).exists()) { "карта не импортирована" }
                 screen(SimulationIntent.SetPaused(false))

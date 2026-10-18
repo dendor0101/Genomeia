@@ -29,6 +29,7 @@ import io.github.some_example_name.old.commands.GoGenomeEditor
 import io.github.some_example_name.old.commands.GoMenu
 import io.github.some_example_name.old.commands.GoReplace
 import io.github.some_example_name.old.commands.PlayerCommand
+import io.github.some_example_name.old.core.ui.ConfirmDialog
 import io.github.some_example_name.old.core.ui.KeyboardFocus
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.DISimulationContainer
@@ -197,6 +198,34 @@ class SimulationScreen(
                 flashText(it, if (effect.success) "label.saved" else "label.saveFailed")
             }
         }
+    }
+
+    /**
+     * «Сохранить»: имя мира, а если под ним лежит другой мир — вопрос, перезаписать ли.
+     * Оба окна только спрашивают; сохраняет команда SaveWorld с уже решённым именем.
+     */
+    private fun showSaveDialog() {
+        val bundle = DIGameGlobalContainer.bundle
+        lateinit var dialog: SaveWorldDialog
+        dialog = SaveWorldDialog(viewModel.suggestedSaveName(bundle.get("map.defaultName"))) { name ->
+            if (!viewModel.wouldOverwrite(name)) {
+                dialog.fadeOut()
+                viewModel.handle(SimulationIntent.SaveWorld(name))
+                return@SaveWorldDialog
+            }
+            ConfirmDialog(
+                title = bundle.get("dialog.saveWorld"),
+                message = bundle.format("label.overwriteMap", name),
+                confirm = bundle.get("button.overwrite"),
+                cancel = bundle.get("button.otherName"),
+                onConfirm = {
+                    dialog.fadeOut()
+                    viewModel.handle(SimulationIntent.SaveWorld(name))
+                },
+                onCancel = { dialog.editName() }
+            ).show(stage)
+        }
+        dialog.show(stage)
     }
 
     /** Ненадолго подменить надпись на кнопке — единственный отклик на сохранение. */
@@ -436,7 +465,7 @@ class SimulationScreen(
         }
 
         val saveButton = makeStyledButton(bundle.get("button.save"), game, extraTextures).onClick {
-            viewModel.handle(viewModel.saveWorldIntent())
+            showSaveDialog()
         }
         saveWorldButton = saveButton
 
