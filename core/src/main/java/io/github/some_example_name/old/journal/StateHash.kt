@@ -44,8 +44,10 @@ object StateHash {
      * 3 — в хэш вошли свои данные клеток (SpecialModDataEntity.specialModData).
      * 4 — EyeEntity, TailEntity, ProducerEntity и PheromoneEmitterEntity влились в них:
      *     частей хэша стало меньше.
+     * 5 — формула remember держит память на нулевом входе (Formula.kt): формула хэша та же,
+     *     но мир с этой формулой считается иначе, и старые хэши сверять нельзя.
      */
-    const val VERSION = 4
+    const val VERSION = 5
 
     class Result(val hash: Long, val parts: LongArray)
 

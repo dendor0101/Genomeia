@@ -9,6 +9,8 @@ import io.github.some_example_name.old.commands.GoEcoSystem
 import io.github.some_example_name.old.commands.GoExit
 import io.github.some_example_name.old.commands.GoGenomeEditor
 import io.github.some_example_name.old.commands.GoGenomes
+import io.github.some_example_name.old.commands.GoGuide
+import io.github.some_example_name.old.commands.GoTutorial
 import io.github.some_example_name.old.commands.GoMenu
 import io.github.some_example_name.old.commands.GoReplace
 import io.github.some_example_name.old.commands.GoSettings
@@ -40,6 +42,8 @@ import io.github.some_example_name.old.editor.system.logic.TryToChange
 import io.github.some_example_name.old.editor.system.logic.TryToDivide
 import io.github.some_example_name.old.editor.system.logic.TryToMutate
 import io.github.some_example_name.old.editor.system.logic.TryToRemove
+import io.github.some_example_name.old.editor.system.logic.TutorialNextStep
+import io.github.some_example_name.old.features.guide.GuideIntent
 import io.github.some_example_name.old.features.devsupport.SupportIntent
 import io.github.some_example_name.old.features.genomes.GenomesIntent
 import io.github.some_example_name.old.features.menu.MenuIntent
@@ -94,6 +98,8 @@ object CommandRegistry {
         t<EcoSystemScreenGlobalSettings>(110),
         t<EcoSystemScreenCellsSettings>(111),
         t<GoGenomes>(112),
+        t<GoGuide>(113),
+        t<GoTutorial>(114),
 
         // --- Главное меню ---
         t<MenuIntent.OpenWorldEditor>(200),
@@ -107,6 +113,7 @@ object CommandRegistry {
         t<MenuIntent.MapImported>(208),
         t<MenuIntent.OpenGenomes>(209),
         t<MenuIntent.DeleteWorld>(210),
+        t<MenuIntent.OpenGuide>(211),
 
         // --- Настройки ---
         t<SettingsIntent.SelectTab>(300),
@@ -115,6 +122,7 @@ object CommandRegistry {
         t<SettingsIntent.SetLanguage>(303),
         t<SettingsIntent.OpenGithub>(304),
         t<SettingsIntent.SetRenderMode>(305),
+        t<SettingsIntent.SetShowHints>(306),
 
         // --- Поддержка ---
         t<SupportIntent.CopyAddress>(400),
@@ -184,6 +192,7 @@ object CommandRegistry {
         t<SaveGenome>(824),
         t<ExportGenome>(825),
         t<EditorZoomCamera>(826),
+        t<TutorialNextStep>(827),
 
         // --- События потока симуляции ---
         t<SessionStarted>(900),
@@ -200,6 +209,15 @@ object CommandRegistry {
         t<GenomesIntent.Delete>(1004),
         t<GenomesIntent.Rename>(1005),
         t<GenomesIntent.Share>(1006),
+
+        // --- Гайд ---
+        t<GuideIntent.SelectTab>(1100),
+        t<GuideIntent.StartTutorial>(1101),
+        t<GuideIntent.SelectFormula>(1102),
+        t<GuideIntent.SetCoefficient>(1103),
+        t<GuideIntent.SetInput>(1104),
+        t<GuideIntent.SetInputCount>(1105),
+        t<GuideIntent.SetCombine>(1106),
     )
 
     private val byClass: Map<KClass<*>, Type<*>> = types.associateBy { it.kClass }

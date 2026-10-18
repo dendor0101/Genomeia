@@ -19,6 +19,7 @@ import io.github.some_example_name.old.editor.system.logic.TryToDivide
 import io.github.some_example_name.old.editor.system.logic.UiEditorCommands
 import io.github.some_example_name.old.features.devsupport.SupportIntent
 import io.github.some_example_name.old.features.genomes.GenomesIntent
+import io.github.some_example_name.old.features.guide.GuideIntent
 import io.github.some_example_name.old.features.menu.MenuIntent
 import io.github.some_example_name.old.features.settings.SettingsIntent
 import io.github.some_example_name.old.features.settings.SettingsTab
@@ -55,6 +56,7 @@ class CommandRegistryTest {
         PlayerCommand::class,
         UiEditorCommands::class,
         SimEvent::class,
+        GuideIntent::class,
     )
 
     @Test

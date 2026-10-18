@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.features.editor.dialog
 
+import io.github.some_example_name.old.core.ui.hint
 import com.kotcrab.vis.ui.widget.VisSlider
 import com.kotcrab.vis.ui.widget.VisTable
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
@@ -23,7 +24,7 @@ object DirectedSection : CellEditorSection {
         val actionSystem = dialog.actionSystem
         val angleAction = (actionSystem.angleDirected * (180 / PI.toFloat()) * 10).roundToInt() / 10.0f
 
-        val angleLabel = visLabel(text = "${bundle.get("button.angle")}: $angleAction", font = game.extraLargeFont)
+        val angleLabel = visLabel(text = "${bundle.get("button.angle")}: $angleAction", font = game.extraLargeFont).hint(bundle.get("editor.hint.angle"))
         row()
 
         visTable({ growX().expandX() }) {
@@ -37,8 +38,8 @@ object DirectedSection : CellEditorSection {
                 }
             }
 
-            visTextButton("<<", onClick = { changeAngle(-1f) })
-            visTextButton("<", onClick = { changeAngle(-0.1f) })
+            visTextButton("<<", onClick = { changeAngle(-1f) }).hint(bundle.get("editor.hint.angleStep"))
+            visTextButton("<", onClick = { changeAngle(-0.1f) }).hint(bundle.get("editor.hint.angleFine"))
 
             angleSlider = visSlider(
                 min = -180f,
@@ -55,10 +56,10 @@ object DirectedSection : CellEditorSection {
                 }
             ) {
                 growX().expandX()
-            }
+            }.hint(bundle.get("editor.hint.angle"))
 
-            visTextButton(">", onClick = { changeAngle(0.1f) })
-            visTextButton(">>", onClick = { changeAngle(1f) })
+            visTextButton(">", onClick = { changeAngle(0.1f) }).hint(bundle.get("editor.hint.angleFine"))
+            visTextButton(">>", onClick = { changeAngle(1f) }).hint(bundle.get("editor.hint.angleStep"))
         }
         row()
     }

@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.features.editor.dialog
 
+import io.github.some_example_name.old.core.ui.hint
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.scenes.scene2d.Action
@@ -48,6 +49,10 @@ class SymmetryDialog(
         buttonGroup.setMaxCheckCount(1); buttonGroup.setMinCheckCount(1)
         listOf(noSymmetryButton, axialButton, squareGridButton, triangleGridButton)
             .forEach { game.applyCustomFont(it) }
+        noSymmetryButton.hint(bundle.get("editor.hint.symmetryNone"))
+        axialButton.hint(bundle.get("editor.hint.symmetryAxial"))
+        squareGridButton.hint(bundle.get("editor.hint.symmetrySquare"))
+        triangleGridButton.hint(bundle.get("editor.hint.symmetryTriangle"))
 
         // 2-column grid of radio buttons
         val radioGrid = VisTable()

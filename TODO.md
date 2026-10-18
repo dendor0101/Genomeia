@@ -508,3 +508,24 @@ px/py/invMass; у настоящих тел — обычно 2.1 КБ, макс�
   `Index -1 out of bounds for length 400` в `bugReplayCheck -Pworkers=2
   -PgrowTicks=3000 -PspawnGrid=4 -PhashPeriod=1`. Повторён до сохранения карты
   и на базе `b22e6c2`, и в ветке `.map`; проверка и её пороги не менялись.
+
+## 7. Гайд и обучение
+
+- [x] Вкладка «Гайд» в меню (`GoGuide` 113, `MenuIntent.OpenGuide` 211, `GuideIntent` 1100-1101,
+  `CommandSource.GUIDE` 10): обучение и описание клеток (`cell.<key>.description`).
+- [x] Обучение — редактор генома в режиме `GoTutorial` (114) с панелью шагов
+  (`editor/tutorial`). Задания засчитываются по командам редактора и правкам истории
+  (`EditorHistoryListener`), шаг листается командой `TutorialNextStep` (827), поэтому
+  повтор `.bug` проходит обучение так же, как игрок. Итог — «Франкенштейн»: Controller -> Tail,
+  нейроны y = t -> cos -> Muscle x2 и Chameleon; форма не проверяется.
+- [x] Подсказки при наведении / зажатии на элементах редактора (`Actor.hint`), общий флаг
+  `GlobalSettings.SHOW_HINTS` (настройки, вкладка «Графика», `SetShowHints` 306).
+- [x] Вкладка «Формулы»: стенд одного нейрона (`features/guide/FormulaLabView`, `NeuronLab`) —
+  входы и a, b, c ползунками, график y(x) или сигнала во времени (`Formula.dependsOnTime`),
+  описание каждой формулы (`formula.<key>.description`). Нейрон стенда — своя маленькая
+  `CellEntity`, а не интерфейс у формул: замер 17.10 — вторая реализация интерфейса даёт
+  +12..15% на вызовах формул. Команды `GuideIntent` 1102-1106.
+- [ ] Пользователю: вычитать описания клеток (`cell.*.description`), формул
+  (`formula.*.description`) и тексты шагов
+  во всех четырёх `MyBundle*.properties` — они написаны по коду и могут быть неточны.
+- [ ] Проверить панель обучения на телефоне (узкий экран, клавиатура поверх полей a/b/c).

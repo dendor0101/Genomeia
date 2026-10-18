@@ -1,6 +1,8 @@
 package io.github.some_example_name.old.cells.base
 
+import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.entities.CellEntity
+import java.util.MissingResourceException
 import io.github.some_example_name.old.systems.genomics.genome.LegacyTypeIds
 import kotlin.math.abs
 import kotlin.math.cos
@@ -21,6 +23,26 @@ import kotlin.math.sin
  */
 abstract class Formula(val key: String, val label: String) {
     abstract fun compute(cells: CellEntity, cellIndex: Int, x: Float): Float
+
+    /**
+     * Выход зависит не только от входа x, но и от времени, памяти нейрона или состояния
+     * клетки (Time, Remember, Spike, Energy…). Такую формулу стенд гайда рисует как сигнал
+     * во времени, а не как кривую y(x): одному x у неё соответствует разный y. Симуляция
+     * этим не пользуется.
+     */
+    open val dependsOnTime: Boolean get() = false
+
+    /**
+     * Что делает формула — для гайда. Ключ в I18NBundle: `formula.<key>.description`; у
+     * формулы мода без описания — пустая строка. Лениво: тесты :core живут без Gdx.
+     */
+    val description: String by lazy {
+        try {
+            bundle.get("formula.$key.description")
+        } catch (e: MissingResourceException) {
+            ""
+        }
+    }
 }
 
 /**
@@ -120,11 +142,13 @@ private object StepLt : Formula("step_lt", "y = b, x < a; y = c, x >= a") {
 }
 
 private object Time : Formula("time", "y = t") {
+    override val dependsOnTime get() = true
     override fun compute(cells: CellEntity, cellIndex: Int, x: Float) =
         cells.simulationData.timeSimulation + cellIndex
 }
 
 private object Impulse : Formula("impulse", "y = impulse(a), x>=1") {
+    override val dependsOnTime get() = true
     override fun compute(cells: CellEntity, cellIndex: Int, x: Float): Float = with(cells) {
         if (x >= 1f && simulationData.timeSimulation > getDTime(cellIndex)) {
             setDTime(cellIndex, simulationData.timeSimulation + getA(cellIndex))
@@ -148,12 +172,21 @@ private object Pow : Formula("pow", "y = x^(a)") {
     override fun compute(cells: CellEntity, cellIndex: Int, x: Float) = x.pow(cells.getA(cellIndex))
 }
 
+/**
+ * Память: положительный вход запоминается, ноль её не трогает, отрицательный стирает.
+ *
+ * До 17.10 ноль тоже стирал (`x <= 0`), и формула работала как y = max(x, 0) — память не
+ * держалась ни тика. Поменялась математика, поэтому StateHash.VERSION 5: хэши старых .bug
+ * с этой формулой разошлись бы на первом же нуле на входе.
+ */
 private object Remember : Formula("remember", "y = remember(x), x > 0") {
+    override val dependsOnTime get() = true
+
     override fun compute(cells: CellEntity, cellIndex: Int, x: Float): Float = with(cells) {
-        if (x > 0) {
+        if (x > 0f) {
             setRemember(cellIndex, x)
-        } else if (x <= 0) {
-            setRemember(cellIndex, 0.0f)
+        } else if (x < 0f) {
+            setRemember(cellIndex, 0f)
         }
         getRemember(cellIndex)
     }
@@ -177,6 +210,7 @@ private object Blue : Formula("blue", "y = b(x)") {
 }
 
 private object Energy : Formula("energy", "y = energy") {
+    override val dependsOnTime get() = true
     override fun compute(cells: CellEntity, cellIndex: Int, x: Float) =
         cells.energy[cellIndex] / cells.maxEnergy[cellIndex]
 }
@@ -186,11 +220,13 @@ private object Energy : Formula("energy", "y = energy") {
  * в новых для этого есть клетка Controller, у которой клавиша хранится по имени.
  */
 private object ControllerKey : Formula("controller", "y = controller(a)") {
+    override val dependsOnTime get() = true
     override fun compute(cells: CellEntity, cellIndex: Int, x: Float) =
         if (cells.simulationData.controllerKeys[cells.getA(cellIndex).toInt()]) 1f else 0f + x
 }
 
 private object Decay : Formula("decay", "y = decay(x - a), (b, c)") {
+    override val dependsOnTime get() = true
     override fun compute(cells: CellEntity, cellIndex: Int, x: Float): Float = with(cells) {
         val decay = getA(cellIndex)
         val min = getB(cellIndex)
@@ -213,6 +249,7 @@ private object Decay : Formula("decay", "y = decay(x - a), (b, c)") {
 }
 
 private object Spike : Formula("spike", "y = spike(x) = 1, dx >= a") {
+    override val dependsOnTime get() = true
     override fun compute(cells: CellEntity, cellIndex: Int, x: Float): Float = with(cells) {
         val dx = x - getRemember(cellIndex)
         setRemember(cellIndex, x)
@@ -229,6 +266,7 @@ private object Abs : Formula("abs", "y = |x|") {
 }
 
 private object LinksAmount : Formula("links_amount", "y = links amount") {
+    override val dependsOnTime get() = true
     override fun compute(cells: CellEntity, cellIndex: Int, x: Float) = cells.linkAmount[cellIndex].toFloat()
 }
 

@@ -18,7 +18,10 @@ enum class CommandSource(val code: Int, val label: String) {
     SYSTEM(8, "System"),
 
     /** Экран «Геномы»: свои и встроенные геномы, импорт, удаление, переименование. */
-    GENOMES(9, "Genomes");
+    GENOMES(9, "Genomes"),
+
+    /** Гайд игрока: обучение редактору генома, описание клеток, стенд формул. */
+    GUIDE(10, "Guide");
 
     companion object {
         private val byCode = entries.associateBy { it.code }

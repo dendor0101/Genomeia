@@ -8,7 +8,7 @@ import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
 import io.github.some_example_name.old.core.ui.dp
-import io.github.some_example_name.old.core.ui.hoverPopup
+import io.github.some_example_name.old.core.ui.hint
 import io.github.some_example_name.old.core.ui.visLabel
 import io.github.some_example_name.old.core.ui.visTable
 import io.github.some_example_name.old.core.ui.visTextField
@@ -383,7 +383,7 @@ object SynapseSection : CellEditorSection {
         // Пояснение висит и на названии, и на поле: на телефоне зажатие названия показывает
         // его, не открывая клавиатуру.
         visLabel("$name:", font = game.extraLargeFont) { left().padRight(16.dp()) }
-            .hoverPopup { visLabel(hint) }
+            .hint(hint)
         visTextField(
             text = if (zeroMeansDefault && value <= 0f) "" else value.toString(),
             hint = default.toString(),
@@ -392,7 +392,7 @@ object SynapseSection : CellEditorSection {
                 if (text.isBlank()) onChange(default) else text.toFloatOrNull()?.let(onChange)
             }
         ) { left() }
-            .hoverPopup { visLabel(hint) }
+            .hint(hint)
         row()
     }
 }

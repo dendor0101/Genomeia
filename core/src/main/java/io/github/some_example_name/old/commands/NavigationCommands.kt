@@ -66,6 +66,18 @@ object GoGenomes : Menu() {
     override val name get() = "GoGenomes"
 }
 
+/** Гайд игрока: обучение редактору генома и описание клеток. */
+@Serializable
+object GoGuide : Menu() {
+    override val name get() = "GoGuide"
+}
+
+/** Обучение: редактор генома с новым геномом и шагами обучения (EditorTutorial). */
+@Serializable
+object GoTutorial : Menu() {
+    override val name get() = "GoTutorial"
+}
+
 @Serializable
 object GoSettings : Menu() {
     override val name get() = "GoSettings"
@@ -120,6 +132,8 @@ fun navigationCommandByName(name: String): NavigationCommands? = when (name.trim
     GoSupport.name -> GoSupport
     "GoGenomeEditor" -> GoGenomeEditor(null)
     GoGenomes.name -> GoGenomes
+    GoGuide.name -> GoGuide
+    GoTutorial.name -> GoTutorial
     GoBack.name -> GoBack
     GoExit.name -> GoExit
     else -> null

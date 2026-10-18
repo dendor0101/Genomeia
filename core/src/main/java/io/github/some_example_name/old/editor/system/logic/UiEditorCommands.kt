@@ -236,3 +236,12 @@ class ZoomCamera(val zoom: Float, val x: Float, val y: Float): UiEditorCommands 
     override val name get() = "ZoomCamera"
     override val detail get() = String.format(Locale.ROOT, "%.4f", zoom)
 }
+
+/**
+ * Обучение: следующий шаг. Шаг меняется только этой командой, поэтому повтор .bug
+ * листает обучение там же, где игрок (см. EditorTutorial).
+ */
+@Serializable
+object TutorialNextStep: UiEditorCommands {
+    override val name get() = "TutorialNext"
+}

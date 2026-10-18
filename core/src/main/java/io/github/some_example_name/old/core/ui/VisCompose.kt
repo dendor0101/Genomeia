@@ -386,6 +386,16 @@ fun VisTable.visScrollPane(
             override fun enter(event: InputEvent?, x: Float, y: Float, pointer: Int, fromActor: Actor?) {
                 stage?.scrollFocus = this@apply
             }
+
+            // Курсор ушёл — фокус колеса отдаём обратно. Иначе прокрутка держала его и
+            // дальше, и колесо над полем не зумило камеру (в редакторе генома — после
+            // прокрутки панели обучения). Переход на свои же дочерние элементы — не уход.
+            override fun exit(event: InputEvent?, x: Float, y: Float, pointer: Int, toActor: Actor?) {
+                val stage = stage ?: return
+                if (pointer == -1 && stage.scrollFocus === this@apply && toActor?.isDescendantOf(this@apply) != true) {
+                    stage.scrollFocus = null
+                }
+            }
         })
     }
 

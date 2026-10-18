@@ -162,6 +162,14 @@ class SettingsScreen : VisDslScreen(
             )
             this.add(selectBox) as Cell<StyledSelectBox<String>>
         }
+        row()
+
+        visToggleButton(
+            text = bundle.get("settings.showHints"),
+            checked = GlobalSettings.SHOW_HINTS,
+            onCheckedChange = { viewModel.handle(SettingsIntent.SetShowHints(it)) }
+        ) { left().padTop(16.dp()) }
+        row()
     }
 
     fun VisTable.language() {
