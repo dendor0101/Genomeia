@@ -119,6 +119,9 @@ class GenomePreviewCache(
     }
 
     private fun renderPreview(name: String): FrameBuffer? {
+        // Свой геном могли удалить или переименовать, пока он ждал очереди (в том же кадре):
+        // картинка ему уже не нужна, и это не ошибка.
+        if (!GenomeCatalog.isBundled(name) && !genomeFile(name).exists()) return null
         val preview = try {
             GenomeCatalog.load(name).preview
         } catch (e: Exception) {
@@ -182,7 +185,9 @@ class GenomePreviewCache(
     /** Время изменения файла своего генома; у встроенных — ноль, они за запуск не меняются. */
     private fun stampOf(name: String): Long =
         if (GenomeCatalog.isBundled(name)) 0L
-        else GameFiles.genomesDir().child(name + GenomeImport.EXTENSION).lastModified()
+        else genomeFile(name).lastModified()
+
+    private fun genomeFile(name: String) = GameFiles.genomesDir().child(name + GenomeImport.EXTENSION)
 
     private companion object {
         const val TAG = "GenomePreview"
