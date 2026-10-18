@@ -60,6 +60,18 @@ class GoGenomeEditor(val genomeName: String?) : Menu() {
     override val detail get() = genomeName ?: "new"
 }
 
+/** Гайд игрока: обучение редактору генома и описание клеток. */
+@Serializable
+object GoGuide : Menu() {
+    override val name get() = "GoGuide"
+}
+
+/** Обучение: редактор генома с новым геномом и шагами обучения (EditorTutorial). */
+@Serializable
+object GoTutorial : Menu() {
+    override val name get() = "GoTutorial"
+}
+
 @Serializable
 object GoSettings : Menu() {
     override val name get() = "GoSettings"
@@ -113,6 +125,8 @@ fun navigationCommandByName(name: String): NavigationCommands? = when (name.trim
     GoEcoSystem.name -> GoEcoSystem
     GoSupport.name -> GoSupport
     "GoGenomeEditor" -> GoGenomeEditor(null)
+    GoGuide.name -> GoGuide
+    GoTutorial.name -> GoTutorial
     GoBack.name -> GoBack
     GoExit.name -> GoExit
     else -> null

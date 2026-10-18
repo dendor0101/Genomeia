@@ -49,6 +49,13 @@ sealed interface SettingsIntent : GameCommand {
         override val detail get() = renderMode.toString()
     }
 
+    /** Подсказки при наведении (на телефоне — при зажатии) на элементы редактора генома. */
+    @Serializable
+    data class SetShowHints(val visible: Boolean) : SettingsIntent {
+        override val name get() = "SetShowHints"
+        override val detail get() = visible.toString()
+    }
+
     @Serializable
     data object OpenGithub : SettingsIntent {
         override val name get() = "OpenGithub"
@@ -96,6 +103,11 @@ class SettingsViewModel {
 
             is SettingsIntent.SetRenderMode -> {
                 GlobalSettings.RENDER_MODE = intent.renderMode
+                UserPreferences.save()
+            }
+
+            is SettingsIntent.SetShowHints -> {
+                GlobalSettings.SHOW_HINTS = intent.visible
                 UserPreferences.save()
             }
 
@@ -164,5 +176,11 @@ object GlobalSettings {
     var MUSIC_VOLUME = 0
     var SOUND_VOLUME = 50
     var RENDER_MODE = 0
+
+    /**
+     * Общий флаг всплывающих подсказок интерфейса (core/ui/hint). Только вид: на игру и
+     * повтор .bug не влияет.
+     */
+    var SHOW_HINTS = true
     var currentLanguageTag: String = Locale.getDefault().toLanguageTag()
 }

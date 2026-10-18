@@ -26,6 +26,7 @@ import io.github.some_example_name.old.editor.system.CellSearchManager
 import io.github.some_example_name.old.editor.system.control.LeftRightClickManager
 import io.github.some_example_name.old.editor.system.control.TryActionManager
 import io.github.some_example_name.old.editor.system.simulation.EditorSimulationSystem
+import io.github.some_example_name.old.editor.tutorial.EditorTutorial
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.ParticleEntity
@@ -49,6 +50,16 @@ class EditorLogicSystem(
 ): RestartSimulationCallBack {
 
     private lateinit var camera: OrthographicCamera
+
+    /**
+     * Обучение, если редактор открыт в нём (GoTutorial), иначе null. Его выставляет и
+     * снимает экран; задания обучения смотрят на каждую команду отсюда.
+     */
+    var tutorial: EditorTutorial? = null
+        set(value) {
+            field = value
+            commandEditorStackManager.historyListener = value
+        }
 
     init {
         commandEditorStackManager.bind(this)
@@ -75,8 +86,10 @@ class EditorLogicSystem(
      */
     fun putUiCommand(command: UiEditorCommands) =
         SessionJournal.execute(CommandSource.EDITOR, command) {
+            tutorial?.beforeCommand(it)
             applyCommand(it)
             dropStaleNeuralLinkStart()
+            tutorial?.afterCommand(it)
         }
 
     private fun applyCommand(command: UiEditorCommands) {
@@ -204,6 +217,8 @@ class EditorLogicSystem(
             is ExportGenome -> if (!BugReplay.isActive) {
                 DIGameGlobalContainer.game.multiPlatformFileProvider.exportGenome("genomes/${command.genomeName}.genome")
             }
+
+            TutorialNextStep -> tutorial?.nextStep()
 
             is ZoomCamera -> {
                 camera.zoom = command.zoom

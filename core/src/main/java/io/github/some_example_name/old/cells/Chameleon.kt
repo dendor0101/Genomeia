@@ -5,6 +5,7 @@ import io.github.some_example_name.old.cells.base.SpecialModData
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
 import io.github.some_example_name.old.core.ui.dp
+import io.github.some_example_name.old.core.ui.hint
 import io.github.some_example_name.old.core.ui.visLabel
 import io.github.some_example_name.old.core.ui.visTable
 import io.github.some_example_name.old.core.ui.visToggleButton
@@ -90,6 +91,7 @@ object ChameleonSection : CellEditorSection {
 
         visTable({ left().padBottom(32.dp()) }) {
             visLabel(bundle.get("chameleon.channels"), font = game.extraLargeFont) { padRight(16.dp()) }
+                .hint(bundle.get("editor.hint.chameleonChannels"))
             var channels = current.channels
             listOf("R" to ChameleonData.RED, "G" to ChameleonData.GREEN, "B" to ChameleonData.BLUE).forEach { (name, bit) ->
                 visToggleButton(
@@ -99,7 +101,7 @@ object ChameleonSection : CellEditorSection {
                         channels = if (on) channels or bit else channels and bit.inv()
                         actionSystem.action = actionSystem.action.copy(special = ChameleonData(channels))
                     }
-                ) { padRight(8.dp()) }
+                ) { padRight(8.dp()) }.hint(bundle.get("editor.hint.chameleonChannels"))
             }
         }
         row()

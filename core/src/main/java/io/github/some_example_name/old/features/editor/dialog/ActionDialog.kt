@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.features.editor.dialog
 
+import io.github.some_example_name.old.core.ui.hint
 import com.kotcrab.vis.ui.widget.VisDialog
 import com.kotcrab.vis.ui.widget.VisTable
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
@@ -97,7 +98,7 @@ class ActionDialog(
                 dialog.pack()
                 dialog.centerWindow()
             }
-        ) { left() }
+        ) { left() }.hint(bundle.get("editor.hint.cellType"))
         row()
 
         dynamicContent = visTable { }
@@ -107,15 +108,15 @@ class ActionDialog(
         if (actionDialogType == ActionDialogType.DIVIDE || actionDialogType == ActionDialogType.CHANGE_REMOVE) {
             //Настройка радиуса клетки при делении
             val defaultRadius = actionSystem.action.radius ?: PARTICLE_MAX_RADIUS
-            val radiusLabel = visLabel("Radius: $defaultRadius", font = game.extraLargeFont)
+            val radiusLabel = visLabel("${bundle.get("button.radius")}: $defaultRadius", font = game.extraLargeFont).hint(bundle.get("editor.hint.radius"))
             row()
             visSlider(
                 0.2f, 0.5f, 0.01f, value = defaultRadius,
                 onValueChange = {
                     val radius = round(it * 100f) / 100f
                     actionSystem.action = actionSystem.action.copy(radius = radius)
-                    radiusLabel.setText("Radius: $radius")
-                }) { growX().expandX() }
+                    radiusLabel.setText("${bundle.get("button.radius")}: $radius")
+                }) { growX().expandX() }.hint(bundle.get("editor.hint.radius"))
             row()
         }
 
@@ -128,7 +129,7 @@ class ActionDialog(
                     initialDirectedAngle = if (cellList.byKey(cellType).isDirected) {
                         actionSystem.angleParent + (clickedCell.angleDirected ?: 0f)
                     } else null
-                )
+                ).hint(bundle.get("editor.hint.previewNow"))
 
                 visLabel("->", font = game.extraLargeFont)
             }
@@ -137,13 +138,13 @@ class ActionDialog(
             circleWidget = visCircleWidget(
                 initialColor = actionSystem.action.color ?: clickedCell.actual?.color ?: throw Exception("color is null"),
                 initialDirectedAngle = if (actionSystem.isDirected) actionSystem.angleParent + actionSystem.angleDirected else null
-            )
+            ).hint(bundle.get("editor.hint.preview"))
         }
         row()
 
         if (actionDialogType == ActionDialogType.MUTATION) {
             //Текст списка изменений в следствии mutation
-            visLabel(text = actionSystem.makeMutateList(), font = game.largeFont) { left().padLeft(8.dp()) }
+            visLabel(text = actionSystem.makeMutateList(), font = game.largeFont) { left().padLeft(8.dp()) }.hint(bundle.get("editor.hint.mutateList"))
             row()
         }
 
@@ -157,7 +158,7 @@ class ActionDialog(
                         circleWidget?.setCircleColor(it)
                     }
                 )
-            })
+            }).hint(bundle.get("editor.hint.cellColor"))
 
             visTextButton(
                 text = when (actionDialogType) {
@@ -182,6 +183,14 @@ class ActionDialog(
                     }
                     fadeOut()
                 }
+            ).hint(
+                bundle.get(
+                    when (actionDialogType) {
+                        ActionDialogType.DIVIDE -> "editor.hint.divide"
+                        ActionDialogType.MUTATION -> "editor.hint.mutate"
+                        ActionDialogType.CHANGE_REMOVE -> "editor.hint.change"
+                    }
+                )
             )
 
             if (actionDialogType == ActionDialogType.CHANGE_REMOVE) {
@@ -191,7 +200,7 @@ class ActionDialog(
                         onRemove?.invoke()
                         fadeOut()
                     }
-                )
+                ).hint(bundle.get("editor.hint.remove"))
             }
         }
 
@@ -205,7 +214,7 @@ class ActionDialog(
                     onCancelMutation?.invoke()
                     fadeOut()
                 }
-            ) { center() }
+            ) { center() }.hint(bundle.get("editor.hint.cancelMutation"))
         }
     }
 

@@ -6,7 +6,7 @@ import io.github.some_example_name.old.core.DIGameGlobalContainer
 import java.util.Locale
 
 /**
- * Настройки игрока, которые переживают перезапуск: звук и язык.
+ * Настройки игрока, которые переживают перезапуск: звук, язык, вид, подсказки.
  *
  * Лежат в libGDX Preferences (на десктопе — ~/.prefs/genomeia, на Android — SharedPreferences),
  * а не рядом с игрой, чтобы не зависеть от того, откуда запущена сборка.
@@ -21,6 +21,7 @@ object UserPreferences {
     private const val SOUND_VOLUME = "soundVolume"
     private const val LANGUAGE = "language"
     private const val RENDER_MODE = "render_mode"
+    private const val SHOW_HINTS = "show_hints"
 
     private val prefs by lazy { Gdx.app.getPreferences(NAME) }
 
@@ -32,6 +33,7 @@ object UserPreferences {
         GlobalSettings.SOUND_VOLUME = prefs.getInteger(SOUND_VOLUME, GlobalSettings.SOUND_VOLUME).coerceIn(0, 100)
 
         GlobalSettings.RENDER_MODE = prefs.getInteger(RENDER_MODE, GlobalSettings.RENDER_MODE)
+        GlobalSettings.SHOW_HINTS = prefs.getBoolean(SHOW_HINTS, GlobalSettings.SHOW_HINTS)
 
         val tag = prefs.getString(LANGUAGE, "")
         if (tag.isNotBlank()) {
@@ -48,6 +50,7 @@ object UserPreferences {
         prefs.putInteger(SOUND_VOLUME, GlobalSettings.SOUND_VOLUME)
         prefs.putString(LANGUAGE, GlobalSettings.currentLanguageTag)
         prefs.putInteger(RENDER_MODE, GlobalSettings.RENDER_MODE)
+        prefs.putBoolean(SHOW_HINTS, GlobalSettings.SHOW_HINTS)
         prefs.flush()
     }
 }

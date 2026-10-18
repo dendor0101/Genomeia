@@ -10,6 +10,7 @@ import io.github.some_example_name.old.features.editor.dialog.CellEditorSection
 import io.github.some_example_name.old.features.editor.dialog.DirectedSection
 import io.github.some_example_name.old.features.editor.dialog.NeuralSection
 import io.github.some_example_name.old.systems.genomics.genome.Action
+import java.util.MissingResourceException
 
 /**
  * Тип клетки: её поведение в симуляции и то, как она выглядит в редакторе.
@@ -57,8 +58,20 @@ abstract class Cell(
      */
     val name: String = displayName(key)
 
-    /** Лениво: так клетку можно создать без Gdx (в тестах :core), бандл нужен только UI. */
-    val description: String by lazy { descriptionBundle?.let { bundle.get(it) } ?: "" }
+    /**
+     * Что делает клетка — для гайда. Ключ в I18NBundle — [descriptionBundle], по умолчанию
+     * `cell.<key>.description`; у клетки мода без описания — пустая строка.
+     *
+     * Лениво: так клетку можно создать без Gdx (в тестах :core), бандл нужен только UI.
+     */
+    val description: String by lazy {
+        val bundleKey = descriptionBundle ?: "cell.$key.description"
+        try {
+            bundle.get(bundleKey)
+        } catch (e: MissingResourceException) {
+            ""
+        }
+    }
 
     /**
      * Свои данные клетки, которые игрок настраивает в ГЕНОМЕ (Action.special), — значение по

@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.features.editor.dialog
 
+import io.github.some_example_name.old.core.ui.hint
 import com.badlogic.gdx.graphics.Color
 import com.kotcrab.vis.ui.widget.VisSlider
 import com.kotcrab.vis.ui.widget.VisTable
@@ -31,7 +32,7 @@ object EyeSection : CellEditorSection {
     override fun VisTable.compose(dialog: CellDialog) {
         val actionSystem = dialog.actionSystem
         val distanceAction = (actionSystem.action.lengthDirected ?: actionSystem.clickedCell.actual?.lengthDirected ?: throw Exception("lengthDirected is null")) * 40f
-        val distanceLabel = visLabel("${bundle.get("button.distance")} $distanceAction", font = game.extraLargeFont)
+        val distanceLabel = visLabel("${bundle.get("button.distance")} $distanceAction", font = game.extraLargeFont).hint(bundle.get("editor.hint.eyeDistance"))
         row()
 
         var distanceSlider: VisSlider? = null
@@ -50,14 +51,14 @@ object EyeSection : CellEditorSection {
                     distanceLabel.setText("${bundle.get("button.distance")}: ${it.toInt()}")
 
                     actionSystem.action = actionSystem.action.copy(lengthDirected = it / 40f)
-                }) { growX().expandX() }
+                }) { growX().expandX() }.hint(bundle.get("editor.hint.eyeDistance"))
 
             visTextButton(">", onClick = { changeAngle(1f) })
         }
         row()
 
         visTable {
-            visLabel(bundle.get("button.colorRecognition"), font = game.extraLargeFont) { padRight(16.dp()) }
+            visLabel(bundle.get("button.colorRecognition"), font = game.extraLargeFont) { padRight(16.dp()) }.hint(bundle.get("editor.hint.eyeColor"))
 
             val color = getColorFromBits(actionSystem.action.colorRecognition ?: actionSystem.clickedCell.actual?.colorRecognition ?: throw Exception("colorRecognition is null"))
 
@@ -77,19 +78,19 @@ object EyeSection : CellEditorSection {
                 text = "R",
                 checked = color.r > 0f,
                 onCheckedChange = { updateColor() }
-            )
+            ).hint(bundle.get("editor.hint.eyeColor"))
 
             gButton = visToggleButton(
                 text = "G",
                 checked = color.g > 0f,
                 onCheckedChange = { updateColor() }
-            )
+            ).hint(bundle.get("editor.hint.eyeColor"))
 
             bButton = visToggleButton(
                 text = "B",
                 checked = color.b > 0f,
                 onCheckedChange = { updateColor() }
-            )
+            ).hint(bundle.get("editor.hint.eyeColor"))
         }
         row()
     }

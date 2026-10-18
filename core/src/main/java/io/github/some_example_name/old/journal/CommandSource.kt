@@ -15,7 +15,9 @@ enum class CommandSource(val code: Int, val label: String) {
     EDITOR(7, "Editor"),
 
     /** Сама игра, а не игрок: начало сессии симуляции, снимок клавиш, хэш состояния. */
-    SYSTEM(8, "System");
+    SYSTEM(8, "System"),
+
+    GUIDE(9, "Guide");
 
     companion object {
         private val byCode = entries.associateBy { it.code }

@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.features.editor.dialog
 
+import io.github.some_example_name.old.core.ui.hint
 import com.kotcrab.vis.ui.widget.VisDialog
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
@@ -24,14 +25,14 @@ class MutateOrDivideDialog(
             visTextButton(bundle.get("button.divide"), onClick = {
                 onDivide.invoke()
                 fadeOut()
-            }) { pad(8.dp()) }
+            }) { pad(8.dp()) }.hint(bundle.get("editor.hint.chooseDivide"))
 
             row()
 
             visTextButton(bundle.get("button.mutate"), onClick = {
                 onMutate.invoke()
                 fadeOut()
-            }) { pad(8.dp()) }
+            }) { pad(8.dp()) }.hint(bundle.get("editor.hint.chooseMutate"))
         }
 
         contentTable.add(rootTable)

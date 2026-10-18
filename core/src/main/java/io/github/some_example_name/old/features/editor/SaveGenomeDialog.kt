@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.features.editor
 
+import io.github.some_example_name.old.core.ui.hint
 import com.badlogic.gdx.Application
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Texture
@@ -46,7 +47,7 @@ class SaveGenomeDialog(
         visTable ( {growX().expandX()}) {
             visLabel(bundle.get("button.name")) {
                 pad(8.dp())
-            }
+            }.hint(bundle.get("editor.hint.genomeName"))
 
             genomeNameField = visTextField(text = genomeName, onTextChange = { text ->
                 val isDisabled = text.isEmpty()
@@ -55,7 +56,7 @@ class SaveGenomeDialog(
                 exportButton?.isDisabled = isDisabled
             }) {
                 growX().expandX()
-            }
+            }.hint(bundle.get("editor.hint.genomeName"))
         }
         row()
 
@@ -64,7 +65,7 @@ class SaveGenomeDialog(
                 val name = genomeNameField?.text ?: throw Exception("genomeNameField is null")
                 onSaveAndTest.invoke(name)
                 fadeOut()
-            })
+            }).hint(bundle.get("editor.hint.saveAndTest"))
         }
         row()
 
@@ -72,11 +73,11 @@ class SaveGenomeDialog(
             saveToFileButton = visTextButton(bundle.get("button.saveToFile"), onClick = {
                 val name = genomeNameField?.text ?: throw Exception("genomeNameField is null")
                 onSave.invoke(name)
-            })
+            }).hint(bundle.get("editor.hint.saveToFile"))
             if (isGoToMenu) {
                 visTextButton(bundle.get("button.menu"), onClick = {
                     onGoMenu.invoke()
-                }) { center() }
+                }) { center() }.hint(bundle.get("editor.hint.menuWithoutSaving"))
             }
         }
         row()
@@ -86,7 +87,7 @@ class SaveGenomeDialog(
                 exportButton = visTextButton(bundle.get("button.saveAndExport"), onClick = {
                     val name = genomeNameField?.text ?: throw Exception("genomeNameField is null")
                     onSaveAndExport.invoke(name)
-                }) { center() }
+                }) { center() }.hint(bundle.get("editor.hint.saveAndExport"))
             }
 
             visTextButton("Share with everyone", onClick = {

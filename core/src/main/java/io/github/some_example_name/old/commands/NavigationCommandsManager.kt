@@ -9,6 +9,7 @@ import io.github.some_example_name.old.journal.SessionJournal
 import io.github.some_example_name.old.features.devsupport.SupportScreen
 import io.github.some_example_name.old.features.ecosystem.EcoSystemScreen
 import io.github.some_example_name.old.features.editor.GenomeEditorScreen
+import io.github.some_example_name.old.features.guide.GuideScreen
 import io.github.some_example_name.old.features.menu.MenuScreen
 import io.github.some_example_name.old.features.settings.SettingsScreen
 import io.github.some_example_name.old.features.simulation.SimulationScreen
@@ -95,6 +96,8 @@ class NavigationCommandsManager {
         GoMenu -> MenuScreen()
         GoEcoSystem -> EcoSystemScreen()
         is GoGenomeEditor -> GenomeEditorScreen(command.genomeName)
+        GoGuide -> GuideScreen()
+        GoTutorial -> GenomeEditorScreen(genomeName = null, isTutorial = true)
         GoSettings -> SettingsScreen()
         is GoWorldEditor -> WorldEditorScreen(command.seed)
         GoSupport -> SupportScreen()
@@ -113,7 +116,9 @@ class NavigationCommandsManager {
             return
         }
         clearStack()
-        game.screen?.dispose()
+        // Текущий экран здесь НЕ освобождается: Gdx.app.exit() на всех платформах доходит
+        // до MyGame.dispose(), а тот освобождает экран сам. Раньше он освобождался дважды,
+        // и кнопка «Выход» в меню падала на втором Stage.dispose (буфер батча уже отдан).
         Gdx.app.exit()
     }
 

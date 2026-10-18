@@ -3,6 +3,7 @@ package io.github.some_example_name.old.features.editor
 import com.badlogic.gdx.Application
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Color
+import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.utils.Align
 import com.kotcrab.vis.ui.widget.VisLabel
@@ -38,6 +39,7 @@ import io.github.some_example_name.old.core.ui.STYLE_BLACK
 import io.github.some_example_name.old.core.ui.dp
 import io.github.some_example_name.old.core.ui.renderModeSelectBox
 import io.github.some_example_name.old.core.ui.globalVisTable
+import io.github.some_example_name.old.core.ui.hint
 import io.github.some_example_name.old.core.ui.visFlowRow
 import io.github.some_example_name.old.core.ui.visLabel
 import io.github.some_example_name.old.core.ui.visLeftArrowButton
@@ -65,7 +67,9 @@ class ComposeGenomeEditor {
         stage: Stage,
         editorSimulationSystem: EditorSimulationSystem,
         editorLogicSystem: EditorLogicSystem,
-        editorRenderSystem: EditorRenderSystem
+        editorRenderSystem: EditorRenderSystem,
+        /** Панель справа над полем (обучение); null — поле свободно целиком. */
+        sidePanel: Actor? = null
     ) {
         val rootTable = globalVisTable {
             setFillParent(true)
@@ -80,11 +84,11 @@ class ComposeGenomeEditor {
             ) {
                 visLeftArrowButton(onClick = {
                     stage.saveDialog(isGoToMenu = true, genomeName = editorSimulationSystem.getGenome().name, editorLogicSystem)
-                })
+                }).hint(bundle.get("editor.hint.back"))
 
                 visTextButton(bundle.get("button.saveGenome"), onClick = {
                     stage.saveDialog(isGoToMenu = false, genomeName = editorSimulationSystem.getGenome().name, editorLogicSystem)
-                })
+                }).hint(bundle.get("editor.hint.save"))
 
                 visToggleButton(
                     text = bundle.get("button.showPhysicalLink"),
@@ -92,28 +96,28 @@ class ComposeGenomeEditor {
                     onCheckedChange = {
                         editorLogicSystem.putUiCommand(SetShowPhysicalLinks(it))
                     }
-                )
+                ).hint(bundle.get("editor.hint.physicalLinks"))
 
-                visTextButton("Neural link color", onClick = {
+                visTextButton(bundle.get("button.neuralLinkColor"), onClick = {
                     stage.colorPickerDialog(
                         initColor = linkColor,
                         onFinished = { editorLogicSystem.putUiCommand(SetNeuralLinkColor(Color.rgba8888(it))) }
                     )
-                })
+                }).hint(bundle.get("editor.hint.linkColor"))
 
-                visTextButton("Symmetry", onClick = {
+                visTextButton(bundle.get("button.symmetry"), onClick = {
                     SymmetryDialog(
                         current = symmetryManager.symmetryMode,
                         onApply = { editorLogicSystem.putUiCommand(SetSymmetry(it)) }
                     ).show(stage)
-                })
+                }).hint(bundle.get("editor.hint.symmetry"))
 
                 // Режим — свой у редактора, с режимом симуляции не связан.
                 add(
                     renderModeSelectBox(
                         selected = editorRenderSystem.mode,
                         onSelect = { editorLogicSystem.putUiCommand(SetRenderMode(it)) }
-                    )
+                    ).hint(bundle.get("editor.hint.renderMode"))
                 )
 
                 if (Gdx.app.type == Application.ApplicationType.Android) {
@@ -123,7 +127,7 @@ class ComposeGenomeEditor {
                         onCheckedChange = {
                             editorLogicSystem.putUiCommand(SetNeuralLinking(it))
                         }
-                    )
+                    ).hint(bundle.get("editor.hint.neuralLinking"))
 
                     visToggleButton(
                         text = bundle.get("button.performLastAction"),
@@ -131,7 +135,7 @@ class ComposeGenomeEditor {
                         onCheckedChange = {
                             editorLogicSystem.putUiCommand(SetRepeatLastAction(it))
                         }
-                    )
+                    ).hint(bundle.get("editor.hint.repeatLast"))
                 }
 
 //                visSelectBox(arrayOf("Main genome", "arm", "head", "tail", "neuron"))
@@ -139,7 +143,10 @@ class ComposeGenomeEditor {
             }
             row()
 
-            add().expand().fill()
+            // Пустая ячейка ввод не перехватывает: нажатия идут в поле. Панель занимает
+            // только свой размер и не налезает ни на кнопки, ни на шкалу времени.
+            if (sidePanel != null) add(sidePanel).expand().right().padRight(12.dp())
+            else add().expand().fill()
             row()
 
             visTable(
@@ -150,18 +157,18 @@ class ComposeGenomeEditor {
             ) {
                 defaults().pad(8.dp()).center()
 
-                undoButton = visTextButton("Undo", onClick = {
+                undoButton = visTextButton(bundle.get("button.undo"), onClick = {
                     editorLogicSystem.putUiCommand(CtrlZ)
-                })
+                }).hint(bundle.get("editor.hint.undo"))
 
                 tickLabel = visLabel(text = "${bundle.get("button.tick")}0", textColor = STYLE_BLACK, align = Align.center) {
                     expandX().fillX()
                     center()
-                }
+                }.hint(bundle.get("editor.hint.tick"))
 
-                redoButton = visTextButton("Redo", onClick = {
+                redoButton = visTextButton(bundle.get("button.redo"), onClick = {
                     editorLogicSystem.putUiCommand(CtrlY)
-                })
+                }).hint(bundle.get("editor.hint.redo"))
             }
 
             row()
@@ -176,11 +183,11 @@ class ComposeGenomeEditor {
 
                 visTextButton("<<", onClick = {
                     editorLogicSystem.putUiCommand(GoToStartOfTimeLine)
-                })
+                }).hint(bundle.get("editor.hint.timelineStart"))
 
                 visTextButton("<", onClick = {
                     editorLogicSystem.putUiCommand(PrevTickButtonTap)
-                })
+                }).hint(bundle.get("editor.hint.prevStage"))
 
                 timeSlider = visSlider(
                     min = 0f,
@@ -197,15 +204,15 @@ class ComposeGenomeEditor {
                 ) {
                     expandX().fillX()
                     pad(0f, 24.dp(), 0f, 24.dp())
-                }
+                }.hint(bundle.get("editor.hint.timeline"))
 
                 visTextButton(">", onClick = {
                     editorLogicSystem.putUiCommand(NextTickButtonTap)
-                })
+                }).hint(bundle.get("editor.hint.nextStage"))
 
                 visTextButton(">>", onClick = {
                     editorLogicSystem.putUiCommand(GoToEndOfTimeLine)
-                })
+                }).hint(bundle.get("editor.hint.timelineEnd"))
             }
         }
         stage.addActor(rootTable)

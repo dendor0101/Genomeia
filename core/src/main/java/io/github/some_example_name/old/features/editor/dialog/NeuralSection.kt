@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.features.editor.dialog
 
+import io.github.some_example_name.old.core.ui.hint
 import com.kotcrab.vis.ui.util.FloatDigitsOnlyFilter
 import com.kotcrab.vis.ui.widget.VisTable
 import io.github.some_example_name.old.cells.base.Formulas
@@ -35,33 +36,33 @@ object NeuralSection : CellEditorSection {
 
     override fun VisTable.compose(dialog: CellDialog) {
         val actionSystem = dialog.actionSystem
-        visLabel(bundle.get("button.inputSignals"), font = game.extraLargeFont) { left() }
+        visLabel(bundle.get("button.inputSignals"), font = game.extraLargeFont) { left() }.hint(bundle.get("editor.hint.combineInputs"))
         row()
 
         visTable ({ left().padBottom(32.dp()) }) {
-            visLabel("a:", font = game.extraLargeFont)
+            visLabel("a:", font = game.extraLargeFont).hint(bundle.get("editor.hint.coefA"))
             val a = actionSystem.action.a ?: actionSystem.clickedCell.actual?.a ?: throw Exception("a is null")
             visTextField(
                 text = a.toString(),
                 textFieldFilter = FloatDigitsOnlyFilter(true),
                 onTextChange = { text -> text.toFloatOrNull()?.let { actionSystem.action = actionSystem.action.copy(a = it) } }
-            ) { padRight(16.dp()) }
+            ) { padRight(16.dp()) }.hint(bundle.get("editor.hint.coefA"))
 
-            visLabel("b:", font = game.extraLargeFont)
+            visLabel("b:", font = game.extraLargeFont).hint(bundle.get("editor.hint.coefB"))
             val b = actionSystem.action.b ?: actionSystem.clickedCell.actual?.b ?: throw Exception("b is null")
             visTextField(
                 text = b.toString(),
                 textFieldFilter = FloatDigitsOnlyFilter(true),
                 onTextChange = { text -> text.toFloatOrNull()?.let { actionSystem.action = actionSystem.action.copy(b = it) } }
-            ) { padRight(16.dp()) }
+            ) { padRight(16.dp()) }.hint(bundle.get("editor.hint.coefB"))
 
-            visLabel("c:", font = game.extraLargeFont)
+            visLabel("c:", font = game.extraLargeFont).hint(bundle.get("editor.hint.coefC"))
             val c = actionSystem.action.c ?: actionSystem.clickedCell.actual?.c ?: throw Exception("c is null")
             visTextField(
                 text = c.toString(),
                 textFieldFilter = FloatDigitsOnlyFilter(true),
                 onTextChange = { text -> text.toFloatOrNull()?.let { actionSystem.action = actionSystem.action.copy(c = it) } }
-            )
+            ).hint(bundle.get("editor.hint.coefC"))
         }
 
         row()
@@ -78,7 +79,7 @@ object NeuralSection : CellEditorSection {
                 onChange = { _, choice ->
                     actionSystem.action = actionSystem.action.copy(funActivation = formulas[choice].key)
                 }
-            )
+            ).hint(bundle.get("editor.hint.formula"))
 
             val isSum = actionSystem.action.isSum ?: actionSystem.clickedCell.actual?.isSum ?: throw Exception("isSum is null")
             visSelectBox(
@@ -87,7 +88,7 @@ object NeuralSection : CellEditorSection {
                 onChange = { _, sumOrMultiply ->
                     actionSystem.action = actionSystem.action.copy(isSum = sumOrMultiply == 0)
                 }
-            )
+            ).hint(bundle.get("editor.hint.combineInputs"))
         }
 
         row()

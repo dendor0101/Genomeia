@@ -9,6 +9,7 @@ import io.github.some_example_name.old.bug.BugReplay
 import io.github.some_example_name.old.commands.GameCommand
 import io.github.some_example_name.old.commands.GoExit
 import io.github.some_example_name.old.commands.GoGenomeEditor
+import io.github.some_example_name.old.commands.GoGuide
 import io.github.some_example_name.old.commands.GoSettings
 import io.github.some_example_name.old.commands.GoSimulation
 import io.github.some_example_name.old.commands.GoSupport
@@ -92,6 +93,11 @@ sealed interface MenuIntent : GameCommand {
     data class MapImported(val slot: String, val attachment: String) : MenuIntent {
         override val name get() = "MapImported"
         override val detail get() = slot
+    }
+
+    @Serializable
+    data object OpenGuide : MenuIntent {
+        override val name get() = "OpenGuide"
     }
 
     @Serializable
@@ -195,6 +201,8 @@ class MenuViewModel(
                 SessionAttachments.markMapWritten(intent.slot)
                 navigation.performCommand(GoSimulation(world = null, genomeName = null, savedWorld = intent.slot))
             }
+
+            is MenuIntent.OpenGuide -> navigation.performCommand(GoGuide)
 
             is MenuIntent.OpenSettings -> navigation.performCommand(GoSettings)
 
