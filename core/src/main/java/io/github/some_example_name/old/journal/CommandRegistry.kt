@@ -123,6 +123,7 @@ object CommandRegistry {
         t<SettingsIntent.OpenGithub>(304),
         t<SettingsIntent.SetRenderMode>(305),
         t<SettingsIntent.SetShowHints>(306),
+        t<SettingsIntent.SetFullscreen>(307),
 
         // --- Поддержка ---
         t<SupportIntent.CopyAddress>(400),

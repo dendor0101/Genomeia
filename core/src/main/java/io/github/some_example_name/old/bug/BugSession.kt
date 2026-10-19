@@ -51,7 +51,10 @@ object BugSession {
         }
         DevStartup.applyStartCommand()
         // Прошлый запуск упал — теперь, когда игра снова жива, можно показать окно отчёта.
-        BugReports.pendingCrash()?.let { BugOverlay.showCrash(it) {} }
+        BugReports.pendingCrash()?.let {
+            CrashHandler.logPreviousCrash(it)
+            BugOverlay.showCrash(it, previousLaunch = true) {}
+        }
     }
 
     /**

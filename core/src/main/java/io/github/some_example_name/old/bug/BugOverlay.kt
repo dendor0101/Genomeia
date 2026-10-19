@@ -132,7 +132,7 @@ object BugOverlay {
      * Окно краша. Звать из потока рендера. [onClosed] — когда игрок закрыл окно: для краша
      * в фоновом потоке это сигнал завершить игру, см. CrashHandler.
      */
-    fun showCrash(bug: FileHandle, onClosed: () -> Unit) {
+    fun showCrash(bug: FileHandle, previousLaunch: Boolean = false, onClosed: () -> Unit) {
         // Игра упала, пока игрок писал отчёт: окно краша важнее, но набранный текст не
         // должен пропасть — он переезжает в окно краша и уйдёт в его .bug. Раньше окно
         // краша в такой момент просто не открывалось.
@@ -141,7 +141,7 @@ object BugOverlay {
             open.close()
             text
         } ?: ""
-        openReport(BugKind.CRASH, existing = bug, screenshot = null, description = typed, onClosed = onClosed)
+        openReport(BugKind.CRASH, existing = bug, screenshot = null, description = typed, previousLaunch = previousLaunch, onClosed = onClosed)
     }
 
     private fun openReport(
@@ -149,12 +149,13 @@ object BugOverlay {
         existing: FileHandle?,
         screenshot: ByteArray?,
         description: String = "",
+        previousLaunch: Boolean = false,
         onClosed: () -> Unit
     ) {
         val stage = stage ?: return
         if (dialog != null) return
         lateinit var opened: BugReportDialog
-        opened = BugReportDialog(kind, existing, screenshot, description) {
+        opened = BugReportDialog(kind, existing, screenshot, description, previousLaunch) {
             if (dialog === opened) dialog = null
             onClosed()
         }

@@ -9,6 +9,7 @@ import com.kotcrab.vis.ui.widget.VisTable
 import com.kotcrab.vis.ui.widget.VisTextButton
 import io.github.some_example_name.old.commands.GoBack
 import io.github.some_example_name.old.core.DIGameGlobalContainer
+import io.github.some_example_name.old.core.PlatformWindow
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DISimulationContainer.renderSystem
 import io.github.some_example_name.old.core.ui.StyledSelectBox
@@ -170,6 +171,16 @@ class SettingsScreen : VisDslScreen(
             onCheckedChange = { viewModel.handle(SettingsIntent.SetShowHints(it)) }
         ) { left().padTop(16.dp()) }
         row()
+
+        // Полный экран есть только на ПК; состояние берём у окна, а не храним: из него можно выйти и мимо кнопки.
+        if (PlatformWindow.isSupported) {
+            visToggleButton(
+                text = bundle.get("settings.fullscreen"),
+                checked = PlatformWindow.isFullscreen,
+                onCheckedChange = { viewModel.handle(SettingsIntent.SetFullscreen(it)) }
+            ) { left().padTop(16.dp()) }
+            row()
+        }
     }
 
     fun VisTable.language() {

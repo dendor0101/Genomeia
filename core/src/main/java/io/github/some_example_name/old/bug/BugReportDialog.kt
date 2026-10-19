@@ -57,10 +57,15 @@ class BugReportDialog(
     private val screenshot: ByteArray?,
     /** Уже набранное пояснение — когда окно краша сменяет недописанный отчёт. */
     private val initialDescription: String = "",
+    /** Краш случился при прошлом запуске, а не только что: окно предупреждает, что игра уже жива. */
+    private val previousLaunch: Boolean = false,
     private val onClosed: () -> Unit
-) : VisDialog(bundle.get(if (kind == BugKind.CRASH) "bug.title.crash" else "bug.title.report")) {
+) : VisDialog(bundle.get(titleKey(kind, previousLaunch))) {
 
     private var bug: FileHandle? = existing
+    private var crashLabel: VisLabel? = null
+    private var crashButton: VisTextButton? = null
+    private var crashShown = false
     private val textures = mutableListOf<Texture>()
     private lateinit var description: VisTextArea
     private lateinit var status: VisLabel
@@ -106,11 +111,24 @@ class BugReportDialog(
     private fun VisTable.composeContent() {
         defaults().pad(6.dp())
 
+        // Явная строка вверху: краш это или обращение игрока (жук) — по тексту окна не всегда ясно.
+        val crash = kind == BugKind.CRASH
         visLabel(
-            text = bundle.get(if (kind == BugKind.CRASH) "bug.text.crash" else "bug.text.report"),
-            font = game.mediumFont
+            text = bundle.get(if (crash) "bug.banner.crash" else "bug.banner.report"),
+            font = game.mediumFont,
+            textColor = if (crash) CRASH_COLOR else REPORT_COLOR
         ) { growX() }.setWrap(true)
         row()
+
+        val textKey = when {
+            !crash -> "bug.text.report"
+            previousLaunch -> "bug.text.crashPrevious"
+            else -> "bug.text.crash"
+        }
+        visLabel(text = bundle.get(textKey), font = game.mediumFont) { growX() }.setWrap(true)
+        row()
+
+        if (crash) composeCrashText()
 
         val style = makeStyledTextField(game, textures).style as VisTextField.VisTextFieldStyle
         description = VisTextArea(initialDescription, style).apply {
@@ -154,6 +172,39 @@ class BugReportDialog(
         // --- Приватность ---
         visLabel(text = bundle.get("bug.privacy"), font = game.mediumFont, textColor = PRIVACY_COLOR) { growX() }
             .setWrap(true)
+    }
+
+    /** Кнопка «показать текст краша» и скрытый до нажатия текст из crash.txt внутри .bug. */
+    private fun VisTable.composeCrashText() {
+        val label = VisLabel("", Label.LabelStyle(game.smallFont, Color.WHITE)).apply { setWrap(true) }
+        crashLabel = label
+        val button = makeStyledButton(bundle.get("bug.showCrash"), game, textures).apply {
+            addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: Actor?) = toggleCrashText()
+            })
+        }
+        crashButton = button
+        add(button).growX()
+        row()
+        // Ячейка с текстом пока пустая: пустой label занимал бы место.
+        crashCell = add().growX()
+        row()
+    }
+
+    private var crashCell: Cell<Actor>? = null
+
+    private fun toggleCrashText() {
+        val label = crashLabel ?: return
+        crashShown = !crashShown
+        if (crashShown && label.text.isEmpty()) {
+            val text = bug?.let { runCatching { BugFile.readEntry(it.file(), BugFile.CRASH) }.getOrNull() }
+                ?.toString(Charsets.UTF_8)
+            label.setText(text ?: bundle.get("bug.crashMissing"))
+        }
+        crashCell?.setActor(if (crashShown) label else null)
+        crashButton?.setText(bundle.get(if (crashShown) "bug.hideCrash" else "bug.showCrash"))
+        label.invalidateHierarchy()
+        pack()
     }
 
     private fun makeClearButton(): VisTextButton =
@@ -260,13 +311,24 @@ class BugReportDialog(
         }
     }
 
+    /**
+     * Игрок уже поделился крашем (сохранил, отправил, открыл «поделиться»): при следующем
+     * запуске окно повторно не показываем, не дожидаясь закрытия этого окна — игру могут
+     * закрыть и раньше.
+     */
+    private fun markHandled(file: FileHandle) {
+        if (kind == BugKind.CRASH) BugReports.clearPendingCrash(file)
+    }
+
     private fun save() {
         val file = ensureBug() ?: return
+        markHandled(file)
         showStatus(bundle.get("bug.saved") + file.file().absolutePath)
     }
 
     private fun share() {
         val file = ensureBug() ?: return
+        markHandled(file)
         if (!game.multiPlatformFileProvider.shareFile(file.file(), bundle.get("bug.title.report"))) {
             showStatus(bundle.get("bug.saved") + file.file().absolutePath)
         }
@@ -276,6 +338,7 @@ class BugReportDialog(
         val file = ensureBug() ?: return
         showStatus(bundle.get("bug.sending"))
         BugUploader.upload(file) { success, message ->
+            if (success) markHandled(file)
             showStatus(if (success) bundle.get("bug.sent") else bundle.get("bug.sendFailed") + message)
         }
     }
@@ -311,6 +374,14 @@ class BugReportDialog(
         const val MAX_IMAGES = 5
         const val MAX_IMAGE_BYTES = 10 * 1024 * 1024
         val PRIVACY_COLOR = Color(0.78f, 0.74f, 0.66f, 1f)
+        val CRASH_COLOR = Color(1f, 0.45f, 0.35f, 1f)
+        val REPORT_COLOR = Color(0.55f, 0.85f, 1f, 1f)
+
+        fun titleKey(kind: BugKind, previousLaunch: Boolean): String = when {
+            kind != BugKind.CRASH -> "bug.title.report"
+            previousLaunch -> "bug.title.crashPrevious"
+            else -> "bug.title.crash"
+        }
 
         /** Имя файла внутри .bug: только безопасные символы, расширение сохраняется. */
         fun safeName(name: String): String =

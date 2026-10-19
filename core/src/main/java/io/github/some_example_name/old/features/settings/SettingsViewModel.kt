@@ -3,6 +3,7 @@ package io.github.some_example_name.old.features.settings
 import io.github.some_example_name.old.commands.GameCommand
 import com.badlogic.gdx.Gdx
 import io.github.some_example_name.old.core.DIGameGlobalContainer
+import io.github.some_example_name.old.core.PlatformWindow
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
 import io.github.some_example_name.old.bug.BugReplay
 import io.github.some_example_name.old.journal.CommandSource
@@ -54,6 +55,13 @@ sealed interface SettingsIntent : GameCommand {
     data class SetShowHints(val visible: Boolean) : SettingsIntent {
         override val name get() = "SetShowHints"
         override val detail get() = visible.toString()
+    }
+
+    /** Полный экран на ПК. Вид окна, на мир не влияет; при повторе бага окно не трогаем. */
+    @Serializable
+    data class SetFullscreen(val enabled: Boolean) : SettingsIntent {
+        override val name get() = "SetFullscreen"
+        override val detail get() = enabled.toString()
     }
 
     @Serializable
@@ -110,6 +118,8 @@ class SettingsViewModel {
                 GlobalSettings.SHOW_HINTS = intent.visible
                 UserPreferences.save()
             }
+
+            is SettingsIntent.SetFullscreen -> if (!BugReplay.isActive) PlatformWindow.setFullscreen(intent.enabled)
 
             // При повторе бага браузер разработчику ни к чему.
             is SettingsIntent.OpenGithub -> if (!BugReplay.isActive) Gdx.net.openURI(GITHUB_URL)

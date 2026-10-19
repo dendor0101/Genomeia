@@ -4,10 +4,9 @@ import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application;
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration;
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3WindowAdapter;
 
+import io.github.some_example_name.old.core.PlatformWindow;
 import io.github.some_example_name.old.game.MyGame;
 
-import java.awt.Dimension;
-import java.awt.Toolkit;
 import java.util.Arrays;
 
 /**
@@ -37,7 +36,15 @@ public class Lwjgl3Launcher {
         configuration.setWindowListener(new Lwjgl3WindowAdapter() {
             @Override
             public void created(com.badlogic.gdx.backends.lwjgl3.Lwjgl3Window window) {
-                com.badlogic.gdx.Gdx.app.postRunnable(() -> game.openFiles(Arrays.asList(args)));
+                com.badlogic.gdx.Gdx.app.postRunnable(() -> {
+                    // Окно уже есть, рамка известна: вместить его в рабочую область до первого кадра игрока.
+                    PlatformWindow.INSTANCE.setFitWindow(() -> {
+                        WindowFit.fit();
+                        return kotlin.Unit.INSTANCE;
+                    });
+                    WindowFit.fit();
+                    game.openFiles(Arrays.asList(args));
+                });
             }
 
             @Override
@@ -52,37 +59,6 @@ public class Lwjgl3Launcher {
         Lwjgl3ApplicationConfiguration configuration = new Lwjgl3ApplicationConfiguration();
         configuration.setTitle("Genomeia");
 
-        // === НАДЁЖНЫЙ способ получить реальное разрешение экрана ===
-        Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
-        int screenWidth = screenSize.width;
-        int screenHeight = screenSize.height;
-
-        System.out.println("[Lwjgl3Launcher] Detected screen resolution: " + screenWidth + " × " + screenHeight);
-
-        // По умолчанию — 1300×1300
-        int windowSize = 1300;
-
-        // Если хотя бы одна сторона экрана меньше 1300 — делаем окно квадратным
-        if (screenWidth < 1300 || screenHeight < 1300) {
-            int minDimension = Math.min(screenWidth, screenHeight);
-            windowSize = (int) (minDimension * 0.8f);
-
-            // Минимальная защита — не меньше 640 пикселей
-            if (windowSize < 640) {
-                windowSize = 640;
-            }
-        }
-
-        // === САМАЯ ВАЖНАЯ ЗАЩИТА ===
-        // Убеждаемся, что окно точно помещается с учётом заголовка окна, рамок и панели задач
-        int maxSafeWidth = screenWidth - 40;   // небольшой отступ по ширине
-        int maxSafeHeight = screenHeight - 120; // отступ сверху (заголовок + панель задач)
-        windowSize = Math.min(windowSize, Math.min(maxSafeWidth, maxSafeHeight));
-
-        System.out.println("[Lwjgl3Launcher] Final window size: " + windowSize + " × " + windowSize);
-
-        configuration.setWindowedMode(windowSize, windowSize);
-
         configuration.useVsync(true);
         //// Limits FPS to the refresh rate of the currently active monitor, plus 1 to try to match fractional
         //// refresh rates. The Vsync setting above should limit the actual FPS to match the monitor.
@@ -93,7 +69,8 @@ public class Lwjgl3Launcher {
 //        configuration.useVsync(false);
 //        configuration.setForegroundFPS(60);
         // Размер окна можно задать снаружи: -Dgenomeia.width=1280 -Dgenomeia.height=720.
-        // Нужно для проверки вёрстки на разных разрешениях без правки кода.
+        // Нужно для проверки вёрстки на разных разрешениях без правки кода. Если окно не
+        // помещается на экран, его уменьшает и сдвигает WindowFit после создания.
         int windowWidth = Integer.getInteger("genomeia.width", 900);
         int windowHeight = Integer.getInteger("genomeia.height", 900);
         configuration.setWindowedMode(windowWidth, windowHeight);
