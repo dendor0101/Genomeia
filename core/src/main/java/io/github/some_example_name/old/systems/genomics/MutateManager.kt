@@ -5,7 +5,6 @@ import com.badlogic.gdx.utils.Disposable
 import io.github.some_example_name.old.cells.Cell
 import io.github.some_example_name.old.cells.base.Formulas
 import io.github.some_example_name.old.cells.Muscle
-import io.github.some_example_name.old.cells.Zygote
 import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.core.DISimulationContainer.cellsSettings
@@ -50,13 +49,6 @@ class MutateManager(
             val newCellType = action.cellType?.let(cellList::requireIndex)
             val newCell = newCellType?.let { cellList[it] } ?: lastCell
 
-            // Мутация в зиготу пока не делает ничего — ни типа, ни остальных полей. Зигота —
-            // корень нового организма, а клетка живёт в арене своего: перенести её в новую
-            // арену — отдельная работа (см. TODO.md). Раньше клетка оставалась в теле с
-            // cellGenomeId = 0 и начинала выполнять действия генома корня. Счётчик мутаций
-            // уменьшен выше, так что стадия организма не застрянет.
-            if (newCell is Zygote && lastCell !is Zygote) return
-
             newCellType?.let {
                 isFromMuscleToAnother = lastCell is Muscle && newCell !is Muscle
 
@@ -92,6 +84,19 @@ class MutateManager(
                 worldCommandsManager.worldCommandBuffer[threadId].push(
                     type = WorldCommandType.MUTATE_ON_START,
                     ints = intArrayOf(index, threadId, genomeIndex)
+                )
+            }
+
+            // Мутация в зиготу делает клетку зиготой-пустышкой (CellEntity.isDormantZygote): в
+            // теле она остаётся и ничего не растит — новое тело на старом в арену организма
+            // не помещается. Действий следующих стадий она не получит (CellSystem), а деление
+            // ЭТОЙ стадии, если оно у неё было, засчитывается как сделанное: стадия ждёт его
+            // по счётчику, и без этого организм застрял бы на ней навсегда.
+            if (!isDividedInThisStage[index] && isDormantZygote(index)) {
+                isDividedInThisStage[index] = true
+                worldCommandsManager.worldCommandBuffer[threadId].push(
+                    type = WorldCommandType.DECREMENT_DIVIDE_COUNTER,
+                    ints = intArrayOf(organIndex[index])
                 )
             }
 

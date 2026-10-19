@@ -162,7 +162,12 @@ class CellSystem(
             if (organEntity.justChangedStage[organIndex]) {
                 val currentStage = genomeManager.genomes[organEntity.genomeIndex[organIndex]]
                     .genomeStageInstruction[organEntity.stage[organIndex]]
-                val action = currentStage.cellActions[cellGenomeId[cellIndex]]
+                // Зигота-пустышка действий не получает вовсе — как клетка, которой в этой
+                // стадии делать нечего. Счётчики стадии её тогда не ждут, и организм
+                // растёт дальше без того, что выросло бы из неё.
+                val action =
+                    if (isDormantZygote(cellIndex)) null
+                    else currentStage.cellActions[cellGenomeId[cellIndex]]
                 val isDivideNotNull = action?.divide != null
                 val isMutateNotNull = action?.mutate != null
 

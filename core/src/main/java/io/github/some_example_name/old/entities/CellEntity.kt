@@ -1,6 +1,7 @@
 package io.github.some_example_name.old.entities
 
 import io.github.some_example_name.old.cells.Cell
+import io.github.some_example_name.old.cells.Zygote
 import io.github.some_example_name.old.cells.base.CellTypeList
 import io.github.some_example_name.old.cells.base.Formula
 import io.github.some_example_name.old.cells.base.Formulas
@@ -105,6 +106,16 @@ class CellEntity(
     var linkAmount = IntArray(maxAmount) { 0 }
     @Transient val organToIdToIndex = OrderedIntPairMap(maxAmount)
     var neuralConnections = Int2ObjectOpenHashMap<IntArrayList>()
+
+    /**
+     * Зигота-пустышка: стала зиготой делением или мутацией внутри тела, а не родилась
+     * корнем организма. Действий генома не получает, ничего не растит и энергии не
+     * копит — арена организма фиксирована при рождении и под новое тело на старом не
+     * рассчитана. Корень отличается номером в геноме: у него всегда
+     * [Zygote.ROOT_CELL_GENOME_ID], у клеток от деления — номер своего действия.
+     */
+    fun isDormantZygote(cellIndex: Int) =
+        cellGenomeId[cellIndex] != Zygote.ROOT_CELL_GENOME_ID && cellList[cellType[cellIndex].toInt()] is Zygote
 
     /**
      * Инлайн-список соседей по физическим связям: MAX_LINKS_PER_CELL слотов на клетку,

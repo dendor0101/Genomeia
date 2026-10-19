@@ -268,15 +268,29 @@ class OrganEntity(
     // жива ли ещё клетка, через которую связь узнавала свой организм.
     // ===================================================================================
 
+    // Запечённый слот в свободный список НЕ возвращается: он принадлежит своей клетке
+    // (связи) по раскладке, и та получает его напрямую, мимо списка. Попади он в список,
+    // его отдали бы и постороннему — тогда либо посторонний ляжет на место вернувшейся
+    // запечённой (addAt падает: «арена выдала занятый индекс»), либо вернувшаяся найдёт
+    // свой слот занятым. Так бывало, когда рвалась и создавалась заново запечённая связь,
+    // а следом приходила связь вне раскладки (ArenaFreeSlotsTest). Пока запечённая клетка
+    // мертва, её слот просто ждёт: место под неё в арене и так зарезервировано.
+
     fun releaseCellSlot(organIndex: Int, cellIndex: Int) {
         if (organIndex == -1) return
+        if (cellIndex - cellArenaBase[organIndex] < bakedCells(organIndex)) return
         freeListOf(cellFreeSlots, organIndex).add(cellIndex)
     }
 
     fun releaseLinkSlot(organIndex: Int, linkIndex: Int) {
         if (organIndex == -1) return
+        if (linkIndex - linkArenaBase[organIndex] < bakedLinks(organIndex)) return
         freeListOf(linkFreeSlots, organIndex).add(linkIndex)
     }
+
+    /** Сколько слотов в начале арены занято раскладкой — их адресует карта, а не список. */
+    private fun bakedCells(organIndex: Int) = arenaLayout[organIndex]?.cellsInLayout ?: 0
+    private fun bakedLinks(organIndex: Int) = arenaLayout[organIndex]?.linksInLayout ?: 0
 
     private fun freeListOf(lists: Array<IntArrayList?>, organIndex: Int): IntArrayList {
         var list = lists[organIndex]
@@ -405,7 +419,21 @@ class OrganEntity(
             val organIndex = aliveList.getInt(i)
             if (cellArenaBase[organIndex] == -1) continue
             arenaLayout[organIndex] = genomes.getOrNull(genomeIndex[organIndex])?.sortedGraph
+            // Сохранения, сделанные до починки releaseCellSlot, могут нести запечённые слоты
+            // в свободных списках. Раскладка известна только сейчас — здесь их и убираем.
+            dropBakedSlots(cellFreeSlots[organIndex], cellArenaBase[organIndex], bakedCells(organIndex))
+            dropBakedSlots(linkFreeSlots[organIndex], linkArenaBase[organIndex], bakedLinks(organIndex))
         }
+    }
+
+    private fun dropBakedSlots(list: IntArrayList?, base: Int, baked: Int) {
+        if (list == null || baked == 0) return
+        var write = 0
+        for (read in 0 until list.size) {
+            val slot = list.getInt(read)
+            if (slot - base >= baked) list.set(write++, slot)
+        }
+        list.size(write)
     }
 
     override fun onCopy() {
