@@ -158,19 +158,15 @@ class LinkPhysicsSystem(
     }
 
     /**
-     * Нарезка организма, если его можно резать, иначе null.
-     *
-     * Резать можно, только пока в арене нет ничего сверх раскладки: ширина ленты гарантирована
-     * лишь для запечённых клеток и связей. Клетка или связь из хвоста арены (bump-курсор ушёл
-     * за раскладку) могла лечь где угодно — тогда организм считается целиком, как раньше.
+     * Нарезка организма, если тело достаточно крупное, иначе null — тогда оно считается
+     * целиком. Ширина ленты гарантирована: все клетки и связи лежат в своих слотах раскладки
+     * (OrganEntity.takeCellSlot), сверх неё в арене ничего не бывает.
      */
     private fun splittableChunks(organIndex: Int): LayoutChunks? {
         val organEntity = linkEntity.organEntity
         val layout = organEntity.arenaLayout[organIndex] ?: return null
         val chunks = layout.chunks
         if (chunks.count < 2) return null
-        if (organEntity.cellArenaUsed[organIndex] != layout.cellsInLayout) return null
-        if (organEntity.linkArenaUsed[organIndex] != layout.linksInLayout) return null
         return chunks
     }
 
@@ -429,13 +425,8 @@ class LinkPhysicsSystem(
             val from = organEntity.linkArenaBase[organIndex]
             val to = organEntity.linkArenaEnd(organIndex)
 
-            // Считаем ЖИВЫЕ клетки, а не cellArenaUsed.
-            //
-            // cellArenaUsed — это bump-курсор, и при запечённой раскладке он равен размеру
-            // раскладки с самого первого тика: запечённые слоты выдаются по cellGenomeId
-            // напрямую, курсор через них не проходит. Печатать его как «клеток в арене»
-            // было прямой дезинформацией — тело выглядело выросшим целиком с первого тика,
-            // даже когда рост застревал на середине.
+            // Считаем ЖИВЫЕ клетки: арена с первого тика размером с раскладку, и её размер
+            // ничего не говорит о том, сколько тела уже выросло.
             var aliveCells = 0
             for (cellIndex in cellBase until organEntity.cellArenaEnd(organIndex)) {
                 if (cellEntity.isAlive[cellIndex]) aliveCells++
@@ -467,7 +458,7 @@ class LinkPhysicsSystem(
                 .append(", лента avg ").append(if (count == 0) 0 else (sumBand / count))
                 .append(" max ").append(maxBand)
                 .append(", живых клеток ").append(aliveCells)
-                .append(" из ").append(layout?.cellsInLayout ?: organEntity.cellArenaUsed[organIndex])
+                .append(" из ").append(organEntity.cellArenaCapacity[organIndex])
                 .append(", стадия ").append(organEntity.stage[organIndex])
                 .append('/').append(organEntity.genomeSize[organIndex])
                 .append(if (organEntity.alreadyGrownUp[organIndex]) " (вырос)" else " (растёт)")

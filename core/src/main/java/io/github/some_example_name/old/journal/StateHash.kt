@@ -51,8 +51,10 @@ object StateHash {
      * 7 — у организма в хэш вошла арена нейросвязей (OrganEntity.neuralArena*), а нейрофаза
      *     суммирует сигналы по аренам, а не по общему списку.
      * 8 — в часть SimulationData вошли параметры стресса (PlayerCommand.SetStress).
+     * 9 — у организма больше нет курсоров и свободных списков клеток и связей: слот задан
+     *     раскладкой.
      */
-    const val VERSION = 8
+    const val VERSION = 9
 
     class Result(val hash: Long, val parts: LongArray)
 

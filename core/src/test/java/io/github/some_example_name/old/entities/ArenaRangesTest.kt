@@ -1,11 +1,18 @@
 package io.github.some_example_name.old.entities
 
+import io.github.some_example_name.old.systems.genomics.genome.BakedLayout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /** Свободные диапазоны сущности: арены умерших организмов выдаются заново. */
 class ArenaRangesTest {
+
+    /** Раскладка из [cells] клеток с номерами 0..cells-1 и [links] связей 0–k. */
+    private fun layoutOf(cells: Int, links: Int) = BakedLayout(
+        cellGenomeIdsInSlotOrder = List(cells) { it },
+        linkPairsInSlotOrder = (1..links).flatMap { listOf(0, it) }
+    )
 
     private class Slots : Entity(16) {
         fun occupy(index: Int, owner: Int = -1) = addAt(index, owner)
@@ -93,7 +100,7 @@ class ArenaRangesTest {
         organs.bindEntities(cells, particles, links)
 
         val first = organs.addOrgan(genomeIndex = 0, genomeSize = 1)
-        organs.allocateArenas(first, layout = null, maxCells = 20, maxLinks = 40)
+        organs.allocateArenas(first, layout = layoutOf(20, 40))
         val cellBase = organs.cellArenaBase[first]
         val particleBase = organs.particleArenaBase[first]
         val linkBase = organs.linkArenaBase[first]
@@ -104,7 +111,6 @@ class ArenaRangesTest {
         cells.occupy(slot, first)
         particles.occupy(organs.particleIndexOfCell(first, slot), first)
         organs.cellAdded(first)
-        organs.releaseCellSlot(first, slot)
         organs.cellRemoved(first)
         cells.free(slot)
         particles.free(organs.particleIndexOfCell(first, slot))
@@ -115,7 +121,7 @@ class ArenaRangesTest {
         assertEquals(-1, particles.deadStack.indexOf(particleBase))
 
         val second = organs.addOrgan(genomeIndex = 0, genomeSize = 1)
-        organs.allocateArenas(second, layout = null, maxCells = 20, maxLinks = 40)
+        organs.allocateArenas(second, layout = layoutOf(20, 40))
         assertEquals(cellBase, organs.cellArenaBase[second])
         assertEquals(particleBase, organs.particleArenaBase[second])
         assertEquals(linkBase, organs.linkArenaBase[second])
@@ -132,7 +138,7 @@ class ArenaRangesTest {
         organs.bindEntities(cells, particles, links, neural)
 
         val organ = organs.addOrgan(genomeIndex = 0, genomeSize = 1)
-        organs.allocateArenas(organ, layout = null, maxCells = 4, maxLinks = 4, maxNeuralLinks = 3)
+        organs.allocateArenas(organ, layout = layoutOf(4, 4), maxNeuralLinks = 3)
         assertTrue(organs.hasNeuralArena(organ))
         val base = organs.neuralArenaBase[organ]
 
@@ -149,7 +155,7 @@ class ArenaRangesTest {
 
         // Организм без генома с пиком — арены нет.
         val old = organs.addOrgan(genomeIndex = 0, genomeSize = 1)
-        organs.allocateArenas(old, layout = null, maxCells = 4, maxLinks = 4)
+        organs.allocateArenas(old, layout = layoutOf(4, 4))
         assertTrue(!organs.hasNeuralArena(old))
 
         // Смерть: арена нейросвязей возвращается и выдаётся следующему.
@@ -157,7 +163,7 @@ class ArenaRangesTest {
         organs.cellRemoved(organ)
         organs.deleteEmptiedOrgans()
         val next = organs.addOrgan(genomeIndex = 0, genomeSize = 1)
-        organs.allocateArenas(next, layout = null, maxCells = 4, maxLinks = 4, maxNeuralLinks = 3)
+        organs.allocateArenas(next, layout = layoutOf(4, 4), maxNeuralLinks = 3)
         assertEquals(base, organs.neuralArenaBase[next])
     }
 

@@ -200,9 +200,8 @@ class LinkEntity(
             )
             if (slot == -1) {
                 throw IllegalStateException(
-                    "арена связей организма $organIndex исчерпана " +
-                        "(ёмкость ${organEntity.linkArenaCapacity[organIndex]}) — " +
-                        "поднимите OrganEntity.ARENA_HEADROOM_PERCENT или пересохраните геном"
+                    "связи ${cellEntity.cellGenomeId[cellIndex]}–${cellEntity.cellGenomeId[otherCellIndex]} нет " +
+                        "в запечённой раскладке организма $organIndex — пересохраните геном"
                 )
             }
             slot
@@ -290,11 +289,6 @@ class LinkEntity(
 
     fun deleteLink(linkIndex: Int, linkGeneration: Int? = null) {
         if (isAlive[linkIndex] && (linkGeneration == null || getGeneration(linkIndex) == linkGeneration)) {
-            // Владелец берётся из запомненного при выдаче, а не через клетку связи: клетку
-            // к этому моменту могли удалить — она и стала причиной удаления связи, — и её
-            // organIndex уже сброшен.
-            organEntity.releaseLinkSlot(arenaOwnerOf(linkIndex), linkIndex)
-
             delete(linkIndex)
 
             val cellA = links1[linkIndex]

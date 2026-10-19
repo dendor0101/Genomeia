@@ -59,8 +59,6 @@ class OrganismSpawner(
         organEntity.allocateArenas(
             organIndex = organIndex,
             layout = genome.sortedGraph,
-            maxCells = genome.cellsAmount,
-            maxLinks = genome.linksAmount,
             maxNeuralLinks = genome.neuralLinksPeak ?: -1
         )
         return cellEntity.addCell(

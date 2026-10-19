@@ -364,20 +364,17 @@ class CellEntity(
         pheromoneType: Int = -1,
         specialModData: SpecialModData? = null
     ): Int {
-        // Слот берётся из арены организма, если она у него есть.
+        // Слот — свой по раскладке организма, если у организма есть арена.
         //
-        // Исчерпание арены — это ошибка конфигурации, а не штатный режим: ёмкость
-        // снята при запекании генома плюс OrganEntity.ARENA_HEADROOM_PERCENT.
-        // Молча уйти в общий аллокатор нельзя — часть тела оказалась бы вне диапазона,
-        // и обход организма по арене её просто не увидел бы.
+        // Клетки вне раскладки не бывает: тело растёт только по запечённому геному. Молча уйти
+        // в общий аллокатор нельзя — часть тела оказалась бы вне диапазона, и обход организма
+        // по арене её просто не увидел бы.
         val arenaCellSlot = if (organEntity.hasArena(organIndex)) {
             val slot = organEntity.takeCellSlot(organIndex, cellGenomeId)
             if (slot == -1) {
                 throw IllegalStateException(
-                    "арена клеток организма $organIndex исчерпана " +
-                        "(ёмкость ${organEntity.cellArenaCapacity[organIndex]}): " +
-                        "тело выросло больше, чем под него зарезервировали — " +
-                        "поднимите OrganEntity.ARENA_HEADROOM_PERCENT или пересохраните геном"
+                    "клетки $cellGenomeId нет в запечённой раскладке организма $organIndex: " +
+                        "тело выросло не по геному, под который печётся арена — пересохраните геном"
                 )
             }
             slot
@@ -655,9 +652,6 @@ class CellEntity(
         // бы сиротой и счётчик поехал бы в минус.
         if (!organEntity.hasArena(organIndex[cellIndex])) orphanCellCount--
 
-        // Слот возвращается в арену СВОЕГО организма, иначе арена расходовалась бы по числу
-        // когда-либо созданных клеток, а не живых.
-        organEntity.releaseCellSlot(arenaOwnerOf(cellIndex), cellIndex)
         organEntity.cellRemoved(organIndex[cellIndex])
 
         delete(cellIndex)
