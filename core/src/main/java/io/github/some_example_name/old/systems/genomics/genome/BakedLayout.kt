@@ -77,8 +77,41 @@ data class BakedLayout(
      * Удвоенная знаковая площадь каждого треугольника в позе покоя, снятая в редакторе
      * с выращенного тела. Удвоенная — чтобы в рантайме не делить на два.
      */
-    @ProtoNumber(5) val triangleRestArea2: List<Float> = emptyList()
+    @ProtoNumber(5) val triangleRestArea2: List<Float> = emptyList(),
+
+    /**
+     * Граница тела, в порядке слотов: сколько физических связей у клетки во взрослом теле,
+     * если она ВНУТРЕННЯЯ, и 0, если граничная. См. InteriorCells и CellEntity.refreshOnEdge.
+     *
+     * Внутренняя — та, рядом с которой редактор не нашёл бы места для новой клетки. В мире
+     * клетка внутренняя, пока у неё ВСЕ её взрослые связи: пока тело растёт, части связей
+     * ещё нет; умер сосед или порвалась связь — их меньше. В обоих случаях клетка у края,
+     * и это верно на любой стадии и для любой сетки, без запекания каждой стадии.
+     *
+     * Пусто у геномов, запечённых раньше: тогда работает прежний порог по числу связей.
+     */
+    @ProtoNumber(6) val interiorLinks: List<Int> = emptyList()
 ) {
+
+    /** Есть ли запечённая граница — у старых раскладок её нет. */
+    val hasInteriorLinks: Boolean get() = interiorLinks.isNotEmpty() && interiorLinks.size == cellsInLayout
+
+    /** [interiorLinks] массивом: читается при каждом изменении связей клетки. */
+    @Transient
+    val interiorLinksArray: IntArray = IntArray(interiorLinks.size) { interiorLinks[it] }
+
+    /**
+     * Эта же раскладка с границей из [other] — для допекания старых геномов. Порядок слотов
+     * остаётся СВОИМ: от него зависит, как уже живущие организмы лежат в аренах, поэтому
+     * граница переносится по cellGenomeId. Клетка, которой в [other] нет, — граничная.
+     */
+    fun withInteriorFrom(other: BakedLayout?): BakedLayout {
+        if (other == null || !other.hasInteriorLinks) return this
+        return copy(interiorLinks = cellGenomeIdsInSlotOrder.map { genomeId ->
+            val slot = other.slotByCellGenomeId.get(genomeId)
+            if (slot == -1) 0 else other.interiorLinks[slot]
+        })
+    }
 
     /**
      * cellGenomeId -> смещение слота в арене клеток.

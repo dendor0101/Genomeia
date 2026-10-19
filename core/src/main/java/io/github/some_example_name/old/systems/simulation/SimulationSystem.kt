@@ -177,6 +177,10 @@ class SimulationSystem(
         profiler.measure(Phase.ORGANS) { organManager.performOrgansNextStage() }
         profiler.measure(Phase.USER_CMD) { userCommandManager.processingCommandsFromUser() }
         profiler.measure(Phase.LAST_WORLD_CMD) { worldCommandsManager.executingLastCommandsFromTheWorld() }
+        // Организмы, потерявшие в этом тике последнюю клетку, — после всех команд тика: они
+        // ещё читали поля организма. Арены уходят в свободные куски до перестройки сетки,
+        // но их частицы уже мертвы, и сетка их пропустит.
+        organEntity.deleteEmptiedOrgans()
         // Единственное место, где меняется структура пространственной сетки. Стоит здесь,
         // потому что к этому моменту уже применены все перемещения (фаза 6) и все
         // создания/удаления частиц (фазы 7-10), то есть сетка собирается один раз по

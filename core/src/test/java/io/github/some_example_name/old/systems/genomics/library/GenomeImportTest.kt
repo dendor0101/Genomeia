@@ -1,6 +1,7 @@
 package io.github.some_example_name.old.systems.genomics.library
 
 import com.badlogic.gdx.files.FileHandle
+import io.github.some_example_name.old.systems.genomics.genome.BakedLayout
 import io.github.some_example_name.old.systems.genomics.genome.Genome
 import io.github.some_example_name.old.systems.genomics.genome.GenomePreview
 import io.github.some_example_name.old.systems.genomics.genome.decodeGenome
@@ -193,6 +194,31 @@ class GenomeImportTest {
         assertEquals("ab", GenomeImport.fileBaseName("a<b>?.json"))
         assertEquals("imported", GenomeImport.fileBaseName(".json"))
         assertEquals("imported", GenomeImport.fileBaseName(""))
+    }
+
+    @Test
+    fun `граница тела допекается в старую раскладку без смены порядка слотов`() {
+        // Старая раскладка: клетки 5, 7, 9 в этом порядке, границы нет.
+        val oldLayout = BakedLayout(cellGenomeIdsInSlotOrder = listOf(5, 7, 9))
+        val genome = bakedGenome("g").copy(sortedGraph = oldLayout)
+        // Новое запекание кладёт их иначе и знает границу; клетки 9 в нём нет.
+        val bakerWithInterior = Baker { g, name ->
+            g.copy(name = name, sortedGraph = BakedLayout(
+                cellGenomeIdsInSlotOrder = listOf(7, 5, 3),
+                interiorLinks = listOf(6, 0, 4)
+            ))
+        }
+
+        val rebaked = assertNotNull(GenomeImport.withBaking(genome, bakerWithInterior))
+        val layout = assertNotNull(rebaked.sortedGraph)
+
+        assertEquals(listOf(5, 7, 9), layout.cellGenomeIdsInSlotOrder)
+        assertEquals(listOf(0, 6, 0), layout.interiorLinks)
+        assertTrue(layout.hasInteriorLinks)
+        // Снимок, который уже был, не перезаписан.
+        assertTrue(rebaked.preview === genome.preview)
+        // Второй раз печь нечего.
+        assertEquals(null, GenomeImport.withBaking(rebaked, bakerWithInterior))
     }
 
     @Test

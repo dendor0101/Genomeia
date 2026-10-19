@@ -46,8 +46,10 @@ object StateHash {
      *     частей хэша стало меньше.
      * 5 — формула remember держит память на нулевом входе (Formula.kt): формула хэша та же,
      *     но мир с этой формулой считается иначе, и старые хэши сверять нельзя.
+     * 6 — у каждой сущности в хэш вошли свободные диапазоны (Entity.freeRanges): арены
+     *     умерших организмов возвращаются и выдаются заново.
      */
-    const val VERSION = 5
+    const val VERSION = 6
 
     class Result(val hash: Long, val parts: LongArray)
 

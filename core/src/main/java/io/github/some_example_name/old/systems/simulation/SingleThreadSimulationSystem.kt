@@ -71,6 +71,7 @@ class SingleThreadSimulationSystem(
         organManager.performOrgansNextStage()
         userCommandManager.processingCommandsFromUser()
         worldCommandsManager.executingLastCommandsFromTheWorld()
+        organEntity.deleteEmptiedOrgans()
 
         // Пересборка сетки: после движения и всех команд, один раз за тик.
         gridManager.rebuild(particleEntity.isAlive, particleEntity.gridId, particleEntity.isInGrid)

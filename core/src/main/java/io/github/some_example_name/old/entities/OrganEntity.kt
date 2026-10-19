@@ -61,10 +61,13 @@ class OrganEntity(
     // вместо чтения из cellEntity.particleIndexes. Сам particleIndexes остаётся —
     // он нужен субстанциям (у них организма нет) и служит проверкой под DEBUG_CHECKS.
     //
-    // ЧЕГО ЗДЕСЬ ПОКА НЕТ
-    // -------------------
-    // Арена умершего организма не отдаётся новым: бронь только растёт. Слоты ВНУТРИ
-    // живой арены переиспользуются через свободный список.
+    // ЖИЗНЬ АРЕНЫ
+    // -----------
+    // Размер фиксирован при рождении: тело растёт только по запечённому геному (зигота
+    // от деления и мутации — пустышка, см. CellEntity.isDormantZygote). Слоты ВНУТРИ живой
+    // арены переиспользуются через свободный список, а вся арена умершего организма
+    // уходит в свободные куски сущностей (Entity.releaseRange) и выдаётся следующему
+    // рождению. Переноса арен (уплотнения) пока нет.
     // ===================================================================================
 
     /**
@@ -119,6 +122,66 @@ class OrganEntity(
     var linkArenaBase = IntArray(maxAmount) { -1 }
     var linkArenaCapacity = IntArray(maxAmount)
     var linkArenaUsed = IntArray(maxAmount)
+
+    // ===================================================================================
+    // СМЕРТЬ ОРГАНИЗМА
+    //
+    // Организм умирает вместе с последней клеткой. До этого он не удалялся никогда
+    // (DELETE_ORGAN — заглушка): пустой организм оставался в aliveList, получал работу в
+    // фазе связей, OrganManager гонял его стадии, а арена держалась вечно.
+    //
+    // Удаляется он не в момент смерти клетки, а в конце тика (SimulationSystem зовёт
+    // [deleteEmptiedOrgans] после всех команд). Команды того же тика ещё читают поля
+    // организма: продюсер, умерший раньше в этом проходе, всё равно рожает зиготу с
+    // genomeIndex своего организма, а счётчики стадии получают свои декременты.
+    // ===================================================================================
+
+    /**
+     * Живых клеток организма. Выводится из клеток и не сохраняется — его пересчитывает
+     * CellEntity.restoreAfterLoad.
+     */
+    var liveCells = IntArray(maxAmount)
+        private set
+
+    /** Опустевшие в этом тике, в порядке опустения — он детерминирован, как и команды. */
+    private val emptiedOrgans = IntArrayList()
+
+    fun cellAdded(organIndex: Int) {
+        if (organIndex != -1) liveCells[organIndex]++
+    }
+
+    fun cellRemoved(organIndex: Int) {
+        if (organIndex == -1) return
+        // В редакторе организм не удаляется (см. deleteEmptiedOrgans), копить незачем.
+        if (--liveCells[organIndex] == 0 && arenasEnabled) emptiedOrgans.add(organIndex)
+    }
+
+    /** После загрузки: счётчики считает CellEntity, пустые (утекшие раньше) — к удалению. */
+    fun resetLiveCells() = liveCells.fill(0)
+
+    fun scheduleIfEmpty(organIndex: Int) {
+        if (liveCells[organIndex] == 0 && arenasEnabled) emptiedOrgans.add(organIndex)
+    }
+
+    /**
+     * Удалить организмы, оставшиеся без клеток. Однопоточно, после всех команд тика.
+     *
+     * Не в редакторе: там организм один на всё время работы редактора, и его индекс 0
+     * зашит в команды. Арен там нет, так что и освобождать нечего.
+     */
+    fun deleteEmptiedOrgans() {
+        if (!arenasEnabled) {
+            emptiedOrgans.clear()
+            return
+        }
+        for (i in 0 until emptiedOrgans.size) {
+            val organIndex = emptiedOrgans.getInt(i)
+            // Повтор в списке (опустел, ожил, опустел) или клетка уже вернулась.
+            if (!isAlive[organIndex] || liveCells[organIndex] != 0) continue
+            deleteOrgan(organIndex)
+        }
+        emptiedOrgans.clear()
+    }
 
 
     /**
@@ -348,9 +411,17 @@ class OrganEntity(
         mutateAmountThisStage[organIndex] = 0
         justChangedStage[organIndex] = true
 
-        // Арена НЕ возвращается в оборот: курсоры только растут. Дескриптор гасится, чтобы
-        // мёртвый organIndex не выглядел как владелец живого диапазона — иначе обход по
-        // аренам прошёлся бы по чужой памяти, если индекс организма переиспользуется.
+        // Арена возвращается в оборот — следующему рождению (Entity.releaseRange). Размер
+        // тот же, что брался в allocateArenas, вместе с зазором. Дескриптор гасится, чтобы
+        // мёртвый organIndex не выглядел как владелец диапазона — иначе обход по аренам
+        // прошёлся бы по чужой памяти, если индекс организма переиспользуется.
+        if (cellArenaBase[organIndex] != -1) {
+            val cellRange = cellArenaCapacity[organIndex] + ARENA_GAP
+            cellEntityRef?.releaseRange(cellArenaBase[organIndex], cellRange)
+            particleEntityRef?.releaseRange(particleArenaBase[organIndex], cellRange)
+            linkEntityRef?.releaseRange(linkArenaBase[organIndex], linkArenaCapacity[organIndex] + ARENA_GAP)
+        }
+        liveCells[organIndex] = 0
         arenaLayout[organIndex] = null
         // Списки чистятся, но не выбрасываются: слот организма переиспользуется, и вместе
         // с ним переиспользуется уже выделенный IntArrayList.
@@ -415,6 +486,7 @@ class OrganEntity(
 
     /** Раскладки арен после загрузки мира: их источник — геном организма, как в allocateArenas. */
     fun restoreArenaLayouts(genomes: List<Genome>) {
+        val particlesInDeadStack = particleEntityRef?.deadStackMask() ?: BooleanArray(0)
         for (i in 0 until aliveList.size) {
             val organIndex = aliveList.getInt(i)
             if (cellArenaBase[organIndex] == -1) continue
@@ -423,7 +495,14 @@ class OrganEntity(
             // в свободных списках. Раскладка известна только сейчас — здесь их и убираем.
             dropBakedSlots(cellFreeSlots[organIndex], cellArenaBase[organIndex], bakedCells(organIndex))
             dropBakedSlots(linkFreeSlots[organIndex], linkArenaBase[organIndex], bakedLinks(organIndex))
+            // До починки частицы клеток выдавались без владельца (addParticleAt), и
+            // умершая уходила в общий стек — под субстанцию. С возвратом арен такой слот
+            // попал бы и в стек, и в свободный кусок, то есть был бы выдан дважды.
+            particleEntityRef?.adoptRange(
+                particleArenaBase[organIndex], cellArenaCapacity[organIndex] + ARENA_GAP, organIndex, particlesInDeadStack
+            )
         }
+        particleEntityRef?.dropOwnedFromDeadStack()
     }
 
     private fun dropBakedSlots(list: IntArrayList?, base: Int, baked: Int) {
@@ -457,6 +536,8 @@ class OrganEntity(
         mutateAmountThisStage.clear()
         justChangedStage.clear(true)
 
+        liveCells.clear()
+        emptiedOrgans.clear()
         arenaLayout.fill(null)
         for (list in cellFreeSlots) list?.clear()
         for (list in linkFreeSlots) list?.clear()
@@ -484,6 +565,7 @@ class OrganEntity(
         mutateAmountThisStage = mutateAmountThisStage.resize()
         justChangedStage = justChangedStage.resize(true)
 
+        liveCells = liveCells.resize()
         arenaLayout = arenaLayout.copyOf(maxAmount)
         cellFreeSlots = cellFreeSlots.copyOf(maxAmount)
         linkFreeSlots = linkFreeSlots.copyOf(maxAmount)

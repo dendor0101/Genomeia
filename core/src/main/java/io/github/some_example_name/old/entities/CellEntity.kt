@@ -406,8 +406,10 @@ class CellEntity(
             cellStiffness = cellsSettings[cellType].cellStiffness,
             isCell = true,
             isSub = false,
-            holderEntityIndex = cellIndex
+            holderEntityIndex = cellIndex,
+            arenaOwner = if (arenaCellSlot == -1) -1 else organIndex
         )
+        organEntity.cellAdded(organIndex)
         //
         // Зигота ВСЕГДА начинает новую систему отсчёта, даже если появилась делением из
         // родительского организма. Иначе род навсегда остался бы привязан к точке спавна
@@ -582,21 +584,25 @@ class CellEntity(
      * Пересчитывает «клетка на границе тела» по числу её физических связей и синхронно
      * решает, участвует ли её частица в пространственной сетке.
      *
-     * ПОЧЕМУ ЧИСЛО СВЯЗЕЙ, А НЕ ГЕОМЕТРИЯ
-     * -----------------------------------
-     * В треугольной упаковке клетка, окружённая со всех сторон, имеет шесть соседей.
-     * Меньше шести — значит хотя бы один сектор вокруг неё свободен, то есть снаружи до
-     * неё можно дотянуться. Это чисто топологический признак: он не зависит ни от того,
-     * как тело деформировано, ни от того, куда оно уплыло, и потому не требует
-     * пересчёта при движении — только при изменении числа связей.
+     * ПОЧЕМУ ЧИСЛО СВЯЗЕЙ, А НЕ ГЕОМЕТРИЯ КАЖДЫЙ ТИК
+     * ---------------------------------------------
+     * Геометрия считается один раз, при запекании (InteriorCells): клетка внутренняя, если
+     * во взрослом теле рядом с ней нет места для новой — тот же признак, по которому
+     * редактор не даёт её делить. Для внутренней запоминается, сколько у неё связей
+     * (BakedLayout.interiorLinks). В мире клетка внутренняя, пока у неё не меньше связей,
+     * чем было во взрослом теле: пока тело растёт, части связей ещё нет; умер сосед или
+     * порвалась связь — их стало меньше. Так граница верна на любой стадии и для любой
+     * сетки, не зависит от того, как тело деформировано, и пересчитывается только при
+     * изменении числа связей.
      *
-     * ГРАНИЦА ПРИМЕНИМОСТИ
-     * --------------------
-     * Порог [EDGE_LINK_THRESHOLD] верен именно для треугольной решётки. Геном, растящий
-     * тело по квадратной решётке (четыре соседа у внутренней клетки), при этом пороге
-     * объявит внутренними вообще все клетки, и тело перестанет сталкиваться целиком.
-     * Когда такие геномы появятся, порог придётся выводить из генома, а не держать
-     * константой.
+     * Без запечённой границы (редактор, геном старше неё) — прежний порог
+     * [EDGE_LINK_THRESHOLD]: шесть соседей — полное окружение в треугольной упаковке.
+     *
+     * ЧЕГО ПРИЗНАК НЕ ВИДИТ
+     * ---------------------
+     * Порвалась связь между двумя соседями клетки, а её собственные целы — клетка
+     * остаётся внутренней, хотя рядом щель (сами соседи при этом стали граничными).
+     * Закрывается запеканием ещё и связей между соседями по кругу; см. TODO.md, 2.8.
      *
      * ИНКРЕМЕНТАЛЬНОСТЬ
      * -----------------
@@ -606,7 +612,7 @@ class CellEntity(
      * это на каждой связи, когда ничего не поменялось, незачем.
      */
     fun refreshOnEdge(cellIndex: Int) {
-        val onEdge = linkAmount[cellIndex] < EDGE_LINK_THRESHOLD
+        val onEdge = linkAmount[cellIndex] < interiorLinkCount(cellIndex)
         if (isOnEdge[cellIndex] == onEdge) return
 
         isOnEdge[cellIndex] = onEdge
@@ -627,6 +633,23 @@ class CellEntity(
         if (onEdge) particleEntity.gridManager.registerParticle(particleIndex)
     }
 
+    /**
+     * Со скольких связей клетка внутренняя: из запечённой границы её организма, а без неё
+     * прежний порог. Int.MAX_VALUE — клетка граничная при любом числе связей (во взрослом
+     * теле она у края).
+     */
+    private fun interiorLinkCount(cellIndex: Int): Int {
+        val organ = organIndex[cellIndex]
+        if (!organEntity.hasArena(organ)) return EDGE_LINK_THRESHOLD
+        val layout = organEntity.arenaLayout[organ]
+        if (layout == null || !layout.hasInteriorLinks) return EDGE_LINK_THRESHOLD
+        val slot = cellIndex - organEntity.cellArenaBase[organ]
+        val links = layout.interiorLinksArray
+        if (slot >= links.size) return Int.MAX_VALUE
+        val required = links[slot]
+        return if (required == 0) Int.MAX_VALUE else required
+    }
+
     fun deleteCell(cellIndex: Int) {
         // Считается ДО delete: organIndex ещё не сброшен, иначе клетка из арены выглядела
         // бы сиротой и счётчик поехал бы в минус.
@@ -635,6 +658,7 @@ class CellEntity(
         // Слот возвращается в арену СВОЕГО организма, иначе арена расходовалась бы по числу
         // когда-либо созданных клеток, а не живых.
         organEntity.releaseCellSlot(arenaOwnerOf(cellIndex), cellIndex)
+        organEntity.cellRemoved(organIndex[cellIndex])
 
         delete(cellIndex)
 
@@ -790,10 +814,16 @@ class CellEntity(
 
     override fun restoreAfterLoad() {
         organToIdToIndex.clear()
+        organEntity.resetLiveCells()
         for (i in 0 until aliveList.size) {
             val cellIndex = aliveList.getInt(i)
             organToIdToIndex.put(organIndex[cellIndex], cellGenomeId[cellIndex], cellIndex)
+            organEntity.cellAdded(organIndex[cellIndex])
         }
+        // Сохранения до появления смерти организма несут организмы без единой клетки —
+        // они удалятся в конце первого же тика, как удалились бы при жизни.
+        val organs = organEntity.aliveList
+        for (i in 0 until organs.size) organEntity.scheduleIfEmpty(organs.getInt(i))
     }
 
     override fun onCopy() {
@@ -893,9 +923,9 @@ class CellEntity(
         /**
          * Со скольких связей клетка считается ВНУТРЕННЕЙ (см. [refreshOnEdge]).
          *
-         * Шесть — это полное окружение в треугольной упаковке. Значение подобрано под
-         * геномы, которые растят тело именно такой решёткой; для других решёток его
-         * придётся выводить из генома.
+         * Шесть — это полное окружение в треугольной упаковке. Это запасной порог: он
+         * работает только там, где нет запечённой границы (редактор, геномы старше неё),
+         * а в мире порог у каждой клетки свой — BakedLayout.interiorLinks.
          */
         const val EDGE_LINK_THRESHOLD = 6
 

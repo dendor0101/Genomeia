@@ -33,6 +33,15 @@ abstract class Entity(startMaxAmount: Int) {
     /** Организм-владелец слота, или -1 если слот не из арены. */
     fun arenaOwnerOf(index: Int) = arenaOwner[index]
 
+    companion object {
+        /**
+         * Владелец «слот выдаёт кто-то снаружи»: сущность, индексируемая чужим индексом
+         * (SpecialEntity — индексом клетки). Умерший слот в [deadStack] не идёт: add()
+         * у такой сущности не зовётся, и стек только рос бы — в памяти и в сохранении.
+         */
+        const val EXTERNAL_SLOT = -2
+    }
+
     protected fun add(): Int {
         val cellIndex = if (!deadStack.isEmpty()) {
             deadStack.removeInt(deadStack.size - 1)
@@ -119,10 +128,157 @@ abstract class Entity(startMaxAmount: Int) {
      * add(), и арены с ними не пересекаются, потому что бронь всегда выше.
      */
     fun reserveRange(count: Int): Int {
+        val reused = takeFreeRange(count)
+        if (reused != -1) return reused
+
         val base = lastId + 1
         lastId = base + count - 1
         ensureCapacity(lastId)
         return base
+    }
+
+    // ===================================================================================
+    // СВОБОДНЫЕ ДИАПАЗОНЫ
+    //
+    // Арена умершего организма возвращается сюда и выдаётся следующему. Без этого бронь
+    // только росла: каждое рождение навсегда съедало свой диапазон (тело на 1200 клеток —
+    // ~0.6 МБ всех массивов), и за долгую сессию массивы раздувались до сотен мегабайт.
+    //
+    // Пары [начало, длина] подряд, по возрастанию начала, соседние всегда склеены. Это
+    // состояние мира: в сохранении и в хэше (StateHash). Список
+    // короткий (по куску на умерший и ещё не занятый организм), а трогается он только на
+    // рождении и смерти организма, поэтому здесь простой перебор — дерево не окупится.
+    // Особей одного генома много, и дыра умершего обычно в точности под следующего такого
+    // же, поэтому выбирается НАИМЕНЬШИЙ подходящий кусок: так большие не крошатся на мелочь.
+    // ===================================================================================
+
+    private var freeRanges = IntArrayList()
+
+    /** Начало подходящего свободного куска (откусывается его начало), или -1. */
+    private fun takeFreeRange(count: Int): Int {
+        var best = -1
+        var bestLength = Int.MAX_VALUE
+        var i = 0
+        while (i < freeRanges.size) {
+            val length = freeRanges.getInt(i + 1)
+            // Строго меньше: при равной длине остаётся первый, то есть с меньшим адресом.
+            // Выбор обязан зависеть только от состояния мира — иначе разойдётся повтор.
+            if (length >= count && length < bestLength) {
+                best = i
+                bestLength = length
+            }
+            i += 2
+        }
+        if (best == -1) return -1
+
+        val base = freeRanges.getInt(best)
+        if (bestLength == count) {
+            freeRanges.removeElements(best, best + 2)
+        } else {
+            freeRanges.set(best, base + count)
+            freeRanges.set(best + 1, bestLength - count)
+        }
+        return base
+    }
+
+    /**
+     * Вернуть диапазон, выданный [reserveRange]. Вызывать, когда в нём не осталось
+     * живых сущностей его владельца.
+     *
+     * Освобождаются только МЁРТВЫЕ слоты, подряд идущими кусками. Живой слот внутри —
+     * это чужой жилец: в сохранениях до починки слотов частиц субстанция могла занять
+     * частицу клетки через общий [deadStack]. Отдать его под новую арену нельзя — addAt
+     * упал бы на занятом индексе, — поэтому он просто остаётся вне свободного списка.
+     */
+    fun releaseRange(base: Int, count: Int) {
+        val end = minOf(base + count, lastId + 1)
+        var runStart = -1
+        for (index in base until end) {
+            if (!isAlive[index]) {
+                if (runStart == -1) runStart = index
+            } else if (runStart != -1) {
+                addFreeRange(runStart, index - runStart)
+                runStart = -1
+            }
+        }
+        if (runStart != -1) addFreeRange(runStart, end - runStart)
+    }
+
+    private fun addFreeRange(start: Int, length: Int) {
+        // Место вставки по началу — список отсортирован.
+        var i = 0
+        while (i < freeRanges.size && freeRanges.getInt(i) < start) i += 2
+
+        var newStart = start
+        var newEnd = start + length
+
+        // Склейка с левым соседом.
+        if (i >= 2 && freeRanges.getInt(i - 2) + freeRanges.getInt(i - 1) == newStart) {
+            i -= 2
+            newStart = freeRanges.getInt(i)
+            freeRanges.removeElements(i, i + 2)
+        }
+        // Склейка с правым.
+        if (i < freeRanges.size && freeRanges.getInt(i) == newEnd) {
+            newEnd += freeRanges.getInt(i + 1)
+            freeRanges.removeElements(i, i + 2)
+        }
+
+        // Кусок на самом верху lastId НЕ опускает, хотя мог бы. Строки выше lastId не
+        // сохраняются, и мир после загрузки получил бы там значения по умолчанию, а мир без
+        // загрузки — остатки умерших (поколения, поля, которые addCell не сбрасывает).
+        // Следующая арена в этих слотах разошлась бы между ними, и saveRoundTrip с повтором
+        // сохранённого мира это поймали бы. Опускать — только вместе со сбросом строк.
+        freeRanges.add(i, newStart)
+        freeRanges.add(i + 1, newEnd - newStart)
+    }
+
+    /** Сколько слотов ниже lastId лежит в свободных кусках — для замеров дробления. */
+    fun freeRangeSlots(): Int {
+        var total = 0
+        var i = 1
+        while (i < freeRanges.size) {
+            total += freeRanges.getInt(i)
+            i += 2
+        }
+        return total
+    }
+
+    /**
+     * Отдать арене [owner] слоты её диапазона, которые выданы без владельца. Только для
+     * загрузки старых сохранений; [inDeadStack] — из [deadStackMask].
+     *
+     * До починки частицы клеток выдавались без владельца, и умершая частица уходила в
+     * общий стек — откуда её брала субстанция. Здесь такие слоты (живые без владельца и
+     * мёртвые из стека) получают владельца, а [dropOwnedFromDeadStack] уберёт их из стека.
+     * Живой чужой жилец остаётся жить, но после смерти в стек уже не вернётся.
+     *
+     * Ни разу не занятые слоты не трогаются: в мире, сохранённом уже с починкой, у них
+     * владельца нет, и загрузка обязана дать ровно то же состояние (saveRoundTrip).
+     */
+    fun adoptRange(base: Int, count: Int, owner: Int, inDeadStack: BooleanArray) {
+        val end = minOf(base + count, lastId + 1)
+        for (index in base until end) {
+            if (arenaOwner[index] != -1) continue
+            if (isAlive[index] || inDeadStack[index]) arenaOwner[index] = owner
+        }
+    }
+
+    /** Какие слоты лежат в [deadStack] — разовая маска для [adoptRange]. */
+    fun deadStackMask(): BooleanArray {
+        val mask = BooleanArray(lastId + 1)
+        for (i in 0 until deadStack.size) mask[deadStack.getInt(i)] = true
+        return mask
+    }
+
+    /** Убрать из [deadStack] слоты, у которых есть владелец-арена. Пара к [adoptRange]. */
+    fun dropOwnedFromDeadStack() {
+        var write = 0
+        for (read in 0 until deadStack.size) {
+            val index = deadStack.getInt(read)
+            if (arenaOwner[index] == -1) deadStack.set(write++, index)
+        }
+        deadStack.size(write)
     }
 
     protected fun delete(index: Int) {
@@ -153,6 +309,7 @@ abstract class Entity(startMaxAmount: Int) {
         cellBoundBeforeClear = cellBound
         lastId = -1
         deadStack.clear()
+        freeRanges.clear()
         generation.fill(0, 0, cellBound)
         isAlive.fill(false, 0, cellBound)
         arenaOwner.fill(-1, 0, cellBound)
@@ -227,6 +384,7 @@ abstract class Entity(startMaxAmount: Int) {
         state.ints(::arenaOwner)
         state.intList(::aliveList)
         state.intList(::deadStack)
+        state.intList(::freeRanges)
 
         persistFields(state)
     }
