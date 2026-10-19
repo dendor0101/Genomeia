@@ -7,6 +7,7 @@ import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.editor.entities.EditorReplay
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.Entity
+import io.github.some_example_name.old.entities.NeuralLinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.systems.genomics.CellSystem
@@ -31,6 +32,7 @@ class EditorSimulationSystem(
     val particleEntity: ParticleEntity,
     val zygote: Zygote,
     val entityList: List<Entity>,
+    val neuralLinkEntity: NeuralLinkEntity,
     val userCommandManager: UserCommandManager
 ) {
 
@@ -40,6 +42,16 @@ class EditorSimulationSystem(
     var mapCellGenomeIdToIndex = Int2IntOpenHashMap().apply { defaultReturnValue(-1) }
 
     var maxCellId = 0
+
+    /**
+     * Пик нейросвязей последнего выращивания — Genome.neuralLinksPeak. На каждой стадии берётся
+     * «живых на её начало + созданных за неё»: внутри стадии мир может создать все её
+     * нейросвязи раньше, чем удалит отменённые (порядок там задаёт энергия клеток, а не
+     * редактор), и арена обязана вместить и такой порядок. Само число живых в редакторе
+     * этого не видит — он удаляет и создаёт в своём, одном порядке.
+     */
+    var neuralLinksPeak = 0
+        private set
 
     /** [genomeName] — свой или встроенный геном (см. GenomeCatalog), null — новый. */
     fun reinitGenome(genomeName: String?) {
@@ -108,15 +120,24 @@ class EditorSimulationSystem(
 
         var stage = organEntity.stage[baseOrganIndex]
         var stageStartedAt = 0
+        var stageStartAlive = neuralLinkEntity.aliveList.size
+        var stageStartCreated = neuralLinkEntity.createdCount
+        neuralLinksPeak = stageStartAlive
         for (tick in 0..TIME_SIMULATION) {
             updateTick()
             replays.forEach { it.copy() }
+
+            // Созданное в тике, где стадия сменилась, — ещё её: смена стадии идёт после команд.
+            val bound = stageStartAlive + (neuralLinkEntity.createdCount - stageStartCreated).toInt()
+            if (bound > neuralLinksPeak) neuralLinksPeak = bound
 
             if (organEntity.alreadyGrownUp[baseOrganIndex]) break
 
             if (organEntity.stage[baseOrganIndex] != stage) {
                 stage = organEntity.stage[baseOrganIndex]
                 stageStartedAt = tick
+                stageStartAlive = neuralLinkEntity.aliveList.size
+                stageStartCreated = neuralLinkEntity.createdCount
             } else if (tick - stageStartedAt >= STUCK_STAGE_TICKS) {
                 throw IllegalStateException("рост застрял на стадии $stage: $STUCK_STAGE_TICKS тиков без перехода")
             }

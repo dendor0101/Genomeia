@@ -86,6 +86,8 @@ object GenomeImport {
      *  - снимка для превью (preview == null) — геном сохранён до появления превью;
      *  - границы тела в раскладке (BakedLayout.interiorLinks) — геном сохранён до неё.
      *    Без неё граничные клетки определяются прежним порогом в шесть связей.
+     *  - пика нейросвязей (Genome.neuralLinksPeak) — без него у организма нет арены
+     *    нейросвязей, и они идут в общий пул.
      *
      * Сам геном не трогается — берётся только недостающее, остальное как в файле: имя,
      * версия, порядок стадий. В том числе уже лежащая раскладка: от неё зависит, как
@@ -97,19 +99,23 @@ object GenomeImport {
         val layout = genome.sortedGraph
         // Граница тела (BakedLayout.interiorLinks) появилась позже раскладки.
         val needsInterior = layout != null && layout.cellsInLayout > 0 && !layout.hasInteriorLinks
-        if (!needsLayout && genome.preview != null && !needsInterior) return null
+        // Пик нейросвязей (ёмкость их арены) появился ещё позже.
+        val needsNeuralPeak = genome.neuralLinksPeak == null
+        if (!needsLayout && genome.preview != null && !needsInterior && !needsNeuralPeak) return null
 
         val baked = baker.bake(genome, genome.name)
         // Раскладка остаётся своей — граница переносится в неё по cellGenomeId, порядок
         // слотов не меняется. Уже лежащий снимок тоже не трогается.
         if (!needsLayout) return genome.copy(
             preview = genome.preview ?: baked.preview,
-            sortedGraph = layout?.withInteriorFrom(baked.sortedGraph)
+            sortedGraph = layout?.withInteriorFrom(baked.sortedGraph),
+            neuralLinksPeak = genome.neuralLinksPeak ?: baked.neuralLinksPeak
         )
         return genome.copy(
             cellsAmount = baked.cellsAmount,
             linksAmount = baked.linksAmount,
             neuralLinksAmount = baked.neuralLinksAmount,
+            neuralLinksPeak = baked.neuralLinksPeak,
             sortedGraph = baked.sortedGraph,
             preview = baked.preview
         )

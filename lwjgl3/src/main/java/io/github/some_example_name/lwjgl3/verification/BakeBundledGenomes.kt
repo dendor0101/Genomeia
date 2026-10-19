@@ -100,6 +100,8 @@ private class BakeBundledGenomes(
             // Граница тела (BakedLayout.interiorLinks) влияет на симуляцию — она обязана
             // повторяться так же, как снимок.
             val layout = genome.sortedGraph
+            if (genome.neuralLinksPeak == null) problems += "нет пика нейросвязей"
+            else if (rebaked.neuralLinksPeak != genome.neuralLinksPeak) problems += "повторное выращивание дало другой пик нейросвязей"
             if (layout == null || !layout.hasInteriorLinks) problems += "нет границы тела"
             else if (layout.withInteriorFrom(rebaked.sortedGraph).interiorLinks != layout.interiorLinks) {
                 problems += "повторное выращивание дало другую границу"

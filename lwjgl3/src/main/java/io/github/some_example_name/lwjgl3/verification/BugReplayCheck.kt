@@ -313,8 +313,11 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 // Все запечённые геномы по кругу: нейросвязи, феромоны, глаза — всё, что
                 // есть в папке, должно попасть в мир и в хэш состояния.
                 println("Запечённых геномов: ${baked.size} из ${genomes.size}")
+                val spawnOnly = SPAWN_GENOME?.let { name ->
+                    GenomeCatalog.all().indexOf(name).also { check(it >= 0) { "нет генома $name" } }
+                }
                 SPAWN.forEachIndexed { i, (x, y) ->
-                    DISimulationContainer.userCommandManager.push(PlayerCommand.Tap(x, y, genomeIndex = baked[i % baked.size]))
+                    DISimulationContainer.userCommandManager.push(PlayerCommand.Tap(x, y, genomeIndex = spawnOnly ?: baked[i % baked.size]))
                 }
                 screen(SimulationIntent.ZoomCamera(0.05f, 90f, 90f))
                 untilTick(data.tickCounter + GROW_TICKS)
@@ -447,6 +450,12 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
 
         /** Сколько тиков мир растёт после посадки: -PgrowTicks=3000 — длинный прогон. */
         val GROW_TICKS = System.getProperty("bugReplayCheck.growTicks")?.toIntOrNull() ?: 300
+
+        /**
+         * Сажать во все точки один геном: -PspawnGenome=bundled/Megalodon. Для замеров на
+         * крупных телах; без параметра — все запечённые по кругу.
+         */
+        val SPAWN_GENOME: String? = System.getProperty("bugReplayCheck.spawnGenome")
 
         const val TIMEOUT_NS = 300_000_000_000L
     }

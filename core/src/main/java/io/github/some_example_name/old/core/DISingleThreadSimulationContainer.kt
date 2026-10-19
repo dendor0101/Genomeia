@@ -104,7 +104,7 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
 
     init {
         // См. комментарий в DISimulationContainer: organEntity создаётся раньше всех.
-        organEntity.bindEntities(cellEntity, particleEntity, linkEntity)
+        organEntity.bindEntities(cellEntity, particleEntity, linkEntity, neuralLinkEntity)
     }
     override val pheromoneEntity = PheromoneEntity(
         gridManager = gridManager

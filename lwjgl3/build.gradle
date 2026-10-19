@@ -300,6 +300,7 @@ tasks.register('bugReplayCheckRecord', JavaExec) {
   if (project.hasProperty('workers')) systemProperty 'bugReplayCheck.workers', project.property('workers')
   if (project.hasProperty('growTicks')) systemProperty 'bugReplayCheck.growTicks', project.property('growTicks')
   if (project.hasProperty('spawnGrid')) systemProperty 'bugReplayCheck.spawnGrid', project.property('spawnGrid')
+  if (project.hasProperty('spawnGenome')) systemProperty 'bugReplayCheck.spawnGenome', project.property('spawnGenome')
   if (project.hasProperty('stressTicks')) systemProperty 'bugReplayCheck.stressTicks', project.property('stressTicks')
 }
 
@@ -316,6 +317,7 @@ tasks.register('bugReplayCheck', JavaExec) {
   if (project.hasProperty('workers')) systemProperty 'bugReplayCheck.workers', project.property('workers')
   if (project.hasProperty('growTicks')) systemProperty 'bugReplayCheck.growTicks', project.property('growTicks')
   if (project.hasProperty('spawnGrid')) systemProperty 'bugReplayCheck.spawnGrid', project.property('spawnGrid')
+  if (project.hasProperty('spawnGenome')) systemProperty 'bugReplayCheck.spawnGenome', project.property('spawnGenome')
   if (project.hasProperty('stressTicks')) systemProperty 'bugReplayCheck.stressTicks', project.property('stressTicks')
 }
 

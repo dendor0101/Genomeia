@@ -168,7 +168,7 @@ class SimulationSystem(
 
         // --- Измерения ---
         profiler.measure(Phase.LINKS) { linkPhysicsSystem.iterateLinksInParallel() }
-        profiler.measure(Phase.NEURAL) { neuralLinkManager.iterate() }
+        profiler.measure(Phase.NEURAL) { neuralLinkManager.iterateInParallel() }
         profiler.measure(Phase.COLLIDE) { processParticleCollision() }
         profiler.measure(Phase.CELLS) { cellSystem.iterateCellInParallel() }
         profiler.measure(Phase.PHEROMONE) { pheromonesManager.iterate() }

@@ -45,7 +45,7 @@ class GenomeImportTest {
     private val bakedNames = mutableListOf<String>()
     private val baker = Baker { genome, name ->
         bakedNames += name
-        genome.copy(name = name, cellsAmount = genome.stageInstruction.size, linksAmount = 7, preview = bakedPreview)
+        genome.copy(name = name, cellsAmount = genome.stageInstruction.size, linksAmount = 7, neuralLinksPeak = 0, preview = bakedPreview)
     }
 
     private val json = """
@@ -105,7 +105,7 @@ class GenomeImportTest {
 
     /** Уже запечённый .genome — как его сохраняет редактор. */
     private fun bakedGenome(name: String) =
-        LegacyGenomeJson.parse(json, name).copy(cellsAmount = 3, linksAmount = 2, preview = bakedPreview)
+        LegacyGenomeJson.parse(json, name).copy(cellsAmount = 3, linksAmount = 2, neuralLinksPeak = 0, preview = bakedPreview)
 
     @Test
     fun `запечённый genome кладётся байт в байт и без запекания`() {
@@ -139,7 +139,7 @@ class GenomeImportTest {
         assertEquals(listOf("Внутреннее имя"), bakedNames)
         assertEquals(2, genome.cellsAmount)
         assertEquals(7, genome.linksAmount)
-        assertEquals(unbaked.copy(cellsAmount = 2, linksAmount = 7, preview = bakedPreview), genome)
+        assertEquals(unbaked.copy(cellsAmount = 2, linksAmount = 7, neuralLinksPeak = 0, preview = bakedPreview), genome)
     }
 
     @Test

@@ -123,6 +123,45 @@ class ArenaRangesTest {
     }
 
     @Test
+    fun neuralArenaReusesFreedSlotsAndReturnsOnDeath() {
+        val organs = OrganEntity(4)
+        val cells = Slots()
+        val particles = Slots()
+        val links = Slots()
+        val neural = Slots()
+        organs.bindEntities(cells, particles, links, neural)
+
+        val organ = organs.addOrgan(genomeIndex = 0, genomeSize = 1)
+        organs.allocateArenas(organ, layout = null, maxCells = 4, maxLinks = 4, maxNeuralLinks = 3)
+        assertTrue(organs.hasNeuralArena(organ))
+        val base = organs.neuralArenaBase[organ]
+
+        // Пик — три одновременно: четвёртой места нет, это путь в общий пул.
+        val a = organs.takeNeuralSlot(organ)
+        val b = organs.takeNeuralSlot(organ)
+        val c = organs.takeNeuralSlot(organ)
+        assertEquals(listOf(base, base + 1, base + 2), listOf(a, b, c))
+        assertEquals(-1, organs.takeNeuralSlot(organ))
+
+        // Перевязка: удалённая уступает слот следующей того же организма.
+        organs.releaseNeuralSlot(organ, b)
+        assertEquals(b, organs.takeNeuralSlot(organ))
+
+        // Организм без генома с пиком — арены нет.
+        val old = organs.addOrgan(genomeIndex = 0, genomeSize = 1)
+        organs.allocateArenas(old, layout = null, maxCells = 4, maxLinks = 4)
+        assertTrue(!organs.hasNeuralArena(old))
+
+        // Смерть: арена нейросвязей возвращается и выдаётся следующему.
+        organs.cellAdded(organ)
+        organs.cellRemoved(organ)
+        organs.deleteEmptiedOrgans()
+        val next = organs.addOrgan(genomeIndex = 0, genomeSize = 1)
+        organs.allocateArenas(next, layout = null, maxCells = 4, maxLinks = 4, maxNeuralLinks = 3)
+        assertEquals(base, organs.neuralArenaBase[next])
+    }
+
+    @Test
     fun plainAddDoesNotLandInsideFreeRange() {
         val slots = Slots()
         val base = slots.reserveRange(10)

@@ -1,6 +1,7 @@
 package io.github.some_example_name.old.systems.genomics.genome
 
 import io.github.some_example_name.old.core.utils.OrderedIntPairMap
+import io.github.some_example_name.old.systems.physics.LayoutChunks
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
@@ -167,6 +168,13 @@ data class BakedLayout(
     val cellsInLayout: Int get() = cellGenomeIdsInSlotOrder.size
     val linksInLayout: Int get() = linkPairsInSlotOrder.size / 2
     val neuralLinksInLayout: Int get() = neuralLinkPairsInSlotOrder.size / 2
+
+    /**
+     * Нарезка тела на чётные и нечётные куски для фазы связей. Стоит последней: читает
+     * [slotByCellGenomeId] и [triangleSlotsArray], а поля класса создаются по порядку.
+     */
+    @Transient
+    val chunks: LayoutChunks = LayoutChunks.of(this)
 
     private companion object {
         fun buildPairMap(flatPairs: List<Int>): OrderedIntPairMap {
