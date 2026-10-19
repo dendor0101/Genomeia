@@ -50,8 +50,9 @@ object StateHash {
      *     умерших организмов возвращаются и выдаются заново.
      * 7 — у организма в хэш вошла арена нейросвязей (OrganEntity.neuralArena*), а нейрофаза
      *     суммирует сигналы по аренам, а не по общему списку.
+     * 8 — в часть SimulationData вошли параметры стресса (PlayerCommand.SetStress).
      */
-    const val VERSION = 7
+    const val VERSION = 8
 
     class Result(val hash: Long, val parts: LongArray)
 

@@ -47,6 +47,15 @@ class SimulationData {
     var debugKillCells = false
     var debugFlingCells = false
 
+    /**
+     * Стресс жизненного цикла для проверок, см. PlayerCommand.SetStress: раз во сколько тиков
+     * убить клетку, отбросить клетку, посадить организм; 0 — выключено. Состояние мира: в
+     * хэше (SimulationSystem.hashState), сбрасывается с началом сессии.
+     */
+    var stressKillEvery = 0
+    var stressFlingEvery = 0
+    var stressSpawnEvery = 0
+
     fun clear() {
         isRestart = false
         isFinish = false

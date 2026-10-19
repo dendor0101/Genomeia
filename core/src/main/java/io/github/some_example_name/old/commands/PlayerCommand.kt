@@ -38,4 +38,19 @@ sealed interface PlayerCommand : GameCommand {
     object StopDrag : PlayerCommand {
         override val name get() = "StopDrag"
     }
+
+    /**
+     * Стресс жизненного цикла для проверок (bugReplayCheck): раз в [killEvery] тиков
+     * умирает случайная клетка, раз в [flingEvery] — случайная клетка улетает, рвя связи,
+     * раз в [spawnEvery] — в случайном месте сажается организм случайного запечённого
+     * генома. 0 — выключено. Из интерфейса игрока не посылается.
+     *
+     * Командой, а не флагом запуска: стресс меняет мир, поэтому он обязан попасть в журнал
+     * и повториться при повторе бага — в тех же тиках, при любом числе воркеров.
+     */
+    @Serializable
+    data class SetStress(val killEvery: Int, val flingEvery: Int, val spawnEvery: Int) : PlayerCommand {
+        override val name get() = "SetStress"
+        override val detail get() = "kill=$killEvery fling=$flingEvery spawn=$spawnEvery"
+    }
 }
