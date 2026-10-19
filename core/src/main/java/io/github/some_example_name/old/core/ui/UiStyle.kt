@@ -104,6 +104,32 @@ fun makeStyledIconButton(icon: String, textures: MutableList<Texture>): VisImage
     return VisImageButton(style).also { it.image.setScaling(Scaling.fit) }
 }
 
+/**
+ * Кнопка-значок в рамке makeStyledButton со своей картинкой. [icon] — белый значок на
+ * прозрачном (см. HudIcons): кнопка красит его, как makeStyledIconButton выше. [checkedIcon]
+ * делает кнопку переключателем: включённая показывает его (пауза ↔ «играть»).
+ */
+fun makeStyledIconButton(
+    icon: TextureRegion,
+    textures: MutableList<Texture>,
+    checkedIcon: TextureRegion? = null
+): VisImageButton {
+    val style = VisImageButton.VisImageButtonStyle()
+    style.up   = makeStyledNP(BTN_UP,  Color(STYLE_BEIGE).also { it.a = 0.75f }, textures)
+    style.over = makeStyledNP(BTN_OVR, Color(STYLE_BEIGE), textures)
+    style.down = makeStyledNP(BTN_DWN, Color.WHITE, textures)
+    val drawable = TextureRegionDrawable(icon)
+    style.imageUp   = drawable.tint(STYLE_BEIGE)
+    style.imageOver = drawable.tint(Color.WHITE)
+    style.imageDown = style.imageOver
+    if (checkedIcon != null) {
+        val checked = TextureRegionDrawable(checkedIcon)
+        style.imageChecked = checked.tint(STYLE_BEIGE)
+        style.imageCheckedOver = checked.tint(Color.WHITE)
+    }
+    return VisImageButton(style).also { it.image.setScaling(Scaling.fit) }
+}
+
 // ── Dialog window rounded corners ───────────────────────────────────────────
 
 private var _dialogBgDrawable: NinePatchDrawable? = null

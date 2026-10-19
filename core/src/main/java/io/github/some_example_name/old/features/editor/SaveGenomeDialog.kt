@@ -33,6 +33,8 @@ class SaveGenomeDialog(
     /** Android: сохранить и отдать файл системе. */
     val onSaveAndExport: (name: String) -> Unit,
     val onGoMenu: () -> Unit,
+    /** Подпись кнопки выхода без сохранения: «Меню», а из мира — «Назад в мир». */
+    val goMenuLabel: String,
     val isGoToMenu: Boolean
 ) : VisDialog(bundle.get("button.saveGenome")) {
 
@@ -75,7 +77,7 @@ class SaveGenomeDialog(
                 onSave.invoke(name)
             }).hint(bundle.get("editor.hint.saveToFile"))
             if (isGoToMenu) {
-                visTextButton(bundle.get("button.menu"), onClick = {
+                visTextButton(goMenuLabel, onClick = {
                     onGoMenu.invoke()
                 }) { center() }.hint(bundle.get("editor.hint.menuWithoutSaving"))
             }

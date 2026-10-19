@@ -124,6 +124,7 @@ object CommandRegistry {
         t<SettingsIntent.SetRenderMode>(305),
         t<SettingsIntent.SetShowHints>(306),
         t<SettingsIntent.SetFullscreen>(307),
+        t<SettingsIntent.SetShowDebugInfo>(308),
 
         // --- Поддержка ---
         t<SupportIntent.CopyAddress>(400),
@@ -158,12 +159,15 @@ object CommandRegistry {
         t<SimulationIntent.AppResumed>(612),
         t<SimulationIntent.MoveCamera>(613),
         t<SimulationIntent.ZoomCamera>(614),
+        t<SimulationIntent.SetTool>(615),
+        t<SimulationIntent.UseSavedGenome>(616),
 
         // --- Касания мира ---
         t<PlayerCommand.TouchDown>(700),
         t<PlayerCommand.Drag>(701),
         t<PlayerCommand.Tap>(702),
         t<PlayerCommand.StopDrag>(703),
+        t<PlayerCommand.KillCell>(704),
 
         // --- Редактор генома ---
         t<PrevTickButtonTap>(800),

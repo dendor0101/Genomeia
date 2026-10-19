@@ -172,6 +172,13 @@ class SettingsScreen : VisDslScreen(
         ) { left().padTop(16.dp()) }
         row()
 
+        visToggleButton(
+            text = bundle.get("settings.showDebugInfo"),
+            checked = GlobalSettings.SHOW_DEBUG_INFO,
+            onCheckedChange = { viewModel.handle(SettingsIntent.SetShowDebugInfo(it)) }
+        ) { left().padTop(16.dp()) }
+        row()
+
         // Полный экран есть только на ПК; состояние берём у окна, а не храним: из него можно выйти и мимо кнопки.
         if (PlatformWindow.isSupported) {
             visToggleButton(

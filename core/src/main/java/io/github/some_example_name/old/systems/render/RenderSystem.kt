@@ -35,6 +35,15 @@ class RenderSystem(
 
     var isRenderUi = true
 
+    /** Подробный текст в углу (настройка SHOW_DEBUG_INFO); без него — только FPS и UPS. Ставит экран. */
+    var showDebugInfo = false
+
+    /** Нижний край текста в пикселях экрана — над кнопками в левом нижнем углу. Ставит экран. */
+    var textBottom = 0f
+
+    /** Текст угла пересобирается каждый кадр в один и тот же буфер, без новой строки на кадр. */
+    private val simInfoText = StringBuilder()
+
     /** Режим рендера этого мира; хранится у [renderBufferManager], см. пояснение там. */
     var mode: RenderMode
         get() = renderBufferManager.mode
@@ -268,26 +277,33 @@ class RenderSystem(
     }
 
     private fun drawTextSimInfo(spec: RenderSpecificBufferData) {
-        spriteBatch.begin()
-        font.draw(
-            spriteBatch,
-            """
-FPS: ${Gdx.graphics.framesPerSecond}
-UPS: ${spec.ups}
-Update Time: ${spec.updateTime} ms
-Cells: ${spec.cellsAmount}
-Particles: ${spec.particleAmount}
-Links ${spec.linksAmount}
-NeuronImpulseInput ${spec.neuronImpulseInput}
-NeuronImpulseOutput ${spec.neuronImpulseOutput}
-Cell type ${spec.cellName}
+        val text = simInfoText
+        text.setLength(0)
+        text.append("FPS: ").append(Gdx.graphics.framesPerSecond)
+        text.append("\nUPS: ").append(spec.ups)
+        if (showDebugInfo) {
+            text.append("\nUpdate Time: ").append(spec.updateTime).append(" ms")
+            text.append("\nCells: ").append(spec.cellsAmount)
+            text.append("\nParticles: ").append(spec.particleAmount)
+            text.append("\nLinks ").append(spec.linksAmount)
+        }
+        if (spec.isCellSelected) {
+            text.append("\n\nCell type ").append(spec.cellName)
+            text.append("\nNeuronImpulseInput ").append(spec.neuronImpulseInput)
+            text.append("\nNeuronImpulseOutput ").append(spec.neuronImpulseOutput)
+            text.append("\nSelected cell index ").append(spec.selectedCellIndex)
+        }
+        if (showDebugInfo && spec.detailedPerformance.isNotEmpty()) {
+            text.append('\n').append(spec.detailedPerformance)
+        }
 
-Selected cell index ${spec.selectedCellIndex}
-${spec.detailedPerformance}
-                """.trimIndent(),
-            30f,
-            450f
-        )
+        var lines = 1
+        for (i in 0 until text.length) if (text[i] == '\n') lines++
+
+        spriteBatch.begin()
+        // Текст растёт вверх от textBottom: сколько бы в нём ни было строк, он не уходит
+        // под кнопки внизу и не упирается в жёсткую высоту, которой нет на маленьком окне.
+        font.draw(spriteBatch, text, SIM_INFO_MARGIN, textBottom + SIM_INFO_MARGIN + lines * font.lineHeight)
         font.data.setScale(1f)
         spriteBatch.end()
     }
@@ -322,5 +338,9 @@ ${spec.detailedPerformance}
      * Собственных GL-ресурсов у этого класса нет: буферы инстансов — обычная память.
      */
     fun dispose() {
+    }
+
+    private companion object {
+        const val SIM_INFO_MARGIN = 12f
     }
 }

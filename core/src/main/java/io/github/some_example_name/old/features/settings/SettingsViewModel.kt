@@ -57,6 +57,13 @@ sealed interface SettingsIntent : GameCommand {
         override val detail get() = visible.toString()
     }
 
+    /** Подробная информация о мире в углу симуляции; без неё — только FPS и UPS. */
+    @Serializable
+    data class SetShowDebugInfo(val visible: Boolean) : SettingsIntent {
+        override val name get() = "SetShowDebugInfo"
+        override val detail get() = visible.toString()
+    }
+
     /** Полный экран на ПК. Вид окна, на мир не влияет; при повторе бага окно не трогаем. */
     @Serializable
     data class SetFullscreen(val enabled: Boolean) : SettingsIntent {
@@ -116,6 +123,11 @@ class SettingsViewModel {
 
             is SettingsIntent.SetShowHints -> {
                 GlobalSettings.SHOW_HINTS = intent.visible
+                UserPreferences.save()
+            }
+
+            is SettingsIntent.SetShowDebugInfo -> {
+                GlobalSettings.SHOW_DEBUG_INFO = intent.visible
                 UserPreferences.save()
             }
 
@@ -192,5 +204,11 @@ object GlobalSettings {
      * повтор .bug не влияет.
      */
     var SHOW_HINTS = true
+
+    /**
+     * Подробный текст в углу симуляции: время тика, число клеток, частиц и связей, разбивка
+     * по фазам. Выключено — только FPS и UPS. Только вид: на мир и повтор .bug не влияет.
+     */
+    var SHOW_DEBUG_INFO = false
     var currentLanguageTag: String = Locale.getDefault().toLanguageTag()
 }

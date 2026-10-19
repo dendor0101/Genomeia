@@ -38,6 +38,7 @@ import io.github.some_example_name.old.editor.system.logic.ShowMutateOrDivideDia
 import io.github.some_example_name.old.editor.system.logic.UiScreenCommands
 import io.github.some_example_name.old.core.ui.CameraControl
 import io.github.some_example_name.old.core.ui.KeyboardFocus
+import io.github.some_example_name.old.core.ui.keepWindowsOnScreen
 import io.github.some_example_name.old.commands.GoMenu
 import io.github.some_example_name.old.commands.GoReplace
 import io.github.some_example_name.old.core.DIGameGlobalContainer.navigationCommandsManager
@@ -80,6 +81,9 @@ class GenomeEditorScreen(
 
     /** Проход ввода к панели обучения поверх окон (TutorialPanel.inputBridge). */
     private var tutorialInputBridge: Actor? = null
+
+    /** Панель обучения справа: при пересборке вёрстки переезжает в новую, а не создаётся заново. */
+    private var tutorialPanel: TutorialPanel? = null
 
     var isRestartSimulation = false
     val editorSimulationSystem = DIGenomeEditorContainer.editorSimulationSystem
@@ -124,13 +128,21 @@ class GenomeEditorScreen(
         renderSystem.create(shape, camera)
         editorLogicSystem.bindToScreen(camera)
 
+        tutorialPanel = startTutorial()
+        compose()
+    }
+
+    private fun compose() {
         composeGenomeEditor.composeGenomeEditor(
             stage,
             editorSimulationSystem,
             editorLogicSystem,
             renderSystem,
-            sidePanel = startTutorial()?.root
+            sidePanel = tutorialPanel?.root
         )
+        // Свежая вёрстка показывает тик 0: пусть render заново выставит тик и шкалу.
+        state.currentTick = -1
+        state.lastTick = -1
     }
 
     /**
@@ -266,6 +278,8 @@ class GenomeEditorScreen(
     override fun resize(width: Int, height: Int) {
         if (width == currentScreenWidth && height == currentScreenHeight) return
         stage.viewport.update(width, height, true)
+        compose()
+        stage.keepWindowsOnScreen()
         renderSystem.isUpdateBuffer = true
         renderSystem.resize(width, height)
 

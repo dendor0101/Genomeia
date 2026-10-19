@@ -4,6 +4,8 @@ import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.kotcrab.vis.ui.widget.color.ColorPickerAdapter
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
+import io.github.some_example_name.old.core.DIGameGlobalContainer.game
+import io.github.some_example_name.old.commands.GoBack
 import io.github.some_example_name.old.commands.GoMenu
 import io.github.some_example_name.old.commands.GoReplace
 import io.github.some_example_name.old.commands.GoSimulation
@@ -155,6 +157,10 @@ fun Stage.saveDialog(
     genomeName: String,
     editorLogicSystem: EditorLogicSystem
 ) {
+    // Редактор открыт из мира (кнопкой «Создать новый геном»): мир стоит под ним на паузе,
+    // и все выходы ведут обратно в него, а не в меню и не в тест генома.
+    val previous = navigationCommandsManager.previousCommand()
+    val fromWorld = previous is GoSimulation && previous.genomeName == null
     SaveGenomeDialog(
         genomeName = genomeName,
         onSave = { name -> editorLogicSystem.putUiCommand(SaveGenome(name)) },
@@ -162,17 +168,33 @@ fun Stage.saveDialog(
         // попадают в журнал действий, и только так чистится стек прошлого маршрута.
         onSaveAndTest = { name ->
             editorLogicSystem.putUiCommand(SaveGenome(name))
-            navigationCommandsManager.performCommand(
-                GoReplace(GoSimulation(world = null, genomeName = name))
-            )
+            if (fromWorld) {
+                navigationCommandsManager.performCommand(GoBack)
+                // Отдельной командой уже мира: при повторе её подаст запись, на экран мира.
+                (game.screen as? GenomeEditorCaller)?.onGenomeSaved(name)
+            } else {
+                navigationCommandsManager.performCommand(
+                    GoReplace(GoSimulation(world = null, genomeName = name))
+                )
+            }
         },
         onSaveAndExport = { name ->
             editorLogicSystem.putUiCommand(SaveGenome(name))
             editorLogicSystem.putUiCommand(ExportGenome(name))
         },
         onGoMenu = {
-            navigationCommandsManager.performCommand(GoReplace(GoMenu))
+            navigationCommandsManager.performCommand(if (fromWorld) GoBack else GoReplace(GoMenu))
         },
+        goMenuLabel = bundle.get(if (fromWorld) "button.backToWorld" else "button.menu"),
         isGoToMenu = isGoToMenu
     ).show(this)
+}
+
+/**
+ * Экран, из которого открыли редактор генома и в который он возвращается после
+ * «Сохранить и протестировать» (мир симуляции).
+ */
+interface GenomeEditorCaller {
+    /** Геном [fileName] только что сохранён — сделать его выбранным. */
+    fun onGenomeSaved(fileName: String)
 }

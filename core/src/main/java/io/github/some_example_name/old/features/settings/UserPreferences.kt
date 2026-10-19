@@ -22,6 +22,7 @@ object UserPreferences {
     private const val LANGUAGE = "language"
     private const val RENDER_MODE = "render_mode"
     private const val SHOW_HINTS = "show_hints"
+    private const val SHOW_DEBUG_INFO = "show_debug_info"
 
     private val prefs by lazy { Gdx.app.getPreferences(NAME) }
 
@@ -34,6 +35,7 @@ object UserPreferences {
 
         GlobalSettings.RENDER_MODE = prefs.getInteger(RENDER_MODE, GlobalSettings.RENDER_MODE)
         GlobalSettings.SHOW_HINTS = prefs.getBoolean(SHOW_HINTS, GlobalSettings.SHOW_HINTS)
+        GlobalSettings.SHOW_DEBUG_INFO = prefs.getBoolean(SHOW_DEBUG_INFO, GlobalSettings.SHOW_DEBUG_INFO)
 
         val tag = prefs.getString(LANGUAGE, "")
         if (tag.isNotBlank()) {
@@ -51,6 +53,7 @@ object UserPreferences {
         prefs.putString(LANGUAGE, GlobalSettings.currentLanguageTag)
         prefs.putInteger(RENDER_MODE, GlobalSettings.RENDER_MODE)
         prefs.putBoolean(SHOW_HINTS, GlobalSettings.SHOW_HINTS)
+        prefs.putBoolean(SHOW_DEBUG_INFO, GlobalSettings.SHOW_DEBUG_INFO)
         prefs.flush()
     }
 }

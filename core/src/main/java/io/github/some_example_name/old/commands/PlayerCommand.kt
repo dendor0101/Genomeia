@@ -34,6 +34,13 @@ sealed interface PlayerCommand : GameCommand {
             get() = "${x.toInt()},${y.toInt()} ${if (isLeftButton) "L" else "R"} genome=${genomeIndex ?: "current"}"
     }
 
+    /** Инструмент «Убить клетку»: клетка под касанием умирает, пустое место — ничего. */
+    @Serializable
+    data class KillCell(val x: Float, val y: Float) : PlayerCommand {
+        override val name get() = "KillCell"
+        override val detail get() = "${x.toInt()},${y.toInt()}"
+    }
+
     @Serializable
     object StopDrag : PlayerCommand {
         override val name get() = "StopDrag"

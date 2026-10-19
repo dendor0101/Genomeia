@@ -246,6 +246,32 @@ class UserCommandManager(
 
 //                    println("Tap (${cmd.x}, ${cmd.y} ${cmd.isLeftButton} ${grabbedParticleIndex})")
             }
+
+            is PlayerCommand.KillCell -> killCell(cmd.x, cmd.y)
+        }
+    }
+
+    /**
+     * Убить клетку под касанием. Через обычную команду мира, как и стресс-тест
+     * (SimulationSystem.killRandomCell): со смертью клетки снимаются связи, освобождаются
+     * частица и орган, и всё это должно пройти штатным путём. Поколение в команде отсекает
+     * случай, когда до исполнения на этом месте уже родилась другая клетка.
+     */
+    private fun killCell(x: Float, y: Float) {
+        val particle = gridManager.pickParticle(x, y, particleEntity, cellEntity)
+        if (particle == -1 || !particleEntity.isCell[particle]) return
+        val cellIndex = particleEntity.holderEntityIndex[particle]
+        worldCommandsManager.worldCommandBuffer[0].push(
+            WorldCommandType.DELETE_CELL,
+            cellIndex,
+            cellEntity.getGeneration(cellIndex)
+        )
+        // Убитая клетка не должна остаться ни выбранной, ни схваченной: её номер скоро
+        // достанется другой.
+        if (simulationData.selectedCellIndex == cellIndex) simulationData.selectedCellIndex = -1
+        if (grabbedParticleIndex == particle) {
+            grabbedParticleIndex = -1
+            isDragging = false
         }
     }
 

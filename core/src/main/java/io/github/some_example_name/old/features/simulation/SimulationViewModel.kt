@@ -34,11 +34,34 @@ sealed interface SimulationIntent : GameCommand {
         override val detail get() = paused.toString()
     }
 
-    /** «Поставить организм»: левая кнопка ставит организм, правая — субстанцию; выключено — наоборот. */
+    /**
+     * Старая кнопка «Поставить организм»: включено — инструмент «Спавнить клетку»,
+     * выключено — «Спавнить еду». Кнопки больше нет, команда осталась ради старых .bug.
+     */
     @Serializable
     data class SetPutOrganism(val enabled: Boolean) : SimulationIntent {
         override val name get() = "SetPutOrganism"
         override val detail get() = enabled.toString()
+    }
+
+    /** Что делает касание мира, см. [SimulationTool]. */
+    @Serializable
+    data class SetTool(val tool: SimulationTool) : SimulationIntent {
+        override val name get() = "SetTool"
+        override val detail get() = tool.name
+    }
+
+    /**
+     * Игрок сохранил геном в редакторе, открытом из этого мира, и вернулся: геном
+     * дочитывается в мир из файла и становится выбранным.
+     *
+     * Читается всегда заново, даже если имя уже есть в мире: под старым именем мог лечь
+     * изменённый геном. Старая копия остаётся — по ней растут уже посаженные организмы.
+     */
+    @Serializable
+    data class UseSavedGenome(val fileName: String) : SimulationIntent {
+        override val name get() = "UseSavedGenome"
+        override val detail get() = fileName
     }
 
     /** Геном для следующих организмов — по имени файла, см. [SimulationViewModel.genomeNames]. */
@@ -135,6 +158,24 @@ sealed interface SimulationIntent : GameCommand {
     }
 }
 
+/**
+ * Инструмент — что делает касание мира. Решается на экране при создании команды
+ * (см. SimulationScreen.onTap): в запись сессии уходит уже итоговое действие.
+ *
+ * Имена — формат файла (команда SetTool): не переименовывать.
+ */
+@Serializable
+enum class SimulationTool {
+    /** Левая кнопка ставит организм, правая сыплет еду. */
+    SPAWN_CELL,
+
+    /** Наоборот: левая — еда, правая — организм. */
+    SPAWN_FOOD,
+
+    /** Касание клетки убивает её. */
+    KILL_CELL
+}
+
 /** Что экран должен сделать со своей стороны после команды. */
 sealed interface SimulationEffect {
     /** Состав или состояние кнопок поменялись — пересобрать панель. */
@@ -142,6 +183,9 @@ sealed interface SimulationEffect {
 
     /** Поменялась пауза, но не по кнопке паузы — поправить её отметку. */
     data object PauseChanged : SimulationEffect
+
+    /** Поменялся инструмент — поправить значок его кнопки. */
+    data object ToolChanged : SimulationEffect
 
     data class WorldSaved(val success: Boolean) : SimulationEffect
 }
@@ -173,7 +217,7 @@ class SimulationViewModel(
     /** Куда сохраняется мир. null — ещё не сохранялся, первое сохранение заведёт новый слот. */
     private var saveSlot = savedWorld
 
-    var putOrganism = true
+    var tool = SimulationTool.SPAWN_CELL
         private set
 
     var isUiVisible = true
@@ -192,6 +236,9 @@ class SimulationViewModel(
      */
     var genomeNames: List<String> = emptyList()
         private set
+
+    /** Мир не из теста генома: в нём выбирают геномы, сохраняют мир и открывают редактор. */
+    val isSandbox: Boolean get() = genomeName == null
 
     val isPaused: Boolean get() = !simulationData.isPlay
 
@@ -221,10 +268,18 @@ class SimulationViewModel(
             // бы мир раньше, чем он дойдёт до тиков следующих команд.
             is SimulationIntent.SetPaused -> if (!BugReplay.isActive) simulationData.isPlay = !intent.paused
 
-            is SimulationIntent.SetPutOrganism -> putOrganism = intent.enabled
+            is SimulationIntent.SetPutOrganism ->
+                setTool(if (intent.enabled) SimulationTool.SPAWN_CELL else SimulationTool.SPAWN_FOOD)
+
+            is SimulationIntent.SetTool -> setTool(intent.tool)
 
             is SimulationIntent.SelectGenome -> {
-                val index = genomeNames.indexOf(intent.fileName)
+                // Последний: после UseSavedGenome под одним именем может быть несколько
+                // копий, и выбирать надо свежую.
+                val index = genomeNames.lastIndexOf(intent.fileName).takeIf { it >= 0 }
+                    // В окне выбора — все геномы из папки, а в мир при старте читаются
+                    // только они же; но файл мог появиться позже (сохранили из редактора).
+                    ?: addGenomeFromFile(intent.fileName)
                 if (index >= 0) {
                     simulationData.currentGenomeIndex = index
                 } else {
@@ -232,6 +287,15 @@ class SimulationViewModel(
                     // в другом месте — на genomes[-1] в момент постановки клетки, то есть
                     // в потоке симуляции.
                     Gdx.app.error("Genome", "геном '${intent.fileName}' не найден среди $genomeNames")
+                }
+            }
+
+            is SimulationIntent.UseSavedGenome -> {
+                val index = addGenomeFromFile(intent.fileName)
+                if (index >= 0) {
+                    simulationData.currentGenomeIndex = index
+                    // Геном только что сделан, чтобы его посадить.
+                    setTool(SimulationTool.SPAWN_CELL)
                 }
             }
 
@@ -284,6 +348,30 @@ class SimulationViewModel(
                 camera.update()
             }
         }
+    }
+
+    private fun setTool(value: SimulationTool) {
+        if (tool == value) return
+        tool = value
+        onEffect?.invoke(SimulationEffect.ToolChanged)
+    }
+
+    /**
+     * Дочитать геном из папки в мир, вернуть его номер или -1.
+     *
+     * В конец списка, как и геномы сохранённого мира (GenomeManager.addSavedGenome): номер
+     * генома — это OrganEntity.genomeIndex уже живущих организмов, сдвигать его нельзя.
+     * Между тиками: список читает поток симуляции, когда сажает организм.
+     */
+    private fun addGenomeFromFile(fileName: String): Int = try {
+        val index = simulationSystem.betweenTicks {
+            DISimulationContainer.genomeManager.addFromCatalog(fileName)
+        }
+        genomeNames = genomeNames + fileName
+        index
+    } catch (e: Exception) {
+        Gdx.app.error("Genome", "не удалось прочитать геном '$fileName'", e)
+        -1
     }
 
     /** Геномы мира — до первой сборки панели: по их именам работает выбор генома. */

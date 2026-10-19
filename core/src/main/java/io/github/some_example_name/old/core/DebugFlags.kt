@@ -17,7 +17,7 @@ package io.github.some_example_name.old.core
  *
  * Включать вручную при отладке физики или NaN-ов и пересобирать.
  */
-const val DEBUG_CHECKS = false
+const val DEBUG_CHECKS = true
 
 /**
  * Запись профиля тика в консоль и в CSV-файл (sim_profile.csv рядом с рабочей директорией).

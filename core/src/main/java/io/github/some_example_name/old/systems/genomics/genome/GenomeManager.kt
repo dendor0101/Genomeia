@@ -39,6 +39,15 @@ class GenomeManager(
         return genomes.size - 1
     }
 
+    /**
+     * Дочитать геном [name] из GenomeCatalog в конец списка, вернуть его индекс. В конец
+     * по той же причине, что и [addSavedGenome]: индексы уже занятых геномов не двигаются.
+     */
+    fun addFromCatalog(name: String): Int {
+        genomes.add(parseGenome(name))
+        return genomes.size - 1
+    }
+
     private fun parseGenome(name: String): Genome = GenomeCatalog.load(name).prepare()
 
     /** Досчитывает @Transient-поля генома: и после чтения файла, и после загрузки мира. */

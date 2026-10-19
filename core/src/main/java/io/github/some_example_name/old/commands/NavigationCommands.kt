@@ -121,8 +121,8 @@ object EcoSystemScreenCellsSettings : Menu() {
  * Команда навигации по имени.
  *
  * Нужна там, где команда приходит строкой, а не из кода: параметр запуска для скриншотов
- * вёрстки. Команды с обязательными аргументами (GoSimulation) сюда намеренно не попадают;
- * редактор мира открывается со случайным сидом.
+ * вёрстки. Команды с аргументами берутся с аргументами по умолчанию: редактор мира — со
+ * случайным сидом, симуляция — пустой мир без рельефа и без теста генома.
  */
 fun navigationCommandByName(name: String): NavigationCommands? = when (name.trim()) {
     GoMenu.name -> GoMenu
@@ -134,6 +134,7 @@ fun navigationCommandByName(name: String): NavigationCommands? = when (name.trim
     GoGenomes.name -> GoGenomes
     GoGuide.name -> GoGuide
     GoTutorial.name -> GoTutorial
+    "GoSimulation" -> GoSimulation(world = null, genomeName = null)
     GoBack.name -> GoBack
     GoExit.name -> GoExit
     else -> null

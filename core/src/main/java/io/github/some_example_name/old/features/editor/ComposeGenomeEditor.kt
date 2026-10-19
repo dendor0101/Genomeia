@@ -63,6 +63,9 @@ class ComposeGenomeEditor {
     lateinit var undoButton: VisTextButton
     lateinit var redoButton: VisTextButton
 
+    /** Собранная вёрстка: при пересборке (смена размера окна) старая снимается со сцены. */
+    private var rootTable: Actor? = null
+
     fun composeGenomeEditor(
         stage: Stage,
         editorSimulationSystem: EditorSimulationSystem,
@@ -71,6 +74,9 @@ class ComposeGenomeEditor {
         /** Панель справа над полем (обучение); null — поле свободно целиком. */
         sidePanel: Actor? = null
     ) {
+        // Ряд кнопок раскладывается по строкам один раз, по ширине окна в момент сборки
+        // (visFlowRow), поэтому при смене размера окна вёрстка собирается заново.
+        rootTable?.remove()
         val rootTable = globalVisTable {
             setFillParent(true)
 
@@ -215,6 +221,8 @@ class ComposeGenomeEditor {
                 }).hint(bundle.get("editor.hint.timelineEnd"))
             }
         }
-        stage.addActor(rootTable)
+        // Под окнами, а не поверх: при пересборке на открытый диалог вёрстка не ложится.
+        stage.root.addActorAt(0, rootTable)
+        this.rootTable = rootTable
     }
 }

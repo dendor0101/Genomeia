@@ -74,7 +74,9 @@ object BugReplay {
     private var started = false
 
     private var uiEntries: List<JournalEntry> = emptyList()
-    private var cursor = 0
+
+    /** Следующая UI-команда. Пишет поток рендера, читает и поток симуляции ([mustHold]). */
+    @Volatile private var cursor = 0
     private val epochs = HashMap<Int, SimEpoch>()
     private var finalEpoch = 0
     private var finalTick = -1
@@ -107,7 +109,7 @@ object BugReplay {
     private val notes = ArrayList<String>()
     private var lastProgressNanos = 0L
     private var lastSeenTick = Int.MIN_VALUE
-    private var finished = false
+    @Volatile private var finished = false
 
     /**
      * Итог повтора: null — ещё идёт (или не начинался), true — всё применено, все суммы
@@ -462,6 +464,7 @@ object BugReplay {
      */
     fun mustHold(epoch: Int, tick: Int): Boolean {
         if (!started) return true
+        if (uiCommandPending(epoch, tick)) return true
         val save = epochs[epoch]?.nextSaveTick()
         if (save != null && tick >= save) return true
         if (epoch == finalEpoch && finalTick >= 0 && tick >= finalTick) {
@@ -469,6 +472,26 @@ object BugReplay {
             return true
         }
         return false
+    }
+
+    /**
+     * Поток рендера ещё не подал UI-команду, нажатую у игрока на этом тике или раньше.
+     *
+     * Кнопки игрок жмёт в потоке рендера, и у него они ложатся между тиками того мира,
+     * который он видит. При повторе поток рендера подаёт команды по кадрам (переход
+     * экрана — целый кадр), и без этой остановки мир успевал уйти вперёд. Пока игрок
+     * был, например, в редакторе генома, его мир стоял на паузе на одном тике, а при
+     * повторе за десятки кадров правок генома мир убегал бы на десятки тиков, и выбранный
+     * в конце геном доставался бы уже не тому касанию.
+     */
+    private fun uiCommandPending(epoch: Int, tick: Int): Boolean {
+        if (finished) return false
+        val entry = uiEntries.getOrNull(cursor) ?: return false
+        // Сохранение мира подаётся не «с тика», а ровно на тике, где оно случилось
+        // (gateOpen), и мир до него довозит свой барьер. Держать мир здесь — значит не
+        // дать ему дойти до этого тика: повтор встал бы навсегда.
+        if (entry.command is SimulationIntent.SaveWorld) return false
+        return entry.tick >= 0 && entry.epoch == epoch && entry.tick <= tick
     }
 
     /** Сохранение мира случилось (или упало) — отпустить мир. Зовётся между тиками. */

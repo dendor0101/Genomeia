@@ -42,6 +42,12 @@ class NavigationCommandsManager {
     fun currentPath(): List<String> =
         commandStack.map { it.logName } + listOfNotNull(currentCommand?.logName)
 
+    /**
+     * Команда экрана под текущим — туда вернёт [GoBack]. null — под текущим ничего нет.
+     * Так редактор генома узнаёт, что открыт из мира и после сохранения вернётся в него.
+     */
+    fun previousCommand(): NavigationCommands? = commandStack.lastOrNull()
+
     fun performCommand(command: NavigationCommands) =
         // В ActionLog переход пишет onCommand — уже с тем, куда в итоге попали.
         SessionJournal.execute(CommandSource.NAVIGATION, command, logAction = false) { perform(it) }

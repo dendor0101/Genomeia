@@ -38,7 +38,6 @@ genomes/Hypha.genome
 genomes/Leech.genome
 genomes/Maggot.genome
 genomes/Megalodon.genome
-genomes/Morphogenesis.genome
 genomes/Stem grow emitter.genome
 genomes/Sucker.genome
 genomes/Tapeworm.genome

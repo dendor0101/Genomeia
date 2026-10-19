@@ -5,21 +5,28 @@ import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
 import com.badlogic.gdx.Screen
 import com.badlogic.gdx.files.FileHandle
+import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.OrthographicCamera
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
+import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Matrix4
+import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.Stage
+import com.badlogic.gdx.scenes.scene2d.Touchable
 import com.badlogic.gdx.scenes.scene2d.actions.Actions
+import com.badlogic.gdx.scenes.scene2d.ui.Button
+import com.badlogic.gdx.scenes.scene2d.ui.Label
 import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
-import com.badlogic.gdx.scenes.scene2d.utils.Layout
+import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.viewport.ScreenViewport
+import com.kotcrab.vis.ui.VisUI
 import com.kotcrab.vis.ui.widget.VisDialog
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisTextButton
@@ -28,17 +35,25 @@ import io.github.some_example_name.old.commands.GameCommand
 import io.github.some_example_name.old.commands.GoGenomeEditor
 import io.github.some_example_name.old.commands.GoMenu
 import io.github.some_example_name.old.commands.GoReplace
+import io.github.some_example_name.old.commands.GoSettings
+import io.github.some_example_name.old.commands.Menu
 import io.github.some_example_name.old.commands.PlayerCommand
 import io.github.some_example_name.old.core.ui.ConfirmDialog
 import io.github.some_example_name.old.core.ui.KeyboardFocus
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.ui.CameraControl
+import io.github.some_example_name.old.core.ui.STYLE_BEIGE
 import io.github.some_example_name.old.core.ui.h
+import io.github.some_example_name.old.core.ui.hint
+import io.github.some_example_name.old.core.ui.keepWindowsOnScreen
 import io.github.some_example_name.old.core.ui.makeStyledButton
+import io.github.some_example_name.old.core.ui.makeStyledIconButton
+import io.github.some_example_name.old.core.ui.makeStyledNP
 import io.github.some_example_name.old.core.ui.setupTitleSize
-import io.github.some_example_name.old.core.ui.renderModeSelectBox
 import io.github.some_example_name.old.core.ui.w
+import io.github.some_example_name.old.features.editor.GenomeEditorCaller
+import io.github.some_example_name.old.features.settings.GlobalSettings
 import io.github.some_example_name.old.features.worldeditor.WorldSpec
 import io.github.some_example_name.old.game.applyCustomFontMedium
 import io.github.some_example_name.old.systems.genomics.library.GenomeCatalog
@@ -52,7 +67,7 @@ class SimulationScreen(
     val genomeName: String?,
     /** Слот сохранённого мира: мир загружается из него, см. MapSave. */
     val savedWorld: String? = null
-) : Screen, ReplayTarget {
+) : Screen, ReplayTarget, GenomeEditorCaller {
 
     private val simulationSystem = DISimulationContainer.simulationSystem
     private val renderSystem = DISimulationContainer.renderSystem
@@ -78,12 +93,7 @@ class SimulationScreen(
         onTouchDown = { x, y, isLeft ->
             userCommandManager.push(PlayerCommand.TouchDown(x, y, isLeftButton = isLeft))
         },
-        onTap = { x, y, isLeft ->
-            // «Поставить организм» меняет кнопки местами. Решается здесь, при создании
-            // команды: в запись сессии уходит уже итоговая кнопка.
-            val putOrganism = viewModel.putOrganism
-            userCommandManager.push(PlayerCommand.Tap(x, y, isLeftButton = if (isLeft) putOrganism else !putOrganism))
-        },
+        onTap = ::onWorldTap,
         onFling = {
             userCommandManager.push(PlayerCommand.StopDrag)
         },
@@ -111,12 +121,30 @@ class SimulationScreen(
     private var currentScreenWidth = 0
     private var currentScreenHeight = 0
 
-    var onResize: (() -> Unit)? = null
     private val extraTextures = mutableListOf<Texture>()
+    private lateinit var icons: HudIcons
 
-    /** Кнопки, которым экран меняет вид по эффектам ViewModel. Пересоздаются в rebuildMenu. */
-    private var pauseSimToggle: VisTextButton? = null
-    private var saveWorldButton: VisTextButton? = null
+    /** Кнопка паузы: эффект ViewModel поправляет её отметку. Пересоздаётся в rebuildMenu. */
+    private var pauseButton: Button? = null
+
+    /**
+     * Самая верхняя из кнопок внизу экрана: над ней рисуется текст угла (FPS, UPS…), чтобы
+     * не ложиться на кнопки ни при каком размере окна.
+     */
+    private var bottomAnchor: Actor? = null
+    private val anchorTop = Vector2()
+
+    /**
+     * Мир уже построен. Экран показывается второй раз, когда игрок возвращается из
+     * редактора генома или настроек, открытых поверх мира: тогда мир не строится заново.
+     */
+    private var isStarted = false
+
+    /** Снять паузу, когда игрок вернётся (из настроек): ставил её не он, а уход с экрана. */
+    private var resumeOnReturn = false
+
+    /** «Сохранить и выйти»: выйти, как только мир сохранится. */
+    private var exitAfterSave = false
 
     /**
      * Последнее состояние клавиш контроллера НА КЛАВИАТУРЕ. Команда уходит только при
@@ -125,6 +153,12 @@ class SimulationScreen(
     private val keyboardKeys = BooleanArray(CONTROLLER_KEY_CODES.size)
 
     override fun show() {
+        if (isStarted) {
+            returnFromScreenOnTop()
+            return
+        }
+        isStarted = true
+
         viewModel.loadGenomes()
         viewModel.onEffect = ::applyEffect
 
@@ -139,6 +173,9 @@ class SimulationScreen(
         // Масштабируем шрифт симуляционной информации под DPI (density)
         // Это обеспечивает корректный размер текста при любом разрешении/DPI
         font.data.setScale(Gdx.graphics.density)
+
+        icons = HudIcons()
+        renderSystem.showDebugInfo = GlobalSettings.SHOW_DEBUG_INFO
 
         root = Table()
         root.setFillParent(true)
@@ -162,6 +199,31 @@ class SimulationScreen(
         camera.position.set(DISimulationContainer.gridWidth / 2f, DISimulationContainer.gridHeight / 2f, 0f)
         camera.update()
         if (!started) showLoadError()
+    }
+
+    /**
+     * Вернулись с экрана, открытого поверх мира (редактор генома, настройки). Мир стоял под
+     * ним на паузе и строиться заново не должен. Возвращаются ввод и рендер; вёрстку
+     * пересоберёт resize, который Game.setScreen зовёт сразу после show: пока игрока не
+     * было, могли смениться и размер окна, и язык.
+     */
+    private fun returnFromScreenOnTop() {
+        Gdx.input.inputProcessor = cameraControl.getInputMultiplexer(stage)
+        // Рендер мира один на всю игру, и редактор генома мог перенастроить его под себя.
+        renderSystem.create(
+            fontMatrix = fontMatrix,
+            spriteBatch = spriteBatch,
+            font = font,
+            shapeRenderer = shapeRenderer,
+            camera = camera
+        )
+        renderSystem.showDebugInfo = GlobalSettings.SHOW_DEBUG_INFO
+        currentScreenWidth = 0
+        currentScreenHeight = 0
+        if (resumeOnReturn) {
+            resumeOnReturn = false
+            viewModel.handle(SimulationIntent.SetPaused(false))
+        }
     }
 
     private fun showLoadError() {
@@ -192,25 +254,89 @@ class SimulationScreen(
         when (effect) {
             SimulationEffect.RebuildMenu -> rebuildMenu()
 
-            SimulationEffect.PauseChanged -> pauseSimToggle?.isChecked = viewModel.isPaused
+            SimulationEffect.PauseChanged -> pauseButton?.isChecked = viewModel.isPaused
 
-            is SimulationEffect.WorldSaved -> saveWorldButton?.let {
-                flashText(it, if (effect.success) "label.saved" else "label.saveFailed")
+            // Значок кнопки инструмента — нынешний инструмент.
+            SimulationEffect.ToolChanged -> rebuildMenu()
+
+            is SimulationEffect.WorldSaved -> onWorldSaved(effect.success)
+        }
+    }
+
+    private fun onWorldSaved(success: Boolean) {
+        showToast(if (success) "label.saved" else "label.saveFailed")
+        if (!exitAfterSave) return
+        exitAfterSave = false
+        // Выходим только с сохранённым миром: упало — игрок остаётся и видит ошибку.
+        // Не сразу, а следующим кадром: сохранение заканчивается внутри отрисовки мира,
+        // а выход освобождает этот экран.
+        if (success) Gdx.app.postRunnable { exit() }
+    }
+
+    /** Касание мира: что делать, решает инструмент. */
+    private fun onWorldTap(x: Float, y: Float, isLeft: Boolean) {
+        // Решается здесь, при создании команды: в запись сессии уходит уже итоговое действие.
+        when (val tool = viewModel.tool) {
+            SimulationTool.KILL_CELL -> userCommandManager.push(PlayerCommand.KillCell(x, y))
+            SimulationTool.SPAWN_CELL, SimulationTool.SPAWN_FOOD -> {
+                // «Еда» меняет кнопки местами: левая сыплет еду, правая ставит организм.
+                val putOrganism = tool == SimulationTool.SPAWN_CELL
+                userCommandManager.push(PlayerCommand.Tap(x, y, isLeftButton = if (isLeft) putOrganism else !putOrganism))
             }
         }
+    }
+
+    /** Из редактора, открытого кнопкой «Создать новый геном», вернулись с сохранённым геномом. */
+    override fun onGenomeSaved(fileName: String) {
+        viewModel.handle(SimulationIntent.UseSavedGenome(fileName))
+        // Геном сделан, чтобы сразу его посадить: мир идёт дальше. Вышел из редактора без
+        // сохранения («Назад в мир») — мир остаётся на паузе, см. openOnTop.
+        viewModel.handle(SimulationIntent.SetPaused(false))
+        // Кнопки уже пересобраны при возвращении на экран — с паузой, какой она была до этого.
+        applyEffect(SimulationEffect.PauseChanged)
+    }
+
+    /**
+     * Через менеджер, а не game.screen = ...: иначе переход не виден журналу, а стек
+     * остаётся от прошлого маршрута — «Назад» в меню уводило бы туда, откуда игрок уже вышел.
+     */
+    private fun exit() {
+        DIGameGlobalContainer.navigationCommandsManager.performCommand(
+            if (genomeName == null) {
+                GoReplace(GoMenu)
+            } else {
+                GoReplace(GoGenomeEditor(genomeName.replace(".json", "")))
+            }
+        )
+    }
+
+    /**
+     * Экран поверх мира (редактор генома, настройки). Мир на это время встаёт: его не
+     * видно, а на телефоне он ещё и жёг бы батарею в фоне. [resume] — снять паузу по
+     * возвращении (настройки). Из редактора паузу снимает только сохранённый геном
+     * ([onGenomeSaved]); вернулся без него — мир ждёт игрока на паузе.
+     */
+    private fun openOnTop(command: Menu, resume: Boolean) {
+        resumeOnReturn = resume && !viewModel.isPaused
+        viewModel.handle(SimulationIntent.SetPaused(true))
+        DIGameGlobalContainer.navigationCommandsManager.performCommand(command)
     }
 
     /**
      * «Сохранить»: имя мира, а если под ним лежит другой мир — вопрос, перезаписать ли.
      * Оба окна только спрашивают; сохраняет команда SaveWorld с уже решённым именем.
      */
-    private fun showSaveDialog() {
+    private fun showSaveDialog(exitAfter: Boolean) {
         val bundle = DIGameGlobalContainer.bundle
+        fun save(name: String) {
+            exitAfterSave = exitAfter
+            viewModel.handle(SimulationIntent.SaveWorld(name))
+        }
         lateinit var dialog: SaveWorldDialog
         dialog = SaveWorldDialog(viewModel.suggestedSaveName(bundle.get("map.defaultName"))) { name ->
             if (!viewModel.wouldOverwrite(name)) {
                 dialog.fadeOut()
-                viewModel.handle(SimulationIntent.SaveWorld(name))
+                save(name)
                 return@SaveWorldDialog
             }
             ConfirmDialog(
@@ -220,7 +346,7 @@ class SimulationScreen(
                 cancel = bundle.get("button.otherName"),
                 onConfirm = {
                     dialog.fadeOut()
-                    viewModel.handle(SimulationIntent.SaveWorld(name))
+                    save(name)
                 },
                 onCancel = { dialog.editName() }
             ).show(stage)
@@ -228,12 +354,24 @@ class SimulationScreen(
         dialog.show(stage)
     }
 
-    /** Ненадолго подменить надпись на кнопке — единственный отклик на сохранение. */
-    private fun flashText(button: VisTextButton, key: String) {
-        val original = button.text.toString()
-        button.setText(DIGameGlobalContainer.bundle.get(key))
-        button.clearActions()
-        button.addAction(Actions.delay(1.5f, Actions.run { button.setText(original) }))
+    /** Короткая надпись сверху по центру, сама гаснет — отклик на сохранение мира. */
+    private fun showToast(key: String) {
+        val game = DIGameGlobalContainer.game
+        val label = VisLabel(DIGameGlobalContainer.bundle.get(key))
+        game.applyCustomFontMedium(label)
+        label.setAlignment(Align.center)
+        val density = Gdx.graphics.density
+        // Сцена экрана, а не таблицы: у ещё не добавленной таблицы своей сцены нет.
+        val screenStage = stage
+        val toast = Table().apply {
+            background = makeStyledNP(TOAST_FILL, Color(STYLE_BEIGE).also { it.a = 0.65f }, extraTextures)
+            touchable = Touchable.disabled
+            add(label).pad(8f * density, 16f * density, 8f * density, 16f * density)
+            pack()
+            setPosition((screenStage.width - width) / 2f, screenStage.height - height - (HUD_BUTTON_DP + 24f) * density)
+            addAction(Actions.sequence(Actions.delay(1.5f), Actions.fadeOut(0.4f), Actions.removeActor()))
+        }
+        screenStage.addActor(toast)
     }
 
     override fun render(delta: Float) {
@@ -262,6 +400,10 @@ class SimulationScreen(
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
 
         shapeRenderer.projectionMatrix = camera.combined
+
+        // Вёрстка с прошлого кадра: сцена в пикселях экрана (ScreenViewport), поэтому верх
+        // кнопки в координатах сцены — это и есть высота над нижним краем в пикселях.
+        renderSystem.textBottom = bottomAnchor?.let { it.localToStageCoordinates(anchorTop.set(0f, it.height)).y } ?: 0f
 
         renderSystem.render()
 
@@ -354,7 +496,7 @@ class SimulationScreen(
         currentScreenWidth = width
         currentScreenHeight = height
         rebuildMenu()
-        onResize?.invoke()
+        stage.keepWindowsOnScreen()
     }
 
     override fun pause() {
@@ -387,6 +529,7 @@ class SimulationScreen(
         spriteBatch.dispose()
         font.dispose()
         extraTextures.forEach { it.dispose() }
+        icons.dispose()
     }
 
 
@@ -394,131 +537,173 @@ class SimulationScreen(
         extraTextures.forEach { it.dispose() }
         extraTextures.clear()
         root.clear()
-        pauseSimToggle = null
-        saveWorldButton = null
+        pauseButton = null
+        bottomAnchor = null
 
         // Интерфейс спрятан (клавиша Z) — только мир, без единой кнопки.
         if (!viewModel.isUiVisible) return
 
-        root.top().left()
-
         val bundle = DIGameGlobalContainer.bundle
-        val game = DIGameGlobalContainer.game
+        val density = Gdx.graphics.density
+        val size = hudButtonSize()
+        val pad = 8f * density
 
-        val menuButton = makeStyledButton(
-            if (genomeName == null) bundle.get("button.menu") else bundle.get("button.backToEditor"),
-            game, extraTextures
-        ).onClick {
-            // Через менеджер, а не game.screen = ...: иначе переход не виден журналу,
-            // а стек остаётся от прошлого маршрута — «Назад» в меню уводило бы туда,
-            // откуда игрок уже вышел.
-            DIGameGlobalContainer.navigationCommandsManager.performCommand(
-                if (genomeName == null) {
-                    GoReplace(GoMenu)
-                } else {
-                    GoReplace(GoGenomeEditor(genomeName.replace(".json", "")))
-                }
-            )
+        // --- Сверху: слева меню и геном, справа инструмент и пауза ---
+        val topBar = Table()
+        topBar.add(iconButton(icons.menu).hint(bundle.get("button.menu")).onClick { showMenu() })
+            .size(size).padRight(pad)
+        // Геномы выбирают только в обычном мире: у теста генома он один.
+        if (viewModel.isSandbox) {
+            topBar.add(iconButton(icons.organism).hint(bundle.get("button.selectGenome")).onClick { showGenomeList() })
+                .size(size)
         }
+        topBar.add().expandX()
 
-        val putOrganismToggle = makeStyledButton(bundle.get("button.putOrganism"), game, extraTextures, toggle = true)
-        putOrganismToggle.isChecked = viewModel.putOrganism
-        putOrganismToggle.onClick {
-            viewModel.handle(SimulationIntent.SetPutOrganism(putOrganismToggle.isChecked))
-        }
+        val toolButton = iconButton(icons.of(viewModel.tool))
+        toolButton.hint(bundle.get("tool.title") + ": " + bundle.get(viewModel.tool.labelKey))
+        toolButton.onClick { showToolMenu(toolButton) }
+        topBar.add(toolButton).size(size).padRight(pad)
 
-        val selectGenomeButton = makeStyledButton(bundle.get("button.selectGenome"), game, extraTextures).onClick {
-            showGenomeList()
-        }
+        val pause = iconButton(icons.pause, checkedIcon = icons.play)
+        pause.isChecked = viewModel.isPaused
+        pause.hint(bundle.get("button.pause"))
+        pause.onClick { viewModel.handle(SimulationIntent.SetPaused(pause.isChecked)) }
+        pauseButton = pause
+        // Справа место под кнопку-жук отчёта об ошибке (BugOverlay): она поверх всех экранов.
+        topBar.add(pause).size(size).padRight(BUG_BUTTON_RESERVE_DP * density)
 
-        val speedUpButton = makeStyledButton(bundle.get("button.speedUp"), game, extraTextures).onClick {
-            SpeedUpDialog(
-                game = game,
-                bundle = bundle,
-                onTargetUps = { viewModel.handle(SimulationIntent.SetTargetUps(it)) },
-                onMaxSpeed = { viewModel.handle(SimulationIntent.SetMaxSpeed(it)) }
-            ).show(stage)
-        }
+        root.top().left()
+        root.add(topBar).growX().pad(pad).row()
 
-        val pauseToggle = makeStyledButton(bundle.get("button.pause"), game, extraTextures, toggle = true)
-        pauseToggle.isChecked = viewModel.isPaused
-        pauseToggle.onClick {
-            viewModel.handle(SimulationIntent.SetPaused(pauseToggle.isChecked))
-        }
-        pauseSimToggle = pauseToggle
+        // --- Посередине — мир; экранная клавиатура контроллера, если включена ---
+        val keyboardShown = simulationSystem.simulationData.showControllerKeys
+        if (keyboardShown) root.add(controllerNumbers()).growX().left().padTop(pad).row()
+        root.add().grow().row()
+        val bottomKeyboard = if (keyboardShown) controllerKeyboard() else null
+        if (bottomKeyboard != null) root.add(bottomKeyboard).growX().bottom().left().padBottom(pad).row()
 
-        val restartSimulationButton = makeStyledButton(bundle.get("button.restart"), game, extraTextures).onClick {
-            viewModel.handle(SimulationIntent.Restart)
-        }
+        // --- Снизу слева — клавиши контроллера ---
+        val keysToggle = controllerKeysToggle(size)
+        root.add(keysToggle).size(size * KEYS_BUTTON_WIDTH, size).left().pad(pad)
 
-        // Режим — свой у симуляции: ни меню, ни редактор генома его не видят.
-        val renderModeSelect = renderModeSelectBox(
-            selected = renderSystem.mode,
-            onSelect = { viewModel.handle(SimulationIntent.SetRenderMode(it)) }
-        )
-
-        val controllerKeysToggle = makeStyledButton("Controller Keys", game, extraTextures, toggle = true)
-        controllerKeysToggle.isChecked = simulationSystem.simulationData.showControllerKeys
-        controllerKeysToggle.onClick {
-            // Панель пересоберёт эффект RebuildMenu: клавиатуру надо показать или спрятать.
-            viewModel.handle(SimulationIntent.SetControllerKeysVisible(controllerKeysToggle.isChecked))
-        }
-
-        val saveButton = makeStyledButton(bundle.get("button.save"), game, extraTextures).onClick {
-            showSaveDialog()
-        }
-        saveWorldButton = saveButton
-
-        // Сохранение только у обычного мира: тест генома — временный мир, из которого
-        // возвращаются в редактор.
-        val buttons: List<Actor> = if (genomeName == null) {
-            listOf(
-                menuButton, putOrganismToggle, selectGenomeButton, speedUpButton,
-                pauseToggle, restartSimulationButton, renderModeSelect, controllerKeysToggle,
-                saveButton
-            )
-        } else {
-            listOf(
-                menuButton, putOrganismToggle, speedUpButton, pauseToggle,
-                restartSimulationButton, renderModeSelect, controllerKeysToggle
-            )
-        }
-
-        val controls = Table()
-        controls.defaults().pad(8f * Gdx.graphics.density).left() // Pad 8f around each cell, align left
-
-        var currentWidth = 0f
-        var rowTable = Table()
-        rowTable.defaults().pad(8f * Gdx.graphics.density).left()
-
-        for (button in buttons) {
-            // Кнопки и список режима — разные виджеты, общее у них только Layout.
-            val prefWidth = (button as Layout).prefWidth + 16f * Gdx.graphics.density
-            if (currentWidth + prefWidth > Gdx.graphics.width && currentWidth > 0f) {
-                controls.add(rowTable).growX().row()
-                rowTable = Table()
-                rowTable.defaults().padLeft(8f * Gdx.graphics.density).padRight(8f * Gdx.graphics.density).left()
-                currentWidth = 0f
-            }
-            rowTable.add(button).height(Gdx.graphics.height * 0.05f)
-            currentWidth += prefWidth
-        }
-        if (rowTable.hasChildren()) {
-            controls.add(rowTable).growX()
-        }
-
-        root.add(controls).growX().top().left().row()
-
-        if (simulationSystem.simulationData.showControllerKeys) {
-            controllerKeyboard()
-        }
+        bottomAnchor = bottomKeyboard ?: keysToggle
     }
 
     /**
-     * Экранная клавиатура контроллера: цифры сверху, WASD, пробел и стрелки снизу.
+     * Сторона кнопок-значков: не меньше текстовой кнопки (шрифт кнопок свой у каждого
+     * экрана и плотности), иначе значки рядом с текстом выглядели бы мелкими.
+     */
+    private fun hudButtonSize(): Float {
+        val textButton = makeStyledButton("Ag", DIGameGlobalContainer.game, extraTextures).prefHeight
+        return maxOf(HUD_BUTTON_DP * Gdx.graphics.density, textButton)
+    }
+
+    private fun iconButton(icon: TextureRegion, checkedIcon: TextureRegion? = null): Button =
+        makeStyledIconButton(icon, extraTextures, checkedIcon).also {
+            // Свой отступ вместо отступов рамки: у скруглённой рамки они почти с саму
+            // кнопку, и значку не оставалось места.
+            it.pad(HUD_ICON_INSET_DP * Gdx.graphics.density)
+            it.imageCell.grow()
+        }
+
+    /**
+     * Кнопка «Клавиши контроллера»: на ней нарисованы клавиши W, A, S, D. Переключатель —
+     * показывает и прячет экранную клавиатуру.
+     */
+    private fun controllerKeysToggle(size: Float): Button {
+        val game = DIGameGlobalContainer.game
+        val button = makeStyledButton("", game, extraTextures, toggle = true)
+        button.clearChildren()
+        button.pad(size * 0.06f)
+
+        // Клавиша — тёмный квадрат в светлой обводке. Не скруглённая рамка makeStyledNP:
+        // её углы больше такой маленькой клавиши, и она рисовалась кругами.
+        val skin = VisUI.getSkin()
+        val keyBorder = skin.newDrawable("white", STYLE_BEIGE)
+        val keyFill = skin.newDrawable("white", KEYCAP_FILL)
+        val keyStyle = Label.LabelStyle(game.smallFont, STYLE_BEIGE)
+        val keySize = size * 0.3f
+        // Буква — в полклавиши, какой бы ни была плотность экрана и размер шрифта.
+        val letterScale = keySize * 0.42f / game.smallFont.capHeight
+        fun key(letter: String) = Table().apply {
+            background = keyBorder
+            add(Table().apply {
+                background = keyFill
+                add(Label(letter, keyStyle).apply { setFontScale(letterScale) }).expand().center()
+            }).grow().pad(maxOf(1.5f, keySize * 0.08f))
+        }
+
+        val keys = Table()
+        keys.defaults().size(keySize).pad(size * 0.02f)
+        keys.add()
+        keys.add(key("W"))
+        keys.add().row()
+        keys.add(key("A"))
+        keys.add(key("S"))
+        keys.add(key("D"))
+        button.add(keys).expand().center()
+
+        button.isChecked = simulationSystem.simulationData.showControllerKeys
+        button.hint(DIGameGlobalContainer.bundle.get("button.controllerKeys"))
+        button.onClick {
+            // Панель пересоберёт эффект RebuildMenu: клавиатуру надо показать или спрятать.
+            viewModel.handle(SimulationIntent.SetControllerKeysVisible(button.isChecked))
+        }
+        return button
+    }
+
+    /** Окно «Меню»: всё, что раньше было рядом кнопок над миром. */
+    private fun showMenu() {
+        val bundle = DIGameGlobalContainer.bundle
+        val data = simulationSystem.simulationData
+        SimulationMenuDialog(
+            game = DIGameGlobalContainer.game,
+            bundle = bundle,
+            renderMode = renderSystem.mode,
+            targetUps = data.targetUPS,
+            maxSpeed = data.maxSpeed,
+            exitLabel = bundle.get(if (genomeName == null) "button.exit" else "button.backToEditor"),
+            onTargetUps = { viewModel.handle(SimulationIntent.SetTargetUps(it)) },
+            onMaxSpeed = { viewModel.handle(SimulationIntent.SetMaxSpeed(it)) },
+            // Режим — свой у симуляции: ни меню, ни редактор генома его не видят.
+            onRenderMode = { viewModel.handle(SimulationIntent.SetRenderMode(it)) },
+            onRestart = { viewModel.handle(SimulationIntent.Restart) },
+            onSettings = { openOnTop(GoSettings, resume = true) },
+            // Сохранение только у обычного мира: тест генома — временный мир, из которого
+            // возвращаются в редактор.
+            onSave = if (viewModel.isSandbox) ({ showSaveDialog(exitAfter = false) }) else null,
+            onSaveAndExit = if (viewModel.isSandbox) ({ showSaveDialog(exitAfter = true) }) else null,
+            onExit = ::exit
+        ).show(stage)
+    }
+
+    private fun showToolMenu(anchor: Actor) {
+        SimulationToolDialog(
+            game = DIGameGlobalContainer.game,
+            bundle = DIGameGlobalContainer.bundle,
+            icons = icons,
+            current = viewModel.tool,
+            onSelect = { viewModel.handle(SimulationIntent.SetTool(it)) }
+        ).showUnder(stage, anchor)
+    }
+
+    /** Цифры экранной клавиатуры контроллера — строкой под верхними кнопками. */
+    private fun controllerNumbers(): Table {
+        val density = Gdx.graphics.density
+        val keySize = minOf(Gdx.graphics.width.toFloat(), Gdx.graphics.height.toFloat()) * 0.075f
+        val numbersTable = Table()
+        numbersTable.defaults().pad(3f * density).width(keySize).height(keySize)
+        for (num in 0..9) {
+            numbersTable.add(controllerKeyButton(num.toString(), index = num))
+        }
+        return numbersTable
+    }
+
+    /**
+     * Нижняя часть экранной клавиатуры контроллера: WASD, пробел и стрелки.
      * Индексы клавиш — те же, что в [CONTROLLER_KEY_CODES].
      */
-    private fun controllerKeyboard() {
+    private fun controllerKeyboard(): Table {
         val density = Gdx.graphics.density
         val screenW = minOf(Gdx.graphics.width.toFloat(), Gdx.graphics.height.toFloat())
 
@@ -526,18 +711,6 @@ class SimulationScreen(
         val keySize = screenW * 0.075f          // ~8.5% ширины экрана
         val spaceSize = screenW * 0.38f         // ~38% ширины экрана
 
-        // === 1. ЦИФРЫ (0-9) — полноширинная строка под верхними кнопками ===
-        val numbersTable = Table()
-        numbersTable.defaults().pad(3f * density).width(keySize).height(keySize)
-        for (num in 0..9) {
-            numbersTable.add(controllerKeyButton(num.toString(), index = num))
-        }
-        root.add(numbersTable).growX().top().left().padTop(8f * density).row()
-
-        // === Spacer, который выталкивает нижнюю клавиатуру вниз ===
-        root.add().growY().row()
-
-        // === 2. НИЖНЯЯ КЛАВИАТУРА (WASD + Space + стрелки) ===
         val bottomKeyboard = Table()
         bottomKeyboard.defaults().pad(4f * density).left()
 
@@ -579,13 +752,7 @@ class SimulationScreen(
         row3.add(rightGroup).right().expandX()
 
         bottomKeyboard.add(row3).growX().row()
-
-        root.add(bottomKeyboard)
-            .growX()
-            .bottom()
-            .left()
-            .padBottom(30f * density)
-            .row()
+        return bottomKeyboard
     }
 
     /** Клавиша экранной клавиатуры: нажата, пока на ней палец. */
@@ -605,29 +772,20 @@ class SimulationScreen(
 
     /**
      * Выбор генома для посадки: свои, а под чертой — встроенные, их можно сажать сразу.
-     * Список — тот же, что у ViewModel: номер в нём и есть номер генома в мире.
+     * Список — из папки геномов, какой она есть сейчас; номер генома в мире по имени
+     * находит ViewModel (SelectGenome).
      */
     private fun showGenomeList() {
         val bundle = DIGameGlobalContainer.bundle
-        val genomes = viewModel.genomeNames
+        val genomes = GenomeCatalog.all()
         GenomeListDialog(
             genomesList = genomes,
-            selectedGenomeIndex = simulationSystem.simulationData.currentGenomeIndex,
+            selectedGenome = viewModel.genomeNames.getOrNull(simulationSystem.simulationData.currentGenomeIndex),
             title = bundle.get("button.selectGenome"),
-            new = bundle.get("button.new"),
-            select = bundle.get("button.select"),
-            onNew = {
-                DIGameGlobalContainer.navigationCommandsManager.performCommand(
-                    GoReplace(GoGenomeEditor(null))
-                )
-            },
-            onNext = { selectedFileName ->
-                viewModel.handle(SimulationIntent.SelectGenome(selectedFileName))
-            },
+            createLabel = bundle.get("button.createGenome"),
+            onCreate = { openOnTop(GoGenomeEditor(null), resume = false) },
+            onSelect = { viewModel.handle(SimulationIntent.SelectGenome(it)) },
             game = DIGameGlobalContainer.game,
-            onResize = { handler ->
-                onResize = if (handler == {}) null else handler
-            },
             displayName = GenomeCatalog::displayName,
             sectionStart = genomes.indexOfFirst(GenomeCatalog::isBundled),
             sectionTitle = bundle.get("label.bundledGenomes")
@@ -635,13 +793,28 @@ class SimulationScreen(
     }
 
     /** Обработчик нажатия в одну строку: здесь их много, и все устроены одинаково. */
-    private fun VisTextButton.onClick(action: () -> Unit): VisTextButton = apply {
+    private fun <T : Button> T.onClick(action: () -> Unit): T = apply {
         addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) = action()
         })
     }
 
     private companion object {
+        /** Сторона кнопок-значков по углам экрана. */
+        const val HUD_BUTTON_DP = 52f
+
+        /** Отступ значка от рамки кнопки. */
+        const val HUD_ICON_INSET_DP = 8f
+
+        /** Кнопка клавиш контроллера шире квадрата: на ней три клавиши в ряд. */
+        const val KEYS_BUTTON_WIDTH = 1.35f
+
+        /** Место справа сверху под кнопку-жук BugOverlay (36 dp и отступы). */
+        const val BUG_BUTTON_RESERVE_DP = 56f
+
+        val KEYCAP_FILL = Color(0.10f, 0.10f, 0.12f, 0.9f)
+        val TOAST_FILL = Color(0.14f, 0.13f, 0.11f, 0.92f)
+
         /**
          * Клавиши контроллера на клавиатуре — по индексу в controllerKeyTouched:
          * 0–9 цифры, 10–13 WASD, 14 пробел, 15–18 стрелки. Порядок — тот же, что у имён
