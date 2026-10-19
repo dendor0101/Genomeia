@@ -53,8 +53,9 @@ object StateHash {
      * 8 — в часть SimulationData вошли параметры стресса (PlayerCommand.SetStress).
      * 9 — у организма больше нет курсоров и свободных списков клеток и связей: слот задан
      *     раскладкой.
+     * 10 — у сущностей в хэш вошёл текущий блок пула вне арен (Entity.poolNext/poolEnd).
      */
-    const val VERSION = 9
+    const val VERSION = 10
 
     class Result(val hash: Long, val parts: LongArray)
 

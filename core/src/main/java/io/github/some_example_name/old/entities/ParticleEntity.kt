@@ -257,6 +257,13 @@ class ParticleEntity(
         gridManager.rebuild(isAlive, gridId, isInGrid)
     }
 
+    /**
+     * Частицы субстанций и террейна — пулом по 1024 (Entity.poolBlockSize): по одной с верха
+     * они вставали бы между аренами организмов. 1024 частицы — ~80 КБ на массивы, а террейн
+     * в тысячи частиц ложится несколькими блоками подряд.
+     */
+    override val poolBlockSize: Int get() = 1024
+
     override fun onCopy() {
 
     }

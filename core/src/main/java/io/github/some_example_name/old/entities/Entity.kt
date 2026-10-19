@@ -45,6 +45,8 @@ abstract class Entity(startMaxAmount: Int) {
     protected fun add(): Int {
         val cellIndex = if (!deadStack.isEmpty()) {
             deadStack.removeInt(deadStack.size - 1)
+        } else if (poolBlockSize > 0) {
+            takePoolSlot()
         } else {
             ++lastId
         }
@@ -135,6 +137,33 @@ abstract class Entity(startMaxAmount: Int) {
         lastId = base + count - 1
         ensureCapacity(lastId)
         return base
+    }
+
+    // ===================================================================================
+    // ПУЛ ВНЕ АРЕН
+    //
+    // Сущности, которые делят адресное пространство с аренами, но сами в них не живут
+    // (частицы субстанций и террейна рядом с частицами клеток), берут новые индексы не по
+    // одному с верха (++lastId), а из своего блока, забронированного целиком [reserveRange].
+    // По одному с верха они вставали между аренами организмов, и свободные куски умерших по
+    // обе стороны от такой частицы уже не склеивались. Блоками — вставка одна на
+    // [poolBlockSize] субстанций, а блок сам может занять дыру умершей арены.
+    // ===================================================================================
+
+    /** Размер блока пула; 0 — пула нет, новые индексы с верха, как раньше. */
+    protected open val poolBlockSize: Int get() = 0
+
+    // Текущий блок пула: следующий свободный индекс и конец. Состояние мира — в сохранении
+    // и в хэше.
+    private var poolNext = 0
+    private var poolEnd = 0
+
+    private fun takePoolSlot(): Int {
+        if (poolNext >= poolEnd) {
+            poolNext = reserveRange(poolBlockSize)
+            poolEnd = poolNext + poolBlockSize
+        }
+        return poolNext++
     }
 
     // ===================================================================================
@@ -310,6 +339,8 @@ abstract class Entity(startMaxAmount: Int) {
         lastId = -1
         deadStack.clear()
         freeRanges.clear()
+        poolNext = 0
+        poolEnd = 0
         generation.fill(0, 0, cellBound)
         isAlive.fill(false, 0, cellBound)
         arenaOwner.fill(-1, 0, cellBound)
@@ -385,6 +416,8 @@ abstract class Entity(startMaxAmount: Int) {
         state.intList(::aliveList)
         state.intList(::deadStack)
         state.intList(::freeRanges)
+        poolNext = state.int("poolNext", poolNext)
+        poolEnd = state.int("poolEnd", poolEnd)
 
         persistFields(state)
     }

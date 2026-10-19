@@ -167,6 +167,32 @@ class ArenaRangesTest {
         assertEquals(base, organs.neuralArenaBase[next])
     }
 
+    /** Сущность с пулом вне арен — как частицы субстанций рядом с частицами клеток. */
+    private class Pooled : Entity(16) {
+        override val poolBlockSize: Int get() = 4
+        fun plain() = add()
+        fun free(index: Int) = delete(index)
+        override fun onCopy() {}
+        override fun onPaste() {}
+        override fun onClear(bound: Int) {}
+        override fun onResize(oldMax: Int) {}
+    }
+
+    @Test
+    fun poolTakesWholeBlocksAndDoesNotInterleaveArenas() {
+        val pooled = Pooled()
+        val first = pooled.plain()
+        val arena = pooled.reserveRange(10)
+        // Блок пула забронирован целиком: остальные три его индекса не достаются арене.
+        assertEquals(first + 4, arena)
+        assertEquals(listOf(first + 1, first + 2, first + 3), List(3) { pooled.plain() })
+        // Блок кончился — следующий за ареной, а не между аренами.
+        assertEquals(arena + 10, pooled.plain())
+        // Умерший из пула переиспользуется раньше нового блока.
+        pooled.free(first + 1)
+        assertEquals(first + 1, pooled.plain())
+    }
+
     @Test
     fun plainAddDoesNotLandInsideFreeRange() {
         val slots = Slots()
