@@ -4,7 +4,7 @@ package io.github.some_example_name.render.pack
  * Как клетка выглядит в отладочном режиме — четвёртое поле инстанса (CellInstanceBuffer,
  * атрибут a_look в shaders/debug_view/cell.vert):
  *
- *   look = pattern | action<<8 | transparency<<16
+ *   look = pattern | action<<8 | transparency<<16 | filter<<24
  *
  *  - pattern — схематический рисунок, константы ниже. Рендер знает только рисунки, а не
  *    типы клеток: какой клетке какой рисунок, решает :core (DebugCellPalette). Имена
@@ -13,6 +13,9 @@ package io.github.some_example_name.render.pack
  *    анимация мышц, присосок, хвоста и прочих клеток, которые что-то ДЕЛАЮТ по нейросигналу.
  *  - transparency — 0 непрозрачная, 255 невидимая. Нужна «призраку» в редакторе генома —
  *    клетке, которая появится на следующей стадии.
+ *  - filter — значение для фильтра отладки (DebugFilter): заполненность энергией
+ *    ([energyFilterByte]) или нормализованный нейросигнал ([signalFilterByte]). Какой из них
+ *    лежит в байте, решает тот, кто упаковал кадр: фильтр выбран один на кадр и едет с ним.
  *
  * Ноль во всех байтах — непрозрачная клетка без рисунка и без сигнала, то есть ровно
  * прежний вид. Его и пишут все, кто про поле не знает (реалистичный и ностальгический
@@ -109,8 +112,45 @@ object CellLook {
     fun transparencyByte(transparency: Float): Int =
         (transparency * 255f + 0.5f).toInt().coerceIn(0, 255)
 
-    fun look(pattern: Int, action: Float = 0f, transparency: Float = 0f): Int =
+    fun look(pattern: Int, action: Float = 0f, transparency: Float = 0f, filter: Int = 0): Int =
         (pattern and 0xFF) or
             (actionByte(action) shl 8) or
-            (transparencyByte(transparency) shl 16)
+            (transparencyByte(transparency) shl 16) or
+            ((filter and 0xFF) shl 24)
+
+    /**
+     * Фильтр «энергия»: заполненность клетки 0..1 (энергия / её максимум) в байт.
+     *
+     * Заполненность, а не энергия как есть: максимум у клеток разный (жир держит больше), и
+     * в абсолютных числах жир светился бы всегда, а голодная клетка с малым запасом — нет.
+     * Голод виден одинаково у любой клетки: синяя — пустая, пурпурная — полная.
+     */
+    fun energyFilterByte(energy: Float, maxEnergy: Float): Int {
+        if (!(maxEnergy > 0f)) return 0
+        val fullness = energy / maxEnergy
+        return if (fullness > 0f) (minOf(fullness, 1f) * 255f + 0.5f).toInt() else 0
+    }
+
+    /**
+     * Фильтр «нейросигнал»: выход клетки, сжатый в −1..1 как s / (|s| + [SIGNAL_KNEE]),
+     * знаковым байтом.
+     *
+     * ПОЧЕМУ ТАК
+     * ----------
+     * Сигнал не ограничен: у формул бывают и сотые, и десятки. Линейный зажим в −1..1
+     * сливает всё, что больше единицы, в одно, а слабые сигналы (0.02–0.1) почти не
+     * отличает от нуля — именно их и ищут, разбираясь, куда пропадает сигнал. Логарифм не
+     * определён в нуле и несимметричен по знаку. s / (|s| + k) — монотонная, симметричная,
+     * ноль остаётся ровно нулём, большие сигналы не сливаются (1 → 0.8, 4 → 0.94), а
+     * половина шкалы приходится на |s| = k: 0.05 даёт уже 0.17, то есть заметно синее нуля.
+     * tanh похож, но насыщается быстрее: 2 и 10 у него неразличимы.
+     */
+    fun signalFilterByte(signal: Float): Int {
+        if (signal != signal) return 0
+        val normalized = signal / (Math.abs(signal) + SIGNAL_KNEE)
+        return Math.round(normalized * 127f) and 0xFF
+    }
+
+    /** |сигнал|, при котором фильтр «нейросигнал» проходит половину шкалы. */
+    const val SIGNAL_KNEE = 0.25f
 }

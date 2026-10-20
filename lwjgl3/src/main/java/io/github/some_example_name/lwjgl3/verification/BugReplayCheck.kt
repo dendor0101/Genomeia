@@ -44,6 +44,7 @@ import io.github.some_example_name.old.systems.genomics.genome.LinkData
 import io.github.some_example_name.old.systems.genomics.genome.encodeGenome
 import io.github.some_example_name.old.systems.genomics.library.GenomeCatalog
 import io.github.some_example_name.old.systems.maps.MapSave
+import io.github.some_example_name.render.DebugFilter
 import io.github.some_example_name.render.RenderMode
 import java.io.File
 import kotlin.system.exitProcess
@@ -298,6 +299,8 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
             5 -> {
                 screen(SimulationIntent.SetMaxSpeed(true))
                 screen(SimulationIntent.SetRenderMode(RenderMode.DEBUG))
+                // Фильтр отладки — тоже команда игрока: повтор обязан её подать.
+                screen(SimulationIntent.SetDebugFilter(DebugFilter.ENERGY))
                 val genomes = DISimulationContainer.genomeManager.genomes
                 // Импортированный — первым: геномов в папке больше, чем мест посадки, а он
                 // должен попасть в мир, чтобы хэши проверили, что повтор взял тот же геном.

@@ -34,6 +34,7 @@ flat in float v_action;
 flat in float v_opacity;
 flat in float v_key;
 flat in vec4 v_rand;
+flat in float v_filtered;
 
 /** Секунды, по кругу с периодом RenderFrame.TIME_WRAP. */
 uniform float u_time;
@@ -51,6 +52,9 @@ const float WALL_HALF_PX = 0.6;
 const float WALL_ALPHA = 0.45;
 
 const float TAU = 6.2831853;
+
+/** Насколько виден рисунок под фильтром отладки. */
+const float FILTER_INK = 0.3;
 
 // ==================== Покрытие и владелец пикселя ====================
 
@@ -271,6 +275,10 @@ vec3 bodyColor(float t) {
 
     // Прежний вид: чистый цвет типа и лёгкий объём — к ободу чуть темнее.
     if (pattern == P_PLAIN) return base * mix(1.05, 0.86, t * t);
+
+    // Под фильтром цвет — шкала фильтра (cell.vert), и читаться она должна как есть: без
+    // прозрачности на фоне и без поправок под тип. Объём тот же лёгкий.
+    if (v_filtered > 0.5) return base * mix(1.05, 0.86, t * t);
 
     vec3 tint = base;
     if (pattern == P_OSTEON) {
@@ -688,6 +696,9 @@ vec3 cellColor(float t) {
     float fade = patternFade(v_tPerPixel);
     if (v_pattern != P_PLAIN && fade > 0.0) {
         vec4 ink = patternInk(cellFrame(), t) * fade;
+        // Под фильтром рисунок — бледный серый след: тип клетки узнаётся, а цвет шкалы не
+        // искажается цветами органелл.
+        if (v_filtered > 0.5) ink = vec4(vec3(dot(ink.rgb, vec3(0.299, 0.587, 0.114))), ink.a) * FILTER_INK;
         color = color * (1.0 - ink.a) + ink.rgb;
     }
     return color;

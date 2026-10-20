@@ -45,6 +45,7 @@ import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.ui.CameraControl
 import io.github.some_example_name.old.core.ui.STYLE_BEIGE
 import io.github.some_example_name.old.core.ui.h
+import io.github.some_example_name.old.core.ui.debugFilterSelectBox
 import io.github.some_example_name.old.core.ui.hint
 import io.github.some_example_name.old.core.ui.keepWindowsOnScreen
 import io.github.some_example_name.old.core.ui.makeStyledButton
@@ -58,6 +59,7 @@ import io.github.some_example_name.old.features.worldeditor.WorldSpec
 import io.github.some_example_name.old.game.applyCustomFontMedium
 import io.github.some_example_name.old.systems.genomics.library.GenomeCatalog
 import io.github.some_example_name.old.systems.simulation.ControllerKeys
+import io.github.some_example_name.render.RenderMode
 import io.github.some_example_name.render.debug.RenderSceneDump
 import java.io.File
 
@@ -557,7 +559,16 @@ class SimulationScreen(
             topBar.add(iconButton(icons.organism).hint(bundle.get("button.selectGenome")).onClick { showGenomeList() })
                 .size(size)
         }
-        topBar.add().expandX()
+        // Сверху по центру — фильтр отладочного режима: только в нём он что-то значит.
+        if (renderSystem.mode == RenderMode.DEBUG) {
+            val filter = debugFilterSelectBox(renderSystem.debugFilter) {
+                viewModel.handle(SimulationIntent.SetDebugFilter(it))
+            }
+            filter.hint(bundle.get("debugFilter.hint"))
+            topBar.add(filter).expandX().center()
+        } else {
+            topBar.add().expandX()
+        }
 
         val toolButton = iconButton(icons.of(viewModel.tool))
         toolButton.hint(bundle.get("tool.title") + ": " + bundle.get(viewModel.tool.labelKey))

@@ -581,7 +581,9 @@ object SyntheticScene {
                 energy = 5f,
                 cellType = seed % layerCount,
                 noiseSeed = 500 + seed++,
-                look = CellLook.look(exhibit.pattern, exhibit.action, transparency)
+                // Байт фильтра — вразброс по всей шкале: для энергии от пустой до полной,
+                // для сигнала (знаковый байт) — и плюс, и минус.
+                look = CellLook.look(exhibit.pattern, exhibit.action, transparency, filter = (seed * 53 + 17) and 0xFF)
             )
             if (exhibit.pattern == CellLook.FLAGELLUM_BASE && transparency == 0f) {
                 putFlagellum(overlay, x, y, exhibit.angle, GALLERY_RADIUS, exhibit.color, exhibit.action, seed)

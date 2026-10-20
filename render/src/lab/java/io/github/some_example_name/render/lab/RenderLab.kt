@@ -16,6 +16,7 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Matrix4
 import com.badlogic.gdx.math.Vector3
+import io.github.some_example_name.render.DebugFilter
 import io.github.some_example_name.render.RenderFrame
 import io.github.some_example_name.render.RenderMode
 import io.github.some_example_name.render.WorldRenderer
@@ -65,6 +66,7 @@ import java.io.File
  * ----------
  *   R           перечитать шейдеры с диска
  *   M           режим: реалистичный → отладка → ностальгический
+ *   G           фильтр отладки: оригинал → энергия → нейросигнал (-Dgenomeia.filter=...)
  *   N           следующая синтетическая сцена (если открыта не из дампа)
  *   T           замер вкл/выкл: рендер N раз за кадр, время в подсказке
  *   V           виньетка вкл/выкл
@@ -87,6 +89,7 @@ private const val SCREENSHOT_PROPERTY = "genomeia.screenshot"
 private const val SCREENSHOT_FRAME_PROPERTY = "genomeia.screenshotFrame"
 private const val DEFAULT_SCREENSHOT_FRAME = 60
 private const val MODE_PROPERTY = "genomeia.mode"
+private const val FILTER_PROPERTY = "genomeia.filter"
 private const val SYNTHETIC_PROPERTY = "genomeia.synthetic"
 private const val BENCH_PROPERTY = "genomeia.bench"
 private const val BENCH_OUT_PROPERTY = "genomeia.benchOut"
@@ -229,6 +232,10 @@ class RenderLab(private val scene: RenderSceneDump.Scene?) : ApplicationAdapter(
     private var syntheticKind = SyntheticScene.Kind.LAYERS
 
     private var mode = RenderMode.REALISTIC
+
+    /** Фильтр отладочного режима. Байт значения у клеток синтетики — какой есть: стенд
+     * показывает шкалу, а не настоящую энергию. */
+    private var debugFilter = DebugFilter.ORIGINAL
     private var vignette = 1f
     private var blur = 0f
     private var showHud = true
@@ -270,6 +277,9 @@ class RenderLab(private val scene: RenderSceneDump.Scene?) : ApplicationAdapter(
             ?.let { name -> RenderMode.entries.firstOrNull { it.name.equals(name, true) } }
             ?: scene?.mode
             ?: RenderMode.REALISTIC
+        debugFilter = System.getProperty(FILTER_PROPERTY)
+            ?.let { name -> DebugFilter.entries.firstOrNull { it.name.equals(name, true) } }
+            ?: DebugFilter.ORIGINAL
         vignette = scene?.vignetteEnabled ?: 1f
         blur = scene?.blurAmount ?: 0f
 
@@ -410,6 +420,7 @@ class RenderLab(private val scene: RenderSceneDump.Scene?) : ApplicationAdapter(
             zoom = camera.zoom
             vignetteEnabled = vignette
             mode = this@RenderLab.mode
+            debugFilter = this@RenderLab.debugFilter
         }
 
         if (liveBench || autoBench != null) {
@@ -515,7 +526,7 @@ class RenderLab(private val scene: RenderSceneDump.Scene?) : ApplicationAdapter(
                 appendLine("клеток $instances   феромонов $pheromoneCount   фигур оверлея $overlayCount   слоёв ${texturePaths.size}")
                 appendLine("zoom ${"%.4f".format(camera.zoom)}   " +
                     "камера ${"%.1f".format(camera.position.x)}, ${"%.1f".format(camera.position.y)}")
-                appendLine("режим ${mode.name.lowercase()}   виньетка ${onOff(vignette > 0f)}   перезагрузок $reloadCount")
+                appendLine("режим ${mode.name.lowercase()}   фильтр ${debugFilter.name.lowercase()}   виньетка ${onOff(vignette > 0f)}   перезагрузок $reloadCount")
                 if (liveBench || autoBench != null) {
                     appendLine("замер ×${benchmark.repeats}: GPU ${"%.3f".format(liveWindow.gpuMedian)} мс " +
                         "(мин ${"%.3f".format(liveWindow.gpuMin)}), CPU ${"%.3f".format(liveWindow.cpuMedian)} мс " +
@@ -619,6 +630,7 @@ class RenderLab(private val scene: RenderSceneDump.Scene?) : ApplicationAdapter(
                     mode = RenderMode.entries[(mode.ordinal + 1) % RenderMode.entries.size]
                     liveWindow.clear()
                 }
+                Input.Keys.G -> debugFilter = DebugFilter.entries[(debugFilter.ordinal + 1) % DebugFilter.entries.size]
                 Input.Keys.N -> if (scene == null) {
                     val kinds = SyntheticScene.Kind.entries
                     syntheticKind = kinds[(syntheticKind.ordinal + 1) % kinds.size]
