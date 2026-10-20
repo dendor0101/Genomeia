@@ -7,7 +7,7 @@ import kotlin.math.roundToInt
 
 /**
  * Буфер фигур оверлея отладочного режима: нейросвязи, стрелки направлений, лучи глаз,
- * кольца феромонов. Читает его DebugRenderer — инстансами, по кваду на фигуру.
+ * кольца феромонов, жгутики хвостов. Читает его DebugRenderer — инстансами, по кваду на фигуру.
  *
  * Модуль рендера не знает, что такое глаз или нейрон: здесь только фигуры. Что из
  * клеток превращается в какую фигуру и каким цветом, решает :core (RenderSystem).
@@ -21,9 +21,9 @@ import kotlin.math.roundToInt
  *
  *   params = kind | signalByte<<8 | seed<<16 | 0<<24
  *
- *   kind       — [KIND_RING], [KIND_RAY], [KIND_ARROW], [KIND_NEURAL];
+ *   kind       — [KIND_RING], [KIND_RAY], [KIND_ARROW], [KIND_NEURAL], [KIND_FLAGELLUM];
  *   signalByte — сигнал из -1..1 со смещением 127, см. [signalByte];
- *   seed       — сдвиг фазы импульсов, чтобы связи не мигали в такт.
+ *   seed       — сдвиг фазы импульсов или волны, чтобы фигуры не двигались в такт.
  *
  * Порядок записи — порядок отрисовки: что записано позже, ложится сверху.
  *
@@ -85,6 +85,13 @@ class OverlayInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
     fun putRay(x0: Float, y0: Float, x1: Float, y1: Float, color: Int, signal: Float = 0f) =
         put(x0, y0, x1, y1, color, params(KIND_RAY, signal, 0))
 
+    /**
+     * Жгутик: от поверхности клетки ([x0], [y0]) до кончика. По нему бежит волна; [signal]
+     * — тяга хвоста, от неё размах волны.
+     */
+    fun putFlagellum(x0: Float, y0: Float, x1: Float, y1: Float, color: Int, signal: Float, seed: Int) =
+        put(x0, y0, x1, y1, color, params(KIND_FLAGELLUM, signal, seed))
+
     /** Окружность радиуса [radius] вокруг ([x], [y]). */
     fun putRing(x: Float, y: Float, radius: Float, color: Int) =
         put(x, y, radius, 0f, color, params(KIND_RING, 0f, 0))
@@ -140,6 +147,7 @@ class OverlayInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
         const val KIND_RAY = 1
         const val KIND_ARROW = 2
         const val KIND_NEURAL = 3
+        const val KIND_FLAGELLUM = 4
 
         /**
          * Байт сигнала: -1..1 → 0..254, ноль — ровно 127.

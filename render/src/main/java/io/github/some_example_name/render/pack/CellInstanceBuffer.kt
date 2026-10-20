@@ -19,17 +19,25 @@ import java.nio.ByteOrder
  *
  * Теперь копий на CPU одна, и она покрыта тестами (CellInstanceBufferTest).
  *
- * РАСКЛАДКА (20 байт, порядок байт нативный)
- * ------------------------------------------
+ * РАСКЛАДКА (24 байта, порядок байт нативный)
+ * -------------------------------------------
  *   [0..7]   float x, float y      → a_center  (2 × GL_FLOAT)
  *   [8..11]  int   color           → a_color   (4 × GL_UNSIGNED_BYTE, normalized)
  *   [12..15] int   shape           → a_shape   (4 × GL_UNSIGNED_BYTE, normalized)
  *   [16..19] int   type            → a_type    (4 × GL_UNSIGNED_BYTE, normalized)
+ *   [20..23] int   look            → a_look    (4 × GL_UNSIGNED_BYTE, normalized)
  *
  *   shape = cosByte | sinByte<<8 | radiusByte<<16 | energyByte<<24
  *   type  = cellType | seedLo<<8  | seedHi<<16    | flags<<24
+ *   look  = pattern  | action<<8  | transparency<<16              — см. CellLook
  *
- *   flags — битовые признаки частицы, см. [FLAG_NOT_CELL] и [FLAG_SPIRAL].
+ *   flags — битовые признаки частицы, см. [FLAG_NOT_CELL].
+ *
+ * Поле look читает только отладочный режим (shaders/debug_view), остальные пишут ноль —
+ * непрозрачная клетка без рисунка. Отдельным полем, а не свободными битами чужих полей:
+ * энергия нужна ностальгическому режиму, тип — реалистичному, и байт, смысл которого
+ * зависит от режима, разъехался бы при первой же правке. Цена — 4 байта на клетку, то
+ * есть 400 КБ загрузки за кадр на 100 000 клеток при прежних 2 МБ.
  *
  * ПОЧЕМУ НОРМАЛИЗОВАННЫЕ БАЙТЫ, А НЕ РАСПАКОВКА В ШЕЙДЕРЕ
  * -------------------------------------------------------
@@ -96,14 +104,15 @@ class CellInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
         finished = false
     }
 
-    /** Готовые shape/type — путь GL-потока, без арифметики. */
-    fun put(x: Float, y: Float, color: Int, shape: Int, type: Int) {
+    /** Готовые shape/type/look — путь GL-потока, без арифметики. */
+    fun put(x: Float, y: Float, color: Int, shape: Int, type: Int, look: Int = 0) {
         ensureRoomForOneMore()
         buffer.putFloat(x)
         buffer.putFloat(y)
         buffer.putInt(color)
         buffer.putInt(shape)
         buffer.putInt(type)
+        buffer.putInt(look)
         written++
     }
 
@@ -113,7 +122,9 @@ class CellInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
      * [noiseSeed] — устойчивый ключ шума: шейдер доворачивает текстуру на случайный угол,
      * взятый из него. Ключ обязан быть закреплён за клеткой на всю жизнь, иначе доворот
      * пересчитывается каждый кадр и текстуры визуально крутятся. Индекс частицы годится,
-     * позиция в буфере — нет.
+     * позиция в буфере — нет. По нему же отладочный режим раскладывает рисунок клетки.
+     *
+     * [look] — вид в отладочном режиме, см. CellLook; ноль — прежняя плоская клетка.
      */
     fun putCell(
         x: Float,
@@ -126,7 +137,7 @@ class CellInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
         cellType: Int,
         noiseSeed: Int,
         isCell: Boolean = true,
-        spiral: Boolean = false
+        look: Int = 0
     ) {
         put(
             x = x,
@@ -138,7 +149,8 @@ class CellInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
                 radiusByte = radiusByte(radius),
                 energyByte = energyByte(energy)
             ),
-            type = type(cellType = cellType, noiseSeed = noiseSeed, isCell = isCell, spiral = spiral)
+            type = type(cellType = cellType, noiseSeed = noiseSeed, isCell = isCell),
+            look = look
         )
     }
 
@@ -190,17 +202,18 @@ class CellInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
 
     companion object {
         /**
-         * 20 байт на инстанс: 2 float + 3 упакованных четвёрки байт.
-         * Менять только вместе с раскладкой атрибутов в CellGeometry и с шейдерами клеток
-         * (circle_pc.vert, debug_view/cell.vert, nostalgic.vert).
+         * 24 байта на инстанс: 2 float + 4 упакованных четвёрки байт.
+         * Менять только вместе с раскладкой атрибутов в CellGeometry, с шейдерами клеток
+         * (circle_pc.vert, debug_view/cell.vert, nostalgic.vert) и с версией RenderSceneDump.
          */
-        const val STRUCT_SIZE = 20
+        const val STRUCT_SIZE = 24
 
         /** Смещения полей внутри инстанса — их же объявляет CellGeometry. */
         const val OFFSET_CENTER = 0
         const val OFFSET_COLOR = 8
         const val OFFSET_SHAPE = 12
         const val OFFSET_TYPE = 16
+        const val OFFSET_LOOK = 20
 
         const val INITIAL_CAPACITY = 30_000
 
@@ -217,9 +230,9 @@ class CellInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
          * Делитель энергии: при ней байт насыщается, и ядро клетки достигает максимума.
          * Это не физическая энергия, а только её показ.
          *
-         * Читают её отладочный (debug_view/cell.vert) и ностальгический (nostalgic.vert)
-         * шейдеры, одинаково: линейно, в долях радиуса клетки — см.
-         * NostalgicRenderer.NUCLEUS_AT_FULL_ENERGY. Реалистичный энергию не показывает.
+         * Читает её только ностальгический шейдер (nostalgic.vert): линейно, в долях
+         * радиуса клетки — см. NostalgicRenderer.NUCLEUS_AT_FULL_ENERGY. Реалистичный и
+         * отладочный энергию не показывают: у отладочного ядра — часть рисунков клеток.
          */
         const val ENERGY_SPAN = 10f
 
@@ -254,25 +267,19 @@ class CellInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
         const val FLAG_NOT_CELL = 1
 
         /**
-         * Нарисовать на клетке спираль — в отладочном режиме (shaders/debug_view).
-         *
-         * Опознавательный знак для клетки, которую по цвету не узнать: :core ставит его
-         * хамелеону, чей цвет меняет сигнал. Здесь — только «узор», без знания о типах:
-         * какой клетке он нужен, решает тот, кто знает про клетки.
-         */
-        const val FLAG_SPIRAL = 2
-
-        /**
          * Тип клетки (индекс слоя в TextureArray), 16-битный ключ шума двумя байтами и
          * байт флагов.
          *
          * Ключ раскладывается на два байта, потому что нормализованный атрибут отдаёт в
          * шейдер четыре независимых компоненты, а не одно число. Собирается обратно как
          * `lo + hi*256` с округлением — точно, без потери бита.
+         *
+         * Второй бит флагов (2) раньше означал «спираль хамелеона» в отладке; теперь у
+         * хамелеона свой рисунок в look (CellLook.PIGMENTS), бит не пишется и не читается.
          */
-        fun type(cellType: Int, noiseSeed: Int, isCell: Boolean = true, spiral: Boolean = false): Int {
+        fun type(cellType: Int, noiseSeed: Int, isCell: Boolean = true): Int {
             val seed = noiseSeed and 0xFFFF
-            val flags = (if (isCell) 0 else FLAG_NOT_CELL) or (if (spiral) FLAG_SPIRAL else 0)
+            val flags = if (isCell) 0 else FLAG_NOT_CELL
             return cellType.coerceIn(0, 255) or
                 ((seed and 0xFF) shl 8) or
                 (((seed ushr 8) and 0xFF) shl 16) or

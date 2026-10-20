@@ -21,7 +21,8 @@ import kotlin.test.assertTrue
  *   radius = 0.05 + a_shape.z * 0.7
  *   seed  = byteValue(a_type.y) + byteValue(a_type.z) * 256.0
  *   isCell = младший бит byteValue(a_type.w) равен нулю     (nostalgic.vert, debug_view/cell.vert)
- *   spiral = второй бит byteValue(a_type.w)                  (debug_view/cell.vert)
+ *   pattern = byteValue(a_look.x); action = знаковый byteValue(a_look.y) / 127;
+ *   opacity = 1 - byteValue(a_look.z) / 255                   (debug_view/cell.vert)
  *
  * ВНИМАНИЕ: здесь намеренно ЛИТЕРАЛЫ, а не константы из CellInstanceBuffer. Тест сверяет
  * Kotlin с ШЕЙДЕРОМ, а шейдер про константы Kotlin ничего не знает — в нём голые числа.
@@ -58,8 +59,18 @@ class CellInstanceBufferTest {
     /** nostalgic.vert: `isCell = mod(floor(a_type.w * 255.0 + 0.5), 2.0) < 1.0` */
     private fun shaderIsCell(type: Int): Boolean = byteValue(type, 3) % 2 < 1
 
-    /** debug_view/cell.vert: `v_spiral = mod(floor(flags / 2.0), 2.0)` */
-    private fun shaderHasSpiral(type: Int): Boolean = (byteValue(type, 3) / 2) % 2 == 1
+    /** debug_view/cell.vert: `v_pattern = int(byteValue(a_look.x))` */
+    private fun shaderPattern(look: Int): Int = byteValue(look, 0)
+
+    /** debug_view/cell.vert: знаковый байт, `if (action > 127) action -= 256; v_action = action / 127` */
+    private fun shaderAction(look: Int): Float {
+        var action = byteValue(look, 1)
+        if (action > 127) action -= 256
+        return action / 127f
+    }
+
+    /** debug_view/cell.vert: `v_opacity = 1.0 - byteValue(a_look.z) / 255.0` */
+    private fun shaderOpacity(look: Int): Float = 1f - byteValue(look, 2) / 255f
 
     private fun readInstance(data: ByteBuffer, index: Int): Instance {
         val base = index * CellInstanceBuffer.STRUCT_SIZE
@@ -68,7 +79,8 @@ class CellInstanceBufferTest {
             y = data.getFloat(base + CellInstanceBuffer.OFFSET_CENTER + 4),
             color = data.getInt(base + CellInstanceBuffer.OFFSET_COLOR),
             shape = data.getInt(base + CellInstanceBuffer.OFFSET_SHAPE),
-            type = data.getInt(base + CellInstanceBuffer.OFFSET_TYPE)
+            type = data.getInt(base + CellInstanceBuffer.OFFSET_TYPE),
+            look = data.getInt(base + CellInstanceBuffer.OFFSET_LOOK)
         )
     }
 
@@ -77,14 +89,15 @@ class CellInstanceBufferTest {
         val y: Float,
         val color: Int,
         val shape: Int,
-        val type: Int
+        val type: Int,
+        val look: Int
     )
 
     // ==================== Тесты ====================
 
     @Test
-    fun `раскладка инстанса ровно 20 байт и смещения выровнены`() {
-        assertEquals(20, CellInstanceBuffer.STRUCT_SIZE, "менять только вместе с ParticleRenderer")
+    fun `раскладка инстанса ровно 24 байта и смещения выровнены`() {
+        assertEquals(24, CellInstanceBuffer.STRUCT_SIZE, "менять только вместе с CellGeometry и RenderSceneDump")
 
         // GL и особенно WebGL2 требуют, чтобы смещение атрибута было кратно размеру его
         // типа, а шаг — размеру самого крупного. У нас крупнейший тип float (4 байта).
@@ -93,11 +106,14 @@ class CellInstanceBufferTest {
         assertEquals(0, CellInstanceBuffer.OFFSET_COLOR % 4)
         assertEquals(0, CellInstanceBuffer.OFFSET_SHAPE % 4)
         assertEquals(0, CellInstanceBuffer.OFFSET_TYPE % 4)
+        assertEquals(0, CellInstanceBuffer.OFFSET_LOOK % 4)
 
         // Поля не должны перекрываться и обязаны покрывать инстанс целиком.
         assertEquals(8, CellInstanceBuffer.OFFSET_COLOR, "после двух float")
         assertEquals(12, CellInstanceBuffer.OFFSET_SHAPE)
         assertEquals(16, CellInstanceBuffer.OFFSET_TYPE)
+        assertEquals(20, CellInstanceBuffer.OFFSET_LOOK)
+        assertEquals(CellInstanceBuffer.STRUCT_SIZE, CellInstanceBuffer.OFFSET_LOOK + 4, "look — последнее поле")
     }
 
     @Test
@@ -217,30 +233,52 @@ class CellInstanceBufferTest {
     }
 
     @Test
-    fun `спираль хамелеона едет своим битом и не трогает остальное`() {
-        // Бит узора стоит рядом с битом не-клетки в том же байте: перепутай их — и в
-        // отладке хамелеон потерял бы спираль, а в ностальгическом режиме — ядро.
-        val plain = CellInstanceBuffer.type(cellType = 13, noiseSeed = 0x1234)
-        val spiral = CellInstanceBuffer.type(cellType = 13, noiseSeed = 0x1234, spiral = true)
-        val both = CellInstanceBuffer.type(cellType = 13, noiseSeed = 0x1234, isCell = false, spiral = true)
-
-        assertTrue(!shaderHasSpiral(plain), "по умолчанию спирали нет")
-        assertTrue(shaderHasSpiral(spiral), "спираль не распозналась")
-        assertTrue(shaderHasSpiral(both), "спираль потерялась рядом с флагом не-клетки")
-
-        assertTrue(shaderIsCell(spiral), "спираль сделала клетку не-клеткой")
-        assertTrue(!shaderIsCell(both), "спираль затёрла флаг не-клетки")
-
-        for (packed in listOf(plain, spiral, both)) {
-            assertEquals(13, shaderCellType(packed), "флаг повредил тип")
-            assertEquals(0x1234, shaderSeed(packed), "флаг повредил ключ шума")
-        }
-
-        val data = CellInstanceBuffer(initialCapacity = 1).apply {
-            begin(1)
-            putCell(0f, 0f, 0, 1f, 0f, 0.3f, 0f, 13, 11, spiral = true)
+    fun `вид в отладке едет своим полем и читается так же, как в cell vert`() {
+        // Ноль во всех байтах — прежняя плоская непрозрачная клетка: его пишут все, кто
+        // про поле не знает (реалистичный режим, превью геномов, старые дампы).
+        val data = CellInstanceBuffer(initialCapacity = 4).apply {
+            begin(4)
+            putCell(0f, 0f, 0, 1f, 0f, 0.3f, 0f, 13, 0x1234)
+            putCell(0f, 0f, 0, 1f, 0f, 0.3f, 0f, 13, 0x1234, look = CellLook.look(CellLook.MUSCLE, action = -1f))
+            putCell(0f, 0f, 0, 1f, 0f, 0.3f, 0f, 13, 0x1234, look = CellLook.look(CellLook.CHIP, action = 0.5f, transparency = 0.55f))
+            putCell(0f, 0f, 0, 1f, 0f, 0.3f, 0f, 13, 0x1234, look = CellLook.look(CellLook.PLAIN, action = 1f))
         }.end()
-        assertTrue(shaderHasSpiral(readInstance(data, 0).type), "putCell не довёз спираль")
+
+        val plain = readInstance(data, 0).look
+        assertEquals(0, plain)
+        assertEquals(CellLook.PLAIN, shaderPattern(plain))
+        assertEquals(0f, shaderAction(plain), "ноль сигнала обязан быть ровно нулём")
+        assertEquals(1f, shaderOpacity(plain))
+
+        val muscle = readInstance(data, 1).look
+        assertEquals(CellLook.MUSCLE, shaderPattern(muscle))
+        assertEquals(-1f, shaderAction(muscle))
+        assertEquals(1f, shaderOpacity(muscle))
+
+        val ghost = readInstance(data, 2).look
+        assertEquals(CellLook.CHIP, shaderPattern(ghost))
+        assertNear(0.5f, shaderAction(ghost), 1f / 127f, "сигнал")
+        assertNear(0.45f, shaderOpacity(ghost), 1f / 255f, "непрозрачность призрака")
+
+        assertEquals(1f, shaderAction(readInstance(data, 3).look))
+
+        // Вид не трогает остальные поля.
+        repeat(4) { i ->
+            val cell = readInstance(data, i)
+            assertEquals(13, shaderCellType(cell.type))
+            assertEquals(0x1234, shaderSeed(cell.type))
+            assertTrue(shaderIsCell(cell.type))
+        }
+    }
+
+    @Test
+    fun `сигнал за пределами и NaN зажимаются, а не переполняют соседний байт`() {
+        assertEquals(1f, shaderAction(CellLook.look(CellLook.PLAIN, action = 50f)))
+        assertEquals(-1f, shaderAction(CellLook.look(CellLook.PLAIN, action = -50f)))
+        assertEquals(0f, shaderAction(CellLook.look(CellLook.PLAIN, action = Float.NaN)))
+        // Отрицательный сигнал не должен залезть в байт прозрачности.
+        assertEquals(1f, shaderOpacity(CellLook.look(CellLook.EYE, action = -0.3f)))
+        assertEquals(CellLook.EYE, shaderPattern(CellLook.look(CellLook.EYE, action = -0.3f, transparency = 1f)))
     }
 
     @Test

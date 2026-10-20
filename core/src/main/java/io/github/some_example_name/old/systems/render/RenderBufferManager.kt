@@ -124,8 +124,8 @@ class RenderBufferManager(
      *
      * Обход по арене снимает оба. Клетки организма лежат подряд, частицы — подряд и
      * параллельно им, так что particleIndex получается арифметикой из слота, без чтения
-     * particleIndexes. Все шесть полей CellEntity (angleCos/Sin, degreeOfShortening,
-     * energy, cellType) читаются в том же слотовом порядке, то есть потоком.
+     * particleIndexes. Поля CellEntity (angleCos/Sin, energy, cellType, а в отладке ещё
+     * neuronImpulseOutput) читаются в том же слотовом порядке, то есть потоком.
      *
      * Ветки isCell внутри цикла тоже больше нет: здесь заведомо только клетки.
      */
@@ -244,6 +244,8 @@ class RenderBufferManager(
                 // Без ядра в ностальгическом режиме: ядро — признак клетки.
                 isCell = false
             )
+            // В отладке — плоская и непрозрачная, как и была.
+            back.look[writeIndex] = 0
 
             writeIndex++
         }
@@ -271,14 +273,17 @@ class RenderBufferManager(
         back.x[writeIndex] = x
         back.y[writeIndex] = y
         back.color[writeIndex] =
-            if (debug) debugColor(cellIndex, cellType, pColor[particleIndex]) else pColor[particleIndex]
+            if (debug) palette.color(cellType, pColor[particleIndex]) else pColor[particleIndex]
 
-        val visibleRadius = pRadius[particleIndex] * cellEntity.degreeOfShortening[cellIndex]
+        // Радиус — физический, без degreeOfShortening. Укорочение мышцы меняет длину её
+        // связей, а не размер клетки: сжимавшийся вместе с ним круг мигал на каждом
+        // сигнале. Сжатие видно по самому телу и, в отладке, по яркости мышцы.
+        val radius = pRadius[particleIndex]
 
         back.shape[writeIndex] = CellInstanceBuffer.shape(
             cosByte = CellInstanceBuffer.angleByte(angleCos),
             sinByte = CellInstanceBuffer.angleByte(angleSin),
-            radiusByte = CellInstanceBuffer.radiusByte(visibleRadius),
+            radiusByte = CellInstanceBuffer.radiusByte(radius),
             energyByte = CellInstanceBuffer.energyByte(cellEntity.energy[cellIndex])
         )
         // Старшие 16 бит — устойчивый ключ шума для шейдера.
@@ -291,55 +296,40 @@ class RenderBufferManager(
         // визуально крутились у всего тела, пока организм не дорастал.
         //
         // Индекс частицы это слот арены: он закреплён за клеткой на всю жизнь и от
-        // порядка сборки буфера не зависит вообще.
-        back.type[writeIndex] = CellInstanceBuffer.type(
-            cellType = cellType,
-            noiseSeed = particleIndex,
-            // Хамелеона по цвету не узнать — его меняет сигнал. В отладке на нём спираль.
-            spiral = debug && palette.hasSpiral(cellType)
-        )
+        // порядка сборки буфера не зависит вообще. По нему же отладка раскладывает рисунок.
+        back.type[writeIndex] = CellInstanceBuffer.type(cellType = cellType, noiseSeed = particleIndex)
 
-        if (debug) writeDirection(cellIndex, cellType, x, y, angleCos, angleSin, visibleRadius)
+        if (debug) {
+            // Сигнал действия — выход клетки: мышца сжимается, хвост тянет, присоска
+            // присасывается ровно по нему. От него анимация рисунка, см. DebugCellPalette.
+            val signal = cellEntity.neuronImpulseOutput[cellIndex]
+            back.look[writeIndex] = palette.look(cellType, signal)
+            writeDirection(cellIndex, cellType, particleIndex, x, y, angleCos, angleSin, radius, signal)
+        } else {
+            back.look[writeIndex] = 0
+        }
     }
 
-    /** Цвет клетки в отладочном режиме — см. DebugCellPalette. */
-    private fun debugColor(cellIndex: Int, cellType: Int, particleColor: Int): Int =
-        palette.color(
-            cellType,
-            particleColor,
-            if (palette.isMuscle(cellType)) muscleContraction(cellIndex) else 0f
-        )
-
-    /**
-     * Насколько мышца сжата, 0..1: сигнал, который она получает, зажатый в 0..1.
-     *
-     * Берётся команда, а не результат. Физически мышца сейчас не укорачивается — строка с
-     * degreeOfShortening в Muscle.doOnTick закомментирована, — и по укорочению мышцы на
-     * картинке не менялись бы вовсе. Когда сокращение вернётся, читать надо будет его.
-     */
-    private fun muscleContraction(cellIndex: Int): Float {
-        val signal = cellEntity.neuronImpulseOutput[cellIndex]
-        // NaN не больше нуля — тоже «не сжата».
-        return if (signal > 0f) minOf(signal, 1f) else 0f
-    }
-
-    /** Стрелка направления или луч глаза — в оверлей, см. DebugCellPalette. */
+    /** Стрелка направления, луч глаза или жгутик хвоста — в оверлей, см. DebugCellPalette. */
     private fun writeDirection(
         cellIndex: Int,
         cellType: Int,
+        particleIndex: Int,
         x: Float,
         y: Float,
         angleCos: Float,
         angleSin: Float,
-        radius: Float
+        radius: Float,
+        signal: Float
     ) {
-        val signal = cellEntity.neuronImpulseOutput[cellIndex]
         if (palette.isEye(cellType)) {
             palette.writeEyeRay(
                 overlayBack, cellType, x, y, angleCos, angleSin, radius,
                 range = specialEntity.eyeData(cellIndex).visibilityRange,
                 signal = signal
             )
+        } else if (palette.hasFlagellum(cellType)) {
+            palette.writeFlagellum(overlayBack, cellType, x, y, angleCos, angleSin, radius, signal, seed = particleIndex)
         } else if (palette.hasArrow(cellType)) {
             palette.writeArrow(overlayBack, x, y, angleCos, angleSin, radius, signal)
         }
@@ -506,6 +496,9 @@ class RenderCellBufferData(initialCapacity: Int) {
     var shape = IntArray(capacity)
     var type = IntArray(capacity)
 
+    /** Вид в отладке (CellLook); в остальных режимах ноль. */
+    var look = IntArray(capacity)
+
     fun ensureCapacity(minCapacity: Int) {
         if (minCapacity > capacity) {
             val newCapacity = if (capacity == 0) minCapacity else (capacity * 2).coerceAtLeast(minCapacity)
@@ -516,6 +509,7 @@ class RenderCellBufferData(initialCapacity: Int) {
             color = color.copyOf(newCapacity)
             shape = shape.copyOf(newCapacity)
             type = type.copyOf(newCapacity)
+            look = look.copyOf(newCapacity)
         }
     }
 }

@@ -130,21 +130,40 @@ class RenderSceneDumpTest {
         assertTrue(scene.overlay.isDirect, "оверлей тоже едет на GPU как есть")
     }
 
+    /** Смещение поля time в заголовке: magic, версия, вьюпорт, камера, блюр, виньетка, режим, K и P. */
+    private val timeOffset = 8 + 4 + 4 + 4 + 3 * 4 + 2 * 4 + 1 + 2 * 4
+
+    /**
+     * Запись текущей версии → запись версии 2 или 3: клетки по 20 байт (без look), у
+     * версии 2 ещё нет времени и оверлея. [paths] — длина секции путей к текстурам в байтах.
+     */
+    private fun downgrade(current: ByteArray, version: Int, paths: Int, cellCount: Int): ByteArray {
+        val cellsAt = timeOffset + 4 + paths + 4
+        val cells = ByteArray(cellCount * 20)
+        repeat(cellCount) { i ->
+            current.copyInto(cells, i * 20, cellsAt + i * 24, cellsAt + i * 24 + 20)
+        }
+        val head = current.copyOfRange(0, cellsAt)
+        val tail = current.copyOfRange(cellsAt + cellCount * 24, current.size)
+        var result = head + cells + tail
+        if (version == 2) {
+            // Без времени после pheromoneP и без счётчика оверлея в самом конце.
+            result = result.copyOfRange(0, timeOffset) + result.copyOfRange(timeOffset + 4, result.size - 4)
+        }
+        result[8] = 0; result[9] = 0; result[10] = 0; result[11] = version.toByte()
+        return result
+    }
+
     @Test
     fun `дамп версии 2 читается без оверлея и времени`() {
-        // Версия 3 добавила два поля: время после pheromoneP и оверлей в самом конце.
-        // Старые снимки — материал для сравнения «до и после», терять их нельзя.
+        // Версия 3 добавила два поля: время после pheromoneP и оверлей в самом конце,
+        // версия 4 — look в каждой клетке. Старые снимки — материал для сравнения «до и
+        // после», терять их нельзя.
         val (frame, _, _) = sampleFrame(cellCount = 4, pheromoneCount = 2)
         frame.overlay = null
         val file = FileHandle(folder.newFile("v2.scene"))
         RenderSceneDump.write(file, frame, 800, 600, 1f, 2f, 0.5f, listOf("a.png"))
-
-        // Из записи версии 3 делаем версию 2: номер, без времени и без счётчика оверлея.
-        val v3 = file.readBytes()
-        val timeOffset = 8 + 4 + 4 + 4 + 3 * 4 + 2 * 4 + 1 + 2 * 4
-        val v2 = v3.copyOfRange(0, timeOffset) + v3.copyOfRange(timeOffset + 4, v3.size - 4)
-        v2[8] = 0; v2[9] = 0; v2[10] = 0; v2[11] = 2
-        file.writeBytes(v2, false)
+        file.writeBytes(downgrade(file.readBytes(), version = 2, paths = 4 + 4 + 5, cellCount = 4), false)
 
         val scene = RenderSceneDump.read(file)
         assertEquals(4, scene.cellCount)
@@ -152,7 +171,23 @@ class RenderSceneDumpTest {
         assertEquals(0f, scene.time)
         assertEquals(0, scene.overlayCount)
         assertEquals(0, scene.overlay.remaining())
+        // У образца look нулевой — ровно то, чем дамп старой версии и дополняется.
         assertBuffersEqual(frame.cells!!, scene.cells, "буфер клеток")
+    }
+
+    @Test
+    fun `дамп версии 3 читается с клетками по 20 байт`() {
+        val (frame, _, _) = sampleFrame(cellCount = 3, pheromoneCount = 1)
+        val file = FileHandle(folder.newFile("v3.scene"))
+        RenderSceneDump.write(file, frame, 800, 600, 1f, 2f, 0.5f, listOf("a.png"))
+        file.writeBytes(downgrade(file.readBytes(), version = 3, paths = 4 + 4 + 5, cellCount = 3), false)
+
+        val scene = RenderSceneDump.read(file)
+        assertEquals(3, scene.cellCount)
+        assertEquals(123.25f, scene.time)
+        assertEquals(3, scene.overlayCount)
+        assertBuffersEqual(frame.cells!!, scene.cells, "буфер клеток")
+        assertBuffersEqual(frame.overlay!!, scene.overlay, "буфер оверлея")
     }
 
     @Test

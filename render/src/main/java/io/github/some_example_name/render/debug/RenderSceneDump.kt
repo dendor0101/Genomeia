@@ -45,7 +45,7 @@ import java.nio.ByteOrder
  *   pheromoneP       float
  *   time             float   с версии 3: часы анимации оверлея (RenderFrame.time)
  *   texturePaths     int count, далее для каждого: int длина + UTF-8 байты
- *   cellCount        int, далее cellCount * 20 байт (в версии 1 — по 32)
+ *   cellCount        int, далее cellCount * 24 байта (в версии 1 — по 32, во 2–3 — по 20)
  *   pheromoneCount   int, далее pheromoneCount * 16 байт
  *   overlayCount     int, далее overlayCount * 24 байта — с версии 3, оверлей отладки
  *
@@ -61,11 +61,15 @@ object RenderSceneDump {
     /**
      * Версия 2: инстанс клетки ужался с 32 байт до 20, см. CellInstanceBuffer.
      * Версия 3: оверлей отладочного режима и время его анимации.
+     * Версия 4: инстанс клетки 24 байта — добавился вид в отладке (CellInstanceBuffer.look).
      */
-    const val VERSION = 3
+    const val VERSION = 4
 
     /** Раскладка версии 1: x, y, color, packed1, packed2 + 12 байт добивки. */
     private const val V1_CELL_STRUCT_SIZE = 32
+
+    /** Раскладка версий 2–3: x, y, color, shape, type — без look. */
+    private const val V2_CELL_STRUCT_SIZE = 20
 
     /** Расширение по умолчанию, чтобы дампы было видно глазами в каталоге. */
     const val EXTENSION = "scene"
@@ -206,6 +210,8 @@ object RenderSceneDump {
         val cellCount = input.int
         val cells = if (version == 1) {
             readCellsV1(input, cellCount)
+        } else if (version <= 3) {
+            readCellsV2(input, cellCount)
         } else {
             readDirect(input, cellCount * CellInstanceBuffer.STRUCT_SIZE)
         }
@@ -248,7 +254,7 @@ object RenderSceneDump {
      * Было (32 байта):  x, y, color, packed1, packed2, три нулевых int
      *   packed1 = cos | sin<<8 | 0<<16 | radius<<24
      *   packed2 = energy | cellType<<8 | seed<<16
-     * Стало (20 байт):  x, y, color, shape, type
+     * Стало (24 байта): x, y, color, shape, type, look = 0
      *   shape = cos | sin<<8 | radius<<16 | energy<<24
      *   type  = cellType | seedLo<<8 | seedHi<<16
      */
@@ -281,9 +287,26 @@ object RenderSceneDump {
             target.putInt(color)
             target.putInt(CellInstanceBuffer.shape(cosByte, sinByte, radiusByte, energyByte))
             target.putInt(CellInstanceBuffer.type(cellType, seed))
+            target.putInt(0)
         }
 
         (source as java.nio.Buffer).position(source.position() + cellCount * V1_CELL_STRUCT_SIZE)
+        (target as java.nio.Buffer).flip()
+        return target
+    }
+
+    /**
+     * Клетки из дампов версий 2–3: те же 20 байт, что сейчас, плюс нулевой look —
+     * непрозрачная клетка без рисунка, то есть ровно то, как такие дампы и рисовались.
+     */
+    private fun readCellsV2(source: ByteBuffer, cellCount: Int): ByteBuffer {
+        val target = ByteBuffer
+            .allocateDirect((cellCount * CellInstanceBuffer.STRUCT_SIZE).coerceAtLeast(1))
+            .order(ByteOrder.nativeOrder())
+        repeat(cellCount) {
+            repeat(V2_CELL_STRUCT_SIZE) { target.put(source.get()) }
+            target.putInt(0)
+        }
         (target as java.nio.Buffer).flip()
         return target
     }

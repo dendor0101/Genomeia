@@ -12,7 +12,7 @@ import kotlin.math.sin
 /**
  * Геометрия клеток на GPU: веер одной клетки плюс инстансные данные всех клеток кадра.
  *
- * Данные инстанса едут обычными вершинными атрибутами с делителем 1 — по 20 байт на
+ * Данные инстанса едут обычными вершинными атрибутами с делителем 1 — по 24 байта на
  * клетку, раскладка в CellInstanceBuffer.
  *
  * ЗАЧЕМ ОТДЕЛЬНО ОТ ПРОХОДОВ
@@ -158,6 +158,14 @@ class CellGeometry {
         )
         gl30.glVertexAttribDivisor(A_TYPE, 1)
 
+        // Вид в отладочном режиме (CellLook). Остальные шейдеры клеток его не объявляют —
+        // атрибут просто не читается.
+        gl.glEnableVertexAttribArray(A_LOOK)
+        gl.glVertexAttribPointer(
+            A_LOOK, 4, GL20.GL_UNSIGNED_BYTE, true, stride, CellInstanceBuffer.OFFSET_LOOK
+        )
+        gl30.glVertexAttribDivisor(A_LOOK, 1)
+
         gl30.glBindVertexArray(0)
         gl.glBindBuffer(GL20.GL_ARRAY_BUFFER, 0)
     }
@@ -300,5 +308,6 @@ class CellGeometry {
         private const val A_COLOR = 2
         private const val A_SHAPE = 3
         private const val A_TYPE = 4
+        private const val A_LOOK = 5
     }
 }

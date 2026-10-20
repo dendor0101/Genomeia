@@ -57,6 +57,7 @@ shaders/debug_view/cell.vert
 shaders/debug_view/cell_common.glsl
 shaders/debug_view/cell_edge.frag
 shaders/debug_view/cell_fill.frag
+shaders/debug_view/cell_look.glsl
 shaders/debug_view/composite.frag
 shaders/debug_view/overlay.frag
 shaders/debug_view/overlay.vert

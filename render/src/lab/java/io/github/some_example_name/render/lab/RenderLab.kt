@@ -45,7 +45,8 @@ import java.io.File
  *   gradlew :render:renderLab -Dgenomeia.scene=scene-dumps/scene-1712345678.scene
  *       откроет конкретный снимок
  *
- *   -Dgenomeia.synthetic=layers|body|dense|organism   какую синтетику рисовать без дампа
+ *   -Dgenomeia.synthetic=layers|body|dense|organism|gallery   какую синтетику рисовать без
+ *                                              дампа; gallery — все рисунки клеток отладки
  *   -Dgenomeia.mode=realistic|debug|nostalgic   режим рендера на старте
  *   -Dgenomeia.zoom=0.01                       зум камеры вместо того, что в сцене
  *   -Dgenomeia.cameraX=0 -Dgenomeia.cameraY=0  центр камеры, тоже вместо сценового

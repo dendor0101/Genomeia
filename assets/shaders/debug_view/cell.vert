@@ -6,8 +6,12 @@ precision highp float;
 //
 // Геометрия — описанный восьмиугольник из CellGeometry (Detail.HULL), раздутый на
 // AA_MARGIN_PX пикселей: второму проходу нужны фрагменты чуть ЗА окружностью, чтобы
-// размыть край клетки наружу. Точное d/R считает фрагментный шейдер по v_local — позиция
-// интерполируется растеризатором точно, в отличие от расстояния.
+// размыть край клетки наружу. В проходе сглаживания корпус раздут ещё и на бахрому
+// рисунка (реснички, иглы — fringeLength). Точное d/R считает фрагментный шейдер по
+// v_local — позиция интерполируется растеризатором точно, в отличие от расстояния.
+
+#include "cell_look.glsl"
+
 layout(location = 0) in vec3 a_corner;  // xy — точка корпуса в долях радиуса
 
 // Инстансные атрибуты, раскладка — в CellInstanceBuffer.
@@ -15,17 +19,15 @@ layout(location = 1) in vec2 a_center;
 layout(location = 2) in vec4 a_color;   // r, g, b, a
 layout(location = 3) in vec4 a_shape;   // cos, sin, радиус, энергия
 layout(location = 4) in vec4 a_type;    // тип клетки, ключ шума lo, hi, флаги
+layout(location = 5) in vec4 a_look;    // рисунок, сигнал действия, прозрачность, —
 
 uniform mat4 u_projTrans;
 
 /** Сколько единиц мира приходится на один пиксель экрана. */
 uniform float u_pixelWorld;
 
-/**
- * Радиус ядра в долях радиуса клетки при энергии ENERGY_SPAN. Ядро — индикатор энергии,
- * растёт с ней линейно, как в ностальгическом режиме.
- */
-uniform float u_nucleusAtFullEnergy;
+/** 1 — раздуть корпус на бахрому рисунка (проход сглаживания), 0 — нет (заливка). */
+uniform float u_fringe;
 
 /** На сколько пикселей корпус выходит за окружность: полоса сглаживания края. */
 const float AA_MARGIN_PX = 1.5;
@@ -38,14 +40,30 @@ flat out vec3 v_color;
 /** Шаг d/R на один пиксель экрана: перевод «долей радиуса» в пиксели. */
 flat out float v_tPerPixel;
 
-/** Радиус ядра в долях R; не больше нуля — ядра нет. */
-flat out float v_nucleus;
-
-/** Направление клетки (cos, sin) — по нему крутится узор. */
+/** Направление клетки (cos, sin) — по нему повёрнут рисунок. */
 flat out vec2 v_dir;
 
-/** Нарисовать на клетке спираль — см. CellInstanceBuffer.FLAG_SPIRAL. */
-flat out float v_spiral;
+/** Рисунок — CellLook, P_* в cell_look.glsl. */
+flat out int v_pattern;
+
+/** Сигнал действия клетки −1..1: от него анимация мышц, присосок и прочих. */
+flat out float v_action;
+
+/** Непрозрачность 0..1; меньше единицы — «призрак», его рисует только проход 3. */
+flat out float v_opacity;
+
+/** Ключ клетки 0..65535: от него расположение и фазы её рисунка, см. hash4. */
+flat out float v_key;
+
+/**
+ * Четыре случайных числа клетки 0..1 — то, что у рисунка одно на клетку (где ядро, сколько
+ * отростков, фазы). Здесь, а не во фрагментном шейдере: там это был бы хэш на каждый пиксель.
+ */
+flat out vec4 v_rand;
+
+float byteValue(float normalized) {
+    return floor(normalized * 255.0 + 0.5);
+}
 
 void main() {
     // Распаковка — та же, что в circle_pc.vert: RADIUS_MIN + байт * RADIUS_SPAN.
@@ -53,18 +71,28 @@ void main() {
 
     v_tPerPixel = u_pixelWorld / radius;
 
-    float grow = 1.0 + AA_MARGIN_PX * v_tPerPixel;
+    int pattern = int(byteValue(a_look.x));
+    v_pattern = pattern < P_COUNT ? pattern : P_PLAIN;
+
+    // Знаковый байт. Шаг — целым числом, и только потом в float: выражение (b - 127)/127
+    // компилятор вправе переписать через умножение, и на Intel UHD ноль становился -6e-8.
+    int action = int(byteValue(a_look.y));
+    if (action > 127) action -= 256;
+    v_action = float(action) / 127.0;
+
+    v_opacity = 1.0 - byteValue(a_look.z) / 255.0;
+
+    v_key = byteValue(a_type.y) + byteValue(a_type.z) * 256.0;
+    v_rand = hash4(vec2(v_key, 0.5));
+
+    // Бахрому рисует только клетка крупнее 10 пикселей (patternFade в cell_common.glsl):
+    // мельче корпус не раздуваем — на дальнем плане это были бы тысячи пустых фрагментов.
+    float fringe = v_tPerPixel < 0.1 ? u_fringe * fringeLength(v_pattern) : 0.0;
+    float grow = 1.0 + AA_MARGIN_PX * v_tPerPixel + fringe;
     v_local = a_corner.xy * grow;
 
     v_color = a_color.rgb;
     v_dir = vec2(a_shape.x * 2.0 - 1.0, a_shape.y * 2.0 - 1.0);
-
-    // Байт флагов обратно в целое — с округлением, как byteValue() в circle_pc.vert.
-    float flags = floor(a_type.w * 255.0 + 0.5);
-    bool isCell = mod(flags, 2.0) < 1.0;                  // FLAG_NOT_CELL = 1
-    v_spiral = mod(floor(flags / 2.0), 2.0);              // FLAG_SPIRAL = 2
-
-    v_nucleus = isCell ? a_shape.w * u_nucleusAtFullEnergy : -1.0;
 
     gl_Position = u_projTrans * vec4(v_local * radius + a_center, 0.0, 1.0);
 }
