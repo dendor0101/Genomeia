@@ -29,11 +29,12 @@ uniform float u_pixelWorld;
 /** 1 — раздуть корпус на бахрому рисунка (проход сглаживания), 0 — нет (заливка). */
 uniform float u_fringe;
 
-/** Фильтр отладки — DebugFilter.ordinal: 0 оригинал, 1 энергия, 2 нейросигнал. */
+/** Фильтр отладки — DebugFilter.ordinal: 0 оригинал, 1 энергия, 2 нейросигнал, 3 коллизии. */
 uniform int u_filter;
 
 const int FILTER_ENERGY = 1;
 const int FILTER_SIGNAL = 2;
+const int FILTER_COLLISION = 3;
 
 /** На сколько пикселей корпус выходит за окружность: полоса сглаживания края. */
 const float AA_MARGIN_PX = 1.5;
@@ -79,9 +80,13 @@ float byteValue(float normalized) {
  *  - энергия: заполненность 0..1 — от синего (0, 0, 1) к пурпурному (1, 0, 1);
  *  - нейросигнал: знаковый байт уже нормализованного сигнала (CellLook.signalFilterByte) —
  *    ноль синий, плюс к пурпурному, минус к голубому (0, 1, 1): тормозящий сигнал
- *    отличается от возбуждающего, а молчащая клетка — от обеих.
+ *    отличается от возбуждающего, а молчащая клетка — от обеих;
+ *  - коллизии: частица в сетке столкновений (CellLook.collisionFilterByte) — оранжевая,
+ *    вне её — тёмно-синяя. Двух цветов хватает: признак да/нет, а оранжевый на тёмном
+ *    синем виден и на мелких клетках дальнего плана.
  */
 vec3 filterColor(int kind, float value) {
+    if (kind == FILTER_COLLISION) return value > 0.0 ? vec3(1.0, 0.55, 0.0) : vec3(0.08, 0.12, 0.45);
     if (kind == FILTER_ENERGY) return vec3(value / 255.0, 0.0, 1.0);
     int steps = int(value);
     if (steps > 127) steps -= 256;
@@ -119,9 +124,10 @@ void main() {
     v_filtered = 0.0;
     if (u_filter != 0) {
         // Не-клетка (еда, субстанции) ни энергии, ни сигнала не несёт — гасим её до
-        // серого, чтобы не путалась со шкалой фильтра.
+        // серого, чтобы не путалась со шкалой фильтра. В коллизиях же она участвует, как
+        // и клетки, — её фильтр закрашивает тоже.
         bool isCell = mod(byteValue(a_type.w), 2.0) < 1.0;
-        if (isCell) {
+        if (isCell || u_filter == FILTER_COLLISION) {
             v_color = filterColor(u_filter, byteValue(a_look.w));
             v_filtered = 1.0;
         } else {

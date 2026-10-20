@@ -106,7 +106,10 @@ class TouchDown(val x: Float, val y: Float): UiEditorCommands {
 @Serializable
 class DivideDialog(
     val clickedCell: EditorCell,
-    val newDividedCellPosition: Pair<Float, Float>
+    val newDividedCellPosition: Pair<Float, Float>,
+    // Последним и со значением по умолчанию: поля ProtoBuf нумеруются по порядку, и
+    // журналы, записанные до таблицы мест, читаются с пустой.
+    val places: DivisionPlaces = DivisionPlaces()
 ): UiEditorCommands {
     override val name get() = "DivideDialog"
     override val detail get() = "cell=${clickedCell.id}"

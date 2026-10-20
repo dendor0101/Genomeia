@@ -4,9 +4,12 @@ import io.github.some_example_name.old.core.utils.distanceTo
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.currentTick
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.nextStageTick
 import io.github.some_example_name.old.editor.entities.CellReplay
+import io.github.some_example_name.old.editor.geometry.CellPlacement
+import io.github.some_example_name.old.editor.system.logic.DivisionPlaces
 import io.github.some_example_name.old.editor.system.logic.ToEditorDataMapper
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.systems.physics.GridManager
+import kotlin.math.ceil
 
 class CellSearchManager(
     val cellReplay: CellReplay,
@@ -93,48 +96,88 @@ class CellSearchManager(
     }
 
 
-    fun getAll2LayersNeighboursEditor(
-        clickedX: Float,
-        clickedY: Float,
-        clickedCellIndex: Int
-    ): List<Int> {
-        val gridGrabbedX = clickedX.toInt()
-        val gridGrabbedY = clickedY.toInt()
-        val allCells = mutableListOf<Int>()
-        for (i in -2..2) {
-            for (j in -2..2) {
-                if (i == 2 && j == 2) continue
-                if (i == -2 && j == 2) continue
-                if (i == 2 && j == -2) continue
-                if (i == -2 && j == -2) continue
-                allCells.addAll(gridManager.getParticles(gridGrabbedX + i, gridGrabbedY + j).toList())
-            }
+    /**
+     * Места для дочери клетки [clickedCellIndex] под каждый радиус, который предлагает
+     * диалог деления (см. [DivisionPlaces]). Пустых мест нет — таблица всё равно полная, с NaN.
+     */
+    fun getDivisionPlaces(
+        clickedCellIndex: Int,
+        symmetryManager: SymmetryManager,
+    ): DivisionPlaces {
+        val clickedCell = toEditorDataMapper.mapToEditorData(clickedCellIndex)
+        val neighbours = collectPlacementNeighbours(clickedCellIndex, symmetryManager)
+        val count = CellPlacement.CHILD_RADIUS_COUNT
+        val xs = ArrayList<Float>(count)
+        val ys = ArrayList<Float>(count)
+        for (step in 0 until count) {
+            val point = symmetryManager.newPoint(clickedCell, CellPlacement.childRadius(step), neighbours)
+            xs.add(point?.first ?: Float.NaN)
+            ys.add(point?.second ?: Float.NaN)
         }
-        return allCells.filter { it != clickedCellIndex }
+        return DivisionPlaces(xs, ys)
     }
 
+    /** Место для дочери радиуса [childRadius] у клетки [clickedCellIndex] или null. */
     fun getPositionForNewCell(
         clickedCellIndex: Int,
+        childRadius: Float,
         symmetryManager: SymmetryManager,
     ): Pair<Float, Float>? {
         val clickedCell = toEditorDataMapper.mapToEditorData(clickedCellIndex)
-        val xs = mutableListOf<Float>()
-        val ys = mutableListOf<Float>()
-
-        val neighboursAllowedForConnectionIds = getAll2LayersNeighboursEditor(
-            clickedCell.x,
-            clickedCell.y,
-            clickedCellIndex
-        )
-
-        neighboursAllowedForConnectionIds.forEach { it ->
-            val clickedCell = toEditorDataMapper.mapToEditorData(it)
-            xs.add(clickedCell.x)
-            ys.add(clickedCell.y)
-        }
-
-        val newPoint = symmetryManager.newPoint(clickedCell, xs, ys)
-        return newPoint
+        return symmetryManager.newPoint(clickedCell, childRadius, collectPlacementNeighbours(clickedCellIndex, symmetryManager))
     }
 
+    /**
+     * Клетки, которые могут помешать дочери: все в пределах CellPlacement.neighbourReach,
+     * а с сеткой симметрии — и до дальнего её узла-кандидата.
+     *
+     * Раньше брался квадрат 5×5 клеток сетки без углов. Без углов он не доставал до
+     * соседа на расстоянии ~1.4 по диагонали, а запрет вокруг соседа дотягивается до 1.5:
+     * дочь могла встать вплотную к клетке, которую поиск не видел.
+     */
+    private fun collectPlacementNeighbours(clickedCellIndex: Int, symmetryManager: SymmetryManager): PlacementNeighbours {
+        val cx = particleEntity.x[clickedCellIndex]
+        val cy = particleEntity.y[clickedCellIndex]
+        val reach = maxOf(
+            CellPlacement.neighbourReach(particleEntity.radius[clickedCellIndex]),
+            symmetryManager.candidateReach()
+        )
+        val layers = ceil(reach).toInt()
+        val gx = cx.toInt()
+        val gy = cy.toInt()
+        val result = PlacementNeighbours()
+        for (i in -layers..layers) for (j in -layers..layers) {
+            for (p in gridManager.getParticles(gx + i, gy + j)) {
+                if (p == clickedCellIndex) continue
+                val x = particleEntity.x[p]
+                val y = particleEntity.y[p]
+                val dx = x - cx
+                val dy = y - cy
+                if (dx * dx + dy * dy >= reach * reach) continue
+                result.add(x, y, particleEntity.radius[p])
+            }
+        }
+        return result
+    }
+
+}
+
+/** Соседи для поиска места: позиции и радиусы, первые [count]. */
+class PlacementNeighbours {
+    var x = FloatArray(32)
+        private set
+    var y = FloatArray(32)
+        private set
+    var r = FloatArray(32)
+        private set
+    var count = 0
+        private set
+
+    fun add(px: Float, py: Float, pr: Float) {
+        if (count == x.size) {
+            x = x.copyOf(count * 2); y = y.copyOf(count * 2); r = r.copyOf(count * 2)
+        }
+        x[count] = px; y[count] = py; r[count] = pr
+        count++
+    }
 }

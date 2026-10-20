@@ -109,6 +109,7 @@ class CellLookTest {
                 ?: error("в cell.vert нет $name")
         assertEquals(DebugFilter.ENERGY.ordinal, constInt("FILTER_ENERGY"))
         assertEquals(DebugFilter.SIGNAL.ordinal, constInt("FILTER_SIGNAL"))
+        assertEquals(DebugFilter.COLLISION.ordinal, constInt("FILTER_COLLISION"))
         assertEquals(0, DebugFilter.ORIGINAL.ordinal, "u_filter = 0 — без фильтра")
     }
 

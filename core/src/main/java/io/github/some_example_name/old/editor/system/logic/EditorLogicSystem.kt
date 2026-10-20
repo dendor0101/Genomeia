@@ -172,7 +172,8 @@ class EditorLogicSystem(
 
             is DivideDialog -> uiScreenCommands = ShowDivideDialog(
                 clickedCell = command.clickedCell,
-                newDividedCellPosition = command.newDividedCellPosition
+                newDividedCellPosition = command.newDividedCellPosition,
+                places = command.places
             )
             is MutateDialog -> uiScreenCommands = ShowMutateDialog(
                 clickedCell = command.clickedCell,

@@ -9,6 +9,7 @@ import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer
 import io.github.some_example_name.old.game.MyGame
 import io.github.some_example_name.old.systems.genomics.genome.decodeGenome
 import io.github.some_example_name.old.systems.genomics.genome.encodeGenome
+import io.github.some_example_name.old.systems.genomics.library.Baker
 import io.github.some_example_name.old.systems.genomics.library.GenomeLibrary
 import java.io.File
 import kotlin.system.exitProcess
@@ -29,8 +30,15 @@ import kotlin.system.exitProcess
  *  3. печатается время выращивания (столько игра стоит при первом запуске на каждом
  *     своём геноме без снимка) и сколько снимок добавил к файлу.
  *
- * Запуск: gradlew :lwjgl3:bakeBundledGenomes [-Pdir=каталог], по умолчанию assets/genomes.
- * Ненулевой код — хоть один геном не допёкся или снимок не повторился.
+ * Запуск: gradlew :lwjgl3:bakeBundledGenomes [-Pdir=каталог] [-PrebakeInterior], по
+ * умолчанию assets/genomes. Ненулевой код — хоть один геном не допёкся или снимок не повторился.
+ *
+ * -PrebakeInterior — перед проверкой пересчитать границу тела (BakedLayout.interiorLinks)
+ * у всех файлов, а не только у тех, где её нет: так встроенные геномы переходят на новый
+ * признак границы (InteriorCells) без удаления и пересохранения. Граница переносится в
+ * СВОЮ раскладку по cellGenomeId (withInteriorFrom): порядок слотов, стадии и снимок не
+ * меняются. Повтор .bug, записанного на прежней сборке с встроенным геномом в мире,
+ * после этого разойдётся — граница влияет на столкновения.
  */
 fun main(args: Array<String>) {
     val dir = File(args.getOrNull(0) ?: "assets/genomes")
@@ -41,15 +49,19 @@ fun main(args: Array<String>) {
         // Как в Lwjgl3Launcher: контейнеры игры поднимают рендер, а ему нужен GL30.
         setOpenGLEmulation(Lwjgl3ApplicationConfiguration.GLEmulation.GL30, 3, 3)
     }
-    Lwjgl3Application(BakeBundledGenomes(MyGame(DesktopFileProvider()), dir), config)
+    val rebakeInterior = args.contains(REBAKE_INTERIOR)
+    Lwjgl3Application(BakeBundledGenomes(MyGame(DesktopFileProvider()), dir, rebakeInterior), config)
     exitProcess(exitCode)
 }
 
 private var exitCode = 1
 
+private const val REBAKE_INTERIOR = "--rebake-interior"
+
 private class BakeBundledGenomes(
     private val game: MyGame,
-    private val dir: File
+    private val dir: File,
+    private val rebakeInterior: Boolean
 ) : ApplicationListener by game {
 
     private var frames = 0
@@ -71,6 +83,8 @@ private class BakeBundledGenomes(
         require(dir.isDirectory) { "нет каталога ${dir.absolutePath}" }
         val baker = DIGenomeEditorContainer.genomeBaker
         val folder = Gdx.files.absolute(dir.absolutePath)
+
+        if (rebakeInterior) rebakeInterior(baker)
 
         val started = System.nanoTime()
         val (baked, failed) = GenomeLibrary.bakeUnbaked(baker, folder)
@@ -118,5 +132,26 @@ private class BakeBundledGenomes(
 
         println(if (failures == 0) "Все ${files.size} со снимком, снимки повторяются." else "НЕ ПРОШЛИ: $failures из ${files.size}.")
         return failures == 0
+    }
+
+    /** Граница тела заново у всех файлов; печатает, сколько граничных было и стало. */
+    private fun rebakeInterior(baker: Baker) {
+        val files = dir.listFiles { f -> f.isFile && f.extension.equals("genome", ignoreCase = true) }
+            ?.sortedBy { it.name }.orEmpty()
+        for (file in files) {
+            val genome = decodeGenome(file.readBytes())
+            val layout = genome.sortedGraph
+            if (layout == null || layout.cellsInLayout == 0) continue
+            val rebaked = layout.withInteriorFrom(baker.bake(genome, genome.name).sortedGraph)
+            if (rebaked.interiorLinks == layout.interiorLinks) {
+                println("граница ${file.name}: без изменений")
+                continue
+            }
+            file.writeBytes(encodeGenome(genome.copy(sortedGraph = rebaked)))
+            println(
+                "граница ${file.name}: граничных ${layout.interiorLinks.count { it == 0 }} -> " +
+                    "${rebaked.interiorLinks.count { it == 0 }} из ${layout.cellsInLayout}"
+            )
+        }
     }
 }
