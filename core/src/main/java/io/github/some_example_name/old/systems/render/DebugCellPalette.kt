@@ -109,11 +109,12 @@ class DebugCellPalette(private val cellList: List<Cell>) {
     fun pattern(cellType: Int): Int = patternByType[cellType]
 
     /**
-     * Поле look инстанса: рисунок типа, сигнал действия [action] (выход клетки, −1..1) и
-     * прозрачность [transparency] (0 — непрозрачная).
+     * Поле look инстанса: рисунок типа, сигнал действия [action] (выход клетки, −1..1),
+     * прозрачность [transparency] (0 — непрозрачная) и байт фильтра отладки [filter]
+     * (CellLook.energyFilterByte или signalFilterByte; 0 — без фильтра).
      */
-    fun look(cellType: Int, action: Float, transparency: Float = 0f): Int =
-        CellLook.look(patternByType[cellType], action, transparency)
+    fun look(cellType: Int, action: Float, transparency: Float = 0f, filter: Int = 0): Int =
+        CellLook.look(patternByType[cellType], action, transparency, filter)
 
     fun isEye(cellType: Int): Boolean = shapeByType[cellType] == SHAPE_RAY
 

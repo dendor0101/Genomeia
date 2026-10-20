@@ -15,6 +15,7 @@ import io.github.some_example_name.old.systems.maps.MapSave
 import io.github.some_example_name.old.systems.render.RenderSystem
 import io.github.some_example_name.old.systems.simulation.SimulationData
 import io.github.some_example_name.old.systems.simulation.SimulationSystem
+import io.github.some_example_name.render.DebugFilter
 import io.github.some_example_name.render.RenderMode
 import java.util.Locale
 
@@ -92,6 +93,16 @@ sealed interface SimulationIntent : GameCommand {
     data class SetRenderMode(val mode: RenderMode) : SimulationIntent {
         override val name get() = "SetRenderMode"
         override val detail get() = mode.name
+    }
+
+    /**
+     * Фильтр отладочного режима: оригинал, энергия, нейросигнал. Только вид — мир от него
+     * не меняется; командой, потому что это действие игрока и повтор должен показать то же.
+     */
+    @Serializable
+    data class SetDebugFilter(val filter: DebugFilter) : SimulationIntent {
+        override val name get() = "SetDebugFilter"
+        override val detail get() = filter.name
     }
 
     /** Экранная клавиатура контроллера: показать или спрятать. */
@@ -306,7 +317,13 @@ class SimulationViewModel(
             // При повторе рестарт делает сам поток симуляции, в записанном тике (SimRestarted).
             is SimulationIntent.Restart -> if (!BugReplay.isActive) simulationData.isRestart = true
 
-            is SimulationIntent.SetRenderMode -> renderSystem.mode = intent.mode
+            is SimulationIntent.SetRenderMode -> {
+                renderSystem.mode = intent.mode
+                // Список фильтров сверху есть только в отладочном режиме.
+                onEffect?.invoke(SimulationEffect.RebuildMenu)
+            }
+
+            is SimulationIntent.SetDebugFilter -> renderSystem.debugFilter = intent.filter
 
             is SimulationIntent.SetControllerKeysVisible -> {
                 simulationData.showControllerKeys = intent.visible

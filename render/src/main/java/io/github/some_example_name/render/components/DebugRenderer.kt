@@ -270,6 +270,8 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         setIfPresent(shader, "u_depthScale", DEPTH_SCALE)
         setIfPresent(shader, "u_fringe", if (fringe) 1f else 0f)
         setIfPresent(shader, "u_time", context.time)
+        // Фильтр — номер DebugFilter, его ждёт u_filter в cell.vert (0 — оригинал).
+        setIfPresent(shader, "u_filter", context.debugFilter.ordinal)
         val location = shader.fetchUniformLocation("u_background", false)
         if (location >= 0) shader.setUniformf(location, BACKGROUND_R, BACKGROUND_G, BACKGROUND_B)
     }

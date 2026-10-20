@@ -11,6 +11,7 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Matrix4
 import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.render.RenderFrame
+import io.github.some_example_name.render.DebugFilter
 import io.github.some_example_name.render.RenderMode
 import io.github.some_example_name.render.WorldRenderer
 import io.github.some_example_name.render.debug.RenderSceneDump
@@ -49,6 +50,13 @@ class RenderSystem(
         get() = renderBufferManager.mode
         set(value) {
             renderBufferManager.mode = value
+        }
+
+    /** Фильтр отладочного режима; хранится у [renderBufferManager], см. пояснение там. */
+    var debugFilter: DebugFilter
+        get() = renderBufferManager.debugFilter
+        set(value) {
+            renderBufferManager.debugFilter = value
         }
 
     private lateinit var fontMatrix: Matrix4
@@ -157,6 +165,8 @@ class RenderSystem(
             zoom = camera.zoom
             vignetteEnabled = 1f
             this.mode = mode
+            // Из снимка, а не из выбора игрока: байты фильтра в клетках упакованы под него.
+            debugFilter = cellBuf.filter
         }
         worldRenderer.render(frame)
 

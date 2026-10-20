@@ -11,8 +11,10 @@ import io.github.some_example_name.old.entities.PheromoneEntity
 import io.github.some_example_name.old.entities.SpecialEntity
 import io.github.some_example_name.old.features.settings.GlobalSettings
 import io.github.some_example_name.old.systems.simulation.SimulationData
+import io.github.some_example_name.render.DebugFilter
 import io.github.some_example_name.render.RenderMode
 import io.github.some_example_name.render.pack.CellInstanceBuffer
+import io.github.some_example_name.render.pack.CellLook
 import io.github.some_example_name.render.pack.OverlayInstanceBuffer
 import kotlin.math.round
 import kotlin.math.sqrt
@@ -45,6 +47,16 @@ class RenderBufferManager(
      */
     @Volatile
     var mode: RenderMode = RenderMode.entries[GlobalSettings.RENDER_MODE]
+
+    /**
+     * Фильтр отладочного режима (энергия, нейросигнал). Как и [mode]: пишет GL-поток (список
+     * на экране симуляции), читает поток симуляции раз за [updateBuffer] — под него
+     * пакуется байт фильтра каждой клетки, и вместе с клетками он уходит в снимок
+     * (RenderCellBufferData.filter), чтобы кадр не нарисовал байты одного фильтра шкалой
+     * другого. Видимость обеспечивает ; переключают руками, цена ничто.
+     */
+    @Volatile
+    var debugFilter: DebugFilter = DebugFilter.ORIGINAL
 
     // Двойные буферы
     private val cellBuffers = arrayOf(
@@ -105,6 +117,9 @@ class RenderBufferManager(
      * отладочные цвета, а половина обычные.
      */
     private var debugFrame = false
+
+    /** Фильтр текущего [updateBuffer]; читается один раз, как и [debugFrame]. */
+    private var frameFilter = DebugFilter.ORIGINAL
 
     /** Оверлей, который собирается в текущем [updateBuffer]. */
     private var overlayBack = overlayBuffers[0]
@@ -303,11 +318,21 @@ class RenderBufferManager(
             // Сигнал действия — выход клетки: мышца сжимается, хвост тянет, присоска
             // присасывается ровно по нему. От него анимация рисунка, см. DebugCellPalette.
             val signal = cellEntity.neuronImpulseOutput[cellIndex]
-            back.look[writeIndex] = palette.look(cellType, signal)
+            back.look[writeIndex] = palette.look(cellType, signal, filter = filterByte(cellIndex, signal))
             writeDirection(cellIndex, cellType, particleIndex, x, y, angleCos, angleSin, radius, signal)
         } else {
             back.look[writeIndex] = 0
         }
+    }
+
+    /**
+     * Байт фильтра отладки для клетки (CellLook): заполненность энергией или
+     * нормализованный выход. Без фильтра ноль — лишних чтений нет.
+     */
+    private fun filterByte(cellIndex: Int, signal: Float): Int = when (frameFilter) {
+        DebugFilter.ORIGINAL -> 0
+        DebugFilter.ENERGY -> CellLook.energyFilterByte(cellEntity.energy[cellIndex], cellEntity.maxEnergy[cellIndex])
+        DebugFilter.SIGNAL -> CellLook.signalFilterByte(signal)
     }
 
     /** Стрелка направления, луч глаза или жгутик хвоста — в оверлей, см. DebugCellPalette. */
@@ -388,6 +413,7 @@ class RenderBufferManager(
         val frameBackIndex = 1 - frameFrontIndex.get()
 
         debugFrame = mode.drawsDebugOverlay
+        frameFilter = if (debugFrame) debugFilter else DebugFilter.ORIGINAL
         overlayBack = overlayBuffers[frameBackIndex]
         overlayBack.clear()
 
@@ -417,6 +443,7 @@ class RenderBufferManager(
         }
 
         cellBack.renderCellBufferSize = writeIndex
+        cellBack.filter = frameFilter
         // Переключения тут больше нет: клетки публикуются вместе со связями, в самом конце.
 
         // ==================== PHEROMONE ===============
@@ -489,6 +516,9 @@ class RenderBufferManager(
 class RenderCellBufferData(initialCapacity: Int) {
     var capacity = initialCapacity
     var renderCellBufferSize = 0
+
+    /** Под какой фильтр отладки упакованы байты look этого снимка, см. RenderBufferManager.debugFilter. */
+    var filter = DebugFilter.ORIGINAL
 
     var x = FloatArray(capacity)
     var y = FloatArray(capacity)

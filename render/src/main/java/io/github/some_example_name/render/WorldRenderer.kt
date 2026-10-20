@@ -310,6 +310,7 @@ class WorldRenderer(
             vignetteEnabled = frame.vignetteEnabled
             this.chromaticAberration = chromaticAberration
             mode = frame.mode
+            debugFilter = frame.debugFilter
 
             sceneFbo = scene
             blurFbo = blur

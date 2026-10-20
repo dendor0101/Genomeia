@@ -4,6 +4,7 @@ import com.badlogic.gdx.graphics.Mesh
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.glutils.FrameBuffer
 import com.badlogic.gdx.math.Matrix4
+import io.github.some_example_name.render.DebugFilter
 import io.github.some_example_name.render.RenderMode
 import java.nio.ByteBuffer
 
@@ -41,6 +42,9 @@ class RenderContext {
 
     /** Секунды для анимации, см. RenderFrame.time. */
     var time: Float = 0f
+
+    /** Фильтр отладочного режима, см. RenderFrame.debugFilter. */
+    var debugFilter: DebugFilter = DebugFilter.ORIGINAL
 
     /**
      * Сколько единиц мира приходится на пиксель экранного буфера. По ней проходы, которые

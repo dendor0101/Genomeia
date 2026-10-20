@@ -29,6 +29,12 @@ uniform float u_pixelWorld;
 /** 1 — раздуть корпус на бахрому рисунка (проход сглаживания), 0 — нет (заливка). */
 uniform float u_fringe;
 
+/** Фильтр отладки — DebugFilter.ordinal: 0 оригинал, 1 энергия, 2 нейросигнал. */
+uniform int u_filter;
+
+const int FILTER_ENERGY = 1;
+const int FILTER_SIGNAL = 2;
+
 /** На сколько пикселей корпус выходит за окружность: полоса сглаживания края. */
 const float AA_MARGIN_PX = 1.5;
 
@@ -61,8 +67,26 @@ flat out float v_key;
  */
 flat out vec4 v_rand;
 
+/** 1 — клетка закрашена фильтром, рисунок на ней только бледным следом. */
+flat out float v_filtered;
+
 float byteValue(float normalized) {
     return floor(normalized * 255.0 + 0.5);
+}
+
+/**
+ * Цвет клетки под фильтром. Значение — четвёртый байт look (CellLook.filter):
+ *  - энергия: заполненность 0..1 — от синего (0, 0, 1) к пурпурному (1, 0, 1);
+ *  - нейросигнал: знаковый байт уже нормализованного сигнала (CellLook.signalFilterByte) —
+ *    ноль синий, плюс к пурпурному, минус к голубому (0, 1, 1): тормозящий сигнал
+ *    отличается от возбуждающего, а молчащая клетка — от обеих.
+ */
+vec3 filterColor(int kind, float value) {
+    if (kind == FILTER_ENERGY) return vec3(value / 255.0, 0.0, 1.0);
+    int steps = int(value);
+    if (steps > 127) steps -= 256;
+    float signal = float(steps) / 127.0;
+    return signal >= 0.0 ? vec3(signal, 0.0, 1.0) : vec3(0.0, -signal, 1.0);
 }
 
 void main() {
@@ -92,6 +116,18 @@ void main() {
     v_local = a_corner.xy * grow;
 
     v_color = a_color.rgb;
+    v_filtered = 0.0;
+    if (u_filter != 0) {
+        // Не-клетка (еда, субстанции) ни энергии, ни сигнала не несёт — гасим её до
+        // серого, чтобы не путалась со шкалой фильтра.
+        bool isCell = mod(byteValue(a_type.w), 2.0) < 1.0;
+        if (isCell) {
+            v_color = filterColor(u_filter, byteValue(a_look.w));
+            v_filtered = 1.0;
+        } else {
+            v_color = vec3(dot(a_color.rgb, vec3(0.299, 0.587, 0.114)) * 0.35);
+        }
+    }
     v_dir = vec2(a_shape.x * 2.0 - 1.0, a_shape.y * 2.0 - 1.0);
 
     gl_Position = u_projTrans * vec4(v_local * radius + a_center, 0.0, 1.0);

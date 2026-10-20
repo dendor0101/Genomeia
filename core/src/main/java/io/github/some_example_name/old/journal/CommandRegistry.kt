@@ -161,6 +161,7 @@ object CommandRegistry {
         t<SimulationIntent.ZoomCamera>(614),
         t<SimulationIntent.SetTool>(615),
         t<SimulationIntent.UseSavedGenome>(616),
+        t<SimulationIntent.SetDebugFilter>(617),
 
         // --- Касания мира ---
         t<PlayerCommand.TouchDown>(700),
