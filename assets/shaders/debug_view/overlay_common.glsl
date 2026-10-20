@@ -10,6 +10,7 @@ const int KIND_RING = 0;
 const int KIND_RAY = 1;
 const int KIND_ARROW = 2;
 const int KIND_NEURAL = 3;
+const int KIND_FLAGELLUM = 4;
 
 // ---- нейросвязь ----
 const float LINK_HALF = 0.022;
@@ -36,6 +37,15 @@ const float RAY_CORE_HALF = 0.014;
 const float RAY_MIN_HALF_PX = 0.6;
 const float RAY_GLOW_HALF = 0.09;
 const float RAY_TICK_HALF = 0.09;     // поперечная черта на конце — предел дальности
+
+// ---- жгутик хвоста ----
+// Размеры — в долях длины жгутика: радиуса клетки оверлей не знает, а длину жгутику
+// задаёт :core в радиусах клетки (DebugCellPalette.FLAGELLUM_LENGTH).
+const float FLAGELLUM_HALF = 0.03;        // полутолщина у основания
+const float FLAGELLUM_MIN_HALF_PX = 0.6;
+const float FLAGELLUM_AMPLITUDE = 0.11;   // размах волны на кончике при полной тяге
+const float FLAGELLUM_WAVELENGTH = 0.45;
+const float FLAGELLUM_HZ = 1.5;           // см. PULSE_HZ: произведение на TIME_WRAP целое
 
 // ---- кольцо (радиус феромона) ----
 const float RING_HALF_PX = 0.7;

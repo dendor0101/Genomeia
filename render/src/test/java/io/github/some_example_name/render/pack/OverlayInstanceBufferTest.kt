@@ -138,6 +138,7 @@ class OverlayInstanceBufferTest {
         assertEquals(OverlayInstanceBuffer.KIND_RAY, constInt("KIND_RAY"))
         assertEquals(OverlayInstanceBuffer.KIND_ARROW, constInt("KIND_ARROW"))
         assertEquals(OverlayInstanceBuffer.KIND_NEURAL, constInt("KIND_NEURAL"))
+        assertEquals(OverlayInstanceBuffer.KIND_FLAGELLUM, constInt("KIND_FLAGELLUM"))
 
         // Часы анимации идут по кругу с периодом TIME_WRAP. Если за период импульсы не
         // делают целого числа шагов, на обороте они прыгают.
@@ -145,6 +146,11 @@ class OverlayInstanceBufferTest {
             ?: error("в overlay_common.glsl нет PULSE_HZ")
         val steps = hz * RenderFrame.TIME_WRAP
         assertEquals(kotlin.math.round(steps), steps, "PULSE_HZ * TIME_WRAP обязано быть целым")
+
+        val flagellumHz = Regex("""const float FLAGELLUM_HZ = ([\d.]+);""").find(glsl)?.groupValues?.get(1)?.toFloat()
+            ?: error("в overlay_common.glsl нет FLAGELLUM_HZ")
+        val turns = flagellumHz * RenderFrame.TIME_WRAP
+        assertEquals(kotlin.math.round(turns), turns, "FLAGELLUM_HZ * TIME_WRAP обязано быть целым")
     }
 
     private fun shaderSource(name: String): String {

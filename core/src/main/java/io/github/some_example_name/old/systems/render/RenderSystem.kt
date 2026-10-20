@@ -205,7 +205,8 @@ class RenderSystem(
                     y = y[i],
                     color = color[i],
                     shape = shape[i],
-                    type = type[i]
+                    type = type[i],
+                    look = look[i]
                 )
             }
         }

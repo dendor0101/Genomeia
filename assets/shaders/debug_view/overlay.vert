@@ -72,6 +72,11 @@ void main() {
         vec2 normal = vec2(-dir.y, dir.x);
 
         v_length = segment;
+        // Жгутик — единственная фигура, чья ширина зависит от длины: волна и толщина
+        // заданы в долях длины.
+        if (v_kind == KIND_FLAGELLUM) {
+            extent = (FLAGELLUM_AMPLITUDE + FLAGELLUM_HALF) * segment + (OUTLINE_PX + 2.0) * pw;
+        }
         float along = mix(-extent, segment + extent, a_corner.x);
         float across = a_corner.y * extent;
         v_local = vec2(along, across);

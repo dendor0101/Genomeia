@@ -20,8 +20,11 @@ flat in float v_seed;
 
 uniform float u_pixelWorld;
 
-/** Секунды, по кругу с периодом RenderFrame.TIME_WRAP. Двигает импульсы. */
+/** Секунды, по кругу с периодом RenderFrame.TIME_WRAP. Двигает импульсы и жгутики. */
 uniform float u_time;
+
+/** Владелец пикселя из заливки клеток (cell_fill.frag): a > 0.25 — пиксель занят клеткой. */
+uniform sampler2D u_owner;
 
 out vec4 fragColor;
 
@@ -162,6 +165,36 @@ vec4 eyeRay(vec2 p) {
     return over(paint(v_color.rgb, cover(tick) * 0.55), result);
 }
 
+/**
+ * Жгутик хвоста: от поверхности клетки (x = 0) к кончику (x = длина). По нему от
+ * основания к кончику бежит синусоида, размах растёт к кончику. Тяга хвоста (сигнал)
+ * меняет размах, а не частоту — частота от сигнала сдвигала бы фазу рывком при каждой его
+ * смене. Толщина сходит на нет к кончику; тёмная обводка — как у остальных линий.
+ */
+vec4 flagellum(vec2 p) {
+    float pw = u_pixelWorld;
+    float len = v_length;
+    float x = clamp(p.x, 0.0, len);
+    float s = x / len;
+
+    float amplitude = FLAGELLUM_AMPLITUDE * len * mix(0.35, 1.0, signalMagnitude());
+    float wavelength = FLAGELLUM_WAVELENGTH * len;
+    float phase = 6.2831853 * (x / wavelength - fract(FLAGELLUM_HZ * u_time + v_seed));
+    float y = amplitude * s * sin(phase);
+    // Наклон кривой: расстояние по вертикали делится на него — так линия не толстеет на
+    // крутых участках волны.
+    float slope = amplitude * (sin(phase) / len + s * cos(phase) * 6.2831853 / wavelength);
+    float d = length(vec2(p.x - x, (p.y - y) / sqrt(1.0 + slope * slope)));
+
+    float minHalf = FLAGELLUM_MIN_HALF_PX * pw;
+    float halfW = FLAGELLUM_HALF * len * (1.0 - 0.75 * s);
+    float thin = min(1.0, halfW / minHalf);
+    d -= max(halfW, minHalf);
+
+    vec4 result = paint(vec3(0.0), cover(d - OUTLINE_PX * pw) * 0.5 * thin);
+    return over(paint(mix(v_color.rgb, vec3(1.0), 0.3), cover(d) * thin), result);
+}
+
 /** Кольцо — радиус действия феромона: тонкая окружность и едва заметная заливка. */
 vec4 ring(vec2 p) {
     float pw = u_pixelWorld;
@@ -178,6 +211,11 @@ void main() {
         color = directionArrow(v_local);
     } else if (v_kind == KIND_RAY) {
         color = eyeRay(v_local);
+    } else if (v_kind == KIND_FLAGELLUM) {
+        // Жгутик виден только над пустотой: над клетками — своей или чужой — его закрывает
+        // тело, как и бахрому ресничек (cell_edge.frag).
+        if (texelFetch(u_owner, ivec2(gl_FragCoord.xy), 0).a > 0.25) discard;
+        color = flagellum(v_local);
     } else {
         color = ring(v_local);
     }

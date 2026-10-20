@@ -11,8 +11,10 @@ import com.badlogic.gdx.graphics.glutils.ShaderProgram
 import io.github.some_example_name.render.RenderMode
 
 /**
- * Отладочный режим: плоские клетки на тёмном фоне, как на стенде RealBodyDemo, и поверх —
- * нейросвязи с бегущими импульсами, стрелки направлений и лучи глаз.
+ * Отладочный режим: клетки цвета своего типа со схемой-рисунком (CellLook — хлоропласты,
+ * волокна мышцы, реснички) на тёмном фоне, как на стенде RealBodyDemo, и поверх —
+ * нейросвязи с бегущими импульсами, стрелки направлений, жгутики и лучи глаз. Рисунки
+ * анимированы часами кадра и сигналом действия клетки — см. cell_common.glsl.
  *
  * Всё сглажено аналитически: каждая фигура знает расстояние от пикселя до своего края и
  * сама считает, какую долю пикселя закрывает. Это то, что дал бы MSAA, но без
@@ -32,7 +34,10 @@ import io.github.some_example_name.render.RenderMode
  *     прохода 1. Каждая клетка знает, насколько она проиграла владельцу пикселя и как
  *     быстро растёт проигрыш, то есть как далеко её граница, и подмешивает свой цвет в
  *     полупиксельную полосу у неё, заодно рисуя стенку между клетками (cell_edge.frag).
- *  4. Оверлей: нейросвязи, стрелки, лучи, кольца — инстансами по кваду (overlay.frag).
+ *     Над пустотой за окружностью тут же рисуется бахрома рисунков — реснички, иглы,
+ *     шипы, — а полупрозрачные клетки («призрак» в редакторе) рисуются здесь целиком.
+ *  4. Оверлей: нейросвязи, стрелки, лучи, кольца, жгутики — инстансами по кваду
+ *     (overlay.frag). Жгутик читает владельцев пикселей из прохода 1: над клетками его нет.
  *
  * Глубина нужна проходу 3 как ТЕКСТУРА, поэтому у режима свой FBO с текстурой глубины, а
  * не scene FBO из WorldRenderer: у того глубина в рендербуфере, читать её нельзя.
@@ -47,6 +52,20 @@ import io.github.some_example_name.render.RenderMode
  * оверлея — 3.22 мс, на уровне реалистичного (3.11). Разница — второй проход по клеткам
  * (выборка глубины, большинство фрагментов отбрасывается сразу за ней) и вывод FBO на
  * экран. Оверлей стоит пропорционально числу и длине связей, стрелок и лучей.
+ *
+ * ЦЕНА РИСУНКОВ (20.10, та же сцена и тот же GPU; старые и новые шейдеры по очереди при
+ * одном и том же Kotlin, чтобы фоновая нагрузка машины легла на оба варианта):
+ *  - вдали (радиус клетки 7–10 пикселей, рисунки ещё не включаются): 3.8–4.4 → 4.1–4.9 мс;
+ *  - вблизи (радиус ~33 пикселя, весь экран — клетки со случайными рисунками, худший
+ *    случай): 2.0–2.1 → 3.2–3.7 мс; без рисунков те же шейдеры — 2.0–2.4 мс. Для сравнения,
+ *    реалистичный режим на этой сцене — 2.9 мс.
+ *  - по рисункам вблизи (у всех клеток один): без рисунка 2.15, пигменты 2.77, кость 2.87,
+ *    лист 3.09, сенсор касания 3.14, мышца 3.15, нейрон 3.33, контроллер 3.56, синапс 3.75.
+ * Что уже сделано ради цены: рисунок включается с радиуса 10 пикселей (patternFade), в
+ * полосе сглаживания у соседа — только ткань без рисунка, случайные числа клетки — в
+ * вершинном шейдере, угол — полиномом вместо atan, корпус под бахрому раздувается только
+ * у крупных клеток. Дальше дешевле — только убрав перекрытие корпусов в заливке (рисунок
+ * сейчас считается и для проигравших фрагментов, на плотной сцене ~1.5 раза на пиксель).
  */
 class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
 
@@ -147,7 +166,7 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
             depth = target.textureAttachments[DEPTH_ATTACHMENT],
             owner = target.textureAttachments[OWNER_ATTACHMENT]
         )
-        drawOverlay(context)
+        drawOverlay(context, owner = target.textureAttachments[OWNER_ATTACHMENT])
 
         // Состояние — как его ждут остальные проходы и интерфейс.
         gl.glDisable(GL20.GL_BLEND)
@@ -170,7 +189,7 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
 
         fillShader.bind()
-        bindCellUniforms(fillShader, context)
+        bindCellUniforms(fillShader, context, fringe = false)
         cells.draw(context.numInstances, CellGeometry.Detail.HULL)
 
         target.end()
@@ -205,7 +224,7 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         gl.glBlendFunc(GL20.GL_ONE, GL20.GL_ONE_MINUS_SRC_ALPHA)
 
         edgeShader.bind()
-        bindCellUniforms(edgeShader, context)
+        bindCellUniforms(edgeShader, context, fringe = true)
         setIfPresent(edgeShader, "u_depth", 0)
         setIfPresent(edgeShader, "u_owner", 1)
         depth.bind(0)
@@ -216,8 +235,11 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         cells.draw(context.numInstances, CellGeometry.Detail.HULL)
     }
 
-    /** Проход 4: нейросвязи, стрелки, лучи, кольца. */
-    private fun drawOverlay(context: RenderContext) {
+    /**
+     * Проход 4: нейросвязи, стрелки, лучи, кольца, жгутики. [owner] — владельцы пикселей
+     * из заливки: жгутик виден только над пустотой.
+     */
+    private fun drawOverlay(context: RenderContext, owner: Texture) {
         val data = context.overlayData ?: return
         if (context.numOverlayInstances <= 0) return
 
@@ -231,16 +253,25 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         overlayShader.setUniformMatrix("u_projTrans", context.cameraProjection)
         setIfPresent(overlayShader, "u_pixelWorld", context.pixelWorld)
         setIfPresent(overlayShader, "u_time", context.time)
+        setIfPresent(overlayShader, "u_owner", 0)
+        owner.bind(0)
         overlay.draw(context.numOverlayInstances)
     }
 
-    private fun bindCellUniforms(shader: ShaderProgram, context: RenderContext) {
+    /**
+     * [fringe] — раздуть корпус клетки на бахрому рисунка (реснички, иглы): она нужна
+     * только проходу сглаживания, заливке лишние фрагменты ни к чему.
+     */
+    private fun bindCellUniforms(shader: ShaderProgram, context: RenderContext, fringe: Boolean) {
         shader.setUniformMatrix("u_projTrans", context.cameraProjection)
+        // Компилятор вправе выкинуть неиспользуемый униформ — отсюда setIfPresent, а не
+        // setUniformf с его исключением.
         setIfPresent(shader, "u_pixelWorld", context.pixelWorld)
         setIfPresent(shader, "u_depthScale", DEPTH_SCALE)
-        // Проходу сглаживания ядро не нужно, и компилятор вправе выкинуть униформ вместе
-        // с ним — отсюда setIfPresent, а не setUniformf с его исключением.
-        setIfPresent(shader, "u_nucleusAtFullEnergy", NUCLEUS_AT_FULL_ENERGY)
+        setIfPresent(shader, "u_fringe", if (fringe) 1f else 0f)
+        setIfPresent(shader, "u_time", context.time)
+        val location = shader.fetchUniformLocation("u_background", false)
+        if (location >= 0) shader.setUniformf(location, BACKGROUND_R, BACKGROUND_G, BACKGROUND_B)
     }
 
     private fun setIfPresent(shader: ShaderProgram, name: String, value: Float) {
@@ -277,12 +308,6 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
          * — это 0.5, и у раздутого под сглаживание корпуса есть запас за окружностью.
          */
         private const val DEPTH_SCALE = 0.5f
-
-        /**
-         * Радиус ядра в долях радиуса клетки при полном байте энергии (ENERGY_SPAN) — как
-         * в ностальгическом режиме: обычная клетка с полным запасом получает 0.2R.
-         */
-        const val NUCLEUS_AT_FULL_ENERGY = NostalgicRenderer.NUCLEUS_AT_FULL_ENERGY
 
         /** Фон — тот же тёмно-синий, что у стенда RealBodyDemo (BG = #12161E). */
         const val BACKGROUND_R = 0x12 / 255f

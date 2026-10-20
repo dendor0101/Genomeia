@@ -1,6 +1,7 @@
 package io.github.some_example_name.render.lab
 
 import io.github.some_example_name.render.pack.CellInstanceBuffer
+import io.github.some_example_name.render.pack.CellLook
 import io.github.some_example_name.render.pack.OverlayInstanceBuffer
 import io.github.some_example_name.render.pack.PheromoneInstanceBuffer
 import java.nio.ByteBuffer
@@ -13,8 +14,8 @@ import java.util.Random
 /**
  * Сцены, собранные из ничего — чтобы стенд был полезен сразу, без дампа из игры.
  *
- * Их четыре, см. [Kind]. Выбираются свойством -Dgenomeia.synthetic=layers|body|dense|organism
- * или клавишей N в стенде.
+ * Их пять, см. [Kind]. Выбираются свойством
+ * -Dgenomeia.synthetic=layers|body|dense|organism|gallery или клавишей N в стенде.
  *
  * [Kind.LAYERS] показывает то, что в живом кадре ещё поди поймай:
  *  - ВСЕ слои TextureArray разом, по сетке — видно, какой тип чем рисуется;
@@ -47,11 +48,19 @@ object SyntheticScene {
 
         /**
          * Организм для отладочного режима: клетки цветов своих типов (мышцы, хвосты, глаз,
-         * нейроны, хамелеон), нейросвязи с сигналами всех знаков, стрелки направлений, луч
-         * глаза и кольцо феромона — всё, что рисует оверлей. Цвета — defaultColor из :core,
-         * переписанные числами: стенд о клетках ничего не знает.
+         * нейроны, хамелеон) со своими рисунками, нейросвязи с сигналами всех знаков,
+         * стрелки направлений, жгутики, луч глаза и кольцо феромона — всё, что рисует
+         * оверлей. Цвета — defaultColor из :core, переписанные числами: стенд о клетках
+         * ничего не знает.
          */
-        ORGANISM
+        ORGANISM,
+
+        /**
+         * Все рисунки отладочного режима (CellLook) крупно, по одному, плюс то, что видно
+         * только в куче: слитые кости и мышцы с разным сжатием, хвост с жгутиком и
+         * полупрозрачный «призрак» поверх клетки. Для правки шейдеров клеток.
+         */
+        GALLERY
     }
 
     /** Сцена вместе с камерой, на которую она рассчитана. */
@@ -84,6 +93,7 @@ object SyntheticScene {
         Kind.BODY -> body(layerCount, nonCellLayer)
         Kind.DENSE -> dense(layerCount, nonCellLayer)
         Kind.ORGANISM -> organism(layerCount, nonCellLayer)
+        Kind.GALLERY -> gallery(layerCount)
     }
 
     private fun layers(layerCount: Int): Scene {
@@ -308,7 +318,12 @@ object SyntheticScene {
                     energy = random.nextFloat() * CellInstanceBuffer.ENERGY_SPAN,
                     cellType = if (isCell) random.nextInt(layerCount) else nonCellLayer,
                     noiseSeed = seed++ and 0xFFFF,
-                    isCell = isCell
+                    isCell = isCell,
+                    // Рисунки отладочного режима — случайные, с сигналами: замер берёт их
+                    // цену целиком. Остальные режимы поле не читают.
+                    look = if (isCell) {
+                        CellLook.look(1 + random.nextInt(CellLook.COUNT - 1), random.nextFloat() * 2f - 1f)
+                    } else 0
                 )
             }
         }
@@ -346,7 +361,9 @@ object SyntheticScene {
         val row: Int,
         val color: Int,
         val angle: Float = 0f,
-        val spiral: Boolean = false,
+        val pattern: Int = CellLook.PLAIN,
+        /** Сигнал действия: сжатие мышцы, тяга хвоста. */
+        val action: Float = 0f,
         val energy: Float = 5f,
         val directed: Boolean = false
     )
@@ -359,38 +376,32 @@ object SyntheticScene {
 
     private fun organismY(row: Int) = row * ORGANISM_STEP * 0.866f
 
-    /** Мышца, затемнённая сжатием [contraction] 0..1 — так её красит :core в отладке. */
-    private fun contracted(contraction: Float): Int {
-        val k = 1f - 0.55f * contraction
-        return rgba((205 * k).toInt(), 0, 0)
-    }
-
     private fun organism(layerCount: Int, nonCellLayer: Int): Scene {
         val pi = Math.PI.toFloat()
         val body = listOf(
-            // Хвост сзади: стрелки смотрят назад.
-            OrganismCell(0, 0, TAIL, angle = pi, directed = true),
-            OrganismCell(0, 2, TAIL, angle = pi * 0.9f, directed = true),
+            // Хвост сзади: жгутики смотрят назад; плавник — стрелкой.
+            OrganismCell(0, 0, TAIL, angle = pi, pattern = CellLook.FLAGELLUM_BASE, action = 1f),
+            OrganismCell(0, 2, TAIL, angle = pi * 0.9f, pattern = CellLook.FLAGELLUM_BASE, action = 0.2f),
             OrganismCell(0, 1, FIN, angle = pi * 1.1f, directed = true),
-            // Мышцы по бокам, сжаты по-разному.
-            OrganismCell(1, 0, contracted(0f)),
-            OrganismCell(2, 0, contracted(0.5f)),
-            OrganismCell(3, 0, contracted(1f)),
-            OrganismCell(1, 2, contracted(0.2f)),
-            OrganismCell(2, 2, contracted(0.8f)),
-            OrganismCell(3, 2, MUSCLE),
+            // Мышцы по бокам: сжаты (сигнал < 0) и растянуты по-разному.
+            OrganismCell(1, 0, MUSCLE, pattern = CellLook.MUSCLE, action = 0f),
+            OrganismCell(2, 0, MUSCLE, pattern = CellLook.MUSCLE, action = -0.5f),
+            OrganismCell(3, 0, MUSCLE, pattern = CellLook.MUSCLE, action = -1f),
+            OrganismCell(1, 2, MUSCLE, pattern = CellLook.MUSCLE, action = 0.4f),
+            OrganismCell(2, 2, MUSCLE, pattern = CellLook.MUSCLE, action = 1f),
+            OrganismCell(3, 2, MUSCLE, pattern = CellLook.MUSCLE, action = -0.2f),
             // Середина: нейроны, кость, жир, лист, хамелеоны.
-            OrganismCell(1, 1, NEURON),
-            OrganismCell(2, 1, NEURON, energy = 9f),
-            OrganismCell(3, 1, rgba(70, 200, 130), angle = 0.6f, spiral = true),
-            OrganismCell(4, 1, BONE, energy = 1f),
-            OrganismCell(4, 0, FAT, energy = 10f),
-            OrganismCell(4, 2, LEAF),
-            OrganismCell(1, 3, NEURON),
-            OrganismCell(2, 3, rgba(40, 40, 60), angle = -0.4f, spiral = true),
-            OrganismCell(1, -1, LEAF, energy = 0f),
+            OrganismCell(1, 1, NEURON, pattern = CellLook.NEURON),
+            OrganismCell(2, 1, NEURON, pattern = CellLook.NEURON, action = 0.9f, energy = 9f),
+            OrganismCell(3, 1, rgba(70, 200, 130), angle = 0.6f, pattern = CellLook.PIGMENTS),
+            OrganismCell(4, 1, BONE, pattern = CellLook.OSTEON, energy = 1f),
+            OrganismCell(4, 0, FAT, pattern = CellLook.FAT_DROPLET, energy = 10f),
+            OrganismCell(4, 2, LEAF, pattern = CellLook.CHLOROPLASTS),
+            OrganismCell(1, 3, NEURON, pattern = CellLook.NEURON),
+            OrganismCell(2, 3, rgba(40, 40, 60), angle = -0.4f, pattern = CellLook.PIGMENTS),
+            OrganismCell(1, -1, LEAF, pattern = CellLook.CHLOROPLASTS, energy = 0f),
             // Глаз впереди.
-            OrganismCell(5, 1, EYE, angle = 0.15f)
+            OrganismCell(5, 1, EYE, angle = 0.15f, pattern = CellLook.EYE)
         )
 
         val cells = CellInstanceBuffer()
@@ -410,7 +421,7 @@ object SyntheticScene {
                 energy = cell.energy,
                 cellType = i % layerCount,
                 noiseSeed = 300 + i,
-                spiral = cell.spiral
+                look = CellLook.look(cell.pattern, cell.action)
             )
         }
 
@@ -455,6 +466,10 @@ object SyntheticScene {
                 rgba(255, 255, 255, 235)
             )
         }
+        body.filter { it.pattern == CellLook.FLAGELLUM_BASE }.forEachIndexed { i, cell ->
+            val (x, y) = at(cell.column, cell.row)
+            putFlagellum(overlay, x, y, cell.angle, ORGANISM_RADIUS, TAIL, cell.action, seed = 40 * i)
+        }
 
         // Нейросвязи: глаз → нейрон → мышцы и хвост; одна тормозная, одна молчит.
         val cyan = rgba(0, 255, 255)
@@ -484,6 +499,139 @@ object SyntheticScene {
             centerX = 3.6f,
             centerY = 0.9f,
             zoom = 0.0095f,
+            overlay = overlay.end()
+        )
+    }
+
+    /**
+     * Жгутик хвоста — так его пишет DebugCellPalette.writeFlagellum в :core: от
+     * поверхности клетки по её направлению на FLAGELLUM_LENGTH радиусов.
+     */
+    private fun putFlagellum(
+        overlay: OverlayInstanceBuffer,
+        x: Float,
+        y: Float,
+        angle: Float,
+        radius: Float,
+        color: Int,
+        signal: Float,
+        seed: Int
+    ) {
+        val tip = radius * (1f + FLAGELLUM_LENGTH)
+        overlay.putFlagellum(
+            x + cos(angle) * radius, y + sin(angle) * radius,
+            x + cos(angle) * tip, y + sin(angle) * tip,
+            color, signal, seed
+        )
+    }
+
+    /** DebugCellPalette.FLAGELLUM_LENGTH из :core. */
+    private const val FLAGELLUM_LENGTH = 2.4f
+
+    /** Рисунок галереи: цвет типа из :core и сигнал действия. */
+    private class Exhibit(val pattern: Int, val color: Int, val action: Float = 0f, val angle: Float = 0.4f)
+
+    private const val GALLERY_RADIUS = 0.7f
+    private const val GALLERY_STEP = 3.2f
+    private const val GALLERY_COLUMNS = 6
+
+    private fun gallery(layerCount: Int): Scene {
+        val pi = Math.PI.toFloat()
+        val exhibits = listOf(
+            Exhibit(CellLook.PLAIN, rgba(200, 200, 200)),
+            Exhibit(CellLook.CHLOROPLASTS, LEAF),
+            Exhibit(CellLook.FAT_DROPLET, FAT),
+            Exhibit(CellLook.OSTEON, BONE),
+            Exhibit(CellLook.FLAGELLUM_BASE, TAIL, action = 1f, angle = pi),
+            Exhibit(CellLook.NEURON, NEURON, action = 0.7f),
+            Exhibit(CellLook.MUSCLE, MUSCLE),
+            Exhibit(CellLook.CILIA_INWARD, rgba(255, 165, 0)),       // orangeColors[0]
+            Exhibit(CellLook.STEM, rgba(255, 192, 203)),             // pinkColors[0]
+            Exhibit(CellLook.EXCRETA, rgba(165, 42, 42), action = 1f), // brownColors[0]
+            Exhibit(CellLook.SUCTION_RINGS, rgba(32, 178, 170), action = 1f), // leafColors[5]
+            Exhibit(CellLook.STICKY_BUMPS, rgba(240, 128, 128), action = 1f), // pinkColors[3]
+            Exhibit(CellLook.PUMP_NEEDLES, rgba(178, 34, 34)),       // redColors[2]
+            Exhibit(CellLook.PIGMENTS, rgba(70, 200, 130)),          // свой цвет хамелеона
+            Exhibit(CellLook.EYE, EYE),
+            Exhibit(CellLook.SYNAPSE, rgba(100, 149, 237)),          // skyBlueColors.last()
+            Exhibit(CellLook.TOUCH_NET, rgba(173, 255, 47), action = 0.5f), // genomeEditorColor[6]
+            Exhibit(CellLook.ZYGOTE, rgba(255, 192, 203)),           // pinkColors[0]
+            Exhibit(CellLook.DIVIDING, rgba(139, 0, 0)),             // redColors[4]
+            Exhibit(CellLook.EMITTER_GRANULES, rgba(65, 105, 225), action = 1f), // blueColors[3]
+            Exhibit(CellLook.LONG_CILIA, rgba(0, 191, 255)),         // blueColors[2]
+            Exhibit(CellLook.SPIKES, rgba(255, 0, 0)),               // redColors[0]
+            Exhibit(CellLook.SHORT_CILIA, rgba(0, 70, 139), action = 0.6f), // blueColors[6]
+            Exhibit(CellLook.CHIP, rgba(153, 50, 204))               // purpleColors[3]
+        )
+
+        val cells = CellInstanceBuffer()
+        cells.begin()
+        val overlay = OverlayInstanceBuffer()
+        overlay.begin()
+        var seed = 0
+
+        fun put(x: Float, y: Float, exhibit: Exhibit, transparency: Float = 0f) {
+            cells.putCell(
+                x = x,
+                y = y,
+                color = exhibit.color,
+                angleCos = cos(exhibit.angle),
+                angleSin = sin(exhibit.angle),
+                radius = GALLERY_RADIUS,
+                energy = 5f,
+                cellType = seed % layerCount,
+                noiseSeed = 500 + seed++,
+                look = CellLook.look(exhibit.pattern, exhibit.action, transparency)
+            )
+            if (exhibit.pattern == CellLook.FLAGELLUM_BASE && transparency == 0f) {
+                putFlagellum(overlay, x, y, exhibit.angle, GALLERY_RADIUS, exhibit.color, exhibit.action, seed)
+            }
+        }
+
+        // По одной клетке каждого рисунка — порознь, чтобы бахрома была видна целиком.
+        exhibits.forEachIndexed { i, exhibit ->
+            put((i % GALLERY_COLUMNS) * GALLERY_STEP, -(i / GALLERY_COLUMNS) * GALLERY_STEP, exhibit)
+        }
+
+        // Ниже — то, что видно только в куче. Гексагональные пятна по 7 клеток вплотную.
+        val step = GALLERY_RADIUS * 1.62f
+        val hex = listOf(0f to 0f) + (0 until 6).map { k ->
+            val a = k * pi / 3f
+            cos(a) * step to sin(a) * step
+        }
+        val rowY = -(exhibits.size / GALLERY_COLUMNS + 1) * GALLERY_STEP
+
+        // Кость к кости — сливаются в один участок.
+        hex.forEach { (dx, dy) -> put(dx, rowY + dy, Exhibit(CellLook.OSTEON, BONE, angle = dx * 3f + dy)) }
+
+        // Мышцы от полного сжатия (−1, темнее) до растяжения (+1, светлее).
+        hex.forEachIndexed { k, (dx, dy) ->
+            put(GALLERY_STEP * 1.5f + dx, rowY + dy, Exhibit(CellLook.MUSCLE, MUSCLE, action = -1f + k / 3f, angle = k.toFloat()))
+        }
+
+        // Ткань с хвостами по краю: жгутик выходит из поверхности и над телом не виден.
+        hex.forEachIndexed { k, (dx, dy) ->
+            val x = GALLERY_STEP * 3f + dx
+            val y = rowY + dy
+            if (k == 0) {
+                put(x, y, Exhibit(CellLook.NEURON, NEURON))
+            } else {
+                put(x, y, Exhibit(CellLook.FLAGELLUM_BASE, TAIL, action = k / 6f, angle = (k - 1) * pi / 3f))
+            }
+        }
+
+        // «Призрак» будущей клетки поверх тела — как в редакторе генома.
+        put(GALLERY_STEP * 4.5f, rowY, Exhibit(CellLook.CHLOROPLASTS, LEAF))
+        put(GALLERY_STEP * 4.5f + step, rowY, Exhibit(CellLook.FAT_DROPLET, FAT))
+        put(GALLERY_STEP * 4.5f + step * 0.5f, rowY + step * 0.6f, Exhibit(CellLook.CHIP, rgba(153, 50, 204)), transparency = 0.55f)
+
+        val rows = exhibits.size / GALLERY_COLUMNS + 2
+        return Scene(
+            cells = cells.end(),
+            pheromones = emptyPheromones(),
+            centerX = (GALLERY_COLUMNS - 1) * GALLERY_STEP / 2f,
+            centerY = -(rows - 1) * GALLERY_STEP / 2f,
+            zoom = 0.0225f,
             overlay = overlay.end()
         )
     }
