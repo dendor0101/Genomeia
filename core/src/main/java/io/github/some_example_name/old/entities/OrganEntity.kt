@@ -250,25 +250,18 @@ class OrganEntity(
         // Бронь делает сама сущность: она знает свой lastId, то есть где кончается уже
         // розданное. Свои курсоры здесь вести нельзя — субстанции и террейн создаются
         // раньше первого организма и занимают индексы с нуля.
-        //
-        // Зазор в конце — против false sharing на границе арен. Округления ёмкости до
-        // кратного 64 недостаточно: данные массива в JVM начинаются после заголовка
-        // объекта, а сам объект выровнен по 8/16 байт, не по 64, поэтому граница арены
-        // попадает в середину кэш-линии со смещением, которое из Kotlin не контролируется.
-        // Нужен именно реальный пропуск элементов, и 64 покрывают линию даже у
-        // ByteArray/BooleanArray, где элемент — байт.
-        cellArenaBase[organIndex] = cells.reserveRange(cellCapacity + ARENA_GAP)
+        cellArenaBase[organIndex] = cells.reserveRange(cellCapacity)
         cellArenaCapacity[organIndex] = cellCapacity
 
-        particleArenaBase[organIndex] = particles.reserveRange(cellCapacity + ARENA_GAP)
+        particleArenaBase[organIndex] = particles.reserveRange(cellCapacity)
 
-        linkArenaBase[organIndex] = links.reserveRange(linkCapacity + ARENA_GAP)
+        linkArenaBase[organIndex] = links.reserveRange(linkCapacity)
         linkArenaCapacity[organIndex] = linkCapacity
 
         // Нейросвязей у генома может не быть вовсе — тогда и брони нет.
         val neural = neuralLinkEntityRef
         if (neural != null && maxNeuralLinks > 0) {
-            neuralArenaBase[organIndex] = neural.reserveRange(maxNeuralLinks + ARENA_GAP)
+            neuralArenaBase[organIndex] = neural.reserveRange(maxNeuralLinks)
             neuralArenaCapacity[organIndex] = maxNeuralLinks
             neuralArenaUsed[organIndex] = 0
         }
@@ -278,7 +271,7 @@ class OrganEntity(
         val triangles = triangleEntityRef
         val triangleCount = layout.trianglesInLayout
         if (triangles != null && triangleCount > 0) {
-            val base = triangles.reserveRange(triangleCount + ARENA_GAP)
+            val base = triangles.reserveRange(triangleCount)
             triangles.resetRange(base, triangleCount)
             triangleArenaBase[organIndex] = base
         }
@@ -397,17 +390,17 @@ class OrganEntity(
         // мёртвый organIndex не выглядел как владелец диапазона — иначе обход по аренам
         // прошёлся бы по чужой памяти, если индекс организма переиспользуется.
         if (cellArenaBase[organIndex] != -1) {
-            val cellRange = cellArenaCapacity[organIndex] + ARENA_GAP
+            val cellRange = cellArenaCapacity[organIndex]
             cellEntityRef?.releaseRange(cellArenaBase[organIndex], cellRange)
             particleEntityRef?.releaseRange(particleArenaBase[organIndex], cellRange)
-            linkEntityRef?.releaseRange(linkArenaBase[organIndex], linkArenaCapacity[organIndex] + ARENA_GAP)
+            linkEntityRef?.releaseRange(linkArenaBase[organIndex], linkArenaCapacity[organIndex])
         }
         if (neuralArenaBase[organIndex] != -1) {
-            neuralLinkEntityRef?.releaseRange(neuralArenaBase[organIndex], neuralArenaCapacity[organIndex] + ARENA_GAP)
+            neuralLinkEntityRef?.releaseRange(neuralArenaBase[organIndex], neuralArenaCapacity[organIndex])
         }
         if (triangleArenaBase[organIndex] != -1) {
             val count = arenaLayout[organIndex]?.trianglesInLayout ?: 0
-            triangleEntityRef?.releaseRange(triangleArenaBase[organIndex], count + ARENA_GAP)
+            triangleEntityRef?.releaseRange(triangleArenaBase[organIndex], count)
         }
         liveCells[organIndex] = 0
         arenaLayout[organIndex] = null
@@ -485,7 +478,7 @@ class OrganEntity(
             // умершая уходила в общий стек — под субстанцию. С возвратом арен такой слот
             // попал бы и в стек, и в свободный кусок, то есть был бы выдан дважды.
             particleEntityRef?.adoptRange(
-                particleArenaBase[organIndex], cellArenaCapacity[organIndex] + ARENA_GAP, organIndex, particlesInDeadStack
+                particleArenaBase[organIndex], cellArenaCapacity[organIndex], organIndex, particlesInDeadStack
             )
         }
         particleEntityRef?.dropOwnedFromDeadStack()
@@ -556,21 +549,4 @@ class OrganEntity(
         triangleArenaBase = triangleArenaBase.resize(-1)
     }
 
-    companion object {
-        /**
-         * Пропуск между аренами, в элементах.
-         *
-         * 64 элемента — это 64 байта даже у ByteArray/BooleanArray, то есть гарантированно
-         * не меньше кэш-линии в КАЖДОМ массиве сущности, независимо от типа элемента и от
-         * того, как JVM выровняла сам объект массива. Без этого зазора последний элемент
-         * арены A и первый элемент арены B делили бы линию, и два воркера, считающие
-         * соседние организмы, гоняли бы её между ядрами (false sharing).
-         *
-         * Цена — 64 слота на организм на массив. При арене в ~1200 клеток это ~5%.
-         * Для мелких организмов доля вырастет, и тогда зазор имеет смысл считать
-         * по типу массива (16 элементов хватает для Float/Int), но пока организмы
-         * крупные, единое число проще и надёжнее.
-         */
-        const val ARENA_GAP = 64
-    }
 }
