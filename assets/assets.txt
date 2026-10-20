@@ -42,7 +42,6 @@ genomes/Stem grow emitter.genome
 genomes/Sucker.genome
 genomes/Tapeworm.genome
 genomes/Tardigrade.genome
-hs_err_pid22808.log
 ost/track1.ogg
 ost/track2.ogg
 ost/track3.ogg

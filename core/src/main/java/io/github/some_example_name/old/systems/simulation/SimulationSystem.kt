@@ -440,10 +440,17 @@ class SimulationSystem(
         val tick = simulationData.tickCounter
         val state = StateHash.compute(
             entities = entityList,
+            // Выбранного генома (currentGenomeIndex) здесь нет намеренно. Это выбор в интерфейсе:
+            // его пишет поток рендера (SimulationIntent.SelectGenome), когда игрок нажал кнопку, —
+            // то есть в любой момент тика. Тик UI-команды в журнале читается «на лету», и при
+            // повторе она подаётся уже между тиками: у игрока выбор успел попасть в хэш тика N,
+            // при повторе — только в хэш N+1 (bugReplayCheck: «эпоха 1, тик 1: разошлись
+            // SimulationData», а при другой нагрузке машины — нет). На мир выбор влияет только
+            // через касание «посадить организм», а его индекс генома UserCommandManager.resolve
+            // фиксирует в самой команде журнала — этим мир и проверен.
             simulation = { h ->
                 var x = Fnv.word(h, simulationData.tickCounter)
                 x = Fnv.word(x, java.lang.Float.floatToRawIntBits(simulationData.timeSimulation))
-                x = Fnv.word(x, simulationData.currentGenomeIndex)
                 Fnv.word(x, simulationData.selectedCellIndex)
             },
             input = userCommandManager::hashInput,
