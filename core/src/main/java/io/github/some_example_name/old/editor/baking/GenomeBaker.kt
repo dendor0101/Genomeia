@@ -51,6 +51,8 @@ class GenomeBaker(
             cellsAmount = cellEntity.aliveList.size,
             linksAmount = linkEntity.aliveList.size,
             neuralLinksAmount = neuralLinkEntity.aliveList.size,
+            // Не меньше живых сейчас: тело на экране могли дорастить уже после simulate().
+            neuralLinksPeak = maxOf(editorSimulationSystem.neuralLinksPeak, neuralLinkEntity.aliveList.size),
             sortedGraph = layout,
             preview = previewCapture.capture()
         )

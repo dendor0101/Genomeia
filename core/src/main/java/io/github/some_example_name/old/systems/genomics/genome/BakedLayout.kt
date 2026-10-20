@@ -1,6 +1,7 @@
 package io.github.some_example_name.old.systems.genomics.genome
 
 import io.github.some_example_name.old.core.utils.OrderedIntPairMap
+import io.github.some_example_name.old.systems.physics.LayoutChunks
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
@@ -77,8 +78,41 @@ data class BakedLayout(
      * Удвоенная знаковая площадь каждого треугольника в позе покоя, снятая в редакторе
      * с выращенного тела. Удвоенная — чтобы в рантайме не делить на два.
      */
-    @ProtoNumber(5) val triangleRestArea2: List<Float> = emptyList()
+    @ProtoNumber(5) val triangleRestArea2: List<Float> = emptyList(),
+
+    /**
+     * Граница тела, в порядке слотов: сколько физических связей у клетки во взрослом теле,
+     * если она ВНУТРЕННЯЯ, и 0, если граничная. См. InteriorCells и CellEntity.refreshOnEdge.
+     *
+     * Внутренняя — та, рядом с которой редактор не нашёл бы места для новой клетки. В мире
+     * клетка внутренняя, пока у неё ВСЕ её взрослые связи: пока тело растёт, части связей
+     * ещё нет; умер сосед или порвалась связь — их меньше. В обоих случаях клетка у края,
+     * и это верно на любой стадии и для любой сетки, без запекания каждой стадии.
+     *
+     * Пусто у геномов, запечённых раньше: тогда работает прежний порог по числу связей.
+     */
+    @ProtoNumber(6) val interiorLinks: List<Int> = emptyList()
 ) {
+
+    /** Есть ли запечённая граница — у старых раскладок её нет. */
+    val hasInteriorLinks: Boolean get() = interiorLinks.isNotEmpty() && interiorLinks.size == cellsInLayout
+
+    /** [interiorLinks] массивом: читается при каждом изменении связей клетки. */
+    @Transient
+    val interiorLinksArray: IntArray = IntArray(interiorLinks.size) { interiorLinks[it] }
+
+    /**
+     * Эта же раскладка с границей из [other] — для допекания старых геномов. Порядок слотов
+     * остаётся СВОИМ: от него зависит, как уже живущие организмы лежат в аренах, поэтому
+     * граница переносится по cellGenomeId. Клетка, которой в [other] нет, — граничная.
+     */
+    fun withInteriorFrom(other: BakedLayout?): BakedLayout {
+        if (other == null || !other.hasInteriorLinks) return this
+        return copy(interiorLinks = cellGenomeIdsInSlotOrder.map { genomeId ->
+            val slot = other.slotByCellGenomeId.get(genomeId)
+            if (slot == -1) 0 else other.interiorLinks[slot]
+        })
+    }
 
     /**
      * cellGenomeId -> смещение слота в арене клеток.
@@ -134,6 +168,70 @@ data class BakedLayout(
     val cellsInLayout: Int get() = cellGenomeIdsInSlotOrder.size
     val linksInLayout: Int get() = linkPairsInSlotOrder.size / 2
     val neuralLinksInLayout: Int get() = neuralLinkPairsInSlotOrder.size / 2
+
+    // ===================================================================================
+    // ТРЕУГОЛЬНИКИ ПО СВЯЗЯМ (TriangleEntity)
+    //
+    // Треугольник сформирован, когда живы три его связи. Чтобы пересчитывать это по месту,
+    // когда рождается или умирает связь, нужно знать и обратное — треугольники на связи.
+    // Всё выводится из раскладки один раз при чтении; O(треугольников + связей).
+    // ===================================================================================
+
+    /**
+     * Слоты связей треугольника t: 3t — (s0, s1), 3t+1 — (s1, s2), 3t+2 — (s2, s0). -1 у всех
+     * трёх, если какой-то пары нет среди связей раскладки: такой треугольник не формируется
+     * никогда и в счётах ниже не участвует.
+     */
+    @Transient
+    val triangleLinkSlots: IntArray = IntArray(trianglesInLayout * 3).also { edges ->
+        val ids = cellGenomeIdsInSlotOrder
+        val slots = triangleSlotsArray
+        for (t in 0 until trianglesInLayout) {
+            val a = ids[slots[3 * t]]; val b = ids[slots[3 * t + 1]]; val c = ids[slots[3 * t + 2]]
+            val ab = slotByLinkPair.get(a, b)
+            val bc = slotByLinkPair.get(b, c)
+            val ca = slotByLinkPair.get(c, a)
+            val valid = ab != -1 && bc != -1 && ca != -1
+            edges[3 * t] = if (valid) ab else -1
+            edges[3 * t + 1] = if (valid) bc else -1
+            edges[3 * t + 2] = if (valid) ca else -1
+        }
+    }
+
+    /** Треугольники на связи: связь k — trianglesOfLink[trianglesOfLinkStart[k] until trianglesOfLinkStart[k + 1]]. */
+    @Transient
+    val trianglesOfLinkStart: IntArray = IntArray(linksInLayout + 1).also { start ->
+        for (e in triangleLinkSlots) if (e != -1) start[e + 1]++
+        for (k in 0 until linksInLayout) start[k + 1] += start[k]
+    }
+
+    @Transient
+    val trianglesOfLink: IntArray = IntArray(trianglesOfLinkStart[linksInLayout]).also { list ->
+        val fill = trianglesOfLinkStart.copyOf()
+        for (i in triangleLinkSlots.indices) {
+            val e = triangleLinkSlots[i]
+            if (e != -1) list[fill[e]++] = i / 3
+        }
+    }
+
+    /**
+     * Сколько формируемых треугольников у клетки в каждом слоте во взрослом теле.
+     * Внутренняя клетка обязана иметь их все (CellEntity.refreshOnEdge): иначе рядом щель.
+     */
+    @Transient
+    val trianglesAroundSlot: IntArray = IntArray(cellsInLayout).also { around ->
+        for (t in 0 until trianglesInLayout) {
+            if (triangleLinkSlots[3 * t] == -1) continue
+            for (v in 0..2) around[triangleSlotsArray[3 * t + v]]++
+        }
+    }
+
+    /**
+     * Нарезка тела на чётные и нечётные куски для фазы связей. Стоит последней: читает
+     * [slotByCellGenomeId] и [triangleSlotsArray], а поля класса создаются по порядку.
+     */
+    @Transient
+    val chunks: LayoutChunks = LayoutChunks.of(this)
 
     private companion object {
         fun buildPairMap(flatPairs: List<Int>): OrderedIntPairMap {

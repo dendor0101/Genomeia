@@ -78,6 +78,7 @@ class RCMSort(
         val triangles = collectTriangles(organIndex, cellGenomeIds, adjacency, slotOfGenomeId)
 
         return BakedLayout(
+            interiorLinks = interiorLinks(organIndex, cellIdsInSlotOrder).toList(),
             triangleSlots = triangles.first,
             triangleRestArea2 = triangles.second,
             cellGenomeIdsInSlotOrder = cellIdsInSlotOrder.toList(),
@@ -94,6 +95,37 @@ class RCMSort(
                 aliveIndices = neuralLinkEntity.aliveList.toIntArray()
             )
         )
+    }
+
+    // ===================================================================================
+    // ГРАНИЦА ТЕЛА
+    // ===================================================================================
+
+    /**
+     * По слотам: число физических связей внутренней клетки во взрослом теле, 0 у граничной
+     * (см. BakedLayout.interiorLinks, [InteriorCells]).
+     *
+     * Число — linkAmount, тот же счётчик, с которым его сравнивает мир
+     * (CellEntity.refreshOnEdge): связи редактор растит тем же делением, что и мир.
+     */
+    private fun interiorLinks(organIndex: Int, cellIdsInSlotOrder: IntArray): IntArray {
+        val cellOfGenomeId = Int2IntOpenHashMap(cellIdsInSlotOrder.size).apply {
+            defaultReturnValue(-1)
+            val alive = cellEntity.aliveList
+            for (i in 0 until alive.size) {
+                val cellIndex = alive.getInt(i)
+                if (cellEntity.organIndex[cellIndex] != organIndex) continue
+                put(cellEntity.cellGenomeId[cellIndex], cellIndex)
+            }
+        }
+        val cells = IntArray(cellIdsInSlotOrder.size) { cellOfGenomeId.get(cellIdsInSlotOrder[it]) }
+        val interior = InteriorCells.find(
+            xs = FloatArray(cells.size) { cellEntity.getX(cells[it]) },
+            ys = FloatArray(cells.size) { cellEntity.getY(cells[it]) }
+        )
+        return IntArray(cells.size) { slot ->
+            if (interior[slot]) cellEntity.linkAmount[cells[slot]] else 0
+        }
     }
 
     // ===================================================================================

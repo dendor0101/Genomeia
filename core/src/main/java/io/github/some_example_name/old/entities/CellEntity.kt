@@ -1,6 +1,7 @@
 package io.github.some_example_name.old.entities
 
 import io.github.some_example_name.old.cells.Cell
+import io.github.some_example_name.old.cells.Zygote
 import io.github.some_example_name.old.cells.base.CellTypeList
 import io.github.some_example_name.old.cells.base.Formula
 import io.github.some_example_name.old.cells.base.Formulas
@@ -103,8 +104,24 @@ class CellEntity(
     var degreeOfShortening = FloatArray(maxAmount) { 1f }
     var pheromoneType = IntArray(maxAmount) { -1 }
     var linkAmount = IntArray(maxAmount) { 0 }
+
+    /**
+     * Сколько треугольников тела вокруг клетки сейчас сформировано (все три связи живы),
+     * см. TriangleEntity. Внутренняя клетка обязана иметь их все — иначе рядом щель.
+     */
+    var formedTriangles = IntArray(maxAmount)
     @Transient val organToIdToIndex = OrderedIntPairMap(maxAmount)
     var neuralConnections = Int2ObjectOpenHashMap<IntArrayList>()
+
+    /**
+     * Зигота-пустышка: стала зиготой делением или мутацией внутри тела, а не родилась
+     * корнем организма. Действий генома не получает, ничего не растит и энергии не
+     * копит — арена организма фиксирована при рождении и под новое тело на старом не
+     * рассчитана. Корень отличается номером в геноме: у него всегда
+     * [Zygote.ROOT_CELL_GENOME_ID], у клеток от деления — номер своего действия.
+     */
+    fun isDormantZygote(cellIndex: Int) =
+        cellGenomeId[cellIndex] != Zygote.ROOT_CELL_GENOME_ID && cellList[cellType[cellIndex].toInt()] is Zygote
 
     /**
      * Инлайн-список соседей по физическим связям: MAX_LINKS_PER_CELL слотов на клетку,
@@ -353,20 +370,17 @@ class CellEntity(
         pheromoneType: Int = -1,
         specialModData: SpecialModData? = null
     ): Int {
-        // Слот берётся из арены организма, если она у него есть.
+        // Слот — свой по раскладке организма, если у организма есть арена.
         //
-        // Исчерпание арены — это ошибка конфигурации, а не штатный режим: ёмкость
-        // снята при запекании генома плюс OrganEntity.ARENA_HEADROOM_PERCENT.
-        // Молча уйти в общий аллокатор нельзя — часть тела оказалась бы вне диапазона,
-        // и обход организма по арене её просто не увидел бы.
+        // Клетки вне раскладки не бывает: тело растёт только по запечённому геному. Молча уйти
+        // в общий аллокатор нельзя — часть тела оказалась бы вне диапазона, и обход организма
+        // по арене её просто не увидел бы.
         val arenaCellSlot = if (organEntity.hasArena(organIndex)) {
             val slot = organEntity.takeCellSlot(organIndex, cellGenomeId)
             if (slot == -1) {
                 throw IllegalStateException(
-                    "арена клеток организма $organIndex исчерпана " +
-                        "(ёмкость ${organEntity.cellArenaCapacity[organIndex]}): " +
-                        "тело выросло больше, чем под него зарезервировали — " +
-                        "поднимите OrganEntity.ARENA_HEADROOM_PERCENT или пересохраните геном"
+                    "клетки $cellGenomeId нет в запечённой раскладке организма $organIndex: " +
+                        "тело выросло не по геному, под который печётся арена — пересохраните геном"
                 )
             }
             slot
@@ -395,8 +409,10 @@ class CellEntity(
             cellStiffness = cellsSettings[cellType].cellStiffness,
             isCell = true,
             isSub = false,
-            holderEntityIndex = cellIndex
+            holderEntityIndex = cellIndex,
+            arenaOwner = if (arenaCellSlot == -1) -1 else organIndex
         )
+        organEntity.cellAdded(organIndex)
         //
         // Зигота ВСЕГДА начинает новую систему отсчёта, даже если появилась делением из
         // родительского организма. Иначе род навсегда остался бы привязан к точке спавна
@@ -462,6 +478,7 @@ class CellEntity(
         this.degreeOfShortening[cellIndex] = 1f
         this.pheromoneType[cellIndex] = pheromoneType
         linkAmount[cellIndex] = 0
+        formedTriangles[cellIndex] = 0
         // Индексы переиспользуются через deadStack, поэтому слоты связей нужно
         // обязательно вычистить: иначе новая клетка унаследует соседей мёртвой.
         clearCellLinks(cellIndex)
@@ -571,21 +588,25 @@ class CellEntity(
      * Пересчитывает «клетка на границе тела» по числу её физических связей и синхронно
      * решает, участвует ли её частица в пространственной сетке.
      *
-     * ПОЧЕМУ ЧИСЛО СВЯЗЕЙ, А НЕ ГЕОМЕТРИЯ
-     * -----------------------------------
-     * В треугольной упаковке клетка, окружённая со всех сторон, имеет шесть соседей.
-     * Меньше шести — значит хотя бы один сектор вокруг неё свободен, то есть снаружи до
-     * неё можно дотянуться. Это чисто топологический признак: он не зависит ни от того,
-     * как тело деформировано, ни от того, куда оно уплыло, и потому не требует
-     * пересчёта при движении — только при изменении числа связей.
+     * ПОЧЕМУ ЧИСЛО СВЯЗЕЙ, А НЕ ГЕОМЕТРИЯ КАЖДЫЙ ТИК
+     * ---------------------------------------------
+     * Геометрия считается один раз, при запекании (InteriorCells): клетка внутренняя, если
+     * во взрослом теле рядом с ней нет места для новой — тот же признак, по которому
+     * редактор не даёт её делить. Для внутренней запоминается, сколько у неё связей
+     * (BakedLayout.interiorLinks). В мире клетка внутренняя, пока у неё не меньше связей,
+     * чем было во взрослом теле: пока тело растёт, части связей ещё нет; умер сосед или
+     * порвалась связь — их стало меньше. Так граница верна на любой стадии и для любой
+     * сетки, не зависит от того, как тело деформировано, и пересчитывается только при
+     * изменении числа связей.
      *
-     * ГРАНИЦА ПРИМЕНИМОСТИ
-     * --------------------
-     * Порог [EDGE_LINK_THRESHOLD] верен именно для треугольной решётки. Геном, растящий
-     * тело по квадратной решётке (четыре соседа у внутренней клетки), при этом пороге
-     * объявит внутренними вообще все клетки, и тело перестанет сталкиваться целиком.
-     * Когда такие геномы появятся, порог придётся выводить из генома, а не держать
-     * константой.
+     * Без запечённой границы (редактор, геном старше неё) — прежний порог
+     * [EDGE_LINK_THRESHOLD]: шесть соседей — полное окружение в треугольной упаковке.
+     *
+     * ЧЕГО ПРИЗНАК НЕ ВИДИТ
+     * ---------------------
+     * Порвалась связь между двумя соседями клетки, а её собственные целы — клетка
+     * остаётся внутренней, хотя рядом щель (сами соседи при этом стали граничными).
+     * Закрывается запеканием ещё и связей между соседями по кругу; см. TODO.md, 2.8.
      *
      * ИНКРЕМЕНТАЛЬНОСТЬ
      * -----------------
@@ -595,7 +616,7 @@ class CellEntity(
      * это на каждой связи, когда ничего не поменялось, незачем.
      */
     fun refreshOnEdge(cellIndex: Int) {
-        val onEdge = linkAmount[cellIndex] < EDGE_LINK_THRESHOLD
+        val onEdge = !isInterior(cellIndex)
         if (isOnEdge[cellIndex] == onEdge) return
 
         isOnEdge[cellIndex] = onEdge
@@ -616,14 +637,41 @@ class CellEntity(
         if (onEdge) particleEntity.gridManager.registerParticle(particleIndex)
     }
 
+    /**
+     * Со скольких связей клетка внутренняя: из запечённой границы её организма, а без неё
+     * прежний порог. Int.MAX_VALUE — клетка граничная при любом числе связей (во взрослом
+     * теле она у края).
+     */
+    /**
+     * Внутренняя ли клетка: по запечённой границе её организма, а без неё — по прежнему
+     * порогу числа связей.
+     *
+     * По запечённой: во взрослом теле она внутренняя (BakedLayout.interiorLinks), у неё
+     * не меньше связей, чем было там, и сформированы все её треугольники
+     * (BakedLayout.trianglesAroundSlot). Последнее ловит щель, которую число собственных
+     * связей не видит: порвалась связь между двумя соседями, а свои целы. У старых
+     * сохранений арены треугольников нет — тогда только по связям.
+     */
+    private fun isInterior(cellIndex: Int): Boolean {
+        val organ = organIndex[cellIndex]
+        if (!organEntity.hasArena(organ)) return linkAmount[cellIndex] >= EDGE_LINK_THRESHOLD
+        val layout = organEntity.arenaLayout[organ]
+        if (layout == null || !layout.hasInteriorLinks) return linkAmount[cellIndex] >= EDGE_LINK_THRESHOLD
+        val slot = cellIndex - organEntity.cellArenaBase[organ]
+        val links = layout.interiorLinksArray
+        if (slot >= links.size) return false
+        val required = links[slot]
+        if (required == 0 || linkAmount[cellIndex] < required) return false
+        if (organEntity.triangleArenaBase[organ] == -1) return true
+        return formedTriangles[cellIndex] >= layout.trianglesAroundSlot[slot]
+    }
+
     fun deleteCell(cellIndex: Int) {
         // Считается ДО delete: organIndex ещё не сброшен, иначе клетка из арены выглядела
         // бы сиротой и счётчик поехал бы в минус.
         if (!organEntity.hasArena(organIndex[cellIndex])) orphanCellCount--
 
-        // Слот возвращается в арену СВОЕГО организма, иначе арена расходовалась бы по числу
-        // когда-либо созданных клеток, а не живых.
-        organEntity.releaseCellSlot(arenaOwnerOf(cellIndex), cellIndex)
+        organEntity.cellRemoved(organIndex[cellIndex])
 
         delete(cellIndex)
 
@@ -655,6 +703,7 @@ class CellEntity(
         this.degreeOfShortening[cellIndex] = 1f
         pheromoneType[cellIndex] = -1
         linkAmount[cellIndex] = 0
+        formedTriangles[cellIndex] = 0
         clearCellLinks(cellIndex)
         neuralConnections.remove(cellIndex)
 
@@ -688,6 +737,7 @@ class CellEntity(
         state.floats(::degreeOfShortening)
         state.ints(::pheromoneType)
         state.ints(::linkAmount)
+        state.ints(::formedTriangles)
         state.ints(::cellLinks, perSlot = MAX_LINKS_PER_CELL)
         state.ints(::cellLinkIds, perSlot = MAX_LINKS_PER_CELL)
         state.ints(::neuralIndexes)
@@ -779,10 +829,16 @@ class CellEntity(
 
     override fun restoreAfterLoad() {
         organToIdToIndex.clear()
+        organEntity.resetLiveCells()
         for (i in 0 until aliveList.size) {
             val cellIndex = aliveList.getInt(i)
             organToIdToIndex.put(organIndex[cellIndex], cellGenomeId[cellIndex], cellIndex)
+            organEntity.cellAdded(organIndex[cellIndex])
         }
+        // Сохранения до появления смерти организма несут организмы без единой клетки —
+        // они удалятся в конце первого же тика, как удалились бы при жизни.
+        val organs = organEntity.aliveList
+        for (i in 0 until organs.size) organEntity.scheduleIfEmpty(organs.getInt(i))
     }
 
     override fun onCopy() {
@@ -821,6 +877,7 @@ class CellEntity(
         degreeOfShortening.clear(1f)
         pheromoneType.clear(-1)
         linkAmount.clear(0)
+        formedTriangles.clear()
         cellLinks.fill(-1, 0, bound shl LINKS_SHIFT)
         cellLinkIds.fill(-1, 0, bound shl LINKS_SHIFT)
         neuralConnections.clear()
@@ -859,6 +916,7 @@ class CellEntity(
         degreeOfShortening = degreeOfShortening.resize(1f)
         pheromoneType = pheromoneType.resize(-1)
         linkAmount = linkAmount.resize(0)
+        formedTriangles = formedTriangles.resize()
         // Массив связей растёт не как остальные: на клетку в нём MAX_LINKS_PER_CELL
         // слотов, поэтому и размер, и копируемый диапазон умножаются на них же.
         run {
@@ -882,9 +940,9 @@ class CellEntity(
         /**
          * Со скольких связей клетка считается ВНУТРЕННЕЙ (см. [refreshOnEdge]).
          *
-         * Шесть — это полное окружение в треугольной упаковке. Значение подобрано под
-         * геномы, которые растят тело именно такой решёткой; для других решёток его
-         * придётся выводить из генома.
+         * Шесть — это полное окружение в треугольной упаковке. Это запасной порог: он
+         * работает только там, где нет запечённой границы (редактор, геномы старше неё),
+         * а в мире порог у каждой клетки свой — BakedLayout.interiorLinks.
          */
         const val EDGE_LINK_THRESHOLD = 6
 

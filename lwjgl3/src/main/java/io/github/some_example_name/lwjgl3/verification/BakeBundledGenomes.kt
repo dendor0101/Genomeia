@@ -97,6 +97,15 @@ private class BakeBundledGenomes(
             val rebaked = baker.bake(genome, genome.name)
             val ms = (System.nanoTime() - growStarted) / 1_000_000.0
             if (rebaked.preview != preview) problems += "повторное выращивание дало другой снимок"
+            // Граница тела (BakedLayout.interiorLinks) влияет на симуляцию — она обязана
+            // повторяться так же, как снимок.
+            val layout = genome.sortedGraph
+            if (genome.neuralLinksPeak == null) problems += "нет пика нейросвязей"
+            else if (rebaked.neuralLinksPeak != genome.neuralLinksPeak) problems += "повторное выращивание дало другой пик нейросвязей"
+            if (layout == null || !layout.hasInteriorLinks) problems += "нет границы тела"
+            else if (layout.withInteriorFrom(rebaked.sortedGraph).interiorLinks != layout.interiorLinks) {
+                problems += "повторное выращивание дало другую границу"
+            }
 
             val previewBytes = bytes.size - encodeGenome(genome.copy(preview = null)).size
             println(String.format(

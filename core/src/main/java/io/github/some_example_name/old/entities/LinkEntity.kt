@@ -200,9 +200,8 @@ class LinkEntity(
             )
             if (slot == -1) {
                 throw IllegalStateException(
-                    "арена связей организма $organIndex исчерпана " +
-                        "(ёмкость ${organEntity.linkArenaCapacity[organIndex]}) — " +
-                        "поднимите OrganEntity.ARENA_HEADROOM_PERCENT или пересохраните геном"
+                    "связи ${cellEntity.cellGenomeId[cellIndex]}–${cellEntity.cellGenomeId[otherCellIndex]} нет " +
+                        "в запечённой раскладке организма $organIndex — пересохраните геном"
                 )
             }
             slot
@@ -228,6 +227,11 @@ class LinkEntity(
 
         cellEntity.addCellLink(cellIndex, otherCellIndex, addLinkIndex)
         cellEntity.addCellLink(otherCellIndex, cellIndex, addLinkIndex)
+
+        // Связь могла достроить треугольники тела — они формируются, и их вершины могут стать
+        // внутренними (TriangleEntity). Только после addCellLink: refreshOnEdge вершин читает
+        // уже полное состояние.
+        if (arenaLinkSlot != -1) organEntity.triangles?.onLinkChanged(organIndex, addLinkIndex, organEntity, this, cellEntity)
 
         return addLinkIndex
     }
@@ -290,11 +294,6 @@ class LinkEntity(
 
     fun deleteLink(linkIndex: Int, linkGeneration: Int? = null) {
         if (isAlive[linkIndex] && (linkGeneration == null || getGeneration(linkIndex) == linkGeneration)) {
-            // Владелец берётся из запомненного при выдаче, а не через клетку связи: клетку
-            // к этому моменту могли удалить — она и стала причиной удаления связи, — и её
-            // organIndex уже сброшен.
-            organEntity.releaseLinkSlot(arenaOwnerOf(linkIndex), linkIndex)
-
             delete(linkIndex)
 
             val cellA = links1[linkIndex]
@@ -310,6 +309,11 @@ class LinkEntity(
             // в сетку. Иначе оторванный кусок тела перестал бы сталкиваться вообще.
             cellEntity.refreshOnEdge(cellA)
             cellEntity.refreshOnEdge(cellB)
+
+            // И треугольники на ней распались: их вершины теперь у щели. Владелец — запомненный
+            // при выдаче: клетки связи могли уже умирать (detachAllLinks).
+            val owner = arenaOwnerOf(linkIndex)
+            if (owner >= 0) organEntity.triangles?.onLinkChanged(owner, linkIndex, organEntity, this, cellEntity)
 
             links1[linkIndex] = -1
             links2[linkIndex] = -1

@@ -169,6 +169,7 @@ object CommandRegistry {
         t<PlayerCommand.Tap>(702),
         t<PlayerCommand.StopDrag>(703),
         t<PlayerCommand.KillCell>(704),
+        t<PlayerCommand.SetStress>(705),
 
         // --- Редактор генома ---
         t<PrevTickButtonTap>(800),

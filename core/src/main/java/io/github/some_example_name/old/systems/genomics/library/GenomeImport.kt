@@ -83,7 +83,11 @@ object GenomeImport {
      *    запекания. Без них организм получает арену нулевой ёмкости и падает на первой же
      *    клетке (UserCommandManager, «арена клеток организма исчерпана (ёмкость 0)»): так
      *    падала игра, когда в мир ставили старый геном;
-     *  - снимка для превью (preview == null) — геном сохранён до появления превью.
+     *  - снимка для превью (preview == null) — геном сохранён до появления превью;
+     *  - границы тела в раскладке (BakedLayout.interiorLinks) — геном сохранён до неё.
+     *    Без неё граничные клетки определяются прежним порогом в шесть связей.
+     *  - пика нейросвязей (Genome.neuralLinksPeak) — без него у организма нет арены
+     *    нейросвязей, и они идут в общий пул.
      *
      * Сам геном не трогается — берётся только недостающее, остальное как в файле: имя,
      * версия, порядок стадий. В том числе уже лежащая раскладка: от неё зависит, как
@@ -92,14 +96,26 @@ object GenomeImport {
     fun withBaking(genome: Genome, baker: Baker): Genome? {
         if (genome.stageInstruction.isEmpty()) return null
         val needsLayout = genome.cellsAmount <= 0
-        if (!needsLayout && genome.preview != null) return null
+        val layout = genome.sortedGraph
+        // Граница тела (BakedLayout.interiorLinks) появилась позже раскладки.
+        val needsInterior = layout != null && layout.cellsInLayout > 0 && !layout.hasInteriorLinks
+        // Пик нейросвязей (ёмкость их арены) появился ещё позже.
+        val needsNeuralPeak = genome.neuralLinksPeak == null
+        if (!needsLayout && genome.preview != null && !needsInterior && !needsNeuralPeak) return null
 
         val baked = baker.bake(genome, genome.name)
-        if (!needsLayout) return genome.copy(preview = baked.preview)
+        // Раскладка остаётся своей — граница переносится в неё по cellGenomeId, порядок
+        // слотов не меняется. Уже лежащий снимок тоже не трогается.
+        if (!needsLayout) return genome.copy(
+            preview = genome.preview ?: baked.preview,
+            sortedGraph = layout?.withInteriorFrom(baked.sortedGraph),
+            neuralLinksPeak = genome.neuralLinksPeak ?: baked.neuralLinksPeak
+        )
         return genome.copy(
             cellsAmount = baked.cellsAmount,
             linksAmount = baked.linksAmount,
             neuralLinksAmount = baked.neuralLinksAmount,
+            neuralLinksPeak = baked.neuralLinksPeak,
             sortedGraph = baked.sortedGraph,
             preview = baked.preview
         )

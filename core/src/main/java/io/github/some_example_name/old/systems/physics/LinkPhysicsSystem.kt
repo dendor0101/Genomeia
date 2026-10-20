@@ -71,6 +71,11 @@ class LinkPhysicsSystem(
          * у неё не определено, и вытащить её ограничением площади всё равно нельзя.
          */
         const val MIN_GRAD_SQUARED = 1e-8f
+
+        /** Номер куска «организм целиком» в работах фазы связей. */
+        private const val WHOLE = -1
+
+        private val NO_FLAGS = BooleanArray(0)
     }
 
     /**
@@ -92,40 +97,156 @@ class LinkPhysicsSystem(
      * воркеру, значит гонок нет — и это более прямое обоснование, чем прежняя приписка
      * по якорю: она давала то же свойство окольным путём, через геометрию чанков.
      *
+     * КРУПНОЕ ТЕЛО РЕЖЕТСЯ НА КУСКИ
+     * ----------------------------
+     * Организм целиком — одна работа, пока он мелкий. Крупный режется по слотам клеток на
+     * куски (LayoutChunks), и фаза идёт двумя стадиями: сначала чётные куски всех крупных
+     * тел вместе с мелкими телами целиком, потом нечётные. Почему чётные куски одного тела
+     * не гоняются между собой и почему результат не зависит от воркеров — см. LayoutChunks.
+     * Цена — один лишний барьер за тик, и только когда в мире есть крупное тело.
+     *
      * ГРАНИЦА ПРИМЕНИМОСТИ
      * --------------------
      * Обходятся ТОЛЬКО связи организмов с аренами. Связь между клетками без организма
      * (organIndex == -1) в арену не попадёт и обсчитана не будет. Сейчас таких клеток в
-     * мире нет: потомку (зигота от продюсера или деления) организм с ареной заводится
-     * раньше его самого, см. OrganismSpawner. Появятся бесхозные клетки со связями — этот
-     * путь придётся вернуть.
+     * мире нет: организм с ареной заводится раньше зиготы, см. OrganismSpawner. Появятся
+     * бесхозные клетки со связями — этот путь придётся вернуть.
      */
     fun iterateLinksInParallel() {
-        val organEntity = linkEntity.organEntity
-        val organs = organEntity.aliveList
+        planWorks()
 
         // Работ больше, чем воркеров, и это нормально: раздача динамическая, а организмы
         // разного размера. Номер работы и номер воркера здесь РАЗНЫЕ вещи — в буферы
         // команд индексируемся вторым, иначе слот №9 писал бы за границу массива.
-        threadManager.runWorkStage(organs.size, Phase.LINKS) { work, workerId ->
-            val organIndex = organs.getInt(work)
-            if (organEntity.hasArena(organIndex)) {
-                val from = organEntity.linkArenaBase[organIndex]
-                val to = organEntity.linkArenaEnd(organIndex)
-                val alive = linkEntity.isAlive
-                for (linkIndex in from until to) {
-                    // Дырки в арене: связь умерла, а слот ещё не переиспользован.
-                    if (!alive[linkIndex]) continue
-                    processLink(linkIndex, workerId)
-                }
+        threadManager.runWorkStage(evenCount, Phase.LINKS) { work, workerId ->
+            processWork(evenOrgan[work], evenChunk[work], workerId)
+        }
+        // Вторая стадия — свой номер в WorkOrder, поэтому разрывы связей из неё применятся
+        // после разрывов первой, кто бы что ни считал.
+        if (oddCount > 0) {
+            threadManager.runWorkStage(oddCount, Phase.LINKS) { work, workerId ->
+                processWork(oddOrgan[work], oddChunk[work], workerId)
+            }
+        }
+    }
 
-                // Треугольники того же организма — здесь же, в той же работе.
-                //
-                // Не отдельной стадией: это ещё один барьер и, главное, второй проход по
-                // тем же клеткам. Здесь они только что прочитаны обходом связей и лежат
-                // в кэше — треугольники отсортированы по тому же минимальному слоту, то
-                // есть идут вдоль той же ленты RCM.
-                processTriangles(organIndex)
+    // Работы двух стадий: организм и номер куска, WHOLE — организм целиком. Пересобираются
+    // каждый тик в однопоточной части (организмы рождаются и умирают), массивы растут только
+    // когда работ стало больше, чем было когда-либо.
+    private var evenOrgan = IntArray(64)
+    private var evenChunk = IntArray(64)
+    private var evenCount = 0
+    private var oddOrgan = IntArray(64)
+    private var oddChunk = IntArray(64)
+    private var oddCount = 0
+
+    private fun planWorks() {
+        val organEntity = linkEntity.organEntity
+        val organs = organEntity.aliveList
+        evenCount = 0
+        oddCount = 0
+        for (i in 0 until organs.size) {
+            val organIndex = organs.getInt(i)
+            if (!organEntity.hasArena(organIndex)) continue
+            val chunks = splittableChunks(organIndex)
+            if (chunks == null) {
+                addEven(organIndex, WHOLE)
+                continue
+            }
+            for (chunk in 0 until chunks.count) {
+                if (chunk % 2 == 0) addEven(organIndex, chunk) else addOdd(organIndex, chunk)
+            }
+        }
+    }
+
+    /**
+     * Нарезка организма, если тело достаточно крупное, иначе null — тогда оно считается
+     * целиком. Ширина ленты гарантирована: все клетки и связи лежат в своих слотах раскладки
+     * (OrganEntity.takeCellSlot), сверх неё в арене ничего не бывает.
+     */
+    private fun splittableChunks(organIndex: Int): LayoutChunks? {
+        val organEntity = linkEntity.organEntity
+        val layout = organEntity.arenaLayout[organIndex] ?: return null
+        val chunks = layout.chunks
+        if (chunks.count < 2) return null
+        return chunks
+    }
+
+    private fun addEven(organIndex: Int, chunk: Int) {
+        if (evenCount == evenOrgan.size) {
+            evenOrgan = evenOrgan.copyOf(evenCount * 2)
+            evenChunk = evenChunk.copyOf(evenCount * 2)
+        }
+        evenOrgan[evenCount] = organIndex
+        evenChunk[evenCount] = chunk
+        evenCount++
+    }
+
+    private fun addOdd(organIndex: Int, chunk: Int) {
+        if (oddCount == oddOrgan.size) {
+            oddOrgan = oddOrgan.copyOf(oddCount * 2)
+            oddChunk = oddChunk.copyOf(oddCount * 2)
+        }
+        oddOrgan[oddCount] = organIndex
+        oddChunk[oddCount] = chunk
+        oddCount++
+    }
+
+    private fun processWork(organIndex: Int, chunk: Int, workerId: Int) {
+        val organEntity = linkEntity.organEntity
+        val base = organEntity.linkArenaBase[organIndex]
+        val from: Int
+        val to: Int
+        val triangleFrom: Int
+        val triangleTo: Int
+        if (chunk == WHOLE) {
+            from = base
+            to = organEntity.linkArenaEnd(organIndex)
+            triangleFrom = 0
+            triangleTo = Int.MAX_VALUE
+        } else {
+            val chunks = organEntity.arenaLayout[organIndex]!!.chunks
+            from = base + chunks.linkStart[chunk]
+            to = base + chunks.linkStart[chunk + 1]
+            triangleFrom = chunks.triangleStart[chunk]
+            triangleTo = chunks.triangleStart[chunk + 1]
+            if (DEBUG_CHECKS) verifyChunkWindow(organIndex, chunk, chunks, from, to)
+        }
+
+        val alive = linkEntity.isAlive
+        for (linkIndex in from until to) {
+            // Дырки в арене: связь умерла, а слот ещё не переиспользован.
+            if (!alive[linkIndex]) continue
+            processLink(linkIndex, workerId)
+        }
+
+        // Треугольники того же куска — здесь же, в той же работе.
+        //
+        // Не отдельной стадией: это ещё один барьер и, главное, второй проход по
+        // тем же клеткам. Здесь они только что прочитаны обходом связей и лежат
+        // в кэше — треугольники отсортированы по тому же минимальному слоту, то
+        // есть идут вдоль той же ленты RCM.
+        processTriangles(organIndex, triangleFrom, triangleTo)
+    }
+
+    /**
+     * Связи куска трогают только клетки своего окна [k·W, (k+1)·W + band) — на этом держится
+     * отсутствие гонок. Нарушиться может, если связь легла в слот не по раскладке.
+     */
+    private fun verifyChunkWindow(organIndex: Int, chunk: Int, chunks: LayoutChunks, from: Int, to: Int) {
+        val organEntity = linkEntity.organEntity
+        val cellBase = organEntity.cellArenaBase[organIndex]
+        val low = chunk * chunks.slotsPerChunk
+        val high = low + chunks.slotsPerChunk + chunks.band
+        for (linkIndex in from until to) {
+            if (!linkEntity.isAlive[linkIndex]) continue
+            val a = linkEntity.links1[linkIndex] - cellBase
+            val b = linkEntity.links2[linkIndex] - cellBase
+            if (a < low || b < low || a >= high || b >= high) {
+                throw IllegalStateException(
+                    "связь $linkIndex организма $organIndex куска $chunk касается слотов $a и $b " +
+                        "вне окна [$low, $high) — чётные куски могут гоняться"
+                )
             }
         }
     }
@@ -159,27 +280,26 @@ class LinkPhysicsSystem(
      * одного поиска, ни одного чтения particleIndexes. Организм целиком принадлежит одному
      * воркеру, поэтому записи в vx/vy никем не разделяются — синхронизация не нужна.
      */
-    private fun processTriangles(organIndex: Int) {
+    private fun processTriangles(organIndex: Int, from: Int, to: Int) {
         val organEntity = linkEntity.organEntity
 
-        // Только для ВЗРОСЛОГО тела.
+        // На любой стадии — но только СФОРМИРОВАННЫЕ треугольники (все три связи живы,
+        // TriangleEntity).
         //
-        // Площади покоя сняты в редакторе с выросшего организма. Пока тело растёт, его
-        // треугольники ещё не в позе покоя: клетка появляется вплотную к родителю и лишь
-        // потом расталкивается пружинами, поэтому свежий треугольник во много раз меньше
-        // своей взрослой площади. Ограничение видит огромную ошибку и непрерывно тянет
-        // вершины — тело шевелится всё время роста.
+        // Раньше ограничение включалось только у взрослого тела и для треугольника хватало
+        // трёх живых клеток. У растущего тела три клетки уже есть, а связей между ними ещё
+        // нет: свежая клетка лежит вплотную к родителю, треугольник во много раз меньше
+        // взрослой площади, и ограничение тянуло вершины без пружин — тело шевелилось весь
+        // рост, а текстуры клеток вращались (угол клетки — из направления на родителя). Со
+        // всеми тремя связями цель площади (снятая со взрослого тела, то есть согласованная
+        // с длинами покоя этих же связей) тянет туда же, куда пружины.
         //
-        // Наружу это вылезает неожиданным образом: angleCos/angleSin считаются из
-        // направления на родителя (CellSystem.processCellAngle), поэтому непрерывно
-        // движущиеся вершины дают непрерывно вращающиеся текстуры клеток. Как только
-        // организм дорастал, ошибка уходила в зону допуска и вращение прекращалось —
-        // отсюда и «пока растёт, углы скачут, вырос — всё нормально».
-        //
-        // Чинить подгонкой жёсткости бессмысленно: проблема не в силе, а в том, что
-        // цель заведомо неверна для растущего тела. Правильная цель для промежуточных
-        // стадий потребовала бы запекать площади для каждой стадии генома отдельно.
-        if (!organEntity.alreadyGrownUp[organIndex]) return
+        // Старые сохранения: арены треугольников нет — прежнее правило, только у взрослого.
+        val triangleBase = organEntity.triangleArenaBase[organIndex]
+        if (triangleBase == -1 && !organEntity.alreadyGrownUp[organIndex]) return
+        // Без арены треугольников флаги не читаются — пустой массив вместо null, чтобы в цикле
+        // не было проверки на null.
+        val formed = organEntity.triangles?.formed ?: NO_FLAGS
 
         val layout = organEntity.arenaLayout[organIndex] ?: return
 
@@ -197,9 +317,11 @@ class LinkPhysicsSystem(
         val vx = particleEntity.vx
         val vy = particleEntity.vy
 
-        var t = 0
-        var base = 0
-        while (t < restArea2.size) {
+        // Диапазон треугольников куска (или все, если организм считается целиком).
+        val end = minOf(to, restArea2.size)
+        var t = from
+        var base = 3 * from
+        while (t < end) {
             val s0 = slots[base]
             val s1 = slots[base + 1]
             val s2 = slots[base + 2]
@@ -207,9 +329,11 @@ class LinkPhysicsSystem(
             val triangle = t
             t++
 
-            // Клетка могла умереть — треугольника больше нет. Топология при этом не
-            // перепекается, поэтому мёртвые тройки просто пропускаются.
-            if (!cellAlive[cellBase + s0] ||
+            // Не сформирован (связи ещё не выросли или порвались) — пропуск. Один байт подряд по
+            // арене вместо трёх случайных чтений isAlive клеток.
+            if (triangleBase != -1) {
+                if (!formed[triangleBase + triangle]) continue
+            } else if (!cellAlive[cellBase + s0] ||
                 !cellAlive[cellBase + s1] ||
                 !cellAlive[cellBase + s2]
             ) continue
@@ -304,13 +428,8 @@ class LinkPhysicsSystem(
             val from = organEntity.linkArenaBase[organIndex]
             val to = organEntity.linkArenaEnd(organIndex)
 
-            // Считаем ЖИВЫЕ клетки, а не cellArenaUsed.
-            //
-            // cellArenaUsed — это bump-курсор, и при запечённой раскладке он равен размеру
-            // раскладки с самого первого тика: запечённые слоты выдаются по cellGenomeId
-            // напрямую, курсор через них не проходит. Печатать его как «клеток в арене»
-            // было прямой дезинформацией — тело выглядело выросшим целиком с первого тика,
-            // даже когда рост застревал на середине.
+            // Считаем ЖИВЫЕ клетки: арена с первого тика размером с раскладку, и её размер
+            // ничего не говорит о том, сколько тела уже выросло.
             var aliveCells = 0
             for (cellIndex in cellBase until organEntity.cellArenaEnd(organIndex)) {
                 if (cellEntity.isAlive[cellIndex]) aliveCells++
@@ -342,7 +461,7 @@ class LinkPhysicsSystem(
                 .append(", лента avg ").append(if (count == 0) 0 else (sumBand / count))
                 .append(" max ").append(maxBand)
                 .append(", живых клеток ").append(aliveCells)
-                .append(" из ").append(layout?.cellsInLayout ?: organEntity.cellArenaUsed[organIndex])
+                .append(" из ").append(organEntity.cellArenaCapacity[organIndex])
                 .append(", стадия ").append(organEntity.stage[organIndex])
                 .append('/').append(organEntity.genomeSize[organIndex])
                 .append(if (organEntity.alreadyGrownUp[organIndex]) " (вырос)" else " (растёт)")

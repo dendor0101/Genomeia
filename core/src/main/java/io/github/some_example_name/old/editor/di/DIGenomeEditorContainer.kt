@@ -310,6 +310,7 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
         particleEntity = particleEntity,
         zygote = zygote,
         entityList = entityList,
+        neuralLinkEntity = neuralLinkEntity,
         userCommandManager = userCommandManager
     )
 

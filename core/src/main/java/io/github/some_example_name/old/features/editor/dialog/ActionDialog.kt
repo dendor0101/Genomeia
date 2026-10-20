@@ -73,7 +73,7 @@ class ActionDialog(
         var dynamicContent: VisTable? = null
 
         //Выбор типа клетки — из палитры редактора; свой тип клетки виден, даже если скрыт.
-        val cellChoices = cellPalette.cellChoices(cellList, current = actionSystem.cellType)
+        val cellChoices = cellPalette.actionCellChoices(cellList, current = actionSystem.cellType)
         visSelectBox(
             items = cellChoices.map { it.name }.toTypedArray(),
             // Типа нет в списке — клетка от мода, которого нет; показывается первый.

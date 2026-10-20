@@ -152,6 +152,11 @@ class UserCommandManager(
 
     private fun applyCommand(cmd: PlayerCommand) {
         when (cmd) {
+            is PlayerCommand.SetStress -> {
+                simulationData.stressKillEvery = cmd.killEvery
+                simulationData.stressFlingEvery = cmd.flingEvery
+                simulationData.stressSpawnEvery = cmd.spawnEvery
+            }
             PlayerCommand.StopDrag -> {
                 grabbedParticleIndex = -1
                 simulationData.selectedCellIndex = -1

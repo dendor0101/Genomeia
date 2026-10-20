@@ -24,7 +24,7 @@ class ActionDialogSystem(
 
     var action = when(actionDialogType) {
         // Первая клетка палитры: обычно лист, но уровень может его и не разрешать.
-        ActionDialogType.DIVIDE -> newCellAction(cellPalette.cellChoices(cellList, current = null).first())
+        ActionDialogType.DIVIDE -> newCellAction(cellPalette.actionCellChoices(cellList, current = null).first())
         ActionDialogType.MUTATION -> clickedCell.mutate?.copy() ?: Action()
         ActionDialogType.CHANGE_REMOVE -> clickedCell.divide?.copy() ?: throw Exception("clickedCell.divide is null")
     }

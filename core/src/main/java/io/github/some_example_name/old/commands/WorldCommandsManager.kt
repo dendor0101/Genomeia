@@ -206,13 +206,15 @@ class WorldCommandsManager(
                         val cellType = ints[2]
                         val newCell = cellList[cellType]
 
-                        if (isDivide && newCell is Zygote && !isEditor) {
-                            // Зигота в мире (её родил продюсер или геном поделился в неё) —
-                            // корень НОВОГО организма с геномом родителя, как было до арен.
-                            // Сама клетка появится в последней фазе команд, уже в арене
-                            // своего организма (OrganismSpawner); связи, которые деление
-                            // проводит к ней следом (ADD_LINK с -1), — не к чему: это был бы
-                            // другой организм.
+                        if (isDivide && newCell is Zygote && parentCellIndex == -1 && !isEditor) {
+                            // Зигота от продюсера (у неё нет родителя) — корень НОВОГО
+                            // организма с геномом родителя. Сама клетка появится в последней
+                            // фазе команд, уже в арене своего организма (OrganismSpawner).
+                            //
+                            // Зигота от деления по геному (родитель есть) сюда не попадает:
+                            // она остаётся в теле пустышкой и ничего не растит
+                            // (CellEntity.isDormantZygote). Новое тело на старом не помещается
+                            // в арену организма — её размер фиксирован при рождении.
                             worldCommandLastBuffer.push(
                                 type = WorldCommandType.SPAWN_ORGANISM,
                                 ints = intArrayOf(organEntity.genomeIndex[ints[3]], ints[0]),
@@ -224,7 +226,7 @@ class WorldCommandsManager(
                             val parentOrganIndex = ints[3]
                             val parentIndex = ints[4]
                             // В редакторе организм один, и зигота — его часть.
-                            val organIndex = if (newCell is Zygote) 0 else parentOrganIndex
+                            val organIndex = if (newCell is Zygote && isEditor) 0 else parentOrganIndex
 
                             val specialModDataIndex = ints[7]
 

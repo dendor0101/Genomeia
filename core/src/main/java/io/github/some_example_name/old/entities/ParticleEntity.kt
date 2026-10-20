@@ -119,9 +119,15 @@ class ParticleEntity(
         isCell: Boolean,
         isSub: Boolean,
         isPheromoneEmitter: Boolean = false,
-        holderEntityIndex: Int
+        holderEntityIndex: Int,
+        /**
+         * Организм, из чьей арены слот. Без владельца умершая частица ушла бы в общий
+         * deadStack, и её взяла бы первая же субстанция — например та, что появляется
+         * на месте умершей клетки, — а потом арену, выданную заново, addAt нашёл бы занятой.
+         */
+        arenaOwner: Int = -1
     ): Int = initParticle(
-        particleIndex = if (particleIndex == -1) add() else addAt(particleIndex),
+        particleIndex = if (particleIndex == -1) add() else addAt(particleIndex, arenaOwner),
         x = x, y = y, radius = radius, color = color, vx = vx, vy = vy,
         dragCoefficient = dragCoefficient, effectOnContact = effectOnContact,
         isCollidable = isCollidable, cellStiffness = cellStiffness,
@@ -250,6 +256,13 @@ class ParticleEntity(
         }
         gridManager.rebuild(isAlive, gridId, isInGrid)
     }
+
+    /**
+     * Частицы субстанций и террейна — пулом по 1024 (Entity.poolBlockSize): по одной с верха
+     * они вставали бы между аренами организмов. 1024 частицы — ~80 КБ на массивы, а террейн
+     * в тысячи частиц ложится несколькими блоками подряд.
+     */
+    override val poolBlockSize: Int get() = 1024
 
     override fun onCopy() {
 

@@ -29,6 +29,9 @@ import io.github.some_example_name.old.systems.render.RenderBufferManager
 import io.github.some_example_name.old.features.worldeditor.WorldTerrainManager
 import io.github.some_example_name.old.systems.genomics.NeuralLinkManager
 import io.github.some_example_name.old.systems.physics.MovementManager
+import io.github.some_example_name.old.systems.physics.CollisionManager.Companion.PARTICLE_MAX_RADIUS
+import io.github.some_example_name.old.systems.genomics.OrganismSpawner
+import io.github.some_example_name.old.cells.Zygote
 import io.github.some_example_name.old.bug.BugReplay
 import io.github.some_example_name.old.journal.CommandSource
 import io.github.some_example_name.old.journal.ControllerKeys
@@ -165,10 +168,11 @@ class SimulationSystem(
         latchControllerKeys()
 
         if (DEBUG_CHECKS) applyDebugStress()
+        applyPeriodicStress()
 
         // --- Измерения ---
         profiler.measure(Phase.LINKS) { linkPhysicsSystem.iterateLinksInParallel() }
-        profiler.measure(Phase.NEURAL) { neuralLinkManager.iterate() }
+        profiler.measure(Phase.NEURAL) { neuralLinkManager.iterateInParallel() }
         profiler.measure(Phase.COLLIDE) { processParticleCollision() }
         profiler.measure(Phase.CELLS) { cellSystem.iterateCellInParallel() }
         profiler.measure(Phase.PHEROMONE) { pheromonesManager.iterate() }
@@ -177,6 +181,10 @@ class SimulationSystem(
         profiler.measure(Phase.ORGANS) { organManager.performOrgansNextStage() }
         profiler.measure(Phase.USER_CMD) { userCommandManager.processingCommandsFromUser() }
         profiler.measure(Phase.LAST_WORLD_CMD) { worldCommandsManager.executingLastCommandsFromTheWorld() }
+        // Организмы, потерявшие в этом тике последнюю клетку, — после всех команд тика: они
+        // ещё читали поля организма. Арены уходят в свободные куски до перестройки сетки,
+        // но их частицы уже мертвы, и сетка их пропустит.
+        organEntity.deleteEmptiedOrgans()
         // Единственное место, где меняется структура пространственной сетки. Стоит здесь,
         // потому что к этому моменту уже применены все перемещения (фаза 6) и все
         // создания/удаления частиц (фазы 7-10), то есть сетка собирается один раз по
@@ -193,6 +201,7 @@ class SimulationSystem(
         // организма по диапазону в параллельных фазах. Стоит здесь, вместе с проверкой
         // сетки: обе ловят «сущность есть, но её никто не обсчитывает».
         if (DEBUG_CHECKS) cellEntity.verifyArenaIntegrity()
+        if (DEBUG_CHECKS) organEntity.triangles?.verify(organEntity, linkEntity, cellEntity)
 
         if (DEBUG_CHECKS) {
             gridManager.verifyIntegrity(
@@ -244,6 +253,50 @@ class SimulationSystem(
         if (simulationData.debugFlingCells) {
             repeat(DEBUG_STRESS_CELLS_PER_TICK) { flingRandomCell() }
         }
+    }
+
+    /**
+     * Стресс жизненного цикла по команде PlayerCommand.SetStress — для проверок
+     * (bugReplayCheck -PkillEvery/-PflingEvery/-PspawnEvery). В отличие от [applyDebugStress]
+     * работает и без DEBUG_CHECKS: проверка должна гонять смерти и рождения на той же
+     * сборке, что у игрока. Выключенный стоит три сравнения с нулём за тик.
+     *
+     * Там же, в начале тика, в однопоточной части: смерть — обычной командой DELETE_CELL,
+     * посадка — тем же OrganismSpawner, что у игрока и продюсера. Случайность — из
+     * debugRandom с сидом сессии, поэтому повтор делает то же самое.
+     */
+    private fun applyPeriodicStress() {
+        val tick = simulationData.tickCounter
+        val kill = simulationData.stressKillEvery
+        val fling = simulationData.stressFlingEvery
+        val spawn = simulationData.stressSpawnEvery
+        if (kill > 0 && tick % kill == 0) killRandomCell()
+        if (fling > 0 && tick % fling == 0) flingRandomCell()
+        if (spawn > 0 && tick % spawn == 0) spawnRandomOrganism()
+    }
+
+    private val stressZygote by lazy { cellEntity.cellList.filterIsInstance<Zygote>().single() }
+    private val stressSpawner by lazy { OrganismSpawner(organEntity, cellEntity, genomeManager, stressZygote) }
+
+    private fun spawnRandomOrganism() {
+        val genomes = genomeManager.genomes
+        var baked = 0
+        for (genome in genomes) if (genome.cellsAmount > 0) baked++
+        if (baked == 0) return
+        // k-й по счёту запечённый — без списка, это и так раз в много тиков.
+        var pick = debugRandom.nextInt(baked)
+        var genomeIndex = 0
+        while (genomes[genomeIndex].cellsAmount <= 0 || pick-- > 0) genomeIndex++
+        val margin = 10f
+        stressSpawner.spawn(
+            genomeIndex = genomeIndex,
+            x = margin + debugRandom.nextFloat() * (gridManager.gridWidth - 2 * margin),
+            y = margin + debugRandom.nextFloat() * (gridManager.gridHeight - 2 * margin),
+            color = stressZygote.defaultColor.toIntBits(),
+            radius = PARTICLE_MAX_RADIUS,
+            angleCos = 1f,
+            angleSin = 0f
+        )
     }
 
     private fun killRandomCell() {
@@ -429,6 +482,9 @@ class SimulationSystem(
         userCommandManager.startSession(seed)
         debugRandom.setSeed(seed xor DEBUG_RANDOM_SALT)
         simulationData.controllerKeys.fill(false)
+        simulationData.stressKillEvery = 0
+        simulationData.stressFlingEvery = 0
+        simulationData.stressSpawnEvery = 0
         lastControllerKeysMask = 0
     }
 
@@ -451,7 +507,10 @@ class SimulationSystem(
             simulation = { h ->
                 var x = Fnv.word(h, simulationData.tickCounter)
                 x = Fnv.word(x, java.lang.Float.floatToRawIntBits(simulationData.timeSimulation))
-                Fnv.word(x, simulationData.selectedCellIndex)
+                x = Fnv.word(x, simulationData.selectedCellIndex)
+                x = Fnv.word(x, simulationData.stressKillEvery)
+                x = Fnv.word(x, simulationData.stressFlingEvery)
+                Fnv.word(x, simulationData.stressSpawnEvery)
             },
             input = userCommandManager::hashInput,
             grid = gridManager::hashOrder

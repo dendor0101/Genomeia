@@ -300,7 +300,11 @@ tasks.register('bugReplayCheckRecord', JavaExec) {
   if (project.hasProperty('workers')) systemProperty 'bugReplayCheck.workers', project.property('workers')
   if (project.hasProperty('growTicks')) systemProperty 'bugReplayCheck.growTicks', project.property('growTicks')
   if (project.hasProperty('spawnGrid')) systemProperty 'bugReplayCheck.spawnGrid', project.property('spawnGrid')
+  if (project.hasProperty('spawnGenome')) systemProperty 'bugReplayCheck.spawnGenome', project.property('spawnGenome')
   if (project.hasProperty('stressTicks')) systemProperty 'bugReplayCheck.stressTicks', project.property('stressTicks')
+  if (project.hasProperty('killEvery')) systemProperty 'bugReplayCheck.killEvery', project.property('killEvery')
+  if (project.hasProperty('flingEvery')) systemProperty 'bugReplayCheck.flingEvery', project.property('flingEvery')
+  if (project.hasProperty('spawnEvery')) systemProperty 'bugReplayCheck.spawnEvery', project.property('spawnEvery')
 }
 
 tasks.register('bugReplayCheck', JavaExec) {
@@ -313,10 +317,17 @@ tasks.register('bugReplayCheck', JavaExec) {
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
   if (project.hasProperty('hashPeriod')) systemProperty 'genomeia.stateHashPeriod', project.property('hashPeriod')
-  if (project.hasProperty('workers')) systemProperty 'bugReplayCheck.workers', project.property('workers')
+  // Повтор может идти при другом числе воркеров, чем запись: -PreplayWorkers=1 — проверка,
+  // что мир не зависит от числа потоков.
+  if (project.hasProperty('replayWorkers')) systemProperty 'bugReplayCheck.workers', project.property('replayWorkers')
+  else if (project.hasProperty('workers')) systemProperty 'bugReplayCheck.workers', project.property('workers')
   if (project.hasProperty('growTicks')) systemProperty 'bugReplayCheck.growTicks', project.property('growTicks')
   if (project.hasProperty('spawnGrid')) systemProperty 'bugReplayCheck.spawnGrid', project.property('spawnGrid')
+  if (project.hasProperty('spawnGenome')) systemProperty 'bugReplayCheck.spawnGenome', project.property('spawnGenome')
   if (project.hasProperty('stressTicks')) systemProperty 'bugReplayCheck.stressTicks', project.property('stressTicks')
+  if (project.hasProperty('killEvery')) systemProperty 'bugReplayCheck.killEvery', project.property('killEvery')
+  if (project.hasProperty('flingEvery')) systemProperty 'bugReplayCheck.flingEvery', project.property('flingEvery')
+  if (project.hasProperty('spawnEvery')) systemProperty 'bugReplayCheck.spawnEvery', project.property('spawnEvery')
 }
 
 // Снимки отладочного режима на настоящих организмах: gradlew :lwjgl3:debugViewShot

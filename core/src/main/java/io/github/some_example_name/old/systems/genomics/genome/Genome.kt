@@ -54,7 +54,22 @@ data class Genome(
      * Снимок взрослого тела для превью в списке и карточке геномов. null — геном ещё не
      * снимали: его допекает GenomeImport.withBaking. См. [GenomePreview].
      */
-    @ProtoNumber(9) val preview: GenomePreview? = null
+    @ProtoNumber(9) val preview: GenomePreview? = null,
+
+    /**
+     * Сколько нейросвязей может быть у организма ОДНОВРЕМЕННО за весь рост — ёмкость его
+     * арены нейросвязей (OrganEntity.allocateArenas). Не [neuralLinksAmount] (столько их у
+     * взрослого) и не число всех созданных: геном перевязывает нейросвязи по ходу стадий,
+     * удалённая уступает слот следующей.
+     *
+     * Снимается в редакторе (EditorSimulationSystem.simulate) как наибольшее за стадии
+     * «живых на начало стадии + созданных за стадию» — с запасом на любой порядок создания
+     * и удаления внутри стадии, который в мире зависит от энергии клеток.
+     *
+     * null — геном старше этого поля: его допекает GenomeImport.withBaking, а до того
+     * нейросвязи такого организма живут в общем пуле.
+     */
+    @ProtoNumber(10) val neuralLinksPeak: Int? = null
 ) {
     @Transient
     var genomeStageInstruction: List<GenomeStage> = stageInstruction
