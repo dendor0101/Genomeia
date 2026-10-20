@@ -201,6 +201,7 @@ class SimulationSystem(
         // организма по диапазону в параллельных фазах. Стоит здесь, вместе с проверкой
         // сетки: обе ловят «сущность есть, но её никто не обсчитывает».
         if (DEBUG_CHECKS) cellEntity.verifyArenaIntegrity()
+        if (DEBUG_CHECKS) organEntity.triangles?.verify(organEntity, linkEntity, cellEntity)
 
         if (DEBUG_CHECKS) {
             gridManager.verifyIntegrity(

@@ -54,8 +54,10 @@ object StateHash {
      * 9 — у организма больше нет курсоров и свободных списков клеток и связей: слот задан
      *     раскладкой.
      * 10 — у сущностей в хэш вошёл текущий блок пула вне арен (Entity.poolNext/poolEnd).
+     * 11 — новая часть TriangleEntity (сформированные треугольники), у организма — арена
+     *     треугольников, у клетки — их счётчик.
      */
-    const val VERSION = 10
+    const val VERSION = 11
 
     class Result(val hash: Long, val parts: LongArray)
 

@@ -62,6 +62,28 @@ class LayoutChunksTest {
     }
 
     @Test
+    fun trianglesKnowTheirLinksAndLinksKnowTheirTriangles() {
+        val layout = strip(10)
+        // У треугольника (i, i+1, i+2) все три стороны — связи раскладки.
+        for (t in 0 until layout.trianglesInLayout) {
+            val edges = (0..2).map { layout.triangleLinkSlots[3 * t + it] }
+            assertTrue(edges.all { it != -1 }, "треугольник $t")
+            for (e in edges) {
+                val on = (layout.trianglesOfLinkStart[e] until layout.trianglesOfLinkStart[e + 1])
+                    .map { layout.trianglesOfLink[it] }
+                assertTrue(t in on, "треугольник $t на связи $e")
+            }
+        }
+        // Связь i–i+1 внутри полосы — сторона двух треугольников, крайняя — одного.
+        val pairs = layout.linkPairsInSlotOrder
+        val middle = (0 until layout.linksInLayout).first { pairs[2 * it] == 4 && pairs[2 * it + 1] == 5 }
+        assertEquals(2, layout.trianglesOfLinkStart[middle + 1] - layout.trianglesOfLinkStart[middle])
+        // Вокруг клетки посередине — три треугольника, на краю — один.
+        assertEquals(3, layout.trianglesAroundSlot[5])
+        assertEquals(1, layout.trianglesAroundSlot[0])
+    }
+
+    @Test
     fun unsortedLinksAreNotSplit() {
         val sorted = strip(1000)
         val pairs = sorted.linkPairsInSlotOrder.toMutableList()

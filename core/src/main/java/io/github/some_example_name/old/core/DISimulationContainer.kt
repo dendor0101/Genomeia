@@ -9,6 +9,7 @@ import io.github.some_example_name.old.core.DIGameGlobalContainer.substrateSetti
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.NeuralEntity
+import io.github.some_example_name.old.entities.TriangleEntity
 import io.github.some_example_name.old.entities.NeuralLinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
@@ -121,11 +122,14 @@ object DISimulationContainer : DIContext, Disposable {
         isEditor = false
     )
 
+    /** Треугольники тел по аренам организмов, см. TriangleEntity. */
+    val triangleEntity = TriangleEntity(20_000)
+
     init {
         // Связывается здесь, а не конструктором: organEntity создаётся раньше всех,
         // потому что CellEntity/LinkEntity/NeuralLinkEntity уже зависят от него.
         // Без этого вызова арены просто не выдаются, и всё идёт прежним путём.
-        organEntity.bindEntities(cellEntity, particleEntity, linkEntity, neuralLinkEntity)
+        organEntity.bindEntities(cellEntity, particleEntity, linkEntity, neuralLinkEntity, triangleEntity)
     }
     override val pheromoneEntity = PheromoneEntity(
         gridManager = gridManager
@@ -146,7 +150,8 @@ object DISimulationContainer : DIContext, Disposable {
         linkEntity,
         neuralLinkEntity,
         pheromoneEntity,
-        substancesEntity
+        substancesEntity,
+        triangleEntity
     )
 
     override val genomeManager = GenomeManager(
@@ -351,6 +356,7 @@ object DISimulationContainer : DIContext, Disposable {
                 "cells" to cellEntity,
                 "links" to linkEntity,
                 "neuralLinks" to neuralLinkEntity,
+                "triangles" to triangleEntity,
                 "pheromones" to pheromoneEntity,
                 "substances" to substancesEntity
             ),

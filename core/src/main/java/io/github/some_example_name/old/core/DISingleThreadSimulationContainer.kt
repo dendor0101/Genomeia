@@ -9,6 +9,7 @@ import io.github.some_example_name.old.core.DIGameGlobalContainer.substrateSetti
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.NeuralEntity
+import io.github.some_example_name.old.entities.TriangleEntity
 import io.github.some_example_name.old.entities.NeuralLinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
@@ -102,9 +103,12 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
         isEditor = false
     )
 
+    /** Треугольники тел по аренам организмов, см. TriangleEntity. */
+    val triangleEntity = TriangleEntity(20_000)
+
     init {
         // См. комментарий в DISimulationContainer: organEntity создаётся раньше всех.
-        organEntity.bindEntities(cellEntity, particleEntity, linkEntity, neuralLinkEntity)
+        organEntity.bindEntities(cellEntity, particleEntity, linkEntity, neuralLinkEntity, triangleEntity)
     }
     override val pheromoneEntity = PheromoneEntity(
         gridManager = gridManager
@@ -125,7 +129,8 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
         linkEntity,
         neuralLinkEntity,
         pheromoneEntity,
-        substancesEntity
+        substancesEntity,
+        triangleEntity
     )
 
     override val genomeManager = GenomeManager(

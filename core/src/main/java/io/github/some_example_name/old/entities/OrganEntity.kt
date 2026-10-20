@@ -118,6 +118,9 @@ class OrganEntity(
     var neuralArenaCapacity = IntArray(maxAmount)
     var neuralArenaUsed = IntArray(maxAmount)
 
+    /** Начало арены треугольников организма (TriangleEntity), -1 — нет (геном без треугольников или старое сохранение). */
+    var triangleArenaBase = IntArray(maxAmount) { -1 }
+
     // ===================================================================================
     // СМЕРТЬ ОРГАНИЗМА
     //
@@ -192,17 +195,23 @@ class OrganEntity(
     private var particleEntityRef: Entity? = null
     private var linkEntityRef: Entity? = null
     private var neuralLinkEntityRef: Entity? = null
+    private var triangleEntityRef: TriangleEntity? = null
+
+    /** Треугольники тел, если они подключены (в мире — да, в редакторе — нет). */
+    val triangles: TriangleEntity? get() = triangleEntityRef
 
     fun bindEntities(
         cellEntity: Entity,
         particleEntity: Entity,
         linkEntity: Entity,
-        neuralLinkEntity: Entity? = null
+        neuralLinkEntity: Entity? = null,
+        triangleEntity: TriangleEntity? = null
     ) {
         cellEntityRef = cellEntity
         particleEntityRef = particleEntity
         linkEntityRef = linkEntity
         neuralLinkEntityRef = neuralLinkEntity
+        triangleEntityRef = triangleEntity
     }
 
     /** Есть ли у организма арена. Клетки без организма (organIndex == -1) идут общим путём. */
@@ -262,6 +271,16 @@ class OrganEntity(
             neuralArenaBase[organIndex] = neural.reserveRange(maxNeuralLinks + ARENA_GAP)
             neuralArenaCapacity[organIndex] = maxNeuralLinks
             neuralArenaUsed[organIndex] = 0
+        }
+
+        // Треугольники — по раскладке, слот = номер треугольника в ней. Слоты, оставшиеся от
+        // умершего организма, сбрасываются: сформированность наследовать нельзя.
+        val triangles = triangleEntityRef
+        val triangleCount = layout.trianglesInLayout
+        if (triangles != null && triangleCount > 0) {
+            val base = triangles.reserveRange(triangleCount + ARENA_GAP)
+            triangles.resetRange(base, triangleCount)
+            triangleArenaBase[organIndex] = base
         }
     }
 
@@ -386,6 +405,10 @@ class OrganEntity(
         if (neuralArenaBase[organIndex] != -1) {
             neuralLinkEntityRef?.releaseRange(neuralArenaBase[organIndex], neuralArenaCapacity[organIndex] + ARENA_GAP)
         }
+        if (triangleArenaBase[organIndex] != -1) {
+            val count = arenaLayout[organIndex]?.trianglesInLayout ?: 0
+            triangleEntityRef?.releaseRange(triangleArenaBase[organIndex], count + ARENA_GAP)
+        }
         liveCells[organIndex] = 0
         arenaLayout[organIndex] = null
         // Списки чистятся, но не выбрасываются: слот организма переиспользуется, и вместе
@@ -399,6 +422,7 @@ class OrganEntity(
         neuralArenaBase[organIndex] = -1
         neuralArenaCapacity[organIndex] = 0
         neuralArenaUsed[organIndex] = 0
+        triangleArenaBase[organIndex] = -1
     }
 
     override fun persistFields(state: EntityState) {
@@ -422,6 +446,7 @@ class OrganEntity(
         state.ints(::neuralArenaBase)
         state.ints(::neuralArenaCapacity)
         state.ints(::neuralArenaUsed)
+        state.ints(::triangleArenaBase)
         state.packed("neuralFreeSlots", write = { packFreeSlots(neuralFreeSlots) }, read = { unpackFreeSlots(it, neuralFreeSlots) })
         // arenaLayout — ссылка внутрь генома, её ставит restoreArenaLayouts.
     }
@@ -499,6 +524,7 @@ class OrganEntity(
         neuralArenaBase.clear(-1)
         neuralArenaCapacity.clear()
         neuralArenaUsed.clear()
+        triangleArenaBase.clear(-1)
         // Откатывать здесь нечего: курсор брони — это lastId самой сущности, а его
         // сбрасывает её собственный clear().
     }
@@ -527,6 +553,7 @@ class OrganEntity(
         neuralArenaBase = neuralArenaBase.resize(-1)
         neuralArenaCapacity = neuralArenaCapacity.resize()
         neuralArenaUsed = neuralArenaUsed.resize()
+        triangleArenaBase = triangleArenaBase.resize(-1)
     }
 
     companion object {

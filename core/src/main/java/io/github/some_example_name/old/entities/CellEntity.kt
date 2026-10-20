@@ -104,6 +104,12 @@ class CellEntity(
     var degreeOfShortening = FloatArray(maxAmount) { 1f }
     var pheromoneType = IntArray(maxAmount) { -1 }
     var linkAmount = IntArray(maxAmount) { 0 }
+
+    /**
+     * Сколько треугольников тела вокруг клетки сейчас сформировано (все три связи живы),
+     * см. TriangleEntity. Внутренняя клетка обязана иметь их все — иначе рядом щель.
+     */
+    var formedTriangles = IntArray(maxAmount)
     @Transient val organToIdToIndex = OrderedIntPairMap(maxAmount)
     var neuralConnections = Int2ObjectOpenHashMap<IntArrayList>()
 
@@ -472,6 +478,7 @@ class CellEntity(
         this.degreeOfShortening[cellIndex] = 1f
         this.pheromoneType[cellIndex] = pheromoneType
         linkAmount[cellIndex] = 0
+        formedTriangles[cellIndex] = 0
         // Индексы переиспользуются через deadStack, поэтому слоты связей нужно
         // обязательно вычистить: иначе новая клетка унаследует соседей мёртвой.
         clearCellLinks(cellIndex)
@@ -609,7 +616,7 @@ class CellEntity(
      * это на каждой связи, когда ничего не поменялось, незачем.
      */
     fun refreshOnEdge(cellIndex: Int) {
-        val onEdge = linkAmount[cellIndex] < interiorLinkCount(cellIndex)
+        val onEdge = !isInterior(cellIndex)
         if (isOnEdge[cellIndex] == onEdge) return
 
         isOnEdge[cellIndex] = onEdge
@@ -635,16 +642,28 @@ class CellEntity(
      * прежний порог. Int.MAX_VALUE — клетка граничная при любом числе связей (во взрослом
      * теле она у края).
      */
-    private fun interiorLinkCount(cellIndex: Int): Int {
+    /**
+     * Внутренняя ли клетка: по запечённой границе её организма, а без неё — по прежнему
+     * порогу числа связей.
+     *
+     * По запечённой: во взрослом теле она внутренняя (BakedLayout.interiorLinks), у неё
+     * не меньше связей, чем было там, и сформированы все её треугольники
+     * (BakedLayout.trianglesAroundSlot). Последнее ловит щель, которую число собственных
+     * связей не видит: порвалась связь между двумя соседями, а свои целы. У старых
+     * сохранений арены треугольников нет — тогда только по связям.
+     */
+    private fun isInterior(cellIndex: Int): Boolean {
         val organ = organIndex[cellIndex]
-        if (!organEntity.hasArena(organ)) return EDGE_LINK_THRESHOLD
+        if (!organEntity.hasArena(organ)) return linkAmount[cellIndex] >= EDGE_LINK_THRESHOLD
         val layout = organEntity.arenaLayout[organ]
-        if (layout == null || !layout.hasInteriorLinks) return EDGE_LINK_THRESHOLD
+        if (layout == null || !layout.hasInteriorLinks) return linkAmount[cellIndex] >= EDGE_LINK_THRESHOLD
         val slot = cellIndex - organEntity.cellArenaBase[organ]
         val links = layout.interiorLinksArray
-        if (slot >= links.size) return Int.MAX_VALUE
+        if (slot >= links.size) return false
         val required = links[slot]
-        return if (required == 0) Int.MAX_VALUE else required
+        if (required == 0 || linkAmount[cellIndex] < required) return false
+        if (organEntity.triangleArenaBase[organ] == -1) return true
+        return formedTriangles[cellIndex] >= layout.trianglesAroundSlot[slot]
     }
 
     fun deleteCell(cellIndex: Int) {
@@ -684,6 +703,7 @@ class CellEntity(
         this.degreeOfShortening[cellIndex] = 1f
         pheromoneType[cellIndex] = -1
         linkAmount[cellIndex] = 0
+        formedTriangles[cellIndex] = 0
         clearCellLinks(cellIndex)
         neuralConnections.remove(cellIndex)
 
@@ -717,6 +737,7 @@ class CellEntity(
         state.floats(::degreeOfShortening)
         state.ints(::pheromoneType)
         state.ints(::linkAmount)
+        state.ints(::formedTriangles)
         state.ints(::cellLinks, perSlot = MAX_LINKS_PER_CELL)
         state.ints(::cellLinkIds, perSlot = MAX_LINKS_PER_CELL)
         state.ints(::neuralIndexes)
@@ -856,6 +877,7 @@ class CellEntity(
         degreeOfShortening.clear(1f)
         pheromoneType.clear(-1)
         linkAmount.clear(0)
+        formedTriangles.clear()
         cellLinks.fill(-1, 0, bound shl LINKS_SHIFT)
         cellLinkIds.fill(-1, 0, bound shl LINKS_SHIFT)
         neuralConnections.clear()
@@ -894,6 +916,7 @@ class CellEntity(
         degreeOfShortening = degreeOfShortening.resize(1f)
         pheromoneType = pheromoneType.resize(-1)
         linkAmount = linkAmount.resize(0)
+        formedTriangles = formedTriangles.resize()
         // Массив связей растёт не как остальные: на клетку в нём MAX_LINKS_PER_CELL
         // слотов, поэтому и размер, и копируемый диапазон умножаются на них же.
         run {
