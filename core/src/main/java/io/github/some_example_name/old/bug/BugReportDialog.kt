@@ -34,7 +34,7 @@ import io.github.some_example_name.old.core.ui.w
 
 /**
  * Окно отчёта об ошибке: пояснение игрока, картинки и что сделать с .bug — сохранить,
- * поделиться, отправить на сервер (пока заглушка, см. BugUploader).
+ * поделиться, отправить на сервер (см. BugUploader).
  *
  * Отчёт собирается не при открытии окна, а при первой кнопке: в него должно попасть
  * пояснение. Для краша .bug уже собран обработчиком. Поменяли текст или картинки после
@@ -73,6 +73,7 @@ class BugReportDialog(
     private lateinit var imagesRow: VisTable
     private lateinit var imagesCell: Cell<Actor>
     private var closed = false
+    private var sending = false
 
     private var includeScreenshot = false
     private val attached = ArrayList<BugImage>()
@@ -335,9 +336,12 @@ class BugReportDialog(
     }
 
     private fun send() {
+        if (sending) return
         val file = ensureBug() ?: return
+        sending = true
         showStatus(bundle.get("bug.sending"))
         BugUploader.upload(file) { success, message ->
+            sending = false
             if (success) markHandled(file)
             showStatus(if (success) bundle.get("bug.sent") else bundle.get("bug.sendFailed") + message)
         }

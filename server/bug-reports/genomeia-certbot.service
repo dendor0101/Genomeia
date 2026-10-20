@@ -1,0 +1,8 @@
+[Unit]
+Description=Renew Genomeia IP HTTPS certificate
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/genomeia-certbot/bin/certbot renew --quiet --deploy-hook "systemctl reload nginx"

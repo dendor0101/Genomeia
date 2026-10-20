@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Genomeia — отчёты об ошибках</title>
+<style>
+  body { font: 16px system-ui, sans-serif; background: #101b25; color: #e7eff6; margin: 0; }
+  main { max-width: 1200px; margin: 48px auto; padding: 0 24px; }
+  h1 { font-size: 30px; } p { color: #adc2d3; }
+  a { color: #92dec7; } .table { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; margin: 28px 0; }
+  th, td { padding: 16px 12px; text-align: left; border-bottom: 1px solid #304151; }
+  th { color: #adc2d3; font-size: 13px; } .name { overflow-wrap: anywhere; min-width: 180px; }
+  .download { display: inline-block; background: #92dec7; color: #101b25; border-radius: 6px;
+    text-decoration: none; padding: 9px 14px; white-space: nowrap; }
+  nav { display: flex; gap: 24px; align-items: center; }
+</style>
+<main>
+  <h1>Genomeia · отчёты об ошибках</h1>
+  <p>Время получения указано в UTC. Файлы скачиваются в исходном формате .bug.</p>
+  <a href="/reports">Обновить список</a>
+  <div class="table">
+    <table>
+      <thead><tr><th>Файл</th><th>Получен</th><th>Версия</th><th>Платформа</th><th>Тип</th><th>Размер</th><th></th></tr></thead>
+      <tbody>
+      {% for report in reports %}
+        <tr>
+          <td class="name">{{ report.name }}</td><td>{{ report.created }}</td><td>{{ report.game }}</td>
+          <td>{{ report.platform }}</td><td>{{ report.kind }}</td>
+          <td>{{ '%.2f'|format(report.size / 1024 / 1024) }} МиБ</td>
+          <td><a class="download" href="{{ url_for('download', report_id=report.id) }}">Скачать</a></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7">Отчётов пока нет. Отправьте первый из игры.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <nav>
+    {% if page > 1 %}<a href="{{ url_for('reports', page=page - 1) }}">← Назад</a>{% endif %}
+    <span>Страница {{ page }}</span>
+    {% if has_next %}<a href="{{ url_for('reports', page=page + 1) }}">Далее →</a>{% endif %}
+  </nav>
+</main>
+</html>

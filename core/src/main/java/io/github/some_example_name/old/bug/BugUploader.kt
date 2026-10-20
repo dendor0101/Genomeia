@@ -4,56 +4,31 @@ import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Net
 import com.badlogic.gdx.files.FileHandle
 import com.badlogic.gdx.net.HttpRequestBuilder
+import com.badlogic.gdx.utils.JsonReader
+import com.badlogic.gdx.utils.StreamUtils
 import io.github.some_example_name.old.core.GameVersion
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
 
 /**
- * Отправка .bug на сервер — ЗАГЛУШКА.
+ * Отправка .bug на сервер Genomeia по HTTPS.
  *
  * Запрос — multipart/form-data из двух частей:
  *  - meta — JSON (BugMeta): версия, платформа, устройство, подпись краша. По нему сервер
  *    сортирует и группирует отчёты, не распаковывая файл;
  *  - bug  — сам .bug.
  *
- * Запрос настоящий (POST тела файла через Gdx.net, тот работает на всех платформах), но
- * сервера пока нет: адрес в домене .invalid, который по стандарту не существует нигде,
- * так что запрос гарантированно закончится ошибкой и никуда не уйдёт. Когда сервер
- * появится — поменять [UPLOAD_URL] и разобрать ответ.
+ * Успех — только подтверждение сервера с идентификатором и совпавшим размером файла.
+ * Исходный .bug остаётся у игрока и при успехе, и при ошибке сети.
  */
 object BugUploader {
 
-    const val UPLOAD_URL = "https://bugs.genomeia.invalid/upload"
+    const val UPLOAD_URL = "https://199.189.252.141/upload"
 
-    private const val TIMEOUT_MS = 15_000
-
-    /** Разделитель частей: случайная строка, которой заведомо нет ни в JSON, ни в zip-заголовках. */
-    private const val BOUNDARY = "----GenomeiaBug7f3c91e2a4d05b68"
-
-    private fun multipart(metaJson: String, bug: FileHandle): ByteArray {
-        val out = ByteArrayOutputStream(bug.length().toInt() + 4096)
-        fun line(text: String) = out.write((text + "\r\n").toByteArray(Charsets.UTF_8))
-
-        line("--$BOUNDARY")
-        line("Content-Disposition: form-data; name=\"meta\"")
-        line("Content-Type: application/json; charset=utf-8")
-        line("")
-        line(metaJson)
-
-        line("--$BOUNDARY")
-        line("Content-Disposition: form-data; name=\"bug\"; filename=\"${bug.name()}\"")
-        line("Content-Type: application/octet-stream")
-        line("")
-        bug.read().use { it.copyTo(out) }
-        line("")
-        line("--$BOUNDARY--")
-        return out.toByteArray()
-    }
+    private const val TIMEOUT_MS = 120_000
 
     /** [onResult] приходит в поток рендера: можно сразу трогать интерфейс. */
     fun upload(bug: FileHandle, onResult: (success: Boolean, message: String) -> Unit) {
         val body = try {
-            multipart(BugReports.meta(bug), bug)
+            BugUploadBody(BugReports.meta(bug), bug)
         } catch (e: Exception) {
             onResult(false, e.message ?: e::class.java.simpleName)
             return
@@ -62,26 +37,45 @@ object BugUploader {
             .newRequest()
             .method(Net.HttpMethods.POST)
             .url(UPLOAD_URL)
-            .header("Content-Type", "multipart/form-data; boundary=$BOUNDARY")
+            .header("Content-Type", "multipart/form-data; boundary=${body.boundary}")
             .header("X-Genomeia-Version", GameVersion.NAME)
             .timeout(TIMEOUT_MS)
             .build()
-        request.setContent(ByteArrayInputStream(body), body.size.toLong())
+        val stream = try {
+            body.openStream()
+        } catch (e: Exception) {
+            onResult(false, e.message ?: e::class.java.simpleName)
+            return
+        }
+        request.setContent(stream, body.length)
 
-        Gdx.net.sendHttpRequest(request, object : Net.HttpResponseListener {
+        val listener = object : Net.HttpResponseListener {
             override fun handleHttpResponse(response: Net.HttpResponse) {
+                StreamUtils.closeQuietly(stream)
                 val status = response.status.statusCode
-                val ok = status in 200..299
-                Gdx.app.postRunnable { onResult(ok, if (ok) "OK" else "HTTP $status") }
+                val ok = status == 201 && runCatching {
+                    val receipt = JsonReader().parse(response.resultAsString)
+                    receipt.getBoolean("uploaded", false) && receipt.getLong("size", -1) == body.fileSize &&
+                        receipt.getString("id", "").matches(Regex("[0-9a-f]{32}"))
+                }.getOrDefault(false)
+                val message = if (ok) "OK" else if (status == 201) "Invalid upload response" else "HTTP $status"
+                Gdx.app.postRunnable { onResult(ok, message) }
             }
 
             override fun failed(t: Throwable) {
+                StreamUtils.closeQuietly(stream)
                 Gdx.app.postRunnable { onResult(false, t.message ?: t::class.java.simpleName) }
             }
 
             override fun cancelled() {
+                StreamUtils.closeQuietly(stream)
                 Gdx.app.postRunnable { onResult(false, "cancelled") }
             }
-        })
+        }
+        try {
+            Gdx.net.sendHttpRequest(request, listener)
+        } catch (e: Exception) {
+            listener.failed(e)
+        }
     }
 }

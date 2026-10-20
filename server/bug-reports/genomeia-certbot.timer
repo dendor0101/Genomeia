@@ -1,0 +1,10 @@
+[Unit]
+Description=Check Genomeia IP HTTPS certificate twice daily
+
+[Timer]
+OnCalendar=*-*-* 00,12:00:00
+RandomizedDelaySec=3600
+Persistent=yes
+
+[Install]
+WantedBy=timers.target
