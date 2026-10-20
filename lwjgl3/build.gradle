@@ -273,8 +273,9 @@ tasks.register('genomeJsonCheck', JavaExec) {
 }
 
 // Допекание встроенных геномов (снимок для превью и т.п.) тем же кодом, что свои при запуске:
-// gradlew :lwjgl3:bakeBundledGenomes [-Pdir=каталог]. Ненулевой код — не допёкся или снимок
-// не повторился при втором выращивании.
+// gradlew :lwjgl3:bakeBundledGenomes [-Pdir=каталог] [-PrebakeInterior]. Ненулевой код — не
+// допёкся или снимок не повторился при втором выращивании. -PrebakeInterior — сначала
+// пересчитать границу тела у всех файлов (см. BakeBundledGenomes.kt).
 tasks.register('bakeBundledGenomes', JavaExec) {
   group = 'verification'
   description = 'Встроенные геномы допекаются, как свои при запуске игры, и снимок превью повторяется'
@@ -282,7 +283,8 @@ tasks.register('bakeBundledGenomes', JavaExec) {
   mainClass = 'io.github.some_example_name.lwjgl3.verification.BakeBundledGenomesKt'
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
-  args = [project.findProperty('dir') ?: 'assets/genomes']
+  args = [project.findProperty('dir') ?: 'assets/genomes'] +
+    (project.hasProperty('rebakeInterior') ? ['--rebake-interior'] : [])
 }
 
 // Запись и повтор бага целиком: gradlew :lwjgl3:bugReplayCheck

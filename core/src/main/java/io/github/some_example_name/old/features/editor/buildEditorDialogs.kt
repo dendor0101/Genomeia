@@ -28,6 +28,7 @@ import io.github.some_example_name.old.editor.system.logic.TryToRemove
 import io.github.some_example_name.old.features.editor.dialog.ActionDialog
 import io.github.some_example_name.old.features.editor.dialog.ActionDialogType
 import io.github.some_example_name.old.features.editor.dialog.MutateOrDivideDialog
+import io.github.some_example_name.old.systems.physics.CollisionManager.Companion.PARTICLE_MAX_RADIUS
 
 fun Stage.changeRemoveActionDialog(
     command: ShowChangeRemoveDialog,
@@ -70,7 +71,8 @@ fun Stage.mutateOrDivideDialog(
             onDivide.invoke(
                 DivideDialog(
                     clickedCell = command.clickedCell,
-                    newDividedCellPosition = command.newDividedCellPosition
+                    newDividedCellPosition = command.newDividedCellPosition,
+                    places = command.places
                 )
             )
         }
@@ -108,12 +110,17 @@ fun Stage.divideActionDialog(
     val dialogDivide = ActionDialog(
         clickedCell = command.clickedCell,
         newDividedCellPosition = command.newDividedCellPosition,
+        maxChildRadius = command.places.maxRadius,
         actionDialogType = ActionDialogType.DIVIDE,
         onDivide = { action ->
+            // Место — под выбранный в диалоге радиус; у команд из старых журналов таблицы
+            // нет, и место одно.
+            val position = command.places.positionFor(action.radius ?: PARTICLE_MAX_RADIUS)
+                ?: command.newDividedCellPosition
             onDivide.invoke(
                 TryToDivide(
                     clickedCellIndex = command.clickedCell.index,
-                    newDividedCellPosition = command.newDividedCellPosition,
+                    newDividedCellPosition = position,
                     divide = action.copy()
                 )
             )

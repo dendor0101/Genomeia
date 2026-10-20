@@ -121,7 +121,8 @@ class RCMSort(
         val cells = IntArray(cellIdsInSlotOrder.size) { cellOfGenomeId.get(cellIdsInSlotOrder[it]) }
         val interior = InteriorCells.find(
             xs = FloatArray(cells.size) { cellEntity.getX(cells[it]) },
-            ys = FloatArray(cells.size) { cellEntity.getY(cells[it]) }
+            ys = FloatArray(cells.size) { cellEntity.getY(cells[it]) },
+            rs = FloatArray(cells.size) { cellEntity.getRadius(cells[it]) }
         )
         return IntArray(cells.size) { slot ->
             if (interior[slot]) cellEntity.linkAmount[cells[slot]] else 0

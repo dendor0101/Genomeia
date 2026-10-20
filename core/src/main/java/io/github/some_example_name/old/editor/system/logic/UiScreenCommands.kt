@@ -6,7 +6,8 @@ sealed interface UiScreenCommands
 
 class ShowDivideDialog(
     val clickedCell: EditorCell,
-    val newDividedCellPosition: Pair<Float, Float>
+    val newDividedCellPosition: Pair<Float, Float>,
+    val places: DivisionPlaces
 ): UiScreenCommands
 
 class ShowMutateDialog(
@@ -19,6 +20,7 @@ class ShowMutateOrDivideDialog(
     val clickedCell: EditorCell,
     val parentCell: EditorCell?,
     val newDividedCellPosition: Pair<Float, Float>,
+    val places: DivisionPlaces,
     val currentTick: Int
 ): UiScreenCommands
 

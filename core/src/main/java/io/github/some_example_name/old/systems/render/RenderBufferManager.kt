@@ -235,6 +235,8 @@ class RenderBufferManager(
         val pColor = particleEntity.color
         val pRadius = particleEntity.radius
 
+        val inGrid = particleEntity.isInGrid
+
         // Тип «не клетка» один на всех — считается один раз, а не на каждой частице.
         val nonCellType = (cellList.size + 1)
 
@@ -259,8 +261,11 @@ class RenderBufferManager(
                 // Без ядра в ностальгическом режиме: ядро — признак клетки.
                 isCell = false
             )
-            // В отладке — плоская и непрозрачная, как и была.
-            back.look[writeIndex] = 0
+            // В отладке — плоская и непрозрачная, как и была. Из фильтров её касается только
+            // «коллизии»: в сетке столкновений она, как и граничные клетки.
+            back.look[writeIndex] =
+                if (frameFilter == DebugFilter.COLLISION) CellLook.look(0, filter = CellLook.collisionFilterByte(inGrid[particleIndex]))
+                else 0
 
             writeIndex++
         }
@@ -318,7 +323,7 @@ class RenderBufferManager(
             // Сигнал действия — выход клетки: мышца сжимается, хвост тянет, присоска
             // присасывается ровно по нему. От него анимация рисунка, см. DebugCellPalette.
             val signal = cellEntity.neuronImpulseOutput[cellIndex]
-            back.look[writeIndex] = palette.look(cellType, signal, filter = filterByte(cellIndex, signal))
+            back.look[writeIndex] = palette.look(cellType, signal, filter = filterByte(cellIndex, particleIndex, signal))
             writeDirection(cellIndex, cellType, particleIndex, x, y, angleCos, angleSin, radius, signal)
         } else {
             back.look[writeIndex] = 0
@@ -326,13 +331,14 @@ class RenderBufferManager(
     }
 
     /**
-     * Байт фильтра отладки для клетки (CellLook): заполненность энергией или
-     * нормализованный выход. Без фильтра ноль — лишних чтений нет.
+     * Байт фильтра отладки для клетки (CellLook): заполненность энергией, нормализованный
+     * выход или участие в столкновениях. Без фильтра ноль — лишних чтений нет.
      */
-    private fun filterByte(cellIndex: Int, signal: Float): Int = when (frameFilter) {
+    private fun filterByte(cellIndex: Int, particleIndex: Int, signal: Float): Int = when (frameFilter) {
         DebugFilter.ORIGINAL -> 0
         DebugFilter.ENERGY -> CellLook.energyFilterByte(cellEntity.energy[cellIndex], cellEntity.maxEnergy[cellIndex])
         DebugFilter.SIGNAL -> CellLook.signalFilterByte(signal)
+        DebugFilter.COLLISION -> CellLook.collisionFilterByte(particleEntity.isInGrid[particleIndex])
     }
 
     /** Стрелка направления, луч глаза или жгутик хвоста — в оверлей, см. DebugCellPalette. */

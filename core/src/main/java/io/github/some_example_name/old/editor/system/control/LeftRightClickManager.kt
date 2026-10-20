@@ -19,6 +19,7 @@ import io.github.some_example_name.old.editor.system.simulation.EditorSimulation
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.NeuralLinkEntity
+import io.github.some_example_name.old.systems.physics.CollisionManager.Companion.PARTICLE_MAX_RADIUS
 
 class LeftRightClickManager(
     val commandEditorStackManager: CommandEditorStackManager,
@@ -36,10 +37,14 @@ class LeftRightClickManager(
     fun leftClick(clickedIndex: Int, clickedCell: EditorCell, isCtrl: Boolean) {
         val genomeStageInstruction = editorSimulationSystem.genomeStageInstruction
         if (!isCtrl) {
-            val newDividedCellPosition = cellSearchManager.getPositionForNewCell(
+            // Место ищется под каждый радиус дочери: мелкая помещается там, где крупной
+            // тесно. Делить можно, если влезает хоть самая мелкая; диалог потом не даст
+            // выбрать радиус крупнее помещающегося.
+            val places = cellSearchManager.getDivisionPlaces(
                 clickedCellIndex = clickedIndex,
                 symmetryManager = symmetryManager
             )
+            val newDividedCellPosition = places.maxRadius?.let { places.positionFor(it) }
 
             uiScreenCommands = when {
                 clickedCell.isPhantom && clickedCell.divide != null -> {
@@ -53,6 +58,7 @@ class LeftRightClickManager(
                             clickedCell.parentIndex
                         ) else null,
                         newDividedCellPosition = newDividedCellPosition,
+                        places = places,
                         currentTick = currentTick
                     )
                 }
@@ -103,11 +109,12 @@ class LeftRightClickManager(
         when (tryActionManager.defaultActionType) {
             LastActionType.DIVIDE -> {
                 if (!clickedCell.isPhantom && clickedCell.divide == null ) {
-                    val newDividedCellPosition = cellSearchManager.getPositionForNewCell(
-                        clickedCellIndex = clickedIndex,
-                        symmetryManager = symmetryManager
-                    )
                     tryActionManager.defaultAction?.let {
+                        val newDividedCellPosition = cellSearchManager.getPositionForNewCell(
+                            clickedCellIndex = clickedIndex,
+                            childRadius = it.radius ?: PARTICLE_MAX_RADIUS,
+                            symmetryManager = symmetryManager
+                        )
                         tryActionManager.tryToDivide(clickedIndex, newDividedCellPosition, it.copy(
                             id = -1,
                             angle = null,

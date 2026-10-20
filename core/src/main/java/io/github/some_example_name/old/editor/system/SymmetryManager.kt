@@ -4,7 +4,9 @@ import kotlinx.serialization.Serializable
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.gridHeight
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.gridWidth
-import io.github.some_example_name.old.core.utils.findNewOptimalCellPosition
+import io.github.some_example_name.old.core.utils.START_EDITOR_CELL_X
+import io.github.some_example_name.old.core.utils.START_EDITOR_CELL_Y
+import io.github.some_example_name.old.editor.geometry.CellPlacement
 import io.github.some_example_name.old.editor.entities.EditorCell
 import io.github.some_example_name.old.entities.ParticleEntity
 import kotlin.math.abs
@@ -213,21 +215,26 @@ class SymmetryManager(
         }
     }
 
+    /**
+     * Место для дочери радиуса [childRadius] у клетки [clickedCell] с учётом симметрии.
+     * Сетки (квадратная, треугольная) ставят дочь в свой узел, какого бы радиуса она ни была:
+     * шаг сетки игрок выбирает сам.
+     */
     fun newPoint(
         clickedCell: EditorCell,
-        xs: MutableList<Float>,
-        ys: MutableList<Float>
+        childRadius: Float,
+        neighbours: PlacementNeighbours
     ): Pair<Float, Float>? {
         val symmetryMode = symmetryMode
 
         return when (symmetryMode) {
             Axial -> {
-                findNewOptimalCellPosition(clickedCell.x, clickedCell.y, xs, ys)?.let {
+                findOptimalPosition(clickedCell, childRadius, neighbours)?.let {
                     findAxialSymmetryPoint(it, null)
                 }
             }
 
-            NoSymmetry -> findNewOptimalCellPosition(clickedCell.x, clickedCell.y, xs, ys)
+            NoSymmetry -> findOptimalPosition(clickedCell, childRadius, neighbours)
 
             is SquareGrid -> {
                 val step = symmetryMode.step
@@ -248,7 +255,7 @@ class SymmetryManager(
                     Pair(cx + step, cy + step)
                 )
 
-                findBestFreePosition(candidates, xs, ys, ox, oy)
+                findBestFreePosition(candidates, neighbours, ox, oy)
             }
 
             is TriangleGrid -> {
@@ -270,15 +277,41 @@ class SymmetryManager(
                     Pair(cx - step / 2f, cy - rowHeight)    // -120°
                 )
 
-                findBestFreePosition(candidates, xs, ys, ox, oy)
+                findBestFreePosition(candidates, neighbours, ox, oy)
             }
         }
     }
 
+    /**
+     * Как далеко от родителя лежат узлы-кандидаты сетки (с запасом): соседей для проверки
+     * занятости узла надо собирать хотя бы так далеко. Без сетки — 0.
+     */
+    fun candidateReach(): Float = when (val mode = symmetryMode) {
+        is SquareGrid -> mode.step * 1.5f
+        is TriangleGrid -> mode.step * 1.1f
+        else -> 0f
+    }
+
+    private fun findOptimalPosition(
+        clickedCell: EditorCell,
+        childRadius: Float,
+        neighbours: PlacementNeighbours
+    ): Pair<Float, Float>? = CellPlacement.findPosition(
+        parentX = clickedCell.x,
+        parentY = clickedCell.y,
+        parentRadius = clickedCell.radius,
+        childRadius = childRadius,
+        nx = neighbours.x,
+        ny = neighbours.y,
+        nr = neighbours.r,
+        count = neighbours.count,
+        targetX = START_EDITOR_CELL_X,
+        targetY = START_EDITOR_CELL_Y
+    )
+
     private fun findBestFreePosition(
         candidates: List<Pair<Float, Float>>,
-        xs: MutableList<Float>,
-        ys: MutableList<Float>,
+        neighbours: PlacementNeighbours,
         targetX: Float,
         targetY: Float
     ): Pair<Float, Float>? {
@@ -288,8 +321,8 @@ class SymmetryManager(
         for (cand in candidates) {
             // === ПРОВЕРКА ЗАНЯТОСТИ ЧЕРЕЗ РАССТОЯНИЕ (а не ==) ===
             var occupied = false
-            for (i in xs.indices) {
-                if (abs(xs[i] - cand.first) < EPSILON && abs(ys[i] - cand.second) < EPSILON) {
+            for (i in 0 until neighbours.count) {
+                if (abs(neighbours.x[i] - cand.first) < EPSILON && abs(neighbours.y[i] - cand.second) < EPSILON) {
                     occupied = true
                     break
                 }

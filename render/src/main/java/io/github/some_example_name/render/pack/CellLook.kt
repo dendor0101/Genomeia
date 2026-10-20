@@ -14,7 +14,8 @@ package io.github.some_example_name.render.pack
  *  - transparency — 0 непрозрачная, 255 невидимая. Нужна «призраку» в редакторе генома —
  *    клетке, которая появится на следующей стадии.
  *  - filter — значение для фильтра отладки (DebugFilter): заполненность энергией
- *    ([energyFilterByte]) или нормализованный нейросигнал ([signalFilterByte]). Какой из них
+ *    ([energyFilterByte]), нормализованный нейросигнал ([signalFilterByte]) или участие в
+ *    столкновениях ([collisionFilterByte]). Какой из них
  *    лежит в байте, решает тот, кто упаковал кадр: фильтр выбран один на кадр и едет с ним.
  *
  * Ноль во всех байтах — непрозрачная клетка без рисунка и без сигнала, то есть ровно
@@ -150,6 +151,9 @@ object CellLook {
         val normalized = signal / (Math.abs(signal) + SIGNAL_KNEE)
         return Math.round(normalized * 127f) and 0xFF
     }
+
+    /** Фильтр «коллизии»: частица в сетке столкновений — 255, вне её — 0. */
+    fun collisionFilterByte(inGrid: Boolean): Int = if (inGrid) 255 else 0
 
     /** |сигнал|, при котором фильтр «нейросигнал» проходит половину шкалы. */
     const val SIGNAL_KNEE = 0.25f

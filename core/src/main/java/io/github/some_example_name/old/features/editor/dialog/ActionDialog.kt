@@ -8,6 +8,7 @@ import io.github.some_example_name.old.core.DIGameGlobalContainer.game
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.cellList
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.cellPalette
 import io.github.some_example_name.old.editor.entities.EditorCell
+import io.github.some_example_name.old.editor.geometry.CellPlacement
 import io.github.some_example_name.old.editor.system.ActionDialogSystem
 import io.github.some_example_name.old.editor.undo_redo_commands.hasCellMutation
 import io.github.some_example_name.old.features.editor.colorPickerDialog
@@ -35,6 +36,8 @@ class ActionDialog(
     val clickedCell: EditorCell,
     val actionDialogType: ActionDialogType,
     newDividedCellPosition: Pair<Float, Float>? = null,
+    /** Деление: самый крупный радиус дочери, для которого есть место; null — без ограничения. */
+    maxChildRadius: Float? = null,
     val onDivide: ((Action) -> Unit)? = null,
     val onChange: ((Action) -> Unit)? = null,
     val onRemove: (() -> Unit)? = null,
@@ -43,6 +46,9 @@ class ActionDialog(
 ) : VisDialog("${bundle.get("button.cellId")} ${clickedCell.id}"), CellDialog {
 
     override val actionSystem = ActionDialogSystem(actionDialogType, newDividedCellPosition, clickedCell)
+
+    /** Верх слайдера радиуса: крупнее места для дочери нет. */
+    private val radiusLimit = maxChildRadius ?: CellPlacement.CHILD_RADIUS_MAX
 
     /** Кружок «как будет выглядеть клетка»; секции крутят на нём стрелку направления. */
     override var circleWidget: CircleWidget? = null
@@ -107,17 +113,26 @@ class ActionDialog(
 
         if (actionDialogType == ActionDialogType.DIVIDE || actionDialogType == ActionDialogType.CHANGE_REMOVE) {
             //Настройка радиуса клетки при делении
-            val defaultRadius = actionSystem.action.radius ?: PARTICLE_MAX_RADIUS
+            // Место есть только под мелкую дочь — радиус по умолчанию сразу самый крупный
+            // из помещающихся, иначе деление встало бы на место, посчитанное под другой.
+            val defaultRadius = minOf(actionSystem.action.radius ?: PARTICLE_MAX_RADIUS, radiusLimit)
+            if (defaultRadius != (actionSystem.action.radius ?: PARTICLE_MAX_RADIUS)) {
+                actionSystem.action = actionSystem.action.copy(radius = defaultRadius)
+            }
             val radiusLabel = visLabel("${bundle.get("button.radius")}: $defaultRadius", font = game.extraLargeFont).hint(bundle.get("editor.hint.radius"))
             row()
-            visSlider(
-                0.2f, 0.5f, 0.01f, value = defaultRadius,
-                onValueChange = {
-                    val radius = round(it * 100f) / 100f
-                    actionSystem.action = actionSystem.action.copy(radius = radius)
-                    radiusLabel.setText("${bundle.get("button.radius")}: $radius")
-                }) { growX().expandX() }.hint(bundle.get("editor.hint.radius"))
-            row()
+            // Место только под самую мелкую — выбирать нечего, а слайдер с равными краями
+            // делит на ноль, рисуя ползунок.
+            if (radiusLimit > CellPlacement.CHILD_RADIUS_MIN) {
+                visSlider(
+                    CellPlacement.CHILD_RADIUS_MIN, radiusLimit, CellPlacement.CHILD_RADIUS_STEP, value = defaultRadius,
+                    onValueChange = {
+                        val radius = round(it * 100f) / 100f
+                        actionSystem.action = actionSystem.action.copy(radius = radius)
+                        radiusLabel.setText("${bundle.get("button.radius")}: $radius")
+                    }) { growX().expandX() }.hint(bundle.get("editor.hint.radius"))
+                row()
+            }
         }
 
         visTable {
