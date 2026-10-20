@@ -117,6 +117,7 @@ private class BakeBundledGenomes(
             if (genome.neuralLinksPeak == null) problems += "нет пика нейросвязей"
             else if (rebaked.neuralLinksPeak != genome.neuralLinksPeak) problems += "повторное выращивание дало другой пик нейросвязей"
             if (layout == null || !layout.hasInteriorLinks) problems += "нет границы тела"
+            else if (!layout.hasCurrentInterior) problems += "граница прежнего признака (interiorVersion ${layout.interiorVersion})"
             else if (layout.withInteriorFrom(rebaked.sortedGraph).interiorLinks != layout.interiorLinks) {
                 problems += "повторное выращивание дало другую границу"
             }

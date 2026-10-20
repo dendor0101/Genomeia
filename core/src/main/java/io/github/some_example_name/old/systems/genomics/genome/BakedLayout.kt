@@ -9,6 +9,15 @@ import kotlinx.serialization.Transient
 import kotlinx.serialization.protobuf.ProtoNumber
 
 /**
+ * Версия признака границы тела (BakedLayout.interiorVersion), которым печёт InteriorCells.
+ *  - 0 — «рядом нет места для новой клетки» (19.10), с фиксированными расстояниями редактора;
+ *  - 1 — внешний контур объединения дисков клеток с их радиусами (20.10): граница без швов.
+ * Поменял признак — увеличь: свои геномы игроков перепекутся при запуске, встроенные —
+ * :lwjgl3:bakeBundledGenomes.
+ */
+const val INTERIOR_VERSION = 1
+
+/**
  * Запечённая раскладка организма: в каком порядке его клетки, связи и нейросвязи должны
  * лечь в арены.
  *
@@ -91,11 +100,22 @@ data class BakedLayout(
      *
      * Пусто у геномов, запечённых раньше: тогда работает прежний порог по числу связей.
      */
-    @ProtoNumber(6) val interiorLinks: List<Int> = emptyList()
+    @ProtoNumber(6) val interiorLinks: List<Int> = emptyList(),
+
+    /**
+     * Каким признаком запечена граница [interiorLinks] — см. [INTERIOR_VERSION]. Ноль — у
+     * раскладок, запечённых до этого поля, то есть прежним признаком «нет места для новой
+     * клетки»: такую границу GenomeImport.withBaking перепекает, как и отсутствующую.
+     * Симуляция поле не читает — оно только для допекания.
+     */
+    @ProtoNumber(7) val interiorVersion: Int = 0
 ) {
 
     /** Есть ли запечённая граница — у старых раскладок её нет. */
     val hasInteriorLinks: Boolean get() = interiorLinks.isNotEmpty() && interiorLinks.size == cellsInLayout
+
+    /** Граница есть и запечена нынешним признаком — перепекать её незачем. */
+    val hasCurrentInterior: Boolean get() = hasInteriorLinks && interiorVersion >= INTERIOR_VERSION
 
     /** [interiorLinks] массивом: читается при каждом изменении связей клетки. */
     @Transient
@@ -108,10 +128,13 @@ data class BakedLayout(
      */
     fun withInteriorFrom(other: BakedLayout?): BakedLayout {
         if (other == null || !other.hasInteriorLinks) return this
-        return copy(interiorLinks = cellGenomeIdsInSlotOrder.map { genomeId ->
-            val slot = other.slotByCellGenomeId.get(genomeId)
-            if (slot == -1) 0 else other.interiorLinks[slot]
-        })
+        return copy(
+            interiorLinks = cellGenomeIdsInSlotOrder.map { genomeId ->
+                val slot = other.slotByCellGenomeId.get(genomeId)
+                if (slot == -1) 0 else other.interiorLinks[slot]
+            },
+            interiorVersion = other.interiorVersion
+        )
     }
 
     /**

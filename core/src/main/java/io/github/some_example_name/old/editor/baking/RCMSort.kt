@@ -4,6 +4,7 @@ import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.NeuralLinkEntity
 import io.github.some_example_name.old.systems.genomics.genome.BakedLayout
+import io.github.some_example_name.old.systems.genomics.genome.INTERIOR_VERSION
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
 
 /**
@@ -79,6 +80,7 @@ class RCMSort(
 
         return BakedLayout(
             interiorLinks = interiorLinks(organIndex, cellIdsInSlotOrder).toList(),
+            interiorVersion = INTERIOR_VERSION,
             triangleSlots = triangles.first,
             triangleRestArea2 = triangles.second,
             cellGenomeIdsInSlotOrder = cellIdsInSlotOrder.toList(),

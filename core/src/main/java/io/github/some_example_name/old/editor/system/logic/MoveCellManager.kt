@@ -29,10 +29,12 @@ class MoveCellManager(
         val parentCellY = particleEntity.y[parentIndex]
 
         val (finalX, finalY) = setMinMaxDistForChildCellToParent(
-            command.x,
-            command.y,
-            parentCellX,
-            parentCellY
+            childCellX = command.x,
+            childCellY = command.y,
+            childRadius = particleEntity.radius[grabbedCellIndex],
+            parentCellX = parentCellX,
+            parentCellY = parentCellY,
+            parentRadius = particleEntity.radius[parentIndex]
         )
 
         particleEntity.x[grabbedCellIndex] = finalX

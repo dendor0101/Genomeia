@@ -85,7 +85,10 @@ object GenomeImport {
      *    падала игра, когда в мир ставили старый геном;
      *  - снимка для превью (preview == null) — геном сохранён до появления превью;
      *  - границы тела в раскладке (BakedLayout.interiorLinks) — геном сохранён до неё.
-     *    Без неё граничные клетки определяются прежним порогом в шесть связей.
+     *    Без неё граничные клетки определяются прежним порогом в шесть связей. Граница,
+     *    запечённая прежним признаком (BakedLayout.interiorVersion меньше нынешнего), тоже
+     *    перепекается: иначе у своего генома игрока остались бы клетки на краю тела, которые
+     *    считаются внутренними и ни с чем не сталкиваются (A-11, отчёт 20.10 19:49).
      *  - пика нейросвязей (Genome.neuralLinksPeak) — без него у организма нет арены
      *    нейросвязей, и они идут в общий пул.
      *
@@ -97,8 +100,9 @@ object GenomeImport {
         if (genome.stageInstruction.isEmpty()) return null
         val needsLayout = genome.cellsAmount <= 0
         val layout = genome.sortedGraph
-        // Граница тела (BakedLayout.interiorLinks) появилась позже раскладки.
-        val needsInterior = layout != null && layout.cellsInLayout > 0 && !layout.hasInteriorLinks
+        // Граница тела (BakedLayout.interiorLinks) появилась позже раскладки, а её признак
+        // с тех пор менялся (BakedLayout.interiorVersion).
+        val needsInterior = layout != null && layout.cellsInLayout > 0 && !layout.hasCurrentInterior
         // Пик нейросвязей (ёмкость их арены) появился ещё позже.
         val needsNeuralPeak = genome.neuralLinksPeak == null
         if (!needsLayout && genome.preview != null && !needsInterior && !needsNeuralPeak) return null

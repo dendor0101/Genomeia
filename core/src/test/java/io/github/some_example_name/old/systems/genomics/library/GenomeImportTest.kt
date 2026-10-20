@@ -2,6 +2,7 @@ package io.github.some_example_name.old.systems.genomics.library
 
 import com.badlogic.gdx.files.FileHandle
 import io.github.some_example_name.old.systems.genomics.genome.BakedLayout
+import io.github.some_example_name.old.systems.genomics.genome.INTERIOR_VERSION
 import io.github.some_example_name.old.systems.genomics.genome.Genome
 import io.github.some_example_name.old.systems.genomics.genome.GenomePreview
 import io.github.some_example_name.old.systems.genomics.genome.decodeGenome
@@ -205,7 +206,8 @@ class GenomeImportTest {
         val bakerWithInterior = Baker { g, name ->
             g.copy(name = name, sortedGraph = BakedLayout(
                 cellGenomeIdsInSlotOrder = listOf(7, 5, 3),
-                interiorLinks = listOf(6, 0, 4)
+                interiorLinks = listOf(6, 0, 4),
+                interiorVersion = INTERIOR_VERSION
             ))
         }
 
@@ -219,6 +221,13 @@ class GenomeImportTest {
         assertTrue(rebaked.preview === genome.preview)
         // Второй раз печь нечего.
         assertEquals(null, GenomeImport.withBaking(rebaked, bakerWithInterior))
+
+        // Граница прежнего признака (версия 0) перепекается, хотя она есть; порядок слотов свой.
+        val outdated = rebaked.copy(sortedGraph = layout.copy(interiorLinks = listOf(1, 1, 1), interiorVersion = 0))
+        val updated = assertNotNull(GenomeImport.withBaking(outdated, bakerWithInterior)).sortedGraph!!
+        assertEquals(listOf(5, 7, 9), updated.cellGenomeIdsInSlotOrder)
+        assertEquals(listOf(0, 6, 0), updated.interiorLinks)
+        assertEquals(INTERIOR_VERSION, updated.interiorVersion)
     }
 
     @Test
