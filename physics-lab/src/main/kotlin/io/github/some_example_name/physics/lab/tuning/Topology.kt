@@ -3,6 +3,7 @@ package io.github.some_example_name.physics.lab.tuning
 import io.github.some_example_name.physics.lab.inspection.DemoInspector
 import io.github.some_example_name.physics.lab.session.DemoSession
 import io.github.some_example_name.physics.BodyDefinition
+import io.github.some_example_name.physics.probeCells
 import kotlin.math.abs
 import kotlin.math.sqrt
 
@@ -23,6 +24,8 @@ class Topology private constructor(
     val conB: IntArray,
     val conRest: DoubleArray,
     val conMuscle: IntArray,
+    /** Связи контура в порядке ядра; SwimSolver не разрушает топологию. */
+    val boundaryConstraints: IntArray,
     val triA: IntArray,
     val triB: IntArray,
     val triC: IntArray,
@@ -31,6 +34,7 @@ class Topology private constructor(
     val boundA: IntArray,
     /** Внутренняя вершина граничного ребра, -1 у голого. См. DemoSession.boundOpp. */
     val boundOpp: IntArray,
+    val boundaryOrientation: ByteArray,
     val boundB: IntArray,
     val rigidBones: Array<IntArray>,
     /** Номер жёсткой кости у клетки, -1 если не в кости. */
@@ -47,6 +51,10 @@ class Topology private constructor(
 
     /** Клетки без единой связи — свободные частицы, см. FREE_PARTICLES в демо. */
     val isFree: BooleanArray,
+
+    /** Открытые клетки для контактов: сумма углов может открыть клетку даже
+     * при отсутствии граничного ребра. isFree для этого недостаточно. */
+    val contactProbes: BooleanArray,
 
     /**
      * ИЗГИБ ГРАНИЧНОГО КОНТУРА: пары «через одну» вдоль границы плюс длина покоя.
@@ -127,11 +135,14 @@ class Topology private constructor(
                 conA = f<IntArray>("conA").copyOf(f("conCount")), conB = f<IntArray>("conB").copyOf(f("conCount")),
                 conRest = f<DoubleArray>("conRest").copyOf(f("conCount")),
                 conMuscle = f<IntArray>("conMuscle").copyOf(f("conCount")),
+                boundaryConstraints = (0 until f<Int>("conCount"))
+                    .filter { f<BooleanArray>("conBoundary")[it] }.toIntArray(),
                 triA = body.triA, triB = body.triB, triC = body.triC,
                 triRestArea2 = body.triRestArea2, triMuscle = f("triMuscle"),
                 boundA = f<IntArray>("boundA").copyOf(f("boundCount")),
                 boundB = f<IntArray>("boundB").copyOf(f("boundCount")),
                 boundOpp = f<IntArray>("boundOpp").copyOf(f("boundCount")),
+                boundaryOrientation = demo.state.localBoundary.orientation.copyOf(f("boundCount")),
                 rigidBones = f("rigidBones"),
                 boneRestQx = f("boneRestQx"), boneRestQy = f("boneRestQy"),
                 muscleCount = body.muscleClusters.size,
@@ -139,6 +150,7 @@ class Topology private constructor(
                 organismOf = f("organismOf"),
                 boneOf = f("boneOf"),
                 isFree = f("isFree"),
+                contactProbes = demo.state.probeCells().copyOf(),
                 organismCount = f("organismCount"),
                 organismSize = f("organismSize"),
                 bendA = ba.toIntArray(), bendB = bb.toIntArray(),

@@ -7,38 +7,70 @@ import kotlin.math.sqrt
 fun BodyState.bendCompliance(): Double = BEND_LEVELS[bendLevel]
 
 fun BodyState.solveConstraints(h: Double) {
+    if (conCount == 0) return
     val alpha = SOFT_COMPLIANCE / (h * h)
     // ВСЁ В ЛОКАЛЬНЫЕ. Стадия идёт 64 раза за тик по пяти тысячам связей, и на таком
     // числе проходов заметно даже обращение к полю: у lateinit оно с проверкой.
     val px = px; val py = py; val invMass = invMass
     val conA = conA; val conB = conB; val conRest = conRest; val conMuscle = conMuscle
     val conDead = conDead; val ms = muscleScaleOf
-    // Направление обхода ЧЕРЕДУЕТСЯ. См. sweepBackwards. Индексом, а не диапазоном:
-    // диапазон с переменным направлением — объект с итератором на каждый шаг.
-    val step = if (sweepBackwards) -1 else 1
-    var c = if (sweepBackwards) conCount - 1 else 0
-    var left = conCount
-    while (left > 0) {
-        left--
-        val cc = c
-        c += step
-        // Порванная связь не тянет ни мгновения — даже до пересборки топологии.
-        if (conDead[cc]) continue
-        val i = conA[cc]; val j = conB[cc]
-        val wi = invMass[i]; val wj = invMass[j]
-        val w = wi + wj
-        if (w == 0.0) continue
-        var dx = px[i] - px[j]
-        var dy = py[i] - py[j]
-        val len = sqrt(dx * dx + dy * dy)
-        if (len < 1e-12) continue
-        dx /= len; dy /= len
-        val m = conMuscle[cc]
-        val rest = conRest[cc] * (if (m < 0) 1.0 else ms[m])
-        val dL = -(len - rest) / (w + alpha)
-        px[i] += dx * dL * wi; py[i] += dy * dL * wi
-        px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
+    val plan = distanceSweepOrder
+    // План целого графа не должен оставлять цену умерших связей после упаковки.
+    // Для укороченного списка используем плотный проход ниже; reset возвращает
+    // исходный граф и снова делает план применимым. Порогов по доле смертей нет.
+    if (plan != null && conCount == plan.forward.size) {
+        val order = plan.forward
+        val planA = plan.particleA; val planB = plan.particleB
+        // Обратить весь список достаточно: последовательность связей КАЖДОЙ
+        // частицы тоже обратится. Второй план с теми же зависимостями не нужен.
+        if (sweepBackwards) {
+            for (k in order.lastIndex downTo 0) {
+                val c = order[k]
+                solveDistanceConstraint(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, alpha)
+            }
+        } else {
+            for (k in order.indices) {
+                val c = order[k]
+                solveDistanceConstraint(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, alpha)
+            }
+        }
+        return
     }
+    // Направление прежнее, но шаг каждого цикла постоянный. Так JIT видит
+    // обычный счётный цикл; формула ниже разворачивается Kotlin-компилятором.
+    if (sweepBackwards) {
+        for (c in conCount - 1 downTo 0) {
+            solveDistanceConstraint(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, alpha)
+        }
+    } else {
+        for (c in 0 until conCount) {
+            solveDistanceConstraint(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, alpha)
+        }
+    }
+}
+
+@Suppress("NOTHING_TO_INLINE")
+internal inline fun solveDistanceConstraint(
+    c: Int, endpoint: Int, px: DoubleArray, py: DoubleArray, invMass: DoubleArray,
+    conA: IntArray, conB: IntArray, conRest: DoubleArray, conMuscle: IntArray,
+    conDead: BooleanArray, ms: DoubleArray, alpha: Double,
+) {
+    // Порванная связь не тянет ни мгновения — даже до пересборки топологии.
+    if (conDead[c]) return
+    val i = conA[endpoint]; val j = conB[endpoint]
+    val wi = invMass[i]; val wj = invMass[j]
+    val w = wi + wj
+    if (w == 0.0) return
+    var dx = px[i] - px[j]
+    var dy = py[i] - py[j]
+    val len = sqrt(dx * dx + dy * dy)
+    if (len < 1e-12) return
+    dx /= len; dy /= len
+    val m = conMuscle[c]
+    val rest = conRest[c] * (if (m < 0) 1.0 else ms[m])
+    val dL = -(len - rest) / (w + alpha)
+    px[i] += dx * dL * wi; py[i] += dy * dL * wi
+    px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
 }
 
 fun BodyState.solveLinkMaxLength() {
@@ -47,17 +79,21 @@ fun BodyState.solveLinkMaxLength() {
     val px = px; val py = py; val invMass = invMass
     val conA = conA; val conB = conB; val conRest = conRest; val conMuscle = conMuscle
     val conDead = conDead; val ms = muscleScaleOf
-    for (c in 0 until conCount) {
+    // Список дополняется killEdgeNow прямо в этом проходе. Внутренние связи
+    // по-прежнему участвуют в solveConstraints, но здесь их координаты не читаем.
+    val limits = boundaryLinkLimits
+    limits.beginPass()
+    var cursor = 0
+    while (cursor < limits.count) {
+        val c = limits.ids[cursor++]
+        if (c < 0) continue
         if (conDead[c]) continue
         val i = conA[c]; val j = conB[c]
-        val wi = invMass[i]; val wj = invMass[j]
-        val w = wi + wj
-        if (w == 0.0) continue
         val dx = px[i] - px[j]
         val dy = py[i] - py[j]
         // КОРЕНЬ БЕРЁТСЯ ТОЛЬКО КОГДА НУЖЕН.
         //
-        // Стадия идёт 144 раза за тик по пяти тысячам связей, и у подавляющего
+        // Стадия идёт 144 раза за тик по связям текущего контура, и у подавляющего
         // большинства из них всё в порядке: ни сжатия до порога, ни растяжения сверх
         // предела. А корень считался ВСЕГДА и стоит 13–15 тактов латентности в
         // зависимой цепочке. Все пороги сравниваются с длиной, то есть с квадратом
@@ -76,14 +112,19 @@ fun BodyState.solveLinkMaxLength() {
         // Запас до порогов копится В КВАДРАТАХ, корень берётся один раз при чтении:
         // сравнение «ближе ли этот запас прежнего» от возведения в квадрат не меняется.
         if (DEBUG_CHECKS && dbgLinkExtremaOn) {
+            if (invMass[i] + invMass[j] == 0.0) continue
             val cr2 = len2 / (restScale * restScale)
             if (cr2 < dbgWorstCrush2) dbgWorstCrush2 = cr2
             val st2 = len2 / (rest * rest)
             if (st2 > dbgWorstStretch2) dbgWorstStretch2 = st2
         }
         if (!crushed && !over) continue
+        // Массы нужны только если есть нарушение. Пустой проход не читает
+        // ещё два значения по индексам концов; порядок поправок остаётся прежним.
+        if (invMass[i] + invMass[j] == 0.0) continue
         solveLinkLimitViolation(c, len2, crushed, scale)
     }
+    limits.endPass()
 }
 
 /** Редкие разрывы отдельно от цикла: меньше байткода и живых локальных в обычном проходе. */

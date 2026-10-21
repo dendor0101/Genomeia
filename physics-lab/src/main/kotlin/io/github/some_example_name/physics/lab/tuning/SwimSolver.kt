@@ -1,5 +1,7 @@
 package io.github.some_example_name.physics.lab.tuning
 
+import io.github.some_example_name.physics.ConstraintBlocks
+import io.github.some_example_name.physics.CONSTRAINT_BLOCK_SIZE
 import io.github.some_example_name.physics.CANCEL_INTERNAL_SPIN
 import io.github.some_example_name.physics.FLAP_COMPLIANCE
 import io.github.some_example_name.physics.SOLVER_ITERS
@@ -26,6 +28,7 @@ import io.github.some_example_name.physics.solveBend
 import io.github.some_example_name.physics.solveConstraints
 import io.github.some_example_name.physics.solveFlaps
 import io.github.some_example_name.physics.solveLinkMaxLength
+import io.github.some_example_name.physics.solveBoundaryOrientation
 import io.github.some_example_name.physics.updateVelocities
 import kotlin.math.abs
 import kotlin.math.sqrt
@@ -37,6 +40,8 @@ import kotlin.math.sqrt
  * При умолчаниях и одинаковой модели среды позиции/скорости обязаны совпадать до
  * последнего бита: SwimTuner не начинает подбор без verifyAgainstDemo(). Топология
  * берётся из настоящего ядра через [Topology], численные формулы проверяются отдельно.
+ * Разрушение здесь выключено, как tearingOn=false в сверке ядра. Поэтому стадия
+ * удаления долгих инверсий, как и разрывы рёбер, в этом режиме не меняет топологию.
  */
 class SwimSolver(private val topo: Topology, var p: SwimParams) {
 
@@ -100,7 +105,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         topo.boundA, topo.boundB, topo.boundCount, topo.boundOpp, radius,
         p.contactScale, p.ccdCore, p.contactRestitution, p.contactFriction,
         topo.restX, topo.restY,
-        topo.meanLinkLength.toDouble(), p.contactMaxStep, topo.isFree,
+        topo.meanLinkLength.toDouble(), p.contactMaxStep, topo.contactProbes,
         config = DemoSettings.fromEnvironment().contacts,
     )
 
@@ -145,6 +150,42 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         flapA = a.toIntArray(); flapB = b.toIntArray(); flapRest = r.toDoubleArray()
     }
 
+    private val blocks = ConstraintBlocks(n, topo.organismOf, CONSTRAINT_BLOCK_SIZE,
+        topo.conCount, topo.triCount, topo.rigidBones.size).also { layout ->
+        for (c in 0 until topo.conCount) layout.links.add(c, layout.blockOf(topo.conA[c], topo.conB[c]))
+        for (c in topo.boundaryConstraints) layout.addLimit(c, topo.conA[c], topo.conB[c])
+        for (t in 0 until topo.triCount) layout.areas.add(t, layout.blockOf(topo.triA[t], topo.triB[t], topo.triC[t]))
+        layout.links.finishBuild(); layout.areas.finishBuild()
+        for (c in 0 until topo.bendCount) layout.bends.add(c, layout.blockOf(topo.bendA[c], topo.bendB[c]))
+        for (c in flapA.indices) layout.flaps.add(c, layout.blockOf(flapA[c], flapB[c]))
+        for (b in topo.rigidBones.indices) {
+            val ids = topo.rigidBones[b]
+            var block = layout.particleBlock[ids[0]]
+            for (i in ids) if (layout.particleBlock[i] != block) { block = layout.seam; break }
+            layout.bones.add(b, block)
+        }
+    }
+
+    private fun solveBlockedIteration(h: Double) {
+        for (parity in 0..1) {
+            var block = parity
+            while (block < blocks.blockCount) { solveConstraintBlock(h, block); block += 2 }
+        }
+        solveConstraintBlock(h, blocks.seam)
+        if (blocks.hasSeams()) solveLinkMaxLength()
+    }
+
+    private fun solveConstraintBlock(h: Double, block: Int) {
+        solveConstraints(h, block)
+        solveFlaps(h, block)
+        solveLinkMaxLength(block)
+        solveAreas(h, block)
+        solveBend(h, block)
+        var b = blocks.bones.head[block]
+        while (b >= 0) { projectBone(b); b = blocks.bones.next[b] }
+        solveLinkMaxLength(block)
+    }
+
     /** Зеркало демо: снятие импульса и момента внутренних стадий. См. InternalMomentum. */
     private val internalMom = InternalMomentum(n)
 
@@ -156,10 +197,13 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         internalMom.cancel(topo.organismOf, topo.organismCount, px, py, prevX, prevY, invMass)
     }
 
-    private fun solveFlaps(h: Double) {
+    private fun solveFlaps(h: Double, block: Int) {
         if (flapA.isEmpty()) return
         val alpha = DemoConst.FLAP_COMPLIANCE / (h * h)
-        for (c in flapA.indices) {
+        val list = blocks.flaps
+        var cursor = list.head[block]
+        while (cursor >= 0) {
+            val c = cursor; cursor = list.next[cursor]
             val i = flapA[c]; val j = flapB[c]
             val wi = invMass[i]; val wj = invMass[j]
             val w = wi + wj
@@ -176,25 +220,32 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         }
     }
 
-    private fun solveLinkMaxLength() {
-        for (c in 0 until topo.conCount) {
+    private fun solveLinkMaxLength() = solveLinkMaxLength(-1)
+
+    private fun solveLinkMaxLength(block: Int) {
+        val list = blocks.limits
+        var cursor = if (block < 0) 0 else list.head[block]
+        while (if (block < 0) cursor < topo.boundaryConstraints.size else cursor >= 0) {
+            val c = if (block < 0) topo.boundaryConstraints[cursor++] else cursor
+            if (block >= 0) cursor = list.next[cursor]
             val i = topo.conA[c]; val j = topo.conB[c]
-            val wi = invMass[i]; val wj = invMass[j]
-            val w = wi + wj
-            if (w == 0.0) continue
             var dx = px[i] - px[j]
             var dy = py[i] - py[j]
             val len = sqrt(dx * dx + dy * dy)
             val max = conMaxLen[c]
             if (len <= max || len < 1e-12) continue
+            // Как в ядре: масса нужна лишь связи, нарушившей предел.
+            val wi = invMass[i]; val wj = invMass[j]
+            val w = wi + wj
+            if (w == 0.0) continue
             dx /= len; dy /= len
-            // Тот же потолок поправки за подшаг, что и у контакта, и по той же
-            // причине: стадия ЖЁСТКАЯ, перерастяжение она снимает целиком за один
+            // Собственный потолок поправки длины, как LINK_MAX_STEP в ядре:
+            // стадия ЖЁСТКАЯ, перерастяжение она снимает целиком за один
             // подшаг, а updateVelocities делит поправку на крошечное h. При загибе
             // связи растягиваются сильно, и отсюда шёл остаток выброса скорости.
             // Делится по паре в тех же долях, поэтому импульс пары сохраняется.
             var dL = -(len - max) / w
-            val capL = p.contactMaxStep * topo.meanLinkLength / w
+            val capL = p.linkMaxStep * topo.meanLinkLength / w
             if (dL < -capL) dL = -capL
             px[i] += dx * dL * wi; py[i] += dy * dL * wi
             px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
@@ -306,10 +357,15 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         }
     }
 
-    private fun solveConstraints(h: Double) {
+    private fun solveConstraints(h: Double, block: Int) {
         val alpha = p.softCompliance / (h * h)
-        val order = if (sweepBackwards) (topo.conCount - 1) downTo 0 else 0 until topo.conCount
-        for (c in order) {
+        // Здесь исходный линейный порядок: ядро может переставлять независимые
+        // связи, а PhysicsCheck сверяет, что порядок поправок каждой частицы тот же.
+        val list = blocks.links
+        val start = list.start[block]; val end = start + list.count[block]
+        val order = if (sweepBackwards) end - 1 downTo start else start until end
+        for (slot in order) {
+            val c = list.items[slot]
             val i = topo.conA[c]; val j = topo.conB[c]
             val wi = invMass[i]; val wj = invMass[j]
             val w = wi + wj
@@ -331,10 +387,13 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
      * Стадия ставится ПОСЛЕ площадей и перед проекцией кости — там же, где живут
      * остальные позиционные ограничения.
      */
-    private fun solveBend(h: Double) {
+    private fun solveBend(h: Double, block: Int) {
         if (p.bendCompliance < 0.0) return
         val alpha = p.bendCompliance / (h * h)
-        for (c in 0 until topo.bendCount) {
+        val list = blocks.bends
+        var cursor = list.head[block]
+        while (cursor >= 0) {
+            val c = cursor; cursor = list.next[cursor]
             val i = topo.bendA[c]; val j = topo.bendB[c]
             val wi = invMass[i]; val wj = invMass[j]
             val w = wi + wj
@@ -350,13 +409,15 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         }
     }
 
-    private fun solveAreas(h: Double) {
+    private fun solveAreas(h: Double, block: Int) {
         val alpha = p.areaCompliance / (h * h)
         // -1 значит «не разделять»: тогда ветка ниже выбирает то же самое число, и
         // поведение совпадает с демо до бита.
         val alphaInv = if (p.areaComplianceInverted >= 0.0) p.areaComplianceInverted / (h * h) else alpha
         val maxStep = p.areaMaxStep * topo.meanLinkLength
-        for (t in 0 until topo.triCount) {
+        val list = blocks.areas
+        for (slot in list.start[block] until list.start[block] + list.count[block]) {
+            val t = list.items[slot]
             val i0 = topo.triA[t]; val i1 = topo.triB[t]; val i2 = topo.triC[t]
             val x0 = px[i0]; val y0 = py[i0]
             val x1 = px[i1]; val y1 = py[i1]
@@ -641,18 +702,12 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             // Цикл по всем ограничениям сразу, включая контакт — зеркало демо.
             for (iter in 0 until DemoConst.SOLVER_ITERS) {
                 if (DemoConst.SWEEP_FLIP == 2) sweepBackwards = !sweepBackwards
-                solveConstraints(h)
-                solveFlaps(h)
-                solveLinkMaxLength()
-                solveAreas(h)
-                solveBend(h)
-                for (b in topo.rigidBones.indices) projectBone(b)
-                solveLinkMaxLength()
+                solveBlockedIteration(h)
                 if (p.contactsOn) {
                     contacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = iter > 0)
                     if (DemoConst.CANCEL_INTERNAL_SPIN) internalMom.noteContacts(contacts)
                     contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
-                    contacts.solveContacts(px, py, vx, vy, invMass, h)
+                    solveContactsAndBoundary(h)
                 }
             }
             // Предел длины ещё раз, уже после контактов — зеркало демо: проекция
@@ -663,7 +718,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             if (p.contactsOn) {
                 contacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = true)
                 contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
-                contacts.solveContacts(px, py, vx, vy, invMass, h)
+                solveContactsAndBoundary(h)
             }
             updateVelocities(h)
             // Отскок — зеркало демо, см. solveRestitution.
@@ -750,18 +805,12 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             // Цикл по всем ограничениям сразу, включая контакт — зеркало демо.
             for (iter in 0 until DemoConst.SOLVER_ITERS) {
                 if (DemoConst.SWEEP_FLIP == 2) sweepBackwards = !sweepBackwards
-                solveConstraints(h)
-                solveFlaps(h)
-                solveLinkMaxLength()
-                solveAreas(h)
-                solveBend(h)
-                for (b in topo.rigidBones.indices) projectBone(b)
-                solveLinkMaxLength()
+                solveBlockedIteration(h)
                 if (p.contactsOn) {
                     contacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = iter > 0)
                     if (DemoConst.CANCEL_INTERNAL_SPIN) internalMom.noteContacts(contacts)
                     contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
-                    contacts.solveContacts(px, py, vx, vy, invMass, h)
+                    solveContactsAndBoundary(h)
                 }
             }
             // Предел длины ещё раз, уже после контактов — зеркало демо: проекция
@@ -772,7 +821,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             if (p.contactsOn) {
                 contacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = true)
                 contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
-                contacts.solveContacts(px, py, vx, vy, invMass, h)
+                solveContactsAndBoundary(h)
             }
             updateVelocities(h)
             // Отскок — зеркало демо, см. solveRestitution.
@@ -798,6 +847,12 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     }
 
     fun dragOnly(h: Double) = applyNormalDrag(h)
+
+    private fun solveContactsAndBoundary(h: Double) {
+        contacts.solveContacts(px, py, vx, vy, invMass, h)
+        solveBoundaryOrientation(topo.boundCount, topo.boundA, topo.boundB, topo.boundOpp,
+            topo.boundaryOrientation, px, py, invMass)
+    }
 
     /** Активация первой мышцы. Нужна замеру, чтобы отличить гребок от зажатой позы. */
     fun activation0(): Double = if (muscleActivation.isEmpty()) 0.0 else muscleActivation[0].toDouble()

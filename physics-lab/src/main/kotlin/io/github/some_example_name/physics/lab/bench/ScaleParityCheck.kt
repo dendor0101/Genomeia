@@ -27,6 +27,8 @@ fun main(args: Array<String>) {
     val order = args.getOrNull(5) ?: "old-first"
     require(order == "old-first" || order == "new-first")
     val newFirst = order == "new-first"
+    val mode = args.getOrNull(6) ?: "rest"
+    require(mode == "rest" || mode == "gait")
     require(warm > 0 && ticks > 0)
     val current = System.getProperty("java.class.path").split(File.pathSeparator).map(::File)
     // Снимок полного classpath сохраняет и прежний physics.jar: нельзя случайно
@@ -55,6 +57,14 @@ fun main(args: Array<String>) {
         val frame = type.getMethod("frame", Double::class.javaPrimitiveType, Int::class.javaPrimitiveType,
             Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType)
         val gait = type.getMethod("frameGait", Double::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+        // Та же проверка скрытого состояния, что у повтора игрока. Вызывается вне
+        // замеряемого тика; не добавляет обходов или диагностических полей в физику.
+        val snapshotType = try {
+            loader.loadClass("io.github.some_example_name.physics.lab.checks.RefactorCheckKt")
+        } catch (_: ClassNotFoundException) {
+            loader.loadClass("io.github.some_example_name.lwjgl3.demo.RefactorCheckKt")
+        }
+        val snapshot = snapshotType.getDeclaredMethod("snapshots").apply { isAccessible = true }
         val dt = type.getMethod("const", String::class.java).invoke(probe, "DT") as Double
         val substeps = type.getMethod("constInt", String::class.java).invoke(probe, "SUBSTEPS") as Int
         lateinit var x: DoubleArray; lateinit var y: DoubleArray
@@ -73,7 +83,8 @@ fun main(args: Array<String>) {
         fun step(tick: Int) {
             val p0 = cpu.currentThreadCpuTime
             val t0 = System.nanoTime()
-            frame.invoke(probe, dt, substeps, false, true)
+            if (mode == "gait") gait.invoke(probe, dt, tick)
+            else frame.invoke(probe, dt, substeps, false, true)
             val elapsed = System.nanoTime() - t0
             val used = cpu.currentThreadCpuTime - p0
             if (tick >= warm) {
@@ -82,6 +93,7 @@ fun main(args: Array<String>) {
             }
         }
         fun hash() = PlayerLog.stateHash(x.size, x, y, vx, vy)
+        fun hidden() = snapshot.invoke(null) as Map<*, *>
         fun report() {
             println("PAIRED $label n=${x.size} wall_ms=%.4f cpu_ms=%.4f".format(wall.average(), processor.average()))
         }
@@ -99,7 +111,7 @@ fun main(args: Array<String>) {
             val oldSource = old.type.protectionDomain.codeSource.location
             val newSource = fresh.type.protectionDomain.codeSource.location
             check(oldSource != newSource) { "Обе версии загрузились из $oldSource" }
-            println("PAIRED order=$order old=$oldSource new=$newSource")
+            println("PAIRED order=$order mode=$mode old=$oldSource new=$newSource")
             check(old.dt == fresh.dt && old.substeps == fresh.substeps)
             first.load(2); second.load(2)
             repeat(200) { tick ->
@@ -108,10 +120,19 @@ fun main(args: Array<String>) {
             }
             first.load(copies); second.load(copies)
             check(old.hash() == fresh.hash()) { "Разное исходное состояние" }
+            check(old.hidden() == fresh.hidden()) { "Разное исходное скрытое состояние" }
             repeat(warm + ticks) { tick ->
                 if (tick % 2 == 0) { first.step(tick); second.step(tick) }
                 else { second.step(tick); first.step(tick) }
                 check(old.hash() == fresh.hash()) { "Версии разошлись на тике ${tick + 1}" }
+                if ((tick + 1) % 16 == 0 || tick + 1 == warm + ticks) {
+                    val previousState = old.hidden()
+                    val currentState = fresh.hidden()
+                    check(previousState == currentState) {
+                        "Скрытое состояние разошлось на тике ${tick + 1}: " +
+                            previousState.keys.filter { previousState[it] != currentState[it] }
+                    }
+                }
                 if ((tick + 1) % 16 == 0) println("PAIRED progress=${tick + 1}/${warm + ticks}")
             }
             old.report(); fresh.report()

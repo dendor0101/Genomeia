@@ -90,6 +90,7 @@ internal object DemoConst {
     val CONTACT_SCALE = d("CONTACT_SCALE")
     val CCD_CORE = d("CCD_CORE")
     val CONTACT_MAX_STEP = d("CONTACT_MAX_STEP")
+    val LINK_MAX_STEP = d("LINK_MAX_STEP")
     val PLASTIC_RATE = d("PLASTIC_RATE")
     val PLASTIC_YIELD = d("PLASTIC_YIELD")
     val PLASTIC_HOLD = i("PLASTIC_HOLD")

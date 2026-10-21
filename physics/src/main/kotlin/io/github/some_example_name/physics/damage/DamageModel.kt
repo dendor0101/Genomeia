@@ -38,6 +38,9 @@ fun BodyState.applyPierce(ct: BoundaryContacts) {
 }
 
 fun BodyState.applyKills(ct: BoundaryContacts) {
+    // После удаления связей их перевёрнутые треугольники исчезнут: отломок может
+    // остаться внутри ткани без ограничения, способного вернуть его наружу.
+    fractureOrientation.solve(ct.killList, ct.killN, px, py, invMass)
     var any = false
     for (k in 0 until ct.killN) {
         val v = ct.killList[k]

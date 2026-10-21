@@ -10,6 +10,8 @@ import kotlin.math.sqrt
  * Открытые массивы нужны инспектору и адаптеру стенда, а не для перестановки между стадиями.
  */
 class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
+    internal val boundaryLinkLimits = BoundaryLinkLimits()
+    internal var constraintBlocks: ConstraintBlocks? = null
     val CONTACT_MAX_STEP = config.CONTACT_MAX_STEP
     val LINK_MAX_STEP = config.LINK_MAX_STEP
     val MAXLEN_EARLY = config.MAXLEN_EARLY
@@ -43,7 +45,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     var contacts: BoundaryContacts? = null
 
     /** Связи ЦЕЛОГО тела: снимается один раз и переживает все пересборки. */
-    var everLinked: Set<Long>? = null
+    var everLinked: LinkedPairs? = null
 
     var contactsOn = CONTACTS_ON
 
@@ -91,6 +93,8 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
 
     // --- связи ---
     var conCount = 0
+
+    internal var distanceSweepOrder: DistanceSweepOrder? = null
 
     lateinit var conA: IntArray
 
@@ -249,6 +253,8 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      */
     lateinit var baked: BakedTopology
 
+    internal lateinit var fractureOrientation: FractureOrientation
+
     /** Ребро каждой связи полного списка. */
     var lnkEdge = IntArray(0)
 
@@ -331,8 +337,6 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     lateinit var localBoundary: LocalBoundaryConstraints
 
     lateinit var localComponents: LocalComponents
-
-    var componentTearCursor = 0
 
     lateinit var localSurface: LocalSurface
 
@@ -706,12 +710,13 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      */
     var dbgTimeOn = false
 
-    val dbgTimeNs = LongArray(14)
+    val dbgTimeNs = LongArray(15)
 
     val dbgTimeNames = arrayOf(
         "связи", "лоскуты", "предел длины", "площади", "изгиб", "кость",
         "подготовка контактов", "решатель контактов", "снятие момента",
-        "скорости и среда", "ловушка", "пересборка", "локальная поверхность", "контактные кости")
+        "скорости и среда", "ловушка", "пересборка", "локальная поверхность", "контактные кости",
+        "ориентация контура")
 
     var dbgTimeT0 = 0L
 

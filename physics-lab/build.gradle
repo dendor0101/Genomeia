@@ -140,6 +140,16 @@ tasks.register('perfBench', JavaExec) {
   jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
 }
 
+tasks.register('materialCheck', JavaExec) {
+  group = 'verification'
+  description = 'Форма ткани в покое, при удержании мышцы и гребке; метрики для A/B'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.checks.MaterialQualityCheckKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('body') ?: 'body-export.txt']
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+
 // Один связный организм до 102400 клеток и мир из копий; два повтора с хэшами.
 tasks.register('scaleBench', JavaExec) {
   group = 'verification'
@@ -163,6 +173,20 @@ tasks.register('layoutBench', JavaExec) {
   jvmArgs '-Xmx3g', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
 }
 
+tasks.register('writeBenchmarkClasspath') {
+  group = 'verification'
+  description = 'Записывает текущий runtime classpath для A/B в отдельных JVM'
+  dependsOn 'classes', ':physics:jar', ':render:jar'
+  doLast {
+    def target = layout.buildDirectory.file('bench/classpath.txt').get().asFile
+    target.parentFile.mkdirs()
+    // Gradle включает и каталоги пустых source set; JVM их игнорирует.
+    // В снимок входят только существующие результаты сборки и зависимости.
+    target.text = sourceSets.main.runtimeClasspath.files.findAll { it.exists() }.join(File.pathSeparator)
+    println target.absolutePath
+  }
+}
+
 // Эталон создаётся до извлечения ядра; check никогда его не переписывает.
 tasks.register('refactorCheck', JavaExec) {
   group = 'verification'
@@ -177,6 +201,16 @@ tasks.register('refactorCheck', JavaExec) {
   jvmArgs '-Xmx2g', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
 }
 
+tasks.register('tissueReplayCheck', JavaExec) {
+  group = 'verification'
+  description = 'Два повтора записи, скрытое состояние и проникновения на каждом тике'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.checks.TissueReplayCheckKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('log') ?: 'player-log.txt']
+  jvmArgs '-Xmx3g', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+
 tasks.register('scaleParityCheck', JavaExec) {
   group = 'verification'
   description = 'Старые и новые классы в одном JVM: чередование тиков, CPU и побитовая сверка'
@@ -185,7 +219,8 @@ tasks.register('scaleParityCheck', JavaExec) {
   workingDir = rootProject.projectDir
   args = [project.findProperty('baseline') ?: '', project.findProperty('body') ?: 'body-export.txt',
           project.findProperty('copies') ?: '108', project.findProperty('scaleWarm') ?: '32',
-          project.findProperty('scaleTicks') ?: '48', project.findProperty('scaleOrder') ?: 'old-first']
+          project.findProperty('scaleTicks') ?: '48', project.findProperty('scaleOrder') ?: 'old-first',
+          project.findProperty('scaleMode') ?: 'rest']
   jvmArgs '-Xmx3g', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
 }
 
