@@ -36,18 +36,26 @@ precision highp int;
 // более чем в 1/cos(π/N) раз. При N = 32 это 0.48 %, то есть доли пикселя.
 layout(location = 0) in vec3 a_corner;
 
-// Инстансные атрибуты, делитель 1. Раскладка — в CellInstanceBuffer (20 байт).
+// Инстансные атрибуты, делитель 1. Раскладка — в CellInstanceBuffer (32 байта).
 //
-// Все три четвёрки объявлены как GL_UNSIGNED_BYTE с normalized = true, поэтому байт
-// 0..255 приезжает сюда уже как float 0..1. Раньше эти же байты ехали одним uint через
-// текстуру RGBA32UI и распаковывались руками (unpackRGBA8 + сдвиги) — теперь это делает
-// железо выборки атрибутов, бесплатно.
+// Четвёрки байт объявлены как GL_UNSIGNED_BYTE с normalized = true, поэтому байт
+// 0..255 приезжает сюда уже как float 0..1, а пары short — как -1..1. Раньше эти же байты
+// ехали одним uint через текстуру RGBA32UI и распаковывались руками (unpackRGBA8 +
+// сдвиги) — теперь это делает железо выборки атрибутов, бесплатно.
 layout(location = 1) in vec2 a_center;
 layout(location = 2) in vec4 a_color;   // r, g, b, a
-layout(location = 3) in vec4 a_shape;   // cos, sin, радиус, энергия
+layout(location = 3) in vec4 a_shape;   // —, —, радиус, энергия
 layout(location = 4) in vec4 a_type;    // тип клетки, ключ шума (младший байт), ключ (старший), флаги
+layout(location = 6) in vec2 a_dir;     // cos, sin направления — по 16 бит
+layout(location = 7) in vec2 a_prevCenter;  // центр в прошлом тике
+layout(location = 8) in vec2 a_prevDir;     // направление в прошлом тике
 
 uniform mat4 u_projTrans;
+
+// Интерполяция между тиками — см. CellInstanceBuffer: клетка рисуется на долю u_lag назад
+// от снимка, между нынешней позой и прошлой (a_prevCenter, a_prevDir). u_lag = 0 — ровно
+// снимок: так рисуют редактор, превью и стенд (у них прошлая поза равна нынешней).
+uniform float u_lag;
 
 /**
  * d/R в этом фрагменте. Единственная величина, ради которой раньше считались
@@ -73,13 +81,26 @@ float byteValue(float normalized) {
     return floor(normalized * 255.0 + 0.5);
 }
 
+/**
+ * Направление на долю u_lag назад: нормированная смесь нынешнего и прошлого (nlerp).
+ * Длина — как у a_dir: у не-клетки он (-1, -1), и её текстура рисуется с этим масштабом.
+ * Поворот ровно на 180° за тик смешивается в ноль — тогда без интерполяции.
+ */
+vec2 lagDir() {
+    vec2 mixed = mix(a_dir, a_prevDir, u_lag);
+    float len = length(mixed);
+    return len > 1e-4 ? mixed * (length(a_dir) / len) : a_dir;
+}
+
 void main() {
-    float cosA = a_shape.x * 2.0 - 1.0;
-    float sinA = a_shape.y * 2.0 - 1.0;
+    vec2 dir = lagDir();
+    float cosA = dir.x;
+    float sinA = dir.y;
 
     float radius = 0.05 + a_shape.z * 0.7;
 
-    vec2 worldPos = a_corner.xy * radius + a_center;
+    vec2 center = mix(a_center, a_prevCenter, u_lag);
+    vec2 worldPos = a_corner.xy * radius + center;
 
     ex_R_norm = a_corner.z;
     ex_Color = a_color.rgb;

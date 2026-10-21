@@ -17,11 +17,19 @@ layout(location = 0) in vec3 a_corner;  // xy — точка корпуса в �
 // Инстансные атрибуты, раскладка — в CellInstanceBuffer.
 layout(location = 1) in vec2 a_center;
 layout(location = 2) in vec4 a_color;   // r, g, b, a
-layout(location = 3) in vec4 a_shape;   // cos, sin, радиус, энергия
+layout(location = 3) in vec4 a_shape;   // —, —, радиус, энергия
 layout(location = 4) in vec4 a_type;    // тип клетки, ключ шума lo, hi, флаги
-layout(location = 5) in vec4 a_look;    // рисунок, сигнал действия, прозрачность, —
+layout(location = 5) in vec4 a_look;    // рисунок, сигнал действия, прозрачность, фильтр
+layout(location = 6) in vec2 a_dir;     // cos, sin направления — по 16 бит
+layout(location = 7) in vec2 a_prevCenter;  // центр в прошлом тике
+layout(location = 8) in vec2 a_prevDir;     // направление в прошлом тике
 
 uniform mat4 u_projTrans;
+
+// Интерполяция между тиками — см. CellInstanceBuffer: клетка рисуется на долю u_lag назад
+// от снимка, между нынешней позой и прошлой (a_prevCenter, a_prevDir). u_lag = 0 — ровно
+// снимок: так рисуют редактор, превью и стенд (у них прошлая поза равна нынешней).
+uniform float u_lag;
 
 /** Сколько единиц мира приходится на один пиксель экрана. */
 uniform float u_pixelWorld;
@@ -73,6 +81,17 @@ flat out float v_filtered;
 
 float byteValue(float normalized) {
     return floor(normalized * 255.0 + 0.5);
+}
+
+/**
+ * Направление на долю u_lag назад — как lagDir() в circle_pc.vert.
+ * Длина — как у a_dir: у не-клетки он (-1, -1), и её текстура рисуется с этим масштабом.
+ * Поворот ровно на 180° за тик смешивается в ноль — тогда без интерполяции.
+ */
+vec2 lagDir() {
+    vec2 mixed = mix(a_dir, a_prevDir, u_lag);
+    float len = length(mixed);
+    return len > 1e-4 ? mixed * (length(a_dir) / len) : a_dir;
 }
 
 /**
@@ -134,7 +153,9 @@ void main() {
             v_color = vec3(dot(a_color.rgb, vec3(0.299, 0.587, 0.114)) * 0.35);
         }
     }
-    v_dir = vec2(a_shape.x * 2.0 - 1.0, a_shape.y * 2.0 - 1.0);
+    // Направление на долю u_lag назад — рисунок поворачивается плавно вместе с телом.
+    v_dir = lagDir();
 
-    gl_Position = u_projTrans * vec4(v_local * radius + a_center, 0.0, 1.0);
+    vec2 center = mix(a_center, a_prevCenter, u_lag);
+    gl_Position = u_projTrans * vec4(v_local * radius + center, 0.0, 1.0);
 }

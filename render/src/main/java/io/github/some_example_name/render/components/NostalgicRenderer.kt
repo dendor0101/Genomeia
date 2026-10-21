@@ -135,6 +135,7 @@ class NostalgicRenderer(private val cells: CellGeometry) : RenderComponent {
     private fun fill(context: RenderContext) {
         fillShader.bind()
         fillShader.setUniformMatrix("u_projTrans", context.cameraProjection)
+        fillShader.setUniformf("u_lag", context.interpolationLag)
         fillShader.setUniformf("u_nucleusAtFullEnergy", NUCLEUS_AT_FULL_ENERGY)
         fillShader.setUniformf("u_depthBias", CONTOUR_WIDTH)
         fillShader.setUniformf("u_depthScale", DEPTH_SCALE)
@@ -153,6 +154,7 @@ class NostalgicRenderer(private val cells: CellGeometry) : RenderComponent {
 
         countShader.bind()
         countShader.setUniformMatrix("u_projTrans", context.cameraProjection)
+        countShader.setUniformf("u_lag", context.interpolationLag)
         countShader.setUniformf("u_depthScale", DEPTH_SCALE)
         // Тот же корпус и та же точная d/R, что у заливки, — без подъёма на δ. Поверхности
         // совпадают до бита, так что владелец засчитывает свой пиксель всегда.

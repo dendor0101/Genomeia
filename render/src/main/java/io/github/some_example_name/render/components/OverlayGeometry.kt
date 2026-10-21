@@ -79,6 +79,15 @@ class OverlayGeometry {
         )
         gl30.glVertexAttribDivisor(A_PARAMS, 1)
 
+        // Концы в прошлом тике — для интерполяции между тиками.
+        gl.glEnableVertexAttribArray(A_PREV_FROM)
+        gl.glVertexAttribPointer(A_PREV_FROM, 2, GL20.GL_FLOAT, false, stride, OverlayInstanceBuffer.OFFSET_PREV_FROM)
+        gl30.glVertexAttribDivisor(A_PREV_FROM, 1)
+
+        gl.glEnableVertexAttribArray(A_PREV_TO)
+        gl.glVertexAttribPointer(A_PREV_TO, 2, GL20.GL_FLOAT, false, stride, OverlayInstanceBuffer.OFFSET_PREV_TO)
+        gl30.glVertexAttribDivisor(A_PREV_TO, 1)
+
         gl30.glBindVertexArray(0)
         gl.glBindBuffer(GL20.GL_ARRAY_BUFFER, 0)
     }
@@ -148,5 +157,7 @@ class OverlayGeometry {
         const val A_TO = 2
         const val A_COLOR = 3
         const val A_PARAMS = 4
+        const val A_PREV_FROM = 5
+        const val A_PREV_TO = 6
     }
 }

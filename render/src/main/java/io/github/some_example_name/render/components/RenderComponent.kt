@@ -25,6 +25,9 @@ class RenderContext {
      */
     var numInstances: Int = 0
 
+    /** Отставание кадра от снимка в долях тика — униформ u_lag, см. RenderFrame.interpolationLag. */
+    var interpolationLag: Float = 0f
+
     // Pheromone data
     var pheromoneData: ByteBuffer? = null
     var numPheromoneInstances: Int = 0

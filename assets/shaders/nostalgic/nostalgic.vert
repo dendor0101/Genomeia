@@ -17,10 +17,17 @@ layout(location = 0) in vec3 a_corner;  // xy — точка корпуса в �
 // Инстансные атрибуты, раскладка — в CellInstanceBuffer.
 layout(location = 1) in vec2 a_center;
 layout(location = 2) in vec4 a_color;   // r, g, b, a
-layout(location = 3) in vec4 a_shape;   // cos, sin, радиус, энергия
+layout(location = 3) in vec4 a_shape;   // —, —, радиус, энергия
 layout(location = 4) in vec4 a_type;    // тип клетки, ключ шума lo, hi, флаги
+layout(location = 7) in vec2 a_prevCenter;  // центр в прошлом тике
 
 uniform mat4 u_projTrans;
+
+// Интерполяция между тиками — см. CellInstanceBuffer: клетка рисуется на долю u_lag назад
+// от снимка, между нынешней позой и прошлой (a_prevCenter, a_prevDir). u_lag = 0 — ровно
+// снимок: так рисуют редактор, превью и стенд (у них прошлая поза равна нынешней).
+// Круг поворота не замечает — здесь нужен только центр.
+uniform float u_lag;
 
 /**
  * Радиус ядра в долях радиуса клетки при энергии ENERGY_SPAN (байт энергии = 255).
@@ -59,5 +66,6 @@ void main() {
     // a_shape.w — энергия / ENERGY_SPAN, то есть 0..1. Без энергии ядра нет вовсе.
     ex_Nucleus = isCell ? a_shape.w * u_nucleusAtFullEnergy : -1.0;
 
-    gl_Position = u_projTrans * vec4(a_corner.xy * radius + a_center, 0.0, 1.0);
+    vec2 center = mix(a_center, a_prevCenter, u_lag);
+    gl_Position = u_projTrans * vec4(a_corner.xy * radius + center, 0.0, 1.0);
 }

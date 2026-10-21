@@ -414,6 +414,8 @@ class RenderLab(private val scene: RenderSceneDump.Scene?) : ApplicationAdapter(
             pheromones = this@RenderLab.pheromones.takeIf { it.remaining() > 0 }
             overlay = this@RenderLab.overlay.takeIf { it.remaining() > 0 }
             time = this@RenderLab.time
+            // Дамп рисуется с тем же отставанием от снимка, с каким его сняла игра.
+            interpolationLag = scene?.interpolationLag ?: 0f
             pheromoneK = scene?.pheromoneK ?: SyntheticScene.PHEROMONE_K
             pheromoneP = scene?.pheromoneP ?: SyntheticScene.PHEROMONE_P
             blurAmount = blur

@@ -44,10 +44,12 @@ import java.nio.ByteOrder
  *   pheromoneK       float
  *   pheromoneP       float
  *   time             float   с версии 3: часы анимации оверлея (RenderFrame.time)
+ *   interpolationLag float   с версии 5: отставание кадра от снимка (RenderFrame.interpolationLag)
  *   texturePaths     int count, далее для каждого: int длина + UTF-8 байты
- *   cellCount        int, далее cellCount * 24 байта (в версии 1 — по 32, во 2–3 — по 20)
+ *   cellCount        int, далее cellCount * 40 байт (в версии 1 — по 32 старой раскладки,
+ *                    во 2–3 — по 20, в 4 — по 24)
  *   pheromoneCount   int, далее pheromoneCount * 16 байт
- *   overlayCount     int, далее overlayCount * 24 байта — с версии 3, оверлей отладки
+ *   overlayCount     int, далее overlayCount * 40 байт — с версии 3 (в 3–4 — по 24), оверлей отладки
  *
  * Пути к текстурам лежат в файле намеренно: тип клетки — это индекс слоя в TextureArray,
  * поэтому без исходного ПОРЯДКА путей дамп рисовался бы чужими текстурами. Собрать тот же
@@ -62,14 +64,22 @@ object RenderSceneDump {
      * Версия 2: инстанс клетки ужался с 32 байт до 20, см. CellInstanceBuffer.
      * Версия 3: оверлей отладочного режима и время его анимации.
      * Версия 4: инстанс клетки 24 байта — добавился вид в отладке (CellInstanceBuffer.look).
+     * Версия 5: инстанс клетки 40 байт — направление по 16 бит и поза в прошлом тике, у
+     *           оверлея тоже прошлые концы; в заголовке — отставание кадра от снимка.
      */
-    const val VERSION = 4
+    const val VERSION = 5
 
     /** Раскладка версии 1: x, y, color, packed1, packed2 + 12 байт добивки. */
     private const val V1_CELL_STRUCT_SIZE = 32
 
     /** Раскладка версий 2–3: x, y, color, shape, type — без look. */
     private const val V2_CELL_STRUCT_SIZE = 20
+
+    /** Раскладка версии 4: x, y, color, shape (cos, sin, радиус, энергия по байту), type, look. */
+    private const val V4_CELL_STRUCT_SIZE = 24
+
+    /** Оверлей версий 3–4: без смещений концов. */
+    private const val V4_OVERLAY_STRUCT_SIZE = 24
 
     /** Расширение по умолчанию, чтобы дампы было видно глазами в каталоге. */
     const val EXTENSION = "scene"
@@ -101,7 +111,9 @@ object RenderSceneDump {
         val time: Float = 0f,
         /** Фигуры оверлея; в дампах до версии 3 их нет — пустой буфер. */
         val overlayCount: Int = 0,
-        val overlay: ByteBuffer = emptyDirect()
+        val overlay: ByteBuffer = emptyDirect(),
+        /** Отставание кадра от снимка; в дампах до версии 5 — ноль, они без смещений. */
+        val interpolationLag: Float = 0f
     )
 
     /**
@@ -132,7 +144,7 @@ object RenderSceneDump {
         val pathBytes = texturePaths.map { it.toByteArray(Charsets.UTF_8) }
         val pathsSize = 4 + pathBytes.sumOf { 4 + it.size }
 
-        val total = MAGIC.length + 4 + 4 + 4 + (3 * 4) + (2 * 4) + 1 + (2 * 4) + 4 +
+        val total = MAGIC.length + 4 + 4 + 4 + (3 * 4) + (2 * 4) + 1 + (2 * 4) + 4 + 4 +
             pathsSize + 4 + cellBytes + 4 + pheromoneBytes + 4 + overlayBytes
 
         val out = ByteBuffer.allocate(total).order(ByteOrder.BIG_ENDIAN)
@@ -150,6 +162,7 @@ object RenderSceneDump {
         out.putFloat(frame.pheromoneK)
         out.putFloat(frame.pheromoneP)
         out.putFloat(frame.time)
+        out.putFloat(frame.interpolationLag)
 
         out.putInt(pathBytes.size)
         pathBytes.forEach {
@@ -197,6 +210,7 @@ object RenderSceneDump {
         val pheromoneK = input.float
         val pheromoneP = input.float
         val time = if (version >= 3) input.float else 0f
+        val interpolationLag = if (version >= 5) input.float else 0f
 
         val pathCount = input.int
         val texturePaths = ArrayList<String>(pathCount)
@@ -208,19 +222,22 @@ object RenderSceneDump {
         }
 
         val cellCount = input.int
-        val cells = if (version == 1) {
-            readCellsV1(input, cellCount)
-        } else if (version <= 3) {
-            readCellsV2(input, cellCount)
-        } else {
-            readDirect(input, cellCount * CellInstanceBuffer.STRUCT_SIZE)
+        val cells = when {
+            version == 1 -> readCellsV1(input, cellCount)
+            version <= 3 -> readLegacyCells(input, cellCount, V2_CELL_STRUCT_SIZE)
+            version == 4 -> readLegacyCells(input, cellCount, V4_CELL_STRUCT_SIZE)
+            else -> readDirect(input, cellCount * CellInstanceBuffer.STRUCT_SIZE)
         }
 
         val pheromoneCount = input.int
         val pheromones = readDirect(input, pheromoneCount * PheromoneInstanceBuffer.STRUCT_SIZE)
 
         val overlayCount = if (version >= 3) input.int else 0
-        val overlay = readDirect(input, overlayCount * OverlayInstanceBuffer.STRUCT_SIZE)
+        val overlay = if (version >= 5) {
+            readDirect(input, overlayCount * OverlayInstanceBuffer.STRUCT_SIZE)
+        } else {
+            readLegacyOverlay(input, overlayCount)
+        }
 
         return Scene(
             viewportWidth = viewportWidth,
@@ -240,7 +257,8 @@ object RenderSceneDump {
             pheromones = pheromones,
             time = time,
             overlayCount = overlayCount,
-            overlay = overlay
+            overlay = overlay,
+            interpolationLag = interpolationLag
         )
     }
 
@@ -254,9 +272,7 @@ object RenderSceneDump {
      * Было (32 байта):  x, y, color, packed1, packed2, три нулевых int
      *   packed1 = cos | sin<<8 | 0<<16 | radius<<24
      *   packed2 = energy | cellType<<8 | seed<<16
-     * Стало (24 байта): x, y, color, shape, type, look = 0
-     *   shape = cos | sin<<8 | radius<<16 | energy<<24
-     *   type  = cellType | seedLo<<8 | seedHi<<16
+     * Стало: текущая раскладка, см. [putLegacyCell].
      */
     private fun readCellsV1(source: ByteBuffer, cellCount: Int): ByteBuffer {
         val target = ByteBuffer
@@ -282,12 +298,11 @@ object RenderSceneDump {
             val cellType = (packed2 ushr 8) and 0xFF
             val seed = (packed2 ushr 16) and 0xFFFF
 
-            target.putFloat(x)
-            target.putFloat(y)
-            target.putInt(color)
-            target.putInt(CellInstanceBuffer.shape(cosByte, sinByte, radiusByte, energyByte))
-            target.putInt(CellInstanceBuffer.type(cellType, seed))
-            target.putInt(0)
+            putLegacyCell(
+                target, x, y, color, cosByte, sinByte, radiusByte, energyByte,
+                type = CellInstanceBuffer.type(cellType, seed),
+                look = 0
+            )
         }
 
         (source as java.nio.Buffer).position(source.position() + cellCount * V1_CELL_STRUCT_SIZE)
@@ -296,16 +311,79 @@ object RenderSceneDump {
     }
 
     /**
-     * Клетки из дампов версий 2–3: те же 20 байт, что сейчас, плюс нулевой look —
-     * непрозрачная клетка без рисунка, то есть ровно то, как такие дампы и рисовались.
+     * Клетки из дампов версий 2–4: x, y, color, shape, type и (с версии 4) look, где
+     * shape = cos | sin<<8 | radius<<16 | energy<<24 — направление по байту. В версиях 2–3
+     * look нет: ноль — непрозрачная клетка без рисунка, то есть ровно то, как такие дампы
+     * и рисовались.
      */
-    private fun readCellsV2(source: ByteBuffer, cellCount: Int): ByteBuffer {
+    private fun readLegacyCells(source: ByteBuffer, cellCount: Int, structSize: Int): ByteBuffer {
         val target = ByteBuffer
             .allocateDirect((cellCount * CellInstanceBuffer.STRUCT_SIZE).coerceAtLeast(1))
             .order(ByteOrder.nativeOrder())
-        repeat(cellCount) {
-            repeat(V2_CELL_STRUCT_SIZE) { target.put(source.get()) }
-            target.putInt(0)
+        val native = source.slice().order(ByteOrder.nativeOrder())
+
+        for (i in 0 until cellCount) {
+            val base = i * structSize
+            val shape = native.getInt(base + 12)
+            putLegacyCell(
+                target,
+                x = native.getFloat(base),
+                y = native.getFloat(base + 4),
+                color = native.getInt(base + 8),
+                cosByte = shape and 0xFF,
+                sinByte = (shape ushr 8) and 0xFF,
+                radiusByte = (shape ushr 16) and 0xFF,
+                energyByte = (shape ushr 24) and 0xFF,
+                type = native.getInt(base + 16),
+                look = if (structSize > V2_CELL_STRUCT_SIZE) native.getInt(base + 20) else 0
+            )
+        }
+
+        (source as java.nio.Buffer).position(source.position() + cellCount * structSize)
+        (target as java.nio.Buffer).flip()
+        return target
+    }
+
+    /**
+     * Клетка старой раскладки (направление по байту на cos и sin) — в текущую: байт
+     * распаковывается так, как его распаковывал прежний шейдер, b/255 * 2 - 1. Прошлая поза
+     * равна нынешней — старые дампы снимались без интерполяции.
+     */
+    private fun putLegacyCell(
+        target: ByteBuffer,
+        x: Float,
+        y: Float,
+        color: Int,
+        cosByte: Int,
+        sinByte: Int,
+        radiusByte: Int,
+        energyByte: Int,
+        type: Int,
+        look: Int
+    ) {
+        val dir = CellInstanceBuffer.dir(cosByte / 255f * 2f - 1f, sinByte / 255f * 2f - 1f)
+        target.putFloat(x)
+        target.putFloat(y)
+        target.putInt(color)
+        target.putInt(CellInstanceBuffer.shape(radiusByte, energyByte))
+        target.putInt(type)
+        target.putInt(look)
+        target.putInt(dir)
+        target.putFloat(x)
+        target.putFloat(y)
+        target.putInt(dir)
+    }
+
+    /** Оверлей версий 3–4: те же поля без прошлых концов — фигуры стоят. */
+    private fun readLegacyOverlay(source: ByteBuffer, overlayCount: Int): ByteBuffer {
+        val target = ByteBuffer
+            .allocateDirect((overlayCount * OverlayInstanceBuffer.STRUCT_SIZE).coerceAtLeast(1))
+            .order(ByteOrder.nativeOrder())
+        repeat(overlayCount) {
+            val from = target.position()
+            repeat(V4_OVERLAY_STRUCT_SIZE) { target.put(source.get()) }
+            // Прошлые концы — те же, что нынешние: x0, y0, x1, y1 в начале фигуры.
+            repeat(4 * 4) { k -> target.put(target.get(from + k)) }
         }
         (target as java.nio.Buffer).flip()
         return target

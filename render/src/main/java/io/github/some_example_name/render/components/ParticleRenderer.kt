@@ -122,6 +122,7 @@ class ParticleRenderer(
 
         shader.bind()
         shader.setUniformMatrix("u_projTrans", context.cameraProjection)
+        shader.setUniformf("u_lag", context.interpolationLag)
         shader.setUniformi("u_textureArray", 0)
 
         gl.glActiveTexture(GL20.GL_TEXTURE0)

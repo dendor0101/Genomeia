@@ -8,7 +8,11 @@ import io.github.some_example_name.old.cells.Tail
 import io.github.some_example_name.old.cells.base.CellPalette
 import io.github.some_example_name.old.cells.base.CellTypes
 import io.github.some_example_name.render.pack.CellLook
+import io.github.some_example_name.render.pack.OverlayInstanceBuffer
 import org.junit.Test
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
@@ -91,19 +95,58 @@ class DebugCellPaletteTest {
     }
 
     @Test
-    fun `буфер снимка растёт и не теряет записанное`() {
-        val overlay = RenderOverlayBufferData(initialCapacity = 1)
-        repeat(100) { i -> overlay.add(i.toFloat(), -i.toFloat(), i + 0.5f, 0f, i, i * 2) }
-        assertEquals(100, overlay.size)
-        for (i in 0 until 100) {
-            assertEquals(i.toFloat(), overlay.x0[i])
-            assertEquals(-i.toFloat(), overlay.y0[i])
-            assertEquals(i + 0.5f, overlay.x1[i])
-            assertEquals(i, overlay.color[i])
-            assertEquals(i * 2, overlay.params[i])
-        }
+    fun `стрелка едет и поворачивается вместе со своей клеткой`() {
+        // Клетка за тик сдвинулась из (4.7, 7.2) в (5, 7) и повернулась с 0.8 на 1.0 рад.
+        // Прошлые концы стрелки обязаны оказаться там, где стрелка была в прошлом тике: в
+        // прошлом центре, по прошлому направлению.
+        val overlay = OverlayInstanceBuffer(initialCapacity = 1)
+        overlay.begin()
+        val sink = OverlayMotionSink().apply { target = overlay }
 
-        overlay.clear()
-        assertEquals(0, overlay.size)
+        val angle = 1.0
+        val prevAngle = 0.8
+        val x = 5f
+        val y = 7f
+        val prevX = 4.7f
+        val prevY = 7.2f
+        sink.rigid(
+            x, y, cos(angle).toFloat(), sin(angle).toFloat(),
+            prevX, prevY, cos(prevAngle).toFloat(), sin(prevAngle).toFloat()
+        )
+        palette.writeArrow(sink, x, y, cos(angle).toFloat(), sin(angle).toFloat(), radius = 0.5f, signal = 0f)
+        val data = overlay.end()
+
+        // Начало — центр клетки: в прошлом тике он был в прошлом центре.
+        assertNear(prevX, data.getFloat(OverlayInstanceBuffer.OFFSET_PREV_FROM), "начало x")
+        assertNear(prevY, data.getFloat(OverlayInstanceBuffer.OFFSET_PREV_FROM + 4), "начало y")
+
+        val length = 0.5f * DebugCellPalette.ARROW_LENGTH
+        assertNear(prevX + cos(prevAngle).toFloat() * length, data.getFloat(OverlayInstanceBuffer.OFFSET_PREV_TO), "конец x тиком раньше")
+        assertNear(prevY + sin(prevAngle).toFloat() * length, data.getFloat(OverlayInstanceBuffer.OFFSET_PREV_TO + 4), "конец y тиком раньше")
+    }
+
+    @Test
+    fun `кольца феромонов стоят, связи едут прошлыми позициями своих концов`() {
+        val overlay = OverlayInstanceBuffer(initialCapacity = 1)
+        overlay.begin()
+        val sink = OverlayMotionSink().apply { target = overlay }
+
+        sink.still()
+        sink.add(1f, 2f, 3f, 0f, 0, 0)
+        sink.points(-0.5f, 0f, 1f, 1.25f)
+        palette.writeNeuralLink(sink, 0f, 0f, 1f, 1f, color = 0, signal = 0f, seed = 1)
+        val data = overlay.end()
+
+        assertEquals(1f, data.getFloat(OverlayInstanceBuffer.OFFSET_PREV_FROM), "кольцо стоит")
+        assertEquals(2f, data.getFloat(OverlayInstanceBuffer.OFFSET_PREV_FROM + 4))
+        assertEquals(3f, data.getFloat(OverlayInstanceBuffer.OFFSET_PREV_TO), "радиус тот же")
+
+        val link = OverlayInstanceBuffer.STRUCT_SIZE
+        assertEquals(-0.5f, data.getFloat(link + OverlayInstanceBuffer.OFFSET_PREV_FROM), "начало связи")
+        assertEquals(1.25f, data.getFloat(link + OverlayInstanceBuffer.OFFSET_PREV_TO + 4), "конец связи")
+    }
+
+    private fun assertNear(expected: Float, actual: Float, what: String) {
+        assertTrue(abs(expected - actual) <= 1e-5f, "$what: ожидалось ~$expected, получено $actual")
     }
 }

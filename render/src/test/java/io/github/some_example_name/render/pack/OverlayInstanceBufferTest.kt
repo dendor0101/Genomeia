@@ -40,12 +40,34 @@ class OverlayInstanceBufferTest {
     }
 
     @Test
-    fun `раскладка фигуры ровно 24 байта`() {
-        assertEquals(24, OverlayInstanceBuffer.STRUCT_SIZE)
+    fun `раскладка фигуры ровно 40 байт`() {
+        assertEquals(40, OverlayInstanceBuffer.STRUCT_SIZE)
         assertEquals(0, OverlayInstanceBuffer.OFFSET_FROM)
         assertEquals(8, OverlayInstanceBuffer.OFFSET_TO)
         assertEquals(16, OverlayInstanceBuffer.OFFSET_COLOR)
         assertEquals(20, OverlayInstanceBuffer.OFFSET_PARAMS)
+        assertEquals(24, OverlayInstanceBuffer.OFFSET_PREV_FROM)
+        assertEquals(32, OverlayInstanceBuffer.OFFSET_PREV_TO)
+    }
+
+    @Test
+    fun `прошлые концы лежат после params, по умолчанию — нынешние`() {
+        val data = OverlayInstanceBuffer(initialCapacity = 1).apply {
+            begin(2)
+            put(0f, 0f, 1f, 1f, color = 7, params = 9, prevX0 = -1f, prevY0 = -2f, prevX1 = 3f, prevY1 = 4f)
+            putRing(1f, 2f, 3f, 0)
+        }.end()
+        assertEquals(-1f, data.getFloat(OverlayInstanceBuffer.OFFSET_PREV_FROM))
+        assertEquals(-2f, data.getFloat(OverlayInstanceBuffer.OFFSET_PREV_FROM + 4))
+        assertEquals(3f, data.getFloat(OverlayInstanceBuffer.OFFSET_PREV_TO))
+        assertEquals(4f, data.getFloat(OverlayInstanceBuffer.OFFSET_PREV_TO + 4))
+        assertEquals(9, read(data, 0).params, "прошлые концы не задели params")
+
+        // Кольцо стоит: прошлые центр и радиус — те же.
+        val ring = OverlayInstanceBuffer.STRUCT_SIZE
+        assertEquals(1f, data.getFloat(ring + OverlayInstanceBuffer.OFFSET_PREV_FROM))
+        assertEquals(2f, data.getFloat(ring + OverlayInstanceBuffer.OFFSET_PREV_FROM + 4))
+        assertEquals(3f, data.getFloat(ring + OverlayInstanceBuffer.OFFSET_PREV_TO), "радиус")
     }
 
     @Test

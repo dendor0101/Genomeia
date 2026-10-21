@@ -12,12 +12,14 @@ import kotlin.math.roundToInt
  * Модуль рендера не знает, что такое глаз или нейрон: здесь только фигуры. Что из
  * клеток превращается в какую фигуру и каким цветом, решает :core (RenderSystem).
  *
- * РАСКЛАДКА (24 байта, порядок байт нативный)
+ * РАСКЛАДКА (40 байт, порядок байт нативный)
  * -------------------------------------------
  *   [0..7]   float x0, y0      → a_from   (2 × GL_FLOAT) — начало отрезка, центр кольца
  *   [8..15]  float x1, y1      → a_to     (2 × GL_FLOAT) — конец отрезка; у кольца x1 — радиус
  *   [16..19] int   color       → a_color  (4 × GL_UNSIGNED_BYTE, normalized) — RGBA8
  *   [20..23] int   params      → a_params (4 × GL_UNSIGNED_BYTE, normalized)
+ *   [24..31] float prevX0, prevY0 → a_prevFrom (2 × GL_FLOAT) — начало в прошлом тике
+ *   [32..39] float prevX1, prevY1 → a_prevTo   (2 × GL_FLOAT) — конец в прошлом тике
  *
  *   params = kind | signalByte<<8 | seed<<16 | 0<<24
  *
@@ -26,6 +28,11 @@ import kotlin.math.roundToInt
  *   seed       — сдвиг фазы импульсов или волны, чтобы фигуры не двигались в такт.
  *
  * Порядок записи — порядок отрисовки: что записано позже, ложится сверху.
+ *
+ * Прошлые концы — поза фигуры в прошлом тике. Оверлей интерполируется тем же u_lag, что и
+ * клетки (CellInstanceBuffer): иначе стрелки и нейросвязи отставали бы от плавно едущих
+ * под ними клеток и дёргались бы относительно них раз в тик. У кольца «конец» — это
+ * радиус, и прошлый у него тот же.
  *
  * Размеры фигур (толщины, наконечники, шаг импульсов) задаёт шейдер —
  * shaders/debug_view/overlay_common.glsl, сюда едут только концы, цвет и сигнал.
@@ -50,8 +57,22 @@ class OverlayInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
         finished = false
     }
 
-    /** Готовые поля, без арифметики. */
-    fun put(x0: Float, y0: Float, x1: Float, y1: Float, color: Int, params: Int) {
+    /**
+     * Готовые поля, без арифметики. [prevX0]..[prevY1] — концы в прошлом тике; по умолчанию
+     * нынешние — фигура стоит.
+     */
+    fun put(
+        x0: Float,
+        y0: Float,
+        x1: Float,
+        y1: Float,
+        color: Int,
+        params: Int,
+        prevX0: Float = x0,
+        prevY0: Float = y0,
+        prevX1: Float = x1,
+        prevY1: Float = y1
+    ) {
         if (buffer.remaining() < STRUCT_SIZE) ensureCapacity(written + 1)
         buffer.putFloat(x0)
         buffer.putFloat(y0)
@@ -59,6 +80,10 @@ class OverlayInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
         buffer.putFloat(y1)
         buffer.putInt(color)
         buffer.putInt(params)
+        buffer.putFloat(prevX0)
+        buffer.putFloat(prevY0)
+        buffer.putFloat(prevX1)
+        buffer.putFloat(prevY1)
         written++
     }
 
@@ -131,12 +156,15 @@ class OverlayInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
 
     companion object {
         /** Менять только вместе с OverlayGeometry и shaders/debug_view/overlay.vert. */
-        const val STRUCT_SIZE = 24
+        const val STRUCT_SIZE = 40
 
         const val OFFSET_FROM = 0
         const val OFFSET_TO = 8
         const val OFFSET_COLOR = 16
         const val OFFSET_PARAMS = 20
+
+        const val OFFSET_PREV_FROM = 24
+        const val OFFSET_PREV_TO = 32
 
         const val INITIAL_CAPACITY = 4_096
 
