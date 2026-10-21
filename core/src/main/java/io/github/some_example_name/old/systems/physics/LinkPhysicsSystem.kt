@@ -617,9 +617,11 @@ class LinkPhysicsSystem(
                 linkIndex,
                 linkEntity.getGeneration(linkIndex)
             )
-            cellEntity.isOnEdge[linkCellB] = true
+            // Граница — не здесь: её откроет применение DELETE_LINK (LinkEntity.deleteLink ->
+            // CellEntity.refreshOnEdge) в этом же тике. Прямая запись isOnEdge отсюда
+            // рассинхронизировала его с ParticleEntity.isInGrid (см. LinkEntity.detachAllLinks)
+            // и к тому же писала в чужие клетки из параллельной стадии.
             cellEntity.setColor(linkCellB, Color.RED.toIntBits())
-            cellEntity.isOnEdge[linkCellA] = true
             cellEntity.setColor(linkCellA, Color.RED.toIntBits())
             return
         }

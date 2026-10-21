@@ -135,6 +135,7 @@ class MapSave(
         entities.forEach { (_, entity) -> entity.restoreAfterLoad() }
         cellEntity.restoreCellActions(decodeInts(entries[CELL_ACTIONS] ?: ByteArray(0)), genomeManager.genomes)
         organEntity.restoreArenaLayouts(genomeManager.genomes)
+        cellEntity.repairEdgeFlagsAfterLoad()
 
         simulationData.tickCounter = meta.tickCounter
         simulationData.timeSimulation = meta.timeSimulation

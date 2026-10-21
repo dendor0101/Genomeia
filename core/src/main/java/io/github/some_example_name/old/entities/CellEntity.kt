@@ -562,6 +562,17 @@ class CellEntity(
                 )
             }
 
+            // isOnEdge — лишь память о том, где частица клетки: в сетке столкновений или нет.
+            // Пишет их вместе только refreshOnEdge; запись одного флага мимо него оставляет
+            // клетку «граничной», которая ни с чем не сталкивается (рана после Punisher, 21.10).
+            val particle = particleIndexes[cellIndex]
+            if (particle != -1 && isOnEdge[cellIndex] != particleEntity.isInGrid[particle]) {
+                throw IllegalStateException(
+                    "клетка $cellIndex: isOnEdge=${isOnEdge[cellIndex]}, а частица $particle " +
+                        "isInGrid=${particleEntity.isInGrid[particle]} — флаг записан мимо refreshOnEdge"
+                )
+            }
+
             val organ = organIndex[cellIndex]
             if (!organEntity.hasArena(organ)) continue
 
@@ -636,6 +647,28 @@ class CellEntity(
         // мира, в одном потоке. Уход внутрь регистрации не требует: перестройка пропускает
         // частицы с isInGrid == false сама.
         if (onEdge) particleEntity.gridManager.registerParticle(particleIndex)
+    }
+
+    /**
+     * Мир из сохранения, сделанного до починки 21.10: у части клеток isOnEdge = true, а
+     * частица вне сетки столкновений (флаг ставили мимо refreshOnEdge, см.
+     * LinkEntity.detachAllLinks). Такая клетка не сталкивается никогда — refreshOnEdge
+     * считает, что менять нечего, — а verifyArenaIntegrity на ней падает.
+     *
+     * Флаг возвращается к правде частицы, и refreshOnEdge решает заново — то же, что решил
+     * бы тогда, не будь флаг выставлен заранее. У согласованного мира не меняется ничего.
+     * Только после OrganEntity.restoreArenaLayouts: решению нужна запечённая граница.
+     */
+    fun repairEdgeFlagsAfterLoad() {
+        for (i in 0 until aliveList.size) {
+            val cellIndex = aliveList.getInt(i)
+            val particleIndex = particleIndexes[cellIndex]
+            if (particleIndex == -1) continue
+            val inGrid = particleEntity.isInGrid[particleIndex]
+            if (isOnEdge[cellIndex] == inGrid) continue
+            isOnEdge[cellIndex] = inGrid
+            refreshOnEdge(cellIndex)
+        }
     }
 
     /**
