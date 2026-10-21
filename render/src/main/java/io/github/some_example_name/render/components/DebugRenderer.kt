@@ -252,6 +252,7 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         overlayShader.bind()
         overlayShader.setUniformMatrix("u_projTrans", context.cameraProjection)
         setIfPresent(overlayShader, "u_pixelWorld", context.pixelWorld)
+        setIfPresent(overlayShader, "u_lag", context.interpolationLag)
         setIfPresent(overlayShader, "u_time", context.time)
         setIfPresent(overlayShader, "u_owner", 0)
         owner.bind(0)
@@ -267,6 +268,7 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         // Компилятор вправе выкинуть неиспользуемый униформ — отсюда setIfPresent, а не
         // setUniformf с его исключением.
         setIfPresent(shader, "u_pixelWorld", context.pixelWorld)
+        setIfPresent(shader, "u_lag", context.interpolationLag)
         setIfPresent(shader, "u_depthScale", DEPTH_SCALE)
         setIfPresent(shader, "u_fringe", if (fringe) 1f else 0f)
         setIfPresent(shader, "u_time", context.time)

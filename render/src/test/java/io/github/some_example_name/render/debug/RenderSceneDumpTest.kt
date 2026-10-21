@@ -45,7 +45,11 @@ class RenderSceneDumpTest {
                 radius = 0.1f + i * 0.05f,
                 energy = i.toFloat(),
                 cellType = i,
-                noiseSeed = i * 31
+                noiseSeed = i * 31,
+                prevX = i * 1.5f - i * 0.25f,
+                prevY = -i.toFloat() + i * 0.125f,
+                prevCos = 1f,
+                prevSin = 0f
             )
         }
 
@@ -67,6 +71,7 @@ class RenderSceneDumpTest {
             this.pheromones = pheromones.end()
             this.overlay = overlay.end()
             time = 123.25f
+            interpolationLag = 0.375f
             pheromoneK = 0.4f
             pheromoneP = 0.01f
             blurAmount = 2.5f
@@ -126,6 +131,7 @@ class RenderSceneDumpTest {
 
         assertEquals(3, scene.overlayCount)
         assertEquals(123.25f, scene.time)
+        assertEquals(0.375f, scene.interpolationLag)
         assertBuffersEqual(frame.overlay!!, scene.overlay, "буфер оверлея")
         assertTrue(scene.overlay.isDirect, "оверлей тоже едет на GPU как есть")
     }
@@ -133,32 +139,111 @@ class RenderSceneDumpTest {
     /** Смещение поля time в заголовке: magic, версия, вьюпорт, камера, блюр, виньетка, режим, K и P. */
     private val timeOffset = 8 + 4 + 4 + 4 + 3 * 4 + 2 * 4 + 1 + 2 * 4
 
+    private val native = java.nio.ByteOrder.nativeOrder()
+
     /**
-     * Запись текущей версии → запись версии 2 или 3: клетки по 20 байт (без look), у
-     * версии 2 ещё нет времени и оверлея. [paths] — длина секции путей к текстурам в байтах.
+     * Запись текущей версии (5) → запись версии 2, 3 или 4, ровно в той раскладке, какой
+     * писала старая игра:
+     *   - нет отставания кадра после time (версии до 5);
+     *   - клетка 24 байта (4) или 20 байт (2–3): shape с направлением по байту на cos и
+     *     sin, без dir и прошлой позы;
+     *   - фигура оверлея 24 байта, без смещений концов (3–4);
+     *   - у версии 2 ещё нет ни времени, ни оверлея.
+     * [paths] — длина секции путей к текстурам в байтах.
      */
     private fun downgrade(current: ByteArray, version: Int, paths: Int, cellCount: Int): ByteArray {
-        val cellsAt = timeOffset + 4 + paths + 4
-        val cells = ByteArray(cellCount * 20)
+        val src = java.nio.ByteBuffer.wrap(current)
+        val cellStruct = if (version == 4) 24 else 20
+        val out = java.io.ByteArrayOutputStream()
+
+        // Заголовок до time включительно; у версии 2 time нет.
+        out.write(current, 0, if (version == 2) timeOffset else timeOffset + 4)
+        // Пропускаем отставание кадра: его нет до версии 5.
+        val pathsAt = timeOffset + 4 + 4
+        out.write(current, pathsAt, paths + 4)
+
+        val cellsAt = pathsAt + paths + 4
+        val cellBytes = java.nio.ByteBuffer.allocate(cellCount * cellStruct).order(native)
+        val cells = src.duplicate().order(native)
         repeat(cellCount) { i ->
-            current.copyInto(cells, i * 20, cellsAt + i * 24, cellsAt + i * 24 + 20)
+            val base = cellsAt + i * CellInstanceBuffer.STRUCT_SIZE
+            val shape = cells.getInt(base + CellInstanceBuffer.OFFSET_SHAPE)
+            val dir = cells.getInt(base + CellInstanceBuffer.OFFSET_DIR)
+            cellBytes.putFloat(cells.getFloat(base))
+            cellBytes.putFloat(cells.getFloat(base + 4))
+            cellBytes.putInt(cells.getInt(base + CellInstanceBuffer.OFFSET_COLOR))
+            // Прежний shape: cos | sin<<8 | радиус<<16 | энергия<<24; радиус и энергия на своих местах.
+            cellBytes.putInt(oldAngleByte(dir, 0) or (oldAngleByte(dir, 1) shl 8) or (shape and 0xFFFF0000.toInt()))
+            cellBytes.putInt(cells.getInt(base + CellInstanceBuffer.OFFSET_TYPE))
+            if (version == 4) cellBytes.putInt(cells.getInt(base + CellInstanceBuffer.OFFSET_LOOK))
         }
-        val head = current.copyOfRange(0, cellsAt)
-        val tail = current.copyOfRange(cellsAt + cellCount * 24, current.size)
-        var result = head + cells + tail
-        if (version == 2) {
-            // Без времени после pheromoneP и без счётчика оверлея в самом конце.
-            result = result.copyOfRange(0, timeOffset) + result.copyOfRange(timeOffset + 4, result.size - 4)
+        out.write(cellBytes.array())
+
+        var at = cellsAt + cellCount * CellInstanceBuffer.STRUCT_SIZE
+        val pheromoneCount = src.getInt(at)
+        out.write(current, at, 4 + pheromoneCount * PheromoneInstanceBuffer.STRUCT_SIZE)
+        at += 4 + pheromoneCount * PheromoneInstanceBuffer.STRUCT_SIZE
+
+        if (version >= 3) {
+            val overlayCount = src.getInt(at)
+            out.write(current, at, 4)
+            repeat(overlayCount) { i ->
+                out.write(current, at + 4 + i * OverlayInstanceBuffer.STRUCT_SIZE, 24)
+            }
         }
+
+        val result = out.toByteArray()
         result[8] = 0; result[9] = 0; result[10] = 0; result[11] = version.toByte()
         return result
+    }
+
+    /** Направление из 16 бит в прежний байт: (v + 1) / 2 * 255. */
+    private fun oldAngleByte(dir: Int, index: Int): Int {
+        val value = ((dir ushr (index * 16)) and 0xFFFF).toShort() / 32767f
+        return ((value * 0.5f + 0.5f) * 255f + 0.5f).toInt().coerceIn(0, 255)
+    }
+
+    /**
+     * Клетки старого дампа против исходных: всё, что старая раскладка хранила, — ровно;
+     * направление — с точностью прежнего байта; прошлая поза у старых — нынешняя.
+     */
+    private fun assertLegacyCells(expected: java.nio.ByteBuffer, actual: java.nio.ByteBuffer, cellCount: Int, withLook: Boolean) {
+        assertEquals(cellCount * CellInstanceBuffer.STRUCT_SIZE, actual.remaining())
+        val e = expected.duplicate().order(native)
+        val a = actual.duplicate().order(native)
+        repeat(cellCount) { i ->
+            val eb = e.position() + i * CellInstanceBuffer.STRUCT_SIZE
+            val ab = a.position() + i * CellInstanceBuffer.STRUCT_SIZE
+            assertEquals(e.getFloat(eb), a.getFloat(ab), "x клетки $i")
+            assertEquals(e.getFloat(eb + 4), a.getFloat(ab + 4), "y клетки $i")
+            assertEquals(e.getInt(eb + CellInstanceBuffer.OFFSET_COLOR), a.getInt(ab + CellInstanceBuffer.OFFSET_COLOR))
+            assertEquals(e.getInt(eb + CellInstanceBuffer.OFFSET_TYPE), a.getInt(ab + CellInstanceBuffer.OFFSET_TYPE))
+            val expectedLook = if (withLook) e.getInt(eb + CellInstanceBuffer.OFFSET_LOOK) else 0
+            assertEquals(expectedLook, a.getInt(ab + CellInstanceBuffer.OFFSET_LOOK))
+
+            val eShape = e.getInt(eb + CellInstanceBuffer.OFFSET_SHAPE)
+            val aShape = a.getInt(ab + CellInstanceBuffer.OFFSET_SHAPE)
+            assertEquals(eShape ushr 16, aShape ushr 16, "радиус и энергия клетки $i")
+            assertEquals(0, aShape and 0xFFFF, "младшие байты shape свободны")
+            assertEquals(a.getFloat(ab), a.getFloat(ab + CellInstanceBuffer.OFFSET_PREV_CENTER), "старый дамп стоит: x")
+            assertEquals(a.getFloat(ab + 4), a.getFloat(ab + CellInstanceBuffer.OFFSET_PREV_CENTER + 4), "старый дамп стоит: y")
+            assertEquals(a.getInt(ab + CellInstanceBuffer.OFFSET_DIR), a.getInt(ab + CellInstanceBuffer.OFFSET_PREV_DIR), "старый дамп не вращается")
+
+            val eDir = e.getInt(eb + CellInstanceBuffer.OFFSET_DIR)
+            val aDir = a.getInt(ab + CellInstanceBuffer.OFFSET_DIR)
+            for (k in 0..1) {
+                val ev = ((eDir ushr (k * 16)) and 0xFFFF).toShort() / 32767f
+                val av = ((aDir ushr (k * 16)) and 0xFFFF).toShort() / 32767f
+                assertTrue(kotlin.math.abs(ev - av) <= 1.01f / 255f, "направление клетки $i: $ev против $av")
+            }
+        }
     }
 
     @Test
     fun `дамп версии 2 читается без оверлея и времени`() {
         // Версия 3 добавила два поля: время после pheromoneP и оверлей в самом конце,
-        // версия 4 — look в каждой клетке. Старые снимки — материал для сравнения «до и
-        // после», терять их нельзя.
+        // версия 4 — look в каждой клетке, версия 5 — направление по 16 бит и смещения.
+        // Старые снимки — материал для сравнения «до и после», терять их нельзя.
         val (frame, _, _) = sampleFrame(cellCount = 4, pheromoneCount = 2)
         frame.overlay = null
         val file = FileHandle(folder.newFile("v2.scene"))
@@ -169,10 +254,11 @@ class RenderSceneDumpTest {
         assertEquals(4, scene.cellCount)
         assertEquals(2, scene.pheromoneCount)
         assertEquals(0f, scene.time)
+        assertEquals(0f, scene.interpolationLag)
         assertEquals(0, scene.overlayCount)
         assertEquals(0, scene.overlay.remaining())
-        // У образца look нулевой — ровно то, чем дамп старой версии и дополняется.
-        assertBuffersEqual(frame.cells!!, scene.cells, "буфер клеток")
+        assertLegacyCells(frame.cells!!, scene.cells, 4, withLook = false)
+        assertBuffersEqual(frame.pheromones!!, scene.pheromones, "буфер феромонов")
     }
 
     @Test
@@ -186,7 +272,24 @@ class RenderSceneDumpTest {
         assertEquals(3, scene.cellCount)
         assertEquals(123.25f, scene.time)
         assertEquals(3, scene.overlayCount)
-        assertBuffersEqual(frame.cells!!, scene.cells, "буфер клеток")
+        assertLegacyCells(frame.cells!!, scene.cells, 3, withLook = false)
+        // У образца фигуры стоят — ровно то, чем дополняется старый оверлей.
+        assertBuffersEqual(frame.overlay!!, scene.overlay, "буфер оверлея")
+    }
+
+    @Test
+    fun `дамп версии 4 читается с клетками по 24 байта и направлением по байту`() {
+        val (frame, _, _) = sampleFrame(cellCount = 5, pheromoneCount = 2)
+        val file = FileHandle(folder.newFile("v4.scene"))
+        RenderSceneDump.write(file, frame, 800, 600, 1f, 2f, 0.5f, listOf("a.png"))
+        file.writeBytes(downgrade(file.readBytes(), version = 4, paths = 4 + 4 + 5, cellCount = 5), false)
+
+        val scene = RenderSceneDump.read(file)
+        assertEquals(5, scene.cellCount)
+        assertEquals(123.25f, scene.time)
+        assertEquals(0f, scene.interpolationLag, "старый дамп снят без интерполяции")
+        assertLegacyCells(frame.cells!!, scene.cells, 5, withLook = true)
+        assertBuffersEqual(frame.pheromones!!, scene.pheromones, "буфер феромонов")
         assertBuffersEqual(frame.overlay!!, scene.overlay, "буфер оверлея")
     }
 

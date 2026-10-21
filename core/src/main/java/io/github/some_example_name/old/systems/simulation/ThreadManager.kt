@@ -55,17 +55,38 @@ class ThreadManager(
         isRunning = false
     }
 
+    /**
+     * Цикл тиков: на максимальной скорости — подряд, иначе — по расписанию [simulationData].targetUPS.
+     *
+     * ПОЧЕМУ ПО РАСПИСАНИЮ, А НЕ «СПАТЬ ОСТАТОК ТИКА»
+     * ----------------------------------------------
+     * Прежний цикл копил время в аккумуляторе и после каждого тика спал «длину тика минус
+     * время его расчёта». Thread.sleep на Windows просыпается на 1–7 мс позже, это опоздание
+     * оседало в аккумуляторе, и раз в несколько тиков цикл отдавал долг ДВУМЯ тиками
+     * подряд — с разницей в доли миллисекунды. Замер 21.10 (PROFILE_INTERPOLATION, 144 Гц):
+     * при 60 UPS рендер не видел 2–3 снимка в секунду, при 30 UPS промежуток между тиками
+     * был ~40 мс вместо 33. Пропущенный снимок — это скачок тела на целый тик вперёд
+     * поверх плавной интерполяции.
+     *
+     * Теперь у каждого тика своё время (nextTickAt += длина тика), и цикл спит до него.
+     * После этого на том же замере: 30 UPS — ни одного пропуска, промежуток 32.5–36.5 мс.
+     * Опоздание сна сдвигает только этот тик и не копится: следующий тик ждёт своего
+     * времени, а не «полного тика после этого». Два тика подряд бывают только при
+     * настоящем отставании симуляции; отставание больше [MAX_DEBT_NANOS] прощается, как
+     * раньше прощалось всё сверх 0.25 с, — иначе после подвисания мир бы долго «догонял».
+     *
+     * Время на логику мира не влияет: меняется только, КОГДА идут тики, а не что в них
+     * происходит.
+     */
     inline fun runUpdateLoop(onUpdateTick: () -> Unit) {
-        var lastTime = System.nanoTime()
-        var accumulator = 0.0
-
         // для UPS
         var updatesThisSecond = 0
         var lastUpsTime = System.nanoTime()
 
         // кэшируем последнее значение, чтобы реагировать на изменение на лету
         var lastTargetUPS = simulationData.targetUPS
-        var deltaTimePerTick = 1.0 / lastTargetUPS.toDouble()
+        var tickNanos = NANOS_PER_SECOND / lastTargetUPS
+        var nextTickAt = System.nanoTime()
 
         try {
             while (isRunning) {
@@ -75,46 +96,37 @@ class ThreadManager(
                     } catch (_: InterruptedException) {
                         break
                     }
+                    // После паузы — с чистого листа: пауза не долг, догонять её нельзя.
+                    nextTickAt = System.nanoTime()
                     continue
                 }
 
-                val currentTime = System.nanoTime()
-                val frameTime = minOf((currentTime - lastTime) / 1_000_000_000.0, 0.25)
-                lastTime = currentTime
-
                 // === Реакция на изменение targetUPS на лету ===
                 if (!simulationData.maxSpeed && lastTargetUPS != simulationData.targetUPS) {
-                    deltaTimePerTick = 1.0 / simulationData.targetUPS.toDouble()
-                    accumulator = 0.0          // сбрасываем, чтобы не было резкого "взрыва" обновлений
                     lastTargetUPS = simulationData.targetUPS
+                    tickNanos = NANOS_PER_SECOND / lastTargetUPS
+                    nextTickAt = System.nanoTime() // без резкого "взрыва" обновлений
                 }
-
-                accumulator += frameTime
 
                 if (simulationData.maxSpeed) {
                     onUpdateTick.invoke()
                     updatesThisSecond++
+                    nextTickAt = System.nanoTime()
                 } else {
-                    // обычный фиксированный timestep
-                    while (accumulator >= deltaTimePerTick) {
+                    val now = System.nanoTime()
+                    val wait = nextTickAt - now
+                    if (wait <= 0L) {
                         onUpdateTick.invoke()
-                        accumulator -= deltaTimePerTick
                         updatesThisSecond++
-                    }
-
-                    // === спим остаток тика (даже если обновлений в этом кадре не было) ===
-                    val elapsed = (System.nanoTime() - currentTime) / 1_000_000_000.0
-                    val sleepTime = deltaTimePerTick - elapsed
-                    if (sleepTime > 0.001) {
+                        nextTickAt += tickNanos
+                        if (now - nextTickAt > MAX_DEBT_NANOS) nextTickAt = now
+                    } else if (wait > SLEEP_MIN_NANOS) {
                         try {
-                            Thread.sleep(
-                                (sleepTime * 1000).toLong(),
-                                ((sleepTime * 1_000_000) % 1_000_000).toInt()
-                            )
+                            Thread.sleep(wait / 1_000_000L, (wait % 1_000_000L).toInt())
                         } catch (_: InterruptedException) {
                             break
                         }
-                    } else if (sleepTime > 0) {
+                    } else {
                         Thread.yield()   // совсем маленький остаток — просто уступаем CPU
                     }
                 }
@@ -260,5 +272,16 @@ class ThreadManager(
             }
             return minOf(threadCount, hardware)
         }
+
+        const val NANOS_PER_SECOND = 1_000_000_000L
+
+        /**
+         * Сколько отставания от расписания тиков цикл ещё догоняет; больше — прощает (см.
+         * runUpdateLoop). Столько же, сколько прежний цикл: он обрезал кадр до 0.25 с.
+         */
+        const val MAX_DEBT_NANOS = 250_000_000L
+
+        /** Короче этого не спим, а уступаем процессор: сон на Windows грубее миллисекунды. */
+        const val SLEEP_MIN_NANOS = 1_000_000L
     }
 }

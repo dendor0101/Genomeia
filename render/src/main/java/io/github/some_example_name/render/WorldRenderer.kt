@@ -25,6 +25,7 @@ import io.github.some_example_name.render.components.VignetteRenderer
 import io.github.some_example_name.render.pack.CellInstanceBuffer
 import io.github.some_example_name.render.pack.OverlayInstanceBuffer
 import io.github.some_example_name.render.pack.PheromoneInstanceBuffer
+import java.nio.ByteBuffer
 
 /**
  * Единственная точка входа модуля рендера: отдаёшь [RenderFrame] — получаешь картинку.
@@ -92,6 +93,13 @@ class WorldRenderer(
 
     /** Переиспользуется между кадрами: на кадр не должно быть ни одной аллокации. */
     private val renderContext = RenderContext()
+
+    /**
+     * Чей буфер клеток сейчас лежит в VBO у [cellGeometry]. Геометрия одна на экран, превью
+     * и все экраны игры, а заливать её каждый кадр больше не обязательно (RenderFrame.uploadCells):
+     * без этой пометки кадр после превью нарисовал бы клетки превью.
+     */
+    private var uploadedCells: ByteBuffer? = null
 
     private val components = mutableListOf<RenderComponent>()
 
@@ -225,8 +233,8 @@ class WorldRenderer(
      * экран и читает его по gl_FragCoord.
      *
      * Звать из потока рендера вне [render] (между кадрами). Геометрия клеток общая с
-     * экраном, но экран перезаливает её каждый кадр (uploadCells), так что превью ему не
-     * мешает. После вызова привязан экранный буфер.
+     * экраном, но превью ему не мешает: следующий кадр экрана увидит в VBO чужой буфер и
+     * перезальёт свой (см. [uploadedCells]). После вызова привязан экранный буфер.
      */
     fun renderOffscreen(frame: RenderFrame, output: FrameBuffer) {
         require(frame.mode != RenderMode.DEBUG) { "превью в отладочном режиме не рисуется" }
@@ -282,9 +290,12 @@ class WorldRenderer(
         val cells = frame.cells
 
         // Один раз за кадр и до всех проходов: сколько бы их ни рисовало клетки, байты
-        // едут на GPU единожды.
-        if (frame.uploadCells && cells != null) {
+        // едут на GPU единожды. И не каждый кадр: если буфер тот же и не менялся
+        // (uploadCells = false), в VBO уже лежат ровно эти байты. Чужой буфер — превью
+        // генома или другой экран — заливается всегда, иначе кадр нарисовал бы их клетки.
+        if (cells != null && (frame.uploadCells || cells !== uploadedCells)) {
             cellGeometry.upload(cells)
+            uploadedCells = cells
         }
 
         renderContext.apply {
@@ -292,6 +303,7 @@ class WorldRenderer(
             cameraProjection = frame.cameraProjection
 
             numInstances = cells?.let { it.remaining() / CellInstanceBuffer.STRUCT_SIZE } ?: 0
+            interpolationLag = frame.interpolationLag
 
             pheromoneData = frame.pheromones
             numPheromoneInstances =
@@ -407,6 +419,7 @@ class WorldRenderer(
         components.clear()
 
         cellGeometry.dispose()
+        uploadedCells = null
         if (::mesh.isInitialized) mesh.dispose()
 
         if (::fbo.isInitialized) fbo.dispose()

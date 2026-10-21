@@ -9,6 +9,7 @@ import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Matrix4
+import io.github.some_example_name.old.core.PROFILE_INTERPOLATION
 import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.render.RenderFrame
 import io.github.some_example_name.render.DebugFilter
@@ -16,8 +17,6 @@ import io.github.some_example_name.render.RenderMode
 import io.github.some_example_name.render.WorldRenderer
 import io.github.some_example_name.render.debug.RenderSceneDump
 import io.github.some_example_name.render.pack.CellInstanceBuffer
-import io.github.some_example_name.render.pack.OverlayInstanceBuffer
-import io.github.some_example_name.render.pack.PheromoneInstanceBuffer
 
 /**
  * Сторона симуляции в отрисовке кадра: взять снимок мира и перевести его на язык,
@@ -70,11 +69,18 @@ class RenderSystem(
     private var cameraY = 0f
     private var blurLevel = 0f
 
-    /** Всё переиспользуется между кадрами: аллокаций на кадр быть не должно. */
-    private val cellBuffer = CellInstanceBuffer()
-    private val pheromoneBuffer = PheromoneInstanceBuffer()
-    private val overlayBuffer = OverlayInstanceBuffer()
+    /** Переиспользуется между кадрами: аллокаций на кадр быть не должно. */
     private val frame = RenderFrame()
+
+    /**
+     * Клетки взятого снимка — в direct-буфере, который уходит на GPU. Снимок уже в
+     * раскладке GPU, поэтому это одна копия массива (memcpy) — и только когда снимок новый:
+     * прежде GL-поток каждый кадр заново перекладывал все поля каждой клетки.
+     */
+    private val cellBuffer = CellInstanceBuffer()
+
+    /** Из какого снимка [cellBuffer]: другой слот или первый кадр — копировать заново. */
+    private var packedSnapshot: RenderSnapshot? = null
 
     /**
      * Часы анимации оверлея: по ним бегут импульсы нейросвязей. Идут, только пока идёт
@@ -122,18 +128,18 @@ class RenderSystem(
     }
 
     fun render() {
-        // Индекс кадра читается ОДИН раз, и оба буфера берутся по нему: оверлей рисуется
-        // по координатам клеток, и клетки с оверлеем обязаны быть из одной сборки. Почему
-        // это важно — в RenderBufferManager.frameFrontIndex.
-        val frameIndex = renderBufferManager.frontFrameIndex()
-        val cellBuf = renderBufferManager.cellBuffer(frameIndex)
-        val overlayBuf = renderBufferManager.overlayBuffer(frameIndex)
-
-        val pheromoneBuf = renderBufferManager.getCurrentPheromoneBuffer()
-        val spec = renderBufferManager.getCurrentSpecificBufferData()
+        // Снимок берётся ОДИН раз за кадр и целиком: клетки, оверлей, феромоны и строка
+        // состояния из одного тика (см. TripleBuffer). fresh — снимок новый, буфер клеток
+        // надо перезалить; иначе на GPU уже ровно эти байты, и кадр отличается от прошлого
+        // только долей тика.
+        val fresh = renderBufferManager.acquireSnapshot()
+        val snapshot = renderBufferManager.currentSnapshot()
+        val spec = snapshot.spec
 
         // Один раз на кадр: упаковка, рендер и отладка должны работать в одном режиме.
         val mode = this.mode
+        val lag = interpolationLag(snapshot)
+        if (PROFILE_INTERPOLATION) logInterpolation(snapshot, fresh, lag)
 
         if (zoom != camera.zoom || cameraX != camera.position.x || cameraY != camera.position.y) {
             if (!spec.isCellSelected) {
@@ -144,29 +150,28 @@ class RenderSystem(
             }
         }
 
-        packCells(cellBuf)
-        packPheromones(pheromoneBuf, mode.usesPostProcess)
-        packOverlay(overlayBuf, mode.drawsDebugOverlay)
-
         if (renderBufferManager.simulationData.isPlay) {
             animationTime = RenderFrame.advanceTime(animationTime, Gdx.graphics.deltaTime)
         }
 
         frame.apply {
             cameraProjection = camera.combined
-            cells = cellBuffer.end()
-            uploadCells = true
-            pheromones = pheromoneBuffer.end()
+            cells = cellsOf(snapshot, fresh)
+            uploadCells = fresh || packedNow
+            interpolationLag = lag
+            // Феромоны рисует только постпроцесс, оверлей — только отладка, и только если
+            // снимок собран под неё (режим переключили, а нового тика ещё не было).
+            pheromones = if (mode.usesPostProcess) snapshot.pheromones.end() else null
             pheromoneK = PheromonesManager.K
             pheromoneP = PheromonesManager.P
-            overlay = if (mode.drawsDebugOverlay) overlayBuffer.end() else null
+            overlay = if (mode.drawsDebugOverlay && snapshot.hasOverlay) snapshot.overlay.end() else null
             time = animationTime
             blurAmount = blurLevel
             zoom = camera.zoom
             vignetteEnabled = 1f
             this.mode = mode
             // Из снимка, а не из выбора игрока: байты фильтра в клетках упакованы под него.
-            debugFilter = cellBuf.filter
+            debugFilter = snapshot.filter
         }
         worldRenderer.render(frame)
 
@@ -181,7 +186,7 @@ class RenderSystem(
             }
         }
 
-        moveCameraAndDrawSelected(spec)
+        moveCameraAndDrawSelected(spec, lag)
 
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)
         Gdx.gl.glDepthMask(false)
@@ -196,87 +201,105 @@ class RenderSystem(
         }
     }
 
+    // Диагностика PROFILE_INTERPOLATION: накопители за секунду.
+    private var diagSince = 0L
+    private var diagFrames = 0
+    private var diagFresh = 0
+    private var diagSkipped = 0
+    private var diagStalls = 0
+    private var diagTeleports = 0
+    private var diagStepMax = 0f
+    private var diagGapMin = Long.MAX_VALUE
+    private var diagGapMax = 0L
+    private var diagLastSerial = 0
+    private var diagLastPublished = 0L
+
     /**
-     * Ёмкость считается по СНИМКУ, который сейчас будет записан, а не по живому
-     * aliveList: список принадлежит потоку симуляции и меняется прямо во время кадра.
-     * Если в снимке частиц больше, чем в списке на момент чтения (а так бывает при
-     * массовой гибели — снимок старше), запись уходила за границу буфера и кадр падал
-     * с BufferOverflowException.
+     * Раз в секунду — строка о снимках и интерполяции (см. PROFILE_INTERPOLATION).
+     * «пропущено» — снимки, которых рендер не увидел: симуляция выпустила два подряд
+     * быстрее кадра, и движение прыгнуло на тик вперёд. «стоп» — кадры, где снимок уже
+     * прожит (lag = 0), а нового нет: картинка стоит.
+     */
+    private fun logInterpolation(snapshot: RenderSnapshot, fresh: Boolean, lag: Float) {
+        val now = System.nanoTime()
+        if (diagSince == 0L) diagSince = now
+        diagFrames++
+        if (fresh) {
+            diagFresh++
+            if (diagLastSerial != 0 && snapshot.serial > diagLastSerial + 1) diagSkipped += snapshot.serial - diagLastSerial - 1
+            if (diagLastPublished != 0L) {
+                val gap = snapshot.publishedAtNanos - diagLastPublished
+                diagGapMin = minOf(diagGapMin, gap)
+                diagGapMax = maxOf(diagGapMax, gap)
+            }
+            diagLastSerial = snapshot.serial
+            diagLastPublished = snapshot.publishedAtNanos
+            diagTeleports += snapshot.stepTeleports
+            diagStepMax = maxOf(diagStepMax, snapshot.stepMax)
+        } else if (lag == 0f) {
+            diagStalls++
+        }
+        if (now - diagSince < 1_000_000_000L) return
+        println(
+            "INTERP кадров $diagFrames, снимков $diagFresh, пропущено $diagSkipped, стоп $diagStalls, " +
+                "промежуток ${diagGapMin / 100_000 / 10.0}..${diagGapMax / 100_000 / 10.0} мс " +
+                "(сглаж. ${snapshot.tickNanos / 100_000 / 10.0}), переносов $diagTeleports, " +
+                "макс. шаг ${"%.2f".format(diagStepMax)}"
+        )
+        diagSince = now
+        diagFrames = 0; diagFresh = 0; diagSkipped = 0; diagStalls = 0; diagTeleports = 0
+        diagStepMax = 0f; diagGapMin = Long.MAX_VALUE; diagGapMax = 0L
+    }
+
+    /** Перекопирован ли [cellBuffer] в этом кадре: тогда его и заливать. */
+    private var packedNow = false
+
+    private fun cellsOf(snapshot: RenderSnapshot, fresh: Boolean): java.nio.ByteBuffer {
+        packedNow = fresh || packedSnapshot !== snapshot
+        if (packedNow) {
+            cellBuffer.begin(snapshot.instanceCount)
+            cellBuffer.putAll(snapshot.instances, snapshot.instanceCount)
+            packedSnapshot = snapshot
+        }
+        return cellBuffer.end()
+    }
+
+    /**
+     * На какую долю тика кадр отстаёт от снимка: 1 — только что опубликован (рисуем
+     * прошлый тик), 0 — снимок прожил свой тик целиком (рисуем его самого).
      *
-     * shape/type уже посчитаны потоком симуляции — здесь только перекладывание
-     * байт, без арифметики. См. пояснение в CellInstanceBuffer.
+     * Кадр всегда показывает мир на один тик в прошлом и плавно доходит до снимка к
+     * моменту, когда должен прийти следующий. Цена — задержка картинки на тик (16 мс при
+     * 60 UPS, 33 мс при 30): это та же цена, что у любой интерполяции между фиксированными
+     * шагами, а экстраполяция вперёд промахивалась бы на каждом столкновении и смене силы.
+     *
+     * Снимок, который опоздал, стоит на нуле: картинка ждёт, а не убегает вперёд. Пауза —
+     * тот же случай: снимков нет, мир стоит ровно в последнем.
      */
-    private fun packCells(cellBuf: RenderCellBufferData) {
-        cellBuffer.begin(cellBuf.renderCellBufferSize)
-        with(cellBuf) {
-            for (i in 0..<renderCellBufferSize) {
-                cellBuffer.put(
-                    x = x[i],
-                    y = y[i],
-                    color = color[i],
-                    shape = shape[i],
-                    type = type[i],
-                    look = look[i]
-                )
-            }
-        }
+    private fun interpolationLag(snapshot: RenderSnapshot): Float {
+        if (!INTERPOLATION) return 0f
+        val tick = snapshot.tickNanos
+        if (tick <= 0L) return 0f
+        val age = System.nanoTime() - snapshot.publishedAtNanos
+        return 1f - (age.toFloat() / tick.toFloat()).coerceIn(0f, 1f)
     }
 
-    private fun packPheromones(pheromoneBuf: PheromoneBufferData, usePostProcess: Boolean) {
-        pheromoneBuffer.begin(pheromoneBuf.pheromoneBufferSize)
-        if (!usePostProcess) return
-        with(pheromoneBuf) {
-            for (i in 0..<pheromoneBufferSize) {
-                pheromoneBuffer.put(
-                    x = x[i],
-                    y = y[i],
-                    a = a[i],
-                    color = color[i]
-                )
-            }
-        }
-    }
-
-    /**
-     * Фигуры оверлея уже упакованы потоком симуляции (RenderBufferManager): здесь только
-     * перекладывание, как и в [packCells]. Кадр без отладки оверлей не получает вовсе.
-     */
-    private fun packOverlay(overlayBuf: RenderOverlayBufferData, drawsOverlay: Boolean) {
-        overlayBuffer.begin(overlayBuf.size)
-        if (!drawsOverlay) return
-        with(overlayBuf) {
-            for (i in 0..<size) {
-                overlayBuffer.put(
-                    x0 = x0[i],
-                    y0 = y0[i],
-                    x1 = x1[i],
-                    y1 = y1[i],
-                    color = color[i],
-                    params = params[i]
-                )
-            }
-        }
-    }
-
-    private fun moveCameraAndDrawSelected(spec: RenderSpecificBufferData) {
+    /** [lag] — та же доля тика, что у клеток: подсветка едет вместе с интерполированной клеткой. */
+    private fun moveCameraAndDrawSelected(spec: RenderSpecificBufferData, lag: Float) {
         if (!spec.isCellSelected) return
+        val cellX = spec.grabbedCellX ?: return
+        val cellY = spec.grabbedCellY ?: return
+        val targetX = cellX + (spec.grabbedPrevX - cellX) * lag
+        val targetY = cellY + (spec.grabbedPrevY - cellY) * lag
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
 
         shapeRenderer.color = Color.GOLD
         Gdx.gl.glLineWidth(5f)
 
-        shapeRenderer.circle(
-            spec.grabbedCellX ?: 0f,
-            spec.grabbedCellY ?: 0f,
-            0.55f,
-            64
-        )
+        shapeRenderer.circle(targetX, targetY, 0.55f, 64)
 
         shapeRenderer.end()
-
-        val targetX = spec.grabbedCellX ?: return
-        val targetY = spec.grabbedCellY ?: return
 
         val lerpSpeed = 1f
         val delta = Gdx.graphics.deltaTime
@@ -353,5 +376,11 @@ class RenderSystem(
 
     private companion object {
         const val SIM_INFO_MARGIN = 12f
+
+        /**
+         * Интерполяция между тиками; -Dgenomeia.interpolation=false выключает её — для
+         * сравнения «до/после» глазами. Читается один раз: на Android свойства нет, там null.
+         */
+        val INTERPOLATION = System.getProperty("genomeia.interpolation") != "false"
     }
 }

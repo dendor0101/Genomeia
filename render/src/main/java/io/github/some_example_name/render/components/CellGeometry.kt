@@ -12,7 +12,7 @@ import kotlin.math.sin
 /**
  * Геометрия клеток на GPU: веер одной клетки плюс инстансные данные всех клеток кадра.
  *
- * Данные инстанса едут обычными вершинными атрибутами с делителем 1 — по 24 байта на
+ * Данные инстанса едут обычными вершинными атрибутами с делителем 1 — по 40 байт на
  * клетку, раскладка в CellInstanceBuffer.
  *
  * ЗАЧЕМ ОТДЕЛЬНО ОТ ПРОХОДОВ
@@ -166,6 +166,27 @@ class CellGeometry {
         )
         gl30.glVertexAttribDivisor(A_LOOK, 1)
 
+        // Направление — нормализованные short: -32767..32767 приезжает в шейдер как -1..1.
+        // Байта на угол не хватало, см. CellInstanceBuffer.
+        gl.glEnableVertexAttribArray(A_DIR)
+        gl.glVertexAttribPointer(
+            A_DIR, 2, GL20.GL_SHORT, true, stride, CellInstanceBuffer.OFFSET_DIR
+        )
+        gl30.glVertexAttribDivisor(A_DIR, 1)
+
+        // Поза в прошлом тике — для интерполяции между тиками (CellInstanceBuffer).
+        gl.glEnableVertexAttribArray(A_PREV_CENTER)
+        gl.glVertexAttribPointer(
+            A_PREV_CENTER, 2, GL20.GL_FLOAT, false, stride, CellInstanceBuffer.OFFSET_PREV_CENTER
+        )
+        gl30.glVertexAttribDivisor(A_PREV_CENTER, 1)
+
+        gl.glEnableVertexAttribArray(A_PREV_DIR)
+        gl.glVertexAttribPointer(
+            A_PREV_DIR, 2, GL20.GL_SHORT, true, stride, CellInstanceBuffer.OFFSET_PREV_DIR
+        )
+        gl30.glVertexAttribDivisor(A_PREV_DIR, 1)
+
         gl30.glBindVertexArray(0)
         gl.glBindBuffer(GL20.GL_ARRAY_BUFFER, 0)
     }
@@ -309,5 +330,8 @@ class CellGeometry {
         private const val A_SHAPE = 3
         private const val A_TYPE = 4
         private const val A_LOOK = 5
+        private const val A_DIR = 6
+        private const val A_PREV_CENTER = 7
+        private const val A_PREV_DIR = 8
     }
 }
