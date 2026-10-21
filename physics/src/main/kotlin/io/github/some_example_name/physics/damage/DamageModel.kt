@@ -23,6 +23,9 @@ import kotlin.math.sqrt
  * то есть ребро гаснет сразу, а структура пересобирается в конце тика.
  */
 fun BodyState.applyPierce(ct: BoundaryContacts) {
+    // Как при смерти клетки: исчезающая топология ещё должна успеть вернуть
+    // вывернутый отломок на внешнюю сторону ткани. После killEdgeNow уже поздно.
+    fractureOrientation.solvePierced(ct, conOfEdge, conDead, conCount, px, py, invMass)
     for (k in 0 until ct.pierceN) {
         val e = baked.edgeOf(ct.pierceA[k], ct.pierceB[k])
         if (e < 0 || baked.edgeDead[e]) continue

@@ -1,0 +1,50 @@
+diff --git a/physics-lab/src/main/kotlin/io/github/some_example_name/physics/lab/tuning/SwimSolver.kt b/physics-lab/src/main/kotlin/io/github/some_example_name/physics/lab/tuning/SwimSolver.kt
+index 8c2cbb3..700e1da 100644
+--- a/physics-lab/src/main/kotlin/io/github/some_example_name/physics/lab/tuning/SwimSolver.kt
++++ b/physics-lab/src/main/kotlin/io/github/some_example_name/physics/lab/tuning/SwimSolver.kt
+@@ -723,9 +723,9 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
+             updateVelocities(h)
+             // Отскок — зеркало демо, см. solveRestitution.
+             if (p.contactsOn) contacts.solveRestitution(px, py, vx, vy, invMass)
+-            applyViscosity(h)
+-            applyNormalDrag(h)
+-            applyMediumDrag(h)
++            if ((s + 1) % 4 == 0) applyViscosity(h * 4)
++            if ((s + 1) % 4 == 0) applyNormalDrag(h * 4)
++            if ((s + 1) % 4 == 0) applyMediumDrag(h * 4)
+             clampSpeed(dt)
+         }
+         applyPlasticity(dt)
+@@ -826,9 +826,9 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
+             updateVelocities(h)
+             // Отскок — зеркало демо, см. solveRestitution.
+             if (p.contactsOn) contacts.solveRestitution(px, py, vx, vy, invMass)
+-            applyViscosity(h)
+-            applyNormalDrag(h)
+-            applyMediumDrag(h)
++            if ((s + 1) % 4 == 0) applyViscosity(h * 4)
++            if ((s + 1) % 4 == 0) applyNormalDrag(h * 4)
++            if ((s + 1) % 4 == 0) applyMediumDrag(h * 4)
+             clampSpeed(dt)
+         }
+         applyPlasticity(dt)
+diff --git a/physics/src/main/kotlin/io/github/some_example_name/physics/solver/BodySimulation.kt b/physics/src/main/kotlin/io/github/some_example_name/physics/solver/BodySimulation.kt
+index ddef6d3..2d764dd 100644
+--- a/physics/src/main/kotlin/io/github/some_example_name/physics/solver/BodySimulation.kt
++++ b/physics/src/main/kotlin/io/github/some_example_name/physics/solver/BodySimulation.kt
+@@ -156,12 +156,12 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
+         if (cr != null && contactsOn && !contactsStale) cr.solveRestitution(px, py, vx, vy, invMass)
+         dbgMeasureV(7); dbgMarkV()
+         applyDragVelocity(h)
+-        applyViscosity(h)
++        if ((step + 1) % 4 == 0) applyViscosity(h * 4)
+         dbgMeasureV(8); dbgMarkV()
+-        applyNormalDrag(h)
++        if ((step + 1) % 4 == 0) applyNormalDrag(h * 4)
+         dbgMeasureV(10); dbgMarkV()
+         applyRestitution()
+-        applyMediumDrag(h)
++        if ((step + 1) % 4 == 0) applyMediumDrag(h * 4)
+         clampSpeed()
+         dbgMeasureV(11); tick1(9)
+         observer?.afterSubstep(step)

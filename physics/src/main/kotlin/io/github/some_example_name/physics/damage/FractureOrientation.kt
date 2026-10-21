@@ -1,9 +1,9 @@
 package io.github.some_example_name.physics
 
-/** Не даёт отломку родиться с внутренней стороны ткани при смерти соседней клетки.
+/** Не даёт отломку родиться с внутренней стороны ткани при смерти соседней клетки или пробое связей.
  * Контакт может вывернуть её треугольник после прохода площадей. Если сначала
  * удалить клетку, треугольник исчезнет и ограничение его знака уже не сработает.
- * Поэтому обрабатываем треугольники погибающих клеток до удаления их связей.
+ * Поэтому обрабатываем исчезающие треугольники до удаления их связей.
  *
  * Список берётся из готовой смежности, без обхода всей ткани. Битовая маска
  * убирает дубли, список занятых слов позволяет очистить только задетое. Сортировка
@@ -23,12 +23,39 @@ internal class FractureOrientation(private val body: BodyDefinition, private val
             val v = cells[k]
             for (s in topology.vertexTriStart[v] until topology.vertexTriStart[v + 1]) {
                 val t = topology.vertexTriangles[s] / 3
-                if (!topology.triAlive[t]) continue
-                val word = t ushr 6
-                if (words[word] == 0L) occupied[used++] = word
-                words[word] = words[word] or (1L shl (t and 63))
+                used = collect(t, used)
             }
         }
+        project(used, x, y, w)
+    }
+
+    fun solvePierced(ct: BoundaryContacts, conOfEdge: IntArray, conDead: BooleanArray,
+                     conCount: Int, x: DoubleArray, y: DoubleArray, w: DoubleArray) {
+        var used = 0
+        // Собираем весь пакет ДО первого удаления: два пробоя могут удалить
+        // обе стороны одного треугольника, как у клетки 949 в записи 22.10.
+        for (k in 0 until ct.pierceN) {
+            val e = topology.edgeOf(ct.pierceA[k], ct.pierceB[k])
+            if (e < 0 || topology.edgeDead[e]) continue
+            val c = conOfEdge[e]
+            if (c < 0 || c >= conCount || conDead[c]) continue
+            for (s in topology.edgeTriStart[e] until topology.edgeTriStart[e + 1]) {
+                used = collect(topology.edgeTris[s], used)
+            }
+        }
+        project(used, x, y, w)
+    }
+
+    private fun collect(t: Int, used: Int): Int {
+        if (!topology.triAlive[t]) return used
+        val word = t ushr 6
+        val fresh = words[word] == 0L
+        if (fresh) occupied[used] = word
+        words[word] = words[word] or (1L shl (t and 63))
+        return if (fresh) used + 1 else used
+    }
+
+    private fun project(used: Int, x: DoubleArray, y: DoubleArray, w: DoubleArray) {
         java.util.Arrays.sort(occupied, 0, used)
         for (k in 0 until used) {
             val word = occupied[k]
