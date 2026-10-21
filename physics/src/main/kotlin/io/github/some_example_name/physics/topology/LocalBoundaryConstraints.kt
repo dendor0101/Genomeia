@@ -4,6 +4,8 @@ import kotlin.math.sqrt
 
 /** Плотный список пар с принадлежностью вершине: заменить её ограничения можно за её степень. */
 class VertexPairs(n: Int) {
+    internal var blockLayout: ConstraintBlocks? = null
+    internal var blockIndex: BlockIndex? = null
     private val head = IntArray(n) { -1 }
     private var owner = IntArray(maxOf(n, 16))
     private var next = IntArray(owner.size)
@@ -16,9 +18,11 @@ class VertexPairs(n: Int) {
     fun clear(v: Int) {
         while (head[v] >= 0) {
             val slot = head[v]
+            blockIndex?.remove(slot)
             unlink(slot)
             val last = --count
             if (slot == last) continue
+            blockIndex?.move(last, slot)
             a[slot] = a[last]; b[slot] = b[last]; rest[slot] = rest[last]
             owner[slot] = owner[last]; next[slot] = next[last]; prev[slot] = prev[last]
             if (prev[slot] < 0) head[owner[slot]] = slot else next[prev[slot]] = slot
@@ -42,6 +46,7 @@ class VertexPairs(n: Int) {
         a[count] = i; b[count] = j; rest[count] = sqrt(dx * dx + dy * dy)
         owner[count] = v; prev[count] = -1; next[count] = head[v]
         if (head[v] >= 0) prev[head[v]] = count
+        blockIndex?.add(count, blockLayout!!.blockOf(i, j))
         head[v] = count++
     }
 }
@@ -55,6 +60,9 @@ class LocalBoundaryConstraints(
     val a = IntArray(topology.edgeCount)
     val b = IntArray(topology.edgeCount)
     val opposite = IntArray(topology.edgeCount)
+    // 1 байт/ребро: знак стороны ткани считается при изменении топологии,
+    // чтобы горячий проход не читал координаты покоя (~300 КБ на сетку 100k).
+    val orientation = ByteArray(topology.edgeCount)
     private val edgeAt = IntArray(topology.edgeCount)
     private val slotOf = IntArray(topology.edgeCount) { -1 }
     var count = 0; private set
@@ -68,12 +76,19 @@ class LocalBoundaryConstraints(
             if (slot < 0) return
             val last = --count
             a[slot] = a[last]; b[slot] = b[last]; opposite[slot] = opposite[last]
+            orientation[slot] = orientation[last]
             edgeAt[slot] = edgeAt[last]; slotOf[edgeAt[slot]] = slot
             slotOf[e] = -1
         } else {
             val dst = if (slot >= 0) slot else count++
             a[dst] = topology.edgeU(e); b[dst] = topology.edgeV(e)
             opposite[dst] = topology.opposite(e); edgeAt[dst] = e; slotOf[e] = dst
+            val i = a[dst]; val j = b[dst]; val c = opposite[dst]
+            orientation[dst] = if (c < 0) 0 else {
+                val area = (body.x[j] - body.x[i]).toDouble() * (body.y[c] - body.y[i]) -
+                    (body.y[j] - body.y[i]).toDouble() * (body.x[c] - body.x[i])
+                if (area > 0.0) 1 else if (area < 0.0) -1 else 0
+            }
         }
     }
 

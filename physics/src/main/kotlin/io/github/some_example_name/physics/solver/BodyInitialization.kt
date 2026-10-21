@@ -38,6 +38,7 @@ internal fun BodyState.initialize(definition: BodyDefinition) {
     lnkA = body.linkA.copyOf(); lnkB = body.linkB.copyOf()
     triCount = body.triCount
     baked = BakedTopology(body)
+    fractureOrientation = FractureOrientation(body, baked)
     lnkEdge = baked.linkEdge.copyOf()
     triId = IntArray(triCount) { it }
     triA = body.triA.copyOf(); triB = body.triB.copyOf(); triC = body.triC.copyOf()
@@ -58,6 +59,8 @@ internal fun BodyState.initialize(definition: BodyDefinition) {
     buildMasses()
     buildOrganisms()
     buildContacts()
+    distanceSweepOrder = DistanceSweepOrder.create(this)
+    initializeConstraintBlocks()
 
 }
 

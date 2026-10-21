@@ -23,7 +23,10 @@ class DemoInterpolationTest {
         assertEquals(0, history.allocatedSlots)
         history.beginTick()
         repeat(SUBSTEPS) { step ->
-            state.px[0] = 3.0 + step; state.py[0] = 2 * state.px[0]
+            // Одинаковое линейное движение 2→18 при любом числе подшагов.
+            // Числа ожидаемой картинки ниже остаются прежними.
+            state.px[0] = 2.0 + 16.0 * (step + 1) / SUBSTEPS
+            state.py[0] = 2 * state.px[0]
             history.afterSubstep(step)
         }
         assertEquals(2, history.allocatedSlots)
@@ -45,7 +48,7 @@ class DemoInterpolationTest {
         state.px[0] = 0.0; state.py[0] = 0.0
         history.beginTick()
         repeat(SUBSTEPS) { step ->
-            state.px[0] = (step + 1).toDouble(); state.py[0] = -state.px[0]
+            state.px[0] = 16.0 * (step + 1) / SUBSTEPS; state.py[0] = -state.px[0]
             history.afterSubstep(step)
         }
         history.prepare(0.3)

@@ -49,7 +49,7 @@ private fun digest(value: Any?): Long {
     return hash
 }
 
-private fun snapshots(): Map<String, Long> {
+internal fun snapshots(): Map<String, Long> {
     val result = sortedMapOf<String, Long>()
     for (name in stateFields) result[name] = digest(Probe.get<Any?>(name))
     // Включая продолжение контакта и исходную/живую топологию. Время и счётчики
@@ -64,14 +64,46 @@ private fun snapshots(): Map<String, Long> {
             f.isAccessible = true
             val v = f.get(value) ?: continue
             val key = "$prefix.${f.name}"
-            if (v is Number || v is Boolean || v.javaClass.isArray) {
+            if (key == "contacts.lam") {
+                // Сравниваем логические множители, а не ёмкость/пустые слоты новой
+                // таблицы. Этот же код загружается со старым HashMap для честного A/B.
+                result[key] = digest(contactLambdaEntries(v))
+            } else if (v is Number || v is Boolean || v.javaClass.isArray) {
                 if (v is Array<*> && v.isNotEmpty() && v[0] !is DoubleArray && v[0] !is IntArray) continue
                 result[key] = digest(v)
             } else if (v.javaClass.packageName.startsWith("io.github.some_example_name")) nested(key, v, depth + 1)
         }
     }
+    // Здесь также история инверсий по постоянным ID и число живых треугольников:
+    // одинаковые координаты при разном возрасте складки ещё не означают одинаковое будущее.
     nested("baked", Probe.get<Any>("baked"), 0)
     nested("contacts", Probe.get<Any?>("contacts"), 0)
+    // Порядок контура влияет на следующие поправки. Проверяем и обратный индекс,
+    // а не только координаты частиц; доступ через reflection остаётся в стенде.
+    val limits = Probe.demo.state.javaClass.getDeclaredField("boundaryLinkLimits")
+        .apply { isAccessible = true }.get(Probe.demo.state)
+    nested("boundaryLinkLimits", limits, 0)
+    val blocks = Probe.demo.state.javaClass.getDeclaredField("constraintBlocks")
+        .apply { isAccessible = true }.get(Probe.demo.state)
+    nested("constraintBlocks", blocks, 0)
+    nested("localBoundary", Probe.demo.state.localBoundary, 0)
+    return result
+}
+
+private fun contactLambdaEntries(value: Any): LongArray {
+    val entries = sortedMapOf<Long, Long>()
+    if (value is Map<*, *>) {
+        for ((key, lambda) in value) entries[(key as Number).toLong()] = (lambda as Double).toRawBits()
+    } else {
+        fun field(name: String) = value.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(value)
+        val keys = field("keys") as LongArray
+        val values = field("values") as DoubleArray
+        val used = field("used") as BooleanArray
+        for (i in keys.indices) if (used[i]) entries[keys[i]] = values[i].toRawBits()
+    }
+    val result = LongArray(entries.size * 2)
+    var i = 0
+    for ((key, lambda) in entries) { result[i++] = key; result[i++] = lambda }
     return result
 }
 

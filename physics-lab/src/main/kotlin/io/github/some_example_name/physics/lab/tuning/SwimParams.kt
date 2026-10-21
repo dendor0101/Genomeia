@@ -117,5 +117,7 @@ data class SwimParams(
      */
     val bendCompliance: Double = -1.0,
     val flowModel: FlowModel = FlowModel.GLOBAL_TRACKING,
+    /** Предел поправки связи независим от контактов и числа подшагов. */
+    val linkMaxStep: Double = DemoConst.LINK_MAX_STEP,
 )
 

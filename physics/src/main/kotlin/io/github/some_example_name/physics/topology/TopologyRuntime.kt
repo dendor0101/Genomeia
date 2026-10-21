@@ -166,6 +166,7 @@ fun BodyState.buildContacts() {
         val a = conA[c]; val b = conB[c]
         conTendon[c] = (muscleOf[a] >= 0) != (muscleOf[b] >= 0)
     }
+    rebuildBoundaryLinkLimits()
     if (everLinked == null) everLinked = BoundaryContacts.linkedPairs(conA, conB, conCount)
     // Кандидаты касания в позе покоя считаются по ЦЕЛОМУ телу и от разрывов не зависят:
     // радиус контакта клетки не бывает больше половины её самой длинной связи с запасом шва.
@@ -197,7 +198,6 @@ fun BodyState.buildContacts() {
     contacts!!.attachSurface(localSurface)
     localComponents = LocalComponents(baked, organismOf, organismSize, organismMass,
         restInvMass, cellDead, flowVX, flowVY, organismCount)
-    componentTearCursor = 0
     baked.clearDirty()
     // Наименьший радиус контакта в сцене — мерка «кто вообще способен пролезть».
     // См. dbgSeal. Свободная частица меньше мембранной клетки в разы, поэтому мерить
@@ -507,10 +507,28 @@ fun BodyState.rebuildTimed() {
 /** Погасить ребро немедленно и запомнить для пересборки в конце тика. */
 fun BodyState.killEdgeNow(e: Int) {
     if (!baked.kill(e)) return
+    // Разделяем компоненту ДО следующего удаления. split ищет две стороны
+    // одного разрыва; если сначала погасить целую пачку рёбер, сторон может быть
+    // больше двух. Тогда несколько уже несвязанных кусков сохраняли общий ID,
+    // запас среды и коррекцию импульса (запись 21.10, метки 470/501/876).
+    // Обход остаётся локальным и двусторонним; полного пересчёта мира нет.
+    localComponents.split(e)
+    organismCount = localComponents.count
     // Все связи одной пары гаснут вместе; это не требует второй проверки
     // edgeDead на каждой связи в каждом проходе решателя.
     var c = conOfEdge[e]
     while (c >= 0) { conDead[c] = true; c = conNextForEdge[c] }
+    updateBoundaryLinkLimit(e)
+    // У погибших треугольников открылись новые края. Они должны попасть даже
+    // в уже начатый проход пределов; refreshSurface обновит контакты следом.
+    for (s in baked.edgeTriStart[e] until baked.edgeTriStart[e + 1]) {
+        val t = baked.edgeTris[s]
+        if (!baked.triAlive[t]) constraintBlocks?.removeTriangle(t)
+        for (k in 0..2) {
+            val adjacent = baked.triEdge[3 * t + k]
+            if (adjacent >= 0) updateBoundaryLinkLimit(adjacent)
+        }
+    }
     if (tearQueueN == tearQueue.size) tearQueue = tearQueue.copyOf(tearQueue.size * 2)
     tearQueue[tearQueueN++] = e
     tearsPending = true
@@ -553,6 +571,7 @@ fun BodyState.restoreTopology() {
     tornTotal = 0
     conHold.fill(0); triHold.fill(0)
     buildBoundary(); buildBend(); buildFlaps(); buildOrganisms(); buildContacts()
+    initializeConstraintBlocks()
 }
 
 fun BodyState.rebuildAfterTear() {
@@ -574,8 +593,13 @@ fun BodyState.rebuildAfterTear() {
     refreshSurface()
     val nd = tearQueueN
     tearQueueN = 0
-    componentTearCursor = 0
-    if (nd == 0) return
+    if (nd == 0) {
+        // Самостоятельная смерть треугольника не меняет индексы связей и компоненты.
+        // Контур уже обновлён через dirtyVertices; трогать все связи здесь незачем.
+        if (triCount != baked.liveTriangleCount) compactTriangles()
+        lap(0)
+        return
+    }
     tornTotal += nd
     val edgeDead = baked.edgeDead
 
@@ -599,24 +623,8 @@ fun BodyState.rebuildAfterTear() {
         lnkCount = m
     }
 
-    // 2. Треугольники: умерли вместе с любым своим ребром — см. BakedTopology.kill
-    run {
-        val alive = baked.triAlive
-        var m = 0
-        while (m < triCount && alive[triId[m]]) m++
-        var k = m
-        while (k < triCount) {
-            if (alive[triId[k]]) {
-                triA[m] = triA[k]; triB[m] = triB[k]; triC[m] = triC[k]
-                if (triHold.size > k) triHold[m] = triHold[k]
-                triRestArea2[m] = triRestArea2[k]; triMuscle[m] = triMuscle[k]; triId[m] = triId[k]
-                m++
-            }
-            k++
-        }
-        triCount = m
-        java.util.Arrays.fill(triInverted, false)
-    }
+    // 2. Умершие при разрыве ребра или долгой инверсии треугольники.
+    compactTriangles()
 
     // 3. Рабочие связи решателя — тем же правилом, что при загрузке.
     //
@@ -635,6 +643,7 @@ fun BodyState.rebuildAfterTear() {
         var c = m
         while (c < conCount) {
             if (!edgeDead[conEdge[c]]) {
+                constraintBlocks?.moveConstraint(c, m)
                 conA[m] = conA[c]; conB[m] = conB[c]; conRest[m] = conRest[c]
                 if (conHold.size > c) conHold[m] = conHold[c]
                 conMuscle[m] = conMuscle[c]; conEdge[m] = conEdge[c]; m++
@@ -642,6 +651,7 @@ fun BodyState.rebuildAfterTear() {
             c++
         }
         conCount = m
+        constraintBlocks?.links?.packDirty()
     }
 
     // Контур, пары покоя и компоненты уже обновлены локально в подшаге.
@@ -655,14 +665,13 @@ fun BodyState.rebuildAfterTear() {
         conTendon[c] = (muscleOf[conA[c]] >= 0) != (muscleOf[conB[c]] >= 0)
 
     }
+    rebuildBoundaryLinkLimits()
     lap(0)
 }
 
 fun BodyState.refreshSurface() {
     // Отдельный таймер: обновление вызывается и внутри других измеряемых стадий.
     val surfaceT0 = if (DEBUG_CHECKS && dbgTimeOn) System.nanoTime() else 0L
-    while (componentTearCursor < tearQueueN) localComponents.split(tearQueue[componentTearCursor++])
-    organismCount = localComponents.count
     val count = baked.dirtyCount
     if (count == 0) {
         if (DEBUG_CHECKS && dbgTimeOn) dbgTimeNs[12] += System.nanoTime() - surfaceT0
@@ -675,9 +684,7 @@ fun BodyState.refreshSurface() {
         localBoundary.updateVertex(v)
         for (s in baked.vertStart[v] until baked.vertStart[v + 1]) {
             val e = baked.vertEdge[s]
-            val boundary = baked.triUse[e] <= 1
-            var c = conOfEdge[e]
-            while (c >= 0) { conBoundary[c] = boundary; c = conNextForEdge[c] }
+            updateBoundaryLinkLimit(e)
         }
     }
     syncBoundaryArrays()

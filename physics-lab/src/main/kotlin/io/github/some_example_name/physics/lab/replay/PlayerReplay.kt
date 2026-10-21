@@ -1,5 +1,6 @@
 package io.github.some_example_name.physics.lab.replay
 
+import io.github.some_example_name.physics.LinkedPairs
 import io.github.some_example_name.physics.DT
 import io.github.some_example_name.physics.LINK_MAX_STRETCH
 import io.github.some_example_name.physics.SUBSTEPS
@@ -237,7 +238,7 @@ fun main(args: Array<String>) {
         return when {
             c != null && c < conDead.size && !conDead[c] -> "жива"
             c != null -> "порвана"
-            P.get<Set<Long>?>("everLinked")?.contains(minOf(i, j).toLong() * 1000003L + maxOf(i, j).toLong()) == true -> "порвана"
+            P.get<LinkedPairs?>("everLinked")?.contains(minOf(i, j).toLong() * 1000003L + maxOf(i, j).toLong()) == true -> "порвана"
             ct != null && ct.isBonded(i, j) -> "касание в покое, исключена"
             else -> "не было"
         }
@@ -509,7 +510,7 @@ fun main(args: Array<String>) {
                 val rdx = (P.body.x[i] - P.body.x[j]).toDouble(); val rdy = (P.body.y[i] - P.body.y[j]).toDouble()
                 val restD = sqrt(rdx * rdx + rdy * rdy)
                 val pk = minOf(i, j).toLong() * 1000003L + maxOf(i, j).toLong()
-                val wasLinked = demo.state.conIndexOf(i, j) >= 0 || P.get<Set<Long>?>("everLinked")?.contains(pk) == true
+                val wasLinked = demo.state.conIndexOf(i, j) >= 0 || P.get<LinkedPairs?>("everLinked")?.contains(pk) == true
                 lines.add("         #%d-#%d  d/упор %.3f  упор %s  в позе покоя d/(ri+rj) %.3f  %s%s".format(
                     i, j, d / rc, if (rc < rr) "расстояние покоя" else "сумма радиусов", restD / rr,
                     if (wasLinked) "бывшие соседи" else "связаны не были",

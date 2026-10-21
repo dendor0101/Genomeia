@@ -23,6 +23,8 @@ class LocalComponents(
         if (restInvMass[v] > 0.0) mass[o] -= 1.0 / restInvMass[v]
     }
 
+    /** Вызывать сразу после удаления edge, пока следующее ребро ещё живо:
+     * до этого удаления каждый ID обязан обозначать одну связную компоненту. */
     fun split(edge: Int) {
         val u = topology.edgeU(edge); val v = topology.edgeV(edge)
         if (of[u] != of[v]) return

@@ -205,20 +205,21 @@ class BoundaryContacts(
     /**
      * ЗАЯВКИ НА СМЕРТЬ КЛЕТКИ: центр одной зашёл внутрь радиуса другой.
      *
-     * ЛИШНИХ ПРОВЕРОК ЗДЕСЬ НЕТ НИ ОДНОЙ, и это важно. Условие «центр внутри радиуса»
+     * Условие «центр внутри радиуса»
      * строго строже условия контакта: контакт есть при d < ri + rj, а центр внутри —
      * при d < rj, что заведомо меньше. Значит все кандидаты уже лежат в списке
      * контактов, и проверка сводится к одному сравнению в цикле, который и так идёт.
-     * Ни широкая фаза, ни CCD для этого не нужны.
+     * Но конечной позиции недостаточно при открытии новой поверхности:
+     * начальное перекрытие сохраняет уже существующий проход CCD, см. startDeep.
      *
      * Решатель сам никого не убивает: он складывает номера сюда, а хозяин тела
      * разбирается с топологией после подшага. Убивать посреди обхода нельзя — список
      * контактов и смежность собраны на текущую топологию.
      */
-    var killN = 0
-        private set
-    var killList = IntArray(64)
-        private set
+    private val damage = ContactDamageCandidates(n)
+    val killN: Int get() = damage.count
+    val killList: IntArray get() = damage.ids
+    private val startDeep = ContactDamageCandidates(n)
 
     /**
      * ПРОБИТАЯ МЕМБРАНА: рёбра контура, сквозь которые ПРОШЁЛ центр чужой клетки.
@@ -513,7 +514,7 @@ class BoundaryContacts(
     private var toVelocity = false
     private var velH = 1.0
     /** Перенесённые множители: при optionXpbdWarmStart или в старом режиме optionAblegacy. */
-    private val lam = HashMap<Long, Double>()
+    private val lam = ContactLambdaCache()
 
     /** Пары, которые могут касаться в позе покоя, — запечены на тело. См. RestPairs. */
     private var rest = RestPairs.EMPTY
@@ -620,11 +621,12 @@ class BoundaryContacts(
      * дошли, и виновата широкая фаза или момент, в который её строят.
      */
     fun missedOverlaps(px: DoubleArray, py: DoubleArray): Int {
-        val inList = HashSet<Long>(cN * 2)
+        val inList = LongArray(cN)
         for (c in 0 until cN) {
             val a = minOf(cI[c], cJ[c]).toLong(); val b = maxOf(cI[c], cJ[c]).toLong()
-            inList.add(a * 1000003L + b)
+            inList[c] = a * 1000003L + b
         }
+        inList.sort()
         var missed = 0
         for (a in 0 until vertCount) {
             val i = verts[a]
@@ -635,7 +637,7 @@ class BoundaryContacts(
                 val rr = contactDistance(i, j)
                 if (dx * dx + dy * dy >= rr * rr) continue
                 val k = minOf(i, j).toLong() * 1000003L + maxOf(i, j).toLong()
-                if (!inList.contains(k)) missed++
+                if (java.util.Arrays.binarySearch(inList, k) < 0) missed++
             }
         }
         return missed
@@ -817,7 +819,7 @@ class BoundaryContacts(
         /** Запечённые кандидаты касания в покое. Null — запечь по нынешним радиусам, см. build. */
         restPairs: RestPairs?,
         /** Пары, связанные на ЦЕЛОМ теле. Нужны, только если restPairs не передан. */
-        everLinked: Set<Long>?,
+        everLinked: LinkedPairs?,
     ) {
         var tCfg = System.nanoTime()
         fun cfgLap(k: Int) { val now = System.nanoTime(); cfgNs[k] += now - tCfg; tCfg = now }
@@ -936,7 +938,9 @@ class BoundaryContacts(
         bpValid = false
 
         // Как у нового объекта: списков этого подшага нет, счётчики разбора с нуля.
-        cN = 0; pairN = 0; killN = 0; attractN = 0; pierceN = 0
+        cN = 0; pairN = 0; attractN = 0; pierceN = 0
+        damage.clear()
+        startDeep.clear()
         lastContacts = 0; lastToiClamps = 0; impulseAccum = 0.0
         dbgCcdTotal = 0L; dbgCcdWorst = 0.0; dbgCcdI = -1; dbgCcdJ = -1; dbgCcdMoveA = 0.0; dbgCcdMoveJ = 0.0
         dbgPair = -1L; dbgPairPush = 0.0; dbgPairPull = 0.0; dbgPairLam = 0.0
@@ -1235,6 +1239,7 @@ class BoundaryContacts(
     private fun ccdClamp(px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray,
                          invMass: DoubleArray) {
         lastToiClamps = 0
+        startDeep.clear()
         if (pairN == 0) return
         var hit = false
         for (p in 0 until pairN) {
@@ -1243,6 +1248,19 @@ class BoundaryContacts(
             val dvx = (px[a] - qx[a]) - (px[j] - qx[j])
             val dvy = (py[a] - qy[a]) - (py[j] - qy[j])
             val rc = ccdCore * (contactRadius[a] + contactRadius[j])
+            val d02 = d0x * d0x + d0y * d0y
+            if (killOnDeep) {
+                // 20.10, запись игрока, тик 11226: после разрыва №761 стала
+                // граничной. В начале подшага №822 уже внутри её радиуса
+                // (0.012950 < 0.015119), к prepare вышла (0.018656).
+                // CCD у расходящейся пары законно не находит будущего удара,
+                // но это не отменяет УЖЕ случившееся глубокое перекрытие.
+                // Соседи отсеяны широкой фазой; порог смерти остаётся прежним.
+                val depth = killDepth * maxOf(contactRadius[a], contactRadius[j])
+                if (d02 < depth * depth && invMass[a] + invMass[j] > 0.0) {
+                    startDeep.add(a); startDeep.add(j)
+                }
+            }
 
             // Достаточный критерий пропуска — путь короче ЗАЗОРА до ядра.
             // Полный контактный диаметр здесь неверен: при начальном зазоре 0.1
@@ -1253,9 +1271,9 @@ class BoundaryContacts(
                 // Дальняя пара: (rc + |dv|)^2 <= 2*(rc^2 + |dv|^2).
                 // Берём более свободную верхнюю оценку с запасом от округления;
                 // если она уже не достигает пары, прежний sqrt тоже отверг бы её.
-                if (d0x * d0x + d0y * d0y > 4.0 * (rc * rc + move2)) continue
+                if (d02 > 4.0 * (rc * rc + move2)) continue
                 val reach = rc + sqrt(move2)
-                if (d0x * d0x + d0y * d0y >= reach * reach) continue
+                if (d02 >= reach * reach) continue
             }
             if (move2 > dbgCcdWorst * dbgCcdWorst * rc * rc) {
                 dbgCcdWorst = sqrt(move2) / rc; dbgCcdI = a; dbgCcdJ = j
@@ -1263,7 +1281,7 @@ class BoundaryContacts(
                 dbgCcdMoveJ = sqrt((px[j] - qx[j]) * (px[j] - qx[j]) + (py[j] - qy[j]) * (py[j] - qy[j]))
             }
 
-            val c = d0x * d0x + d0y * d0y - rc * rc
+            val c = d02 - rc * rc
             if (c <= 0) continue                       // уже внутри ядра — дело решателя
             val aa = dvx * dvx + dvy * dvy
             if (aa < 1e-18) continue
@@ -1448,7 +1466,9 @@ class BoundaryContacts(
             boneM = DoubleArray(ids.size); boneCx = DoubleArray(ids.size)
             boneCy = DoubleArray(ids.size); boneI = DoubleArray(ids.size)
         }
-        if (cN == 0) return
+        // Даже разошедшийся контакт может нести заявку из начала подшага.
+        // При первой подготовке boneM ещё пуст: без неё кость ошибочно погибнет.
+        if (cN == 0 && startDeep.count == 0) return
         for (b in ids.indices) {
             var m = 0.0; var cx = 0.0; var cy = 0.0
             for (k in ids[b]) {
@@ -1553,7 +1573,13 @@ class BoundaryContacts(
         this.velH = h
         pass++
         frcN = 0
-        killN = 0
+        damage.clear()
+        // updateBones уже выполнен: кость сохраняется, её мягкий партнёр —
+        // нет, как и при глубоком перекрытии в конечной позиции.
+        if (killOnDeep) for (k in 0 until startDeep.count) {
+            val v = startDeep.ids[k]
+            if (boneIdx(v) < 0) addKill(v)
+        }
         // СКОЛЬКО КОНТАКТОВ У КЛЕТКИ — считается отдельным проходом, до сил.
         // Зачем, см. деление в основном цикле ниже.
         for (c in 0 until cN) {
@@ -1889,9 +1915,7 @@ class BoundaryContacts(
     }
 
     private fun addKill(v: Int) {
-        for (k in 0 until killN) if (killList[k] == v) return
-        if (killN >= killList.size) killList = killList.copyOf(killList.size * 2)
-        killList[killN++] = v
+        damage.add(v)
     }
 
     private fun addForce(k: Int, ax: Double, ay: Double, w: Double) {
@@ -2283,7 +2307,7 @@ class BoundaryContacts(
             /** Клетки без единой связи в ПОЛНОМ графе связей. */
             isolated: BooleanArray? = null,
             /** Пары, связанные на ЦЕЛОМ теле: считаются один раз и живут вечно. */
-            everLinked: Set<Long>? = null,
+            everLinked: LinkedPairs? = null,
             /** Умершие клетки в контактах не участвуют вовсе. См. cellDead в демо. */
             dead: BooleanArray? = null,
             /** Запечённые кандидаты касания в покое, если тело рвётся. См. bakeRestPairs. */
@@ -2315,14 +2339,8 @@ class BoundaryContacts(
         }
 
         /** Пары концов связей, ключами как в pairKey. См. applyRestPairs. */
-        fun linkedPairs(conA: IntArray, conB: IntArray, conCount: Int): HashSet<Long> {
-            val s = HashSet<Long>(conCount * 2)
-            for (c in 0 until conCount) {
-                val i = conA[c]; val j = conB[c]
-                s.add((if (i < j) i else j).toLong() * 1000003L + (if (i < j) j else i).toLong())
-            }
-            return s
-        }
+        fun linkedPairs(conA: IntArray, conB: IntArray, conCount: Int): LinkedPairs =
+            LinkedPairs.from(conA, conB, conCount)
 
         private const val REST_NONE = 0
         private const val REST_TOUCH = 1
@@ -2356,7 +2374,7 @@ class BoundaryContacts(
          * на нынешней топологии, решает applyRestPairs.
          */
         fun bakeRestPairs(n: Int, maxR: DoubleArray, restX: FloatArray, restY: FloatArray,
-                          everLinked: Set<Long>): RestPairs {
+                          everLinked: LinkedPairs): RestPairs {
             var gmax = 0.0
             for (i in 0 until n) if (maxR[i] > gmax) gmax = maxR[i]
             if (gmax <= 0.0) return RestPairs(IntArray(n + 1), IntArray(0), IntArray(0), DoubleArray(0), DoubleArray(0), BooleanArray(0))

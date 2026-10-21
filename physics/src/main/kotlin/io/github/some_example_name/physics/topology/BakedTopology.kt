@@ -27,8 +27,8 @@ class BakedTopology(private val body: BodyDefinition) {
     private val edgeKeys: LongArray
     /** Рёбра треугольника t выгрузки: 3t, 3t+1, 3t+2 — пары (A,B), (B,C), (C,A); -1 — таких связей нет. */
     val triEdge: IntArray
-    private val edgeTriStart: IntArray
-    private val edgeTris: IntArray
+    internal val edgeTriStart: IntArray
+    internal val edgeTris: IntArray
     private val useInit: IntArray
     /** Связи каждой клетки: vertStart[i]..vertStart[i+1] — соседи vertOther и рёбра vertEdge. */
     val vertStart: IntArray
@@ -38,6 +38,10 @@ class BakedTopology(private val body: BodyDefinition) {
     val edgeDead: BooleanArray
     /** Жив ли треугольник выгрузки. */
     val triAlive: BooleanArray
+    /** Счётчик по постоянному номеру треугольника: упаковка рабочих списков его не меняет. */
+    internal val invertedTicks = ByteArray(body.triCount)
+    var liveTriangleCount = body.triCount
+        private set
     /** Сколько живых треугольников опирается на ребро: 0 — голая связь, 1 — граница, 2 — внутри ткани. */
     val triUse: IntArray
 
@@ -45,8 +49,8 @@ class BakedTopology(private val body: BodyDefinition) {
     private val dirty = BooleanArray(body.count)
     var dirtyCount = 0
         private set
-    private val vertexTriangles: IntArray
-    private val vertexTriStart: IntArray
+    internal val vertexTriangles: IntArray
+    internal val vertexTriStart: IntArray
     private val restAngles: DoubleArray
 
     private fun touch(v: Int) {
@@ -166,6 +170,8 @@ class BakedTopology(private val body: BodyDefinition) {
         clearDirty()
         edgeDead.fill(false)
         triAlive.fill(true)
+        invertedTicks.fill(0)
+        liveTriangleCount = body.triCount
         useInit.copyInto(triUse)
         bareEdges = 0
         for (e in triUse.indices) if (triUse[e] == 0) bareEdges++
@@ -181,14 +187,21 @@ class BakedTopology(private val body: BodyDefinition) {
         edgeDead[e] = true
         touch(edgeU(e)); touch(edgeV(e))
         for (s in edgeTriStart[e] until edgeTriStart[e + 1]) {
-            val t = edgeTris[s]
-            if (!triAlive[t]) continue
-            triAlive[t] = false
-            touch(body.triA[t]); touch(body.triB[t]); touch(body.triC[t])
-            for (k in 0..2) {
-                val e2 = triEdge[3 * t + k]
-                if (e2 >= 0 && --triUse[e2] == 0 && !edgeDead[e2]) bareEdges++
-            }
+            killTriangle(edgeTris[s])
+        }
+        return true
+    }
+
+    /** Удалить только площадь ткани, сохранив её клетки и связи. */
+    internal fun killTriangle(t: Int): Boolean {
+        if (!triAlive[t]) return false
+        triAlive[t] = false
+        invertedTicks[t] = 0
+        liveTriangleCount--
+        touch(body.triA[t]); touch(body.triB[t]); touch(body.triC[t])
+        for (k in 0..2) {
+            val e = triEdge[3 * t + k]
+            if (e >= 0 && --triUse[e] == 0 && !edgeDead[e]) bareEdges++
         }
         return true
     }

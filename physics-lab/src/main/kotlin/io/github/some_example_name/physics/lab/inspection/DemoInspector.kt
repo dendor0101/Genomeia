@@ -1,5 +1,6 @@
 package io.github.some_example_name.physics.lab.inspection
 
+import io.github.some_example_name.physics.LinkedPairs
 import io.github.some_example_name.physics.AREA_COMPLIANCE
 import io.github.some_example_name.physics.AREA_COMPLIANCE_INVERTED
 import io.github.some_example_name.physics.AREA_MAX_STEP
@@ -173,7 +174,7 @@ internal object DemoInspector {
         "invMass" -> { d.state.invMass = (value as DoubleArray) }
         "restInvMass" -> { d.state.restInvMass = (value as DoubleArray) }
         "contacts" -> { d.state.contacts = (value as BoundaryContacts?) }
-        "everLinked" -> { d.state.everLinked = (value as Set<Long>?) }
+        "everLinked" -> { d.state.everLinked = (value as LinkedPairs?) }
         "contactsOn" -> { d.state.contactsOn = (value as Boolean) }
         "radius" -> { d.state.radius = (value as DoubleArray) }
         "isFree" -> { d.state.isFree = (value as BooleanArray) }
@@ -279,6 +280,7 @@ internal object DemoInspector {
         "CONTACTS_ON" -> CONTACTS_ON
         "CONTACT_SCALE" -> CONTACT_SCALE
         "CONTACT_MAX_STEP" -> (d?.state?.config ?: DemoSettings.defaults).CONTACT_MAX_STEP
+        "LINK_MAX_STEP" -> (d?.state?.config ?: DemoSettings.defaults).LINK_MAX_STEP
         "CCD_CORE" -> CCD_CORE
         "CONTACT_RESTITUTION" -> CONTACT_RESTITUTION
         "CONTACT_FRICTION" -> CONTACT_FRICTION

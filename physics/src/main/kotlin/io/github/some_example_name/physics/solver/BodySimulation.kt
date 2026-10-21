@@ -9,8 +9,9 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     // что стенд зовёт simulate() напрямую: связи помечались порванными сотнями,
     // а убито было ноль. Та же ошибка уже подводила с пересборкой стадий.
     //
-    // Ровно один раз за тик: внутри подшагов контур и контакты пересобирались бы
-    // по шестнадцать раз, а рвётся обычно пучок связей за один удар.
+    // Сейчас поверхность обновляется локально сразу после повреждения, иначе
+    // контакт пропустит вновь открывшийся контур. Полное уплотнение рабочих
+    // списков остаётся в конце тика: рвётся обычно пучок связей за один удар.
     java.util.Arrays.fill(contactPressure, 0.0)
     java.util.Arrays.fill(contactPressureN, 0)
     java.util.Arrays.fill(crushedCell, false)
@@ -64,23 +65,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         // одну и ту же невязку, вместо того чтобы переписывать работу друг друга.
         for (iter in 0 until SOLVER_ITERS) {
             if (sweepFlip == 2) sweepBackwards = !sweepBackwards
-            tick0(); dbgMark(); solveConstraints(h); dbgMeasure(0, h); tick1(0)
-            tick0(); dbgMark(); solveFlaps(h); dbgMeasure(9, h); tick1(1)
-            // Ранний предел оставляем: его пропуск уже проверяли, покоящееся тело
-            // начинало ползти. Это другой момент решателя, чем предел после площадей.
-            if (MAXLEN_EARLY) { tick0(); dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h); tick1(2); refreshSurface() }
-            // ОПЫТ: выключить стадию площадей знаком среды RB_AREAS=0. Нужен проверке
-            // гипотезы игрока — не она ли проталкивает клетки сквозь чужую ткань в
-            // обход контактов. Возвращать в код насовсем не планируется.
-            if (areasOn) { tick0(); dbgMark(); solveAreas(h); dbgMeasure(1, h); tick1(3) }
-            tick0(); dbgMark(); solveBend(h); dbgMeasure(2, h); tick1(4)
-            tick0(); dbgMark()
-            if (bonesRigid) for (b in rigidBones.indices) projectBone(b)
-            dbgMeasure(3, h); tick1(5)
-            tick0(); dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h); tick1(2)
-            // Производная поверхность обновляется сразу и локально. В конце тика
-            // остаётся только упаковка рабочих списков; см. tearQueue.
-            refreshSurface()
+            solveBlockedIteration(h)
             val ci = contacts
             if (ci != null && contactsOn) {
                 // Геометрия изменилась после связей и костей: новые пары нужны
@@ -116,6 +101,11 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
                 // причины убраны, поэтому развилка открыта заново — RB_PIERCE_ITER=1.
                 if (pierceEachIter) ci.scanPierce(px, py, prevX, prevY)
                 if (ci.pierceN > 0) applyPierce(ci)
+                refreshSurface()
+                tick0()
+                solveBoundaryOrientation(boundCount, boundA, boundB, boundOpp,
+                    localBoundary.orientation, px, py, invMass)
+                tick1(14)
             }
         }
         // ПРЕДЕЛ ДЛИНЫ ПОВТОРНО, УЖЕ ПОСЛЕ КОСТИ.
@@ -151,6 +141,11 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
             contactsStale = false
             if (finalContacts.killN > 0) { applyKills(finalContacts); contactsStale = true }
             if (finalContacts.pierceN > 0) applyPierce(finalContacts)
+            refreshSurface()
+            tick0()
+            solveBoundaryOrientation(boundCount, boundA, boundB, boundOpp,
+                localBoundary.orientation, px, py, invMass)
+            tick1(14)
         }
 
         tick0()
@@ -173,10 +168,11 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         dbgSubstepHook?.invoke(step)
     }
     // Пластика — РАЗ В ТИК, после всех подшагов: течение медленное, внутри тика
-    // ему делать нечего, а стоить оно будет в шестнадцать раз дороже.
+    // ему делать нечего, а цена умножилась бы на число подшагов.
     refreshSurface()
     applyPlasticity(DT)
     burstByPressure()
+    removePersistentInversions()
     // Один проход упаковки за тик. Контактная топология уже актуальна;
     // упаковка нужна плотным рабочим массивам и чтению состояния стенда.
     if (tearsPending) { tick0(); rebuildTimed(); tick1(11) }
