@@ -1,0 +1,1149 @@
+[DemoSession] boundary edges = 400
+[DemoSession] bend pairs = 380 on 400 boundary edges
+[DemoSession] flap angles = 0
+[DemoSession] organisms = 8 (own flow reservoir each)
+[DemoSession] contact particles = 400 boundary edges, contact radius from boundary edges, seal margin
+[DemoSession] смерть от проникновения: ВКЛ, порог 1.0 радиуса, умирают обе клетки (кость не умирает)
+[DemoSession] cells=1900 links=5234 triangles=3402 (1.79 per cell)  bone=420 in 204 clusters  muscle=190 in 12 clusters  meanLink=0.0285
+[DemoSession] rigid bones = 12, degenerate clusters dropped = 192, largest = 44 cells (drag on it is that many times weaker)
+[DemoSession] muscle cells = 434 (grown from 190, edge grab 1), contracting links = 1036, contracting triangles = 486
+[DemoSession] boundary edges = 400
+[DemoSession] bend pairs = 380 on 400 boundary edges
+[DemoSession] flap angles = 0
+[DemoSession] organisms = 8 (own flow reservoir each)
+[DemoSession] contact particles = 400 boundary edges, contact radius from boundary edges, seal margin
+[DemoSession] смерть от проникновения: ВКЛ, порог 1.0 радиуса, умирают обе клетки (кость не умирает)
+[DemoSession] таран: организмы 0 и 1, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 0 и 1, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 1 и 0, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 1 и 0, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 1 и 260, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 1 и 0, по 6,4 клеток/тик навстречу
+[DemoSession] boundary edges = 400
+[DemoSession] bend pairs = 380 on 400 boundary edges
+[DemoSession] flap angles = 0
+[DemoSession] organisms = 8 (own flow reservoir each)
+[DemoSession] contact particles = 400 boundary edges, contact radius from boundary edges, seal margin
+[DemoSession] смерть от проникновения: ВКЛ, порог 1.0 радиуса, умирают обе клетки (кость не умирает)
+[DemoSession] таран: организмы 0 и 1, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 1 и 0, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 1 и 0, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 0 и 1, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 0 и 1, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 0 и 1, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 0 и 1, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 1 и 0, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 1 и 0, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 0 и 370, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 0 и 370, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 0 и 370, по 6,4 клеток/тик навстречу
+[DemoSession] boundary edges = 400
+[DemoSession] bend pairs = 380 on 400 boundary edges
+[DemoSession] flap angles = 0
+[DemoSession] organisms = 8 (own flow reservoir each)
+[DemoSession] contact particles = 400 boundary edges, contact radius from boundary edges, seal margin
+[DemoSession] смерть от проникновения: ВКЛ, порог 1.0 радиуса, умирают обе клетки (кость не умирает)
+[DemoSession] таран: организмы 0 и 1, по 6,4 клеток/тик навстречу
+[DemoSession] boundary edges = 400
+[DemoSession] bend pairs = 380 on 400 boundary edges
+[DemoSession] flap angles = 0
+[DemoSession] organisms = 8 (own flow reservoir each)
+[DemoSession] contact particles = 400 boundary edges, contact radius from boundary edges, seal margin
+[DemoSession] смерть от проникновения: ВКЛ, порог 1.0 радиуса, умирают обе клетки (кость не умирает)
+[DemoSession] таран: организмы 0 и 1, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 1 и 0, по 6,4 клеток/тик навстречу
+STEP 2191.0 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.83596193209286 1.1510688930267514 r=0.0
+POS 947 2.8646526833383654 1.148362313529433 r=0.0
+POS 950 2.8529893012106684 1.1746908667008489 r=0.0
+POS 814 2.4725407843958114 1.0478654053814023 r=0.015118378400802613
+
+STEP 2191.1 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.8309860320765177 1.1486611622289724 r=0.0
+POS 947 2.8599113261577895 1.146143930831042 r=0.0
+POS 950 2.8482306876897665 1.1724648327862577 r=0.0
+POS 814 2.476448191545801 1.0497308053915109 r=0.015118378400802613
+
+STEP 2191.2 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.8260803324854695 1.1463310129461413 r=0.0
+POS 947 2.855200587301072 1.1439725634972888 r=0.0
+POS 950 2.8434998484328453 1.170284536146528 r=0.0
+POS 814 2.4804018329049122 1.0515618995351363 r=0.015118378400802613
+
+STEP 2191.3 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.821231137647495 1.1440765073581898 r=0.0
+POS 947 2.8505184844497653 1.141847052238601 r=0.0
+POS 950 2.8387962836291036 1.1681494704292703 r=0.0
+POS 814 2.4843956771333287 1.0533695651438533 r=0.015118378400802613
+
+STEP 2191.4 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.816442596603941 1.1419052704802917 r=0.0
+POS 947 2.8458603512329734 1.1397417446591156 r=0.0
+POS 950 2.834117350180003 1.1660348829470168 r=0.0
+POS 814 2.4882566799421673 1.055226833617001 r=0.015118378400802613
+
+STEP 2191.5 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.811692504457326 1.139793904455116 r=0.0
+POS 947 2.8412199200031285 1.1376434141923426 r=0.0
+POS 950 2.8294579483744173 1.163928071659431 r=0.0
+POS 814 2.49211176946521 1.0571167551336433 r=0.015118378400802613
+
+STEP 2191.6 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.806985684542316 1.137738718885182 r=0.0
+POS 947 2.836599150366266 1.1355161947227084 r=0.0
+POS 950 2.8248188390217144 1.1617926377731325 r=0.0
+POS 814 2.4960194996239884 1.059021617458948 r=0.015118378400802613
+
+STEP 2191.7 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.802302673949738 1.1357008827587727 r=0.0
+POS 947 2.8319926981320256 1.1333491225849026 r=0.0
+POS 950 2.8201946455815894 1.1596176046646478 r=0.0
+POS 814 2.499977834361507 1.0609294851827595 r=0.015118378400802613
+
+STEP 2191.8 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.7976572493985983 1.1336680141790851 r=0.0
+POS 947 2.827399273693726 1.1311366826858258 r=0.0
+POS 950 2.8155831876642843 1.1573970578869075 r=0.0
+POS 814 2.503962536489516 1.0628359343970513 r=0.015118378400802613
+
+STEP 2191.9 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.7930344706921435 1.1316048769602778 r=0.0
+POS 947 2.822812692918349 1.1288823066105704 r=0.0
+POS 950 2.8109787935886588 1.1551346592939304 r=0.0
+POS 814 2.5079755562577004 1.0647245401022365 r=0.015118378400802613
+
+STEP 2191.10 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.788458300132206 1.1295085095419577 r=0.0
+POS 947 2.818231351536318 1.126600812021388 r=0.0
+POS 950 2.8063793754703186 1.152845008676796 r=0.0
+POS 814 2.511996103304076 1.0666032083072747 r=0.015118378400802613
+
+STEP 2191.11 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.783913154556651 1.1273627912262587 r=0.0
+POS 947 2.813651826132439 1.1242958901009787 r=0.0
+POS 950 2.801781902815104 1.1505319743209481 r=0.0
+POS 814 2.516036378169413 1.0684610609460021 r=0.015118378400802613
+
+STEP 2191.12 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.779428924835915 1.125179724068029 r=0.0
+POS 947 2.8090735590406424 1.1219860772660637 r=0.0
+POS 950 2.7971854957240505 1.1482139468962385 r=0.0
+POS 814 2.5200811629069895 1.0703129715415847 r=0.015118378400802613
+
+STEP 2191.13 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.774984389747902 1.1229592238912862 r=0.0
+POS 947 2.80449533504654 1.119672403914422 r=0.0
+POS 950 2.7925893715820864 1.1458921527450237 r=0.0
+POS 814 2.52414276488373 1.072153107912173 r=0.015118378400802613
+
+STEP 2191.14 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.7706052050519396 1.120718982388029 r=0.0
+POS 947 2.799917271311677 1.117368179767586 r=0.0
+POS 950 2.7879934286612205 1.1435798025941852 r=0.0
+POS 814 2.528204075491916 1.0739982784255009 r=0.015118378400802613
+
+STEP 2191.15 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.7662631672583577 1.1184644628390403 r=0.0
+POS 947 2.795339959163985 1.1150705831229848 r=0.0
+POS 950 2.7833985541949535 1.1412742096300608 r=0.0
+POS 814 2.532274195112843 1.075841590709974 r=0.015118378400802613
+
+STEP 2191.16 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.7619673884119096 1.1162047289048125 r=0.0
+POS 947 2.790763685570846 1.112785276780811 r=0.0
+POS 950 2.778804822392924 1.1389809402816369 r=0.0
+POS 814 2.5361741666592845 1.0777453191210635 r=0.015118378400802613
+
+STEP 2191.17 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.757687170565885 1.113943670788379 r=0.0
+POS 947 2.786190263179884 1.1105076567363337 r=0.0
+POS 950 2.774214294374611 1.1366955044129161 r=0.0
+POS 814 2.5395277195816726 1.0796467377579133 r=0.015118378400802613
+
+STEP 2191.18 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.7534095127985316 1.1116733890902388 r=0.0
+POS 947 2.781620686633804 1.1082516956788322 r=0.0
+POS 950 2.7696287532990107 1.1344322367284483 r=0.0
+POS 814 2.5431507601384933 1.0810806648755855 r=0.015118378400802613
+    тик 2191: связь #1808-#1804 растяжение 1,278, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+
+STEP 2191.19 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.7491109221755856 1.109400197751632 r=0.0
+POS 947 2.777057054309655 1.1060182787861046 r=0.0
+POS 950 2.765050762190509 1.1321922380644884 r=0.0
+POS 814 2.5470252835137757 1.0824780300304857 r=0.015118378400802613
+    тик 2191: связь #1808-#1794 пробой 0,000, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2191: связь #1808-#1795 пробой 0,000, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+
+STEP 2191.20 org=1 free=false
+DIED 1794
+DIED 1808
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.744763465086033 1.1071061549541208 r=0.0
+POS 947 2.772501647385673 1.103821881359707 r=0.0
+POS 950 2.7604834609237416 1.129990381296138 r=0.0
+POS 814 2.550956160387407 1.0839780037941182 r=0.015118378400802613
+
+STEP 2191.21 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.740361055267749 1.1048076359230292 r=0.0
+POS 947 2.767957050952714 1.101663007513985 r=0.0
+POS 950 2.7559297095744846 1.1278273010096689 r=0.0
+POS 814 2.55474409243966 1.085611526408818 r=0.015118378400802613
+
+STEP 2191.22 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.7358774357436864 1.1024863745664475 r=0.0
+POS 947 2.763425352541209 1.0995341441174034 r=0.0
+POS 950 2.7513911941149787 1.125695302840387 r=0.0
+POS 814 2.5576325026296045 1.0872815071254571 r=0.015118378400802613
+
+STEP 2191.23 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.731328504297034 1.1001664768605166 r=0.0
+POS 947 2.758911284245442 1.0974250608150342 r=0.0
+POS 950 2.7468721492322667 1.123583929729635 r=0.0
+POS 814 2.5609268352869488 1.0887790231289234 r=0.015118378400802613
+
+STEP 2191.24 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.7267049368927476 1.09783127257899 r=0.0
+POS 947 2.7544211105683325 1.0953457349511018 r=0.0
+POS 950 2.742379373984376 1.121503406384151 r=0.0
+POS 814 2.564593691849158 1.0902539662648247 r=0.015118378400802613
+    тик 2191: связь #1766-#1546 растяжение 1,332, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+
+STEP 2191.25 org=1 free=false
+DIED 1482
+DIED 1546
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.7220406318850525 1.0955101760869599 r=0.0
+POS 947 2.749959376438725 1.0933029727833796 r=0.0
+POS 950 2.7379176831951786 1.11946066416823 r=0.0
+POS 814 2.5684692325396536 1.0918125900637579 r=0.015118378400802613
+    тик 2191: связь #1795-#1546 растяжение 1,265, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2191: связь #1546-#1544 растяжение 1,261, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2191: связь #1546-#1482 сжатие 0,349, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2191: связь #1543-#1482 растяжение 1,241, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+
+STEP 2191.26 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.717347986975588 1.0932028031697056 r=0.0
+POS 947 2.7455308255731765 1.091295271258479 r=0.0
+POS 950 2.7334917969508816 1.1174541891372507 r=0.0
+POS 814 2.5721531263005617 1.0932640293655032 r=0.015118378400802613
+
+STEP 2191.27 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.7126645198774626 1.090939134821391 r=0.0
+POS 947 2.741120046971271 1.0893287132267677 r=0.0
+POS 950 2.729086428637767 1.1154901203861753 r=0.0
+POS 814 2.575305857317449 1.0948202169974108 r=0.015118378400802613
+
+STEP 2191.28 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.708012416340949 1.0887308393878803 r=0.0
+POS 947 2.736760514901665 1.087418787943839 r=0.0
+POS 950 2.724741251994639 1.1135867934835917 r=0.0
+POS 814 2.578804187985053 1.0962435940203292 r=0.015118378400802613
+
+STEP 2191.29 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.703441465031418 1.0866209827518982 r=0.0
+POS 947 2.7326252053529267 1.085743729377129 r=0.0
+POS 950 2.720648791452611 1.111931373502653 r=0.0
+POS 814 2.582159776296317 1.0974907391944373 r=0.015118378400802613
+    тик 2191: связь #587-#576 растяжение 1,283, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2191: связь #1543-#1336 пробой 0,000, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+
+STEP 2191.30 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.699006753346636 1.0846552999702743 r=0.0
+POS 947 2.7292625478372634 1.0850161085908316 r=0.0
+POS 950 2.7173644940248654 1.1112394476275373 r=0.0
+POS 814 2.585947589743148 1.0966143441312868 r=0.015118378400802613
+    тик 2191: связь #1481-#1336 растяжение 1,552, связь мышцы -1, клетки: мышцы -1/-1, кости 6/-1, сухожилие нет
+
+STEP 2191.31 org=1 free=false
+DIED 1543
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.69505117168895 1.083290468307781 r=0.0
+POS 947 2.7271767070296637 1.0851301787386145 r=0.0
+POS 950 2.7153902671459034 1.1114038733707603 r=0.0
+POS 814 2.588916295938686 1.0951412747503841 r=0.015118378400802613
+    тик 2191: связь #1543-#1481 сжатие 0,274, связь мышцы -1, клетки: мышцы -1/-1, кости -1/6, сухожилие нет
+
+STEP 2192.0 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.6919884667536897 1.0826466505281818 r=0.0
+POS 947 2.724584993842081 1.084599605623962 r=0.0
+POS 950 2.712886417322238 1.1109125397470527 r=0.0
+POS 814 2.592429203988127 1.094204471875142 r=0.015118378400802613
+
+STEP 2192.1 org=1 free=false
+DIED 1119
+DIED 1336
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.68931689502529 1.0822698878662007 r=0.0
+POS 947 2.7219028295643315 1.0844798648652367 r=0.0
+POS 950 2.7103093946427697 1.1108392931874949 r=0.0
+POS 814 2.595669462633419 1.091640762842448 r=0.015118378400802613
+    тик 2192: связь #1336-#1127 растяжение 1,396, связь мышцы -1, клетки: мышцы -1/-1, кости -1/6, сухожилие нет
+    тик 2192: связь #1336-#1119 сжатие 0,146, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2192: связь #1127-#1119 растяжение 1,317, связь мышцы -1, клетки: мышцы -1/-1, кости 6/-1, сухожилие нет
+
+STEP 2192.2 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.6869923168366343 1.0821817978069699 r=0.0
+POS 947 2.719009388492487 1.0835020668949957 r=0.0
+POS 950 2.707496909778194 1.10989695330524 r=0.0
+POS 814 2.5981766927929293 1.0904779368321023 r=0.015118378400802613
+    тик 2192: связь #1118-#1112 растяжение 1,310, связь мышцы -1, клетки: мышцы -1/-1, кости 6/-1, сухожилие нет
+
+STEP 2192.3 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.6847790120572537 1.0819689326642878 r=0.0
+POS 947 2.7157326373861883 1.0822269119974675 r=0.0
+POS 950 2.7042927957451948 1.1086533612100602 r=0.0
+POS 814 2.6016985855483448 1.0900076593708408 r=0.015118378400802613
+
+STEP 2192.4 org=1 free=false
+DIED 519
+DIED 576
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.6825093773476674 1.081532040354852 r=0.0
+POS 947 2.7124851221064095 1.081263108248146 r=0.0
+POS 950 2.701129944906331 1.1077260473425017 r=0.0
+POS 814 2.6045680201899026 1.0896877230655118 r=0.015118378400802613
+    тик 2192: связь #576-#526 растяжение 1,347, связь мышцы -1, клетки: мышцы -1/2, кости -1/-1, сухожилие да
+    тик 2192: связь #576-#519 сжатие 0,184, связь мышцы -1, клетки: мышцы -1/2, кости -1/-1, сухожилие да
+    тик 2192: связь #560-#519 растяжение 1,234, связь мышцы 2, клетки: мышцы 2/2, кости -1/-1, сухожилие нет
+
+STEP 2192.5 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.6801748143659565 1.080904410894311 r=0.0
+POS 947 2.7092337561934885 1.080759013807859 r=0.0
+POS 950 2.6979649952980065 1.1072588670647585 r=0.0
+POS 814 2.607752538680119 1.0882910631725708 r=0.015118378400802613
+
+STEP 2192.6 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.677828423599434 1.0802183304908675 r=0.0
+POS 947 2.7058254958065833 1.0799508008455003 r=0.0
+POS 950 2.6946222692592396 1.106478426251587 r=0.0
+POS 814 2.6107048437883336 1.0873140645601387 r=0.015118378400802613
+
+STEP 2192.7 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.6755637616209835 1.079524923961133 r=0.0
+POS 947 2.702266480289869 1.078874494760191 r=0.0
+POS 950 2.691127322970486 1.1054290869990258 r=0.0
+POS 814 2.6145472507152934 1.0872229421468431 r=0.015118378400802613
+
+STEP 2192.8 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=false torn=false
+POS 949 2.6733263404945213 1.0787261514467406 r=0.0
+POS 947 2.6993333825861416 1.0788180315962648 r=0.0
+POS 950 2.6882899081147857 1.1054125585963313 r=0.0
+POS 814 2.6189969402432647 1.0850616332693583 r=0.015118378400802613
+
+STEP 2192.9 org=1 free=false
+DIED 463
+DIED 526
+DIED 1062
+DIED 1112
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=true torn=false
+POS 949 2.6715251017150754 1.0783147198844791 r=0.015118149930342197
+POS 947 2.6971287798451375 1.0796100624918448 r=0.0
+POS 950 2.6862023748470363 1.1062529014654645 r=0.0
+POS 814 2.621614210304043 1.081183959763867 r=0.015118378400802613
+    тик 2192: связь #518-#466 растяжение 1,284, связь мышцы 2, клетки: мышцы 2/2, кости -1/-1, сухожилие нет
+    тик 2192: связь #526-#518 растяжение 1,231, связь мышцы 2, клетки: мышцы 2/2, кости -1/-1, сухожилие нет
+    тик 2192: связь #520-#518 растяжение 1,510, связь мышцы 2, клетки: мышцы 2/2, кости -1/-1, сухожилие нет
+    тик 2192: связь #1112-#1066 растяжение 1,274, связь мышцы -1, клетки: мышцы -1/-1, кости -1/6, сухожилие нет
+    тик 2192: связь #1066-#1062 растяжение 1,435, связь мышцы -1, клетки: мышцы -1/-1, кости 6/-1, сухожилие нет
+    тик 2192: связь #1112-#1062 сжатие 0,313, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2192: связь #1112-#1090 растяжение 1,276, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+
+STEP 2192.10 org=1 free=false
+DIED 380
+DIED 518
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=true torn=false
+POS 949 2.666116713418792 1.0787730841844974 r=0.015118149930342197
+POS 947 2.694676484436636 1.0792529687734833 r=0.0
+POS 950 2.6838563066062355 1.105939125231004 r=0.0
+POS 814 2.6250766929469647 1.0785578491847578 r=0.015118378400802613
+
+STEP 2192.11 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=true torn=false
+POS 949 2.6612252027984438 1.0796616179378404 r=0.015118149930342197
+POS 947 2.691836585771167 1.0782722424167936 r=0.0
+POS 950 2.681108496661572 1.1049955524440587 r=0.0
+POS 814 2.6280081012315613 1.0770073288976332 r=0.015118378400802613
+
+STEP 2192.12 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=true torn=false
+POS 949 2.6599739992553695 1.0805043843557598 r=0.015118149930342197
+POS 947 2.688662497085961 1.0769693664712636 r=0.0
+POS 950 2.6780213763852654 1.1037274259111778 r=0.0
+POS 814 2.6307718890688085 1.0761732018193884 r=0.015118378400802613
+CONTACT 814 949
+
+STEP 2192.13 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=true torn=false
+POS 949 2.6631535816264607 1.080889602653778 r=0.015118149930342197
+POS 947 2.6853505308785515 1.0756747663133055 r=0.0
+POS 950 2.6748021984074546 1.1024695396252027 r=0.0
+POS 814 2.633538638116737 1.0758884951476666 r=0.015118378400802613
+CONTACT 814 949
+
+STEP 2192.14 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=true torn=false
+POS 949 2.665515834922311 1.082009540045827 r=0.015118149930342197
+POS 947 2.682024735694324 1.0745544020251396 r=0.0
+POS 950 2.6715677632513612 1.10138496150652 r=0.0
+POS 814 2.6365524121171333 1.0756284786774688 r=0.015118378400802613
+CONTACT 814 949
+
+STEP 2192.15 org=1 free=false
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=false torn=false
+LINK 1036 949 dead=false torn=false
+LINK 1060 949 dead=false torn=false
+LINK 1062 949 dead=true torn=false
+POS 949 2.6671625056434696 1.084844590462213 r=0.015118149930342197
+POS 947 2.678920141144247 1.0741617717391334 r=0.0
+POS 950 2.6685639198802193 1.101031380517217 r=0.0
+POS 814 2.6400033982132056 1.073698667397934 r=0.015118378400802613
+CONTACT 814 949
+
+STEP 2192.16 org=1 free=false
+DIED 951
+DIED 1060
+DIED 1092
+DIED 1114
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=true torn=true
+LINK 1036 949 dead=true torn=true
+LINK 1060 949 dead=true torn=true
+LINK 1062 949 dead=true torn=false
+POS 949 2.669039938291752 1.0840470256728274 r=0.015118378400802613
+POS 947 2.6759589317685823 1.0735053946635682 r=0.015118378400802613
+POS 950 2.665700961223305 1.1004126657078228 r=0.015118503570556642
+POS 814 2.6426271669393584 1.072670231589208 r=0.015118378400802613
+CONTACT 814 949
+    тик 2192: связь #1060-#949 растяжение 1,305, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2192: связь #951-#949 растяжение 1,336, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2192: связь #1036-#949 растяжение 1,349, связь мышцы -1, клетки: мышцы -1/-1, кости 6/-1, сухожилие нет
+    тик 2192: связь #1060-#951 сжатие 0,336, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2192: связь #1060-#971 растяжение 1,264, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2192: связь #1092-#1060 растяжение 1,394, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+
+STEP 2192.17 org=1 free=false
+DIED 959
+DIED 971
+DIED 1094
+DIED 1108
+DIED 1139
+DIED 1275
+LINK 949 947 dead=false torn=false
+LINK 950 949 dead=false torn=false
+LINK 951 949 dead=true torn=true
+LINK 1036 949 dead=true torn=true
+LINK 1060 949 dead=true torn=true
+LINK 1062 949 dead=true torn=false
+POS 949 2.670111196705451 1.0841219109734104 r=0.015118378400802613
+POS 947 2.675349866602786 1.0700537353102517 r=0.015118378400802613
+POS 950 2.6643132513271772 1.099691991865212 r=0.015118503570556642
+POS 814 2.6444442762824494 1.0729986637293791 r=0.015118378400802613
+CONTACT 814 949
+    тик 2192: связь #366-#341 растяжение 1,265, связь мышцы 2, клетки: мышцы 2/2, кости -1/-1, сухожилие нет
+    тик 2192: связь #959-#953 растяжение 1,239, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2192: связь #971-#959 сжатие 0,300, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2192: связь #1058-#971 растяжение 1,486, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2192: связь #1108-#1090 растяжение 1,297, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+
+STEP 2192.18 org=165 free=true
+DIED 972
+DIED 1058
+DIED 1096
+DIED 1106
+DIED 1110
+DIED 1273
+DIED 1544
+LINK 949 947 dead=true torn=true
+LINK 950 949 dead=true torn=true
+LINK 951 949 dead=true torn=true
+LINK 1036 949 dead=true torn=true
+LINK 1060 949 dead=true torn=true
+LINK 1062 949 dead=true torn=false
+POS 949 2.6727896517525602 1.0855152137947397 r=0.014398524910211562
+POS 947 2.673272881522643 1.0695836152912737 r=0.0151182125170718
+POS 950 2.662756349203152 1.098719096163158 r=0.015118503570556642
+POS 814 2.644371353775773 1.074638982874521 r=0.015118378400802613
+CONTACT 814 949
+    тик 2192: связь #1058-#972 сжатие 0,340, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2192: связь #973-#970 растяжение 1,277, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2192: связь #1096-#1058 растяжение 1,609, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2192: связь #976-#972 растяжение 1,452, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2192: связь #950-#949 пробой 0,000, связь мышцы -1, клетки: мышцы -1/-1, кости 6/-1, сухожилие нет
+    тик 2192: связь #949-#947 пробой 0,000, связь мышцы -1, клетки: мышцы -1/-1, кости -1/6, сухожилие нет
+
+STEP 2192.19 org=165 free=true
+DIED 1104
+DIED 1177
+DIED 1179
+DIED 1483
+DIED 1484
+DIED 1795
+DIED 1796
+LINK 949 947 dead=true torn=true
+LINK 950 949 dead=true torn=true
+LINK 951 949 dead=true torn=true
+LINK 1036 949 dead=true torn=true
+LINK 1060 949 dead=true torn=true
+LINK 1062 949 dead=true torn=false
+POS 949 2.6841614687851245 1.0897343798861907 r=0.014398524910211562
+POS 947 2.672527082442094 1.0699131413340417 r=0.0151182125170718
+POS 950 2.6624435533257413 1.0984249633556127 r=0.015118503570556642
+POS 814 2.6436903722560916 1.0750406555313763 r=0.015118378400802613
+CONTACT 947 949
+CONTACT 949 950
+    тик 2192: связь #974-#973 растяжение 1,410, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2192: связь #1098-#976 растяжение 1,563, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+    тик 2192: связь #1483-#1337 растяжение 1,352, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+
+STEP 2192.20 org=165 free=true
+LINK 949 947 dead=true torn=true
+LINK 950 949 dead=true torn=true
+LINK 951 949 dead=true torn=true
+LINK 1036 949 dead=true torn=true
+LINK 1060 949 dead=true torn=true
+LINK 1062 949 dead=true torn=false
+POS 949 2.690836297721706 1.0922108717110957 r=0.014398524910211562
+POS 947 2.672268390794244 1.0699263019268463 r=0.0151182125170718
+POS 950 2.662433499946875 1.0981267359337723 r=0.015118503570556642
+POS 814 2.6429406988312065 1.0750055792381445 r=0.015118378400802613
+    тик 2192: связь #1100-#1098 растяжение 1,476, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+
+STEP 2192.21 org=165 free=true
+LINK 949 947 dead=true torn=true
+LINK 950 949 dead=true torn=true
+LINK 951 949 dead=true torn=true
+LINK 1036 949 dead=true torn=true
+LINK 1060 949 dead=true torn=true
+LINK 1062 949 dead=true torn=false
+POS 949 2.6975111266582874 1.0946873635360006 r=0.014398524910211562
+POS 947 2.6720595364035953 1.0700224230886197 r=0.0151182125170718
+POS 950 2.662376157309086 1.0977105680314727 r=0.015118503570556642
+POS 814 2.642546811558483 1.0747002910891927 r=0.015118378400802613
+
+STEP 2192.22 org=165 free=true
+LINK 949 947 dead=true torn=true
+LINK 950 949 dead=true torn=true
+LINK 951 949 dead=true torn=true
+LINK 1036 949 dead=true torn=true
+LINK 1060 949 dead=true torn=true
+LINK 1062 949 dead=true torn=false
+POS 949 2.704185955594869 1.0971638553609055 r=0.014398524910211562
+POS 947 2.671863040329739 1.0701401100165637 r=0.0151182125170718
+POS 950 2.662242745302755 1.0973271485057896 r=0.015118503570556642
+POS 814 2.6423383836868717 1.0742590102190568 r=0.015118378400802613
+
+STEP 2192.23 org=165 free=true
+LINK 949 947 dead=true torn=true
+LINK 950 949 dead=true torn=true
+LINK 951 949 dead=true torn=true
+LINK 1036 949 dead=true torn=true
+LINK 1060 949 dead=true torn=true
+LINK 1062 949 dead=true torn=false
+POS 949 2.7108607845314503 1.0996403471858105 r=0.014398524910211562
+POS 947 2.671631273409387 1.0697642044617985 r=0.0151182125170718
+POS 950 2.662127632881487 1.096947066920951 r=0.015118503570556642
+POS 814 2.642043333420058 1.0740931569574255 r=0.015118378400802613
+
+STEP 2192.24 org=165 free=true
+LINK 949 947 dead=true torn=true
+LINK 950 949 dead=true torn=true
+LINK 951 949 dead=true torn=true
+LINK 1036 949 dead=true torn=true
+LINK 1060 949 dead=true torn=true
+LINK 1062 949 dead=true torn=false
+POS 949 2.7175356134680317 1.1021168390107154 r=0.014398524910211562
+POS 947 2.671340350069212 1.0695103126411396 r=0.0151182125170718
+POS 950 2.6619654981217113 1.0967378601935578 r=0.015118503570556642
+POS 814 2.641855348205534 1.073797807989071 r=0.015118378400802613
+
+STEP 2192.25 org=165 free=true
+LINK 949 947 dead=true torn=true
+LINK 950 949 dead=true torn=true
+LINK 951 949 dead=true torn=true
+LINK 1036 949 dead=true torn=true
+LINK 1060 949 dead=true torn=true
+LINK 1062 949 dead=true torn=false
+POS 949 2.724210442404613 1.1045933308356204 r=0.014398524910211562
+POS 947 2.670824184801223 1.0692305019623827 r=0.0151182125170718
+POS 950 2.6615756143679588 1.0965012030846073 r=0.015118503570556642
+POS 814 2.641285799239232 1.0736611946442811 r=0.015118378400802613
+
+STEP 2192.26 org=165 free=true
+LINK 949 947 dead=true torn=true
+LINK 950 949 dead=true torn=true
+LINK 951 949 dead=true torn=true
+LINK 1036 949 dead=true torn=true
+LINK 1060 949 dead=true torn=true
+LINK 1062 949 dead=true torn=false
+POS 949 2.7308852713411946 1.1070698226605253 r=0.014398524910211562
+POS 947 2.6702644275813636 1.069046808167016 r=0.0151182125170718
+POS 950 2.6611431797572394 1.096360358520049 r=0.015118503570556642
+POS 814 2.640767225488334 1.0735909675281872 r=0.015118378400802613
+
+STEP 2192.27 org=165 free=true
+LINK 949 947 dead=true torn=true
+LINK 950 949 dead=true torn=true
+LINK 951 949 dead=true torn=true
+LINK 1036 949 dead=true torn=true
+LINK 1060 949 dead=true torn=true
+LINK 1062 949 dead=true torn=false
+POS 949 2.737560100277776 1.1095463144854303 r=0.014398524910211562
+POS 947 2.669988824313044 1.0689528813766052 r=0.0151182125170718
+POS 950 2.6609882819565565 1.0963064448016113 r=0.015118503570556642
+POS 814 2.6404726367498306 1.0737813634282884 r=0.015118378400802613
+
+STEP 2192.28 org=165 free=true
+LINK 949 947 dead=true torn=true
+LINK 950 949 dead=true torn=true
+LINK 951 949 dead=true torn=true
+LINK 1036 949 dead=true torn=true
+LINK 1060 949 dead=true torn=true
+LINK 1062 949 dead=true torn=false
+POS 949 2.7442349292143575 1.1120228063103352 r=0.014398524910211562
+POS 947 2.669949746604247 1.0689310393160247 r=0.0151182125170718
+POS 950 2.661064217935945 1.0963221797640152 r=0.015118503570556642
+POS 814 2.640520813948628 1.073808736664205 r=0.015118378400802613
+
+STEP 2192.29 org=165 free=true
+LINK 949 947 dead=true torn=true
+LINK 950 949 dead=true torn=true
+LINK 951 949 dead=true torn=true
+LINK 1036 949 dead=true torn=true
+LINK 1060 949 dead=true torn=true
+LINK 1062 949 dead=true torn=false
+POS 949 2.750909758150939 1.1144992981352402 r=0.014398524910211562
+POS 947 2.669779711887413 1.0688480711879729 r=0.0151182125170718
+POS 950 2.661000124933886 1.096273352365788 r=0.015118503570556642
+POS 814 2.640326980261962 1.0736834455734567 r=0.015118378400802613
+
+STEP 2192.30 org=165 free=true
+LINK 949 947 dead=true torn=true
+LINK 950 949 dead=true torn=true
+LINK 951 949 dead=true torn=true
+LINK 1036 949 dead=true torn=true
+LINK 1060 949 dead=true torn=true
+LINK 1062 949 dead=true torn=false
+POS 949 2.7575845870875204 1.1169757899601451 r=0.014398524910211562
+POS 947 2.6695170339245236 1.0686612796423007 r=0.0151182125170718
+POS 950 2.6608442300059583 1.0961205161019492 r=0.015118503570556642
+POS 814 2.639982541725109 1.0737017127032638 r=0.015118378400802613
+
+STEP 2192.31 org=165 free=true
+LINK 949 947 dead=true torn=true
+LINK 950 949 dead=true torn=true
+LINK 951 949 dead=true torn=true
+LINK 1036 949 dead=true torn=true
+LINK 1060 949 dead=true torn=true
+LINK 1062 949 dead=true torn=false
+POS 949 2.764259416024102 1.11945228178505 r=0.014398524910211562
+POS 947 2.6692718211437163 1.068519771288293 r=0.0151182125170718
+POS 950 2.6607071372141373 1.0960129228708813 r=0.015118503570556642
+POS 814 2.639795848923547 1.0736129309213354 r=0.015118378400802613
+
+STEP 2193.0 org=165 free=true
+POS 949 2.770889948151177 1.121912352170099 r=0.014398524910211562
+POS 947 2.669074706628391 1.0683622898203515 r=0.0151182125170718
+POS 950 2.660615816328803 1.0958881752676226 r=0.015118503570556642
+POS 814 2.6395888379515453 1.073590983564034 r=0.015118378400802613
+
+STEP 2193.1 org=165 free=true
+DIED 2
+POS 949 2.7775204802782523 1.1243724225551481 r=0.014398524910211562
+POS 947 2.668937067987802 1.0682427918362865 r=0.0151182125170718
+POS 950 2.6605813340625994 1.0958001666264943 r=0.015118503570556642
+POS 814 2.6395273858256254 1.0739177858751638 r=0.015118378400802613
+    тик 2193: связь #2-#0 сжатие 0,349, связь мышцы -1, клетки: мышцы -1/-1, кости -1/0, сухожилие нет
+
+STEP 2193.2 org=165 free=true
+POS 949 2.7841510124053275 1.1268324929401972 r=0.014398524910211562
+POS 947 2.6689132448374586 1.0683704501423275 r=0.0151182125170718
+POS 950 2.6606653343930353 1.095960288272652 r=0.015118503570556642
+POS 814 2.6395917312902273 1.0736755309259753 r=0.015118378400802613
+    тик 2193: связь #115-#113 растяжение 1,690, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+
+STEP 2193.3 org=165 free=true
+POS 949 2.7907815445324027 1.1292925633252462 r=0.014398524910211562
+POS 947 2.6689239633277704 1.068226129458379 r=0.0151182125170718
+POS 950 2.6607791378782033 1.0958465750223598 r=0.015118503570556642
+POS 814 2.63941864539669 1.0739344712395915 r=0.015118378400802613
+
+STEP 2193.4 org=165 free=true
+POS 949 2.797412076659478 1.1317526337102952 r=0.014398524910211562
+POS 947 2.6688560713189537 1.0682508301145826 r=0.0151182125170718
+POS 950 2.6608242914440114 1.0959043598494504 r=0.015118503570556642
+POS 814 2.639592121542836 1.0736811323811535 r=0.015118378400802613
+
+STEP 2193.5 org=165 free=true
+POS 949 2.804042608786553 1.1342127040953442 r=0.014398524910211562
+POS 947 2.6688570969468897 1.067823572357222 r=0.0151182125170718
+POS 950 2.6609574436787606 1.0957243489961517 r=0.015118503570556642
+POS 814 2.639418647415348 1.0740006702382132 r=0.015118378400802613
+
+STEP 2193.6 org=165 free=true
+POS 949 2.8106731409136283 1.1366727744803933 r=0.014398524910211562
+POS 947 2.668767815289805 1.0678131347358908 r=0.0151182125170718
+POS 950 2.6609970306830264 1.0958160962655967 r=0.015118503570556642
+POS 814 2.6396240506293136 1.073707605862937 r=0.015118378400802613
+
+STEP 2193.7 org=165 free=true
+POS 949 2.8173036730407035 1.1391328448654423 r=0.014398524910211562
+POS 947 2.668747827296866 1.067315602409781 r=0.0151182125170718
+POS 950 2.661121484773964 1.0956520842324136 r=0.015118503570556642
+POS 814 2.6393806021706783 1.0741432487188576 r=0.015118378400802613
+
+STEP 2193.8 org=165 free=true
+DIED 364
+DIED 366
+POS 949 2.8239342051677787 1.1415929152504913 r=0.014398524910211562
+POS 947 2.6688882531486096 1.0676607214783638 r=0.0151182125170718
+POS 950 2.661394598663268 1.0958657396523814 r=0.015118503570556642
+POS 814 2.639591498992034 1.0738203393593184 r=0.015118378400802613
+    тик 2193: связь #366-#342 растяжение 1,330, связь мышцы -1, клетки: мышцы 2/-1, кости -1/-1, сухожилие да
+    тик 2193: связь #364-#342 растяжение 1,589, связь мышцы -1, клетки: мышцы 2/-1, кости -1/-1, сухожилие да
+    тик 2193: связь #366-#364 сжатие 0,331, связь мышцы 2, клетки: мышцы 2/2, кости -1/-1, сухожилие нет
+    тик 2193: связь #379-#366 растяжение 1,361, связь мышцы 2, клетки: мышцы 2/2, кости -1/-1, сухожилие нет
+
+STEP 2193.9 org=165 free=true
+POS 949 2.830564737294854 1.1440529856355404 r=0.014398524910211562
+POS 947 2.668710304308063 1.0673201418833658 r=0.0151182125170718
+POS 950 2.6613631485304317 1.0956724243273765 r=0.015118503570556642
+POS 814 2.6395082630827713 1.0743444042069268 r=0.015118378400802613
+    тик 2193: связь #356-#344 растяжение 1,575, связь мышцы 2, клетки: мышцы 2/3, кости -1/4, сухожилие нет
+
+STEP 2193.10 org=165 free=true
+POS 949 2.837195269421929 1.1465130560205894 r=0.014398524910211562
+POS 947 2.6684551928981812 1.0679709072835337 r=0.0151182125170718
+POS 950 2.6611879438653325 1.0959098902181292 r=0.015118503570556642
+POS 814 2.639570425564819 1.074175522428998 r=0.015118378400802613
+    тик 2193: связь #905-#874 растяжение 1,242, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+
+STEP 2193.11 org=165 free=true
+POS 949 2.8438258015490043 1.1489731264056384 r=0.014398524910211562
+POS 947 2.668139710512543 1.0678267203153915 r=0.0151182125170718
+POS 950 2.6609870052697193 1.0958619084202865 r=0.015118503570556642
+POS 814 2.638991470118041 1.0748237732300252 r=0.015118378400802613
+    тик 2193: связь #907-#903 растяжение 1,269, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+
+STEP 2193.12 org=165 free=true
+DIED 905
+DIED 1822
+POS 949 2.8504563336760795 1.1514331967906875 r=0.014398524910211562
+POS 947 2.6677337472323615 1.0683357798638116 r=0.0151182125170718
+POS 950 2.6606894507126344 1.0962571888773072 r=0.015118503570556642
+POS 814 2.638840158643581 1.0746215957106542 r=0.015118378400802613
+
+STEP 2193.13 org=165 free=true
+POS 949 2.8570868658031547 1.1538932671757365 r=0.014398524910211562
+POS 947 2.6673352148415344 1.0682746387840507 r=0.0151182125170718
+POS 950 2.660416743966262 1.096289921909121 r=0.015118503570556642
+POS 814 2.638101828725776 1.0753846112748378 r=0.015118378400802613
+
+STEP 2193.14 org=165 free=true
+POS 949 2.86371739793023 1.1563533375607855 r=0.014398524910211562
+POS 947 2.6667924160907046 1.0687069838262044 r=0.0151182125170718
+POS 950 2.660004671791607 1.0966918676402715 r=0.015118503570556642
+POS 814 2.6379693665435444 1.0752009878057243 r=0.015118378400802613
+
+STEP 2193.15 org=165 free=true
+POS 949 2.8701375325852543 1.1578778770489153 r=0.014398524910211562
+POS 947 2.666296920165581 1.0686967929378246 r=0.0151182125170718
+POS 950 2.659643458824885 1.096743995127981 r=0.015118503570556642
+POS 814 2.637158108554864 1.075984885302014 r=0.015118378400802613
+CONTACT 949 1639
+
+STEP 2193.16 org=165 free=true
+POS 949 2.876114520388529 1.15725580364485 r=0.014398524910211562
+POS 947 2.665633409305712 1.0691089114073682 r=0.0151182125170718
+POS 950 2.6591157745348855 1.09715793334666 r=0.015118503570556642
+POS 814 2.636921646181324 1.0758624304623585 r=0.015118378400802613
+CONTACT 949 1639
+
+STEP 2193.17 org=165 free=true
+POS 949 2.881229448433444 1.1560707725047439 r=0.014398524910211562
+POS 947 2.665058681275388 1.0690532378907054 r=0.0151182125170718
+POS 950 2.6586690521223617 1.0972783181524073 r=0.015118503570556642
+POS 814 2.6360248184053368 1.0767235672859927 r=0.015118378400802613
+CONTACT 949 1729
+
+STEP 2193.18 org=165 free=true
+POS 949 2.8845715467620607 1.1536559120301217 r=0.014398524910211562
+POS 947 2.6643952869833676 1.069647181286164 r=0.0151182125170718
+POS 950 2.658137320459396 1.0977552770904266 r=0.015118503570556642
+POS 814 2.6357666441366385 1.0765945430803976 r=0.015118378400802613
+CONTACT 949 1729
+    тик 2193: связь #903-#884 растяжение 1,314, связь мышцы -1, клетки: мышцы -1/-1, кости -1/-1, сухожилие нет
+
+STEP 2193.19 org=165 free=true
+POS 949 2.8878052618982717 1.151113532568872 r=0.014398524910211562
+POS 947 2.663741262563585 1.0695133696578991 r=0.0151182125170718
+POS 950 2.6575945744927894 1.09787895446455 r=0.015118503570556642
+POS 814 2.634840000601386 1.0775253425492304 r=0.015118378400802613
+CONTACT 949 1729
+    тик 2193: связь #346-#344 растяжение 1,265, связь мышцы 3, клетки: мышцы 3/3, кости -1/4, сухожилие нет
+    тик 2193: связь #346-#204 растяжение 1,534, связь мышцы 0, клетки: мышцы 3/0, кости -1/4, сухожилие нет
+    тик 2193: связь #356-#346 растяжение 1,247, связь мышцы 2, клетки: мышцы 2/3, кости -1/-1, сухожилие нет
+    тик 2193: связь #350-#346 растяжение 1,622, связь мышцы 3, клетки: мышцы 3/3, кости -1/-1, сухожилие нет
+    тик 2193: связь #348-#346 растяжение 1,382, связь мышцы 3, клетки: мышцы 3/3, кости -1/-1, сухожилие нет
+    тик 2193: связь #348-#214 растяжение 1,558, связь мышцы 3, клетки: мышцы 3/3, кости -1/-1, сухожилие нет
+    тик 2193: связь #352-#348 растяжение 1,294, связь мышцы 3, клетки: мышцы 3/3, кости -1/-1, сухожилие нет
+
+STEP 2193.20 org=165 free=true
+POS 949 2.8909804731728066 1.1484793247556584 r=0.014398524910211562
+POS 947 2.662929971218306 1.0702328142649924 r=0.0151182125170718
+POS 950 2.656904947318214 1.098391761009501 r=0.015118503570556642
+POS 814 2.6344469023202097 1.0774431552170398 r=0.015118378400802613
+CONTACT 949 1729
+
+STEP 2193.21 org=165 free=true
+POS 949 2.894145016050884 1.1458219487693182 r=0.014398524910211562
+POS 947 2.662224935321494 1.0701344444860699 r=0.0151182125170718
+POS 950 2.656282867685537 1.0984605337655615 r=0.015118503570556642
+POS 814 2.6333593626225342 1.078355866397576 r=0.015118378400802613
+CONTACT 949 1729
+
+STEP 2193.22 org=165 free=true
+DIED 903
+DIED 1622
+POS 949 2.8973095589289617 1.143164572782978 r=0.014398524910211562
+POS 947 2.6614109411640707 1.0706399299847025 r=0.0151182125170718
+POS 950 2.655560559169164 1.0988356783392048 r=0.015118503570556642
+POS 814 2.632908889254827 1.0781454119102167 r=0.015118378400802613
+
+STEP 2193.23 org=165 free=true
+POS 949 2.9004741018070392 1.1405071967966378 r=0.014398524910211562
+POS 947 2.6607314825061787 1.0706430643424285 r=0.0151182125170718
+POS 950 2.654960175495753 1.0988551045052413 r=0.015118503570556642
+POS 814 2.63187073068796 1.0787964653044617 r=0.015118378400802613
+
+STEP 2193.24 org=165 free=true
+POS 949 2.903638644685117 1.1378498208102976 r=0.014398524910211562
+POS 947 2.659945363229639 1.0708285728144726 r=0.0151182125170718
+POS 950 2.6542508360934303 1.0990562109631337 r=0.015118503570556642
+POS 814 2.6314372143826428 1.0785910094020748 r=0.015118378400802613
+
+STEP 2193.25 org=165 free=true
+POS 949 2.9068031875631943 1.1351924448239574 r=0.014398524910211562
+POS 947 2.6593544122509827 1.070778937681036 r=0.0151182125170718
+POS 950 2.6537317145197963 1.0990209713362187 r=0.015118503570556642
+POS 814 2.6305565212894124 1.079050378811089 r=0.015118378400802613
+
+STEP 2193.26 org=165 free=true
+POS 949 2.909967730441272 1.1325350688376172 r=0.014398524910211562
+POS 947 2.6586811724788477 1.0709436888308506 r=0.0151182125170718
+POS 950 2.653134898959051 1.0992008303140288 r=0.015118503570556642
+POS 814 2.6302031191986783 1.0788183306237435 r=0.015118378400802613
+
+STEP 2193.27 org=165 free=true
+POS 949 2.9130326186717137 1.1297484267388662 r=0.014398524910211562
+POS 947 2.6581402568773163 1.0709007321006436 r=0.0151182125170718
+POS 950 2.652667424646048 1.0991721894759743 r=0.015118503570556642
+POS 814 2.6293648471938402 1.0793196210967828 r=0.015118378400802613
+CONTACT 949 1730
+
+STEP 2193.28 org=165 free=true
+POS 949 2.9160975069021555 1.1269617846401152 r=0.014398524910211562
+POS 947 2.657468043838467 1.0710805057966128 r=0.0151182125170718
+POS 950 2.6520694786712826 1.0993662387532186 r=0.015118503570556642
+POS 814 2.6290209745388577 1.0791195969984528 r=0.015118378400802613
+    тик 2193: связь #214-#204 растяжение 1,257, связь мышцы 0, клетки: мышцы 3/0, кости -1/4, сухожилие нет
+
+STEP 2193.29 org=165 free=true
+POS 949 2.9191623951325973 1.1241751425413642 r=0.014398524910211562
+POS 947 2.656888041643211 1.071090659309907 r=0.0151182125170718
+POS 950 2.651560805159322 1.0993899127665172 r=0.015118503570556642
+POS 814 2.628144363665786 1.079642461776103 r=0.015118378400802613
+
+STEP 2193.30 org=165 free=true
+POS 949 2.922227283363039 1.1213885004426132 r=0.014398524910211562
+POS 947 2.6561370306164473 1.0713007448078509 r=0.0151182125170718
+POS 950 2.650877768842285 1.0996127097758213 r=0.015118503570556642
+POS 814 2.627731699333517 1.0794738711120309 r=0.015118378400802613
+
+STEP 2193.31 org=165 free=true
+POS 949 2.925292171593481 1.1186018583438622 r=0.014398524910211562
+POS 947 2.655470837167661 1.0713413511922458 r=0.0151182125170718
+POS 950 2.6502741004233834 1.0996648594842537 r=0.015118503570556642
+POS 814 2.6267558486874973 1.0800188344172579 r=0.015118378400802613
+
+[DemoSession] таран: организмы 1 и 0, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 1 и 0, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 1 и 0, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 1 и 0, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 1 и 0, по 6,4 клеток/тик навстречу
+[DemoSession] таран: организмы 1 и 260, по 6,4 клеток/тик навстречу
+AUDIT DONE

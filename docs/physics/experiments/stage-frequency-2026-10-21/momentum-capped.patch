@@ -1,0 +1,377 @@
+diff --git a/physics-lab/src/main/kotlin/io/github/some_example_name/physics/lab/tuning/SwimSolver.kt b/physics-lab/src/main/kotlin/io/github/some_example_name/physics/lab/tuning/SwimSolver.kt
+index 8c2cbb3..731e09e 100644
+--- a/physics-lab/src/main/kotlin/io/github/some_example_name/physics/lab/tuning/SwimSolver.kt
++++ b/physics-lab/src/main/kotlin/io/github/some_example_name/physics/lab/tuning/SwimSolver.kt
+@@ -188,6 +188,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
+ 
+     /** Зеркало демо: снятие импульса и момента внутренних стадий. См. InternalMomentum. */
+     private val internalMom = InternalMomentum(n)
++    private val tickMomentum = io.github.some_example_name.physics.TickMomentum(n)
+ 
+     private fun markInternal() {
+         internalMom.mark(px, py, topo.organismOf, topo.organismCount)
+@@ -692,21 +693,23 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
+             muscleActivation[m] += (target - muscleActivation[m]) * k
+         }
+ 
++        if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.begin(px, py, vx, vy, invMass, topo.organismOf)
+         val h = dt / substeps
+         for (s in 0 until substeps) {
+             muscleFrac = (s + 1).toDouble() / substeps
+             integrate(h)
+             // Фаза чередования — как в демо, см. SWEEP_FLIP.
+             if (DemoConst.SWEEP_FLIP == 1) sweepBackwards = !sweepBackwards
+-            if (DemoConst.CANCEL_INTERNAL_SPIN) markInternal()
++
+             // Цикл по всем ограничениям сразу, включая контакт — зеркало демо.
+             for (iter in 0 until DemoConst.SOLVER_ITERS) {
+                 if (DemoConst.SWEEP_FLIP == 2) sweepBackwards = !sweepBackwards
+                 solveBlockedIteration(h)
+                 if (p.contactsOn) {
+                     contacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = iter > 0)
+-                    if (DemoConst.CANCEL_INTERNAL_SPIN) internalMom.noteContacts(contacts)
+-                    contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
++                    if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.noteContacts(contacts)
++                    if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.noteContacts(contacts)
++                contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
+                     solveContactsAndBoundary(h)
+                 }
+             }
+@@ -714,19 +717,28 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
+             // кости способна растянуть связь, а от него зависит непроницаемость.
+             solveLinkMaxLength()
+             trackStress()
+-            if (DemoConst.CANCEL_INTERNAL_SPIN) cancelInternalSpin()
++
+             if (p.contactsOn) {
+                 contacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = true)
++                if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.noteContacts(contacts)
+                 contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
+                 solveContactsAndBoundary(h)
+             }
+             updateVelocities(h)
+             // Отскок — зеркало демо, см. solveRestitution.
++            if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.beforeExternal(vx, vy)
+             if (p.contactsOn) contacts.solveRestitution(px, py, vx, vy, invMass)
+             applyViscosity(h)
+             applyNormalDrag(h)
+             applyMediumDrag(h)
+             clampSpeed(dt)
++            if (DemoConst.CANCEL_INTERNAL_SPIN) {
++                tickMomentum.afterExternal(px, py, vx, vy, invMass)
++                if (s == substeps - 1) {
++                    tickMomentum.cancel(px, py, vx, vy, invMass)
++                    clampSpeed(dt)
++                }
++            }
+         }
+         applyPlasticity(dt)
+     }
+@@ -795,21 +807,23 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
+             if (k > 1.0) k = 1.0
+             muscleActivation[m] += (target - muscleActivation[m]) * k
+         }
++        if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.begin(px, py, vx, vy, invMass, topo.organismOf)
+         val h = dt / substeps
+         for (s in 0 until substeps) {
+             muscleFrac = (s + 1).toDouble() / substeps
+             integrate(h)
+             // Фаза чередования — как в демо, см. SWEEP_FLIP.
+             if (DemoConst.SWEEP_FLIP == 1) sweepBackwards = !sweepBackwards
+-            if (DemoConst.CANCEL_INTERNAL_SPIN) markInternal()
++
+             // Цикл по всем ограничениям сразу, включая контакт — зеркало демо.
+             for (iter in 0 until DemoConst.SOLVER_ITERS) {
+                 if (DemoConst.SWEEP_FLIP == 2) sweepBackwards = !sweepBackwards
+                 solveBlockedIteration(h)
+                 if (p.contactsOn) {
+                     contacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = iter > 0)
+-                    if (DemoConst.CANCEL_INTERNAL_SPIN) internalMom.noteContacts(contacts)
+-                    contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
++                    if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.noteContacts(contacts)
++                    if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.noteContacts(contacts)
++                contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
+                     solveContactsAndBoundary(h)
+                 }
+             }
+@@ -817,19 +831,28 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
+             // кости способна растянуть связь, а от него зависит непроницаемость.
+             solveLinkMaxLength()
+             trackStress()
+-            if (DemoConst.CANCEL_INTERNAL_SPIN) cancelInternalSpin()
++
+             if (p.contactsOn) {
+                 contacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = true)
++                if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.noteContacts(contacts)
+                 contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
+                 solveContactsAndBoundary(h)
+             }
+             updateVelocities(h)
+             // Отскок — зеркало демо, см. solveRestitution.
++            if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.beforeExternal(vx, vy)
+             if (p.contactsOn) contacts.solveRestitution(px, py, vx, vy, invMass)
+             applyViscosity(h)
+             applyNormalDrag(h)
+             applyMediumDrag(h)
+             clampSpeed(dt)
++            if (DemoConst.CANCEL_INTERNAL_SPIN) {
++                tickMomentum.afterExternal(px, py, vx, vy, invMass)
++                if (s == substeps - 1) {
++                    tickMomentum.cancel(px, py, vx, vy, invMass)
++                    clampSpeed(dt)
++                }
++            }
+         }
+         applyPlasticity(dt)
+     }
+diff --git a/physics/src/main/kotlin/io/github/some_example_name/physics/model/BodyState.kt b/physics/src/main/kotlin/io/github/some_example_name/physics/model/BodyState.kt
+index 9dfa7c9..4a99e33 100644
+--- a/physics/src/main/kotlin/io/github/some_example_name/physics/model/BodyState.kt
++++ b/physics/src/main/kotlin/io/github/some_example_name/physics/model/BodyState.kt
+@@ -747,6 +747,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
+      * Контакты копят свои смещения в extDx/extDy, и из снимаемого они вычитаются.
+      */
+     var internalMom: InternalMomentum? = null
++    val tickMomentum by lazy { TickMomentum(n) }
+ 
+     /** Включено ли снятие. Переменной, а не константой, — ради A/B на журнале игрока. */
+     var cancelSpinOn = CANCEL_INTERNAL_SPIN
+diff --git a/physics/src/main/kotlin/io/github/some_example_name/physics/solver/BodySimulation.kt b/physics/src/main/kotlin/io/github/some_example_name/physics/solver/BodySimulation.kt
+index ddef6d3..72f7152 100644
+--- a/physics/src/main/kotlin/io/github/some_example_name/physics/solver/BodySimulation.kt
++++ b/physics/src/main/kotlin/io/github/some_example_name/physics/solver/BodySimulation.kt
+@@ -18,6 +18,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
+     if (tearsPending) refreshSurface()
+     val h = DT / SUBSTEPS
+     observer?.beginTick()
++    if (cancelSpinOn) tickMomentum.begin(px, py, vx, vy, invMass, organismOf)
+     for (step in 0 until SUBSTEPS) {
+         // Длина покоя мышцы доезжает до своего значения за тик, а не прыгает в первом
+         // же подшаге — см. muscleScaleOf.
+@@ -52,7 +53,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
+         if (sweepFlip == 1) sweepBackwards = !sweepBackwards
+         // Снимок ДО внутренних стадий: всё, что они внесут сверх формы, снимется
+         // перед контактами. См. cancelInternalSpin.
+-        if (cancelSpinOn) markInternal()
++
+         // ЦИКЛ ПО ВСЕМ ОГРАНИЧЕНИЯМ СРАЗУ, ВКЛЮЧАЯ КОНТАКТ.
+         //
+         // Смысл в накоплении множителя. Сила при повторении просто умножается на
+@@ -73,7 +74,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
+                 tick0(); dbgMark()
+                 ci.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = iter > 0)
+                 dbgMeasure(6, h); tick1(6)
+-                if (cancelSpinOn) internalMom?.noteContacts(ci)
++                if (cancelSpinOn) tickMomentum.noteContacts(ci)
+                 contactsStale = false
+                 tick0()
+                 ci.updateBones(px, py, invMass,
+@@ -122,7 +123,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
+         // Снять импульс и момент, внесённые ВНУТРЕННИМИ стадиями. Контакты стоят в том
+         // же цикле, но их смещения копятся отдельно и не снимаются: контакт внешний
+         // для организма и передаёт импульс между телами законно. См. InternalMomentum.
+-        tick0(); dbgMark(); if (cancelSpinOn) cancelInternalSpin(); dbgMeasure(12, h); tick1(8)
++        tick0(); dbgMark();  dbgMeasure(12, h); tick1(8)
+ 
+         dbgMark(); if (cancel) cancelInternalDrift(beforeX, beforeY); dbgMeasure(12, h)
+ 
+@@ -134,6 +135,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
+             tick0()
+             finalContacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = true)
+             tick1(6); tick0()
++            if (cancelSpinOn) tickMomentum.noteContacts(finalContacts)
+             finalContacts.updateBones(px, py, invMass, if (bonesRigid) boneOf else null, rigidBones)
+             tick1(13); tick0()
+             finalContacts.solveContacts(px, py, vx, vy, invMass, h)
+@@ -152,6 +154,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
+         updateVelocities(h)
+         // Отскок: позиционная часть удар гасит целиком, см. solveRestitution.
+         dbgMarkV()
++        if (cancelSpinOn) tickMomentum.beforeExternal(vx, vy)
+         val cr = contacts
+         if (cr != null && contactsOn && !contactsStale) cr.solveRestitution(px, py, vx, vy, invMass)
+         dbgMeasureV(7); dbgMarkV()
+@@ -164,6 +167,14 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
+         applyMediumDrag(h)
+         clampSpeed()
+         dbgMeasureV(11); tick1(9)
++        if (cancelSpinOn) {
++            tickMomentum.afterExternal(px, py, vx, vy, invMass, inContact)
++            if (step == SUBSTEPS - 1) {
++                tickMomentum.cancel(px, py, vx, vy, invMass)
++                // Коррекция тоже меняет скорости: потолок должен оставаться последним.
++                clampSpeed()
++            }
++        }
+         observer?.afterSubstep(step)
+         dbgSubstepHook?.invoke(step)
+     }
+diff --git a/physics/src/main/kotlin/io/github/some_example_name/physics/solver/TickMomentum.kt b/physics/src/main/kotlin/io/github/some_example_name/physics/solver/TickMomentum.kt
+new file mode 100644
+--- /dev/null
++++ b/physics/src/main/kotlin/io/github/some_example_name/physics/solver/TickMomentum.kt
+@@ -0,0 +1,97 @@
++package io.github.some_example_name.physics
++
++/** Эксперимент: баланс импульса за тик. Внешние изменения скоростей учитываются
++ * отдельно; контакты объединяют группы. Разрыв в середине тика не отменяет уже
++ * переданный импульс. Раздельные тела вновь разделяются на следующем begin.
++ * 12 double + 2 int + boolean на частицу: ~10.5 МБ при 100k, больше L2.
++ * Это цена прямого варианта; выигрыш должен подтвердить замер.
++ */
++class TickMomentum(private val n: Int) {
++    private val parent = IntArray(n)
++    private val first = IntArray(n)
++    private val targetX = DoubleArray(n)
++    private val targetY = DoubleArray(n)
++    private val targetL = DoubleArray(n)
++    private val beforeX = DoubleArray(n)
++    private val beforeY = DoubleArray(n)
++    private val mass = DoubleArray(n)
++    private val cx = DoubleArray(n)
++    private val cy = DoubleArray(n)
++    private val dx = DoubleArray(n)
++    private val dy = DoubleArray(n)
++    private val dl = DoubleArray(n)
++    private val inertia = DoubleArray(n)
++    private val blocked = BooleanArray(n)
++    private fun find(i: Int): Int {
++        var r = i
++        while (parent[r] != r) r = parent[r]
++        var v = i
++        while (parent[v] != r) { val next = parent[v]; parent[v] = r; v = next }
++        return r
++    }
++    private fun union(i: Int, j: Int) {
++        val a = find(i); val b = find(j)
++        if (a != b) parent[maxOf(a, b)] = minOf(a, b)
++    }
++    fun begin(x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
++              invMass: DoubleArray, org: IntArray) {
++        first.fill(-1); blocked.fill(false)
++        for (i in 0 until n) parent[i] = i
++        for (i in 0 until n) {
++            val o = org[i]
++            if (o >= 0) { if (first[o] < 0) first[o] = i else union(first[o], i) }
++            val m = if (invMass[i] > 0.0) 1.0 / invMass[i] else 0.0
++            targetX[i] = m * vx[i]; targetY[i] = m * vy[i]
++            targetL[i] = m * (x[i] * vy[i] - y[i] * vx[i])
++            blocked[i] = invMass[i] <= 0.0
++        }
++    }
++    fun noteContacts(c: BoundaryContacts) {
++        for (k in 0 until c.contactCount) union(c.contactI(k), c.contactJ(k))
++    }
++    fun beforeExternal(vx: DoubleArray, vy: DoubleArray) {
++        System.arraycopy(vx, 0, beforeX, 0, n)
++        System.arraycopy(vy, 0, beforeY, 0, n)
++    }
++    fun afterExternal(x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
++                      invMass: DoubleArray, floor: BooleanArray? = null) {
++        for (i in 0 until n) {
++            if (floor != null && floor[i]) blocked[i] = true
++            if (invMass[i] <= 0.0) continue
++            val m = 1.0 / invMass[i]
++            val fx = m * (vx[i] - beforeX[i]); val fy = m * (vy[i] - beforeY[i])
++            targetX[i] += fx; targetY[i] += fy
++            targetL[i] += x[i] * fy - y[i] * fx
++        }
++    }
++    fun cancel(x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
++               invMass: DoubleArray) {
++        mass.fill(0.0); cx.fill(0.0); cy.fill(0.0)
++        dx.fill(0.0); dy.fill(0.0); dl.fill(0.0); inertia.fill(0.0)
++        for (i in 0 until n) {
++            val g = find(i)
++            if (blocked[i] || invMass[i] <= 0.0) { blocked[g] = true; continue }
++            val m = 1.0 / invMass[i]
++            mass[g] += m; cx[g] += m * x[i]; cy[g] += m * y[i]
++            dx[g] += m * vx[i] - targetX[i]; dy[g] += m * vy[i] - targetY[i]
++            dl[g] += m * (x[i] * vy[i] - y[i] * vx[i]) - targetL[i]
++        }
++        for (g in 0 until n) if (mass[g] > 0.0) {
++            cx[g] /= mass[g]; cy[g] /= mass[g]
++            dl[g] -= cx[g] * dy[g] - cy[g] * dx[g]
++            dx[g] /= mass[g]; dy[g] /= mass[g]
++        }
++        for (i in 0 until n) {
++            if (invMass[i] <= 0.0) continue
++            val g = find(i); val rx = x[i] - cx[g]; val ry = y[i] - cy[g]
++            inertia[g] += (rx * rx + ry * ry) / invMass[i]
++        }
++        for (g in 0 until n) dl[g] = if (inertia[g] > 1e-18) dl[g] / inertia[g] else 0.0
++        for (i in 0 until n) {
++            val g = find(i)
++            if (blocked[g] || invMass[i] <= 0.0) continue
++            vx[i] -= dx[g] - dl[g] * (y[i] - cy[g])
++            vy[i] -= dy[g] + dl[g] * (x[i] - cx[g])
++        }
++    }
++}
+diff --git a/physics/src/test/kotlin/io/github/some_example_name/physics/TickMomentumTest.kt b/physics/src/test/kotlin/io/github/some_example_name/physics/TickMomentumTest.kt
+new file mode 100644
+--- /dev/null
++++ b/physics/src/test/kotlin/io/github/some_example_name/physics/TickMomentumTest.kt
+@@ -0,0 +1,62 @@
++package io.github.some_example_name.physics
++
++import org.junit.Assert.assertEquals
++import org.junit.Test
++
++class TickMomentumTest {
++    private fun momentum(x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray, w: DoubleArray): DoubleArray {
++        val v = DoubleArray(3)
++        for (i in x.indices) if (w[i] > 0.0) {
++            v[0] += vx[i] / w[i]; v[1] += vy[i] / w[i]
++            v[2] += (x[i] * vy[i] - y[i] * vx[i]) / w[i]
++        }
++        return v
++    }
++    private fun same(expected: DoubleArray, actual: DoubleArray) {
++        for (i in expected.indices) assertEquals(expected[i], actual[i], 1e-10)
++    }
++    @Test fun restoresWholeTickMomentumAfterShapeChanges() {
++        val x = doubleArrayOf(-1.0, 0.0, 2.0); val y = doubleArrayOf(0.0, 1.0, -1.0)
++        val vx = doubleArrayOf(2.0, 3.0, -2.0); val vy = doubleArrayOf(1.0, -4.0, 3.0)
++        val w = doubleArrayOf(1.0, 0.5, 2.0); val a = TickMomentum(3)
++        val expected = momentum(x,y,vx,vy,w)
++        a.begin(x,y,vx,vy,w,intArrayOf(0,0,0))
++        x[0] += 0.3; y[2] -= 0.1; vx[1] += 7.0; vy[0] -= 3.0
++        a.cancel(x,y,vx,vy,w)
++        same(expected, momentum(x,y,vx,vy,w))
++    }
++    @Test fun preservesExternalImpulseAndTorque() {
++        val x = doubleArrayOf(-2.0, 2.0); val y = doubleArrayOf(1.0, 1.0)
++        val vx = doubleArrayOf(0.0,0.0); val vy = doubleArrayOf(0.0,0.0)
++        val w = doubleArrayOf(1.0,0.5); val a = TickMomentum(2)
++        a.begin(x,y,vx,vy,w,intArrayOf(0,0))
++        // Ошибка решателя, затем настоящая внешняя сила в той же геометрии.
++        vx[0] = 10.0; vy[1] = -5.0
++        a.beforeExternal(vx,vy)
++        vx[1] += 3.0; vy[0] += 4.0
++        a.afterExternal(x,y,vx,vy,w)
++        a.cancel(x,y,vx,vy,w)
++        same(doubleArrayOf(6.0,4.0,-14.0),momentum(x,y,vx,vy,w))
++    }
++    @Test fun disconnectedPiecesDoNotShareCorrection() {
++        val x = doubleArrayOf(-2.0,-1.0,1.0,2.0); val y = DoubleArray(4)
++        val vx = doubleArrayOf(1.0,1.0,-1.0,-1.0); val vy = DoubleArray(4)
++        val w = DoubleArray(4) { 1.0 }; val a = TickMomentum(4)
++        a.begin(x,y,vx,vy,w,intArrayOf(0,0,1,1))
++        vx[0] += 10.0; vy[0] += 3.0
++        a.cancel(x,y,vx,vy,w)
++        assertEquals(-1.0,vx[2],0.0);assertEquals(-1.0,vx[3],0.0)
++        assertEquals(0.0,vy[2],0.0);assertEquals(0.0,vy[3],0.0)
++        assertEquals(2.0,vx[0]+vx[1],1e-10)
++    }
++    @Test fun nextTickDiscardsPreviousGroupAndExternalLedger() {
++        val x = doubleArrayOf(-1.0,1.0); val y = DoubleArray(2)
++        val vx = DoubleArray(2); val vy = DoubleArray(2); val w = DoubleArray(2) { 1.0 }
++        val a = TickMomentum(2)
++        a.begin(x,y,vx,vy,w,intArrayOf(0,0));a.beforeExternal(vx,vy)
++        vx[0]=10.0;a.afterExternal(x,y,vx,vy,w)
++        vx.fill(0.0);a.begin(x,y,vx,vy,w,intArrayOf(0,1))
++        vx[0]=7.0;a.cancel(x,y,vx,vy,w)
++        assertEquals(0.0,vx[0],0.0);assertEquals(0.0,vx[1],0.0)
++    }
++}

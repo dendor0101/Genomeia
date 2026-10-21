@@ -188,6 +188,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
 
     /** Зеркало демо: снятие импульса и момента внутренних стадий. См. InternalMomentum. */
     private val internalMom = InternalMomentum(n)
+    private val tickMomentum = io.github.some_example_name.physics.TickMomentum(n)
 
     private fun markInternal() {
         internalMom.mark(px, py, topo.organismOf, topo.organismCount)
@@ -692,41 +693,46 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             muscleActivation[m] += (target - muscleActivation[m]) * k
         }
 
+        if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.begin(px, py, vx, vy, invMass, topo.organismOf)
         val h = dt / substeps
         for (s in 0 until substeps) {
             muscleFrac = (s + 1).toDouble() / substeps
             integrate(h)
             // Фаза чередования — как в демо, см. SWEEP_FLIP.
             if (DemoConst.SWEEP_FLIP == 1) sweepBackwards = !sweepBackwards
-            if (DemoConst.CANCEL_INTERNAL_SPIN) markInternal()
+
             // Цикл по всем ограничениям сразу, включая контакт — зеркало демо.
             for (iter in 0 until DemoConst.SOLVER_ITERS) {
                 if (DemoConst.SWEEP_FLIP == 2) sweepBackwards = !sweepBackwards
                 solveBlockedIteration(h)
-                if (p.contactsOn) {
-                    contacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = iter > 0)
-                    if (DemoConst.CANCEL_INTERNAL_SPIN) internalMom.noteContacts(contacts)
-                    contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
-                    solveContactsAndBoundary(h)
-                }
+
             }
             // Предел длины ещё раз, уже после контактов — зеркало демо: проекция
             // кости способна растянуть связь, а от него зависит непроницаемость.
             solveLinkMaxLength()
             trackStress()
-            if (DemoConst.CANCEL_INTERNAL_SPIN) cancelInternalSpin()
+
             if (p.contactsOn) {
-                contacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = true)
+                contacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = false)
+                if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.noteContacts(contacts)
                 contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
                 solveContactsAndBoundary(h)
             }
             updateVelocities(h)
             // Отскок — зеркало демо, см. solveRestitution.
+            if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.beforeExternal(vx, vy)
             if (p.contactsOn) contacts.solveRestitution(px, py, vx, vy, invMass)
-            applyViscosity(h)
-            applyNormalDrag(h)
-            applyMediumDrag(h)
+            if (s == substeps - 1) applyViscosity(h * substeps)
+            if (s == substeps - 1) applyNormalDrag(h * substeps)
+            if (s == substeps - 1) applyMediumDrag(h * substeps)
             clampSpeed(dt)
+            if (DemoConst.CANCEL_INTERNAL_SPIN) {
+                tickMomentum.afterExternal(px, py, vx, vy, invMass)
+                if (s == substeps - 1) {
+                    tickMomentum.cancel(px, py, vx, vy, invMass)
+                    clampSpeed(dt)
+                }
+            }
         }
         applyPlasticity(dt)
     }
@@ -795,41 +801,46 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             if (k > 1.0) k = 1.0
             muscleActivation[m] += (target - muscleActivation[m]) * k
         }
+        if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.begin(px, py, vx, vy, invMass, topo.organismOf)
         val h = dt / substeps
         for (s in 0 until substeps) {
             muscleFrac = (s + 1).toDouble() / substeps
             integrate(h)
             // Фаза чередования — как в демо, см. SWEEP_FLIP.
             if (DemoConst.SWEEP_FLIP == 1) sweepBackwards = !sweepBackwards
-            if (DemoConst.CANCEL_INTERNAL_SPIN) markInternal()
+
             // Цикл по всем ограничениям сразу, включая контакт — зеркало демо.
             for (iter in 0 until DemoConst.SOLVER_ITERS) {
                 if (DemoConst.SWEEP_FLIP == 2) sweepBackwards = !sweepBackwards
                 solveBlockedIteration(h)
-                if (p.contactsOn) {
-                    contacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = iter > 0)
-                    if (DemoConst.CANCEL_INTERNAL_SPIN) internalMom.noteContacts(contacts)
-                    contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
-                    solveContactsAndBoundary(h)
-                }
+
             }
             // Предел длины ещё раз, уже после контактов — зеркало демо: проекция
             // кости способна растянуть связь, а от него зависит непроницаемость.
             solveLinkMaxLength()
             trackStress()
-            if (DemoConst.CANCEL_INTERNAL_SPIN) cancelInternalSpin()
+
             if (p.contactsOn) {
-                contacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = true)
+                contacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = false)
+                if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.noteContacts(contacts)
                 contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
                 solveContactsAndBoundary(h)
             }
             updateVelocities(h)
             // Отскок — зеркало демо, см. solveRestitution.
+            if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.beforeExternal(vx, vy)
             if (p.contactsOn) contacts.solveRestitution(px, py, vx, vy, invMass)
-            applyViscosity(h)
-            applyNormalDrag(h)
-            applyMediumDrag(h)
+            if (s == substeps - 1) applyViscosity(h * substeps)
+            if (s == substeps - 1) applyNormalDrag(h * substeps)
+            if (s == substeps - 1) applyMediumDrag(h * substeps)
             clampSpeed(dt)
+            if (DemoConst.CANCEL_INTERNAL_SPIN) {
+                tickMomentum.afterExternal(px, py, vx, vy, invMass)
+                if (s == substeps - 1) {
+                    tickMomentum.cancel(px, py, vx, vy, invMass)
+                    clampSpeed(dt)
+                }
+            }
         }
         applyPlasticity(dt)
     }

@@ -17,7 +17,9 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     java.util.Arrays.fill(crushedCell, false)
     if (tearsPending) refreshSurface()
     val h = DT / SUBSTEPS
+    // Совместный опыт минимальной частоты: контакты 32, момент и среда 1 раз за тик.
     observer?.beginTick()
+    if (cancelSpinOn) tickMomentum.begin(px, py, vx, vy, invMass, organismOf)
     for (step in 0 until SUBSTEPS) {
         // Длина покоя мышцы доезжает до своего значения за тик, а не прыгает в первом
         // же подшаге — см. muscleScaleOf.
@@ -50,63 +52,12 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
 
         // См. SWEEP_FLIP: раз в подшаг или каждый проход.
         if (sweepFlip == 1) sweepBackwards = !sweepBackwards
-        // Снимок ДО внутренних стадий: всё, что они внесут сверх формы, снимется
-        // перед контактами. См. cancelInternalSpin.
-        if (cancelSpinOn) markInternal()
-        // ЦИКЛ ПО ВСЕМ ОГРАНИЧЕНИЯМ СРАЗУ, ВКЛЮЧАЯ КОНТАКТ.
-        //
-        // Смысл в накоплении множителя. Сила при повторении просто умножается на
-        // число заходов, и общий цикл с ней делал только хуже (0.096, 0.25, 0.92,
-        // 6.25 при одном, двух, четырёх и восьми). Ограничение с накопленным
-        // множителем ведёт себя наоборот: повторения его СХОДЯТ, и в равновесии
-        // приращение обращается в ноль само. А в скорость идёт именно приращение.
-        //
-        // Поэтому здесь связи и контакт стоят в одном цикле и делят между собой
-        // одну и ту же невязку, вместо того чтобы переписывать работу друг друга.
+        // Внутренние ограничения, затем единственный контактный проход подшага.
+        // Импульс учитывается TickMomentum на протяжении тика; коррекция в конце.
         for (iter in 0 until SOLVER_ITERS) {
             if (sweepFlip == 2) sweepBackwards = !sweepBackwards
             solveBlockedIteration(h)
-            val ci = contacts
-            if (ci != null && contactsOn) {
-                // Геометрия изменилась после связей и костей: новые пары нужны
-                // на каждом проходе; множители старых сохраняются внутри подшага.
-                tick0(); dbgMark()
-                ci.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = iter > 0)
-                dbgMeasure(6, h); tick1(6)
-                if (cancelSpinOn) internalMom?.noteContacts(ci)
-                contactsStale = false
-                tick0()
-                ci.updateBones(px, py, invMass,
-                    if (bonesRigid) boneOf else null, rigidBones)
-                tick1(13)
-                tick0(); dbgMark(); ci.solveContacts(px, py, vx, vy, invMass, h); dbgMeasure(5, h); tick1(7)
-                if (ci.killN > 0) { applyKills(ci); contactsStale = true }
-                // ПРОВЕРЯТЬ ПРОБОЙ ПОСЛЕ КАЖДОЙ ИТЕРАЦИИ — ПРОВЕРЕНО И ОТВЕРГНУТО.
-                //
-                // Догадка игрока была верной: на нулевой итерации видно только
-                // баллистику, а внутрь клетку заводит решатель, и его смещение не
-                // проверялось. Проверка после каждой итерации действительно нашла на
-                // 67% больше пересечений (130 пробоев против 78). Но проникновение
-                // стало ХУЖЕ: осталось внутри 637 против 461, входов 1204 против 978.
-                //
-                // Потому что РАЗРЫВ НЕ ОСТАНАВЛИВАЕТ КЛЕТКУ, А ВПУСКАЕТ ЕЁ: каждый
-                // пробой открывает дыру, и следующие заходят через неё, уже ничего не
-                // пересекая. Чем больше честных пробоев, тем больше дыр. Значит
-                // непроницаемость контура разрывом не достигается в принципе — нужен
-                // упор, который клетку ОСТАНАВЛИВАЕТ, а разрыв остаётся ответом на то,
-                // что упор не удержал.
-                //
-                // ПЕРЕМЕР 06.10: тот замер делался, когда отломанные клетки были
-                // призраками (радиус 0) и смерти от проникновения не было. Обе
-                // причины убраны, поэтому развилка открыта заново — RB_PIERCE_ITER=1.
-                if (pierceEachIter) ci.scanPierce(px, py, prevX, prevY)
-                if (ci.pierceN > 0) applyPierce(ci)
-                refreshSurface()
-                tick0()
-                solveBoundaryOrientation(boundCount, boundA, boundB, boundOpp,
-                    localBoundary.orientation, px, py, invMass)
-                tick1(14)
-            }
+
         }
         // ПРЕДЕЛ ДЛИНЫ ПОВТОРНО, УЖЕ ПОСЛЕ КОСТИ.
         //
@@ -122,18 +73,18 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         // Снять импульс и момент, внесённые ВНУТРЕННИМИ стадиями. Контакты стоят в том
         // же цикле, но их смещения копятся отдельно и не снимаются: контакт внешний
         // для организма и передаёт импульс между телами законно. См. InternalMomentum.
-        tick0(); dbgMark(); if (cancelSpinOn) cancelInternalSpin(); dbgMeasure(12, h); tick1(8)
+        tick0(); dbgMark();  dbgMeasure(12, h); tick1(8)
 
         dbgMark(); if (cancel) cancelInternalDrift(beforeX, beforeY); dbgMeasure(12, h)
 
-        // Предел длины и снятие момента тоже двигают клетки. Закрываем их
-        // перемещение контактом до восстановления скоростей.
+        // Закрываем перемещения внутренних ограничений контактом до восстановления скоростей.
         refreshSurface()
         val finalContacts = contacts
         if (finalContacts != null && contactsOn) {
             tick0()
-            finalContacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = true)
+            finalContacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = false)
             tick1(6); tick0()
+            if (cancelSpinOn) tickMomentum.noteContacts(finalContacts)
             finalContacts.updateBones(px, py, invMass, if (bonesRigid) boneOf else null, rigidBones)
             tick1(13); tick0()
             finalContacts.solveContacts(px, py, vx, vy, invMass, h)
@@ -152,18 +103,27 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         updateVelocities(h)
         // Отскок: позиционная часть удар гасит целиком, см. solveRestitution.
         dbgMarkV()
+        if (cancelSpinOn) tickMomentum.beforeExternal(vx, vy)
         val cr = contacts
         if (cr != null && contactsOn && !contactsStale) cr.solveRestitution(px, py, vx, vy, invMass)
         dbgMeasureV(7); dbgMarkV()
         applyDragVelocity(h)
-        applyViscosity(h)
+        if (step == SUBSTEPS - 1) applyViscosity(h * SUBSTEPS)
         dbgMeasureV(8); dbgMarkV()
-        applyNormalDrag(h)
+        if (step == SUBSTEPS - 1) applyNormalDrag(h * SUBSTEPS)
         dbgMeasureV(10); dbgMarkV()
         applyRestitution()
-        applyMediumDrag(h)
+        if (step == SUBSTEPS - 1) applyMediumDrag(h * SUBSTEPS)
         clampSpeed()
         dbgMeasureV(11); tick1(9)
+        if (cancelSpinOn) {
+            tickMomentum.afterExternal(px, py, vx, vy, invMass, inContact)
+            if (step == SUBSTEPS - 1) {
+                tickMomentum.cancel(px, py, vx, vy, invMass)
+                // Коррекция тоже меняет скорости: потолок должен оставаться последним.
+                clampSpeed()
+            }
+        }
         observer?.afterSubstep(step)
         dbgSubstepHook?.invoke(step)
     }

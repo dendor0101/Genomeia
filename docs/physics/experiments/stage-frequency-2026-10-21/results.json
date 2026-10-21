@@ -1,0 +1,990 @@
+{
+  "base": "473c2a8",
+  "branch": "alpha-0.2.4-physics-stage-frequency",
+  "substeps": 32,
+  "iterations": 1,
+  "block_size": 1000,
+  "scale_particles": [
+    11364,
+    102276
+  ],
+  "scale_layout": "12 / 108 copies of 947 cells, rest",
+  "benchmarks": {
+    "contacts/bench-v2/100k": {
+      "tag": "100k",
+      "mode": "scale",
+      "size": 108,
+      "affinity": 4,
+      "warm": 32,
+      "first": "old",
+      "java": "C:\\Users\\dendo\\.jdks\\jbr-21.0.11\\bin\\java.exe",
+      "input": "<worktree>\\docs\\physics\\repros\\detached-fragments-2026-10-21\\body.txt",
+      "gait": "rest",
+      "jvm_args": [
+        "-Dcandidate.allowChangedTrajectory=true"
+      ],
+      "new_jvm_args": [],
+      "self_checked": 80,
+      "first_reference_mismatch_block": null,
+      "blocks": [
+        {
+          "old": 534.69053125,
+          "new": 498.2394375,
+          "repeat": 463.1938375,
+          "old_cpu": 532.2265625,
+          "new_cpu": 500.0,
+          "repeat_cpu": 461.9140625
+        },
+        {
+          "repeat": 454.7020875,
+          "new": 451.88876875,
+          "old": 486.29060625,
+          "old_cpu": 481.4453125,
+          "new_cpu": 447.265625,
+          "repeat_cpu": 452.1484375
+        },
+        {
+          "old": 495.9653,
+          "new": 451.3468,
+          "repeat": 448.68575625,
+          "old_cpu": 492.1875,
+          "new_cpu": 449.21875,
+          "repeat_cpu": 445.3125
+        }
+      ],
+      "baseline": "<worktree>\\build\\experiments\\baseline\\bench-cp.txt",
+      "current": "<worktree>\\build\\experiments\\contacts\\bench-cp.txt",
+      "old_ms": 505.6488125,
+      "new_ms": 467.15833541666666,
+      "speedup": 1.0823927866961915,
+      "repeat_ms": 455.52722708333334,
+      "speedup_repeat": 1.1100298345229265,
+      "new_process_spread_percent": 2.553328899307594
+    },
+    "contacts/bench-v2/10k": {
+      "tag": "10k",
+      "mode": "scale",
+      "size": 12,
+      "affinity": 4,
+      "warm": 32,
+      "first": "old",
+      "java": "C:\\Users\\dendo\\.jdks\\jbr-21.0.11\\bin\\java.exe",
+      "input": "<worktree>\\docs\\physics\\repros\\detached-fragments-2026-10-21\\body.txt",
+      "gait": "rest",
+      "jvm_args": [
+        "-Dcandidate.allowChangedTrajectory=true"
+      ],
+      "new_jvm_args": [],
+      "self_checked": 80,
+      "first_reference_mismatch_block": null,
+      "blocks": [
+        {
+          "old": 49.92381875,
+          "new": 46.8885625,
+          "repeat": 49.50383125,
+          "old_cpu": 41.9921875,
+          "new_cpu": 44.921875,
+          "repeat_cpu": 45.8984375
+        },
+        {
+          "repeat": 47.34568125,
+          "new": 46.95538125,
+          "old": 49.06726875,
+          "old_cpu": 46.875,
+          "new_cpu": 46.875,
+          "repeat_cpu": 44.921875
+        },
+        {
+          "old": 53.2806875,
+          "new": 47.43773125,
+          "repeat": 47.27650625,
+          "old_cpu": 52.734375,
+          "new_cpu": 46.875,
+          "repeat_cpu": 45.8984375
+        }
+      ],
+      "baseline": "<worktree>\\build\\experiments\\baseline\\bench-cp.txt",
+      "current": "<worktree>\\build\\experiments\\contacts\\bench-cp.txt",
+      "old_ms": 50.75725833333333,
+      "new_ms": 47.093891666666664,
+      "speedup": 1.0777885737835426,
+      "repeat_ms": 48.04200625,
+      "speedup_repeat": 1.0565182908724453,
+      "new_process_spread_percent": 2.0132432249263754
+    },
+    "contacts/bench-v2/player": {
+      "tag": "player",
+      "mode": "replay",
+      "size": 0,
+      "affinity": 4,
+      "warm": 1,
+      "first": "old",
+      "java": "C:\\Users\\dendo\\.jdks\\jbr-21.0.11\\bin\\java.exe",
+      "input": "<worktree>\\docs\\physics\\repros\\detached-fragments-2026-10-21\\record.txt",
+      "gait": "rest",
+      "jvm_args": [
+        "-Dcandidate.allowChangedTrajectory=true"
+      ],
+      "new_jvm_args": [],
+      "self_checked": 12778,
+      "first_reference_mismatch_block": 0,
+      "blocks": [
+        {
+          "repeat": 8.39762064485835,
+          "new": 8.216929049929567,
+          "old": 8.95628660197214,
+          "old_cpu": 8.708815933635936,
+          "new_cpu": 7.987361089372358,
+          "repeat_cpu": 8.165890593207074
+        }
+      ],
+      "baseline": "<worktree>\\build\\experiments\\baseline\\bench-cp.txt",
+      "current": "<worktree>\\build\\experiments\\contacts\\bench-cp.txt",
+      "old_ms": 8.95628660197214,
+      "new_ms": 8.216929049929567,
+      "speedup": 1.0899797902050659,
+      "repeat_ms": 8.39762064485835,
+      "speedup_repeat": 1.066526696160757,
+      "new_process_spread_percent": 2.1990161267162467
+    },
+    "momentum32/bench-v2/100k": {
+      "tag": "100k",
+      "mode": "scale",
+      "size": 108,
+      "affinity": 4,
+      "warm": 32,
+      "first": "old",
+      "java": "C:\\Users\\dendo\\.jdks\\jbr-21.0.11\\bin\\java.exe",
+      "input": "<worktree>\\docs\\physics\\repros\\detached-fragments-2026-10-21\\body.txt",
+      "gait": "rest",
+      "jvm_args": [
+        "-Dcandidate.allowChangedTrajectory=true"
+      ],
+      "new_jvm_args": [],
+      "self_checked": 80,
+      "first_reference_mismatch_block": 0,
+      "blocks": [
+        {
+          "old": 476.450975,
+          "new": 474.14091875,
+          "repeat": 457.8405625,
+          "old_cpu": 472.65625,
+          "new_cpu": 475.5859375,
+          "repeat_cpu": 458.0078125
+        },
+        {
+          "repeat": 452.581825,
+          "new": 456.481525,
+          "old": 443.71109375,
+          "old_cpu": 441.40625,
+          "new_cpu": 452.1484375,
+          "repeat_cpu": 450.1953125
+        },
+        {
+          "old": 440.820225,
+          "new": 445.30835,
+          "repeat": 451.81859375,
+          "old_cpu": 438.4765625,
+          "new_cpu": 444.3359375,
+          "repeat_cpu": 453.125
+        }
+      ],
+      "baseline": "<worktree>\\build\\experiments\\baseline\\bench-cp.txt",
+      "current": "<worktree>\\build\\experiments\\momentum32\\bench-cp.txt",
+      "old_ms": 453.66076458333333,
+      "new_ms": 458.6435979166667,
+      "speedup": 0.9891357181132207,
+      "repeat_ms": 454.0803270833333,
+      "speedup_repeat": 0.9990760170062972,
+      "new_process_spread_percent": 1.0049479268666728
+    },
+    "momentum32/bench-v2/10k": {
+      "tag": "10k",
+      "mode": "scale",
+      "size": 12,
+      "affinity": 4,
+      "warm": 32,
+      "first": "old",
+      "java": "C:\\Users\\dendo\\.jdks\\jbr-21.0.11\\bin\\java.exe",
+      "input": "<worktree>\\docs\\physics\\repros\\detached-fragments-2026-10-21\\body.txt",
+      "gait": "rest",
+      "jvm_args": [
+        "-Dcandidate.allowChangedTrajectory=true"
+      ],
+      "new_jvm_args": [],
+      "self_checked": 80,
+      "first_reference_mismatch_block": 0,
+      "blocks": [
+        {
+          "old": 46.84885625,
+          "new": 41.7093375,
+          "repeat": 41.5253875,
+          "old_cpu": 46.875,
+          "new_cpu": 40.0390625,
+          "repeat_cpu": 40.0390625
+        },
+        {
+          "repeat": 41.4711875,
+          "new": 44.13023125,
+          "old": 47.082425,
+          "old_cpu": 46.875,
+          "new_cpu": 42.96875,
+          "repeat_cpu": 38.0859375
+        },
+        {
+          "old": 46.77948125,
+          "new": 42.02606875,
+          "repeat": 43.38765,
+          "old_cpu": 44.921875,
+          "new_cpu": 42.96875,
+          "repeat_cpu": 42.96875
+        }
+      ],
+      "baseline": "<worktree>\\build\\experiments\\baseline\\bench-cp.txt",
+      "current": "<worktree>\\build\\experiments\\momentum32\\bench-cp.txt",
+      "old_ms": 46.9035875,
+      "new_ms": 42.621879166666666,
+      "speedup": 1.1004579905214957,
+      "repeat_ms": 42.128075,
+      "speedup_repeat": 1.113357007173957,
+      "new_process_spread_percent": 1.1721498470240288
+    },
+    "momentum32/bench-v2/player": {
+      "tag": "player",
+      "mode": "replay",
+      "size": 0,
+      "affinity": 4,
+      "warm": 1,
+      "first": "old",
+      "java": "C:\\Users\\dendo\\.jdks\\jbr-21.0.11\\bin\\java.exe",
+      "input": "<worktree>\\docs\\physics\\repros\\detached-fragments-2026-10-21\\record.txt",
+      "gait": "rest",
+      "jvm_args": [
+        "-Dcandidate.allowChangedTrajectory=true"
+      ],
+      "new_jvm_args": [],
+      "self_checked": 12778,
+      "first_reference_mismatch_block": 0,
+      "blocks": [
+        {
+          "repeat": 7.029482172483957,
+          "new": 7.026676130849898,
+          "old": 7.605699968696197,
+          "old_cpu": 7.574053059946784,
+          "new_cpu": 6.972433088120207,
+          "repeat_cpu": 6.991997965252779
+        }
+      ],
+      "baseline": "<worktree>\\build\\experiments\\baseline\\bench-cp.txt",
+      "current": "<worktree>\\build\\experiments\\momentum32\\bench-cp.txt",
+      "old_ms": 7.605699968696197,
+      "new_ms": 7.026676130849898,
+      "speedup": 1.0824036610004202,
+      "repeat_ms": 7.029482172483957,
+      "speedup_repeat": 1.0819715851144447,
+      "new_process_spread_percent": 0.03993412506575478
+    },
+    "medium4/bench-v2/100k": {
+      "tag": "100k",
+      "mode": "scale",
+      "size": 108,
+      "affinity": 4,
+      "warm": 32,
+      "first": "old",
+      "java": "C:\\Users\\dendo\\.jdks\\jbr-21.0.11\\bin\\java.exe",
+      "input": "<worktree>\\docs\\physics\\repros\\detached-fragments-2026-10-21\\body.txt",
+      "gait": "rest",
+      "jvm_args": [
+        "-Dcandidate.allowChangedTrajectory=true"
+      ],
+      "new_jvm_args": [],
+      "self_checked": 80,
+      "first_reference_mismatch_block": 0,
+      "blocks": [
+        {
+          "old": 426.64606875,
+          "new": 390.91549375,
+          "repeat": 343.3170875,
+          "old_cpu": 426.7578125,
+          "new_cpu": 387.6953125,
+          "repeat_cpu": 341.796875
+        },
+        {
+          "repeat": 350.651,
+          "new": 393.910525,
+          "old": 422.36063125,
+          "old_cpu": 416.9921875,
+          "new_cpu": 392.578125,
+          "repeat_cpu": 349.609375
+        },
+        {
+          "old": 425.7042,
+          "new": 390.6900875,
+          "repeat": 342.74548125,
+          "old_cpu": 423.828125,
+          "new_cpu": 387.6953125,
+          "repeat_cpu": 342.7734375
+        }
+      ],
+      "baseline": "<worktree>\\build\\experiments\\baseline\\bench-cp.txt",
+      "current": "<worktree>\\build\\experiments\\medium4\\bench-cp.txt",
+      "old_ms": 424.90363333333335,
+      "new_ms": 391.8387020833333,
+      "speedup": 1.0843840362735992,
+      "repeat_ms": 345.57118958333336,
+      "speedup_repeat": 1.2295690327820838,
+      "new_process_spread_percent": 13.388706551546225
+    },
+    "medium4/bench-v2/10k": {
+      "tag": "10k",
+      "mode": "scale",
+      "size": 12,
+      "affinity": 4,
+      "warm": 32,
+      "first": "old",
+      "java": "C:\\Users\\dendo\\.jdks\\jbr-21.0.11\\bin\\java.exe",
+      "input": "<worktree>\\docs\\physics\\repros\\detached-fragments-2026-10-21\\body.txt",
+      "gait": "rest",
+      "jvm_args": [
+        "-Dcandidate.allowChangedTrajectory=true"
+      ],
+      "new_jvm_args": [],
+      "self_checked": 80,
+      "first_reference_mismatch_block": 0,
+      "blocks": [
+        {
+          "old": 42.0099,
+          "new": 34.62223125,
+          "repeat": 34.933175,
+          "old_cpu": 41.9921875,
+          "new_cpu": 34.1796875,
+          "repeat_cpu": 34.1796875
+        },
+        {
+          "repeat": 34.78975625,
+          "new": 34.77158125,
+          "old": 42.1798875,
+          "old_cpu": 41.9921875,
+          "new_cpu": 35.15625,
+          "repeat_cpu": 33.203125
+        },
+        {
+          "old": 42.10216875,
+          "new": 35.05461875,
+          "repeat": 34.740975,
+          "old_cpu": 41.015625,
+          "new_cpu": 35.15625,
+          "repeat_cpu": 33.203125
+        }
+      ],
+      "baseline": "<worktree>\\build\\experiments\\baseline\\bench-cp.txt",
+      "current": "<worktree>\\build\\experiments\\medium4\\bench-cp.txt",
+      "old_ms": 42.09731875,
+      "new_ms": 34.81614375,
+      "speedup": 1.2091321500819572,
+      "repeat_ms": 34.821302083333336,
+      "speedup_repeat": 1.2089530325216993,
+      "new_process_spread_percent": 0.014815923815048038
+    },
+    "medium4/bench-v2/player": {
+      "tag": "player",
+      "mode": "replay",
+      "size": 0,
+      "affinity": 4,
+      "warm": 1,
+      "first": "old",
+      "java": "C:\\Users\\dendo\\.jdks\\jbr-21.0.11\\bin\\java.exe",
+      "input": "<worktree>\\docs\\physics\\repros\\detached-fragments-2026-10-21\\record.txt",
+      "gait": "rest",
+      "jvm_args": [
+        "-Dcandidate.allowChangedTrajectory=true"
+      ],
+      "new_jvm_args": [],
+      "self_checked": 12778,
+      "first_reference_mismatch_block": 0,
+      "blocks": [
+        {
+          "repeat": 6.9834611206761625,
+          "new": 6.983086523712631,
+          "old": 7.82459247143528,
+          "old_cpu": 7.8039403662544995,
+          "new_cpu": 6.965096259195493,
+          "repeat_cpu": 6.950422601346063
+        }
+      ],
+      "baseline": "<worktree>\\build\\experiments\\baseline\\bench-cp.txt",
+      "current": "<worktree>\\build\\experiments\\medium4\\bench-cp.txt",
+      "old_ms": 7.82459247143528,
+      "new_ms": 6.983086523712631,
+      "speedup": 1.1205063040340584,
+      "repeat_ms": 6.9834611206761625,
+      "speedup_repeat": 1.120446199416612,
+      "new_process_spread_percent": 0.005364346586000934
+    },
+    "medium4/confirmation/100k-long": {
+      "tag": "100k-long",
+      "mode": "scale",
+      "size": 108,
+      "affinity": 4,
+      "warm": 128,
+      "first": "old",
+      "java": "C:\\Users\\dendo\\.jdks\\jbr-21.0.11\\bin\\java.exe",
+      "input": "<worktree>\\docs\\physics\\repros\\detached-fragments-2026-10-21\\body.txt",
+      "gait": "rest",
+      "jvm_args": [
+        "-Dcandidate.allowChangedTrajectory=true"
+      ],
+      "new_jvm_args": [],
+      "self_checked": 256,
+      "first_reference_mismatch_block": 0,
+      "blocks": [
+        {
+          "old": 468.2167,
+          "new": 426.684421875,
+          "repeat": 471.127425,
+          "old_cpu": 468.75,
+          "new_cpu": 425.29296875,
+          "repeat_cpu": 470.703125
+        },
+        {
+          "repeat": 468.248834375,
+          "new": 414.418146875,
+          "old": 457.1002875,
+          "old_cpu": 456.54296875,
+          "new_cpu": 413.57421875,
+          "repeat_cpu": 463.8671875
+        },
+        {
+          "old": 451.145503125,
+          "new": 395.92026875,
+          "repeat": 437.734396875,
+          "old_cpu": 450.68359375,
+          "new_cpu": 395.01953125,
+          "repeat_cpu": 435.05859375
+        },
+        {
+          "repeat": 436.6710375,
+          "new": 401.339821875,
+          "old": 447.25863125,
+          "old_cpu": 446.2890625,
+          "new_cpu": 399.4140625,
+          "repeat_cpu": 437.01171875
+        }
+      ],
+      "baseline": "<worktree>\\build\\experiments\\baseline\\bench-cp.txt",
+      "current": "<worktree>\\build\\experiments\\medium4\\bench-cp.txt",
+      "old_ms": 455.93028046874997,
+      "new_ms": 409.59066484375,
+      "speedup": 1.113136405690978,
+      "repeat_ms": 453.44542343750004,
+      "speedup_repeat": 1.0054799473162892,
+      "new_process_spread_percent": 10.706972193929198
+    },
+    "medium32/bench-v2/100k": {
+      "tag": "100k",
+      "mode": "scale",
+      "size": 108,
+      "affinity": 4,
+      "warm": 32,
+      "first": "old",
+      "java": "C:\\Users\\dendo\\.jdks\\jbr-21.0.11\\bin\\java.exe",
+      "input": "<worktree>\\docs\\physics\\repros\\detached-fragments-2026-10-21\\body.txt",
+      "gait": "rest",
+      "jvm_args": [
+        "-Dcandidate.allowChangedTrajectory=true"
+      ],
+      "new_jvm_args": [],
+      "self_checked": 80,
+      "first_reference_mismatch_block": 0,
+      "blocks": [
+        {
+          "old": 604.29965,
+          "new": 315.87661875,
+          "repeat": 370.20705,
+          "old_cpu": 601.5625,
+          "new_cpu": 312.5,
+          "repeat_cpu": 365.234375
+        },
+        {
+          "repeat": 369.9991625,
+          "new": 310.6807125,
+          "old": 603.37683125,
+          "old_cpu": 589.84375,
+          "new_cpu": 308.59375,
+          "repeat_cpu": 367.1875
+        },
+        {
+          "old": 591.6708,
+          "new": 311.93409375,
+          "repeat": 369.82986875,
+          "old_cpu": 583.984375,
+          "new_cpu": 304.6875,
+          "repeat_cpu": 349.609375
+        }
+      ],
+      "baseline": "<worktree>\\build\\experiments\\baseline\\bench-cp.txt",
+      "current": "<worktree>\\build\\experiments\\medium32\\bench-cp.txt",
+      "old_ms": 599.7824270833333,
+      "new_ms": 312.830475,
+      "speedup": 1.9172762087304103,
+      "repeat_ms": 370.01202708333335,
+      "speedup_repeat": 1.6209808957054566,
+      "new_process_spread_percent": 18.27876650551177
+    },
+    "medium32/bench-v2/10k": {
+      "tag": "10k",
+      "mode": "scale",
+      "size": 12,
+      "affinity": 4,
+      "warm": 32,
+      "first": "old",
+      "java": "C:\\Users\\dendo\\.jdks\\jbr-21.0.11\\bin\\java.exe",
+      "input": "<worktree>\\docs\\physics\\repros\\detached-fragments-2026-10-21\\body.txt",
+      "gait": "rest",
+      "jvm_args": [
+        "-Dcandidate.allowChangedTrajectory=true"
+      ],
+      "new_jvm_args": [],
+      "self_checked": 80,
+      "first_reference_mismatch_block": 0,
+      "blocks": [
+        {
+          "old": 40.5907375,
+          "new": 30.7365375,
+          "repeat": 32.9156875,
+          "old_cpu": 40.0390625,
+          "new_cpu": 30.2734375,
+          "repeat_cpu": 32.2265625
+        },
+        {
+          "repeat": 31.23271875,
+          "new": 31.0566125,
+          "old": 41.465575,
+          "old_cpu": 41.015625,
+          "new_cpu": 29.296875,
+          "repeat_cpu": 30.2734375
+        },
+        {
+          "old": 41.53115625,
+          "new": 31.2756875,
+          "repeat": 31.42556875,
+          "old_cpu": 41.015625,
+          "new_cpu": 31.25,
+          "repeat_cpu": 30.2734375
+        }
+      ],
+      "baseline": "<worktree>\\build\\experiments\\baseline\\bench-cp.txt",
+      "current": "<worktree>\\build\\experiments\\medium32\\bench-cp.txt",
+      "old_ms": 41.19582291666667,
+      "new_ms": 31.022945833333335,
+      "speedup": 1.3279146067554568,
+      "repeat_ms": 31.857991666666667,
+      "speedup_repeat": 1.2931079695073895,
+      "new_process_spread_percent": 2.6917038691925077
+    },
+    "medium32/bench-v2/player": {
+      "tag": "player",
+      "mode": "replay",
+      "size": 0,
+      "affinity": 4,
+      "warm": 1,
+      "first": "old",
+      "java": "C:\\Users\\dendo\\.jdks\\jbr-21.0.11\\bin\\java.exe",
+      "input": "<worktree>\\docs\\physics\\repros\\detached-fragments-2026-10-21\\record.txt",
+      "gait": "rest",
+      "jvm_args": [
+        "-Dcandidate.allowChangedTrajectory=true"
+      ],
+      "new_jvm_args": [],
+      "self_checked": 12778,
+      "first_reference_mismatch_block": 0,
+      "blocks": [
+        {
+          "repeat": 6.56721294412271,
+          "new": 6.644889794960088,
+          "old": 7.985634136797621,
+          "old_cpu": 7.95556816403193,
+          "new_cpu": 6.5933635936766315,
+          "repeat_cpu": 6.532223352637345
+        }
+      ],
+      "baseline": "<worktree>\\build\\experiments\\baseline\\bench-cp.txt",
+      "current": "<worktree>\\build\\experiments\\medium32\\bench-cp.txt",
+      "old_ms": 7.985634136797621,
+      "new_ms": 6.644889794960088,
+      "speedup": 1.2017707416087533,
+      "repeat_ms": 6.56721294412271,
+      "speedup_repeat": 1.2159852596137177,
+      "new_process_spread_percent": 1.1827978093339242
+    },
+    "medium32/confirmation/100k-long": {
+      "tag": "100k-long",
+      "mode": "scale",
+      "size": 108,
+      "affinity": 4,
+      "warm": 128,
+      "first": "old",
+      "java": "C:\\Users\\dendo\\.jdks\\jbr-21.0.11\\bin\\java.exe",
+      "input": "<worktree>\\docs\\physics\\repros\\detached-fragments-2026-10-21\\body.txt",
+      "gait": "rest",
+      "jvm_args": [
+        "-Dcandidate.allowChangedTrajectory=true"
+      ],
+      "new_jvm_args": [],
+      "self_checked": 256,
+      "first_reference_mismatch_block": 0,
+      "blocks": [
+        {
+          "old": 516.838453125,
+          "new": 401.9802625,
+          "repeat": 333.335534375,
+          "old_cpu": 505.859375,
+          "new_cpu": 398.92578125,
+          "repeat_cpu": 332.51953125
+        },
+        {
+          "repeat": 332.92620625,
+          "new": 401.444690625,
+          "old": 513.313965625,
+          "old_cpu": 504.8828125,
+          "new_cpu": 396.484375,
+          "repeat_cpu": 316.89453125
+        },
+        {
+          "old": 546.0379125,
+          "new": 410.866746875,
+          "repeat": 390.42764375,
+          "old_cpu": 538.57421875,
+          "new_cpu": 403.3203125,
+          "repeat_cpu": 359.375
+        },
+        {
+          "repeat": 407.99866875,
+          "new": 461.56,
+          "old": 545.902475,
+          "old_cpu": 538.57421875,
+          "new_cpu": 446.77734375,
+          "repeat_cpu": 378.90625
+        }
+      ],
+      "baseline": "<worktree>\\build\\experiments\\baseline\\bench-cp.txt",
+      "current": "<worktree>\\build\\experiments\\medium32\\bench-cp.txt",
+      "old_ms": 530.5232015624999,
+      "new_ms": 418.962925,
+      "speedup": 1.2662772047490836,
+      "repeat_ms": 366.17201328125,
+      "speedup_repeat": 1.448836017828088,
+      "new_process_spread_percent": 14.416970659688921
+    }
+  },
+  "checks": {
+    "baseline/physics": [
+      "  FAIL потолок скорости молчит при загибе 2 <= 0"
+    ],
+    "baseline/material": [
+      "MATERIAL mode=rest meanResidual=8.77553227705134E-9 peakResidual=1.1691591981110421E-8 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=5.139188203041675E-8 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=hold meanResidual=0.0397865754399952 peakResidual=0.041221651401680444 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=0.04534406928604595 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=gait meanResidual=0.07848999055898015 peakResidual=0.10319188102215819 peakInverted=16 firstInversion=67 dead=4 firstDeath=67 comTravel=36.910367114064485 maxInvertedRun=0 removedTriangles=20 tornEdges=18"
+    ],
+    "baseline/medusa-material": [
+      "MATERIAL mode=rest meanResidual=7.823025102620695E-9 peakResidual=8.803614940151473E-9 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=2.0400689144719627E-7 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=hold meanResidual=0.06961174610932094 peakResidual=0.07568216204822148 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=16.179067105878136 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=gait meanResidual=0.06692391248736297 peakResidual=0.09488072017298274 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=338.0016286741532 maxInvertedRun=0 removedTriangles=0 tornEdges=0"
+    ],
+    "baseline/velocity-bound": [
+      "VELOCITY_BOUND ticks=6389 ratio=1.0000000000000002 tick=1913 cell=627 samplesOver=0"
+    ],
+    "baseline/swim-fixed": [
+      "сверка копии конвейера с DemoSession (400 кадров, GLOBAL_TRACKING): max расхождение = 0.000e+00  ПОБИТОВО СОВПАЛО",
+      "константы демо как есть    |  0.84601 |  0.622 | 1.940e-02 | 1.635e-04 | 2.023e-07 | 2.521e-02 | 0.664 |   0.0% | 0.636 | 1.286 |   0.00000",
+      "константы демо как есть    |  0.84601 |  0.622 | 1.940e-02 | 1.635e-04 | 2.023e-07 | 2.521e-02 | 0.664 |   0.0% | 0.636 | 1.286 |   0.00000"
+    ],
+    "contacts/physics": [
+      "  FAIL потолок скорости молчит при загибе 2 <= 0",
+      "  FAIL повторные тараны не проходят сквозь живую ткань 1 <= 0"
+    ],
+    "contacts/material": [
+      "MATERIAL mode=rest meanResidual=8.77553227705134E-9 peakResidual=1.1691591981110421E-8 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=5.139188203041675E-8 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=hold meanResidual=0.03978614856765036 peakResidual=0.04122146103454332 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=0.04404288722941589 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=gait meanResidual=0.07854112347321851 peakResidual=0.10292331723187702 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=40.12911027610061 maxInvertedRun=0 removedTriangles=0 tornEdges=0"
+    ],
+    "contacts/medusa-material": [
+      "MATERIAL mode=rest meanResidual=7.823025102620695E-9 peakResidual=8.803614940151473E-9 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=2.0400689144719627E-7 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=hold meanResidual=0.06960525349480819 peakResidual=0.07569132606742927 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=16.19138021947284 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=gait meanResidual=0.06692707376389298 peakResidual=0.09488072037771285 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=338.05408896985 maxInvertedRun=0 removedTriangles=0 tornEdges=0"
+    ],
+    "contacts/1198": [
+      "ORIGINAL_SUMS pass=0 ok=31 bad=214",
+      "ORIGINAL_SUMS pass=1 ok=31 bad=214",
+      "Новый повтор: контрольные суммы: все 7368 сошлись; скрытых полей 120294",
+      "TISSUE_AUDIT ticks=0 maximum=0 first=-1 last=-1",
+      "CONNECTIVITY_AUDIT ticks=7368 passed"
+    ],
+    "contacts/fresh": [
+      "ORIGINAL_SUMS pass=0 ok=17 bad=195",
+      "ORIGINAL_SUMS pass=1 ok=17 bad=195",
+      "Новый повтор: контрольные суммы: все 6389 сошлись; скрытых полей 104157",
+      "TISSUE_AUDIT ticks=0 maximum=0 first=-1 last=-1",
+      "CONNECTIVITY_AUDIT ticks=6389 passed"
+    ],
+    "momentum32/physics": [
+      "  FAIL потолок скорости молчит при загибе 2 <= 0"
+    ],
+    "momentum32/material": [
+      "MATERIAL mode=rest meanResidual=8.775532252149385E-9 peakResidual=1.1691591947446404E-8 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=5.154062151198148E-8 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=hold meanResidual=0.03978762987236677 peakResidual=0.04122165104054797 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=0.038058851807949094 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=gait meanResidual=0.07848773261616405 peakResidual=0.10318827781435666 peakInverted=16 firstInversion=67 dead=4 firstDeath=67 comTravel=36.85819562506932 maxInvertedRun=0 removedTriangles=20 tornEdges=18"
+    ],
+    "momentum32/medusa-material": [
+      "MATERIAL mode=rest meanResidual=7.823025280863042E-9 peakResidual=8.803613503632027E-9 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=2.0132240638893167E-7 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=hold meanResidual=0.06961174497734199 peakResidual=0.07568216209765619 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=16.162455720618556 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=gait meanResidual=0.06692385966110778 peakResidual=0.0948807218571418 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=338.0022342577013 maxInvertedRun=0 removedTriangles=0 tornEdges=0"
+    ],
+    "momentum32/velocity-bound": [
+      "VELOCITY_BOUND ticks=6389 ratio=1.0598274545479245 tick=2720 cell=503 samplesOver=146"
+    ],
+    "momentum-capped/physics": [
+      "  FAIL потолок скорости молчит при загибе 2 <= 0"
+    ],
+    "momentum-capped/1198": [
+      "ORIGINAL_SUMS pass=0 ok=0 bad=245",
+      "ORIGINAL_SUMS pass=1 ok=0 bad=245",
+      "Новый повтор: контрольные суммы: все 7368 сошлись; скрытых полей 120294",
+      "TISSUE_AUDIT ticks=1 maximum=2 first=3670 last=3670",
+      "CONNECTIVITY_AUDIT ticks=7368 passed"
+    ],
+    "momentum-capped/fresh": [
+      "ORIGINAL_SUMS pass=0 ok=0 bad=212",
+      "ORIGINAL_SUMS pass=1 ok=0 bad=212",
+      "Новый повтор: контрольные суммы: все 6389 сошлись; скрытых полей 104157",
+      "TISSUE_AUDIT ticks=0 maximum=0 first=-1 last=-1",
+      "CONNECTIVITY_AUDIT ticks=6389 passed"
+    ],
+    "momentum-capped/velocity-bound": [
+      "VELOCITY_BOUND ticks=6389 ratio=1.0000000000000002 tick=2720 cell=471 samplesOver=0"
+    ],
+    "medium4/physics": [
+      "  FAIL потолок скорости молчит при загибе 2 <= 0"
+    ],
+    "medium4/material": [
+      "MATERIAL mode=rest meanResidual=8.775568695603211E-9 peakResidual=1.1691184947416476E-8 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=1.0605918833990063E-7 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=hold meanResidual=0.039795716729205545 peakResidual=0.04122137440315047 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=0.2145888818722555 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=gait meanResidual=0.07849815410548941 peakResidual=0.1031220429437498 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=40.47824966282626 maxInvertedRun=0 removedTriangles=0 tornEdges=0"
+    ],
+    "medium4/medusa-material": [
+      "MATERIAL mode=rest meanResidual=7.822984803544039E-9 peakResidual=8.803244800317551E-9 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=1.488237544949542E-7 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=hold meanResidual=0.0696115906529247 peakResidual=0.07568600708898729 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=15.840115374174088 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=gait meanResidual=0.06689009458277617 peakResidual=0.09482260462621094 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=338.89571902800236 maxInvertedRun=0 removedTriangles=0 tornEdges=0"
+    ],
+    "medium4/1198": [
+      "ORIGINAL_SUMS pass=0 ok=0 bad=245",
+      "ORIGINAL_SUMS pass=1 ok=0 bad=245",
+      "Новый повтор: контрольные суммы: все 7368 сошлись; скрытых полей 120294",
+      "TISSUE_AUDIT ticks=0 maximum=0 first=-1 last=-1",
+      "CONNECTIVITY_AUDIT ticks=7368 passed"
+    ],
+    "medium4/fresh": [
+      "ORIGINAL_SUMS pass=0 ok=0 bad=212",
+      "ORIGINAL_SUMS pass=1 ok=0 bad=212",
+      "Новый повтор: контрольные суммы: все 6389 сошлись; скрытых полей 104157",
+      "TISSUE_AUDIT ticks=0 maximum=0 first=-1 last=-1",
+      "CONNECTIVITY_AUDIT ticks=6389 passed"
+    ],
+    "medium4/old-long": [
+      "ORIGINAL_SUMS pass=0 ok=0 bad=586",
+      "ORIGINAL_SUMS pass=1 ok=0 bad=586",
+      "Новый повтор: контрольные суммы: все 17608 сошлись; скрытых полей 287043",
+      "TISSUE_AUDIT ticks=0 maximum=0 first=-1 last=-1",
+      "CONNECTIVITY_AUDIT ticks=17608 passed"
+    ],
+    "medium4/medusa": [
+      "ORIGINAL_SUMS pass=0 ok=0 bad=100",
+      "ORIGINAL_SUMS pass=1 ok=0 bad=100",
+      "Новый повтор: контрольные суммы: все 3012 сошлись; скрытых полей 49389",
+      "TISSUE_AUDIT ticks=0 maximum=0 first=-1 last=-1",
+      "CONNECTIVITY_AUDIT ticks=3012 passed"
+    ],
+    "medium4/swim-fixed": [
+      "сверка копии конвейера с DemoSession (400 кадров, GLOBAL_TRACKING): max расхождение = 0.000e+00  ПОБИТОВО СОВПАЛО",
+      "константы демо как есть    |  0.84765 |  0.622 | 1.844e-02 | 1.612e-04 | 1.478e-07 | 2.521e-02 | 0.664 |   0.0% | 0.641 | 1.286 |   0.00000",
+      "константы демо как есть    |  0.84765 |  0.622 | 1.844e-02 | 1.612e-04 | 1.478e-07 | 2.521e-02 | 0.664 |   0.0% | 0.641 | 1.286 |   0.00000"
+    ],
+    "medium32/physics": [
+      "  FAIL потолок скорости молчит при загибе 2 <= 0"
+    ],
+    "medium32/material": [
+      "MATERIAL mode=rest meanResidual=8.775567302789335E-9 peakResidual=1.1735186440606133E-8 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=5.9555255522898285E-8 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=hold meanResidual=0.039792232991605274 peakResidual=0.04121470201703632 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=0.12525841961515433 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=gait meanResidual=0.07847479495198462 peakResidual=0.10297500072532172 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=33.965414841174166 maxInvertedRun=0 removedTriangles=0 tornEdges=0"
+    ],
+    "medium32/medusa-material": [
+      "MATERIAL mode=rest meanResidual=7.823014995201677E-9 peakResidual=8.856382005174861E-9 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=1.71297890294857E-7 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=hold meanResidual=0.06961171611787775 peakResidual=0.07568216383441094 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=16.165259701321993 maxInvertedRun=0 removedTriangles=0 tornEdges=0",
+      "MATERIAL mode=gait meanResidual=0.06721877833907201 peakResidual=0.09486179410856946 peakInverted=0 firstInversion=-1 dead=0 firstDeath=-1 comTravel=360.0946510848679 maxInvertedRun=0 removedTriangles=0 tornEdges=0"
+    ],
+    "medium32/1198": [
+      "ORIGINAL_SUMS pass=0 ok=0 bad=245",
+      "ORIGINAL_SUMS pass=1 ok=0 bad=245",
+      "Новый повтор: контрольные суммы: все 7368 сошлись; скрытых полей 120294",
+      "TISSUE_AUDIT ticks=0 maximum=0 first=-1 last=-1",
+      "CONNECTIVITY_AUDIT ticks=7368 passed"
+    ],
+    "medium32/fresh": [
+      "ORIGINAL_SUMS pass=0 ok=0 bad=212",
+      "ORIGINAL_SUMS pass=1 ok=0 bad=212",
+      "Новый повтор: контрольные суммы: все 6389 сошлись; скрытых полей 104157",
+      "TISSUE_AUDIT ticks=0 maximum=0 first=-1 last=-1",
+      "CONNECTIVITY_AUDIT ticks=6389 passed"
+    ],
+    "medium32/old-long": [
+      "ORIGINAL_SUMS pass=0 ok=0 bad=586",
+      "ORIGINAL_SUMS pass=1 ok=0 bad=586",
+      "Новый повтор: контрольные суммы: все 17608 сошлись; скрытых полей 287043",
+      "TISSUE_AUDIT ticks=0 maximum=0 first=-1 last=-1",
+      "CONNECTIVITY_AUDIT ticks=17608 passed"
+    ],
+    "medium32/medusa": [
+      "ORIGINAL_SUMS pass=0 ok=0 bad=100",
+      "ORIGINAL_SUMS pass=1 ok=0 bad=100",
+      "Новый повтор: контрольные суммы: все 3012 сошлись; скрытых полей 49389",
+      "TISSUE_AUDIT ticks=0 maximum=0 first=-1 last=-1",
+      "CONNECTIVITY_AUDIT ticks=3012 passed"
+    ],
+    "medium32/swim-fixed": [
+      "сверка копии конвейера с DemoSession (400 кадров, GLOBAL_TRACKING): max расхождение = 0.000e+00  ПОБИТОВО СОВПАЛО",
+      "константы демо как есть    |  0.90245 |  0.615 | 1.247e-02 | 1.150e-04 | 1.701e-07 | 2.521e-02 | 0.664 |   0.0% | 0.653 | 1.302 |   0.00000",
+      "константы демо как есть    |  0.90245 |  0.615 | 1.247e-02 | 1.150e-04 | 1.701e-07 | 2.521e-02 | 0.664 |   0.0% | 0.653 | 1.302 |   0.00000"
+    ]
+  },
+  "patch_sha256": {
+    "contacts.patch": "eca477c88a7d5cbc5df88134ee08d67524b4c4ce930be8a03208d25c14722cf2",
+    "medium32.patch": "c7198fdd9c04835a03ec13ab6775981c4cc01d7bd39ac33071744da9513799a1",
+    "medium4.patch": "7ff0d0c64ea27b960e84b58cc7f82a48668c5a22fffa150fc813b1af087de012",
+    "momentum-capped.patch": "09e2c912f559e7e2e1a4328b07d9b0fa3874812ca6e92b2aa5f85e0172b231a0",
+    "momentum32.patch": "4bfca7572e3d58759c0758b89b3d23855d75f690c5919f8cda6ce75c95d813da"
+  },
+  "unit-tests": {
+    "baseline": 0,
+    "contacts": 0,
+    "momentum32": 0,
+    "medium32": 0,
+    "medium4": 0,
+    "momentum-capped": 0
+  },
+  "supplemental": [
+    [
+      [
+        "momentum-capped",
+        "physics",
+        1
+      ],
+      [
+        "momentum-capped",
+        "brick",
+        0
+      ],
+      [
+        "momentum-capped",
+        "1198",
+        1
+      ],
+      [
+        "momentum-capped",
+        "fresh",
+        0
+      ]
+    ],
+    [
+      [
+        "medium4",
+        "old-long",
+        0
+      ],
+      [
+        "medium4",
+        "medusa",
+        0
+      ],
+      [
+        "medium4",
+        "swim-fixed",
+        0
+      ]
+    ],
+    [
+      [
+        "medium32",
+        "old-long",
+        0
+      ],
+      [
+        "medium32",
+        "medusa",
+        0
+      ],
+      [
+        "medium32",
+        "swim-fixed",
+        0
+      ]
+    ],
+    [
+      [
+        "baseline",
+        "swim-fixed",
+        0
+      ]
+    ]
+  ],
+  "screening": {
+    "baseline": {
+      "physics": 1,
+      "brick": 0,
+      "material": 0,
+      "medusa-material": 0
+    },
+    "contacts": {
+      "physics": 1,
+      "brick": 0,
+      "material": 0,
+      "medusa-material": 0,
+      "1198": 0,
+      "fresh": 0
+    },
+    "momentum32": {
+      "physics": 1,
+      "brick": 0,
+      "material": 0,
+      "medusa-material": 0,
+      "full_replays": "Stopped superseded uncapped prototype; capped version audited separately"
+    },
+    "medium32": {
+      "physics": 1,
+      "brick": 0,
+      "material": 0,
+      "medusa-material": 0,
+      "1198": 0,
+      "fresh": 0
+    },
+    "medium4": {
+      "physics": 1,
+      "brick": 0,
+      "material": 0,
+      "medusa-material": 0,
+      "1198": 0,
+      "fresh": 0
+    }
+  },
+  "confirmation": [
+    [
+      "medium4",
+      "100k-long",
+      0
+    ],
+    [
+      "medium32",
+      "100k-long",
+      0
+    ]
+  ]
+}

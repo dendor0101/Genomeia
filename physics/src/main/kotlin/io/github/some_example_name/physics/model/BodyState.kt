@@ -747,6 +747,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * Контакты копят свои смещения в extDx/extDy, и из снимаемого они вычитаются.
      */
     var internalMom: InternalMomentum? = null
+    val tickMomentum by lazy { TickMomentum(n) }
 
     /** Включено ли снятие. Переменной, а не константой, — ради A/B на журнале игрока. */
     var cancelSpinOn = CANCEL_INTERNAL_SPIN
