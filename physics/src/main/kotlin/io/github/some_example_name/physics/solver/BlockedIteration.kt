@@ -28,6 +28,8 @@ internal fun BodyState.initializeConstraintBlocks() {
         layout.bones.add(b, block)
     }
     for (c in 0 until bendCount) layout.bends.add(c, layout.blockOf(bendA[c], bendB[c]))
+    layout.awake.fill(0)
+    for (i in 0 until n) if (!sleep.isAsleep(organismOf[i])) layout.awake[layout.particleBlock[i]]++
     for (c in 0 until flapCount) layout.flaps.add(c, layout.blockOf(flapA[c], flapB[c]))
     localBoundary.bend.blockLayout = layout; localBoundary.bend.blockIndex = layout.bends
     localBoundary.flap.blockLayout = layout; localBoundary.flap.blockIndex = layout.flaps
@@ -44,7 +46,8 @@ internal fun BodyState.solveBlockedIteration(h: Double) {
     for (parity in 0..1) {
         var block = parity
         while (block < layout.blockCount) {
-            solveConstraintBlock(h, block, layout)
+            // Спящий блок: все частицы заморожены сном, двигать нечего. См. BodySleep.
+            if (layout.awake[block] > 0) solveConstraintBlock(h, block, layout)
             block += 2
         }
     }
@@ -63,7 +66,11 @@ private fun BodyState.solveConstraintBlock(h: Double, block: Int, layout: Constr
     tick0(); dbgMark()
     if (bonesRigid) {
         var b = layout.bones.head[block]
-        while (b >= 0) { projectBone(b); b = layout.bones.next[b] }
+        while (b >= 0) {
+            // Кость держит позу по matchWeight, а не по invMass: спящую надо пропустить явно.
+            if (!sleep.isAsleep(organismOf[rigidBones[b][0]])) projectBone(b)
+            b = layout.bones.next[b]
+        }
     }
     dbgMeasure(3, h); tick1(5)
     tick0(); dbgMark(); solveBlockLimits(block, layout); dbgMeasure(4, h); tick1(2); refreshSurface()

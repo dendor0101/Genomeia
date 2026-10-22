@@ -21,4 +21,6 @@ internal val HUD_MUTED     = Color.valueOf("76818FFF")
 internal val HUD_WARN      = Color.valueOf("E8A33DFF")
 internal val MARK_COLOR    = Color.valueOf("FF4FD8FF")
 internal val BEND_COLOR     = Color.valueOf("E8A33D88")
+/** Спящий организм (см. BodySleep): видно сразу, кто заморожен. */
+internal val SLEEP_FILL     = Color.valueOf("8C7AE6AA")
 internal val CONTACT_COLOR  = Color.valueOf("4BE08A22")

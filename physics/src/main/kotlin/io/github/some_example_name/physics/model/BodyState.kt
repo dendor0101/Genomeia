@@ -219,6 +219,9 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
 
     lateinit var comAccY: DoubleArray
 
+    /** Сон организмов: см. BodySleep. Выключается RB_SLEEP=0. */
+    val sleep = BodySleep(config["RB_SLEEP"]?.let { it != "0" } ?: SLEEP_ON)
+
     // ================================================================
     //  ТОПОЛОГИЯ ХРАНИТСЯ СВОЯ, А НЕ ЧИТАЕТСЯ ИЗ BodyDefinition.
     //

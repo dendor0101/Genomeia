@@ -33,6 +33,14 @@ internal class DemoSession(internal val bodyPath: String,
 ) {
 
     internal val state = BodyState(physicsConfig)
+
+    init {
+        // СЕССИЯ СТЕНДА СТАРТУЕТ БЕЗ СНА, окно включает его строкой журнала 'Z'.
+        // Так старые записи игрока (в них 'Z' нет) повторяются как раньше, а новые —
+        // вместе со сном. Проверки и стенды задают скорости напрямую, мимо решателя,
+        // и спящее тело такой толчок проигнорировало бы. Включить для замера: RB_SLEEP=1.
+        state.sleep.on = physicsConfig["RB_SLEEP"] == "1"
+    }
     internal val simulation = BodySimulation(state)
     // Только окно устанавливает эти обработчики. Безоконная сессия не знает Gdx.
     internal var onReset: (() -> Unit)? = null

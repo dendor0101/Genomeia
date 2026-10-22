@@ -23,6 +23,7 @@ import io.github.some_example_name.physics.lab.session.WARMUP_ON_START
 import io.github.some_example_name.physics.lab.session.WARMUP_TICKS
 import io.github.some_example_name.physics.lab.session.closePlayerLog
 import io.github.some_example_name.physics.lab.session.openPlayerLog
+import io.github.some_example_name.physics.lab.session.act
 import io.github.some_example_name.physics.lab.session.replayLoad
 import io.github.some_example_name.physics.lab.session.replayStepOne
 import io.github.some_example_name.render.demo.*
@@ -153,6 +154,8 @@ internal class DemoWindow(val session: DemoSession) {
         }
         reset()
         openPlayerLog(logPath)
+        // Сон в окне включён по умолчанию — через журнал, чтобы запись повторялась. См. DemoSession.
+        if (!replayActive && physicsConfig["RB_SLEEP"] != "0") act('Z', 1)
     } } }
 
     internal fun resize(width: Int, height: Int) { with(session) { with(state) {

@@ -1,5 +1,6 @@
 package io.github.some_example_name.physics.lab.session
 
+import io.github.some_example_name.physics.setSleepOn
 import io.github.some_example_name.physics.DRAG_MATCH_WEIGHT
 import io.github.some_example_name.physics.DT
 import io.github.some_example_name.physics.SUBSTEPS
@@ -83,13 +84,14 @@ internal fun DemoSession.plogWrite(s: String, flush: Boolean) { with(state) {
 internal fun DemoSession.act(op: Char, a: Int = 0) { with(state) {
     // Сначала строка, потом исполнение: сцена внутри себя крутит тики, и их
     // строки обязаны лечь ПОСЛЕ строки самой сцены.
-    plogWrite(if (op in "BDEGKNX") "$playTick $op $a" else "$playTick $op", flush = true)
+    plogWrite(if (op in "BDEGKNXZ") "$playTick $op $a" else "$playTick $op", flush = true)
     when (op) {
         'R' -> reset()
         'B' -> bonesRigid = a == 1
         'G' -> { gait = a == 1; gaitFrame = 0 }
         'K' -> contactsOn = a == 1
         'X' -> tearingOn = a == 1
+        'Z' -> setSleepOn(a == 1)
         'E' -> bendLevel = a
         'N' -> sceneIndex = a
         'S' -> runScene()
@@ -204,7 +206,7 @@ internal fun DemoSession.replayRun(lines: List<PlayerLog.Line>, onEvent: (Player
             }
             replayAt++
             when (ln.op) {
-                "R", "B", "G", "K", "X", "E", "N", "S", "P", "O", "D", "U" ->
+                "R", "B", "G", "K", "X", "Z", "E", "N", "S", "P", "O", "D", "U" ->
                     act(ln.op[0], ln.args.getOrNull(0)?.toInt() ?: 0)
                 "H" -> replayCheckHash(ln)
             }
@@ -238,7 +240,7 @@ internal fun DemoSession.replayStepOne(): Boolean { with(state) {
         }
         replayAt++
         when (ln.op) {
-            "R", "B", "G", "K", "X", "E", "N", "S", "P", "O", "D", "U" ->
+            "R", "B", "G", "K", "X", "Z", "E", "N", "S", "P", "O", "D", "U" ->
                 act(ln.op[0], ln.args.getOrNull(0)?.toInt() ?: 0)
             "H" -> replayCheckHash(ln)
             // Метки игрока показываются тем же цветом, что и при записи: по ним и

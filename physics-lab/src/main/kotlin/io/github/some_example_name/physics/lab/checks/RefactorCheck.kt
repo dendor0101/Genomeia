@@ -87,6 +87,8 @@ internal fun snapshots(): Map<String, Long> {
         .apply { isAccessible = true }.get(Probe.demo.state)
     nested("constraintBlocks", blocks, 0)
     nested("localBoundary", Probe.demo.state.localBoundary, 0)
+    // Флаг сна и счёт покоя решают, считается ли тело дальше. См. BodySleep.
+    nested("sleep", Probe.demo.state.sleep, 0)
     return result
 }
 

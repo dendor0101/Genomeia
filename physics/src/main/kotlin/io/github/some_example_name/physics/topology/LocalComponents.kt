@@ -11,6 +11,7 @@ class LocalComponents(
     private val flowX: DoubleArray,
     private val flowY: DoubleArray,
     var count: Int,
+    private val sleep: BodySleep,
 ) {
     private val seen = IntArray(of.size)
     private val frontA = IntArray(of.size)
@@ -63,5 +64,6 @@ class LocalComponents(
             if (restInvMass[w] > 0.0) mass[fresh] += 1.0 / restInvMass[w]
         }
         size[old] -= size[fresh]; mass[old] -= mass[fresh]
+        sleep.inheritSplit(fresh, old, queue, length)
     }
 }

@@ -89,6 +89,14 @@ fun main(args: Array<String>) {
                 println("MEM primitive_payload_bytes=${primitivePayload(p.demo)} history_bytes=0" +
                     " links_areas_working_bytes=${24L * p.n + 21L * initialLinks + 25L * initialTriangles}")
                 println("LOCAL links ${linkLocality(p.conA, p.conB, p.conCount)}")
+                // Сон включается RB_SLEEP=1: сколько уснуло к концу и как быстро самая
+                // быстрая клетка, в длинах связи за тик (порог сна SLEEP_SPEED_CELLS_PER_TICK).
+                with(p.demo.state) {
+                    var top2 = 0.0
+                    for (i in 0 until n) if (!cellDead[i]) top2 = maxOf(top2, vx[i] * vx[i] + vy[i] * vy[i])
+                    println("SLEEP on=${sleep.on} asleep=${sleep.asleepCount}/$organismCount" +
+                        " max_speed_cells_tick=%.2e".format(kotlin.math.sqrt(top2) * dt / body.meanLinkLength))
+                }
             }
         }
     }
