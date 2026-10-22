@@ -116,6 +116,13 @@ internal fun DemoSession.slamOrganisms() { with(state) {
             b -> { vx[i] = -dx * speed; vy[i] = -dy * speed }
         }
     }
+    // Скорость задана мимо решателя: спящие тела надо разбудить, иначе её обнулят.
+    var cellA = -1; var cellB = -1
+    for (i in 0 until n) {
+        if (cellA < 0 && organismOf[i] == a) cellA = i
+        if (cellB < 0 && organismOf[i] == b) cellB = i
+    }
+    sleep.requestWake(cellA); sleep.requestWake(cellB)
     if (!quiet) println("[DemoSession] таран: организмы $a и $b, по " +
         "%.1f клеток/тик навстречу".format(speed * DT / body.meanLinkLength))
 } }
@@ -140,6 +147,8 @@ internal fun DemoSession.fireBullet() { with(state) {
     py[i] = sumY / cnt
     prevX[i] = px[i]; prevY[i] = py[i]
     vx[i] = -speed; vy[i] = 0.0
+    // Пуля — свободная частица, она тоже могла уснуть.
+    sleep.requestWake(i)
     println("[DemoSession] пуля: клетка #$i, скорость " +
         "%.1f клеток/тик".format(speed * DT / body.meanLinkLength))
 } }

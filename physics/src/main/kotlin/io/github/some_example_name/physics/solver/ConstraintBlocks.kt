@@ -90,6 +90,13 @@ class ConstraintBlocks(n: Int, organismOf: IntArray, blockSize: Int,
         flaps = BlockIndex(maxOf(n, 16), blockCount + 1)
     }
 
+    /**
+     * Сколько бодрствующих частиц в блоке. Ноль — блок целиком спит, и решатель его
+     * пропускает: все его частицы заморожены, двигать нечего. Ведёт BodySleep при
+     * засыпании и пробуждении организма; шов не считается и не пропускается.
+     */
+    val awake = IntArray(blockCount + 1)
+
     fun hasSeams(): Boolean = links.liveCount[seam] > 0 || areas.liveCount[seam] > 0 ||
         limits.head[seam] >= 0 || bones.head[seam] >= 0 || bends.head[seam] >= 0 || flaps.head[seam] >= 0
 

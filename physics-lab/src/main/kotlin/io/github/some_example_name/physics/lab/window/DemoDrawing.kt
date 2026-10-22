@@ -55,6 +55,7 @@ internal fun DemoWindow.drawBody() { with(session) { with(state) {
             shapes.color = when {
                 triInverted[t] -> INVERTED_FILL
                 triTorn(t) -> TEAR_FILL
+                sleep.isAsleep(organismOf[i0]) -> SLEEP_FILL
                 boneOf[i0] != -1 && boneOf[i0] == boneOf[i1] && boneOf[i0] == boneOf[i2] ->
                     if (bonesRigid) BONE_FILL else BONE_FILL_OFF
                 m >= 0 -> if (act > 0.002) tmpColor.set(MUSCLE_IDLE).lerp(MUSCLE_FILL, act.toFloat()) else MUSCLE_IDLE
@@ -295,6 +296,10 @@ internal fun DemoWindow.drawHud() { with(session) { with(state) {
                 if (tearingOn) "on" else "OFF", tornTotal)
     else "K -- self-contact (OFF)", 16f, y); y -= line
 
+    hud.color = if (sleep.asleepCount > 0) SLEEP_FILL else HUD_MUTED
+    hud.text(if (sleep.on) "SLEEP [Z] on   asleep organisms = %d / %d".format(sleep.asleepCount, organismCount)
+        else "Z -- sleep (OFF)", 16f, y); y -= line
+
     hud.color = if (bendLevel > 0) HUD_WARN else HUD_MUTED
     hud.text(if (bendLevel > 0)
         "CONTOUR BEND [E] = %.0e on %d pairs  -- thrust cost, see BEND_LEVELS"
@@ -321,7 +326,7 @@ internal fun DemoWindow.drawHud() { with(session) { with(state) {
     hud.color = HUD_TEXT
     hud.text("СЦЕНА [N выбрать, M запустить]: %d/%d  %s".format(
         sceneIndex + 1, scenes.size, scenes[sceneIndex].name), 16f, y); y -= line
-    hud.text("SPACE pause   F fast   E bend   R reset   B bones   C view (норма/кости/радиусы)   P bullet   O slam   L rec   X tear   RMB pan   MMB mark   wheel zoom",
+    hud.text("SPACE pause   F fast   Z sleep   E bend   R reset   B bones   C view (норма/кости/радиусы)   P bullet   O slam   L rec   X tear   RMB pan   MMB mark   wheel zoom",
         16f, y); y -= line
     hud.color = if (marks.isNotEmpty()) MARK_COLOR else HUD_MUTED
     hud.text("LOG %s  tick %d   MARKS [MMB] = %s".format(

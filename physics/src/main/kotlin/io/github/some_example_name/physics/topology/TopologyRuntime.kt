@@ -82,6 +82,8 @@ fun BodyState.buildOrganisms(relabel: Boolean = true) {
             comp++
         }
         organismCount = comp
+        // Полная разметка бывает только при загрузке и сбросе: все бодрствуют.
+        resetSleep()
     }
     // Ёмкость держится по числу клеток: больше компонент, чем клеток, не бывает.
     val fresh = !isorganismSizeInitialized() || organismSize.size < n
@@ -197,7 +199,7 @@ fun BodyState.buildContacts() {
     syncBoundaryArrays()
     contacts!!.attachSurface(localSurface)
     localComponents = LocalComponents(baked, organismOf, organismSize, organismMass,
-        restInvMass, cellDead, flowVX, flowVY, organismCount)
+        restInvMass, cellDead, flowVX, flowVY, organismCount, sleep)
     baked.clearDirty()
     // Наименьший радиус контакта в сцене — мерка «кто вообще способен пролезть».
     // См. dbgSeal. Свободная частица меньше мембранной клетки в разы, поэтому мерить
@@ -507,6 +509,8 @@ fun BodyState.rebuildTimed() {
 /** Погасить ребро немедленно и запомнить для пересборки в конце тика. */
 fun BodyState.killEdgeNow(e: Int) {
     if (!baked.kill(e)) return
+    // Разрыв будит организм: у спящего связь рвёт только чужой удар (гибель клетки).
+    sleep.requestWake(baked.edgeU(e))
     // Разделяем компоненту ДО следующего удаления. split ищет две стороны
     // одного разрыва; если сначала погасить целую пачку рёбер, сторон может быть
     // больше двух. Тогда несколько уже несвязанных кусков сохраняли общий ID,

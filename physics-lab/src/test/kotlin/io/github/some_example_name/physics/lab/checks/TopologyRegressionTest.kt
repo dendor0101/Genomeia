@@ -1,5 +1,6 @@
 package io.github.some_example_name.physics.lab.checks
 
+import io.github.some_example_name.physics.BodySleep
 import io.github.some_example_name.physics.BoundaryContacts
 import io.github.some_example_name.physics.lab.inspection.DemoInspector
 import io.github.some_example_name.physics.lab.io.BodyFile
@@ -117,7 +118,7 @@ class TopologyRegressionTest {
         val masses = DoubleArray(7); masses[0] = 7.0
         val flow = DoubleArray(7); flow[0] = 0.3
         val parts = LocalComponents(topology, of, sizes, masses, DoubleArray(7) { 1.0 },
-            BooleanArray(7), flow, DoubleArray(7), 1)
+            BooleanArray(7), flow, DoubleArray(7), 1, BodySleep(on = false))
         for (edge in 0 until topology.edgeCount) {
             topology.kill(edge); parts.split(edge)
             val expected = IntArray(7) { -1 }; var count = 0

@@ -19,11 +19,15 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     val h = DT / SUBSTEPS
     // Совместный опыт минимальной частоты: контакты 32, момент и среда 1 раз за тик.
     observer?.beginTick()
+    // Мышь и мышцы будят свои организмы до учёта импульса: обратная масса одна на тик.
+    wakeByInput()
     if (cancelSpinOn) { tick0(); tickMomentum.begin(px, py, vx, vy, invMass, organismOf); tick1(16) }
     for (step in 0 until SUBSTEPS) {
         // Длина покоя мышцы доезжает до своего значения за тик, а не прыгает в первом
         // же подшаге — см. muscleScaleOf.
         updateMuscleScale((step + 1).toDouble() / SUBSTEPS)
+        // Удар или разрыв прошлого подшага будит спящих: см. BodySleep.
+        applyWakeRequests()
         // КОНТАКТ ПРИКЛАДЫВАЕТСЯ К СКОРОСТИ ДО ИНТЕГРИРОВАНИЯ, как гравитация.
         // Почему именно так и что было раньше — см. toVelocity в solveContacts.
         if (contacts != null && contactsOn && CONTACT_BEFORE_INTEGRATE) {
@@ -85,6 +89,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
             finalContacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = false)
             tick1(6); tick0()
             if (cancelSpinOn) tickMomentum.noteContacts(finalContacts)
+            noteSleepContacts(finalContacts)
             finalContacts.updateBones(px, py, invMass, if (bonesRigid) boneOf else null, rigidBones)
             tick1(13); tick0()
             finalContacts.solveContacts(px, py, vx, vy, invMass, h)
@@ -139,6 +144,8 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     // Один проход упаковки за тик. Контактная топология уже актуальна;
     // упаковка нужна плотным рабочим массивам и чтению состояния стенда.
     if (tearsPending) { tick0(); rebuildTimed(); tick1(11) }
+    // Засыпание — в самом конце тика, когда все скорости и вся топология этого тика готовы.
+    updateSleep()
     if (watchCell >= 0) watchReport()
 
 }

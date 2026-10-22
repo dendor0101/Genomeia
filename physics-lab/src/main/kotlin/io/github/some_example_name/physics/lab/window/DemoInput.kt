@@ -108,6 +108,7 @@ internal fun DemoWindow.handleInput() { with(session) { with(state) {
         toggleDragLog()
     }
     if (Gdx.input.isKeyJustPressed(Input.Keys.X)) act('X', if (tearingOn) 0 else 1)
+    if (Gdx.input.isKeyJustPressed(Input.Keys.Z)) act('Z', if (sleep.on) 0 else 1)
     // J просит у стенда мягкой решётки новый сид разрушения. В обычном демо
     // окно просто закроется — стенда, который откроет следующее, там нет.
     if (Gdx.input.isKeyJustPressed(Input.Keys.J)) {
