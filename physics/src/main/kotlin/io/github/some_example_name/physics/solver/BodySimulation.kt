@@ -19,7 +19,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     val h = DT / SUBSTEPS
     // Совместный опыт минимальной частоты: контакты 32, момент и среда 1 раз за тик.
     observer?.beginTick()
-    if (cancelSpinOn) tickMomentum.begin(px, py, vx, vy, invMass, organismOf)
+    if (cancelSpinOn) { tick0(); tickMomentum.begin(px, py, vx, vy, invMass, organismOf); tick1(16) }
     for (step in 0 until SUBSTEPS) {
         // Длина покоя мышцы доезжает до своего значения за тик, а не прыгает в первом
         // же подшаге — см. muscleScaleOf.
@@ -32,7 +32,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
                 if (bonesRigid) boneOf else null, rigidBones)
             contacts!!.solveContacts(px, py, vx, vy, invMass, h, 1.0, toVelocity = true)
         }
-        integrate(h)
+        tick0(); integrate(h); tick1(15)
 
         // Скобка вокруг ВНУТРЕННИХ стадий: центр масс до и после. Внешние силы
         // (среда, пол, вязкость) идут ниже по скоростям и в скобку не попадают.
@@ -101,6 +101,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
 
         tick0()
         updateVelocities(h)
+        tick1(17); tick0()
         // Отскок: позиционная часть удар гасит целиком, см. solveRestitution.
         dbgMarkV()
         if (cancelSpinOn) tickMomentum.beforeExternal(vx, vy)
@@ -117,12 +118,14 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         clampSpeed()
         dbgMeasureV(11); tick1(9)
         if (cancelSpinOn) {
+            tick0()
             tickMomentum.afterExternal(px, py, vx, vy, invMass, inContact)
             if (step == SUBSTEPS - 1) {
                 tickMomentum.cancel(px, py, vx, vy, invMass)
                 // Коррекция тоже меняет скорости: потолок должен оставаться последним.
                 clampSpeed()
             }
+            tick1(16)
         }
         observer?.afterSubstep(step)
         dbgSubstepHook?.invoke(step)

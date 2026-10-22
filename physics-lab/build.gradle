@@ -19,6 +19,13 @@ dependencies {
 sourceSets.main.runtimeClasspath += files(rootProject.file('assets'))
 tasks.withType(JavaExec).configureEach {
   environment('__GL_THREADED_OPTIMIZATIONS', '0')
+  // РАСКЛАДКА КУЧИ ОДНА И ТА ЖЕ В КАЖДОМ ЗАПУСКЕ. При участке G1 по умолчанию (2 МБ при
+  // -Xmx3g) массивы частиц сцены 100k ложатся то подряд, то с началом участка, и тогда у
+  // px/py/prevX/... совпадают младшие 12 бит адреса: чтение после записи задерживается
+  // (4K aliasing). Замер 22.10, тот же код: integrate 8.7 / 36 / 60 мс за тик в трёх
+  // запусках, весь тик 255 / 298 / 319 мс. С участком 32 МБ массивы до 16 МБ ложатся
+  // подряд всегда. Худший случай для проверки стадий: -PheapRegion=1m.
+  jvmArgs "-XX:G1HeapRegionSize=${project.findProperty('heapRegion') ?: '32m'}"
   if (System.properties['os.name'].toLowerCase(Locale.ROOT).contains('mac')) {
     jvmArgs '-XstartOnFirstThread'
   }
