@@ -714,7 +714,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
 
             if (p.contactsOn) {
                 contacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = false)
-                if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.noteContacts(contacts)
+                if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.noteContacts(contacts, invMass)
                 contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
                 solveContactsAndBoundary(h)
             }
@@ -822,7 +822,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
 
             if (p.contactsOn) {
                 contacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = false)
-                if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.noteContacts(contacts)
+                if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.noteContacts(contacts, invMass)
                 contacts.updateBones(px, py, invMass, topo.boneOf, topo.rigidBones)
                 solveContactsAndBoundary(h)
             }

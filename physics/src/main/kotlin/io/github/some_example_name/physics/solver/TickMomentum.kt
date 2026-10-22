@@ -33,70 +33,135 @@ class TickMomentum(private val n: Int) {
         val a = find(i); val b = find(j)
         if (a != b) parent[maxOf(a, b)] = minOf(a, b)
     }
+    /**
+     * Диапазоны частиц, по которым идёт учёт: бодрствующие (см. BodySleep.spanStart)
+     * или все, если сна нет ([sleep] == null у зеркала SwimSolver). Спящая частица
+     * заморожена: в группы не входит, её касание блокирует группу соседа (noteContacts).
+     */
+    private inline fun spans(sleep: BodySleep?, body: (Int, Int) -> Unit) {
+        if (sleep == null) { body(0, n); return }
+        for (k in 0 until sleep.spanCount) body(sleep.spanStart[k], sleep.spanEnd[k])
+    }
+
     fun begin(x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
-              invMass: DoubleArray, org: IntArray) {
-        first.fill(-1); blocked.fill(false)
-        for (i in 0 until n) parent[i] = i
-        for (i in 0 until n) {
-            val o = org[i]
-            if (o >= 0) { if (first[o] < 0) first[o] = i else union(first[o], i) }
-            val m = if (invMass[i] > 0.0) 1.0 / invMass[i] else 0.0
-            targetX[i] = m * vx[i]; targetY[i] = m * vy[i]
-            targetL[i] = m * (x[i] * vy[i] - y[i] * vx[i])
-            blocked[i] = invMass[i] <= 0.0
+              invMass: DoubleArray, org: IntArray, sleep: BodySleep? = null) {
+        first.fill(-1)
+        spans(sleep) { from, to ->
+            java.util.Arrays.fill(blocked, from, to, false)
+            for (i in from until to) parent[i] = i
+        }
+        spans(sleep) { from, to ->
+            for (i in from until to) {
+                val o = org[i]
+                if (o >= 0) { if (first[o] < 0) first[o] = i else union(first[o], i) }
+                val m = if (invMass[i] > 0.0) 1.0 / invMass[i] else 0.0
+                targetX[i] = m * vx[i]; targetY[i] = m * vy[i]
+                targetL[i] = m * (x[i] * vy[i] - y[i] * vx[i])
+                blocked[i] = invMass[i] <= 0.0
+            }
         }
     }
-    fun noteContacts(c: BoundaryContacts) {
-        for (k in 0 until c.contactCount) union(c.contactI(k), c.contactJ(k))
+
+    /**
+     * Частица проснулась посреди тика: в начале тика она была неподвижной и
+     * блокировала свою группу до конца тика. Так и остаётся — как было бы при учёте
+     * всех частиц, когда спящая входила в begin с нулевой массой.
+     */
+    fun admitFrozen(i: Int) {
+        parent[i] = i; blocked[i] = true
+        targetX[i] = 0.0; targetY[i] = 0.0; targetL[i] = 0.0
     }
-    fun beforeExternal(vx: DoubleArray, vy: DoubleArray) {
-        System.arraycopy(vx, 0, beforeX, 0, n)
-        System.arraycopy(vy, 0, beforeY, 0, n)
+
+    /**
+     * Контакт объединяет группы. КАСАНИЕ НЕПОДВИЖНОЙ ЧАСТИЦЫ (спящей, мёртвой) НЕ
+     * ОБЪЕДИНЯЕТ, а блокирует группу касающегося: раньше объединение с заблокированной
+     * частицей давало тот же итог — заблокированная группа не корректируется, — но у
+     * спящих индексы вне диапазонов учёта, и их parent не обновлялся бы.
+     */
+    fun noteContacts(c: BoundaryContacts, invMass: DoubleArray) {
+        for (k in 0 until c.contactCount) {
+            val i = c.contactI(k); val j = c.contactJ(k)
+            if (invMass[i] <= 0.0 || invMass[j] <= 0.0) { blocked[i] = true; blocked[j] = true }
+            else union(i, j)
+        }
+    }
+    /**
+     * Только диапазоны бодрствующих частиц: у спящих скорость ноль и не меняется.
+     * Без [sleep] (зеркало SwimSolver) — все частицы. См. BodySleep.
+     */
+    fun beforeExternal(vx: DoubleArray, vy: DoubleArray, sleep: BodySleep? = null) {
+        val spans = sleep?.spanCount ?: 1
+        for (k in 0 until spans) {
+            val s = if (sleep == null) 0 else sleep.spanStart[k]
+            val len = (if (sleep == null) n else sleep.spanEnd[k]) - s
+            System.arraycopy(vx, s, beforeX, s, len)
+            System.arraycopy(vy, s, beforeY, s, len)
+        }
     }
     fun afterExternal(x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
-                      invMass: DoubleArray, floor: BooleanArray? = null) {
+                      invMass: DoubleArray, floor: BooleanArray? = null, sleep: BodySleep? = null) {
         // Сначала все чтения частицы, потом записи: см. BodyState.integrate. Худшая
         // раскладка массивов на 100k: 16.7 мс за тик против 12.9 подряд.
-        for (i in 0 until n) {
-            val onFloor = floor != null && floor[i]
-            val w = invMass[i]
-            if (w <= 0.0) { if (onFloor) blocked[i] = true; continue }
-            val m = 1.0 / w
-            val fx = m * (vx[i] - beforeX[i]); val fy = m * (vy[i] - beforeY[i])
-            val tx = targetX[i] + fx; val ty = targetY[i] + fy
-            val tl = targetL[i] + (x[i] * fy - y[i] * fx)
-            targetX[i] = tx; targetY[i] = ty; targetL[i] = tl
-            if (onFloor) blocked[i] = true
+        val spans = sleep?.spanCount ?: 1
+        for (k in 0 until spans) {
+            val from = if (sleep == null) 0 else sleep.spanStart[k]
+            val to = if (sleep == null) n else sleep.spanEnd[k]
+            for (i in from until to) {
+                val onFloor = floor != null && floor[i]
+                val w = invMass[i]
+                if (w <= 0.0) { if (onFloor) blocked[i] = true; continue }
+                val m = 1.0 / w
+                val fx = m * (vx[i] - beforeX[i]); val fy = m * (vy[i] - beforeY[i])
+                val tx = targetX[i] + fx; val ty = targetY[i] + fy
+                val tl = targetL[i] + (x[i] * fy - y[i] * fx)
+                targetX[i] = tx; targetY[i] = ty; targetL[i] = tl
+                if (onFloor) blocked[i] = true
+            }
         }
     }
     fun cancel(x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
-               invMass: DoubleArray) {
-        mass.fill(0.0); cx.fill(0.0); cy.fill(0.0)
-        dx.fill(0.0); dy.fill(0.0); dl.fill(0.0); inertia.fill(0.0)
-        for (i in 0 until n) {
-            val g = find(i)
-            if (blocked[i] || invMass[i] <= 0.0) { blocked[g] = true; continue }
-            val m = 1.0 / invMass[i]
-            mass[g] += m; cx[g] += m * x[i]; cy[g] += m * y[i]
-            dx[g] += m * vx[i] - targetX[i]; dy[g] += m * vy[i] - targetY[i]
-            dl[g] += m * (x[i] * vy[i] - y[i] * vx[i]) - targetL[i]
+               invMass: DoubleArray, sleep: BodySleep? = null) {
+        // Корень группы — её наименьший индекс (union), то есть тоже внутри диапазонов.
+        spans(sleep) { from, to ->
+            java.util.Arrays.fill(mass, from, to, 0.0); java.util.Arrays.fill(cx, from, to, 0.0)
+            java.util.Arrays.fill(cy, from, to, 0.0); java.util.Arrays.fill(dx, from, to, 0.0)
+            java.util.Arrays.fill(dy, from, to, 0.0); java.util.Arrays.fill(dl, from, to, 0.0)
+            java.util.Arrays.fill(inertia, from, to, 0.0)
         }
-        for (g in 0 until n) if (mass[g] > 0.0) {
-            cx[g] /= mass[g]; cy[g] /= mass[g]
-            dl[g] -= cx[g] * dy[g] - cy[g] * dx[g]
-            dx[g] /= mass[g]; dy[g] /= mass[g]
+        spans(sleep) { from, to ->
+            for (i in from until to) {
+                val g = find(i)
+                if (blocked[i] || invMass[i] <= 0.0) { blocked[g] = true; continue }
+                val m = 1.0 / invMass[i]
+                mass[g] += m; cx[g] += m * x[i]; cy[g] += m * y[i]
+                dx[g] += m * vx[i] - targetX[i]; dy[g] += m * vy[i] - targetY[i]
+                dl[g] += m * (x[i] * vy[i] - y[i] * vx[i]) - targetL[i]
+            }
         }
-        for (i in 0 until n) {
-            if (invMass[i] <= 0.0) continue
-            val g = find(i); val rx = x[i] - cx[g]; val ry = y[i] - cy[g]
-            inertia[g] += (rx * rx + ry * ry) / invMass[i]
+        spans(sleep) { from, to ->
+            for (g in from until to) if (mass[g] > 0.0) {
+                cx[g] /= mass[g]; cy[g] /= mass[g]
+                dl[g] -= cx[g] * dy[g] - cy[g] * dx[g]
+                dx[g] /= mass[g]; dy[g] /= mass[g]
+            }
         }
-        for (g in 0 until n) dl[g] = if (inertia[g] > 1e-18) dl[g] / inertia[g] else 0.0
-        for (i in 0 until n) {
-            val g = find(i)
-            if (blocked[g] || invMass[i] <= 0.0) continue
-            vx[i] -= dx[g] - dl[g] * (y[i] - cy[g])
-            vy[i] -= dy[g] + dl[g] * (x[i] - cx[g])
+        spans(sleep) { from, to ->
+            for (i in from until to) {
+                if (invMass[i] <= 0.0) continue
+                val g = find(i); val rx = x[i] - cx[g]; val ry = y[i] - cy[g]
+                inertia[g] += (rx * rx + ry * ry) / invMass[i]
+            }
+        }
+        spans(sleep) { from, to ->
+            for (g in from until to) dl[g] = if (inertia[g] > 1e-18) dl[g] / inertia[g] else 0.0
+        }
+        spans(sleep) { from, to ->
+            for (i in from until to) {
+                val g = find(i)
+                if (blocked[g] || invMass[i] <= 0.0) continue
+                vx[i] -= dx[g] - dl[g] * (y[i] - cy[g])
+                vy[i] -= dy[g] + dl[g] * (x[i] - cx[g])
+            }
         }
     }
 }

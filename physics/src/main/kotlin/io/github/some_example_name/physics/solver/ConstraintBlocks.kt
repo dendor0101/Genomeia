@@ -68,6 +68,8 @@ class ConstraintBlocks(n: Int, organismOf: IntArray, blockSize: Int,
     val bones: BlockIndex
     val bends: BlockIndex
     val flaps: BlockIndex
+    /** Рёбра контура (LocalBoundaryConstraints) по блокам: ориентации со спящими. */
+    val edges: BlockIndex
     val triangleSlot = IntArray(triangleCapacity) { -1 }
     private val limitQueue = IntArray(linkCapacity)
     private var activeLimitBlock = -1
@@ -88,6 +90,7 @@ class ConstraintBlocks(n: Int, organismOf: IntArray, blockSize: Int,
         bones = BlockIndex(boneCount, blockCount + 1)
         bends = BlockIndex(maxOf(n, 16), blockCount + 1)
         flaps = BlockIndex(maxOf(n, 16), blockCount + 1)
+        edges = BlockIndex(maxOf(n, 16), blockCount + 1)
     }
 
     /**

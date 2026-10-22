@@ -94,58 +94,82 @@ fun BodyState.applyPlasticity(dt: Double) {
     if (conHold.size < conA.size) conHold = conHold.copyOf(conA.size)
     if (triHold.size < triA.size) triHold = triHold.copyOf(triA.size)
 
-    for (c in 0 until conCount) {
-        if (baked.edgeDead[conEdge[c]]) continue
-        // МЫШЦЫ НЕ ТЕКУТ, и это не осторожность, а необходимость.
-        //
-        // У сокращённой мышцы цель заметно короче (MUSCLE_CONTRACTION = 0.50), а
-        // окружающая ткань дотянуться не даёт. Деформация относительно цели выходит
-        // в сотни процентов — не потому что ткань смялась, а потому что мышца
-        // работает. Пластика на этом разносит длину покоя, мышца «забывает» свою
-        // длину и тянуть перестаёт. Проверка ловила это сразу: тело переставало
-        // останавливаться вовсе (замедление 1.0x вместо 20x за минуту), потому что
-        // ползущая длина покоя вечно шевелила границу, а среда это выпрямляла в тягу.
-        if (conMuscle[c] >= 0) continue
-        val target = conRest[c]
-        if (target < 1e-12) continue
-        val dx = px[conA[c]] - px[conB[c]]
-        val dy = py[conA[c]] - py[conB[c]]
-        val len = sqrt(dx * dx + dy * dy)
-        val strain = len / target - 1.0
-        val over = when {
-            strain > PLASTIC_YIELD -> strain - PLASTIC_YIELD
-            strain < -PLASTIC_YIELD -> strain + PLASTIC_YIELD
-            else -> 0.0
-        }
-        if (over == 0.0) { conHold[c] = 0; continue }
-        if (conHold[c] < PLASTIC_HOLD) { conHold[c]++; continue }
-        // Предел длины идёт ЗА длиной покоя сам собой: он и есть
-        // LINK_MAX_STRETCH * conRest, считается на месте. См. conMaxLen.
-        conRest[c] *= 1.0 + over * k
+    // Каждая связь и каждый треугольник текут независимо от остальных: порядок обхода
+    // на итог не влияет. Пока никто не спит — прежний сплошной проход; со спящими —
+    // только блоки, где есть бодрствующие частицы, и шов. У спящего тела длины
+    // заморожены вместе с телом: течь ему, как и двигаться, не с чего. См. BodySleep.
+    val layout = constraintBlocks
+    if (sleep.asleepCount == 0 || layout == null) {
+        for (c in 0 until conCount) plasticLink(c, k)
+        for (t in 0 until triCount) plasticTriangle(t, k)
+        return
     }
+    val links = layout.links
+    val areas = layout.areas
+    for (block in 0..layout.seam) {
+        if (block != layout.seam && layout.awake[block] == 0) continue
+        for (slot in links.start[block] until links.start[block] + links.count[block]) {
+            val c = links.items[slot]
+            if (c >= 0) plasticLink(c, k)
+        }
+        for (slot in areas.start[block] until areas.start[block] + areas.count[block]) {
+            val t = areas.items[slot]
+            if (t >= 0) plasticTriangle(t, k)
+        }
+    }
+}
 
-    for (t in 0 until triCount) {
-        if (!baked.triAlive[triId[t]]) continue
-        if (triMuscle[t] >= 0) continue          // мышечные — по той же причине
-        val rest2 = triRestArea2[t].toDouble()
-        if (abs(rest2) < 1e-18) continue
-        val i0 = triA[t]; val i1 = triB[t]; val i2 = triC[t]
-        val area2 = (px[i1] - px[i0]) * (py[i2] - py[i0]) -
-            (py[i1] - py[i0]) * (px[i2] - px[i0])
-        // ВЫВЕРНУТЫМ ТЕЧЬ НЕЛЬЗЯ: подогнав площадь покоя под сложенное состояние,
-        // пластика УЗАКОНИТ складку, и та не разойдётся уже никогда. Проверка
-        // ловила это прямо: складка 50% и 75% переставали расходиться за 8 секунд.
-        if (area2 <= 0.0) continue
-        val strain = area2 / rest2 - 1.0
-        val over = when {
-            strain > PLASTIC_YIELD -> strain - PLASTIC_YIELD
-            strain < -PLASTIC_YIELD -> strain + PLASTIC_YIELD
-            else -> 0.0
-        }
-        if (over == 0.0) { triHold[t] = 0; continue }
-        if (triHold[t] < PLASTIC_HOLD) { triHold[t]++; continue }
-        triRestArea2[t] = (triRestArea2[t] * (1.0 + over * k)).toFloat()
+private fun BodyState.plasticLink(c: Int, k: Double) {
+    if (baked.edgeDead[conEdge[c]]) return
+    // МЫШЦЫ НЕ ТЕКУТ, и это не осторожность, а необходимость.
+    //
+    // У сокращённой мышцы цель заметно короче (MUSCLE_CONTRACTION = 0.50), а
+    // окружающая ткань дотянуться не даёт. Деформация относительно цели выходит
+    // в сотни процентов — не потому что ткань смялась, а потому что мышца
+    // работает. Пластика на этом разносит длину покоя, мышца «забывает» свою
+    // длину и тянуть перестаёт. Проверка ловила это сразу: тело переставало
+    // останавливаться вовсе (замедление 1.0x вместо 20x за минуту), потому что
+    // ползущая длина покоя вечно шевелила границу, а среда это выпрямляла в тягу.
+    if (conMuscle[c] >= 0) return
+    val target = conRest[c]
+    if (target < 1e-12) return
+    val dx = px[conA[c]] - px[conB[c]]
+    val dy = py[conA[c]] - py[conB[c]]
+    val len = sqrt(dx * dx + dy * dy)
+    val strain = len / target - 1.0
+    val over = when {
+        strain > PLASTIC_YIELD -> strain - PLASTIC_YIELD
+        strain < -PLASTIC_YIELD -> strain + PLASTIC_YIELD
+        else -> 0.0
     }
+    if (over == 0.0) { conHold[c] = 0; return }
+    if (conHold[c] < PLASTIC_HOLD) { conHold[c]++; return }
+    // Предел длины идёт ЗА длиной покоя сам собой: он и есть
+    // LINK_MAX_STRETCH * conRest, считается на месте. См. conMaxLen.
+    conRest[c] *= 1.0 + over * k
+}
+
+private fun BodyState.plasticTriangle(t: Int, k: Double) {
+    if (!baked.triAlive[triId[t]]) return
+    if (triMuscle[t] >= 0) return          // мышечные — по той же причине
+    val rest2 = triRestArea2[t].toDouble()
+    if (abs(rest2) < 1e-18) return
+    val i0 = triA[t]; val i1 = triB[t]; val i2 = triC[t]
+    val area2 = (px[i1] - px[i0]) * (py[i2] - py[i0]) -
+        (py[i1] - py[i0]) * (px[i2] - px[i0])
+    // ВЫВЕРНУТЫМ ТЕЧЬ НЕЛЬЗЯ: подогнав площадь покоя под сложенное состояние,
+    // пластика УЗАКОНИТ складку, и та не разойдётся уже никогда. Проверка
+    // ловила это прямо: складка 50% и 75% переставали расходиться за 8 секунд.
+    if (area2 <= 0.0) return
+    val strain = area2 / rest2 - 1.0
+    val over = when {
+        strain > PLASTIC_YIELD -> strain - PLASTIC_YIELD
+        strain < -PLASTIC_YIELD -> strain + PLASTIC_YIELD
+        else -> 0.0
+    }
+    if (over == 0.0) { triHold[t] = 0; return }
+    if (triHold[t] < PLASTIC_HOLD) { triHold[t]++; return }
+    triRestArea2[t] = (triRestArea2[t] * (1.0 + over * k)).toFloat()
 }
 
 // Возврат застрявших и запрет разрыва удалены: возврат повышал дребезг,
@@ -158,7 +182,10 @@ fun BodyState.burstByPressure() {
     if (trapKillTicks >= 0) { tick0(); scanTrapped(); tick1(10) }
     val lim = pressureBurst * body.meanLinkLength
     var any = false
-    for (i in 0 until n) {
+    // Спящие и так пропускаются по invMass <= 0: обходим только бодрствующих. См. BodySleep.
+    prepareAwakeSpans()
+    val s = sleep
+    for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
         if (cellDead[i] || boneOf[i] >= 0 || invMass[i] <= 0.0) continue
         // ДАВЛЕНИЕ НА ОДИН КОНТАКТ, а не сумма. Сумма не умеет отличить клетку,
         // раздавленную в чужой ткани, от клетки в плотной толпе: у второй толчков
@@ -177,6 +204,7 @@ fun BodyState.burstByPressure() {
         when { byPressure -> pressureBurstCount++; byCrush -> crushBurstCount++; byTrap -> trapKillCount++; else -> foldKillCount++ }
         // Заморозка, а не остановка. Причина та же, см. applyKills.
         vx[i] = 0.0; vy[i] = 0.0; invMass[i] = 0.0
+        contacts?.invalidateStatic()
         killIncidentEdges(i)
         any = true
     }

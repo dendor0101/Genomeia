@@ -18,7 +18,10 @@ import kotlin.math.sqrt
  * Тот же порядок держат updateVelocities и TickMomentum.afterExternal.
  */
 fun BodyState.integrate(h: Double) {
-    for (i in 0 until n) {
+    prepareAwakeSpans()
+    val s = sleep
+    // Только бодрствующие частицы: у спящей prevX = px и скорость ноль. См. BodySleep.
+    for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
         val x = px[i]; val y = py[i]
         if (invMass[i] == 0.0) { prevX[i] = x; prevY[i] = y; inContact[i] = false; continue }
         val nvy = vy[i] + GRAVITY * h
@@ -37,7 +40,9 @@ fun BodyState.integrate(h: Double) {
 
 /** Порядок «сначала чтения» — см. integrate. Худшая раскладка 100k: 13.7 мс против 7.8. */
 fun BodyState.updateVelocities(h: Double) {
-    for (i in 0 until n) {
+    prepareAwakeSpans()
+    val s = sleep
+    for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
         if (invMass[i] == 0.0) { vx[i] = 0.0; vy[i] = 0.0; continue }
         val nvx = (px[i] - prevX[i]) / h
         val nvy = (py[i] - prevY[i]) / h
@@ -49,22 +54,38 @@ fun BodyState.updateVelocities(h: Double) {
 fun BodyState.applyViscosity(h: Double) {
     var k = VISCOSITY * h
     if (k > 0.5) k = 0.5
-    for (c in 0 until conCount) {
-        if (conDead[c]) continue
-        val i = conA[c]; val j = conB[c]
-        val wi = invMass[i]; val wj = invMass[j]
-        val w = wi + wj
-        if (w == 0.0) continue
-        var nx = px[j] - px[i]
-        var ny = py[j] - py[i]
-        val len = sqrt(nx * nx + ny * ny)
-        if (len < 1e-12) continue
-        nx /= len; ny /= len
-        val dv = (vx[j] - vx[i]) * nx + (vy[j] - vy[i]) * ny
-        val si = k * wi / w; val sj = k * wj / w
-        vx[i] += dv * nx * si; vy[i] += dv * ny * si
-        vx[j] -= dv * nx * sj; vy[j] -= dv * ny * sj
+    // Со спящими — только блоки с бодрствующими частицами и шов; у спящих связей вес
+    // ноль, и они всё равно пропускаются. Без сна — прежний порядок. См. BodySleep.
+    val layout = constraintBlocks
+    if (sleep.asleepCount == 0 || layout == null) {
+        for (c in 0 until conCount) viscousLink(c, k)
+        return
     }
+    val links = layout.links
+    for (block in 0..layout.seam) {
+        if (block != layout.seam && layout.awake[block] == 0) continue
+        for (slot in links.start[block] until links.start[block] + links.count[block]) {
+            val c = links.items[slot]
+            if (c >= 0) viscousLink(c, k)
+        }
+    }
+}
+
+private fun BodyState.viscousLink(c: Int, k: Double) {
+    if (conDead[c]) return
+    val i = conA[c]; val j = conB[c]
+    val wi = invMass[i]; val wj = invMass[j]
+    val w = wi + wj
+    if (w == 0.0) return
+    var nx = px[j] - px[i]
+    var ny = py[j] - py[i]
+    val len = sqrt(nx * nx + ny * ny)
+    if (len < 1e-12) return
+    nx /= len; ny /= len
+    val dv = (vx[j] - vx[i]) * nx + (vy[j] - vy[i]) * ny
+    val si = k * wi / w; val sj = k * wj / w
+    vx[i] += dv * nx * si; vy[i] += dv * ny * si
+    vx[j] -= dv * nx * sj; vy[j] -= dv * ny * sj
 }
 
 fun BodyState.applyNormalDrag(h: Double) {
@@ -98,7 +119,10 @@ fun BodyState.applyNormalDrag(h: Double) {
         // то есть НЕ ноль. Вращение начинает заряжать запас, среда толкает тело,
         // толчок снова крутит. Движение из ничего.
         for (o in 0 until organismCount) { comAccX[o] = 0.0; comAccY[o] = 0.0 }
-        for (i in 0 until n) {
+        // Спящие: скорость ноль, масса ноль, запас среды ноль — проходы по ним пусты.
+        prepareAwakeSpans()
+        val s = sleep
+        for (q in 0 until s.spanCount) for (i in s.spanStart[q] until s.spanEnd[q]) {
             if (invMass[i] <= 0.0) continue
             val o = organismOf[i]
             val m = 1.0 / invMass[i]
@@ -134,7 +158,7 @@ fun BodyState.applyNormalDrag(h: Double) {
         // Разгон среды телу СТОИТ: импульс FLOW_MASS * dFlow на каждую частицу.
         // Именно эта строка делает обмен честным — тело не может получить от среды
         // больше, чем вложило.
-        for (i in 0 until n) {
+        for (q in 0 until s.spanCount) for (i in s.spanStart[q] until s.spanEnd[q]) {
             val o = organismOf[i]
             vx[i] -= FLOW_MASS * comAccX[o]
             vy[i] -= FLOW_MASS * comAccY[o]
@@ -191,14 +215,20 @@ fun BodyState.applyNormalDrag(h: Double) {
  * При GRAVITY = 0 стадия холостая — тело до пола не доходит.
  */
 fun BodyState.applyRestitution() {
-    for (i in 0 until n) if (inContact[i] && vy[i] > 0.0) vy[i] *= GROUND_RESTITUTION
+    prepareAwakeSpans()
+    val s = sleep
+    for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
+        if (inContact[i] && vy[i] > 0.0) vy[i] *= GROUND_RESTITUTION
+    }
 }
 
 fun BodyState.applyMediumDrag(h: Double) {
     if (dbgIsoDragOff) return
     var keep = 1.0 - MEDIUM_DRAG * h
     if (keep < 0.0) keep = 0.0
-    for (i in 0 until n) { vx[i] *= keep; vy[i] *= keep }
+    prepareAwakeSpans()
+    val s = sleep
+    for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) { vx[i] *= keep; vy[i] *= keep }
 }
 
 /**
@@ -419,7 +449,9 @@ fun BodyState.clampSpeed() {
     // другим правилам, чем весь мир, а потолок скорости держит устойчивость стадий не
     // от скуки. Решение пользователя — вернуть общий потолок и опустить вместо этого
     // ПОРОГ РАЗРЫВА, см. LINK_TEAR_STRAIN.
-    for (i in 0 until n) {
+    prepareAwakeSpans()
+    val s = sleep
+    for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
         val v2 = vx[i] * vx[i] + vy[i] * vy[i]
         if (v2 > peakSpeed2) peakSpeed2 = v2
         if (v2 <= maxV2) continue

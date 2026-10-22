@@ -11,7 +11,7 @@ internal fun BodyState.initializeConstraintBlocks() {
     val layout = constraintBlocks ?: ConstraintBlocks(n, organismOf, CONSTRAINT_BLOCK_SIZE,
         conA.size, triA.size, rigidBones.size).also { constraintBlocks = it }
     layout.links.clear(); layout.limits.clear(); layout.areas.clear(); layout.bones.clear()
-    layout.bends.clear(); layout.flaps.clear(); layout.triangleSlot.fill(-1)
+    layout.bends.clear(); layout.flaps.clear(); layout.edges.clear(); layout.triangleSlot.fill(-1)
     for (c in 0 until conCount) {
         layout.links.add(c, layout.blockOf(conA[c], conB[c]))
         if (conBoundary[c] && !conDead[c]) layout.addLimit(c, conA[c], conB[c])
@@ -33,6 +33,8 @@ internal fun BodyState.initializeConstraintBlocks() {
     for (c in 0 until flapCount) layout.flaps.add(c, layout.blockOf(flapA[c], flapB[c]))
     localBoundary.bend.blockLayout = layout; localBoundary.bend.blockIndex = layout.bends
     localBoundary.flap.blockLayout = layout; localBoundary.flap.blockIndex = layout.flaps
+    for (k in 0 until localBoundary.count) layout.edges.add(k, localBoundary.blockOfSlot(k, layout))
+    localBoundary.blockLayout = layout; localBoundary.blockIndex = layout.edges
 }
 
 /** Внутренние ограничения блока подряд; швы исполняются один раз после обеих

@@ -65,6 +65,19 @@ class BodySleep(var on: Boolean) {
     private var wakeQueue = IntArray(16)
     private var wakeQueueN = 0
 
+    /**
+     * ДИАПАЗОНЫ БОДРСТВУЮЩИХ ЧАСТИЦ [spanStart, spanEnd): по ним идут поштучные проходы
+     * (интегрирование, скорости, учёт импульса). У спящей частицы каждый такой проход —
+     * пустая работа: скорость ноль, prevX = px. Организм лежит непрерывным куском
+     * индексов, поэтому диапазонов столько, сколько чередований «спит/не спит», а не
+     * частиц. Пересобираются одним проходом по частицам, только если в этом тике кто-то
+     * уснул или проснулся. Без сна — один диапазон [0, n), порядок обхода прежний.
+     */
+    var spanStart = IntArray(1); private set
+    var spanEnd = IntArray(1); private set
+    var spanCount = 0; private set
+    private var spansDirty = true
+
     fun isAsleep(organism: Int): Boolean = asleepCount > 0 && asleep[organism]
 
     /** Разбудить организм клетки в начале следующего подшага; бодрствующему — сбросить покой. */
@@ -81,7 +94,7 @@ class BodySleep(var on: Boolean) {
         } else {
             asleep.fill(false); calmTicks.fill(0); busy.fill(false)
         }
-        asleepCount = 0; wakeQueueN = 0
+        asleepCount = 0; wakeQueueN = 0; spansDirty = true
         java.util.Arrays.fill(first, 0, organismCount, Int.MAX_VALUE)
         java.util.Arrays.fill(last, 0, organismCount, -1)
         for (i in 0 until n) {
@@ -125,11 +138,36 @@ class BodySleep(var on: Boolean) {
         asleep[organism] = value
         if (value) asleepCount++ else asleepCount--
         calmTicks[organism] = 0
+        spansDirty = true
+    }
+
+    internal fun rebuildSpansIfNeeded(n: Int, organismOf: IntArray) {
+        if (!spansDirty) return
+        spansDirty = false
+        spanCount = 0
+        if (asleepCount == 0) { addSpan(0, n); return }
+        var start = -1
+        for (i in 0 until n) {
+            val awake = !asleep[organismOf[i]]
+            if (awake && start < 0) start = i
+            else if (!awake && start >= 0) { addSpan(start, i); start = -1 }
+        }
+        if (start >= 0) addSpan(start, n)
+    }
+
+    private fun addSpan(start: Int, end: Int) {
+        if (spanCount == spanStart.size) {
+            spanStart = spanStart.copyOf(spanCount * 2); spanEnd = spanEnd.copyOf(spanCount * 2)
+        }
+        spanStart[spanCount] = start; spanEnd[spanCount] = end; spanCount++
     }
 
     internal fun countCalm(organism: Int): Int = ++calmTicks[organism]
     internal fun resetCalm(organism: Int) { calmTicks[organism] = 0 }
 }
+
+/** Диапазоны бодрствующих частиц актуальны. Зовётся в начале каждого поштучного прохода: одна проверка. */
+internal fun BodyState.prepareAwakeSpans() = sleep.rebuildSpansIfNeeded(n, organismOf)
 
 /** После полной разметки организмов (загрузка, сброс): все бодрствуют. */
 internal fun BodyState.resetSleep() {
@@ -216,11 +254,17 @@ private fun BodyState.sleepOrganism(o: Int) {
         invMass[i] = 0.0
         vx[i] = 0.0; vy[i] = 0.0
         prevX[i] = px[i]; prevY[i] = py[i]
+        // Поштучные проходы спящего больше не видят (см. spanStart): всё, что они
+        // обнуляли бы каждый подшаг, обнуляется здесь один раз.
+        inContact[i] = false
         if (awake != null) awake[block!![i]]--
     }
     // Запас среды — скорость увлечённой воды; у стоящего тела ей не с чего быть.
     flowVX[o] = 0.0; flowVY[o] = 0.0
     sleep.setAsleep(o, true)
+    parkBoundaryLimits(o, park = true)
+    // Пары спящего со спящими соседями больше не нужны: см. BoundaryContacts.broadphase.
+    contacts?.invalidateBroadphase()
 }
 
 private fun BodyState.wakeOrganism(o: Int) {
@@ -229,9 +273,35 @@ private fun BodyState.wakeOrganism(o: Int) {
     for (i in sleep.first[o]..sleep.last[o]) {
         if (organismOf[i] != o) continue
         invMass[i] = if (cellDead[i]) 0.0 else restInvMass[i]
+        if (cancelSpinOn) tickMomentum.admitFrozen(i)
         if (awake != null) awake[block!![i]]++
     }
     sleep.setAsleep(o, false)
+    parkBoundaryLimits(o, park = false)
+    // Пары проснувшегося со спящими соседями в списке кандидатов отсутствуют.
+    contacts?.invalidateBroadphase()
+}
+
+/**
+ * Граничные связи спящего убираются из общего прохода предела длины и возвращаются
+ * при пробуждении. Проход идёт по контуру всего мира 32 раза за тик, и у спящих он
+ * ничего не делает: длины заморожены. Связи ищутся по рёбрам частиц организма —
+ * локально, не по всему списку. Порядок остальных связей в списке меняется так же,
+ * как при разрыве; без сна список прежний.
+ */
+private fun BodyState.parkBoundaryLimits(o: Int, park: Boolean) {
+    val vs = baked.vertStart; val ve = baked.vertEdge
+    val limits = boundaryLinkLimits
+    for (i in sleep.first[o]..sleep.last[o]) {
+        if (organismOf[i] != o) continue
+        for (s in vs[i] until vs[i + 1]) {
+            var c = conOfEdge[ve[s]]
+            while (c >= 0) {
+                if (park) limits.remove(c) else if (!conDead[c] && conBoundary[c]) limits.add(c)
+                c = conNextForEdge[c]
+            }
+        }
+    }
 }
 
 /** Выключить сон (клавиша стенда): все просыпаются сразу. */

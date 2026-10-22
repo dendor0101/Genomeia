@@ -663,7 +663,7 @@ class BoundaryContacts(
      * конце тика (см. killEdgeNow). Смерть теперь работает так же: радиус обнуляется
      * здесь, список пар перестраивается следующим prepare, структура — в конце тика.
      */
-    fun dropFromContacts(i: Int) { contactRadius[i] = 0.0; radiusMinimum.update(i, 0.0) }
+    fun dropFromContacts(i: Int) { contactRadius[i] = 0.0; radiusMinimum.update(i, 0.0); staticValid = false }
 
     /** Нынешняя мягкость контакта — для стендов. См. optionContactOmegaPair. */
     val omegaPair: Double get() = optionContactOmegaPair
@@ -935,7 +935,7 @@ class BoundaryContacts(
         radiusMinimum.reset(contactRadius)
         bpMargin = Math.abs(optionBpMargin) * maxR
         cellSize = maxOf(2.0 * maxR + bpMargin, 1e-6)
-        bpValid = false
+        bpValid = false; staticValid = false
 
         // Как у нового объекта: списков этого подшага нет, счётчики разбора с нуля.
         cN = 0; pairN = 0; attractN = 0; pierceN = 0
@@ -982,7 +982,7 @@ class BoundaryContacts(
         // открытии более длинного ребра. Список кандидатов сразу недействителен.
         bpMargin = Math.abs(optionBpMargin) * maxRadius
         cellSize = maxOf(2.0 * maxRadius + bpMargin, 1e-6)
-        bpValid = false
+        bpValid = false; staticValid = false
         val rp = rest
         for (k in 0 until count) {
             val v = changed[k]
@@ -1128,24 +1128,73 @@ class BoundaryContacts(
     private var sweepX = IntArray(0)
     private var sweepY = IntArray(0)
 
+    /**
+     * Подвижные вершины контура на момент постройки списка: invMass > 0. Неподвижная
+     * (спящая, мёртвая) от места постройки уехать не может, проверять её незачем.
+     * Список строится заново вместе с кандидатами, а засыпание и пробуждение и так
+     * сбрасывают кандидатов (invalidateBroadphase).
+     */
+    private var movers = IntArray(0)
+    private var moverCount = 0
+
     /** Уехал ли кто-нибудь от места постройки дальше половины запаса. См. bpX. */
     private fun bpStale(px: DoubleArray, py: DoubleArray): Boolean {
         val lim = 0.5 * bpMargin
         val lim2 = lim * lim
-        for (vi in 0 until vertCount) { val v = verts[vi];
+        for (vi in 0 until moverCount) { val v = movers[vi];
             val dx = px[v] - bpX[v]; val dy = py[v] - bpY[v]
             if (dx * dx + dy * dy > lim2) return true
         }
         return false
     }
 
-    private fun broadphase(px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray) {
-        grid.begin(vertCount)
-        if (sweepStart.size < vertCount + 1) sweepStart = IntArray(maxOf(vertCount + 1, sweepStart.size * 2))
-        if (sweepX.size < vertCount * 2) { sweepX = IntArray(vertCount * 2); sweepY = IntArray(vertCount * 2) }
+    /**
+     * Список кандидатов устарел: кто-то уснул или проснулся. Пара двух неподвижных
+     * частиц в список не попадает (см. broadphase), поэтому после пробуждения пары
+     * проснувшегося со спящими соседями надо найти заново, иначе контакт пропустят.
+     */
+    fun invalidateBroadphase() { bpValid = false; staticValid = false }
+
+    /**
+     * Частица стала неподвижной (гибель): в неподвижную сетку её положит ближайшая
+     * перестройка кандидатов. Сами кандидаты не сбрасываются — момент перестройки
+     * влияет на поиск пробоя, и гибель не должна его сдвигать.
+     */
+    fun invalidateStatic() { staticValid = false }
+
+    /**
+     * НЕПОДВИЖНАЯ СЕТКА: вершины контура с invMass = 0 (спящие тела, мёртвые клетки).
+     * Сдвинуться они не могут, поэтому раскладываются по ячейкам один раз, а не при
+     * каждой перестройке кандидатов. Пока среди спящего рельефа движется хоть одно
+     * тело, кандидаты перестраиваются почти каждый подшаг, и раньше каждый раз
+     * раскладывалась вся граница мира: на 100k с двумя летящими телами это было
+     * 83% тика. Сбрасывается вместе с любым изменением массы или контура: сон,
+     * пробуждение, гибель клетки (refreshSurface → updateSurface), смена ячейки.
+     */
+    private val staticGrid = SweptContactGrid()
+    private var staticValid = false
+
+    private fun broadphase(px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray,
+                           invMass: DoubleArray) {
+        if (!staticValid) {
+            staticGrid.begin(vertCount)
+            for (a in 0 until vertCount) {
+                val v = verts[a]
+                if (invMass[v] > 0.0) continue
+                val c = dda(qx[v], qy[v], px[v], py[v])
+                for (k in 0 until c) staticGrid.insert(key(ddaX[k], ddaY[k]), v)
+            }
+            staticValid = true
+        }
+        if (movers.size < vertCount) movers = IntArray(vertCount)
+        moverCount = 0
+        for (a in 0 until vertCount) { val v = verts[a]; if (invMass[v] > 0.0) movers[moverCount++] = v }
+        grid.begin(moverCount)
+        if (sweepStart.size < moverCount + 1) sweepStart = IntArray(maxOf(moverCount + 1, sweepStart.size * 2))
+        if (sweepX.size < moverCount * 2) { sweepX = IntArray(maxOf(moverCount * 2, 16)); sweepY = IntArray(maxOf(moverCount * 2, 16)) }
         var sn = 0
-        for (a in 0 until vertCount) {
-            val v = verts[a]
+        for (a in 0 until moverCount) {
+            val v = movers[a]
             sweepStart[a] = sn
             val c = dda(qx[v], qy[v], px[v], py[v])
             if (sn + c > sweepX.size) {
@@ -1158,16 +1207,23 @@ class BoundaryContacts(
                 grid.insert(key(ddaX[k], ddaY[k]), v)
             }
         }
-        sweepStart[vertCount] = sn
+        sweepStart[moverCount] = sn
         pairN = 0
-        for (a in 0 until vertCount) {
-            val v = verts[a]
+        // ДВЕ НЕПОДВИЖНЫЕ ЧАСТИЦЫ — НЕ ПАРА: спящие тела рядом или мёртвые клетки.
+        // Поправку им нечем делить (вес ноль у обеих), убить нельзя (нужна сумма весов
+        // больше нуля), пробить нечем — они не движутся. Поэтому спрашивают только
+        // подвижные: друг друга (пара один раз, j > v) и неподвижную сетку (каждая
+        // пара находится только со стороны подвижной). Набор пар тот же, что при общем
+        // обходе, порядок задаёт sortPairs.
+        for (a in 0 until moverCount) {
+            val v = movers[a]
             stamp++
             mark[v] = stamp
             for (k in sweepStart[a] until sweepStart[a + 1]) {
                 val cx = sweepX[k]; val cy = sweepY[k]
                 for (ox in -1..1) for (oy in -1..1) {
-                    var e = grid.first(key(cx + ox, cy + oy))
+                    val cell = key(cx + ox, cy + oy)
+                    var e = grid.first(cell)
                     while (e >= 0) {
                         val j = grid.ids[e]
                         e = grid.next[e]
@@ -1175,6 +1231,15 @@ class BoundaryContacts(
                         mark[j] = stamp
                         if (j < v) continue           // пара берётся ровно один раз
                         if (bonded(v, j)) continue    // соседи по ткани не сталкиваются
+                        addPair(v, j)
+                    }
+                    e = staticGrid.first(cell)
+                    while (e >= 0) {
+                        val j = staticGrid.ids[e]
+                        e = staticGrid.next[e]
+                        if (mark[j] == stamp) continue
+                        mark[j] = stamp
+                        if (bonded(v, j)) continue
                         addPair(v, j)
                     }
                 }
@@ -1396,7 +1461,7 @@ class BoundaryContacts(
         if (optionXpbdWarmStart && !optionAblegacy) for (c in 0 until cN) if (cLamTot[c] > 0.0) lam[pairKey(cI[c], cJ[c])] = cLamTot[c]
         bpCalls++
         if (!bpValid || bpMargin <= 0.0 || optionBpMargin < 0.0 || bpStale(px, py)) {
-            broadphase(px, py, qx, qy)
+            broadphase(px, py, qx, qy, invMass)
             for (vi in 0 until vertCount) { val v = verts[vi]; bpX[v] = px[v]; bpY[v] = py[v] }
             bpValid = true
             bpBuilds++
