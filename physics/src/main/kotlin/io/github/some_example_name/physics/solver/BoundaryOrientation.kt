@@ -22,13 +22,39 @@ fun solveBoundaryOrientation(
     count: Int, a: IntArray, b: IntArray, opposite: IntArray, orientation: ByteArray,
     px: DoubleArray, py: DoubleArray, invMass: DoubleArray,
 ) {
-    for (k in 0 until count) {
-        val c = opposite[k]
-        if (c < 0) continue
-        val i = a[k]; val j = b[k]
-        val area = (px[j] - px[i]) * (py[c] - py[i]) - (py[j] - py[i]) * (px[c] - px[i])
-        if (area * orientation[k] >= 0.0) continue
-        projectBoundaryOrientation(i, j, c, area, px, py, invMass)
+    for (k in 0 until count) orientEdge(k, a, b, opposite, orientation, px, py, invMass)
+}
+
+private fun orientEdge(
+    k: Int, a: IntArray, b: IntArray, opposite: IntArray, orientation: ByteArray,
+    px: DoubleArray, py: DoubleArray, invMass: DoubleArray,
+) {
+    val c = opposite[k]
+    if (c < 0) return
+    val i = a[k]; val j = b[k]
+    val area = (px[j] - px[i]) * (py[c] - py[i]) - (py[j] - py[i]) * (px[c] - px[i])
+    if (area * orientation[k] >= 0.0) return
+    projectBoundaryOrientation(i, j, c, area, px, py, invMass)
+}
+
+/**
+ * То же со спящими: только рёбра блоков с бодрствующими частицами и шва. Спящий контур
+ * заморожен, а проход по всему контуру мира 32 раза за тик был последней крупной
+ * статьёй спящей сцены (1.3 из 1.9 мс на 100k). Порядок внутри блока — порядок
+ * добавления, поэтому без сна идёт прежний сплошной список. См. BodySleep.
+ */
+internal fun BodyState.solveBoundaryOrientationAwake() {
+    val layout = constraintBlocks ?: return solveBoundaryOrientation(boundCount, boundA, boundB,
+        boundOpp, localBoundary.orientation, px, py, invMass)
+    val index = layout.edges
+    val orientation = localBoundary.orientation
+    for (block in 0..layout.seam) {
+        if (block != layout.seam && layout.awake[block] == 0) continue
+        var k = index.head[block]
+        while (k >= 0) {
+            orientEdge(k, boundA, boundB, boundOpp, orientation, px, py, invMass)
+            k = index.next[k]
+        }
     }
 }
 

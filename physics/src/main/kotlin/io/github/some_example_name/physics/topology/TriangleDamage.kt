@@ -17,20 +17,39 @@ internal fun BodyState.removePersistentInversions() {
         ages.fill(0)
         return
     }
-    val alive = baked.triAlive
-    for (t in 0 until triCount) {
-        val id = triId[t]
-        if (!alive[id]) continue
-        val a = triA[t]; val b = triB[t]; val c = triC[t]
-        val area2 = (px[b] - px[a]) * (py[c] - py[a]) -
-            (py[b] - py[a]) * (px[c] - px[a])
-        if (area2 < 0.0) {
-            val age = ages[id].toInt() + 1
-            if (age > INVERTED_TRIANGLE_HOLD_TICKS) killTriangleNow(id)
-            else ages[id] = age.toByte()
-        } else {
-            ages[id] = 0
+    // Пока никто не спит — прежний сплошной проход в порядке треугольников. Со спящими —
+    // только блоки с бодрствующими частицами и шов: у спящего площади заморожены, а
+    // засыпает тело без вывернутых треугольников (10 тиков инверсии рвут раньше, чем
+    // 60 тиков покоя усыпят). Порядок гибели треугольников тогда другой, но он
+    // детерминирован. См. BodySleep.
+    val layout = constraintBlocks
+    if (sleep.asleepCount == 0 || layout == null) {
+        for (t in 0 until triCount) checkInversion(t)
+        return
+    }
+    val areas = layout.areas
+    for (block in 0..layout.seam) {
+        if (block != layout.seam && layout.awake[block] == 0) continue
+        for (slot in areas.start[block] until areas.start[block] + areas.count[block]) {
+            val t = areas.items[slot]
+            if (t >= 0) checkInversion(t)
         }
+    }
+}
+
+private fun BodyState.checkInversion(t: Int) {
+    val ages = baked.invertedTicks
+    val id = triId[t]
+    if (!baked.triAlive[id]) return
+    val a = triA[t]; val b = triB[t]; val c = triC[t]
+    val area2 = (px[b] - px[a]) * (py[c] - py[a]) -
+        (py[b] - py[a]) * (px[c] - px[a])
+    if (area2 < 0.0) {
+        val age = ages[id].toInt() + 1
+        if (age > INVERTED_TRIANGLE_HOLD_TICKS) killTriangleNow(id)
+        else ages[id] = age.toByte()
+    } else {
+        ages[id] = 0
     }
 }
 

@@ -76,7 +76,8 @@ internal class BoundaryLinkLimits {
 internal fun BodyState.rebuildBoundaryLinkLimits() {
     boundaryLinkLimits.reset(conA.size)
     for (c in 0 until conCount)
-        if (!conDead[c] && conBoundary[c]) boundaryLinkLimits.add(c)
+        // Связи спящих в общем проходе не нужны: см. parkBoundaryLimits в BodySleep.
+        if (!conDead[c] && conBoundary[c] && !sleep.isAsleep(organismOf[conA[c]])) boundaryLinkLimits.add(c)
 }
 
 /** Вызывается на затронутых рёбрах сразу после изменения triUse, без обхода тела. */
@@ -85,7 +86,9 @@ internal fun BodyState.updateBoundaryLinkLimit(e: Int) {
     var c = conOfEdge[e]
     while (c >= 0) {
         conBoundary[c] = boundary
-        if (boundary && !conDead[c]) boundaryLinkLimits.add(c) else boundaryLinkLimits.remove(c)
+        // Связь спящего в общий проход не возвращается: см. parkBoundaryLimits в BodySleep.
+        if (boundary && !conDead[c] && !sleep.isAsleep(organismOf[conA[c]])) boundaryLinkLimits.add(c)
+        else boundaryLinkLimits.remove(c)
         constraintBlocks?.let { blocks ->
             if (conDead[c]) blocks.links.remove(c)
             if (boundary && !conDead[c]) blocks.addLimit(c, conA[c], conB[c]) else blocks.limits.remove(c)

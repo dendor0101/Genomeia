@@ -120,7 +120,11 @@ fun main(args: Array<String>) {
             }
             first.load(copies); second.load(copies)
             check(old.hash() == fresh.hash()) { "Разное исходное состояние" }
-            check(old.hidden() == fresh.hidden()) { "Разное исходное скрытое состояние" }
+            run {
+                // Имена разошедшихся полей сразу: новое поле у одной из версий тоже даёт расхождение.
+                val o = old.hidden(); val f = fresh.hidden()
+                check(o == f) { "Разное исходное скрытое состояние: " + (o.keys + f.keys).filter { o[it] != f[it] } }
+            }
             repeat(warm + ticks) { tick ->
                 if (tick % 2 == 0) { first.step(tick); second.step(tick) }
                 else { second.step(tick); first.step(tick) }

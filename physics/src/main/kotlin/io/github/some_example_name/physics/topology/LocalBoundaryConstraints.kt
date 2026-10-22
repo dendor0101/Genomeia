@@ -66,6 +66,9 @@ class LocalBoundaryConstraints(
     private val edgeAt = IntArray(topology.edgeCount)
     private val slotOf = IntArray(topology.edgeCount) { -1 }
     var count = 0; private set
+    /** Те же рёбра по блокам решателя — для ориентации со спящими. См. solveBoundaryOrientationAwake. */
+    internal var blockLayout: ConstraintBlocks? = null
+    internal var blockIndex: BlockIndex? = null
     val bend = VertexPairs(body.count)
     val flap = VertexPairs(body.count)
     private val neighbors = IntArray(body.count)
@@ -74,7 +77,9 @@ class LocalBoundaryConstraints(
         val slot = slotOf[e]
         if (topology.edgeDead[e] || topology.triUse[e] > 1) {
             if (slot < 0) return
+            blockIndex?.remove(slot)
             val last = --count
+            blockIndex?.move(last, slot)
             a[slot] = a[last]; b[slot] = b[last]; opposite[slot] = opposite[last]
             orientation[slot] = orientation[last]
             edgeAt[slot] = edgeAt[last]; slotOf[edgeAt[slot]] = slot
@@ -89,7 +94,14 @@ class LocalBoundaryConstraints(
                     (body.y[j] - body.y[i]).toDouble() * (body.x[c] - body.x[i])
                 if (area > 0.0) 1 else if (area < 0.0) -1 else 0
             }
+            val layout = blockLayout
+            if (layout != null) { blockIndex!!.remove(dst); blockIndex!!.add(dst, blockOfSlot(dst, layout)) }
         }
+    }
+
+    internal fun blockOfSlot(k: Int, layout: ConstraintBlocks): Int {
+        val c = opposite[k]
+        return if (c < 0) layout.blockOf(a[k], b[k]) else layout.blockOf(a[k], b[k], c)
     }
 
     fun updateVertex(v: Int) {

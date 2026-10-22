@@ -21,7 +21,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     observer?.beginTick()
     // Мышь и мышцы будят свои организмы до учёта импульса: обратная масса одна на тик.
     wakeByInput()
-    if (cancelSpinOn) { tick0(); tickMomentum.begin(px, py, vx, vy, invMass, organismOf); tick1(16) }
+    if (cancelSpinOn) { tick0(); prepareAwakeSpans(); tickMomentum.begin(px, py, vx, vy, invMass, organismOf, sleep); tick1(16) }
     for (step in 0 until SUBSTEPS) {
         // Длина покоя мышцы доезжает до своего значения за тик, а не прыгает в первом
         // же подшаге — см. muscleScaleOf.
@@ -88,7 +88,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
             tick0()
             finalContacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = false)
             tick1(6); tick0()
-            if (cancelSpinOn) tickMomentum.noteContacts(finalContacts)
+            if (cancelSpinOn) tickMomentum.noteContacts(finalContacts, invMass)
             noteSleepContacts(finalContacts)
             finalContacts.updateBones(px, py, invMass, if (bonesRigid) boneOf else null, rigidBones)
             tick1(13); tick0()
@@ -99,8 +99,9 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
             if (finalContacts.pierceN > 0) applyPierce(finalContacts)
             refreshSurface()
             tick0()
-            solveBoundaryOrientation(boundCount, boundA, boundB, boundOpp,
+            if (sleep.asleepCount == 0) solveBoundaryOrientation(boundCount, boundA, boundB, boundOpp,
                 localBoundary.orientation, px, py, invMass)
+            else solveBoundaryOrientationAwake()
             tick1(14)
         }
 
@@ -109,7 +110,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         tick1(17); tick0()
         // Отскок: позиционная часть удар гасит целиком, см. solveRestitution.
         dbgMarkV()
-        if (cancelSpinOn) tickMomentum.beforeExternal(vx, vy)
+        if (cancelSpinOn) { prepareAwakeSpans(); tickMomentum.beforeExternal(vx, vy, sleep) }
         val cr = contacts
         if (cr != null && contactsOn && !contactsStale) cr.solveRestitution(px, py, vx, vy, invMass)
         dbgMeasureV(7); dbgMarkV()
@@ -124,9 +125,10 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         dbgMeasureV(11); tick1(9)
         if (cancelSpinOn) {
             tick0()
-            tickMomentum.afterExternal(px, py, vx, vy, invMass, inContact)
+            prepareAwakeSpans()
+            tickMomentum.afterExternal(px, py, vx, vy, invMass, inContact, sleep)
             if (step == SUBSTEPS - 1) {
-                tickMomentum.cancel(px, py, vx, vy, invMass)
+                tickMomentum.cancel(px, py, vx, vy, invMass, sleep)
                 // Коррекция тоже меняет скорости: потолок должен оставаться последним.
                 clampSpeed()
             }
@@ -138,14 +140,13 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     // Пластика — РАЗ В ТИК, после всех подшагов: течение медленное, внутри тика
     // ему делать нечего, а цена умножилась бы на число подшагов.
     refreshSurface()
-    applyPlasticity(DT)
-    burstByPressure()
-    removePersistentInversions()
+    tick0(); applyPlasticity(DT); tick1(18)
+    tick0(); burstByPressure(); removePersistentInversions(); tick1(19)
     // Один проход упаковки за тик. Контактная топология уже актуальна;
     // упаковка нужна плотным рабочим массивам и чтению состояния стенда.
     if (tearsPending) { tick0(); rebuildTimed(); tick1(11) }
     // Засыпание — в самом конце тика, когда все скорости и вся топология этого тика готовы.
-    updateSleep()
+    tick0(); updateSleep(); tick1(20)
     if (watchCell >= 0) watchReport()
 
 }
