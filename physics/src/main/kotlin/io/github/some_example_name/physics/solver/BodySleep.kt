@@ -8,8 +8,8 @@ package io.github.some_example_name.physics
  * а не частица и не блок: половина тела спать не может, иначе связи между спящей и
  * бодрствующей половиной тянули бы только одну сторону.
  *
- * ЗАСЫПАЕТ организм, у которого SLEEP_TICKS тиков подряд самая быстрая живая клетка
- * медленнее SLEEP_SPEED_CELLS_PER_TICK, мышцы не работают и его не держит мышь.
+ * ЗАСЫПАЕТ организм, у которого SLEEP_TICKS тиков подряд ни одна живая клетка не ушла
+ * от места начала серии дальше SLEEP_DRIFT_CELLS, мышцы не работают и его не держит мышь.
  * Касания засыпать НЕ мешают: куски рельефа лежат вплотную всегда, и запрет на
  * касание не дал бы им уснуть никогда. Покой и так проверяет скорость — тело, которое
  * толкают, не медленное.
@@ -24,8 +24,8 @@ package io.github.some_example_name.physics
  * целиком (ConstraintBlocks.awake): это и есть основная экономия.
  *
  * БУДИТ:
- *  - касание клетки другого тела быстрее WAKE_SPEED_CELLS_PER_TICK (см. там, почему
- *    не любое касание);
+ *  - касание клетки другого тела, ушедшей с начала тика дальше WAKE_DRIFT_CELLS (см.
+ *    там, почему не любое касание);
  *  - мышь, схватившая клетку организма;
  *  - мышца организма, которой дали команду;
  *  - разрыв связи или гибель клетки организма (контакт может убить клетку спящего).
@@ -37,9 +37,14 @@ package io.github.some_example_name.physics
  * в начале подшага по очереди запросов. Всё, что влияет на будущие тики (флаг сна,
  * счётчик покоя), лежит здесь и попадает в проверку скрытого состояния стенда.
  *
- * ЦЕНА: проверка покоя — один проход по частицам бодрствующих организмов за тик
- * (vx, vy, organismOf: 20 байт на частицу). Засыпание и пробуждение проходят
- * диапазон индексов своего организма, а не весь мир.
+ * ПОКОЙ МЕРИТСЯ МЕСТОМ, А НЕ СКОРОСТЬЮ: лёгкие клетки дрожат с частотой подшагов, и
+ * мгновенная скорость неподвижного тела держится выше порога вечно (запись 22.10:
+ * 280 клеток из 925); бывают и колебания с периодом в несколько тиков. См.
+ * SLEEP_DRIFT_CELLS и TickMotion.
+ *
+ * ЦЕНА: удаление от места начала серии считается попутно в removeTickJitter,
+ * отдельного прохода нет; место серии — 16 байт на частицу. Засыпание и пробуждение проходят диапазон индексов своего
+ * организма, а не весь мир.
  */
 class BodySleep(var on: Boolean) {
     /** Организм спит. Ёмкость — по числу клеток, как у organismSize. */
@@ -206,42 +211,40 @@ internal fun BodyState.applyWakeRequests() {
 }
 
 /**
- * Касание бодрствующей клетки, движущейся быстрее порога, будит спящего соседа.
- * Зовётся после каждой подготовки контактов; пока никто не спит — одна проверка.
+ * Касание бодрствующей клетки, ушедшей с начала тика дальше порога, будит спящего
+ * соседа. Зовётся после каждой подготовки контактов, до removeTickJitter: в
+ * tickJitter ещё лежат положения начала тика. Пока никто не спит — одна проверка.
  */
 internal fun BodyState.noteSleepContacts(ct: BoundaryContacts) {
     val s = sleep
-    if (s.asleepCount == 0) return
-    val wake = WAKE_SPEED_CELLS_PER_TICK * body.meanLinkLength / DT
+    if (s.asleepCount == 0 || tickJitterX.size != n) return
+    val wake = WAKE_DRIFT_CELLS * body.meanLinkLength
     val wake2 = wake * wake
     for (k in 0 until ct.contactCount) {
         val i = ct.contactI(k); val j = ct.contactJ(k)
         val si = s.asleep[organismOf[i]]; val sj = s.asleep[organismOf[j]]
         if (si == sj) continue
         val mover = if (si) j else i
-        val v2 = vx[mover] * vx[mover] + vy[mover] * vy[mover]
-        if (v2 > wake2) s.requestWake(if (si) i else j)
+        val dx = px[mover] - tickJitterX[mover]; val dy = py[mover] - tickJitterY[mover]
+        if (dx * dx + dy * dy > wake2) s.requestWake(if (si) i else j)
     }
 }
 
 /**
- * Конец тика: счёт покоя и засыпание. Проходит только бодрствующие организмы и
- * только их диапазоны индексов.
+ * Конец тика: счёт покоя и засыпание. Только бодрствующие организмы, по их
+ * наибольшей средней скорости за тик.
  */
 internal fun BodyState.updateSleep() {
     val s = sleep
     if (!s.on) return
-    val calm = SLEEP_SPEED_CELLS_PER_TICK * body.meanLinkLength / DT
-    val calm2 = calm * calm
+    val drift = SLEEP_DRIFT_CELLS * body.meanLinkLength
+    val drift2 = drift * drift
     for (o in 0 until organismCount) {
         if (s.asleep[o]) continue
         if (s.takeBusy(o) || organismSize[o] == 0) { s.resetCalm(o); continue }
-        var still = true
-        for (i in s.first[o]..s.last[o]) {
-            if (organismOf[i] != o || cellDead[i]) continue
-            if (vx[i] * vx[i] + vy[i] * vy[i] > calm2) { still = false; break }
-        }
-        if (!still) { s.resetCalm(o); continue }
+        // Ушла ли клетка от места начала серии дальше порога. На первом тике серии
+        // место только поставлено (removeTickJitter), мерить нечего.
+        if (s.calmTicks[o] > 0 && (orgSleepDrift2.size <= o || orgSleepDrift2[o] > drift2)) { s.resetCalm(o); continue }
         if (s.countCalm(o) >= SLEEP_TICKS) sleepOrganism(o)
     }
 }
@@ -273,6 +276,8 @@ private fun BodyState.wakeOrganism(o: Int) {
     for (i in sleep.first[o]..sleep.last[o]) {
         if (organismOf[i] != o) continue
         invMass[i] = if (cellDead[i]) 0.0 else restInvMass[i]
+        // Средняя скорость за остаток тика — от места пробуждения. См. TickMotion.
+        if (tickJitterX.size == n) { tickJitterX[i] = px[i]; tickJitterY[i] = py[i] }
         if (cancelSpinOn) tickMomentum.admitFrozen(i)
         if (awake != null) awake[block!![i]]++
     }

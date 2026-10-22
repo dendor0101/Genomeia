@@ -119,7 +119,6 @@ class BoundaryContacts(
     // подшагами не нужно вовсе. Клетки ячейки лежат односвязным списком в общих массивах,
     // и новая цепляется В ХВОСТ — порядок обхода ячейки прежний, а от него зависит порядок
     // пар и, через него, результат.
-    private val grid = SweptContactGrid()
     // --- пары-кандидаты ---
     private var pairA = IntArray(4096)
     private var pairB = IntArray(4096)
@@ -139,11 +138,12 @@ class BoundaryContacts(
      * РЯДОМ, хотя за подшаг никто далеко не уезжает.
      *
      * Теперь ячейка сетки берётся с запасом (`optionBpMargin` от наибольшего радиуса), а
-     * список строится заново, только когда хоть одна вершина отъехала от места постройки
-     * дальше половины запаса. Пока это не случилось, список заведомо полон: две вершины
-     * могут коснуться, только если между ними меньше суммы радиусов, а на момент
-     * постройки между ними было меньше стороны ячейки — значит пара в переборе 3x3 была.
-     * Быстрое движение сразу возвращает прежнее поведение: перестройка каждый подшаг.
+     * вершина перекладывается, только когда отъехала от своей привязки (bpX, bpY)
+     * дальше половины запаса. Пока это не случилось ни с одной, список заведомо полон:
+     * две вершины могут коснуться, только если между ними меньше суммы радиусов, а их
+     * привязки тогда ближе стороны ячейки — значит пара в переборе 3x3 есть.
+     * До 22.10 запас был общим: одна уехавшая вершина перестраивала весь мир. См.
+     * AnchoredContactGrid.
      */
     private var bpX = DoubleArray(n)
     private var bpY = DoubleArray(n)
@@ -1115,140 +1115,193 @@ class BoundaryContacts(
         pairA[pairN] = i; pairB[pairN] = j; pairN++
     }
 
-    /** Широкая фаза по свип-путям. prevX/prevY — позиция на начало подшага. */
     /**
-     * Ячейки свип-пути каждой вершины — считаются ОДИН раз за подшаг.
-     *
-     * Растеризация шла дважды: сперва чтобы разложить вершины по сетке, потом чтобы
-     * их же опросить. Путь между этими двумя проходами не меняется, так что второй
-     * раз считался ровно тот же список. Пары и их порядок от этого не зависят —
-     * проверено побитовыми суммами по журналам.
-     */
-    private var sweepStart = IntArray(0)
-    private var sweepX = IntArray(0)
-    private var sweepY = IntArray(0)
-
-    /**
-     * Подвижные вершины контура на момент постройки списка: invMass > 0. Неподвижная
-     * (спящая, мёртвая) от места постройки уехать не может, проверять её незачем.
-     * Список строится заново вместе с кандидатами, а засыпание и пробуждение и так
-     * сбрасывают кандидатов (invalidateBroadphase).
+     * Подвижные вершины контура на момент полной перестройки: invMass > 0. Неподвижная
+     * (спящая, мёртвая) от привязки уехать не может, проверять её незачем. Список
+     * строится заново при полной перестройке, а засыпание, пробуждение и гибель её и
+     * вызывают (invalidateBroadphase, invalidateStatic).
      */
     private var movers = IntArray(0)
     private var moverCount = 0
 
-    /** Уехал ли кто-нибудь от места постройки дальше половины запаса. См. bpX. */
-    private fun bpStale(px: DoubleArray, py: DoubleArray): Boolean {
-        val lim = 0.5 * bpMargin
-        val lim2 = lim * lim
-        for (vi in 0 until moverCount) { val v = movers[vi];
-            val dx = px[v] - bpX[v]; val dy = py[v] - bpY[v]
-            if (dx * dx + dy * dy > lim2) return true
-        }
-        return false
-    }
+    /** Вершины, которые перекладываются в этом подшаге, и пометка «перекладывается». */
+    private var moved = IntArray(0)
+    private var movedCount = 0
+    private val movedMark = IntArray(n)
+    private var movedStamp = 0
+
+    /** Подвижные вершины по своим привязкам: см. AnchoredContactGrid. */
+    private val anchored = AnchoredContactGrid(n)
+
+    /** Разбор: сколько вершин переложено за прогон (без полных перестроек). */
+    var bpMoved = 0L
+
+    /**
+     * Новые пары подшага и уцелевшие старые: ключ (меньший номер, больший номер).
+     * Новые разделены: у пар из newKeys перекладываемая вершина меньшая, они идут по
+     * возрастанию вершин сами и сортируются только внутри вершины; остальные (lowKeys)
+     * сортируются целиком. Полная сортировка всех новых стоила 10 мс за тик на 100k.
+     */
+    private var newKeys = LongArray(256)
+    private var lowKeys = LongArray(256)
+    private var keptKeys = LongArray(256)
 
     /**
      * Список кандидатов устарел: кто-то уснул или проснулся. Пара двух неподвижных
-     * частиц в список не попадает (см. broadphase), поэтому после пробуждения пары
+     * частиц в список не попадает (см. updateCandidates), поэтому после пробуждения пары
      * проснувшегося со спящими соседями надо найти заново, иначе контакт пропустят.
      */
     fun invalidateBroadphase() { bpValid = false; staticValid = false }
 
     /**
-     * Частица стала неподвижной (гибель): в неподвижную сетку её положит ближайшая
-     * перестройка кандидатов. Сами кандидаты не сбрасываются — момент перестройки
-     * влияет на поиск пробоя, и гибель не должна его сдвигать.
+     * Частица стала неподвижной (гибель): ей место в неподвижной сетке, а её пары
+     * с другими неподвижными больше не нужны. Делается полной перестройкой в
+     * ближайшем подшаге — гибель редка.
      */
     fun invalidateStatic() { staticValid = false }
 
     /**
      * НЕПОДВИЖНАЯ СЕТКА: вершины контура с invMass = 0 (спящие тела, мёртвые клетки).
      * Сдвинуться они не могут, поэтому раскладываются по ячейкам один раз, а не при
-     * каждой перестройке кандидатов. Пока среди спящего рельефа движется хоть одно
-     * тело, кандидаты перестраиваются почти каждый подшаг, и раньше каждый раз
-     * раскладывалась вся граница мира: на 100k с двумя летящими телами это было
-     * 83% тика. Сбрасывается вместе с любым изменением массы или контура: сон,
-     * пробуждение, гибель клетки (refreshSurface → updateSurface), смена ячейки.
+     * каждой перестройке кандидатов. Сбрасывается вместе с любым изменением массы или
+     * контура: сон, пробуждение, гибель клетки (refreshSurface → updateSurface), смена
+     * ячейки.
      */
     private val staticGrid = SweptContactGrid()
     private var staticValid = false
+    /** Сколько вершин в неподвижной сетке. Ноль — её не спрашивают. */
+    private var staticCount = 0
 
-    private fun broadphase(px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray,
-                           invMass: DoubleArray) {
-        if (!staticValid) {
-            staticGrid.begin(vertCount)
-            for (a in 0 until vertCount) {
-                val v = verts[a]
-                if (invMass[v] > 0.0) continue
-                val c = dda(qx[v], qy[v], px[v], py[v])
-                for (k in 0 until c) staticGrid.insert(key(ddaX[k], ddaY[k]), v)
+    /**
+     * КАНДИДАТЫ ПОДШАГА: переложить уехавшие вершины и найти их пары.
+     *
+     * Полная перестройка (загрузка, сон, пробуждение, гибель, смена контура или
+     * ячейки) перекладывает все подвижные вершины — это ровно
+     * прежняя широкая фаза: тот же след, тот же перебор 3x3, тот же набор пар. Иначе
+     * перекладываются только вершины, уехавшие от своей привязки дальше половины
+     * запаса: их старые пары выбрасываются, новые ищутся заново, остальные остаются.
+     *
+     * ДВЕ НЕПОДВИЖНЫЕ ЧАСТИЦЫ — НЕ ПАРА: поправку им нечем делить (вес ноль у обеих),
+     * убить нельзя (нужна сумма весов больше нуля), пробить нечем — они не движутся.
+     * Поэтому спрашивают только перекладываемые: подвижную сетку и неподвижную.
+     */
+    private fun updateCandidates(px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray,
+                                 invMass: DoubleArray) {
+        val full = !bpValid || !staticValid || bpMargin <= 0.0 || optionBpMargin < 0.0
+        if (moved.size < vertCount) moved = IntArray(vertCount)
+        movedCount = 0
+        if (full) {
+            if (!staticValid) rebuildStaticGrid(px, py, qx, qy, invMass)
+            if (movers.size < vertCount) movers = IntArray(vertCount)
+            moverCount = 0
+            for (a in 0 until vertCount) { val v = verts[a]; if (invMass[v] > 0.0) movers[moverCount++] = v }
+            anchored.clear()
+            System.arraycopy(movers, 0, moved, 0, moverCount)
+            movedCount = moverCount
+            bpValid = true
+        } else {
+            val lim = 0.5 * bpMargin
+            val lim2 = lim * lim
+            for (a in 0 until moverCount) {
+                val v = movers[a]
+                val dx = px[v] - bpX[v]; val dy = py[v] - bpY[v]
+                if (dx * dx + dy * dy > lim2) moved[movedCount++] = v
             }
-            staticValid = true
+            if (movedCount == 0) return
+            bpMoved += movedCount
         }
-        if (movers.size < vertCount) movers = IntArray(vertCount)
-        moverCount = 0
-        for (a in 0 until vertCount) { val v = verts[a]; if (invMass[v] > 0.0) movers[moverCount++] = v }
-        grid.begin(moverCount)
-        if (sweepStart.size < moverCount + 1) sweepStart = IntArray(maxOf(moverCount + 1, sweepStart.size * 2))
-        if (sweepX.size < moverCount * 2) { sweepX = IntArray(maxOf(moverCount * 2, 16)); sweepY = IntArray(maxOf(moverCount * 2, 16)) }
-        var sn = 0
-        for (a in 0 until moverCount) {
-            val v = movers[a]
-            sweepStart[a] = sn
+        bpBuilds++
+        movedStamp++
+        for (a in 0 until movedCount) {
+            val v = moved[a]
+            movedMark[v] = movedStamp
+            anchored.remove(v)
             val c = dda(qx[v], qy[v], px[v], py[v])
-            if (sn + c > sweepX.size) {
-                var cap = sweepX.size * 2
-                while (cap < sn + c) cap *= 2
-                sweepX = sweepX.copyOf(cap); sweepY = sweepY.copyOf(cap)
-            }
-            for (k in 0 until c) {
-                sweepX[sn] = ddaX[k]; sweepY[sn] = ddaY[k]; sn++
-                grid.insert(key(ddaX[k], ddaY[k]), v)
+            for (k in 0 until c) anchored.insert(v, key(ddaX[k], ddaY[k]))
+            bpX[v] = px[v]; bpY[v] = py[v]
+        }
+        // Уцелевшие пары: ни одна из вершин не перекладывается. Они уже в каноническом
+        // порядке и остаются в нём.
+        var kept = 0
+        if (!full) {
+            if (keptKeys.size < pairN) keptKeys = LongArray(pairN * 2)
+            for (p in 0 until pairN) {
+                val i = pairA[p]; val j = pairB[p]
+                if (movedMark[i] == movedStamp || movedMark[j] == movedStamp) continue
+                keptKeys[kept++] = (i.toLong() shl 32) or j.toLong()
             }
         }
-        sweepStart[moverCount] = sn
-        pairN = 0
-        // ДВЕ НЕПОДВИЖНЫЕ ЧАСТИЦЫ — НЕ ПАРА: спящие тела рядом или мёртвые клетки.
-        // Поправку им нечем делить (вес ноль у обеих), убить нельзя (нужна сумма весов
-        // больше нуля), пробить нечем — они не движутся. Поэтому спрашивают только
-        // подвижные: друг друга (пара один раз, j > v) и неподвижную сетку (каждая
-        // пара находится только со стороны подвижной). Набор пар тот же, что при общем
-        // обходе, порядок задаёт sortPairs.
-        for (a in 0 until moverCount) {
-            val v = movers[a]
+        var fresh = 0
+        var low = 0
+        for (a in 0 until movedCount) {
+            val v = moved[a]
             stamp++
             mark[v] = stamp
-            for (k in sweepStart[a] until sweepStart[a + 1]) {
-                val cx = sweepX[k]; val cy = sweepY[k]
+            val segment = fresh
+            val c = dda(qx[v], qy[v], px[v], py[v])
+            for (k in 0 until c) {
+                val cx = ddaX[k]; val cy = ddaY[k]
                 for (ox in -1..1) for (oy in -1..1) {
                     val cell = key(cx + ox, cy + oy)
-                    var e = grid.first(cell)
+                    var e = anchored.first(cell)
                     while (e >= 0) {
-                        val j = grid.ids[e]
-                        e = grid.next[e]
+                        val j = anchored.ids[e]
+                        e = anchored.next[e]
                         if (mark[j] == stamp) continue
                         mark[j] = stamp
-                        if (j < v) continue           // пара берётся ровно один раз
+                        // Пара двух перекладываемых берётся один раз — со стороны меньшего.
+                        if (movedMark[j] == movedStamp && j < v) continue
                         if (bonded(v, j)) continue    // соседи по ткани не сталкиваются
-                        addPair(v, j)
+                        if (j > v) fresh = addKey(fresh, v, j) else low = addLow(low, j, v)
                     }
-                    e = staticGrid.first(cell)
+                    e = if (staticCount > 0) staticGrid.first(cell) else -1
                     while (e >= 0) {
                         val j = staticGrid.ids[e]
                         e = staticGrid.next[e]
                         if (mark[j] == stamp) continue
                         mark[j] = stamp
                         if (bonded(v, j)) continue
-                        addPair(v, j)
+                        if (j > v) fresh = addKey(fresh, v, j) else low = addLow(low, j, v)
                     }
                 }
             }
+            // Пары этой вершины с большими номерами — по возрастанию партнёра. Их единицы.
+            for (x in segment + 1 until fresh) {
+                val k = newKeys[x]; var y = x - 1
+                while (y >= segment && newKeys[y] > k) { newKeys[y + 1] = newKeys[y]; y-- }
+                newKeys[y + 1] = k
+            }
         }
-        sortPairs()
+        mergePairs(kept, fresh, low)
         // Ищем только для реально сблизившихся пар. Предварительный поиск для
         // всех кандидатов тратил больше, чем экономил, на короткой записи с ударами.
         java.util.Arrays.fill(pairRestSlot, 0, pairN, -2)
+    }
+
+    private fun rebuildStaticGrid(px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray,
+                                  invMass: DoubleArray) {
+        staticCount = 0
+        for (a in 0 until vertCount) if (invMass[verts[a]] <= 0.0) staticCount++
+        staticGrid.begin(staticCount)
+        for (a in 0 until vertCount) {
+            val v = verts[a]
+            if (invMass[v] > 0.0) continue
+            val c = dda(qx[v], qy[v], px[v], py[v])
+            for (k in 0 until c) staticGrid.insert(key(ddaX[k], ddaY[k]), v)
+        }
+        staticValid = true
+    }
+
+    private fun addKey(count: Int, lo: Int, hi: Int): Int {
+        if (count == newKeys.size) newKeys = newKeys.copyOf(count * 2)
+        newKeys[count] = (lo.toLong() shl 32) or hi.toLong()
+        return count + 1
+    }
+
+    private fun addLow(count: Int, lo: Int, hi: Int): Int {
+        if (count == lowKeys.size) lowKeys = lowKeys.copyOf(count * 2)
+        lowKeys[count] = (lo.toLong() shl 32) or hi.toLong()
+        return count + 1
     }
 
     /**
@@ -1258,31 +1311,35 @@ class BoundaryContacts(
      * А складывался он из порядка обхода ячеек, и стоило поменять их СТОРОНУ, как
      * менялся и он: стенд ловил это сразу — в сцене «бассейн одиночных» дребезг за
      * шесть спокойных секунд прыгал с 4.2 до 1045.6, хотя ни одна пара не терялась
-     * (проверено полным перебором, см. CT_BPCHECK). Запас у ячейки нужен, чтобы список
-     * жил дольше подшага, поэтому порядок задаётся отдельно и явно: по меньшему номеру
-     * клетки, потом по большему. Пар десятки, сортировка идёт только при перестройке.
+     * (проверено полным перебором, см. CT_BPCHECK). Порядок задаётся явно: по меньшему
+     * номеру клетки, потом по большему. Уцелевшие пары уже в нём, сортируются только
+     * новые, дальше слияние за один проход.
      */
-    private var pairKeys = LongArray(256)
+    private fun mergePairs(kept: Int, fresh: Int, low: Int) {
+        java.util.Arrays.sort(lowKeys, 0, low)
+        val total = kept + fresh + low
+        if (pairA.size < total) {
+            var cap = pairA.size * 2
+            while (cap < total) cap *= 2
+            pairA = pairA.copyOf(cap); pairB = pairB.copyOf(cap); pairRestSlot = pairRestSlot.copyOf(cap)
+        }
+        var i = 0; var j = 0; var l = 0; var out = 0
+        while (out < total) {
+            // Наименьший из трёх голов; ключи различны (одна пара — один источник).
+            var k = Long.MAX_VALUE; var from = 0
+            if (i < kept) { k = keptKeys[i]; from = 1 }
+            if (j < fresh && newKeys[j] < k) { k = newKeys[j]; from = 2 }
+            if (l < low && lowKeys[l] < k) { k = lowKeys[l]; from = 3 }
+            when (from) { 1 -> i++; 2 -> j++; else -> l++ }
+            pairA[out] = (k ushr 32).toInt()
+            pairB[out] = (k and 0xFFFFFFFFL).toInt()
+            out++
+        }
+        pairN = out
+    }
 
     /** Текущее направление обхода контактов. См. optionCtSweepFlip. */
     private var ctBackwards = false
-
-    private fun sortPairs() {
-        if (pairN < 2) return
-        if (pairKeys.size < pairN) pairKeys = LongArray(pairN * 2)
-        for (p in 0 until pairN) {
-            val i = pairA[p]; val j = pairB[p]
-            val lo = if (i < j) i else j
-            val hi = if (i < j) j else i
-            pairKeys[p] = (lo.toLong() shl 32) or hi.toLong()
-        }
-        java.util.Arrays.sort(pairKeys, 0, pairN)
-        for (p in 0 until pairN) {
-            val k = pairKeys[p]
-            pairA[p] = (k ushr 32).toInt()
-            pairB[p] = (k and 0xFFFFFFFFL).toInt()
-        }
-    }
 
     /**
      * Обрезка подшага по времени первого контакта.
@@ -1460,12 +1517,7 @@ class BoundaryContacts(
         if (!optionAblegacy) lam.clear()
         if (optionXpbdWarmStart && !optionAblegacy) for (c in 0 until cN) if (cLamTot[c] > 0.0) lam[pairKey(cI[c], cJ[c])] = cLamTot[c]
         bpCalls++
-        if (!bpValid || bpMargin <= 0.0 || optionBpMargin < 0.0 || bpStale(px, py)) {
-            broadphase(px, py, qx, qy, invMass)
-            for (vi in 0 until vertCount) { val v = verts[vi]; bpX[v] = px[v]; bpY[v] = py[v] }
-            bpValid = true
-            bpBuilds++
-        }
+        updateCandidates(px, py, qx, qy, invMass)
         // ПРОВЕРКА ПОЛНОТЫ СПИСКА: CT_BPCHECK=1. Полный перебор — ищем пары, которые
         // ПЕРЕКРЫЛИСЬ, но в списке кандидатов их нет. Таких быть не должно ни одной.
         if (optionBpCheck) {
@@ -2515,3 +2567,4 @@ class RestPairs(
         val EMPTY = RestPairs(IntArray(1), IntArray(0), IntArray(0), DoubleArray(0), DoubleArray(0), BooleanArray(0))
     }
 }
+
