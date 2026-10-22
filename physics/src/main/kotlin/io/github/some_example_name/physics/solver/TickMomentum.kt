@@ -106,18 +106,25 @@ class TickMomentum(private val n: Int) {
         for (k in 0 until spans) {
             val from = if (sleep == null) 0 else sleep.spanStart[k]
             val to = if (sleep == null) n else sleep.spanEnd[k]
-            for (i in from until to) {
-                val onFloor = floor != null && floor[i]
-                val w = invMass[i]
-                if (w <= 0.0) { if (onFloor) blocked[i] = true; continue }
-                val m = 1.0 / w
-                val fx = m * (vx[i] - beforeX[i]); val fy = m * (vy[i] - beforeY[i])
-                val tx = targetX[i] + fx; val ty = targetY[i] + fy
-                val tl = targetL[i] + (x[i] * fy - y[i] * fx)
-                targetX[i] = tx; targetY[i] = ty; targetL[i] = tl
-                if (onFloor) blocked[i] = true
-            }
+            for (i in from until to) externalAt(i, x, y, vx, vy, invMass, floor)
         }
+    }
+
+    /** Снимок скорости одной частицы до внешних стадий. Склеенный проход: см. FusedPasses. */
+    fun beforeAt(i: Int, vx: Double, vy: Double) { beforeX[i] = vx; beforeY[i] = vy }
+
+    /** Внешний импульс одной частицы за подшаг. Тот же код, что в afterExternal. */
+    fun externalAt(i: Int, x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
+                   invMass: DoubleArray, floor: BooleanArray?) {
+        val onFloor = floor != null && floor[i]
+        val w = invMass[i]
+        if (w <= 0.0) { if (onFloor) blocked[i] = true; return }
+        val m = 1.0 / w
+        val fx = m * (vx[i] - beforeX[i]); val fy = m * (vy[i] - beforeY[i])
+        val tx = targetX[i] + fx; val ty = targetY[i] + fy
+        val tl = targetL[i] + (x[i] * fy - y[i] * fx)
+        targetX[i] = tx; targetY[i] = ty; targetL[i] = tl
+        if (onFloor) blocked[i] = true
     }
     fun cancel(x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
                invMass: DoubleArray, sleep: BodySleep? = null) {

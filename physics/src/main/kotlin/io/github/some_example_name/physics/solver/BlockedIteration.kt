@@ -43,13 +43,25 @@ internal fun BodyState.initializeConstraintBlocks() {
  * Сейчас обход последовательный: общие очереди пределов/разрушения, обновление
  * топологии и счётчики ещё не имеют отдельных владельцев для разных воркеров.
  */
-internal fun BodyState.solveBlockedIteration(h: Double) {
+/**
+ * [integrate] — интегрировать частицы блока прямо перед его ограничениями, а не
+ * отдельным проходом по всему миру до обхода. Частицы блока тогда уже в кэше, когда
+ * до них доходят связи и площади. Результат побитово прежний: интегрирование
+ * считается для каждой частицы отдельно, ограничения блока трогают только его
+ * частицы, а шов решается после обеих чётностей, когда проинтегрированы все.
+ * Пропущенный спящий блок интегрировать незачем: у его частиц prevX и так равен px.
+ */
+internal fun BodyState.solveBlockedIteration(h: Double, integrate: Boolean = false) {
     val layout = constraintBlocks!!
+    val first = layout.firstParticle
     for (parity in 0..1) {
         var block = parity
         while (block < layout.blockCount) {
             // Спящий блок: все частицы заморожены сном, двигать нечего. См. BodySleep.
-            if (layout.awake[block] > 0) solveConstraintBlock(h, block, layout)
+            if (layout.awake[block] > 0) {
+                if (integrate) { tick0(); integrateRange(first[block], first[block + 1], h); tick1(15) }
+                solveConstraintBlock(h, block, layout)
+            }
             block += 2
         }
     }

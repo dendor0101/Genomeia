@@ -38,8 +38,6 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
                 if (bonesRigid) boneOf else null, rigidBones)
             contacts!!.solveContacts(px, py, vx, vy, invMass, h, 1.0, toVelocity = true)
         }
-        tick0(); integrate(h); tick1(15)
-
         // Скобка вокруг ВНУТРЕННИХ стадий: центр масс до и после. Внешние силы
         // (среда, пол, вязкость) идут ниже по скоростям и в скобку не попадают.
         var beforeX = 0.0
@@ -47,6 +45,10 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         // Только когда тело не держат: при активной тяге посылка «центр масс не
         // должен двигаться» неверна, и поправка даёт растяжение (см. константу).
         val cancel = CANCEL_INTERNAL_DRIFT && dragId < 0
+        // Интегрирование идёт внутри обхода блоков, по блоку перед его ограничениями
+        // (см. solveBlockedIteration). Отдельным проходом — только когда до обхода
+        // нужна сумма проинтегрированных координат (снятие сноса).
+        if (cancel) { tick0(); integrate(h); tick1(15) }
         if (cancel) {
             for (i in 0 until n) { beforeX += px[i]; beforeY += py[i] }
             dragShiftX = 0.0; dragShiftY = 0.0
@@ -62,7 +64,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         // Импульс учитывается TickMomentum на протяжении тика; коррекция в конце.
         for (iter in 0 until SOLVER_ITERS) {
             if (sweepFlip == 2) sweepBackwards = !sweepBackwards
-            solveBlockedIteration(h)
+            solveBlockedIteration(h, integrate = iter == 0 && !cancel)
 
         }
         // ПРЕДЕЛ ДЛИНЫ ПОВТОРНО, УЖЕ ПОСЛЕ КОСТИ.
@@ -107,12 +109,13 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
             tick1(14)
         }
 
+        // Восстановление скоростей вместе со снимком для учёта импульса — один проход.
+        // См. FusedPasses.
         tick0()
-        updateVelocities(h)
+        velocityPassBefore(h)
         tick1(17); tick0()
         // Отскок: позиционная часть удар гасит целиком, см. solveRestitution.
         dbgMarkV()
-        if (cancelSpinOn) { prepareAwakeSpans(); tickMomentum.beforeExternal(vx, vy, sleep) }
         val cr = contacts
         if (cr != null && contactsOn && !contactsStale) cr.solveRestitution(px, py, vx, vy, invMass)
         dbgMeasureV(7); dbgMarkV()
@@ -123,19 +126,16 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         // последнего подшага: иначе дребезг выпрямляется в ровный дрейф. См. TickMotion.
         if (step == SUBSTEPS - 1) { removeTickJitter(); applyNormalDrag(h * SUBSTEPS); restoreTickJitter() }
         dbgMeasureV(10); dbgMarkV()
-        applyRestitution()
-        if (step == SUBSTEPS - 1) applyMediumDrag(h * SUBSTEPS)
-        clampSpeed()
+        // Отскок от пола, изотропная среда (раз в тик), потолок скорости и учёт внешнего
+        // импульса — один проход. Учёт внешнего импульса теперь в таймере «скорости и
+        // среда», а не «учёт импульса». См. FusedPasses.
+        velocityPassAfter(step == SUBSTEPS - 1, h * SUBSTEPS)
         dbgMeasureV(11); tick1(9)
-        if (cancelSpinOn) {
+        if (cancelSpinOn && step == SUBSTEPS - 1) {
             tick0()
-            prepareAwakeSpans()
-            tickMomentum.afterExternal(px, py, vx, vy, invMass, inContact, sleep)
-            if (step == SUBSTEPS - 1) {
-                tickMomentum.cancel(px, py, vx, vy, invMass, sleep)
-                // Коррекция тоже меняет скорости: потолок должен оставаться последним.
-                clampSpeed()
-            }
+            tickMomentum.cancel(px, py, vx, vy, invMass, sleep)
+            // Коррекция тоже меняет скорости: потолок должен оставаться последним.
+            clampSpeed()
             tick1(16)
         }
         observer?.afterSubstep(step)
