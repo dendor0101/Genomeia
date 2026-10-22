@@ -21,7 +21,16 @@ fun BodyState.integrate(h: Double) {
     prepareAwakeSpans()
     val s = sleep
     // Только бодрствующие частицы: у спящей prevX = px и скорость ноль. См. BodySleep.
-    for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
+    for (k in 0 until s.spanCount) integrateRange(s.spanStart[k], s.spanEnd[k], h)
+}
+
+/**
+ * Интегрирование частиц [from, to). Обход решателя зовёт его по блоку прямо перед
+ * ограничениями блока (см. solveBlockedIteration): частицы блока остаются в кэше.
+ * Спящая частица (invMass = 0) здесь — пустая работа: prevX и так равен px.
+ */
+internal fun BodyState.integrateRange(from: Int, to: Int, h: Double) {
+    for (i in from until to) {
         val x = px[i]; val y = py[i]
         if (invMass[i] == 0.0) { prevX[i] = x; prevY[i] = y; inContact[i] = false; continue }
         val nvy = vy[i] + GRAVITY * h

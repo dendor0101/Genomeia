@@ -60,6 +60,8 @@ class BlockIndex(capacity: Int, blocks: Int) {
 class ConstraintBlocks(n: Int, organismOf: IntArray, blockSize: Int,
                        linkCapacity: Int, triangleCapacity: Int, boneCount: Int) {
     val particleBlock = IntArray(n)
+    /** Частицы блока b — [firstParticle[b], firstParticle[b + 1]). Шов своих частиц не имеет. */
+    val firstParticle: IntArray
     val blockCount: Int
     val seam: Int
     val links: DenseBlockIndex
@@ -84,6 +86,10 @@ class ConstraintBlocks(n: Int, organismOf: IntArray, blockSize: Int,
             particleBlock[i] = block; size++
         }
         blockCount = block + 1; seam = blockCount
+        // Блок — непрерывный диапазон индексов: номер растёт только вперёд по частицам.
+        firstParticle = IntArray(blockCount + 1)
+        for (i in n - 1 downTo 0) firstParticle[particleBlock[i]] = i
+        firstParticle[blockCount] = n
         links = DenseBlockIndex(linkCapacity, blockCount + 1)
         limits = BlockIndex(linkCapacity, blockCount + 1)
         areas = DenseBlockIndex(triangleCapacity, blockCount + 1)
