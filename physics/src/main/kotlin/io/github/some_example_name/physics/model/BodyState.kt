@@ -219,6 +219,21 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
 
     lateinit var comAccY: DoubleArray
 
+    /**
+     * Положения бодрствующих частиц в начале тика, на последнем подшаге — дрожь
+     * скорости (мгновенная минус средняя за тик). См. TickMotion.
+     */
+    var tickJitterX = DoubleArray(0)
+    var tickJitterY = DoubleArray(0)
+
+    /**
+     * Место, где началась серия покоя организма, и наибольшее удаление его клеток от
+     * этого места (в квадрате) на этом тике. См. SLEEP_DRIFT_CELLS.
+     */
+    var sleepAnchorX = DoubleArray(0)
+    var sleepAnchorY = DoubleArray(0)
+    var orgSleepDrift2 = DoubleArray(0)
+
     /** Сон организмов: см. BodySleep. Выключается RB_SLEEP=0. */
     val sleep = BodySleep(config["RB_SLEEP"]?.let { it != "0" } ?: SLEEP_ON)
 

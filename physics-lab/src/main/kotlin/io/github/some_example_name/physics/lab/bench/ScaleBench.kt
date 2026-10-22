@@ -90,7 +90,7 @@ fun main(args: Array<String>) {
                     " links_areas_working_bytes=${24L * p.n + 21L * initialLinks + 25L * initialTriangles}")
                 println("LOCAL links ${linkLocality(p.conA, p.conB, p.conCount)}")
                 // Сон включается RB_SLEEP=1: сколько уснуло к концу и как быстро самая
-                // быстрая клетка, в длинах связи за тик (порог сна SLEEP_SPEED_CELLS_PER_TICK).
+                // быстрая клетка, в длинах связи за тик (засыпание меряется местом, см. SLEEP_DRIFT_CELLS).
                 with(p.demo.state) {
                     var top2 = 0.0
                     for (i in 0 until n) if (!cellDead[i]) top2 = maxOf(top2, vx[i] * vx[i] + vy[i] * vy[i])

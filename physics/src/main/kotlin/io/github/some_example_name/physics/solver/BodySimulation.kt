@@ -21,6 +21,8 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     observer?.beginTick()
     // Мышь и мышцы будят свои организмы до учёта импульса: обратная масса одна на тик.
     wakeByInput()
+    // Положения в начале тика: средняя скорость за тик нужна сопротивлению среды. См. TickMotion.
+    beginTickMotion()
     if (cancelSpinOn) { tick0(); prepareAwakeSpans(); tickMomentum.begin(px, py, vx, vy, invMass, organismOf, sleep); tick1(16) }
     for (step in 0 until SUBSTEPS) {
         // Длина покоя мышцы доезжает до своего значения за тик, а не прыгает в первом
@@ -117,7 +119,9 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         applyDragVelocity(h)
         if (step == SUBSTEPS - 1) applyViscosity(h * SUBSTEPS)
         dbgMeasureV(8); dbgMarkV()
-        if (step == SUBSTEPS - 1) applyNormalDrag(h * SUBSTEPS)
+        // Сопротивление раз в тик видит СРЕДНЮЮ скорость за тик, а не фазу дребезга
+        // последнего подшага: иначе дребезг выпрямляется в ровный дрейф. См. TickMotion.
+        if (step == SUBSTEPS - 1) { removeTickJitter(); applyNormalDrag(h * SUBSTEPS); restoreTickJitter() }
         dbgMeasureV(10); dbgMarkV()
         applyRestitution()
         if (step == SUBSTEPS - 1) applyMediumDrag(h * SUBSTEPS)

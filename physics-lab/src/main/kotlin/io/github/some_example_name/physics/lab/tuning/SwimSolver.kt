@@ -253,6 +253,29 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         }
     }
 
+    /** Зеркало TickMotion ядра: положения в начале тика, затем дрожь скорости. */
+    private val tickJitterX = DoubleArray(n)
+    private val tickJitterY = DoubleArray(n)
+
+    private fun beginTickMotion() {
+        System.arraycopy(px, 0, tickJitterX, 0, n); System.arraycopy(py, 0, tickJitterY, 0, n)
+    }
+
+    private fun removeTickJitter(dt: Double) {
+        val inv = 1.0 / dt
+        for (i in 0 until n) {
+            if (invMass[i] == 0.0) { tickJitterX[i] = 0.0; tickJitterY[i] = 0.0; continue }
+            val mx = (px[i] - tickJitterX[i]) * inv
+            val my = (py[i] - tickJitterY[i]) * inv
+            tickJitterX[i] = vx[i] - mx; tickJitterY[i] = vy[i] - my
+            vx[i] = mx; vy[i] = my
+        }
+    }
+
+    private fun restoreTickJitter() {
+        for (i in 0 until n) { vx[i] += tickJitterX[i]; vy[i] += tickJitterY[i] }
+    }
+
     private fun clampSpeed(dt: Double) {
         val maxV = p.maxSpeedCellsPerTick * topo.meanLinkLength / dt
         val maxV2 = maxV * maxV
@@ -695,6 +718,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
 
         if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.begin(px, py, vx, vy, invMass, topo.organismOf)
         val h = dt / substeps
+        beginTickMotion()
         for (s in 0 until substeps) {
             muscleFrac = (s + 1).toDouble() / substeps
             integrate(h)
@@ -723,7 +747,8 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.beforeExternal(vx, vy)
             if (p.contactsOn) contacts.solveRestitution(px, py, vx, vy, invMass)
             if (s == substeps - 1) applyViscosity(h * substeps)
-            if (s == substeps - 1) applyNormalDrag(h * substeps)
+            // Зеркало ядра: сопротивление видит среднюю скорость за тик. См. TickMotion.
+            if (s == substeps - 1) { removeTickJitter(dt); applyNormalDrag(h * substeps); restoreTickJitter() }
             if (s == substeps - 1) applyMediumDrag(h * substeps)
             clampSpeed(dt)
             if (DemoConst.CANCEL_INTERNAL_SPIN) {
@@ -803,6 +828,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         }
         if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.begin(px, py, vx, vy, invMass, topo.organismOf)
         val h = dt / substeps
+        beginTickMotion()
         for (s in 0 until substeps) {
             muscleFrac = (s + 1).toDouble() / substeps
             integrate(h)
@@ -831,7 +857,8 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.beforeExternal(vx, vy)
             if (p.contactsOn) contacts.solveRestitution(px, py, vx, vy, invMass)
             if (s == substeps - 1) applyViscosity(h * substeps)
-            if (s == substeps - 1) applyNormalDrag(h * substeps)
+            // Зеркало ядра: сопротивление видит среднюю скорость за тик. См. TickMotion.
+            if (s == substeps - 1) { removeTickJitter(dt); applyNormalDrag(h * substeps); restoreTickJitter() }
             if (s == substeps - 1) applyMediumDrag(h * substeps)
             clampSpeed(dt)
             if (DemoConst.CANCEL_INTERNAL_SPIN) {
