@@ -75,6 +75,12 @@ internal inline fun solveDistanceConstraint(
 
 fun BodyState.solveLinkMaxLength() {
     if (tearingOn) SealStats.tearingOnTicks++ else SealStats.tearingOffTicks++
+    val w = activeWorkers
+    if (w != null && organismCount > 1 && !dbgSealOn && !(DEBUG_CHECKS && dbgLinkExtremaOn)) {
+        // По организмам: связи контура разных организмов не делят частиц. См. ParallelLimits.
+        parallelPhysics(w).solveGlobalLimits()
+        return
+    }
     // Всё в локальные: при MAXLEN_EARLY стадия идёт 144 раза за тик.
     val px = px; val py = py; val invMass = invMass
     val conA = conA; val conB = conB; val conRest = conRest; val conMuscle = conMuscle
@@ -127,14 +133,35 @@ fun BodyState.solveLinkMaxLength() {
     limits.endPass()
 }
 
+/**
+ * Одна связь общего прохода предела в одном потоке — тело цикла solveLinkMaxLength
+ * (без отладочного разбора крайних значений). Им параллельный проход дорабатывает
+ * организмы, остановленные перед событием топологии.
+ */
+internal fun BodyState.solveLimitItemSerial(c: Int) {
+    if (c < 0 || conDead[c]) return
+    val i = conA[c]; val j = conB[c]
+    val dx = px[i] - px[j]
+    val dy = py[i] - py[j]
+    val len2 = dx * dx + dy * dy
+    val mus = conMuscle[c]
+    val scale = if (mus < 0) 1.0 else muscleScaleOf[mus]
+    val rest = conRest[c]
+    val restScale = rest * scale
+    val crushLim = LINK_CRUSH_RATIO * restScale
+    val max = LINK_MAX_STRETCH * rest
+    val crushed = tearingOn && len2 < crushLim * crushLim
+    val over = len2 > max * max
+    if (!crushed && !over) return
+    if (invMass[i] + invMass[j] == 0.0) return
+    solveLinkLimitViolation(c, len2, crushed, scale)
+}
+
 /** Редкие разрывы отдельно от цикла: меньше байткода и живых локальных в обычном проходе. */
 fun BodyState.solveLinkLimitViolation(c: Int, len2: Double, crushed: Boolean, scale: Double) {
     val i = conA[c]; val j = conB[c]
-    val wi = invMass[i]; val wj = invMass[j]; val w = wi + wj
-    var dx = px[i] - px[j]; var dy = py[i] - py[j]
     val mus = conMuscle[c]
     val max = LINK_MAX_STRETCH * conRest[c]
-    val meanLink = body.meanLinkLength
     val len = sqrt(len2)
     // РАЗДАВЛЕННАЯ СВЯЗЬ РВЁТСЯ ТАК ЖЕ, КАК ПЕРЕРАСТЯНУТАЯ. См. LINK_CRUSH_RATIO.
     if (crushed) {
@@ -174,18 +201,49 @@ fun BodyState.solveLinkLimitViolation(c: Int, len2: Double, crushed: Boolean, sc
         linkTorn[c] = true; conDead[c] = true; tearsPending = true; killEdgeNow(conEdge[c])
         membraneTearCount++
     }
-    dx /= len; dy /= len
-    // Тот же потолок поправки за подшаг, что и у контакта, и по той же
-    // причине: стадия ЖЁСТКАЯ, перерастяжение она снимает целиком за один
-    // подшаг, а updateVelocities делит поправку на крошечное h. При загибе
-    // связи растягиваются сильно, и отсюда шёл остаток выброса скорости.
-    // Делится по паре в тех же долях, поэтому импульс пары сохраняется.
+    applyLinkLimitCorrection(i, j, len, max)
+    linkCapHits++
+}
+
+/**
+ * Поправка перерастянутой связи до предела. Общая для обычного прохода и для
+ * параллельного (ParallelBlocks): одна и та же арифметика — одни и те же биты.
+ *
+ * Тот же потолок поправки за подшаг, что и у контакта, и по той же
+ * причине: стадия ЖЁСТКАЯ, перерастяжение она снимает целиком за один
+ * подшаг, а updateVelocities делит поправку на крошечное h. При загибе
+ * связи растягиваются сильно, и отсюда шёл остаток выброса скорости.
+ * Делится по паре в тех же долях, поэтому импульс пары сохраняется.
+ */
+internal fun BodyState.applyLinkLimitCorrection(i: Int, j: Int, len: Double, max: Double) {
+    val wi = invMass[i]; val wj = invMass[j]; val w = wi + wj
+    val dx = (px[i] - px[j]) / len; val dy = (py[i] - py[j]) / len
     var dL = -(len - max) / w
-    val capL = LINK_MAX_STEP * meanLink / w
+    val capL = LINK_MAX_STEP * body.meanLinkLength / w
     if (dL < -capL) dL = -capL
     px[i] += dx * dL * wi; py[i] += dy * dL * wi
     px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
-    linkCapHits++
+}
+
+/**
+ * Даст ли нарушение предела событие топологии — разрыв, раздавливание или пометку
+ * порванной — без единой записи. Условия и их порядок те же, что в
+ * solveLinkLimitViolation; параллельный проход по такому нарушению останавливает
+ * блок, и событие исполняется в одном потоке в исходном порядке. См. ParallelBlocks.
+ */
+internal fun BodyState.limitViolationIsEvent(c: Int, len2: Double, crushed: Boolean): Boolean {
+    if (crushed) return true
+    val i = conA[c]; val j = conB[c]
+    val len = sqrt(len2)
+    if (tearingOn && membranePassTear && conBoundary[c] &&
+        len > (contacts?.contactRadiusOf(i) ?: 0.0) +
+            (contacts?.contactRadiusOf(j) ?: 0.0) + 2.0 * dbgSealMinR) return true
+    if (len < 1e-12) return false
+    val max = LINK_MAX_STRETCH * conRest[c]
+    val tear = if (conTendon[c]) linkTearStrain * tendonTear else linkTearStrain
+    if (len - max > tear * conRest[c]) return true
+    return tearingOn && membraneTearStrain >= 0.0 && conBoundary[c] && !conDead[c] &&
+        len - max > membraneTearStrain * conRest[c]
 }
 
 /** Односторонняя: только не даёт сойтись ближе позы покоя. */

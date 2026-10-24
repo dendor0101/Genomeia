@@ -92,7 +92,12 @@ class BodySleep(var on: Boolean) {
         wakeQueue[wakeQueueN++] = cell
     }
 
+    /** Счётчик засыпаний, пробуждений и сбросов: см. OrgBuckets. */
+    internal var version = 0
+        private set
+
     internal fun reset(n: Int, organismOf: IntArray, organismCount: Int) {
+        version++
         if (asleep.size != n) {
             asleep = BooleanArray(n); calmTicks = IntArray(n); busy = BooleanArray(n)
             first = IntArray(n); last = IntArray(n)
@@ -140,6 +145,7 @@ class BodySleep(var on: Boolean) {
 
     internal fun setAsleep(organism: Int, value: Boolean) {
         if (asleep[organism] == value) return
+        version++
         asleep[organism] = value
         if (value) asleepCount++ else asleepCount--
         calmTicks[organism] = 0

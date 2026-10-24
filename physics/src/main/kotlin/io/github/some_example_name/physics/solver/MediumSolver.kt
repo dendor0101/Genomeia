@@ -66,6 +66,8 @@ fun BodyState.applyViscosity(h: Double) {
     // Со спящими — только блоки с бодрствующими частицами и шов; у спящих связей вес
     // ноль, и они всё равно пропускаются. Без сна — прежний порядок. См. BodySleep.
     val layout = constraintBlocks
+    val w = activeWorkers
+    if (w != null && organismCount > 1) { parallelPhysics(w).viscosity(k, layout); return }
     if (sleep.asleepCount == 0 || layout == null) {
         for (c in 0 until conCount) viscousLink(c, k)
         return
@@ -80,7 +82,7 @@ fun BodyState.applyViscosity(h: Double) {
     }
 }
 
-private fun BodyState.viscousLink(c: Int, k: Double) {
+internal fun BodyState.viscousLink(c: Int, k: Double) {
     if (conDead[c]) return
     val i = conA[c]; val j = conB[c]
     val wi = invMass[i]; val wj = invMass[j]

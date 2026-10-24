@@ -106,6 +106,9 @@ class ConstraintBlocks(n: Int, organismOf: IntArray, blockSize: Int,
      */
     val awake = IntArray(blockCount + 1)
 
+    /** Блоки одной чётности можно считать параллельно — см. ParallelBlocks и computeParallelSafe. */
+    var parallelSafe = false
+
     fun hasSeams(): Boolean = links.liveCount[seam] > 0 || areas.liveCount[seam] > 0 ||
         limits.head[seam] >= 0 || bones.head[seam] >= 0 || bends.head[seam] >= 0 || flaps.head[seam] >= 0
 

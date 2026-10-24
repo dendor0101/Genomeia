@@ -70,6 +70,15 @@ fun BodyState.cancelInternalDrift(beforeX: Double, beforeY: Double) {
  * |P| 0.42). Обе хуже по обоим показателям сразу.
  */
 fun BodyState.projectBone(b: Int) {
+    if (projectBoneInto(b, boneDx, boneDy)) boneCapHits++
+}
+
+/**
+ * Проекция кости с черновиками поправок [boneDx]/[boneDy] снаружи: у каждого воркера
+ * свои (ParallelBlocks). Возвращает, сработал ли потолок смещения — счётчик ведёт
+ * вызывающий.
+ */
+internal fun BodyState.projectBoneInto(b: Int, boneDx: DoubleArray, boneDy: DoubleArray): Boolean {
     val ids = rigidBones[b]
     val q0x = boneRestQx[b]
     val q0y = boneRestQy[b]
@@ -95,7 +104,7 @@ fun BodyState.projectBone(b: Int) {
         t += w * (q0x[k] * ppy - q0y[k] * ppx)
     }
     val norm = sqrt(s * s + t * t)
-    if (norm < 1e-12) return
+    if (norm < 1e-12) return false
     val cos = s / norm; val sin = t / norm
 
     // Считаются ПОПРАВКИ, а не сразу позиции: только по ним и можно обнулить
@@ -126,14 +135,13 @@ fun BodyState.projectBone(b: Int) {
     }
     var scale = 1.0
     val cap = BONE_MAX_STEP * body.meanLinkLength
-    if (maxD2 > cap * cap) {
-        scale = cap / sqrt(maxD2)
-        boneCapHits++
-    }
+    val capped = maxD2 > cap * cap
+    if (capped) scale = cap / sqrt(maxD2)
 
     for (k in ids.indices) {
         val i = ids[k]
         px[i] += (boneDx[k] - mdx) * scale
         py[i] += (boneDy[k] - mdy) * scale
     }
+    return capped
 }

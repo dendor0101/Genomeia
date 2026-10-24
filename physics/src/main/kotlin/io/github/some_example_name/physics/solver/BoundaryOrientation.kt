@@ -25,7 +25,16 @@ fun solveBoundaryOrientation(
     for (k in 0 until count) orientEdge(k, a, b, opposite, orientation, px, py, invMass)
 }
 
-private fun orientEdge(
+/** Ориентация контура: по организмам, если есть воркеры (ParallelPhysics), иначе подряд. */
+internal fun BodyState.solveBoundaryOrientationStage() {
+    val w = activeWorkers
+    if (w != null && organismCount > 1) { parallelPhysics(w).orientation(); return }
+    if (sleep.asleepCount == 0) solveBoundaryOrientation(boundCount, boundA, boundB, boundOpp,
+        localBoundary.orientation, px, py, invMass)
+    else solveBoundaryOrientationAwake()
+}
+
+internal fun orientEdge(
     k: Int, a: IntArray, b: IntArray, opposite: IntArray, orientation: ByteArray,
     px: DoubleArray, py: DoubleArray, invMass: DoubleArray,
 ) {

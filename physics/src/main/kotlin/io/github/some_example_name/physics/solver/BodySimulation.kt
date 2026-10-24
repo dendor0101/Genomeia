@@ -16,6 +16,8 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     java.util.Arrays.fill(contactPressureN, 0)
     java.util.Arrays.fill(crushedCell, false)
     if (tearsPending) refreshSurface()
+    // Воркеры могли подставить снаружи после сборки контактов: отдаём каждый тик.
+    contacts?.workers = activeWorkers
     val h = DT / SUBSTEPS
     // Совместный опыт минимальной частоты: контакты 32, момент и среда 1 раз за тик.
     observer?.beginTick()
@@ -103,9 +105,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
             if (finalContacts.pierceN > 0) applyPierce(finalContacts)
             refreshSurface()
             tick0()
-            if (sleep.asleepCount == 0) solveBoundaryOrientation(boundCount, boundA, boundB, boundOpp,
-                localBoundary.orientation, px, py, invMass)
-            else solveBoundaryOrientationAwake()
+            solveBoundaryOrientationStage()
             tick1(14)
         }
 

@@ -19,9 +19,16 @@ import kotlin.math.sqrt
  */
 internal fun BodyState.velocityPassBefore(h: Double) {
     prepareAwakeSpans()
+    val w = activeWorkers
+    if (w != null && w.count > 1) { parallelPhysics(w).velocityBefore(h); return }
     val s = sleep
+    for (k in 0 until s.spanCount) velocityBeforeRange(s.spanStart[k], s.spanEnd[k], h)
+}
+
+/** Восстановление скоростей частиц [from, to). Кусок параллельного прохода — см. ParallelPhysics. */
+internal fun BodyState.velocityBeforeRange(from: Int, to: Int, h: Double) {
     val tm = if (cancelSpinOn) tickMomentum else null
-    for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
+    for (i in from until to) {
         if (invMass[i] == 0.0) {
             vx[i] = 0.0; vy[i] = 0.0
         } else {
@@ -40,7 +47,18 @@ internal fun BodyState.velocityPassBefore(h: Double) {
  */
 internal fun BodyState.velocityPassAfter(lastStep: Boolean, hTick: Double) {
     prepareAwakeSpans()
+    val w = activeWorkers
+    if (w != null && w.count > 1) { parallelPhysics(w).velocityAfter(lastStep, hTick); return }
     val s = sleep
+    for (k in 0 until s.spanCount) velocityAfterRange(s.spanStart[k], s.spanEnd[k], lastStep, hTick, null)
+}
+
+/**
+ * Частицы [from, to) прохода после редких стадий. [acc] — счётчики воркера в
+ * параллельном проходе; null — счётчики самого состояния.
+ */
+internal fun BodyState.velocityAfterRange(from: Int, to: Int, lastStep: Boolean, hTick: Double,
+                                          acc: WorkerScratch?) {
     val medium = lastStep && !dbgIsoDragOff
     var keep = 1.0 - MEDIUM_DRAG * hTick
     if (keep < 0.0) keep = 0.0
@@ -48,12 +66,22 @@ internal fun BodyState.velocityPassAfter(lastStep: Boolean, hTick: Double) {
     val maxV = MAX_SPEED_CELLS_PER_TICK * body.meanLinkLength / DT
     val maxV2 = maxV * maxV
     val tm = if (cancelSpinOn) tickMomentum else null
-    for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
+    for (i in from until to) {
         if (inContact[i] && vy[i] > 0.0) vy[i] *= GROUND_RESTITUTION
         if (medium) { vx[i] *= keep; vy[i] *= keep }
-        if (clamp) clampOne(i, maxV, maxV2)
+        if (clamp) { if (acc == null) clampOne(i, maxV, maxV2) else clampOneInto(i, maxV, maxV2, acc) }
         tm?.externalAt(i, px, py, vx, vy, invMass, inContact)
     }
+}
+
+/** clampOne со счётчиками воркера: та же арифметика. */
+private fun BodyState.clampOneInto(i: Int, maxV: Double, maxV2: Double, acc: WorkerScratch) {
+    val v2 = vx[i] * vx[i] + vy[i] * vy[i]
+    if (v2 > acc.peakSpeed2) acc.peakSpeed2 = v2
+    if (v2 <= maxV2) return
+    val sc = maxV / sqrt(v2)
+    vx[i] *= sc; vy[i] *= sc
+    acc.speedCapHits++
 }
 
 /** Потолок одной частицы. Отдельной функцией, чтобы склеенный цикл остался маленьким для JIT. */
