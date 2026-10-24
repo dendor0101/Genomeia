@@ -35,6 +35,9 @@ internal fun BodyState.initializeConstraintBlocks() {
     localBoundary.flap.blockLayout = layout; localBoundary.flap.blockIndex = layout.flaps
     for (k in 0 until localBoundary.count) layout.edges.add(k, localBoundary.blockOfSlot(k, layout))
     localBoundary.blockLayout = layout; localBoundary.blockIndex = layout.edges
+    layout.parallelSafe = computeParallelSafe(layout)
+    // Черновики воркеров по размерам этой топологии: после сброса собрать заново.
+    parallelPhysicsState = null
 }
 
 /** Внутренние ограничения блока подряд; швы исполняются один раз после обеих
@@ -54,7 +57,11 @@ internal fun BodyState.initializeConstraintBlocks() {
 internal fun BodyState.solveBlockedIteration(h: Double, integrate: Boolean = false) {
     val layout = constraintBlocks!!
     val first = layout.firstParticle
-    for (parity in 0..1) {
+    val w = activeWorkers
+    if (w != null && parallelBlocksAllowed(w, layout)) {
+        // Блоки одной чётности — по воркерам; швы и доработка событий — здесь. См. ParallelBlocks.
+        tick0(); parallelPhysics(w).solveBlocks(h, integrate, layout); tick1(0)
+    } else for (parity in 0..1) {
         var block = parity
         while (block < layout.blockCount) {
             // Спящий блок: все частицы заморожены сном, двигать нечего. См. BodySleep.
@@ -71,26 +78,47 @@ internal fun BodyState.solveBlockedIteration(h: Double, integrate: Boolean = fal
     if (layout.hasSeams()) { tick0(); solveLinkMaxLength(); tick1(2); refreshSurface() }
 }
 
-private fun BodyState.solveConstraintBlock(h: Double, block: Int, layout: ConstraintBlocks) {
-    tick0(); dbgMark(); solveBlockLinks(h, block, layout); dbgMeasure(0, h); tick1(0)
-    tick0(); dbgMark(); solveBlockFlaps(h, block, layout); dbgMeasure(9, h); tick1(1)
-    if (MAXLEN_EARLY) { tick0(); dbgMark(); solveBlockLimits(block, layout); dbgMeasure(4, h); tick1(2); refreshSurface() }
-    if (areasOn) { tick0(); dbgMark(); solveBlockAreas(h, block, layout); dbgMeasure(1, h); tick1(3) }
-    tick0(); dbgMark(); solveBlockBend(h, block, layout); dbgMeasure(2, h); tick1(4)
-    tick0(); dbgMark()
-    if (bonesRigid) {
-        var b = layout.bones.head[block]
-        while (b >= 0) {
-            // Кость держит позу по matchWeight, а не по invMass: спящую надо пропустить явно.
-            if (!sleep.isAsleep(organismOf[rigidBones[b][0]])) projectBone(b)
-            b = layout.bones.next[b]
-        }
+private fun BodyState.solveConstraintBlock(h: Double, block: Int, layout: ConstraintBlocks) =
+    solveConstraintBlockFrom(h, block, layout, BLOCK_STAGE_START, 0)
+
+/** Стадии блока, с которых можно продолжить: остановка параллельного прохода — только в пределах. */
+internal const val BLOCK_STAGE_START = 0
+internal const val BLOCK_STAGE_LIMITS_EARLY = 1
+internal const val BLOCK_STAGE_LIMITS_LATE = 2
+
+/**
+ * Ограничения блока подряд, начиная со стадии [stage] и записи [cursor] её очереди
+ * пределов. С середины начинает только доработка блока, который параллельный проход
+ * остановил перед событием топологии (ParallelBlocks): всё до этой точки уже
+ * посчитано воркером той же арифметикой.
+ */
+internal fun BodyState.solveConstraintBlockFrom(h: Double, block: Int, layout: ConstraintBlocks,
+                                                stage: Int, cursor: Int) {
+    if (stage == BLOCK_STAGE_START) {
+        tick0(); dbgMark(); solveBlockLinks(h, block, layout); dbgMeasure(0, h); tick1(0)
+        tick0(); dbgMark(); solveBlockFlaps(h, block, layout); dbgMeasure(9, h); tick1(1)
     }
-    dbgMeasure(3, h); tick1(5)
-    tick0(); dbgMark(); solveBlockLimits(block, layout); dbgMeasure(4, h); tick1(2); refreshSurface()
+    if (stage <= BLOCK_STAGE_LIMITS_EARLY) {
+        val from = if (stage == BLOCK_STAGE_LIMITS_EARLY) cursor else 0
+        if (MAXLEN_EARLY) { tick0(); dbgMark(); solveBlockLimits(block, layout, from); dbgMeasure(4, h); tick1(2); refreshSurface() }
+        if (areasOn) { tick0(); dbgMark(); solveBlockAreas(h, block, layout); dbgMeasure(1, h); tick1(3) }
+        tick0(); dbgMark(); solveBlockBend(h, block, layout); dbgMeasure(2, h); tick1(4)
+        tick0(); dbgMark()
+        if (bonesRigid) {
+            var b = layout.bones.head[block]
+            while (b >= 0) {
+                // Кость держит позу по matchWeight, а не по invMass: спящую надо пропустить явно.
+                if (!sleep.isAsleep(organismOf[rigidBones[b][0]])) projectBone(b)
+                b = layout.bones.next[b]
+            }
+        }
+        dbgMeasure(3, h); tick1(5)
+    }
+    val from = if (stage == BLOCK_STAGE_LIMITS_LATE) cursor else 0
+    tick0(); dbgMark(); solveBlockLimits(block, layout, from); dbgMeasure(4, h); tick1(2); refreshSurface()
 }
 
-private fun BodyState.solveBlockLinks(h: Double, block: Int, layout: ConstraintBlocks) {
+internal fun BodyState.solveBlockLinks(h: Double, block: Int, layout: ConstraintBlocks) {
     val alpha = SOFT_COMPLIANCE / (h * h)
     val px = px; val py = py; val mass = invMass
     val a = conA; val b = conB; val rest = conRest; val muscles = conMuscle

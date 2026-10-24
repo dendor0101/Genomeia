@@ -99,6 +99,8 @@ fun BodyState.applyPlasticity(dt: Double) {
     // только блоки, где есть бодрствующие частицы, и шов. У спящего тела длины
     // заморожены вместе с телом: течь ему, как и двигаться, не с чего. См. BodySleep.
     val layout = constraintBlocks
+    val w = activeWorkers
+    if (w != null) { parallelPhysics(w).plasticity(k, layout); return }
     if (sleep.asleepCount == 0 || layout == null) {
         for (c in 0 until conCount) plasticLink(c, k)
         for (t in 0 until triCount) plasticTriangle(t, k)
@@ -119,7 +121,7 @@ fun BodyState.applyPlasticity(dt: Double) {
     }
 }
 
-private fun BodyState.plasticLink(c: Int, k: Double) {
+internal fun BodyState.plasticLink(c: Int, k: Double) {
     if (baked.edgeDead[conEdge[c]]) return
     // МЫШЦЫ НЕ ТЕКУТ, и это не осторожность, а необходимость.
     //
@@ -149,7 +151,7 @@ private fun BodyState.plasticLink(c: Int, k: Double) {
     conRest[c] *= 1.0 + over * k
 }
 
-private fun BodyState.plasticTriangle(t: Int, k: Double) {
+internal fun BodyState.plasticTriangle(t: Int, k: Double) {
     if (!baked.triAlive[triId[t]]) return
     if (triMuscle[t] >= 0) return          // мышечные — по той же причине
     val rest2 = triRestArea2[t].toDouble()

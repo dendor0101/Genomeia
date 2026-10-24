@@ -21,8 +21,12 @@ internal class BoundaryLinkLimits {
         private set
     private var inPass = false
     private var holes = false
+    /** Счётчик правок списка: по нему параллельный проход узнаёт, что раскладка устарела. */
+    var modCount = 0
+        private set
 
     fun reset(capacity: Int) {
+        modCount++
         if (position.size != capacity) {
             ids = IntArray(capacity)
             position = IntArray(capacity)
@@ -35,6 +39,7 @@ internal class BoundaryLinkLimits {
 
     fun add(c: Int) {
         if (position[c] >= 0) return
+        modCount++
         position[c] = count
         ids[count++] = c
     }
@@ -42,6 +47,7 @@ internal class BoundaryLinkLimits {
     fun remove(c: Int) {
         val slot = position[c]
         if (slot < 0) return
+        modCount++
         position[c] = -1
         if (inPass) {
             ids[slot] = -1

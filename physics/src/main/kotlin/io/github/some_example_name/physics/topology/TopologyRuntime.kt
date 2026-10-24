@@ -509,6 +509,7 @@ fun BodyState.rebuildTimed() {
 /** Погасить ребро немедленно и запомнить для пересборки в конце тика. */
 fun BodyState.killEdgeNow(e: Int) {
     if (!baked.kill(e)) return
+    structureVersion++
     // Разрыв будит организм: у спящего связь рвёт только чужой удар (гибель клетки).
     sleep.requestWake(baked.edgeU(e))
     // Разделяем компоненту ДО следующего удаления. split ищет две стороны
@@ -580,6 +581,7 @@ fun BodyState.restoreTopology() {
 
 fun BodyState.rebuildAfterTear() {
     tearsPending = false
+    structureVersion++
     var t = System.nanoTime()
     fun lap(k: Int) {
         val now = System.nanoTime()
@@ -681,6 +683,7 @@ fun BodyState.refreshSurface() {
         if (DEBUG_CHECKS && dbgTimeOn) dbgTimeNs[12] += System.nanoTime() - surfaceT0
         return
     }
+    structureVersion++
     val changed = baked.dirtyVertices
     for (k in 0 until count) {
         val v = changed[k]

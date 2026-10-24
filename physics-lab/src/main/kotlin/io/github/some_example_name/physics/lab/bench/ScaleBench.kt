@@ -26,6 +26,10 @@ fun main(args: Array<String>) {
     val selection = args.getOrNull(3) ?: "all"
     val dir = File("build/reports/scale-bench").apply { mkdirs() }
     println("SCALE java=${System.getProperty("java.runtime.version")} ticks=$ticks warm=$warm selection=$selection")
+    // RB_PARITY_WORKERS=N: первый прогон в одном потоке, второй на N воркерах; сверка
+    // хэша на каждом тике — это и есть проверка побитовости. Таймеры стадий выключены,
+    // чтобы второй прогон мерил чистое время параллельной версии.
+    val parityWorkers = System.getenv("RB_PARITY_WORKERS")?.toIntOrNull()
     val p = Probe
     // JIT прогревается на том же настоящем теле до первой строки таблицы.
     p.boot(path, 2, 0)
@@ -50,6 +54,8 @@ fun main(args: Array<String>) {
         repeat(2) { run ->
             p.boot(scene.path, scene.copies, 0)
             p.demo.state.quiet = true
+            if (parityWorkers != null) p.demo.state.workers =
+                if (run == 0) null else io.github.some_example_name.physics.PhysicsWorkers.shared(parityWorkers)
             p.resetState()
             val initialLinks = p.conCount
             val initialTriangles = p.triCount
@@ -59,7 +65,7 @@ fun main(args: Array<String>) {
             for (tick in 0 until warm + ticks) {
                 // Как O: бьют два крупнейших тела. На большой сцене остальные — фон.
                 if (scene.mode == "slam" && tick == warm) p.demo.slamOrganisms()
-                p.demo.state.dbgTimeOn = run == 1 && tick >= warm
+                p.demo.state.dbgTimeOn = run == 1 && tick >= warm && parityWorkers == null
                 if (tick == warm) p.demo.state.dbgTimeNs.fill(0)
                 val start = System.nanoTime()
                 if (scene.mode == "gait") p.frameGait(dt, tick)
@@ -80,6 +86,8 @@ fun main(args: Array<String>) {
                 " lost_links=${initialLinks - p.conCount} lost_triangles=${initialTriangles - p.triCount}")
             if (run == 1) {
                 println("SCALE checksums=${warm + ticks}/${warm + ticks} timer_ratio=%.3f".format(mean / plainMs))
+                if (parityWorkers != null) println("PARITY workers=$parityWorkers serial_ms=%.3f parallel_ms=%.3f speedup=%.2f"
+                    .format(plainMs, mean, plainMs / mean))
                 for (k in stages.indices) if (stages[k] != 0L) {
                     println("STAGE ${p.demo.state.dbgTimeNames[k]} ms_tick=%.4f percent_tick=%.2f".format(
                         stages[k] / 1e6 / ticks, stages[k] / 1e6 / ticks / mean * 100.0))

@@ -49,6 +49,20 @@ internal class AnchoredContactGrid(n: Int) {
     val ids: IntArray get() = entVert
     val next: IntArray get() = entNext
 
+    /**
+     * Все записи (вершина, ключ ячейки) в [outV]/[outK]; возвращает их число. Для
+     * перераскладки по частям (BoundaryContacts.reshard): набор записей тот же.
+     */
+    fun liveEntries(outV: IntArray, outK: LongArray): Int {
+        var c = 0
+        for (s in keys.indices) {
+            if (!used[s]) continue
+            var e = heads[s]
+            while (e >= 0) { outV[c] = entVert[e]; outK[c] = keys[s]; c++; e = entNext[e] }
+        }
+        return c
+    }
+
     fun clear() {
         used.fill(false); occupied = 0
         entCount = 0; freeHead = -1; live = 0

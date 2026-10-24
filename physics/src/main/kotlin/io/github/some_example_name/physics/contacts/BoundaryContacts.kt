@@ -41,7 +41,7 @@ import kotlin.math.sqrt
  * импульсом — кулоновский конус, а не произвольное торможение.
  */
 class BoundaryContacts(
-    private val n: Int,
+    internal val n: Int,
     /** Индексы граничных клеток. Только они участвуют в контактах. */
     private var verts: IntArray,
     /** Смежность в формате CSR: adjStart[i]..adjStart[i+1] — соседи клетки i. */
@@ -1065,7 +1065,10 @@ class BoundaryContacts(
      * Растеризация отрезка в ячейки. Возвращает число ячеек, координаты в ddaX/ddaY.
      * Это и есть защита от туннелирования — обходятся ВСЕ ячейки пути, а не концы.
      */
-    private fun dda(x0: Double, y0: Double, x1: Double, y1: Double): Int {
+    private fun dda(x0: Double, y0: Double, x1: Double, y1: Double): Int = ddaInto(x0, y0, x1, y1, ddaX, ddaY)
+
+    /** dda в буферы вызывающего: у каждого воркера свои (ParallelCandidates). */
+    internal fun ddaInto(x0: Double, y0: Double, x1: Double, y1: Double, ddaX: IntArray, ddaY: IntArray): Int {
         var ix = floor(x0 / cellSize).toInt()
         var iy = floor(y0 / cellSize).toInt()
         val ex = floor(x1 / cellSize).toInt()
@@ -1134,13 +1137,39 @@ class BoundaryContacts(
     private var moverCount = 0
 
     /** Вершины, которые перекладываются в этом подшаге, и пометка «перекладывается». */
-    private var moved = IntArray(0)
-    private var movedCount = 0
+    internal var moved = IntArray(0); private set
+    internal var movedCount = 0; private set
     private val movedMark = IntArray(n)
     private var movedStamp = 0
 
-    /** Подвижные вершины по своим привязкам: см. AnchoredContactGrid. */
-    private val anchored = AnchoredContactGrid(n)
+    /**
+     * Подвижные вершины по своим привязкам: см. AnchoredContactGrid. С воркерами сетка
+     * разложена на части по ячейкам (shardOf), и каждую часть перекладывает свой воркер
+     * (ParallelReinsert). На результат раскладка не влияет: поиск соседей помечает
+     * уже увиденных и сортирует пары вершины, порядок записей в ячейке ему безразличен.
+     */
+    private var shards = arrayOf(AnchoredContactGrid(n))
+
+    internal val shardCount: Int get() = shards.size
+    internal fun shard(s: Int): AnchoredContactGrid = shards[s]
+
+    internal fun shardOf(cell: Long): Int =
+        if (shards.size == 1) 0 else (((cell * -0x61c8864680b583ebL) ushr 33).toInt()) % shards.size
+
+    /** Разложить записи по [count] частям; набор записей и привязки прежние. */
+    private fun reshard(count: Int) {
+        var live = 0
+        for (g in shards) live += g.live
+        val vs = IntArray(live); val ks = LongArray(live)
+        var c = 0
+        for (g in shards) {
+            val tmpV = IntArray(g.live); val tmpK = LongArray(g.live)
+            val m = g.liveEntries(tmpV, tmpK)
+            System.arraycopy(tmpV, 0, vs, c, m); System.arraycopy(tmpK, 0, ks, c, m); c += m
+        }
+        shards = Array(count) { AnchoredContactGrid(n) }
+        for (k in 0 until c) shards[shardOf(ks[k])].insert(vs[k], ks[k])
+    }
 
     /** Разбор: сколько вершин переложено за прогон (без полных перестроек). */
     var bpMoved = 0L
@@ -1151,9 +1180,46 @@ class BoundaryContacts(
      * возрастанию вершин сами и сортируются только внутри вершины; остальные (lowKeys)
      * сортируются целиком. Полная сортировка всех новых стоила 10 мс за тик на 100k.
      */
-    private var newKeys = LongArray(256)
-    private var lowKeys = LongArray(256)
+    private val keys = PairKeyBuffer()
+    private var newKeys = keys.newKeys
+    private var lowKeys = keys.lowKeys
     private var keptKeys = LongArray(256)
+
+    /** Воркеры параллельных частей подготовки; null — всё в вызывающем потоке. */
+    var workers: PhysicsWorkers? = null
+    private var parallelCandidates: ParallelCandidates? = null
+    private var parallelPairs: ParallelPairs? = null
+    private var parallelCcd: ParallelCcd? = null
+    private var parallelBuild: ParallelBuild? = null
+    private var parallelMoved: ParallelMoved? = null
+    private var parallelReinsert: ParallelReinsert? = null
+    private var parallelBones: ParallelBones? = null
+
+    /** Порог перекладки: дальше половины запаса от привязки. */
+    private fun movedLimit2(): Double { val lim = 0.5 * bpMargin; return lim * lim }
+
+    /** Уехавшие из movers[from, to) в moved начиная с [at]; возвращает конец. */
+    internal fun writeMoved(from: Int, to: Int, at: Int, px: DoubleArray, py: DoubleArray): Int {
+        val lim2 = movedLimit2()
+        var o = at
+        for (a in from until to) {
+            val v = movers[a]
+            val dx = px[v] - bpX[v]; val dy = py[v] - bpY[v]
+            if (dx * dx + dy * dy > lim2) moved[o++] = v
+        }
+        return o
+    }
+
+    internal fun countMoved(from: Int, to: Int, px: DoubleArray, py: DoubleArray): Int {
+        val lim2 = movedLimit2()
+        var c = 0
+        for (a in from until to) {
+            val v = movers[a]
+            val dx = px[v] - bpX[v]; val dy = py[v] - bpY[v]
+            if (dx * dx + dy * dy > lim2) c++
+        }
+        return c
+    }
     // В младшем бите каждого ключа — признак ближней пары (reach): (ключ << 1) | ближняя.
     // Ключи различны, поэтому порядок по ним прежний, а признак переезжает вместе с парой
     // через сортировку и слияние. Номера частиц меньше 2^30, сдвиг не переполняет Long.
@@ -1213,96 +1279,126 @@ class BoundaryContacts(
             // дописывает открывшиеся вершины в конец. До 23.10 здесь сортировки не было, и
             // после первого же разрыва порядок контактов переставал быть каноническим.
             java.util.Arrays.sort(movers, 0, moverCount)
-            anchored.clear()
+            for (g in shards) g.clear()
             System.arraycopy(movers, 0, moved, 0, moverCount)
             movedCount = moverCount
             bpValid = true
         } else {
-            val lim = 0.5 * bpMargin
-            val lim2 = lim * lim
-            for (a in 0 until moverCount) {
-                val v = movers[a]
-                val dx = px[v] - bpX[v]; val dy = py[v] - bpY[v]
-                if (dx * dx + dy * dy > lim2) moved[movedCount++] = v
-            }
+            val w = workers
+            movedCount = if (w != null && w.count > 1 && moverCount >= PARALLEL_PAIRS_MIN) {
+                val pm = parallelMoved ?: ParallelMoved(this, w.count).also { parallelMoved = it }
+                pm.find(w, moverCount, px, py)
+            } else writeMoved(0, moverCount, 0, px, py)
             if (movedCount == 0) return
             bpMoved += movedCount
         }
         bpBuilds++
         movedStamp++
-        for (a in 0 until movedCount) {
+        val wr = workers
+        if (wr != null && wr.count > 1 && movedCount >= PARALLEL_QUERY_MIN) {
+            if (shards.size != wr.count) reshard(wr.count)
+            val pr = parallelReinsert ?: ParallelReinsert(this, wr.count).also { parallelReinsert = it }
+            pr.run(wr, px, py, qx, qy)
+        } else for (a in 0 until movedCount) {
             val v = moved[a]
-            movedMark[v] = movedStamp
-            anchored.remove(v)
+            anchorVertex(v, px, py, qx, qy)
+            for (g in shards) g.remove(v)
             val c = dda(qx[v], qy[v], px[v], py[v])
-            for (k in 0 until c) anchored.insert(v, key(ddaX[k], ddaY[k]))
-            bpX[v] = px[v]; bpY[v] = py[v]
-            val sx = px[v] - qx[v]; val sy = py[v] - qy[v]
-            bpSweep[v] = sqrt(sx * sx + sy * sy)
+            for (k in 0 until c) { val cell = key(ddaX[k], ddaY[k]); shards[shardOf(cell)].insert(v, cell) }
         }
         // Уцелевшие пары: ни одна из вершин не перекладывается. Они уже в каноническом
         // порядке и остаются в нём.
         var kept = 0
+        val w = workers
+        val pp = if (w != null && w.count > 1) parallelPairs ?: ParallelPairs(this, w.count).also { parallelPairs = it } else null
         if (!full) {
             if (keptKeys.size < pairN) keptKeys = LongArray(pairN * 2)
-            for (p in 0 until pairN) {
-                val i = pairA[p]; val j = pairB[p]
-                if (movedMark[i] == movedStamp || movedMark[j] == movedStamp) continue
-                keptKeys[kept++] = packKey(i, j, pairNear[p])
+            kept = if (pp != null && pairN >= PARALLEL_PAIRS_MIN) pp.keep(w!!, pairN) else writeKept(0, pairN, 0)
+        }
+        keys.newN = 0; keys.lowN = 0
+        var lowRuns = 0
+        if (w != null && w.count > 1 && movedCount >= PARALLEL_QUERY_MIN) {
+            // Куски подряд по moved: склейка кусков по порядку даёт тот же newKeys, что
+            // один проход; lowKeys всё равно сортируются целиком. См. ParallelCandidates.
+            val pc = parallelCandidates ?: ParallelCandidates(this, w.count).also { parallelCandidates = it }
+            pc.run(w, px, py, qx, qy)
+            for (k in 0 until pc.chunks) { pc.buffer(k).appendTo(keys); pc.lowRunEnd[k] = keys.lowN }
+            lowRuns = pc.chunks
+        } else {
+            for (a in 0 until movedCount) {
+                stamp++
+                queryVertex(moved[a], px, py, qx, qy, mark, stamp, ddaX, ddaY, keys)
             }
         }
-        var fresh = 0
-        var low = 0
-        for (a in 0 until movedCount) {
-            val v = moved[a]
-            stamp++
-            mark[v] = stamp
-            val segment = fresh
-            val c = dda(qx[v], qy[v], px[v], py[v])
-            for (k in 0 until c) {
-                val cx = ddaX[k]; val cy = ddaY[k]
-                for (ox in -1..1) for (oy in -1..1) {
-                    val cell = key(cx + ox, cy + oy)
-                    var e = anchored.first(cell)
-                    while (e >= 0) {
-                        val j = anchored.ids[e]
-                        e = anchored.next[e]
-                        if (mark[j] == stamp) continue
-                        mark[j] = stamp
-                        // Пара двух перекладываемых берётся один раз — со стороны меньшего.
-                        if (movedMark[j] == movedStamp && j < v) continue
-                        if (bonded(v, j)) continue    // соседи по ткани не сталкиваются
-                        val near = reach(v, j, bpX[j], bpY[j], bpSweep[j])
-                        if (j > v) fresh = addKey(fresh, v, j, near) else low = addLow(low, j, v, near)
-                    }
-                    e = if (staticCount > 0) staticGrid.first(cell) else -1
-                    while (e >= 0) {
-                        val j = staticGrid.ids[e]
-                        e = staticGrid.next[e]
-                        if (mark[j] == stamp) continue
-                        mark[j] = stamp
-                        if (bonded(v, j)) continue
-                        // Неподвижная вершина не сдвигается: её место и есть привязка.
-                        val near = reach(v, j, px[j], py[j], 0.0)
-                        if (j > v) fresh = addKey(fresh, v, j, near) else low = addLow(low, j, v, near)
-                    }
-                }
-            }
-            // Пары этой вершины с большими номерами — по возрастанию партнёра. Их единицы.
-            for (x in segment + 1 until fresh) {
-                val k = newKeys[x]; var y = x - 1
-                while (y >= segment && newKeys[y] > k) { newKeys[y + 1] = newKeys[y]; y-- }
-                newKeys[y + 1] = k
-            }
-        }
-        mergePairs(kept, fresh, low)
-        if (nearA.size < pairN) { nearA = IntArray(pairN * 2); nearB = IntArray(pairN * 2); nearRestSlot = IntArray(pairN * 2) }
-        nearN = 0
-        for (p in 0 until pairN) if (pairNear[p]) { nearA[nearN] = pairA[p]; nearB[nearN] = pairB[p]; nearN++ }
-        // Ищем только для реально сблизившихся пар. Предварительный поиск для
-        // всех кандидатов тратил больше, чем экономил, на короткой записи с ударами.
-        java.util.Arrays.fill(nearRestSlot, 0, nearN, -2)
+        newKeys = keys.newKeys; lowKeys = keys.lowKeys
+        val total = kept + keys.newN + keys.lowN
+        val runEnds = if (lowRuns > 0) parallelCandidates!!.lowRunEnd else null
+        if (pp != null && total >= PARALLEL_PAIRS_MIN && pp.merge(w!!, kept, keys.newN, keys.lowN, runEnds, lowRuns)) return
+        mergePairs(kept, keys.newN, keys.lowN)
+        ensureNearCapacity()
+        nearN = writeNear(0, pairN, 0)
     }
+
+    // --- куски подготовки для ParallelPairs: те же операции на отрезке ---
+
+    /** Уцелевшие пары из pairA/B[from, to) в keptKeys начиная с [at]; возвращает конец. */
+    internal fun writeKept(from: Int, to: Int, at: Int): Int {
+        var o = at
+        for (p in from until to) {
+            val i = pairA[p]; val j = pairB[p]
+            if (movedMark[i] == movedStamp || movedMark[j] == movedStamp) continue
+            keptKeys[o++] = packKey(i, j, pairNear[p])
+        }
+        return o
+    }
+
+    internal fun countKept(from: Int, to: Int): Int {
+        var c = 0
+        for (p in from until to) if (movedMark[pairA[p]] != movedStamp && movedMark[pairB[p]] != movedStamp) c++
+        return c
+    }
+
+    internal fun ensureNearCapacity() {
+        if (nearA.size < pairN) { nearA = IntArray(pairN * 2); nearB = IntArray(pairN * 2); nearRestSlot = IntArray(pairN * 2) }
+    }
+
+    /**
+     * Ближние пары из pairA/B[from, to) в nearA/B начиная с [at]; возвращает конец.
+     * Слот пары покоя ищется только для реально сблизившихся пар (-2 — ещё не искали):
+     * предварительный поиск для всех кандидатов тратил больше, чем экономил.
+     */
+    internal fun writeNear(from: Int, to: Int, at: Int): Int {
+        var o = at
+        for (p in from until to) if (pairNear[p]) { nearA[o] = pairA[p]; nearB[o] = pairB[p]; nearRestSlot[o] = -2; o++ }
+        return o
+    }
+
+    internal fun countNear(from: Int, to: Int): Int {
+        var c = 0
+        for (p in from until to) if (pairNear[p]) c++
+        return c
+    }
+
+    internal val keptKeyArray: LongArray get() = keptKeys
+    internal val pairKeyBuffer: PairKeyBuffer get() = keys
+
+    /** Под слияние ParallelPairs: ёмкость списка пар до раздачи кусков. */
+    internal fun ensurePairCapacity(total: Int) {
+        if (pairA.size < total) {
+            var cap = pairA.size * 2
+            while (cap < total) cap *= 2
+            pairA = pairA.copyOf(cap); pairB = pairB.copyOf(cap); pairNear = pairNear.copyOf(cap)
+        }
+    }
+
+    internal fun setPair(out: Int, k: Long) {
+        val pair = k ushr 1
+        pairA[out] = (pair ushr 32).toInt()
+        pairB[out] = (pair and 0xFFFFFFFFL).toInt()
+        pairNear[out] = (k and 1L) != 0L
+    }
+
+    internal fun finishParallelPairs(total: Int, near: Int) { pairN = total; nearN = near }
 
     /**
      * МОЖЕТ ЛИ ПАРА КОСНУТЬСЯ, ПОКА ОБЕ ВЕРШИНЫ У СВОИХ ПРИВЯЗОК. Перебор 3x3 ячеек
@@ -1316,6 +1412,65 @@ class BoundaryContacts(
      * подшагов трёх записей окна. Из полного списка пары НЕ выбрасываются: пробой там
      * находится и через дальнего партнёра (запись 23.10, тик 342).
      */
+    /**
+     * Пары одной перекладываемой вершины [v] в [out]: перебор 3x3 ячеек её следа в
+     * подвижной и неподвижной сетках. Пометка [mark]/[stamp] и буферы dda — вызывающего:
+     * у каждого воркера свои. Сетки и привязки здесь только читаются.
+     */
+    internal fun queryVertex(v: Int, px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray,
+                             mark: IntArray, stamp: Int, ddaX: IntArray, ddaY: IntArray, out: PairKeyBuffer) {
+        mark[v] = stamp
+        val segment = out.newN
+        val c = ddaInto(qx[v], qy[v], px[v], py[v], ddaX, ddaY)
+        for (k in 0 until c) {
+            val cx = ddaX[k]; val cy = ddaY[k]
+            for (ox in -1..1) for (oy in -1..1) {
+                val cell = key(cx + ox, cy + oy)
+                val g = shards[shardOf(cell)]
+                var e = g.first(cell)
+                while (e >= 0) {
+                    val j = g.ids[e]
+                    e = g.next[e]
+                    if (mark[j] == stamp) continue
+                    mark[j] = stamp
+                    // Пара двух перекладываемых берётся один раз — со стороны меньшего.
+                    if (movedMark[j] == movedStamp && j < v) continue
+                    if (bonded(v, j)) continue    // соседи по ткани не сталкиваются
+                    val near = reach(v, j, bpX[j], bpY[j], bpSweep[j])
+                    if (j > v) out.addNew(packKey(v, j, near)) else out.addLow(packKey(j, v, near))
+                }
+                e = if (staticCount > 0) staticGrid.first(cell) else -1
+                while (e >= 0) {
+                    val j = staticGrid.ids[e]
+                    e = staticGrid.next[e]
+                    if (mark[j] == stamp) continue
+                    mark[j] = stamp
+                    if (bonded(v, j)) continue
+                    // Неподвижная вершина не сдвигается: её место и есть привязка.
+                    val near = reach(v, j, px[j], py[j], 0.0)
+                    if (j > v) out.addNew(packKey(v, j, near)) else out.addLow(packKey(j, v, near))
+                }
+            }
+        }
+        // Пары этой вершины с большими номерами — по возрастанию партнёра. Их единицы.
+        val nk = out.newKeys
+        for (x in segment + 1 until out.newN) {
+            val k = nk[x]; var y = x - 1
+            while (y >= segment && nk[y] > k) { nk[y + 1] = nk[y]; y-- }
+            nk[y + 1] = k
+        }
+    }
+
+    /** Новая привязка перекладываемой вершины: пометка, место, длина пути подшага. */
+    internal fun anchorVertex(v: Int, px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray) {
+        movedMark[v] = movedStamp
+        bpX[v] = px[v]; bpY[v] = py[v]
+        val sx = px[v] - qx[v]; val sy = py[v] - qy[v]
+        bpSweep[v] = sqrt(sx * sx + sy * sy)
+    }
+
+    internal fun cellKey(ix: Int, iy: Int): Long = key(ix, iy)
+
     private fun reach(v: Int, j: Int, jx: Double, jy: Double, jSweep: Double): Boolean {
         val lim = contactRadius[v] + contactRadius[j] + bpMargin + bpSweep[v] + jSweep
         val dx = bpX[v] - jx; val dy = bpY[v] - jy
@@ -1339,17 +1494,6 @@ class BoundaryContacts(
     private fun packKey(lo: Int, hi: Int, near: Boolean): Long =
         (((lo.toLong() shl 32) or hi.toLong()) shl 1) or (if (near) 1L else 0L)
 
-    private fun addKey(count: Int, lo: Int, hi: Int, near: Boolean): Int {
-        if (count == newKeys.size) newKeys = newKeys.copyOf(count * 2)
-        newKeys[count] = packKey(lo, hi, near)
-        return count + 1
-    }
-
-    private fun addLow(count: Int, lo: Int, hi: Int, near: Boolean): Int {
-        if (count == lowKeys.size) lowKeys = lowKeys.copyOf(count * 2)
-        lowKeys[count] = packKey(lo, hi, near)
-        return count + 1
-    }
 
     /**
      * ПОРЯДОК ПАР КАНОНИЧЕН И НЕ ЗАВИСИТ ОТ СЕТКИ.
@@ -1414,67 +1558,112 @@ class BoundaryContacts(
         // Только ближние кандидаты: дальняя пара за подшаг не сойдётся. См. nearA.
         if (nearN == 0) return
         var hit = false
-        for (p in 0 until nearN) {
-            val a = nearA[p]; val j = nearB[p]
-            val d0x = qx[a] - qx[j]; val d0y = qy[a] - qy[j]
-            val dvx = (px[a] - qx[a]) - (px[j] - qx[j])
-            val dvy = (py[a] - qy[a]) - (py[j] - qy[j])
-            val rc = ccdCore * (contactRadius[a] + contactRadius[j])
-            val d02 = d0x * d0x + d0y * d0y
-            if (killOnDeep) {
-                // 20.10, запись игрока, тик 11226: после разрыва №761 стала
-                // граничной. В начале подшага №822 уже внутри её радиуса
-                // (0.012950 < 0.015119), к prepare вышла (0.018656).
-                // CCD у расходящейся пары законно не находит будущего удара,
-                // но это не отменяет УЖЕ случившееся глубокое перекрытие.
-                // Соседи отсеяны широкой фазой; порог смерти остаётся прежним.
-                val depth = killDepth * maxOf(contactRadius[a], contactRadius[j])
-                if (d02 < depth * depth && invMass[a] + invMass[j] > 0.0) {
-                    startDeep.add(a); startDeep.add(j)
-                }
+        val w = workers
+        if (w != null && w.count > 1 && nearN >= PARALLEL_PAIRS_MIN) {
+            // Пары, которые тело пропустило бы без единой записи, отсеиваются
+            // параллельно; остальные — подряд в исходном порядке. См. ParallelCcd.
+            val pc = parallelCcd ?: ParallelCcd(this, w.count).also { parallelCcd = it }
+            pc.scan(w, nearN, px, py, qx, qy, invMass)
+            for (k in 0 until pc.chunks) {
+                val list = pc.found(k)
+                for (x in 0 until pc.foundCount(k)) hit = ccdPair(list[x], hit, px, py, qx, qy, invMass)
             }
-
-            // Достаточный критерий пропуска — путь короче ЗАЗОРА до ядра.
-            // Полный контактный диаметр здесь неверен: при начальном зазоре 0.1
-            // центры могут поменяться местами, пройдя всего 0.9 диаметра.
-            val move2 = dvx * dvx + dvy * dvy
-            val gate = optionCcdGate * (contactRadius[a] + contactRadius[j])
-            if (move2 <= gate * gate) {
-                // Дальняя пара: (rc + |dv|)^2 <= 2*(rc^2 + |dv|^2).
-                // Берём более свободную верхнюю оценку с запасом от округления;
-                // если она уже не достигает пары, прежний sqrt тоже отверг бы её.
-                if (d02 > 4.0 * (rc * rc + move2)) continue
-                val reach = rc + sqrt(move2)
-                if (d02 >= reach * reach) continue
-            }
-            if (move2 > dbgCcdWorst * dbgCcdWorst * rc * rc) {
-                dbgCcdWorst = sqrt(move2) / rc; dbgCcdI = a; dbgCcdJ = j
-                dbgCcdMoveA = sqrt((px[a] - qx[a]) * (px[a] - qx[a]) + (py[a] - qy[a]) * (py[a] - qy[a]))
-                dbgCcdMoveJ = sqrt((px[j] - qx[j]) * (px[j] - qx[j]) + (py[j] - qy[j]) * (py[j] - qy[j]))
-            }
-
-            val c = d02 - rc * rc
-            if (c <= 0) continue                       // уже внутри ядра — дело решателя
-            val aa = dvx * dvx + dvy * dvy
-            if (aa < 1e-18) continue
-            val bb = 2.0 * (d0x * dvx + d0y * dvy)
-            if (bb >= 0) continue                      // расходятся
-            val disc = bb * bb - 4.0 * aa * c
-            if (disc < 0) continue
-            val t = (-bb - sqrt(disc)) / (2.0 * aa)
-            if (t < 0 || t >= 1) continue
-            if (!hit) {
-                // До первого пересечения рабочие массивы никому не нужны.
-                // В покое пропускаем записи по всей границе на каждом проходе CCD.
-                for (vi in 0 until vertCount) { val v = verts[vi]; toi[v] = 1.0; ccdParent[v] = v }
-                hit = true
-            }
-            if (t < toi[a]) toi[a] = t
-            if (t < toi[j]) toi[j] = t
-            val ra = ccdFind(a); val rj = ccdFind(j)
-            if (ra != rj) ccdParent[ra] = rj
-        }
+        } else for (p in 0 until nearN) hit = ccdPair(p, hit, px, py, qx, qy, invMass)
         if (!hit) return
+        finishCcd(px, py, qx, qy, invMass)
+    }
+
+    /**
+     * Пару [p] тело CCD пропустит, ничего не записав: не глубокое перекрытие и путь
+     * короче зазора до ядра. Те же условия и та же арифметика, что в ccdPair.
+     */
+    internal fun ccdSkips(p: Int, px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray,
+                          invMass: DoubleArray): Boolean {
+        val a = nearA[p]; val j = nearB[p]
+        val d0x = qx[a] - qx[j]; val d0y = qy[a] - qy[j]
+        val dvx = (px[a] - qx[a]) - (px[j] - qx[j])
+        val dvy = (py[a] - qy[a]) - (py[j] - qy[j])
+        val rc = ccdCore * (contactRadius[a] + contactRadius[j])
+        val d02 = d0x * d0x + d0y * d0y
+        if (killOnDeep) {
+            val depth = killDepth * maxOf(contactRadius[a], contactRadius[j])
+            if (d02 < depth * depth && invMass[a] + invMass[j] > 0.0) return false
+        }
+        val move2 = dvx * dvx + dvy * dvy
+        val gate = optionCcdGate * (contactRadius[a] + contactRadius[j])
+        if (move2 > gate * gate) return false
+        if (d02 > 4.0 * (rc * rc + move2)) return true
+        val reach = rc + sqrt(move2)
+        return d02 >= reach * reach
+    }
+
+    /** Тело цикла CCD для пары [p]. [hitBefore] — было ли уже пересечение; возвращает новое. */
+    private fun ccdPair(p: Int, hitBefore: Boolean, px: DoubleArray, py: DoubleArray, qx: DoubleArray,
+                        qy: DoubleArray, invMass: DoubleArray): Boolean {
+        var hit = hitBefore
+        val a = nearA[p]; val j = nearB[p]
+        val d0x = qx[a] - qx[j]; val d0y = qy[a] - qy[j]
+        val dvx = (px[a] - qx[a]) - (px[j] - qx[j])
+        val dvy = (py[a] - qy[a]) - (py[j] - qy[j])
+        val rc = ccdCore * (contactRadius[a] + contactRadius[j])
+        val d02 = d0x * d0x + d0y * d0y
+        if (killOnDeep) {
+            // 20.10, запись игрока, тик 11226: после разрыва №761 стала
+            // граничной. В начале подшага №822 уже внутри её радиуса
+            // (0.012950 < 0.015119), к prepare вышла (0.018656).
+            // CCD у расходящейся пары законно не находит будущего удара,
+            // но это не отменяет УЖЕ случившееся глубокое перекрытие.
+            // Соседи отсеяны широкой фазой; порог смерти остаётся прежним.
+            val depth = killDepth * maxOf(contactRadius[a], contactRadius[j])
+            if (d02 < depth * depth && invMass[a] + invMass[j] > 0.0) {
+                startDeep.add(a); startDeep.add(j)
+            }
+        }
+
+        // Достаточный критерий пропуска — путь короче ЗАЗОРА до ядра.
+        // Полный контактный диаметр здесь неверен: при начальном зазоре 0.1
+        // центры могут поменяться местами, пройдя всего 0.9 диаметра.
+        val move2 = dvx * dvx + dvy * dvy
+        val gate = optionCcdGate * (contactRadius[a] + contactRadius[j])
+        if (move2 <= gate * gate) {
+            // Дальняя пара: (rc + |dv|)^2 <= 2*(rc^2 + |dv|^2).
+            // Берём более свободную верхнюю оценку с запасом от округления;
+            // если она уже не достигает пары, прежний sqrt тоже отверг бы её.
+            if (d02 > 4.0 * (rc * rc + move2)) return hit
+            val reach = rc + sqrt(move2)
+            if (d02 >= reach * reach) return hit
+        }
+        if (move2 > dbgCcdWorst * dbgCcdWorst * rc * rc) {
+            dbgCcdWorst = sqrt(move2) / rc; dbgCcdI = a; dbgCcdJ = j
+            dbgCcdMoveA = sqrt((px[a] - qx[a]) * (px[a] - qx[a]) + (py[a] - qy[a]) * (py[a] - qy[a]))
+            dbgCcdMoveJ = sqrt((px[j] - qx[j]) * (px[j] - qx[j]) + (py[j] - qy[j]) * (py[j] - qy[j]))
+        }
+
+        val c = d02 - rc * rc
+        if (c <= 0) return hit                       // уже внутри ядра — дело решателя
+        val aa = dvx * dvx + dvy * dvy
+        if (aa < 1e-18) return hit
+        val bb = 2.0 * (d0x * dvx + d0y * dvy)
+        if (bb >= 0) return hit                      // расходятся
+        val disc = bb * bb - 4.0 * aa * c
+        if (disc < 0) return hit
+        val t = (-bb - sqrt(disc)) / (2.0 * aa)
+        if (t < 0 || t >= 1) return hit
+        if (!hit) {
+            // До первого пересечения рабочие массивы никому не нужны.
+            // В покое пропускаем записи по всей границе на каждом проходе CCD.
+            for (vi in 0 until vertCount) { val v = verts[vi]; toi[v] = 1.0; ccdParent[v] = v }
+            hit = true
+        }
+        if (t < toi[a]) toi[a] = t
+        if (t < toi[j]) toi[j] = t
+        val ra = ccdFind(a); val rj = ccdFind(j)
+        if (ra != rj) ccdParent[ra] = rj
+        return hit
+    }
+
+    private fun finishCcd(px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray,
+                          invMass: DoubleArray) {
         var clamps = 0
         for (vi in 0 until vertCount) { val v = verts[vi];
             if (toi[v] >= 1.0) continue
@@ -1516,38 +1705,65 @@ class BoundaryContacts(
 
     private fun buildContacts(px: DoubleArray, py: DoubleArray, vx: DoubleArray, vy: DoubleArray, continuing: Boolean) {
         cN = 0
+        val w = workers
+        if (!continuing && w != null && w.count > 1 && nearN >= PARALLEL_PAIRS_MIN) {
+            // Фильтр с сохранением порядка: сначала счёт по кускам, потом запись со
+            // своего смещения. См. ParallelBuild.
+            val pb = parallelBuild ?: ParallelBuild(this, w.count).also { parallelBuild = it }
+            cN = pb.build(w, nearN, px, py, vx, vy)
+            lastContacts = cN
+            return
+        }
         // Только ближние кандидаты: дальняя пара не перекрыта. См. nearA.
         for (p in 0 until nearN) {
-            val i = nearA[p]; val j = nearB[p]
-            val dx = px[i] - px[j]; val dy = py[i] - py[j]
-            val d2 = dx * dx + dy * dy
-            val rr0 = contactRadius[i] + contactRadius[j]
-            if (d2 >= rr0 * rr0) continue
-            val rr = pairContactDistance(p, rr0)
-            if (d2 >= rr * rr) continue
-            val d = sqrt(d2)
-            val nx: Double; val ny: Double
-            if (d > 1e-12) { nx = dx / d; ny = dy / d } else { nx = 1.0; ny = 0.0 }
-            if (cN >= cI.size) {
-                cRR = cRR.copyOf(cRR.size * 2)
-                cI = cI.copyOf(cI.size * 2); cJ = cJ.copyOf(cJ.size * 2)
-                cNx = cNx.copyOf(cNx.size * 2); cNy = cNy.copyOf(cNy.size * 2)
-                cVn = cVn.copyOf(cVn.size * 2); cLam = cLam.copyOf(cLam.size * 2)
-                cLamTot = cLamTot.copyOf(cLamTot.size * 2); cLamInit = cLamInit.copyOf(cLamInit.size * 2)
-                cAx = cAx.copyOf(cAx.size * 2); cAy = cAy.copyOf(cAy.size * 2)
-
-            }
-            cI[cN] = i; cJ[cN] = j; cNx[cN] = nx; cNy[cN] = ny; cRR[cN] = rr
-            // Скорость сближения снимается ДО позиционного решателя: именно она задаёт
-            // отскок. Возьми её после — и энергия появится из воздуха.
-            cVn[cN] = (vx[i] - vx[j]) * nx + (vy[i] - vy[j]) * ny
-            cLam[cN] = 0.0
-            cLamTot[cN] = if (optionXpbdWarmStart || optionAblegacy) lam.getOrDefault(pairKey(i, j), 0.0) else 0.0
-            cLamInit[cN] = -1.0
-            if (continuing) passCache.restore(cN, i, j, cLamTot, cLamInit, cVn)
+            if (!contactTouches(p, px, py)) continue
+            ensureContactCapacity(cN + 1)
+            writeContact(p, cN, px, py, vx, vy)
+            if (continuing) passCache.restore(cN, nearA[p], nearB[p], cLamTot, cLamInit, cVn)
             cN++
         }
         lastContacts = cN
+    }
+
+    /** Перекрыта ли ближняя пара [p] — условие попадания в контакты. */
+    internal fun contactTouches(p: Int, px: DoubleArray, py: DoubleArray): Boolean {
+        val i = nearA[p]; val j = nearB[p]
+        val dx = px[i] - px[j]; val dy = py[i] - py[j]
+        val d2 = dx * dx + dy * dy
+        val rr0 = contactRadius[i] + contactRadius[j]
+        if (d2 >= rr0 * rr0) return false
+        val rr = pairContactDistance(p, rr0)
+        return d2 < rr * rr
+    }
+
+    internal fun ensureContactCapacity(need: Int) {
+        if (need <= cI.size) return
+        var cap = cI.size * 2
+        while (cap < need) cap *= 2
+        cRR = cRR.copyOf(cap)
+        cI = cI.copyOf(cap); cJ = cJ.copyOf(cap)
+        cNx = cNx.copyOf(cap); cNy = cNy.copyOf(cap)
+        cVn = cVn.copyOf(cap); cLam = cLam.copyOf(cap)
+        cLamTot = cLamTot.copyOf(cap); cLamInit = cLamInit.copyOf(cap)
+        cAx = cAx.copyOf(cap); cAy = cAy.copyOf(cap)
+    }
+
+    /** Контакт [c] из перекрытой ближней пары [p] (contactTouches). */
+    internal fun writeContact(p: Int, c: Int, px: DoubleArray, py: DoubleArray, vx: DoubleArray, vy: DoubleArray) {
+        val i = nearA[p]; val j = nearB[p]
+        val dx = px[i] - px[j]; val dy = py[i] - py[j]
+        val d2 = dx * dx + dy * dy
+        val rr = pairContactDistance(p, contactRadius[i] + contactRadius[j])
+        val d = sqrt(d2)
+        val nx: Double; val ny: Double
+        if (d > 1e-12) { nx = dx / d; ny = dy / d } else { nx = 1.0; ny = 0.0 }
+        cI[c] = i; cJ[c] = j; cNx[c] = nx; cNy[c] = ny; cRR[c] = rr
+        // Скорость сближения снимается ДО позиционного решателя: именно она задаёт
+        // отскок. Возьми её после — и энергия появится из воздуха.
+        cVn[c] = (vx[i] - vx[j]) * nx + (vy[i] - vy[j]) * ny
+        cLam[c] = 0.0
+        cLamTot[c] = if (optionXpbdWarmStart || optionAblegacy) lam.getOrDefault(pairKey(i, j), 0.0) else 0.0
+        cLamInit[c] = -1.0
     }
 
     /**
@@ -1637,25 +1853,35 @@ class BoundaryContacts(
         // Даже разошедшийся контакт может нести заявку из начала подшага.
         // При первой подготовке boneM ещё пуст: без неё кость ошибочно погибнет.
         if (cN == 0 && startDeep.count == 0) return
-        for (b in ids.indices) {
-            var m = 0.0; var cx = 0.0; var cy = 0.0
-            for (k in ids[b]) {
-                if (invMass[k] <= 0.0) continue
-                val w = 1.0 / invMass[k]
-                m += w; cx += w * px[k]; cy += w * py[k]
-            }
-            boneM[b] = m
-            if (m <= 0.0) { boneI[b] = 0.0; continue }
-            cx /= m; cy /= m
-            boneCx[b] = cx; boneCy[b] = cy
-            var inert = 0.0
-            for (k in ids[b]) {
-                if (invMass[k] <= 0.0) continue
-                val rx = px[k] - cx; val ry = py[k] - cy
-                inert += (rx * rx + ry * ry) / invMass[k]
-            }
-            boneI[b] = inert
+        val w = workers
+        if (w != null && w.count > 1 && ids.size >= 64) {
+            // Кластеры независимы: у каждого свои масса, центр и момент. См. ParallelBones.
+            (parallelBones ?: ParallelBones(this, w.count).also { parallelBones = it }).run(w, ids.size, px, py, invMass)
+            return
         }
+        for (b in ids.indices) updateBone(b, px, py, invMass)
+    }
+
+    /** Масса, центр и момент инерции кластера [b]. */
+    internal fun updateBone(b: Int, px: DoubleArray, py: DoubleArray, invMass: DoubleArray) {
+        val ids = boneIds
+        var m = 0.0; var cx = 0.0; var cy = 0.0
+        for (k in ids[b]) {
+            if (invMass[k] <= 0.0) continue
+            val w = 1.0 / invMass[k]
+            m += w; cx += w * px[k]; cy += w * py[k]
+        }
+        boneM[b] = m
+        if (m <= 0.0) { boneI[b] = 0.0; return }
+        cx /= m; cy /= m
+        boneCx[b] = cx; boneCy[b] = cy
+        var inert = 0.0
+        for (k in ids[b]) {
+            if (invMass[k] <= 0.0) continue
+            val rx = px[k] - cx; val ry = py[k] - cy
+            inert += (rx * rx + ry * ry) / invMass[k]
+        }
+        boneI[b] = inert
     }
 
     /** Эффективная обратная масса точки i вдоль нормали, с учётом жёсткой кости. */
@@ -1749,8 +1975,9 @@ class BoundaryContacts(
             if (boneIdx(v) < 0) addKill(v)
         }
         // СКОЛЬКО КОНТАКТОВ У КЛЕТКИ — считается отдельным проходом, до сил.
-        // Зачем, см. деление в основном цикле ниже.
-        for (c in 0 until cN) {
+        // Зачем, см. деление в основном цикле ниже. Нужно только силовой ветке: при
+        // XPBD делитель не читается, а пометки addForce сверяет уже со следующим pass.
+        if (!XPBD) for (c in 0 until cN) {
             val i = cI[c]; val j = cJ[c]
             val dx = px[i] - px[j]; val dy = py[i] - py[j]
             val rr = cRR[c]
@@ -2201,7 +2428,11 @@ class BoundaryContacts(
 
     companion object {
         private const val BIAS = 1 shl 20
-        private const val DDA_MAX = 4096
+        internal const val DDA_MAX = 4096
+        /** Меньше перекладываемых вершин — поиск соседей в одном потоке: раздача дороже. */
+        private const val PARALLEL_QUERY_MIN = 64
+        /** Меньше пар — отбор и слияние в одном потоке. */
+        private const val PARALLEL_PAIRS_MIN = 1024
 
         /**
          * Запас на сшивание мембраны. Окно у этого числа узкое с обеих сторон:

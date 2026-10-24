@@ -19,6 +19,29 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     val DRAG_SPEED_LIMIT = config.DRAG_SPEED_LIMIT
     val KILL_ON_DEEP_OVERLAP = config.KILL_ON_DEEP_OVERLAP
 
+    /**
+     * Воркеры параллельных стадий; null — всё в вызывающем потоке. Результат от их
+     * числа не зависит побитово (см. ParallelBlocks). Игра может подставить свой пул.
+     */
+    var workers: PhysicsWorkers? = if (config.WORKERS > 1) PhysicsWorkers.shared(config.WORKERS) else null
+
+    /**
+     * Воркеры, которыми стадии пользуются в этом тике: на малом мире — никакими.
+     * Замер 25.10: два тела (1.9k частиц) на 7 воркерах 5.4 → 6.4 мс — у каждой стадии
+     * подшага работы на единицы микросекунд, и барьеры дороже её. На 11k уже 2.5x.
+     */
+    internal val activeWorkers: PhysicsWorkers?
+        get() = if (n >= config.PARALLEL_MIN) workers else null
+    /**
+     * Счётчик изменений топологии: разрыв, обновление контура, пересборка. По нему
+     * параллельные стадии узнают, что их раскладка по организмам устарела (OrgBuckets).
+     */
+    internal var structureVersion = 0
+
+    /** Параллельные стадии и число воркеров, под которое они собраны. См. ParallelBlocks. */
+    internal var parallelPhysicsState: ParallelPhysics? = null
+    internal var parallelPhysicsWorkers = 0
+
     lateinit var body: BodyDefinition
 
     // --- частицы (SoA) ---

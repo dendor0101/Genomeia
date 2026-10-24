@@ -105,7 +105,7 @@ internal fun BodyState.solveBlockAreas(h: Double, block: Int, layout: Constraint
     }
 }
 
-internal fun BodyState.solveBlockLimits(block: Int, layout: ConstraintBlocks) {
+internal fun BodyState.solveBlockLimits(block: Int, layout: ConstraintBlocks, from: Int = 0) {
     // Локальный проход контура. Общая проверка после швов вызывается отдельно.
     val px = px; val py = py; val invMass = invMass
     val conA = conA; val conB = conB; val conRest = conRest; val conMuscle = conMuscle
@@ -114,7 +114,7 @@ internal fun BodyState.solveBlockLimits(block: Int, layout: ConstraintBlocks) {
     // по-прежнему участвуют в solveConstraints, но здесь их координаты не читаем.
     val limits = layout
     limits.beginLimits(block)
-    var cursor = 0
+    var cursor = from
     while (cursor < limits.limitCount()) {
         val c = limits.limitAt(cursor++)
         if (c < 0) continue

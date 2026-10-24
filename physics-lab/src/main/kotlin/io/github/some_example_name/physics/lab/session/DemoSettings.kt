@@ -33,6 +33,10 @@ internal object DemoSettings {
         }
         // У новой записи свои параметры, в том числе явно пустой набор. Среда
         // машины воспроизведения не должна незаметно менять записанный материал.
+        // Число воркеров — не материал: результат от него не зависит побитово, а повтор
+        // старой записи на N воркерах и есть проверка этого.
+        System.getenv("RB_WORKERS")?.let { parameters["RB_WORKERS"] = it }
+        System.getenv("RB_PARALLEL_MIN")?.let { parameters["RB_PARALLEL_MIN"] = it }
         return PhysicsConfig(parameters)
     }
 }
