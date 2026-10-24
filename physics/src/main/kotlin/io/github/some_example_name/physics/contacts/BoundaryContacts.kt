@@ -122,12 +122,27 @@ class BoundaryContacts(
     // --- пары-кандидаты ---
     private var pairA = IntArray(4096)
     private var pairB = IntArray(4096)
+    /** Пара может коснуться, пока вершины у привязок (reach). Ставится при поиске пары. */
+    private var pairNear = BooleanArray(4096)
+    private var pairN = 0
+
+    /**
+     * БЛИЖНИЕ КАНДИДАТЫ — подмножество pairA/pairB в том же каноническом порядке: пары,
+     * которые могут коснуться (reach). По ним идут CCD и сборка контактов: дальняя пара
+     * ни отката, ни контакта, ни гибели от перекрытия дать не может, а на 100k при гребке
+     * таких большинство. Поиск пробоя идёт по ПОЛНОМУ списку: он проверяет рёбра вокруг
+     * партнёра на два шага по контуру, и на порванном контуре с длинными рёбрами
+     * пересечение находится через дальнего партнёра (запись 23.10, тик 342) — урезать
+     * его значило бы ослабить защиту от проникновения.
+     */
+    private var nearA = IntArray(4096)
+    private var nearB = IntArray(4096)
     // Номер записи покоя стабилен между перестройками широкой фазы. JFR 13.10:
     // повторный поиск по строке rest занимал 5.4% CPU на записи из 5620 тиков.
     // Добавлено 4 байта на кандидата: 4096 пар = 16 КБ (часть L1), 100k пар = 0.4 МБ (часть L2).
-    // Массив читается потоком вместе с pairA/B, без новой хеш-таблицы и обхода клеток.
-    private var pairRestSlot = IntArray(4096)
-    private var pairN = 0
+    // Массив читается потоком вместе с nearA/B, без новой хеш-таблицы и обхода клеток.
+    private var nearRestSlot = IntArray(4096)
+    private var nearN = 0
 
     /**
      * СПИСОК ПАР ЖИВЁТ ДОЛЬШЕ ОДНОГО ПОДШАГА.
@@ -147,6 +162,9 @@ class BoundaryContacts(
      */
     private var bpX = DoubleArray(n)
     private var bpY = DoubleArray(n)
+    /** Длина пути вершины на подшаге её привязки: у быстрой вершины начало пути дальше
+     * половины запаса от привязки, это надо добавить к допуску пары. См. reach. */
+    private var bpSweep = DoubleArray(n)
     private var bpValid = false
     private var bpMargin = 0.0
     /** Разбор: сколько раз за прогон широкая фаза строилась заново и сколько раз звали. */
@@ -563,14 +581,14 @@ class BoundaryContacts(
 
     private fun pairContactDistance(p: Int, rr: Double): Double {
         if (!CONTACT_REST_SPACING || optionAblegacy || restSpacingN == 0) return rr
-        var s = pairRestSlot[p]
+        var s = nearRestSlot[p]
         if (s == -2) {
             s = -1
-            val i = pairA[p]; val j = pairB[p]; val rp = rest
+            val i = nearA[p]; val j = nearB[p]; val rp = rest
             for (k in rp.start[i] until rp.start[i + 1]) {
                 if (rp.other[k] == j) { s = k; break }
             }
-            pairRestSlot[p] = s
+            nearRestSlot[p] = s
         }
         if (s < 0 || restState[s].toInt() != REST_SPACING) return rr
         val d = rest.dist[s]
@@ -1106,15 +1124,6 @@ class BoundaryContacts(
     private fun pairKey(i: Int, j: Int): Long =
         (if (i < j) i else j).toLong() * 1000003L + (if (i < j) j else i).toLong()
 
-    private fun addPair(i: Int, j: Int) {
-        if (pairN >= pairA.size) {
-            pairA = pairA.copyOf(pairA.size * 2)
-            pairB = pairB.copyOf(pairB.size * 2)
-            pairRestSlot = pairRestSlot.copyOf(pairA.size)
-        }
-        pairA[pairN] = i; pairB[pairN] = j; pairN++
-    }
-
     /**
      * Подвижные вершины контура на момент полной перестройки: invMass > 0. Неподвижная
      * (спящая, мёртвая) от привязки уехать не может, проверять её незачем. Список
@@ -1145,6 +1154,9 @@ class BoundaryContacts(
     private var newKeys = LongArray(256)
     private var lowKeys = LongArray(256)
     private var keptKeys = LongArray(256)
+    // В младшем бите каждого ключа — признак ближней пары (reach): (ключ << 1) | ближняя.
+    // Ключи различны, поэтому порядок по ним прежний, а признак переезжает вместе с парой
+    // через сортировку и слияние. Номера частиц меньше 2^30, сдвиг не переполняет Long.
 
     /**
      * Список кандидатов устарел: кто-то уснул или проснулся. Пара двух неподвижных
@@ -1195,6 +1207,12 @@ class BoundaryContacts(
             if (movers.size < vertCount) movers = IntArray(vertCount)
             moverCount = 0
             for (a in 0 until vertCount) { val v = verts[a]; if (invMass[v] > 0.0) movers[moverCount++] = v }
+            // ПО ВОЗРАСТАНИЮ НОМЕРА: на этом держится канонический порядок новых пар — пары
+            // с меньшей перекладываемой вершиной идут по вершинам подряд (см. newKeys).
+            // Список вершин контура после разрыва уже не упорядочен: updateSurface
+            // дописывает открывшиеся вершины в конец. До 23.10 здесь сортировки не было, и
+            // после первого же разрыва порядок контактов переставал быть каноническим.
+            java.util.Arrays.sort(movers, 0, moverCount)
             anchored.clear()
             System.arraycopy(movers, 0, moved, 0, moverCount)
             movedCount = moverCount
@@ -1219,6 +1237,8 @@ class BoundaryContacts(
             val c = dda(qx[v], qy[v], px[v], py[v])
             for (k in 0 until c) anchored.insert(v, key(ddaX[k], ddaY[k]))
             bpX[v] = px[v]; bpY[v] = py[v]
+            val sx = px[v] - qx[v]; val sy = py[v] - qy[v]
+            bpSweep[v] = sqrt(sx * sx + sy * sy)
         }
         // Уцелевшие пары: ни одна из вершин не перекладывается. Они уже в каноническом
         // порядке и остаются в нём.
@@ -1228,7 +1248,7 @@ class BoundaryContacts(
             for (p in 0 until pairN) {
                 val i = pairA[p]; val j = pairB[p]
                 if (movedMark[i] == movedStamp || movedMark[j] == movedStamp) continue
-                keptKeys[kept++] = (i.toLong() shl 32) or j.toLong()
+                keptKeys[kept++] = packKey(i, j, pairNear[p])
             }
         }
         var fresh = 0
@@ -1252,7 +1272,8 @@ class BoundaryContacts(
                         // Пара двух перекладываемых берётся один раз — со стороны меньшего.
                         if (movedMark[j] == movedStamp && j < v) continue
                         if (bonded(v, j)) continue    // соседи по ткани не сталкиваются
-                        if (j > v) fresh = addKey(fresh, v, j) else low = addLow(low, j, v)
+                        val near = reach(v, j, bpX[j], bpY[j], bpSweep[j])
+                        if (j > v) fresh = addKey(fresh, v, j, near) else low = addLow(low, j, v, near)
                     }
                     e = if (staticCount > 0) staticGrid.first(cell) else -1
                     while (e >= 0) {
@@ -1261,7 +1282,9 @@ class BoundaryContacts(
                         if (mark[j] == stamp) continue
                         mark[j] = stamp
                         if (bonded(v, j)) continue
-                        if (j > v) fresh = addKey(fresh, v, j) else low = addLow(low, j, v)
+                        // Неподвижная вершина не сдвигается: её место и есть привязка.
+                        val near = reach(v, j, px[j], py[j], 0.0)
+                        if (j > v) fresh = addKey(fresh, v, j, near) else low = addLow(low, j, v, near)
                     }
                 }
             }
@@ -1273,9 +1296,30 @@ class BoundaryContacts(
             }
         }
         mergePairs(kept, fresh, low)
+        if (nearA.size < pairN) { nearA = IntArray(pairN * 2); nearB = IntArray(pairN * 2); nearRestSlot = IntArray(pairN * 2) }
+        nearN = 0
+        for (p in 0 until pairN) if (pairNear[p]) { nearA[nearN] = pairA[p]; nearB[nearN] = pairB[p]; nearN++ }
         // Ищем только для реально сблизившихся пар. Предварительный поиск для
         // всех кандидатов тратил больше, чем экономил, на короткой записи с ударами.
-        java.util.Arrays.fill(pairRestSlot, 0, pairN, -2)
+        java.util.Arrays.fill(nearRestSlot, 0, nearN, -2)
+    }
+
+    /**
+     * МОЖЕТ ЛИ ПАРА КОСНУТЬСЯ, ПОКА ОБЕ ВЕРШИНЫ У СВОИХ ПРИВЯЗОК. Перебор 3x3 ячеек
+     * берёт соседей на расстоянии до ~8 наибольших радиусов, а касание возможно только
+     * ближе суммы радиусов. Пока каждая вершина не дальше половины запаса от своей
+     * привязки, касающиеся вершины имеют привязки ближе суммы радиусов плюс запас; у
+     * быстрой вершины начало пути подшага привязки может быть дальше — добавляется
+     * длина этого пути. Остальные пары ни контакта, ни отката CCD, ни гибели от
+     * глубокого перекрытия дать не могут, и CCD со сборкой контактов их не перебирают
+     * (nearA). Сверка 23.10: с отсевом и без — побитово одно и то же на всех 6.2 млн
+     * подшагов трёх записей окна. Из полного списка пары НЕ выбрасываются: пробой там
+     * находится и через дальнего партнёра (запись 23.10, тик 342).
+     */
+    private fun reach(v: Int, j: Int, jx: Double, jy: Double, jSweep: Double): Boolean {
+        val lim = contactRadius[v] + contactRadius[j] + bpMargin + bpSweep[v] + jSweep
+        val dx = bpX[v] - jx; val dy = bpY[v] - jy
+        return dx * dx + dy * dy <= lim * lim
     }
 
     private fun rebuildStaticGrid(px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray,
@@ -1292,15 +1336,18 @@ class BoundaryContacts(
         staticValid = true
     }
 
-    private fun addKey(count: Int, lo: Int, hi: Int): Int {
+    private fun packKey(lo: Int, hi: Int, near: Boolean): Long =
+        (((lo.toLong() shl 32) or hi.toLong()) shl 1) or (if (near) 1L else 0L)
+
+    private fun addKey(count: Int, lo: Int, hi: Int, near: Boolean): Int {
         if (count == newKeys.size) newKeys = newKeys.copyOf(count * 2)
-        newKeys[count] = (lo.toLong() shl 32) or hi.toLong()
+        newKeys[count] = packKey(lo, hi, near)
         return count + 1
     }
 
-    private fun addLow(count: Int, lo: Int, hi: Int): Int {
+    private fun addLow(count: Int, lo: Int, hi: Int, near: Boolean): Int {
         if (count == lowKeys.size) lowKeys = lowKeys.copyOf(count * 2)
-        lowKeys[count] = (lo.toLong() shl 32) or hi.toLong()
+        lowKeys[count] = packKey(lo, hi, near)
         return count + 1
     }
 
@@ -1321,7 +1368,7 @@ class BoundaryContacts(
         if (pairA.size < total) {
             var cap = pairA.size * 2
             while (cap < total) cap *= 2
-            pairA = pairA.copyOf(cap); pairB = pairB.copyOf(cap); pairRestSlot = pairRestSlot.copyOf(cap)
+            pairA = pairA.copyOf(cap); pairB = pairB.copyOf(cap); pairNear = pairNear.copyOf(cap)
         }
         var i = 0; var j = 0; var l = 0; var out = 0
         while (out < total) {
@@ -1331,8 +1378,10 @@ class BoundaryContacts(
             if (j < fresh && newKeys[j] < k) { k = newKeys[j]; from = 2 }
             if (l < low && lowKeys[l] < k) { k = lowKeys[l]; from = 3 }
             when (from) { 1 -> i++; 2 -> j++; else -> l++ }
-            pairA[out] = (k ushr 32).toInt()
-            pairB[out] = (k and 0xFFFFFFFFL).toInt()
+            val pair = k ushr 1
+            pairA[out] = (pair ushr 32).toInt()
+            pairB[out] = (pair and 0xFFFFFFFFL).toInt()
+            pairNear[out] = (k and 1L) != 0L
             out++
         }
         pairN = out
@@ -1362,10 +1411,11 @@ class BoundaryContacts(
                          invMass: DoubleArray) {
         lastToiClamps = 0
         startDeep.clear()
-        if (pairN == 0) return
+        // Только ближние кандидаты: дальняя пара за подшаг не сойдётся. См. nearA.
+        if (nearN == 0) return
         var hit = false
-        for (p in 0 until pairN) {
-            val a = pairA[p]; val j = pairB[p]
+        for (p in 0 until nearN) {
+            val a = nearA[p]; val j = nearB[p]
             val d0x = qx[a] - qx[j]; val d0y = qy[a] - qy[j]
             val dvx = (px[a] - qx[a]) - (px[j] - qx[j])
             val dvy = (py[a] - qy[a]) - (py[j] - qy[j])
@@ -1466,8 +1516,9 @@ class BoundaryContacts(
 
     private fun buildContacts(px: DoubleArray, py: DoubleArray, vx: DoubleArray, vy: DoubleArray, continuing: Boolean) {
         cN = 0
-        for (p in 0 until pairN) {
-            val i = pairA[p]; val j = pairB[p]
+        // Только ближние кандидаты: дальняя пара не перекрыта. См. nearA.
+        for (p in 0 until nearN) {
+            val i = nearA[p]; val j = nearB[p]
             val dx = px[i] - px[j]; val dy = py[i] - py[j]
             val d2 = dx * dx + dy * dy
             val rr0 = contactRadius[i] + contactRadius[j]
@@ -2567,4 +2618,5 @@ class RestPairs(
         val EMPTY = RestPairs(IntArray(1), IntArray(0), IntArray(0), DoubleArray(0), DoubleArray(0), BooleanArray(0))
     }
 }
+
 
