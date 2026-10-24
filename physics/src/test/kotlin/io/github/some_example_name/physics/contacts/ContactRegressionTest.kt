@@ -23,6 +23,31 @@ class ContactRegressionTest {
         assertEquals(7, grid.ids[grid.first(100L)])
     }
 
+    @Test fun anchoredGridMatchesReferenceThroughGrowthAndCellDeletion() {
+        // Случайные перекладки на тесной области ключей: ячейки то пустеют (deleteCell со
+        // сдвигом цепочки), то заводятся снова, таблица растёт. Сверка с простой картой.
+        val n = 3000
+        val grid = AnchoredContactGrid(n)
+        val ref = HashMap<Long, MutableList<Int>>()
+        val foot = arrayOfNulls<LongArray>(n)
+        val rnd = java.util.Random(7)
+        repeat(40000) {
+            val v = rnd.nextInt(n)
+            foot[v]?.let { keys -> for (k in keys) ref[k]!!.remove(v); grid.remove(v) }
+            val keys = LongArray(1 + rnd.nextInt(3)) { (rnd.nextInt(60).toLong() shl 32) or rnd.nextInt(60).toLong() }.distinct().toLongArray()
+            for (k in keys) { grid.insert(v, k); ref.getOrPut(k) { mutableListOf() }.add(v) }
+            foot[v] = keys
+        }
+        for (x in 0L until 60L) for (y in 0L until 60L) {
+            val k = (x shl 32) or y
+            val got = ArrayList<Int>()
+            var e = grid.first(k)
+            while (e >= 0) { got.add(grid.ids[e]); e = grid.next[e] }
+            assertEquals((ref[k] ?: emptyList<Int>()).sorted(), got.sorted())
+        }
+        assertEquals(ref.values.sumOf { it.size }, grid.live)
+    }
+
     private fun pair(): BoundaryContacts = BoundaryContacts.build(
         2, IntArray(0), IntArray(0), 0, IntArray(0), IntArray(0), 0, IntArray(0),
         doubleArrayOf(0.5, 0.5), 1.0, 0.4, 0.1, 0.0,
