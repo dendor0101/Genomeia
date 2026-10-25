@@ -4,6 +4,7 @@ import io.github.some_example_name.physics.DT
 import io.github.some_example_name.physics.PhysicsConfig
 import io.github.some_example_name.physics.lab.inspection.trapCrashScan
 import io.github.some_example_name.physics.lab.io.BodyFile
+import io.github.some_example_name.physics.lab.io.SceneFile
 import io.github.some_example_name.physics.lab.io.PlayerLog
 import io.github.some_example_name.physics.lab.scenes.BenchScenes
 import io.github.some_example_name.physics.lab.scenes.applyLabDamage
@@ -66,7 +67,9 @@ internal class DemoSession(internal val bodyPath: String,
     // =================================================================
 
     internal fun buildFromFile() { with(state) {
-        simulation.load(BodyFile.load(bodyPath, copies = copies, freeParticles = freeParticles))
+        // Сцена из разных тел (*.scene) — см. SceneFile; иначе копии одного тела.
+        simulation.load(if (SceneFile.isScene(bodyPath)) SceneFile.load(bodyPath)
+            else BodyFile.load(bodyPath, copies = copies, freeParticles = freeParticles))
 
         if (!quiet) println("[DemoSession] " + body.describe())
         if (!quiet) println("[DemoSession] rigid bones = ${rigidBones.size}, degenerate clusters dropped = $degenerateBones" +

@@ -317,7 +317,7 @@ internal fun DemoWindow.drawHud() { with(session) { with(state) {
     hud.color = if (fastForward) HUD_WARN else HUD_MUTED
     hud.text(if (fastForward)
         "FAST FORWARD [F] -- x%.0f  (%.0f steps/frame, budget %d ms)"
-            .format(stepsAvg, stepsAvg, FAST_BUDGET_MS)
+            .format(stepsAvg, stepsAvg, fastBudgetMs)
     else "F -- fast forward (real time now)", 16f, y); y -= line * 1.4f
 
     hud.color = HUD_MUTED
@@ -333,6 +333,16 @@ internal fun DemoWindow.drawHud() { with(session) { with(state) {
         if (plog != null) PlayerLog.FILE else "OFF", playTick,
         if (marks.isEmpty()) "none" else marks.joinToString(" ") { "#$it" }), 16f, y); y -= line
     if (paused) { hud.color = HUD_WARN; hud.text("PAUSED", 16f, y) }
+
+    // UPS КРУПНО — справа сверху. Ниже — чистое время физики на тик и сколько UPS она
+    // дала бы без отрисовки: в ускорении физика и отрисовка делят один поток окна.
+    val right = Gdx.graphics.width - 16f
+    hud.color = HUD_TEXT
+    hud.text("UPS %.0f".format(upsValue), right - 520f, Gdx.graphics.height - 20f, 4f)
+    hud.color = HUD_WARN
+    hud.text("physics %.2f ms/tick = %.0f UPS without drawing   cells %d   workers %d".format(
+        physicsMsPerTick, if (physicsMsPerTick > 0f) 1000f / physicsMsPerTick else 0f, n,
+        workers?.count ?: 1), right - 760f, Gdx.graphics.height - 112f, 1.6f)
     hud.end()
 
     // Диалог рисуется ПОСЛЕДНИМ, поверх всего: он и логически сверху, и свои

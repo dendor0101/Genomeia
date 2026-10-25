@@ -70,5 +70,13 @@ class TextCanvas internal constructor(private val batch: SpriteBatch, private va
 
     fun begin(projection: Matrix4) { batch.projectionMatrix = projection; batch.begin() }
     fun text(value: String, x: Float, y: Float) { font.draw(batch, value, x, y) }
+
+    /** Текст крупнее в [scale] раз: масштаб шрифта возвращается сразу после строки. */
+    fun text(value: String, x: Float, y: Float, scale: Float) {
+        val sx = font.data.scaleX; val sy = font.data.scaleY
+        font.data.setScale(sx * scale, sy * scale)
+        font.draw(batch, value, x, y)
+        font.data.setScale(sx, sy)
+    }
     fun end() = batch.end()
 }
