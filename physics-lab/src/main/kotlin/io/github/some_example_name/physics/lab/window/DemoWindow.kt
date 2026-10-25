@@ -1,5 +1,6 @@
 package io.github.some_example_name.physics.lab.window
 
+import io.github.some_example_name.physics.lab.io.SceneFile
 import com.badlogic.gdx.ApplicationAdapter
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
@@ -45,6 +46,16 @@ internal class DemoWindow(val session: DemoSession) {
 
     // --- ускорение симуляции и наблюдение за дрейфом ---
     internal var fastForward = false
+
+    /** Бюджет ускорения на кадр: у сцены (*.scene) больше — физика важнее частоты кадров. */
+    internal var fastBudgetMs = FAST_BUDGET_MS
+
+    // Счётчик UPS — тиков в секунду реального времени, и время физики на тик.
+    internal var upsValue = 0f
+    internal var physicsMsPerTick = 0f
+    private var upsSteps = 0
+    private var upsT0 = 0L
+    private var physicsNs = 0L
 
     /** Сколько шагов физики уложилось в кадр. Сглаженное — мгновенное слишком дёргается. */
     internal var stepsAvg = 1f
@@ -118,7 +129,7 @@ internal class DemoWindow(val session: DemoSession) {
                 val wy = tmp.y
 
                 camera.zoom *= if (amountY > 0) 1.15f else 1f / 1.15f
-                camera.zoom = camera.zoom.coerceIn(0.05f, 8f)
+                camera.zoom = camera.zoom.coerceIn(0.05f, 64f)
                 camera.update()
 
                 tmp.set(Gdx.input.x.toFloat(), Gdx.input.y.toFloat(), 0f)
@@ -137,6 +148,7 @@ internal class DemoWindow(val session: DemoSession) {
             stepsAvg = 1f
             camera.zoom = ORGANISMS.toFloat()
             camera.position.set(viewCenterX(), 0.85f, 0f)
+            if (SceneFile.isScene(bodyPath)) fitScene()
             camera.update()
         }
         onCamera = { x, y -> camera.position.set(x.toFloat(), y.toFloat(), 0f); camera.update() }
@@ -156,6 +168,12 @@ internal class DemoWindow(val session: DemoSession) {
         openPlayerLog(logPath)
         // Сон в окне включён по умолчанию — через журнал, чтобы запись повторялась. См. DemoSession.
         if (!replayActive && physicsConfig["RB_SLEEP"] != "0") act('Z', 1)
+        // Сцена — на полной скорости и с гребком: тела с мышцами плывут и не засыпают.
+        if (SceneFile.isScene(bodyPath)) {
+            fastForward = true
+            fastBudgetMs = 40L
+            if (!replayActive) act('G', 1)
+        }
     } } }
 
     internal fun resize(width: Int, height: Int) { with(session) { with(state) {
@@ -164,6 +182,7 @@ internal class DemoWindow(val session: DemoSession) {
         // бы панораму и зум, которые пользователь только что настроил.
         if (!cameraPlaced) {
             camera.position.set(viewCenterX(), 0.85f, 0f)
+            if (SceneFile.isScene(bodyPath)) fitScene()
             cameraPlaced = true
         }
         camera.update()
@@ -171,6 +190,17 @@ internal class DemoWindow(val session: DemoSession) {
     } } }
 
     internal var cameraPlaced = false
+
+    /** Камера на весь мир сцены: центр рамки и зум, при котором рамка влезает в кадр. */
+    internal fun fitScene() { with(session) { with(state) {
+        var x0 = Float.MAX_VALUE; var x1 = -Float.MAX_VALUE; var y0 = Float.MAX_VALUE; var y1 = -Float.MAX_VALUE
+        for (i in 0 until n) {
+            val x = body.x[i]; val y = body.y[i]
+            if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y
+        }
+        camera.position.set((x0 + x1) * 0.5f, (y0 + y1) * 0.5f, 0f)
+        camera.zoom = maxOf((x1 - x0) / VIEW_WIDTH, (y1 - y0) / VIEW_HEIGHT) * 1.08f
+    } } }
 
     /** Центр кадра: середина между копиями, иначе вторая уезжает за край. */
     internal fun viewCenterX(): Float { with(session) { with(state) {
@@ -214,8 +244,10 @@ internal class DemoWindow(val session: DemoSession) {
                 // пачку шагов подряд — выглядит как взрыв.
                 if (accumulator > MAX_CATCHUP) accumulator = MAX_CATCHUP
                 while (accumulator >= DT) {
+                    val t0 = System.nanoTime()
                     if (replayActive) { if (!replayStepOne()) { accumulator = 0.0; break } }
                     else stepOnce()
+                    physicsNs += System.nanoTime() - t0
                     accumulator -= DT
                     steps++
                 }
@@ -223,9 +255,11 @@ internal class DemoWindow(val session: DemoSession) {
                 // Крутим шаги, пока не выйдет бюджет. Проверка ПОСЛЕ шага, а не до:
                 // хотя бы один шаг за кадр обязан пройти, иначе при просроченном кадре
                 // симуляция встанет совсем и это будет похоже на зависание.
-                val deadline = System.nanoTime() + FAST_BUDGET_MS * 1_000_000L
+                val deadline = System.nanoTime() + fastBudgetMs * 1_000_000L
                 do {
+                    val t0 = System.nanoTime()
                     if (replayActive) { if (!replayStepOne()) break } else stepOnce()
+                    physicsNs += System.nanoTime() - t0
                     steps++
                 } while (System.nanoTime() < deadline && steps < FAST_MAX_STEPS)
                 // В ускорении долг не копим: реальное время тут ни при чём.
@@ -238,6 +272,7 @@ internal class DemoWindow(val session: DemoSession) {
 
             // Сглаживание, иначе число в HUD прыгает и его невозможно прочесть.
             stepsAvg += (steps - stepsAvg) * 0.1f
+            countUps(steps)
         }
         prepareLerp()
         countInverted()
@@ -268,6 +303,18 @@ internal class DemoWindow(val session: DemoSession) {
         t.priority = Thread.MIN_PRIORITY
         t.start()
     } } }
+
+    /** UPS — тиков за последние полсекунды реального времени; физика — мс на тик за них же. */
+    private fun countUps(steps: Int) {
+        val now = System.nanoTime()
+        if (upsT0 == 0L) upsT0 = now
+        upsSteps += steps
+        if (now - upsT0 >= 500_000_000L) {
+            upsValue = upsSteps * 1e9f / (now - upsT0)
+            physicsMsPerTick = if (upsSteps > 0) physicsNs / 1e6f / upsSteps else 0f
+            upsSteps = 0; physicsNs = 0L; upsT0 = now
+        }
+    }
 
     internal fun dispose() { with(session) { with(state) {
         closePlayerLog()

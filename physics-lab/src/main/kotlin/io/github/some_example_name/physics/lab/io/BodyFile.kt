@@ -52,43 +52,10 @@ object BodyFile {
          */
         freeParticles: Int = 0,
     ): BodyDefinition {
-        val file = File(path)
-        require(file.isFile) { "нет файла тела: $path" }
-
-        // --- разбор ---
-        val ids = ArrayList<Int>()
-        val rawX = ArrayList<Float>()
-        val rawY = ArrayList<Float>()
-        val rawR = ArrayList<Float>()
-        val bone = ArrayList<Boolean>()
-        val muscle = ArrayList<Boolean>()
-        val rawLinks = ArrayList<IntArray>()
-
-        file.forEachLine { raw ->
-            val line = raw.trim()
-            if (line.isEmpty() || line.startsWith("#")) return@forEachLine
-            val p = line.split(Regex("\\s+"))
-            when (p[0]) {
-                "P" -> {
-                    require(p.size >= 8) { "короткая строка P: $line" }
-                    ids.add(p[1].toInt())
-                    rawX.add(p[2].toFloat()); rawY.add(p[3].toFloat())
-                    rawR.add(p[4].toFloat())
-                    bone.add(p[6] == "1"); muscle.add(p[7] == "1")
-                }
-                "L" -> {
-                    require(p.size >= 3) { "короткая строка L: $line" }
-                    rawLinks.add(intArrayOf(p[1].toInt(), p[2].toInt()))
-                }
-            }
-        }
-        require(ids.isNotEmpty()) { "в файле нет ни одной вершины: $path" }
-
-        // genomeId разрежен (дырки от удалённых клеток), а массивам нужен 0..n-1.
-        val indexOfId = HashMap<Int, Int>(ids.size * 2)
-        ids.forEachIndexed { i, id -> indexOfId[id] = i }
-
-        val n = ids.size
+        val raw = parse(path)
+        val n = raw.n
+        val rawX = raw.x; val rawY = raw.y; val rawR = raw.r
+        val bone = raw.bone; val muscle = raw.muscle
 
         // --- нормировка ---
         var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
@@ -110,19 +77,7 @@ object BodyFile {
         val x0 = FloatArray(n) { centerX + (rawX[it] - srcCx) * scale }
         val y0 = FloatArray(n) { centerY + (rawY[it] - srcCy) * scale }
         val r0 = FloatArray(n) { rawR[it] * scale }
-
-        // --- связи: без дублей, без ссылок в никуда ---
-        val seen = HashSet<Long>(rawLinks.size * 2)
-        val la0 = ArrayList<Int>(rawLinks.size)
-        val lb0 = ArrayList<Int>(rawLinks.size)
-        for (l in rawLinks) {
-            val a = indexOfId[l[0]] ?: continue
-            val b = indexOfId[l[1]] ?: continue
-            if (a == b) continue
-            val key = (minOf(a, b).toLong() shl 32) or maxOf(a, b).toLong()
-            if (!seen.add(key)) continue            // уже была — дубль
-            la0.add(a); lb0.add(b)
-        }
+        val la0 = raw.linkA; val lb0 = raw.linkB
 
         // --- РАЗМНОЖЕНИЕ ТЕЛА ---
         //
@@ -180,18 +135,87 @@ object BodyFile {
             }
         }
 
-        val adjacency = Array(total) { sortedSetOf<Int>() }
         val la = ArrayList<Int>(la0.size * copies)
         val lb = ArrayList<Int>(lb0.size * copies)
         for (c in 0 until copies) {
             val off = c * nOne
-            for (k in la0.indices) {
-                val a = la0[k] + off
-                val b = lb0[k] + off
-                adjacency[a].add(b); adjacency[b].add(a)
-                la.add(a); lb.add(b)
+            for (k in la0.indices) { la.add(la0[k] + off); lb.add(lb0[k] + off) }
+        }
+        return build(x, y, r, isBone, isMuscle, la, lb, scale)
+    }
+
+    /** Вершины и связи файла как есть, в его единицах; связи — по индексам, без дублей. */
+    internal class RawBody(
+        val x: FloatArray, val y: FloatArray, val r: FloatArray,
+        val bone: BooleanArray, val muscle: BooleanArray,
+        val linkA: IntArray, val linkB: IntArray,
+    ) {
+        val n get() = x.size
+    }
+
+    internal fun parse(path: String): RawBody {
+        val file = File(path)
+        require(file.isFile) { "нет файла тела: $path" }
+
+        // --- разбор ---
+        val ids = ArrayList<Int>()
+        val rawX = ArrayList<Float>()
+        val rawY = ArrayList<Float>()
+        val rawR = ArrayList<Float>()
+        val bone = ArrayList<Boolean>()
+        val muscle = ArrayList<Boolean>()
+        val rawLinks = ArrayList<IntArray>()
+
+        file.forEachLine { raw ->
+            val line = raw.trim()
+            if (line.isEmpty() || line.startsWith("#")) return@forEachLine
+            val p = line.split(Regex("\\s+"))
+            when (p[0]) {
+                "P" -> {
+                    require(p.size >= 8) { "короткая строка P: $line" }
+                    ids.add(p[1].toInt())
+                    rawX.add(p[2].toFloat()); rawY.add(p[3].toFloat())
+                    rawR.add(p[4].toFloat())
+                    bone.add(p[6] == "1"); muscle.add(p[7] == "1")
+                }
+                "L" -> {
+                    require(p.size >= 3) { "короткая строка L: $line" }
+                    rawLinks.add(intArrayOf(p[1].toInt(), p[2].toInt()))
+                }
             }
         }
+        require(ids.isNotEmpty()) { "в файле нет ни одной вершины: $path" }
+
+        // genomeId разрежен (дырки от удалённых клеток), а массивам нужен 0..n-1.
+        val indexOfId = HashMap<Int, Int>(ids.size * 2)
+        ids.forEachIndexed { i, id -> indexOfId[id] = i }
+
+        // --- связи: без дублей, без ссылок в никуда ---
+        val seen = HashSet<Long>(rawLinks.size * 2)
+        val la0 = ArrayList<Int>(rawLinks.size)
+        val lb0 = ArrayList<Int>(rawLinks.size)
+        for (l in rawLinks) {
+            val a = indexOfId[l[0]] ?: continue
+            val b = indexOfId[l[1]] ?: continue
+            if (a == b) continue
+            val key = (minOf(a, b).toLong() shl 32) or maxOf(a, b).toLong()
+            if (!seen.add(key)) continue            // уже была — дубль
+            la0.add(a); lb0.add(b)
+        }
+        return RawBody(rawX.toFloatArray(), rawY.toFloatArray(), rawR.toFloatArray(),
+            bone.toBooleanArray(), muscle.toBooleanArray(), la0.toIntArray(), lb0.toIntArray())
+    }
+
+    /**
+     * Производная структура мира из вершин и связей: смежность, треугольники знаковой
+     * площади, кластеры костей и мышц. Общая для одного тела с копиями и для сцены
+     * (SceneFile): связи между телами не возникают, индексы тел не пересекаются.
+     */
+    internal fun build(x: FloatArray, y: FloatArray, r: FloatArray, isBone: BooleanArray, isMuscle: BooleanArray,
+                       la: List<Int>, lb: List<Int>, scale: Float): BodyDefinition {
+        val total = x.size
+        val adjacency = Array(total) { sortedSetOf<Int>() }
+        for (k in la.indices) { val a = la[k]; val b = lb[k]; adjacency[a].add(b); adjacency[b].add(a) }
 
         // --- треугольники: тройки взаимно связанных клеток ---
         //
