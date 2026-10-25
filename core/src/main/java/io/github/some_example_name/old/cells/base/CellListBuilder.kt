@@ -2,7 +2,6 @@ package io.github.some_example_name.old.cells.base
 
 import io.github.some_example_name.old.cells.*
 import io.github.some_example_name.old.core.DIContext
-import io.github.some_example_name.old.core.DISimulationContainer.threadCount
 import io.github.some_example_name.old.core.WorldResizable
 import java.util.BitSet
 
@@ -28,7 +27,7 @@ class CellListBuilder: WorldResizable {
     }
 
     private fun Eye.bindBuffers() {
-        visitedBits = Array(threadCount) { BitSet(this@CellListBuilder.context.gridManager.gridSize) }
-        checkedObjectListId = Array(threadCount) { IntArray(16) { -1 } }
+        visitedBits = Array(this@CellListBuilder.context.threadCount) { BitSet(this@CellListBuilder.context.gridManager.gridSize) }
+        checkedObjectListId = Array(this@CellListBuilder.context.threadCount) { IntArray(16) { -1 } }
     }
 }

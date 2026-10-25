@@ -7,7 +7,6 @@ import io.github.some_example_name.old.cells.base.Formulas
 import io.github.some_example_name.old.cells.Muscle
 import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.commands.WorldCommandsManager
-import io.github.some_example_name.old.core.DISimulationContainer.cellsSettings
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.NeuralLinkEntity
@@ -73,11 +72,11 @@ class MutateManager(
                     )
                 }
                 cellType[index] = it.toByte()
-                maxEnergy[index] = cellsSettings[it].maxEnergy
+                maxEnergy[index] = cellEntity.substrateSettings.cellsSettings[it].maxEnergy
                 setDragCoefficient(index, substrateSettings.data.viscosityOfTheEnvironment)
                 setEffectOnContact(index, newCell.effectOnContact)
                 setIsCollidable(index, newCell.isCollidable)
-                setCellStiffness(index, cellsSettings[it].cellStiffness)
+                setCellStiffness(index, cellEntity.substrateSettings.cellsSettings[it].cellStiffness)
                 isNeural[index] = newCell.isNeural
 
                 val genomeIndex = organEntity.genomeIndex[organIndex[index]]

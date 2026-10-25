@@ -26,7 +26,8 @@ class LinkPhysicsSystem(
     val cellSystem: CellSystem,
     val worldCommandsManager: WorldCommandsManager,
     val diContext: DIContext,
-    val simulationData: SimulationData
+    val simulationData: SimulationData,
+    private val maximumLinkLengthSquared: Float = linkMaxLength2
 ) {
 
     companion object {
@@ -609,7 +610,7 @@ class LinkPhysicsSystem(
             cellSystem.processCellAngle(linkCellA, linkCellB)
         }
 
-        if (distanceSquared > linkMaxLength2) {
+        if (distanceSquared > maximumLinkLengthSquared) {
             if (PROFILE_COUNTERS) SimCounters.increment(threadId, SimCounters.LINK_BREAKS)
             linkEntity.reinitParentLink(linkIndex)
             worldCommandsManager.worldCommandBuffer[threadId].push(

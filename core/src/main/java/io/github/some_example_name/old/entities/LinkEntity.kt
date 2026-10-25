@@ -16,7 +16,8 @@ class LinkEntity(
     val particleEntity: ParticleEntity,
     val diContext: DIContext,
     /** Источник арен: связи организма лежат в массивах подряд. См. OrganEntity. */
-    val organEntity: OrganEntity
+    val organEntity: OrganEntity,
+    private val maximumLinkLengthSquared: Float = linkMaxLength2
 ) : Entity(linksStartMaxAmount) {
     /**
      * Клетки на концах связи, по массиву на конец.
@@ -178,7 +179,7 @@ class LinkEntity(
         // допущение, на котором держится приписка к чанкам, — что связанные клетки близки.
         val dx = cellEntity.getX(cellIndex) - cellEntity.getX(otherCellIndex)
         val dy = cellEntity.getY(cellIndex) - cellEntity.getY(otherCellIndex)
-        if (dx * dx + dy * dy > linkMaxLength2) {
+        if (dx * dx + dy * dy > maximumLinkLengthSquared) {
             return -1
         }
 

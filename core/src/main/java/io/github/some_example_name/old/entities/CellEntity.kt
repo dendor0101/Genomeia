@@ -8,7 +8,6 @@ import io.github.some_example_name.old.cells.base.Formulas
 import io.github.some_example_name.old.cells.base.SpecialModData
 import io.github.some_example_name.old.cells.base.UnknownCellTypeException
 import io.github.some_example_name.old.core.DEBUG_CHECKS
-import io.github.some_example_name.old.core.DISimulationContainer.cellsSettings
 import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.core.utils.OrderedIntPairMap
 import io.github.some_example_name.old.systems.genomics.genome.CellAction
@@ -406,7 +405,7 @@ class CellEntity(
             dragCoefficient = substrateSettings.data.viscosityOfTheEnvironment,
             effectOnContact = cellList[cellType].effectOnContact,
             isCollidable = cellList[cellType].isCollidable,
-            cellStiffness = cellsSettings[cellType].cellStiffness,
+            cellStiffness = substrateSettings.cellsSettings[cellType].cellStiffness,
             isCell = true,
             isSub = false,
             holderEntityIndex = cellIndex,
@@ -473,7 +472,7 @@ class CellEntity(
         isMutateInThisStage[cellIndex] = false
         this.cellType[cellIndex] = cellType.toByte()
         energy[cellIndex] = 0.1f
-        maxEnergy[cellIndex] = cellsSettings[cellType].maxEnergy
+        maxEnergy[cellIndex] = substrateSettings.cellsSettings[cellType].maxEnergy
         isOnEdge[cellIndex] = true
         this.degreeOfShortening[cellIndex] = 1f
         this.pheromoneType[cellIndex] = pheromoneType

@@ -191,6 +191,7 @@ private fun controllerGenome(): Genome {
 /** Сценарий игрока. Каждый шаг — команда через экран (ReplayTarget) или навигацию. */
 private class Recorder(private val game: MyGame, private val pathFile: File) : ApplicationListener by game {
 
+    private val cellLabs = CellLabReplayScenario(File(pathFile.parentFile, "cell-labs"))
     private var frames = 0
     private var step = 0
     private var waitUntilFrame = 0
@@ -203,6 +204,7 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
         try {
             game.render()
             frames++
+            if (!cellLabs.update()) return
             if (frames < waitUntilFrame) return
             if (waitUntilTick >= 0 && DISimulationContainer.simulationData.tickCounter < waitUntilTick) {
                 check(System.nanoTime() - startedAt < TIMEOUT_NS) { "сценарий завис на шаге $step" }
