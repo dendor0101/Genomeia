@@ -229,15 +229,14 @@ class WorldRenderer(
      * все превью одного списка одного размера, так что на список это одно создание.
      * Объём: три буфера RGBA8 и один D24S8, на 256×256 — около 1 МБ видеопамяти.
      *
-     * Отладочный режим не поддерживается: DebugRenderer держит свой буфер размером с
-     * экран и читает его по gl_FragCoord.
+     * DebugRenderer подбирает размер своего буфера по выходной текстуре: чтение по
+     * gl_FragCoord совпадает с размером превью.
      *
      * Звать из потока рендера вне [render] (между кадрами). Геометрия клеток общая с
      * экраном, но превью ему не мешает: следующий кадр экрана увидит в VBO чужой буфер и
      * перезальёт свой (см. [uploadedCells]). После вызова привязан экранный буфер.
      */
     fun renderOffscreen(frame: RenderFrame, output: FrameBuffer) {
-        require(frame.mode != RenderMode.DEBUG) { "превью в отладочном режиме не рисуется" }
         val width = output.width
         val height = output.height
         if (offscreenWidth != width || offscreenHeight != height) createOffscreenFbos(width, height)

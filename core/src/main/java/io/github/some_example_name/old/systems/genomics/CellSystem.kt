@@ -26,7 +26,8 @@ class CellSystem(
     val gridManager: GridManager,
     val divideManager: DivideManager,
     val mutateManager: MutateManager,
-    val threadManager: ThreadManager?
+    val threadManager: ThreadManager?,
+    private val linkEnergyTransfer: Float = energyTransportRate
 ): Disposable {
 
     /**
@@ -222,7 +223,7 @@ class CellSystem(
         val energy1 = energy[linkCell1]
         val energy2 = energy[linkCell2]
         val amount = energyTransferAmount(
-            energy1, energy2, maxEnergy[linkCell1], maxEnergy[linkCell2], energyTransportRate
+            energy1, energy2, maxEnergy[linkCell1], maxEnergy[linkCell2], linkEnergyTransfer
         )
         if (amount != 0f) {
             energy[linkCell1] = energy1 + amount

@@ -207,6 +207,8 @@ object CommandRegistry {
         t<SimRestarted>(902),
         t<StateHashed>(903),
         t<WorldSaveCommitted>(904),
+        t<CellLabAdvanced>(905),
+        t<CellLabChecked>(906),
 
         // --- Экран «Геномы» ---
         t<GenomesIntent.SelectTab>(1000),
@@ -225,6 +227,9 @@ object CommandRegistry {
         t<GuideIntent.SetInput>(1104),
         t<GuideIntent.SetInputCount>(1105),
         t<GuideIntent.SetCombine>(1106),
+        t<GuideIntent.OpenCellLab>(1107),
+        t<GuideIntent.CloseCellLab>(1108),
+        t<CellLabInput>(1109),
     )
 
     private val byClass: Map<KClass<*>, Type<*>> = types.associateBy { it.kClass }

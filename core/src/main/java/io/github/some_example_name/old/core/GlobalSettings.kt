@@ -28,9 +28,13 @@ data class CellSettings(
     var energyActionCost: Float = 0.0005f,
 )
 
-class SubstrateSettings {
+/** initialData/defaults позволяют маленькому миру работать без файлов и настроек игрока. */
+class SubstrateSettings(
+    initialData: GlobalSimulationSettings? = null,
+    private val defaults: Map<String, CellSettings>? = null
+) {
 
-    var data = readSettings()
+    var data = initialData ?: readSettings()
 
     /**
      * Настройки по номеру типа клетки. Собираются по реестру клеток (порядок
@@ -45,7 +49,7 @@ class SubstrateSettings {
     }
 
     private fun byCellType(data: GlobalSimulationSettings): List<CellSettings> =
-        defaultCellSettingsMap.map { (name, default) -> data.cellsSettings[name] ?: default }
+        (defaults ?: defaultCellSettingsMap).map { (name, default) -> data.cellsSettings[name] ?: default }
 
     private fun readSettings(): GlobalSimulationSettings {
         val json = Json()

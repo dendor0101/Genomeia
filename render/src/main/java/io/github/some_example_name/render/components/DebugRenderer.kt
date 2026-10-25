@@ -120,14 +120,14 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
     }
 
     /**
-     * FBO в размер ЭКРАННОГО буфера в пикселях, а не логического окна: проходы 2 и 3
+     * FBO в размер выходной текстуры или ЭКРАННОГО буфера в пикселях: проходы 2 и 3
      * читают его по gl_FragCoord, и на экране с масштабом (HiDPI) логический размер
      * разъехался бы с пиксельным. Сверка каждый кадр — два сравнения, зато размер не
      * зависит от того, кто и когда позвал resize.
      */
-    private fun ensureFbo(): FrameBuffer {
-        val width = Gdx.graphics.backBufferWidth.coerceAtLeast(1)
-        val height = Gdx.graphics.backBufferHeight.coerceAtLeast(1)
+    private fun ensureFbo(context: RenderContext): FrameBuffer {
+        val width = (context.outputFbo?.width ?: Gdx.graphics.backBufferWidth).coerceAtLeast(1)
+        val height = (context.outputFbo?.height ?: Gdx.graphics.backBufferHeight).coerceAtLeast(1)
         fbo?.let { existing ->
             if (fboWidth == width && fboHeight == height) return existing
             existing.dispose()
@@ -156,10 +156,11 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
     override fun render(context: RenderContext) {
         if (context.mode != RenderMode.DEBUG) return
 
-        val target = ensureFbo()
+        val target = ensureFbo(context)
         val gl = Gdx.gl
 
         fill(context, target)
+        context.beginOutput()
         composite(context, target.textureAttachments[COLOR_ATTACHMENT])
         edges(
             context,
@@ -167,6 +168,8 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
             owner = target.textureAttachments[OWNER_ATTACHMENT]
         )
         drawOverlay(context, owner = target.textureAttachments[OWNER_ATTACHMENT])
+
+        context.endOutput()
 
         // Состояние — как его ждут остальные проходы и интерфейс.
         gl.glDisable(GL20.GL_BLEND)

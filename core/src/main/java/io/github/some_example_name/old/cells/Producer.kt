@@ -2,7 +2,6 @@ package io.github.some_example_name.old.cells
 
 import io.github.some_example_name.old.cells.base.SpecialModData
 import io.github.some_example_name.old.commands.WorldCommandType
-import io.github.some_example_name.old.core.DISimulationContainer.zygote
 import io.github.some_example_name.old.core.utils.redColors
 import io.github.some_example_name.old.systems.genomics.genome.Action
 import io.github.some_example_name.old.systems.physics.CollisionManager.Companion.PARTICLE_MAX_RADIUS
@@ -48,6 +47,7 @@ class Producer(cellTypeId: Int): Cell(
 
         if (producer.reproductionRestriction != 1) return
 
+        val zygote = cellList[cellList.indexOfKey("zygote")]
         val color: Int = zygote.defaultColor.toIntBits()
         val radius: Float = PARTICLE_MAX_RADIUS
         val cellType: Int = zygote.cellTypeId

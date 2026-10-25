@@ -1,8 +1,10 @@
 package io.github.some_example_name.old.features.guide
 
-import com.badlogic.gdx.Gdx
+import com.badlogic.gdx.Input
+import com.badlogic.gdx.InputAdapter
+import com.kotcrab.vis.ui.widget.VisScrollPane
+import io.github.some_example_name.old.features.guide.celllab.CellLabKeyboard
 import com.badlogic.gdx.graphics.Color
-import com.badlogic.gdx.graphics.Texture
 import com.kotcrab.vis.ui.widget.VisTable
 import com.kotcrab.vis.ui.widget.VisTextButton
 import io.github.some_example_name.old.bug.ReplayTarget
@@ -27,6 +29,10 @@ import io.github.some_example_name.old.core.ui.w
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer
 import io.github.some_example_name.old.editor.tutorial.TutorialSteps
 import io.github.some_example_name.old.features.editor.dialog.NeuralSection
+import io.github.some_example_name.old.features.guide.celllab.CellLabCatalog
+import io.github.some_example_name.old.features.guide.celllab.CellLabView
+import io.github.some_example_name.old.journal.CellLabRecord
+import io.github.some_example_name.old.journal.CellLabInput
 import kotlin.math.min
 
 /**
@@ -39,9 +45,33 @@ import kotlin.math.min
 class GuideScreen : VisDslScreen(isScrollable = false), ReplayTarget {
 
     private val viewModel = GuideViewModel()
+    private val cellLabView = CellLabView(viewModel.cellLab)
+    private val cellLabKeyboard = CellLabKeyboard(viewModel.cellLab, stage)
+    private var cellsScroll: VisScrollPane? = null
+    private var cellsScrollY = 0f
+    private var restoreCellsScroll = false
+
+    override fun dslShow() {
+        inputProcessor.addProcessor(0, cellLabKeyboard)
+        inputProcessor.addProcessor(0, object : InputAdapter() {
+            override fun keyDown(keycode: Int): Boolean {
+                if (keycode != Input.Keys.BACK || viewModel.cellLab.model == null) return false
+                handleGuide(GuideIntent.CloseCellLab)
+                return true
+            }
+        })
+    }
+
+    private fun handleGuide(intent: GuideIntent) {
+        if (intent is GuideIntent.OpenCellLab) cellsScrollY = cellsScroll?.scrollY ?: cellsScrollY
+        viewModel.handle(intent)
+        if (intent == GuideIntent.CloseCellLab) restoreCellsScroll = true
+        if (viewModel.cellLab.model == null) cellLabView.dispose()
+        recompose()
+    }
 
     /** Текстуры клеток для вкладки «Клетки»: compose() зовётся на каждый resize. */
-    private val textures = mutableMapOf<String, Texture>()
+    private val previews by lazy { GuideCellPreviews(DIGenomeEditorContainer.cellList) }
 
     /**
      * Стенд формул: свой нейрон (см. NeuronLab) и вёрстка вкладки. Создаётся при первом
@@ -61,13 +91,29 @@ class GuideScreen : VisDslScreen(isScrollable = false), ReplayTarget {
     }
 
     override fun replay(command: GameCommand): Boolean {
+        if (command is CellLabRecord) {
+            if (command is CellLabInput) viewModel.cellLab.input(command)
+            else viewModel.cellLab.apply(command)
+            if (command is CellLabInput && command.action in listOf("set", "reset", "pause")) recompose()
+            return true
+        }
         if (command !is GuideIntent) return false
-        viewModel.handle(command)
-        recompose()
+        handleGuide(command)
         return true
     }
 
     override fun VisTable.compose() {
+        if (viewModel.cellLab.model != null) {
+            val width = min(w * 0.96f, 1300.dp())
+            visScrollPane({ expand().fill() }, scrollingDisabledX = true) {
+                visTable({ width(width).pad(16.dp()).top() }) {
+                    cellLabView.compose(this, width, onClose = {
+                        handleGuide(GuideIntent.CloseCellLab)
+                    }, rebuild = { recompose() })
+                }
+            }
+            return
+        }
         // Стенду формул нужен простор: ползунки и график стоят рядом.
         val maxWidth = if (viewModel.currentTab == GuideTab.FORMULAS) 1300.dp() else 900.dp()
         val width = min(w * 0.92f, maxWidth)
@@ -105,24 +151,34 @@ class GuideScreen : VisDslScreen(isScrollable = false), ReplayTarget {
             }
             row()
 
-            visScrollPane({ expand().fill().padTop(12.dp()) }, scrollingDisabledX = true) {
+            val contentScroll = visScrollPane({ expand().fill().padTop(12.dp()) }, scrollingDisabledX = true) {
                 when (viewModel.currentTab) {
                     GuideTab.TUTORIAL -> tutorialTab(width)
                     GuideTab.CELLS -> cellsTab(width)
                     GuideTab.FORMULAS -> formulaView.compose(this, width)
                 }
             }
+            if (viewModel.currentTab == GuideTab.CELLS) {
+                cellsScroll = contentScroll
+                contentScroll.name = "guide-cells-list"
+            }
         }
     }
 
     private fun selectTab(tab: GuideTab) {
         if (viewModel.currentTab == tab) return
-        viewModel.handle(GuideIntent.SelectTab(tab))
-        recompose()
+        handleGuide(GuideIntent.SelectTab(tab))
     }
 
     override fun dslRender(delta: Float) {
+        if (restoreCellsScroll && viewModel.cellLab.model == null) {
+            rootTable.validate()
+            cellsScroll?.apply { validate(); scrollY = cellsScrollY; updateVisualScroll() }
+            restoreCellsScroll = false
+        }
+        cellLabKeyboard.releaseWhileTyping()
         if (viewModel.currentTab == GuideTab.FORMULAS) formulaView.update(delta)
+        if (viewModel.cellLab.model != null) cellLabView.update(delta)
     }
 
     private fun VisTable.tutorialTab(width: Float) {
@@ -147,8 +203,9 @@ class GuideScreen : VisDslScreen(isScrollable = false), ReplayTarget {
     }
 
     private fun VisTable.cellsTab(width: Float) {
-        val iconSize = 56.dp()
-        val textWidth = width - iconSize - 64.dp()
+        val iconSize = 168.dp()
+        val stacked = width < 600.dp()
+        val textWidth = if (stacked) width - 48.dp() else width - iconSize - 64.dp()
 
         // Только то, что можно выбрать в редакторе: выведенные из игры клетки остались ради
         // старых геномов, учить им незачем.
@@ -157,7 +214,10 @@ class GuideScreen : VisDslScreen(isScrollable = false), ReplayTarget {
         forEach(cells) { cell ->
             visTable(cellInit = { expandX().fillX().padBottom(12.dp()) }, backgroundColor = CARD) {
                 pad(12.dp())
-                visImage(texture(cell)) { size(iconSize, iconSize).top().padRight(16.dp()) }.color = cell.defaultColor
+                visImage(previews.drawable(cell)) {
+                    size(iconSize, iconSize).top().padRight(if (stacked) 0f else 16.dp())
+                }
+                if (stacked) row()
 
                 visTable(cellInit = { expandX().fillX().left() }) {
                     defaults().left().width(textWidth)
@@ -167,6 +227,12 @@ class GuideScreen : VisDslScreen(isScrollable = false), ReplayTarget {
                     row()
                     visLabel(cell.description.ifEmpty { bundle.get("guide.cell.noDescription") }) { padTop(6.dp()) }
                         .setWrap(true)
+                    if (cell.key in CellLabCatalog.keys) {
+                        row()
+                        visTextButton(bundle.get("guide.lab.open"), onClick = {
+                            handleGuide(GuideIntent.OpenCellLab(cell.key))
+                        }) { padTop(8.dp()).width(min(textWidth, 360.dp())) }
+                    }
                     // У клетки с формулой — ссылка на стенд формул.
                     if (NeuralSection in cell.editorSections()) {
                         row()
@@ -190,13 +256,10 @@ class GuideScreen : VisDslScreen(isScrollable = false), ReplayTarget {
         if (!cell.isCollidable) add(bundle.get("guide.cell.notCollidable"))
     }.joinToString(", ")
 
-    private fun texture(cell: Cell): Texture = textures.getOrPut(cell.textureName) {
-        Texture(Gdx.files.internal("cell_textures/${cell.textureName}"))
-    }
-
     override fun dslDispose() {
-        textures.values.forEach { it.dispose() }
-        textures.clear()
+        previews.dispose()
+        cellLabView.dispose()
+        viewModel.cellLab.dispose()
     }
 
     private companion object {

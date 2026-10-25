@@ -152,7 +152,7 @@ class SimulationScreen(
      * Последнее состояние клавиш контроллера НА КЛАВИАТУРЕ. Команда уходит только при
      * смене состояния: опрос идёт каждый кадр, а журналу нужно нажатие, а не кадр.
      */
-    private val keyboardKeys = BooleanArray(CONTROLLER_KEY_CODES.size)
+    private val keyboardKeys = BooleanArray(ControllerKeys.KEY_CODES.size)
 
     override fun show() {
         if (isStarted) {
@@ -382,8 +382,8 @@ class SimulationScreen(
         // отпускаются, чтобы не залипли.
         val typing = KeyboardFocus.isTyping(stage)
         if (Gdx.app.type == Application.ApplicationType.Desktop) {
-            for (i in CONTROLLER_KEY_CODES.indices) {
-                val pressed = !typing && Gdx.input.isKeyPressed(CONTROLLER_KEY_CODES[i])
+            for (i in ControllerKeys.KEY_CODES.indices) {
+                val pressed = !typing && Gdx.input.isKeyPressed(ControllerKeys.KEY_CODES[i])
                 if (pressed != keyboardKeys[i]) {
                     keyboardKeys[i] = pressed
                     viewModel.handle(SimulationIntent.SetControllerKey(i, pressed))
@@ -712,7 +712,7 @@ class SimulationScreen(
 
     /**
      * Нижняя часть экранной клавиатуры контроллера: WASD, пробел и стрелки.
-     * Индексы клавиш — те же, что в [CONTROLLER_KEY_CODES].
+     * Индексы клавиш — те же, что в [ControllerKeys.KEY_CODES].
      */
     private fun controllerKeyboard(): Table {
         val density = Gdx.graphics.density
@@ -826,18 +826,6 @@ class SimulationScreen(
         val KEYCAP_FILL = Color(0.10f, 0.10f, 0.12f, 0.9f)
         val TOAST_FILL = Color(0.14f, 0.13f, 0.11f, 0.92f)
 
-        /**
-         * Клавиши контроллера на клавиатуре — по индексу в controllerKeyTouched:
-         * 0–9 цифры, 10–13 WASD, 14 пробел, 15–18 стрелки. Порядок — тот же, что у имён
-         * в ControllerKeys.NAMES: по имени клетка Controller находит номер клавиши.
-         */
-        val CONTROLLER_KEY_CODES = intArrayOf(
-            Input.Keys.NUM_0, Input.Keys.NUM_1, Input.Keys.NUM_2, Input.Keys.NUM_3,
-            Input.Keys.NUM_4, Input.Keys.NUM_5, Input.Keys.NUM_6, Input.Keys.NUM_7,
-            Input.Keys.NUM_8, Input.Keys.NUM_9,
-            Input.Keys.W, Input.Keys.A, Input.Keys.S, Input.Keys.D,
-            Input.Keys.SPACE,
-            Input.Keys.UP, Input.Keys.LEFT, Input.Keys.DOWN, Input.Keys.RIGHT
-        ).also { check(it.size == ControllerKeys.COUNT) { "клавиш контроллера ${it.size}, а имён ${ControllerKeys.COUNT}" } }
+
     }
 }
