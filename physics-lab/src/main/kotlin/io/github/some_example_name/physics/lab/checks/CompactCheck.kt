@@ -206,7 +206,7 @@ private fun filtersMatchRebuild(w: PhysicsWorld, label: String): Boolean {
             "vertStart", "vertOther", "vertEdge", "vertexTriangles", "vertexTriStart", "restAngles"))
         if (!same(field(st.baked, f), field(fresh, f))) bad.add("baked.$f")
     val free = st.isFree.copyOf(); val probe = st.probe.copyOf()
-    val surface = io.github.some_example_name.physics.LocalSurface(st.body, st.baked, st.boneOf, st.cellDead,
+    val surface = io.github.some_example_name.physics.LocalSurface(st.body, st.baked, st.boneOf, st.cellDead, st.radius,
         io.github.some_example_name.physics.CONTACT_SCALE, st.config.contacts.CONTACT_SEAL,
         io.github.some_example_name.physics.PROBE_ANGLE_EPS, free, probe, st.probeOn)
     for (v in 0 until st.n) surface.update(v)

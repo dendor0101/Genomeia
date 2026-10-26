@@ -24,6 +24,13 @@ package io.github.some_example_name.physics
  */
 const val COMPACT_DEAD_SHARE = 0.25
 
+/**
+ * Наименьший блок пула свободных частиц (PhysicsWorld.addFree). Следующий блок — размером со
+ * весь прежний пул: дописываний тела-пула логарифм от числа частиц. Нерождённый слот стоит
+ * памяти частицы, но не времени решателя.
+ */
+const val FREE_POOL_BLOCK = 256
+
 class PhysicsWorld(
     val config: PhysicsConfig = PhysicsConfig(),
     workers: PhysicsWorkers? = if (config.WORKERS > 1) PhysicsWorkers.shared(config.WORKERS) else null,
@@ -67,6 +74,7 @@ class PhysicsWorld(
         bodyIds = 0; removedParticles = 0
         java.util.Arrays.fill(bodyStateOf, 0)
         record(0, definition.count, 0, definition.muscleClusters.size)
+        freeBlockN = 0; freeSlots = 0; freeStackN = 0; freeCount = 0
     }
 
     private fun record(first: Int, count: Int, muscleFirst: Int, muscleCount: Int): Int {
@@ -180,6 +188,112 @@ class PhysicsWorld(
     fun reset() {
         if (removedParticles > 0) compact()
         simulation.reset()
+        // Сброс возвращает все клетки целыми, в том числе слоты пула: снова нерождённые.
+        if (freeSlots > 0) {
+            for (b in 0 until freeBlockN) {
+                val first = bodyFirstOf[freeBlockBody[b]]
+                for (k in 0 until bodyCountOf[freeBlockBody[b]]) state.deactivateFree(first + k, refresh = false)
+            }
+            state.refreshSurface()
+            freeLive.fill(false); freeCount = 0
+            freeStackN = 0
+            for (id in freeSlots - 1 downTo 0) freeStack[freeStackN++] = id
+        }
+    }
+
+    // --- свободные частицы (субстанции), этап A3 ---
+    //
+    // Частица рождается в слоте пула — тела из одиночных нерождённых клеток (см.
+    // FreeParticles.kt): дешево, без дописывания тела. Номер частицы стабилен, пока она
+    // жива; частица мира — freeParticle(номер), после уплотнения он другой. Номер
+    // удалённой частицы выдаётся снова (наименьший свободный — первым).
+
+    /** Тела пула и номер их первого слота; слоты пронумерованы подряд по блокам. */
+    private var freeBlockBody = IntArray(4)
+    private var freeBlockStart = IntArray(4)
+    private var freeBlockN = 0
+    private var freeSlots = 0
+    private var freeStack = IntArray(0)
+    private var freeStackN = 0
+    private var freeLive = BooleanArray(0)
+    /** Сколько номеров свободных частиц занято (добавлены и не убраны, живые и убитые физикой). */
+    var freeCount = 0; private set
+
+    /**
+     * Добавить свободную частицу в точку ([x], [y]) со скоростью ([vx], [vy]), радиусом
+     * [radius] и массой [mass] (NaN — как у клетки того же радиуса). Возвращает номер
+     * частицы. Цена — по соседям, кроме редкого роста пула (дописывание тела-пула).
+     */
+    fun addFree(x: Double, y: Double, radius: Double, vx: Double = 0.0, vy: Double = 0.0, mass: Double = Double.NaN): Int {
+        if (freeStackN == 0) growFreePool()
+        val id = freeStack[--freeStackN]
+        state.activateFree(freeParticle(id), x, y, vx, vy, radius, mass)
+        freeLive[id] = true; freeCount++
+        return id
+    }
+
+    /** Убрать свободную частицу [id] (живую или убитую физикой): её слот снова ждёт рождения. */
+    fun removeFree(id: Int) {
+        require(isFreeInUse(id)) { "свободной частицы $id нет" }
+        state.deactivateFree(freeParticle(id))
+        freeLive[id] = false; freeCount--
+        freeStack[freeStackN++] = id
+    }
+
+    /** Номер занят (addFree, ещё не removeFree). */
+    fun isFreeInUse(id: Int): Boolean = id in 0 until freeSlots && freeLive[id]
+
+    /**
+     * Частица жива: номер занят, и физика её не убила (глубокий контакт, давление — как
+     * клетку). Убитую клиент убирает removeFree, как и живую.
+     */
+    fun isFreeAlive(id: Int): Boolean = isFreeInUse(id) && !state.cellDead[freeParticle(id)]
+
+    /** Частица мира свободной частицы [id]. */
+    fun freeParticle(id: Int): Int {
+        require(id in 0 until freeSlots) { "номера свободной частицы $id нет" }
+        var lo = 0; var hi = freeBlockN - 1
+        while (lo < hi) { val mid = (lo + hi + 1) ushr 1; if (freeBlockStart[mid] <= id) lo = mid else hi = mid - 1 }
+        return bodyFirstOf[freeBlockBody[lo]] + (id - freeBlockStart[lo])
+    }
+
+    /**
+     * Пул вырос: новое тело из одиночных нерождённых клеток, вдвое больше прежнего пула
+     * (не меньше FREE_POOL_BLOCK). Позы покоя слотов разнесены, чтобы между ними не
+     * запеклось ни одной пары покоя; где слот лежит до рождения, не важно — он мёртв.
+     */
+    private fun growFreePool() {
+        // Масштаб мира (пороги, массы) берётся из первого тела; у пула связей нет.
+        require(state.n > 0 || state.worldScale != null) { "пустому миру со свободными частицами нужен WorldScale" }
+        val k = maxOf(FREE_POOL_BLOCK, freeSlots)
+        val r0 = 0.5f * (if (state.n > 0) state.linkScale else 1f)
+        val side = kotlin.math.ceil(kotlin.math.sqrt(k.toDouble())).toInt()
+        val step = 8f * r0
+        val def = BodyDefinition(
+            x = FloatArray(k) { (it % side) * step }, y = FloatArray(k) { (it / side) * step },
+            radius = FloatArray(k) { r0 }, isBone = BooleanArray(k), isMuscle = BooleanArray(k),
+            linkA = IntArray(0), linkB = IntArray(0), triA = IntArray(0), triB = IntArray(0), triC = IntArray(0),
+            triRestArea2 = FloatArray(0), boneClusters = emptyArray(), muscleClusters = emptyArray(),
+            scale = if (state.n > 0) state.body.scale else 1f,
+        )
+        val body: Int
+        if (state.n == 0) {
+            // Пустой мир: пул — первое тело (загрузка целиком), слоты гасятся следом.
+            body = addBody(def)
+            for (i in 0 until k) state.deactivateFree(i, refresh = false)
+            state.refreshSurface()
+        } else {
+            body = addBody(def, BooleanArray(k))
+        }
+        if (freeBlockN == freeBlockBody.size) {
+            freeBlockBody = freeBlockBody.copyOf(freeBlockN * 2); freeBlockStart = freeBlockStart.copyOf(freeBlockN * 2)
+        }
+        freeBlockBody[freeBlockN] = body; freeBlockStart[freeBlockN] = freeSlots; freeBlockN++
+        val total = freeSlots + k
+        freeLive = freeLive.copyOf(total)
+        freeStack = freeStack.copyOf(total)
+        for (id in total - 1 downTo freeSlots) freeStack[freeStackN++] = id
+        freeSlots = total
     }
 
     /**

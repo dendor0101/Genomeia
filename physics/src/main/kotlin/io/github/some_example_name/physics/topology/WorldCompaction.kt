@@ -154,7 +154,7 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
     // Поверхность — фильтром (её строки — строки топологии); контур — заново: его порядок
     // после уплотнения канонический, как после загрузки (в нём жили удалённые записи).
     val oldSurface = localSurface
-    localSurface = LocalSurface(body, baked, boneOf, cellDead, CONTACT_SCALE,
+    localSurface = LocalSurface(body, baked, boneOf, cellDead, radius, CONTACT_SCALE,
         config.contacts.CONTACT_SEAL, PROBE_ANGLE_EPS, isFree, probe, probeOn)
     localSurface.compactFrom(oldSurface, pNew)
     localBoundary = LocalBoundaryConstraints(body, baked, boneOf)

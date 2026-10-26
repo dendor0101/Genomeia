@@ -192,7 +192,7 @@ fun BodyState.buildContacts() {
         ct.reconfigure(conA, conB, conCount, boundA, boundB, boundCount, boundOpp,
             body.x, body.y, probeCells(), cellDead, restPairs, everLinked)
     }
-    localSurface = LocalSurface(body, baked, boneOf, cellDead, CONTACT_SCALE,
+    localSurface = LocalSurface(body, baked, boneOf, cellDead, radius, CONTACT_SCALE,
         config.contacts.CONTACT_SEAL, PROBE_ANGLE_EPS, isFree, probe, probeOn)
     localBoundary = LocalBoundaryConstraints(body, baked, boneOf)
     for (v in 0 until n) { localSurface.update(v); localBoundary.updateVertex(v) }

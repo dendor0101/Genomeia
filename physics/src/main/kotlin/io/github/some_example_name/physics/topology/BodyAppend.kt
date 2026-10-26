@@ -183,7 +183,7 @@ internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = nul
 
     // --- контур: поверхность и ограничения контура по новым вершинам ---
     localBoundary.detachBlocks()
-    localSurface.grow(body, boneOf, cellDead, isFree, probe)
+    localSurface.grow(body, boneOf, cellDead, radius, isFree, probe)
     localBoundary.grow(body, boneOf)
     for (v in n0 until n) { localSurface.update(v); localBoundary.updateVertex(v) }
     syncBoundaryArrays()

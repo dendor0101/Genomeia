@@ -8,6 +8,12 @@ class LocalSurface(
     private val topology: BakedTopology,
     private var boneOf: IntArray,
     private var dead: BooleanArray,
+    /**
+     * Радиус клетки — из состояния мира, а не из описания: у свободной частицы (субстанции)
+     * его задаёт клиент при рождении (BodyState.activateFree). У клеток тел это то же число,
+     * что в описании (radius = body.radius при загрузке и дописывании).
+     */
+    private var cellRadius: DoubleArray,
     private val scale: Double,
     private val seal: Double,
     private val angleEps: Double,
@@ -31,8 +37,10 @@ class LocalSurface(
      * состояние копируется как есть; строки новых заполнит update. Массивы клеток
      * мира (boneOf, dead, free, probe) после роста — новые объекты, ссылки обновляются.
      */
-    internal fun grow(body: BodyDefinition, boneOf: IntArray, dead: BooleanArray, free: BooleanArray, probe: BooleanArray) {
-        this.body = body; this.boneOf = boneOf; this.dead = dead; this.free = free; this.probe = probe
+    internal fun grow(body: BodyDefinition, boneOf: IntArray, dead: BooleanArray, cellRadius: DoubleArray,
+                      free: BooleanArray, probe: BooleanArray) {
+        this.body = body; this.boneOf = boneOf; this.dead = dead; this.cellRadius = cellRadius
+        this.free = free; this.probe = probe
         val n = body.count
         start = topology.vertStart
         adj = adj.copyOf(topology.vertOther.size)
@@ -84,7 +92,7 @@ class LocalSurface(
         probe[v] = free[v] || topology.surfaceAngle(v) < 2.0 * Math.PI - angleEps
         val exposed = free[v] || (probesEnabled && probe[v])
         active[v] = !dead[v] && (b > start[v] || exposed)
-        if (r == 0.0 && (a == start[v] || exposed)) r = body.radius[v] * scale
+        if (r == 0.0 && (a == start[v] || exposed)) r = cellRadius[v] * scale
         radius[v] = if (dead[v]) 0.0 else r
     }
 }
