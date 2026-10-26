@@ -699,6 +699,21 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
 
     var tornTotal = 0
 
+    /**
+     * СОБЫТИЯ ДЛЯ КЛИЕНТА (игра, этап B2): что погибло за последний шаг мира, в порядке гибели.
+     * Рёбра — парами частиц (номер ребра меняет уплотнение, частицы между шагами — нет),
+     * клетки — номером частицы. Пишут killEdge (разрыв, пробой, гибель клетки; удаление тела
+     * целиком — нет) и killIncidentEdges (любая гибель клетки: глубокий контакт, давление,
+     * раздавливание, причина клиента). Однопоточно, как tearQueue. Чистит PhysicsWorld:
+     * в начале шага, при уплотнении и записи снимка — номера там уже другие или прочитаны.
+     */
+    var edgeDeathLog = IntArray(64)
+    var edgeDeathN = 0
+    var cellDeathLog = IntArray(32)
+    var cellDeathN = 0
+
+    fun clearDeathLogs() { edgeDeathN = 0; cellDeathN = 0 }
+
     /** Разбор цены пересборки по частям: списки, контур, изгиб+лоскуты, организмы, контакты. */
     val dbgRebuildSec = LongArray(5)
 

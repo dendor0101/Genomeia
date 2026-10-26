@@ -159,6 +159,7 @@ class PhysicsWorld(
         }
         removedParticles = 0
         compactions++
+        state.clearDeathLogs()
     }
 
     /**
@@ -188,6 +189,17 @@ class PhysicsWorld(
         val p = birthPlacement(cell)
         state.activateCell(cell, p[0], p[1], p[2], p[3])
     }
+
+    // --- события последнего шага (этап B2) ---
+
+    /** Сколько рёбер погибло за последний шаг (разрыв, пробой, гибель клетки), в порядке гибели. */
+    val edgeDeathCount: Int get() = state.edgeDeathN
+    /** Концы [k]-го погибшего ребра — частицы мира. */
+    fun edgeDeathA(k: Int): Int = state.edgeDeathLog[2 * k]
+    fun edgeDeathB(k: Int): Int = state.edgeDeathLog[2 * k + 1]
+    /** Сколько клеток погибло за последний шаг и какие ([cellDeath]). */
+    val cellDeathCount: Int get() = state.cellDeathN
+    fun cellDeath(k: Int): Int = state.cellDeathLog[k]
 
     /** Ждёт ли клетка рождения. */
     fun isUnborn(cell: Int): Boolean = state.cellUnborn[cell]
@@ -321,7 +333,7 @@ class PhysicsWorld(
      */
     fun write(out: java.io.DataOutput) {
         require(state.n > 0) { "пустой мир не пишется" }
-        compact()
+        compact()     // и журналы событий: номера частиц в них — до уплотнения
         out.writeInt(SNAPSHOT_MAGIC); out.writeInt(SNAPSHOT_VERSION)
         out.writeUTF(materialKey())
         val scale = state.worldScale!!
@@ -376,6 +388,7 @@ class PhysicsWorld(
      */
     fun step(dt: Double = DT) {
         if (state.n == 0) return
+        state.clearDeathLogs()
         state.updateMuscles(dt)
         state.easeNewborn()
         if (state.cellScalesDirty) state.recomputeCellScales()

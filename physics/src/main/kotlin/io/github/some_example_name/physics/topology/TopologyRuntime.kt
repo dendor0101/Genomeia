@@ -516,6 +516,9 @@ internal fun BodyState.killEdge(e: Int, split: Boolean) {
     if (!baked.kill(e)) return
     structureVersion++
     if (split) {
+        if (2 * edgeDeathN + 2 > edgeDeathLog.size) edgeDeathLog = edgeDeathLog.copyOf(edgeDeathLog.size * 2)
+        edgeDeathLog[2 * edgeDeathN] = baked.edgeU(e); edgeDeathLog[2 * edgeDeathN + 1] = baked.edgeV(e)
+        edgeDeathN++
         // Разрыв будит организм: у спящего связь рвёт только чужой удар (гибель клетки).
         sleep.requestWake(baked.edgeU(e))
         // Разделяем компоненту ДО следующего удаления. split ищет две стороны

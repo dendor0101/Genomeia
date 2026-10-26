@@ -1,7 +1,10 @@
 package io.github.some_example_name.old.physics.bridge
 
+import io.github.some_example_name.old.commands.WorldCommandType
+import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.core.DEBUG_CHECKS
 import io.github.some_example_name.old.entities.CellEntity
+import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.entities.SubstancesEntity
@@ -9,6 +12,7 @@ import io.github.some_example_name.old.journal.Fnv
 import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.old.systems.physics.GridManager
 import io.github.some_example_name.physics.PhysicsWorkers
+import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
 import it.unimi.dsi.fastutil.ints.IntArrayList
 
 /**
@@ -30,7 +34,10 @@ import it.unimi.dsi.fastutil.ints.IntArrayList
  *     липучка, присоска — ParticleEntity.pushVx/pushVy) уходят в мир с пробуждением организма.
  *     Однопоточные записи (мышь, отладочный бросок) идут в мир сразу — [setVelocity], [place].
  *  3. ШАГ МИРА.
- *  4. СЕТКА: смена клетки сетки — gridId и след феромона (как делал MovementManager); ссылки
+ *  4. СОБЫТИЯ (этап B2): что погибло в шаге, игра узнаёт командами мира этого же тика —
+ *     клетка организма — DELETE_CELL, свободная частица — DELETE_SUBSTANCE, порванная связь
+ *     между живыми клетками — DELETE_LINK ([reportDeaths]).
+ *  5. СЕТКА: смена клетки сетки — gridId и след феромона (как делал MovementManager); ссылки
  *     ParticleEntity.physics* — на массивы мира (он заводит их заново при росте и уплотнении);
  *     после уплотнения мира физики номера частиц пересчитываются по номерам тел.
  *
@@ -38,16 +45,18 @@ import it.unimi.dsi.fastutil.ints.IntArrayList
  * появления: от числа воркеров не зависит ничего.
  *
  * Цена: проход по клеткам и субстанциям до шага (сверка со входами) и после (сетка), потоком
- * по аренам. События библиотеки (разрыв, гибель клетки физикой, касания) игре не сообщаются
- * (B2): клетка, убитая физикой, стоит на месте гибели.
+ * по аренам. Касания для сенсоров и поедания пока находит прежний перебор пар по сетке игры
+ * (CollisionManager.onContact) по позициям мира физики.
  */
 class WorldPhysics(
     private val organEntity: OrganEntity,
     private val cellEntity: CellEntity,
+    private val linkEntity: LinkEntity,
     private val particleEntity: ParticleEntity,
     private val substancesEntity: SubstancesEntity,
     private val gridManager: GridManager,
     private val pheromonesManager: PheromonesManager,
+    private val worldCommandsManager: WorldCommandsManager,
     private val workers: PhysicsWorkers?
 ) {
     var bridge = PhysicsBridge(workers)
@@ -96,6 +105,7 @@ class WorldPhysics(
         syncSubstances()
         bridge.step()
         publish()
+        reportDeaths()
         updateGrid()
     }
 
@@ -316,7 +326,80 @@ class WorldPhysics(
         bridge.setVelocity(i, bridge.vx(i) + dvx, bridge.vy(i) + dvy)
     }
 
-    // --- 4. сетка и номера частиц -------------------------------------------------------
+    // --- 4. события шага ---------------------------------------------------------------
+
+    /** Частица мира физики → субстанция; собирается, только когда погибла не клетка организма. */
+    private val substanceOfParticle = Int2IntOpenHashMap().apply { defaultReturnValue(-1) }
+
+    /**
+     * Что погибло в шаге — командами мира этого же тика (WORLD_CMD идёт после фазы физики), в
+     * порядке гибели и вне стадий: команды встают после последней стадии тика (WorkOrder).
+     * Порванное ребро погибшей клетки пропускается — её связи снимет DELETE_CELL.
+     */
+    private fun reportDeaths() {
+        val world = bridge.world
+        val cells = world.cellDeathCount
+        val edges = world.edgeDeathCount
+        if (cells == 0 && edges == 0) return
+        val buffer = worldCommandsManager.worldCommandBuffer[0]
+        val alive = cellEntity.isAlive
+        substanceOfParticle.clear()
+        for (k in 0 until cells) {
+            val i = world.cellDeath(k)
+            val organ = organOf(i)
+            if (organ >= 0) {
+                val cell = organEntity.cellArenaBase[organ] + (i - bridge.particleOf(organ, 0))
+                if (alive[cell]) buffer.push(WorldCommandType.DELETE_CELL, cell, cellEntity.getGeneration(cell))
+                continue
+            }
+            val sub = substanceOf(i)
+            if (sub >= 0) buffer.push(WorldCommandType.DELETE_SUBSTANCE, sub, substancesEntity.getGeneration(sub))
+        }
+        val dead = world.state.cellDead
+        for (k in 0 until edges) {
+            val a = world.edgeDeathA(k); val b = world.edgeDeathB(k)
+            if (dead[a] || dead[b]) continue
+            val organ = organOf(a)
+            if (organ < 0) continue
+            val first = bridge.particleOf(organ, 0)
+            val cellBase = organEntity.cellArenaBase[organ]
+            val cellA = cellBase + (a - first); val cellB = cellBase + (b - first)
+            if (!alive[cellA] || !alive[cellB]) continue
+            val link = organEntity.takeLinkSlot(organ, cellEntity.cellGenomeId[cellA], cellEntity.cellGenomeId[cellB])
+            if (link == -1 || !linkEntity.isAlive[link]) continue
+            val l1 = linkEntity.links1[link]; val l2 = linkEntity.links2[link]
+            if (!((l1 == cellA && l2 == cellB) || (l1 == cellB && l2 == cellA))) continue
+            buffer.push(WorldCommandType.DELETE_LINK, link, linkEntity.getGeneration(link))
+        }
+    }
+
+    /**
+     * Организм частицы мира физики, -1 — не клетка организма (свободная частица, слот пула).
+     * Организмы с телом идут в порядке подсадки, а тела в мире — в том же порядке (дописывание
+     * в конец, уплотнение порядок сохраняет): двоичный поиск по началу тела.
+     */
+    private fun organOf(i: Int): Int {
+        var lo = 0; var hi = organsWithBody.size - 1; var found = -1
+        while (lo <= hi) {
+            val mid = (lo + hi) ushr 1
+            if (bridge.particleOf(organsWithBody.getInt(mid), 0) <= i) { found = mid; lo = mid + 1 } else hi = mid - 1
+        }
+        if (found < 0) return -1
+        val organ = organsWithBody.getInt(found)
+        return if (i < bridge.particleOf(organ, 0) + organEntity.cellArenaCapacity[organ]) organ else -1
+    }
+
+    private fun substanceOf(i: Int): Int {
+        if (substanceOfParticle.isEmpty()) {
+            for (k in 0 until trackedSubstances.size) {
+                val sub = trackedSubstances.getInt(k)
+                substanceOfParticle.put(bridge.substanceParticle(freeOfSubstance[sub]), sub)
+            }
+        }
+        return substanceOfParticle.get(i)
+    }
+
+    // --- 5. сетка и номера частиц -------------------------------------------------------
 
     /** Ссылки ParticleEntity на массивы мира физики: он заводит их заново при росте и уплотнении. */
     private fun publish() {

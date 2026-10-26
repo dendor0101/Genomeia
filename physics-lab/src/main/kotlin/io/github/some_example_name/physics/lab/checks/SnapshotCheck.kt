@@ -197,7 +197,11 @@ private val skipNames = setOf("workers", "observer", "config", "dbgSubstepHook",
  * начале прохода), метки и штампы обходов.
  */
 private val scratchPrefixes = listOf("state.tickMomentumState.", "state.sleep.span", "state.contacts.staticGrid.",
-    "state.contacts.keys.", "state.contacts.rigidBatch.")
+    "state.contacts.keys.", "state.contacts.rigidBatch.",
+    // Журналы событий для клиента (этап B2): чистятся в начале шага, при уплотнении и записи
+    // снимка (счётчики edgeDeathN/cellDeathN сверяются и равны нулю); за счётчиком — остатки
+    // прошлых шагов и разная ёмкость, на следующие тики они не влияют.
+    "state.cellDeathLog", "state.edgeDeathLog")
 private val contactScratch = setOf("boneCx", "boneCy", "boneI", "boneIds", "boneM", "boneOf", "bpMoved", "cAx", "cAy",
     "cI", "cJ", "cLam", "cLamTot", "cNx", "cNy", "cRR", "cVn", "ddaX", "ddaY", "dirtyBuf", "frcList", "frcN", "keptKeys",
     "lowKeys", "moved", "movedCount", "movedStamp", "moverCount", "movers", "nearA", "nearB", "nearN", "nearRestSlot",

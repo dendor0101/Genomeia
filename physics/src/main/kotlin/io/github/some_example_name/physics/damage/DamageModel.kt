@@ -89,6 +89,8 @@ fun BodyState.killCell(v: Int) {
 }
 
 fun BodyState.killIncidentEdges(v: Int) {
+    if (cellDeathN == cellDeathLog.size) cellDeathLog = cellDeathLog.copyOf(cellDeathN * 2)
+    cellDeathLog[cellDeathN++] = v
     localComponents.removeCell(v)
     for (s in baked.vertStart[v] until baked.vertStart[v + 1]) {
         val e = baked.vertEdge[s]

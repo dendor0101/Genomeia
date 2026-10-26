@@ -307,10 +307,12 @@ object DISimulationContainer : DIContext, Disposable {
     val worldPhysics = WorldPhysics(
         organEntity = organEntity,
         cellEntity = cellEntity,
+        linkEntity = linkEntity,
         particleEntity = particleEntity,
         substancesEntity = substancesEntity,
         gridManager = gridManager,
         pheromonesManager = pheromonesManager,
+        worldCommandsManager = worldCommandsManager,
         workers = GamePhysicsWorkers(threadManager)
     )
 
