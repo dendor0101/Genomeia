@@ -140,6 +140,28 @@ class BodySleep(var on: Boolean) {
         spansDirty = true
     }
 
+    /** Сон в снимок мира (WorldSnapshot): по организму, [orgCount] штук; просьбы разбудить. */
+    internal fun write(out: java.io.DataOutput, orgCount: Int) {
+        out.writeBoolean(on)
+        out.writeBooleans(asleep, orgCount); out.writeInts(calmTicks, orgCount); out.writeBooleans(busy, orgCount)
+        out.writeInts(first, orgCount); out.writeInts(last, orgCount)
+        out.writeInts(wakeQueue, wakeQueueN)
+    }
+
+    /** Сон из снимка; ёмкость — по числу частиц [n], как в reset. Диапазоны соберутся заново. */
+    internal fun read(input: java.io.DataInput, n: Int) {
+        version++
+        on = input.readBoolean()
+        asleep = input.readBooleans(n); calmTicks = input.readInts(n); busy = input.readBooleans(n)
+        first = input.readInts(n); last = input.readInts(n)
+        val q = input.readInts(0)
+        wakeQueueN = q.size
+        wakeQueue = q.copyOf(maxOf(16, q.size))
+        asleepCount = 0
+        for (o in asleep.indices) if (asleep[o]) asleepCount++
+        spansDirty = true
+    }
+
     /**
      * Мир дописал тело: частицы [fromParticle, n), организмы [fromOrganism, organismCount).
      * Новые бодрствуют; сон прежних не трогается. Ёмкость — по числу частиц, как в reset.

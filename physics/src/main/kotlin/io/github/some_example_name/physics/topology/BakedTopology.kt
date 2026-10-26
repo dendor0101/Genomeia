@@ -349,6 +349,28 @@ class BakedTopology(private var body: BodyDefinition, build: Boolean = true) {
         dirtyVertices = IntArray(n); dirty = BooleanArray(n); dirtyCount = 0
     }
 
+    /** Изменяемое состояние в снимок мира (WorldSnapshot): структура выводится из описания. */
+    internal fun writeState(out: java.io.DataOutput) {
+        out.writeBooleans(edgeDead, edgeCount); out.writeInts(triUse, edgeCount)
+        out.writeBooleans(edgeUnborn, edgeUnborn.size)
+        out.writeBooleans(triAlive, body.triCount); out.writeBytes(invertedTicks, body.triCount)
+        out.writeBooleans(triUnborn, triUnborn.size)
+    }
+
+    /** Состояние из снимка поверх топологии, построенной по тому же описанию. */
+    internal fun readState(input: java.io.DataInput) {
+        edgeDead = input.readBooleans(edgeCount); triUse = input.readInts(edgeCount)
+        edgeUnborn = input.readBooleans(0)
+        triAlive = input.readBooleans(body.triCount); invertedTicks = input.readBytes(body.triCount)
+        triUnborn = input.readBooleans(0)
+        check(edgeDead.size == edgeCount && triAlive.size == body.triCount) { "снимок не от этого описания" }
+        liveTriangleCount = 0
+        for (t in 0 until body.triCount) if (triAlive[t]) liveTriangleCount++
+        bareEdges = 0
+        for (e in 0 until edgeCount) if (!edgeDead[e] && triUse[e] == 0) bareEdges++
+        clearDirty()
+    }
+
     /** Ребро [e] не рождено: гаснет вместе со своими треугольниками, помечается к оживлению. */
     internal fun markUnborn(e: Int) {
         if (edgeUnborn.size < edgeCount) edgeUnborn = edgeUnborn.copyOf(edgeCount)

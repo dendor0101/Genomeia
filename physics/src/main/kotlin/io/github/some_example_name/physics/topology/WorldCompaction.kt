@@ -135,6 +135,24 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
     n = nNew
     baked = BakedTopology(def, build = false).also { it.compactFrom(oldBaked, pNew, eNew, tNew, linkKept) }
     lap(3)
+    restPairs = restPairs?.keep(pNew, nNew)
+    sleep.compact(oNew, orgCount, pNew, n)
+    rebuildDerived(localSurface, pNew, ::lap)
+}
+
+/**
+ * ПРОИЗВОДНОЕ ПО ЯДРУ — общий путь уплотнения и загрузки снимка (WorldSnapshot). Ядро —
+ * описание, частицы, рабочие списки, смерть и нерождённость рёбер и треугольников,
+ * организмы, сон, кости, мышцы — уже на месте; здесь заново: разметка связей по рёбрам,
+ * поверхность и контур, компоненты, пределы контура, контакты (resize + путь загрузки
+ * reconfigure), план связей и блоки решателя. Порядок всего этого канонический: одно и то
+ * же ядро даёт один и тот же мир, откуда бы оно ни пришло.
+ *
+ * [oldSurface] с [pNew] — строки поверхности переезжают фильтром (уплотнение); null —
+ * поверхность считается заново по всем клеткам (загрузка; CompactCheck сверяет, что это
+ * одно и то же).
+ */
+internal fun BodyState.rebuildDerived(oldSurface: LocalSurface?, pNew: IntArray?, lap: (Int) -> Unit = {}) {
     fractureOrientation = FractureOrientation(body, baked)
     conOfEdge = IntArray(baked.edgeCount).also { java.util.Arrays.fill(it, -1) }
     conNextForEdge = IntArray(conA.size)
@@ -145,18 +163,16 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
     // Когда-либо связанные пары — функция описания: все связи без внутрикостных, как при
     // загрузке (fillConstraints). Ключ пары однозначно не раскладывается при миллионе
     // частиц, поэтому не переводится, а строится заново.
-    if (everLinked != null) everLinked = everLinkedOf(def)
-    restPairs = restPairs?.keep(pNew, nNew)
+    if (everLinked != null) everLinked = everLinkedOf(body)
     deadCount = 0
     for (i in 0 until n) if (cellDead[i] && !cellUnborn[i]) deadCount++
 
-    // --- производное: контур, поверхность, сон, пределы, контакты, решатель ---
-    // Поверхность — фильтром (её строки — строки топологии); контур — заново: его порядок
-    // после уплотнения канонический, как после загрузки (в нём жили удалённые записи).
-    val oldSurface = localSurface
+    // Поверхность — фильтром (её строки — строки топологии) или заново; контур — заново:
+    // его порядок канонический, как после загрузки (в нём жили записи удалённых тел).
+    val surfaceFrom = oldSurface
     localSurface = LocalSurface(body, baked, boneOf, cellDead, radius, CONTACT_SCALE,
         config.contacts.CONTACT_SEAL, PROBE_ANGLE_EPS, isFree, probe, probeOn)
-    localSurface.compactFrom(oldSurface, pNew)
+    if (surfaceFrom != null) localSurface.compactFrom(surfaceFrom, pNew!!) else for (v in 0 until n) localSurface.update(v)
     localBoundary = LocalBoundaryConstraints(body, baked, boneOf)
     // Клетке без живого ребра на одном треугольнике или без треугольников updateVertex
     // ничего не добавит — ни ребра контура, ни изгиба, ни лоскута; пропуск не меняет ни
@@ -170,7 +186,6 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
     syncBoundaryArrays()
     baked.clearDirty()
     lap(4)
-    sleep.compact(oNew, orgCount, pNew, n)
     localComponents = LocalComponents(baked, organismOf, organismSize, organismMass,
         restInvMass, cellDead, flowVX, flowVY, organismCount, sleep)
     for (c in 0 until conCount) {
@@ -319,7 +334,7 @@ private fun BodyDefinition.keep(removed: BooleanArray, pNew: IntArray, nNew: Int
 }
 
 /** Пары связей описания без внутрикостных — как everLinked при загрузке. */
-private fun BodyState.everLinkedOf(def: BodyDefinition): LinkedPairs {
+internal fun BodyState.everLinkedOf(def: BodyDefinition): LinkedPairs {
     val a = IntArray(def.linkCount); val b = IntArray(def.linkCount)
     var m = 0
     for (l in 0 until def.linkCount) {

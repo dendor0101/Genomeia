@@ -296,6 +296,65 @@ class PhysicsWorld(
         freeSlots = total
     }
 
+    // --- снимок, этап A4 ---
+
+    /**
+     * Записать ПОЛНЫЙ СНИМОК мира — всё, что влияет на следующие тики (WorldSnapshot.kt).
+     * Зовётся между тиками. Сначала мир уплотняется: производное (контур, контакты с
+     * широкой фазой, блоки решателя) пересобирается так же, как при чтении снимка, —
+     * поэтому и пишущий мир после записи идёт по этому каноническому производному.
+     * Загруженный из снимка мир (read) дальше побитово совпадает с этим.
+     */
+    fun write(out: java.io.DataOutput) {
+        require(state.n > 0) { "пустой мир не пишется" }
+        compact()
+        out.writeInt(SNAPSHOT_MAGIC); out.writeInt(SNAPSHOT_VERSION)
+        out.writeUTF(materialKey())
+        val scale = state.worldScale!!
+        out.writeInt(java.lang.Float.floatToRawIntBits(scale.meanLinkLength))
+        out.writeLong(java.lang.Double.doubleToRawLongBits(scale.meanCellArea))
+        out.writeDefinition(state.body)
+        out.writeInt(bodyIds)
+        out.writeInts(bodyFirstOf, bodyIds); out.writeInts(bodyCountOf, bodyIds)
+        out.writeInts(bodyMuscleFirstOf, bodyIds); out.writeInts(bodyMuscleCountOf, bodyIds)
+        out.writeBytes(bodyStateOf, bodyIds)
+        out.writeInt(freeBlockN); out.writeInts(freeBlockBody, freeBlockN); out.writeInts(freeBlockStart, freeBlockN)
+        out.writeInt(freeSlots); out.writeInt(freeCount)
+        out.writeInts(freeStack, freeStackN); out.writeBooleans(freeLive, freeSlots)
+        state.writeCore(out)
+    }
+
+    /**
+     * Прочитать снимок (write) в НОВЫЙ мир с тем же материалом (PhysicsConfig.snapshot):
+     * постоянные мира, тела, свободные частицы и всё состояние — как в мире, который
+     * снимок записал. Мир до чтения пуст.
+     */
+    fun read(input: java.io.DataInput) {
+        require(state.n == 0) { "снимок читается в новый мир" }
+        require(input.readInt() == SNAPSHOT_MAGIC) { "это не снимок мира физики" }
+        val version = input.readInt()
+        require(version == SNAPSHOT_VERSION) { "снимок версии $version, мир читает $SNAPSHOT_VERSION" }
+        val material = input.readUTF()
+        require(material == materialKey()) { "снимок записан с другим материалом мира" }
+        state.worldScale = WorldScale(java.lang.Float.intBitsToFloat(input.readInt()),
+            java.lang.Double.longBitsToDouble(input.readLong()))
+        simulation.load(input.readDefinition())
+        bodyIds = input.readInt()
+        bodyFirstOf = input.readInts(8); bodyCountOf = input.readInts(8)
+        bodyMuscleFirstOf = input.readInts(8); bodyMuscleCountOf = input.readInts(8)
+        bodyStateOf = input.readBytes(8)
+        removedParticles = 0
+        freeBlockN = input.readInt()
+        freeBlockBody = input.readInts(4); freeBlockStart = input.readInts(4)
+        freeSlots = input.readInt(); freeCount = input.readInt()
+        freeStack = input.readInts(0).let { freeStackN = it.size; it.copyOf(freeSlots) }
+        freeLive = input.readBooleans(freeSlots)
+        state.readCore(input)
+    }
+
+    /** Отпечаток материала: снимок читается только миром с теми же параметрами решателя. */
+    private fun materialKey(): String = config.snapshot().entries.joinToString(";") { "${it.key}=${it.value}" }
+
     /**
      * Один тик: мышцы доезжают к своим целям за [dt], новорождённая ткань — на шаг к своим
      * длинам покоя, затем шаг решателя (внутри — SUBSTEPS подшагов). [dt] другой, чем DT, — только у стендов с ускоренными мышцами.

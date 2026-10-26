@@ -1007,7 +1007,7 @@ class BoundaryContacts(
     }
 
     /**
-     * МИР УПЛОТНЁН: частиц теперь [newN], номера сдвинуты. Массивы на частицу заводятся
+     * МИР УПЛОТНЁН ИЛИ ЗАГРУЖЕН ИЗ СНИМКА: частиц теперь [newN]. Массивы на частицу заводятся
      * заново: всё, что в них живёт дольше подшага (радиусы, контур, вершины, пары покоя),
      * следом выставит reconfigure + attachSurface — тот же путь, что при загрузке. Объект
      * остаётся прежним, вместе с настройками, которые выставил клиент.
@@ -1034,6 +1034,9 @@ class BoundaryContacts(
         shards = Array(shards.size) { AnchoredContactGrid(newN) }
         parallelCandidates = null; parallelPairs = null; parallelCcd = null
         parallelBuild = null; parallelMoved = null; parallelReinsert = null; parallelBones = null
+        // Тёплый старт (необязательный) — множители прошлых подшагов по парам: после
+        // пересборки мир начинает без них, как после загрузки снимка.
+        lam.clear()
         bpValid = false; staticValid = false
     }
 
