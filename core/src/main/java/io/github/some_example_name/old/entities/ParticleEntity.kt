@@ -1,5 +1,8 @@
 package io.github.some_example_name.old.entities
 
+import io.github.some_example_name.old.physics.bridge.GAME_PER_PHYSICS
+import io.github.some_example_name.old.physics.bridge.PHYSICS_VELOCITY_PER_GAME
+import io.github.some_example_name.old.physics.bridge.WorldPhysics
 import io.github.some_example_name.old.systems.physics.CollisionManager.Companion.PARTICLE_MAX_RADIUS
 import io.github.some_example_name.old.systems.physics.GridManager
 import it.unimi.dsi.fastutil.ints.IntArrayList
@@ -10,10 +13,84 @@ class ParticleEntity(
     val gridManager: GridManager
 ): Entity(particlesStartMaxAmount) {
     var gridId = IntArray(maxAmount) { -1 }
-    var x = FloatArray(maxAmount)
-    var y = FloatArray(maxAmount)
-    var vx = FloatArray(maxAmount)
-    var vy = FloatArray(maxAmount)
+
+    /*
+     * ПОЗИЦИИ И СКОРОСТИ — функциями [x], [y], [vx], [vy], а не массивами (решение 2 плана
+     * docs/physics/library-integration-plan-2026-10-25.md). Частицу, которую ведёт мир
+     * физики-библиотеки ([physicsIndex] >= 0: клетки организмов, субстанции), читают прямо из
+     * его массивов — копии нет. Остальных — террейн, мир редактора (там физики нет), клетку
+     * в тике её создания, пока мир физики её не родил, — из своих массивов local*.
+     */
+
+    /** Свои позиции и скорости частицы, которую мир физики не ведёт. */
+    var localX = FloatArray(maxAmount)
+    var localY = FloatArray(maxAmount)
+    var localVx = FloatArray(maxAmount)
+    var localVy = FloatArray(maxAmount)
+
+    /**
+     * Номер частицы в мире физики, -1 — мир её не ведёт. Пишет только WorldPhysics (рождение,
+     * подсадка, уплотнение мира физики); в сохранение не входит — выводится заново.
+     */
+    var physicsIndex = IntArray(maxAmount) { -1 }
+
+    /**
+     * Массивы мира физики — только чтение, единицы мира физики. Мир физики заводит их заново
+     * при росте и уплотнении; ссылки обновляет WorldPhysics после каждой своей фазы.
+     */
+    @JvmField var physicsX = DoubleArray(0)
+    @JvmField var physicsY = DoubleArray(0)
+    @JvmField var physicsVx = DoubleArray(0)
+    @JvmField var physicsVy = DoubleArray(0)
+
+    /**
+     * Приращения скорости из параллельных стадий (жгутик, плавник, липучка, присоска): каждая
+     * пишет в элемент своей частицы, мир физики забирает их в своей фазе (WorldPhysics) —
+     * вызвать мир физики из стадии нельзя, пробуждение сна там общее.
+     */
+    var pushVx = FloatArray(maxAmount)
+    var pushVy = FloatArray(maxAmount)
+
+    /** Мир физики игры; null — мир редактора и прочие без физики. */
+    var physics: WorldPhysics? = null
+
+    fun x(p: Int): Float {
+        val i = physicsIndex[p]
+        return if (i >= 0) (physicsX[i] * GAME_PER_PHYSICS).toFloat() else localX[p]
+    }
+
+    fun y(p: Int): Float {
+        val i = physicsIndex[p]
+        return if (i >= 0) (physicsY[i] * GAME_PER_PHYSICS).toFloat() else localY[p]
+    }
+
+    fun vx(p: Int): Float {
+        val i = physicsIndex[p]
+        return if (i >= 0) (physicsVx[i] / PHYSICS_VELOCITY_PER_GAME).toFloat() else localVx[p]
+    }
+
+    fun vy(p: Int): Float {
+        val i = physicsIndex[p]
+        return if (i >= 0) (physicsVy[i] / PHYSICS_VELOCITY_PER_GAME).toFloat() else localVy[p]
+    }
+
+    /** Поставить частицу в точку. Однопоточно (команды, редактор). */
+    fun place(p: Int, x: Float, y: Float) {
+        val i = physicsIndex[p]
+        if (i >= 0) physics!!.place(i, x, y) else { localX[p] = x; localY[p] = y }
+    }
+
+    /** Назначить скорость. Однопоточно: мир физики будит организм частицы. */
+    fun setVelocity(p: Int, vx: Float, vy: Float) {
+        val i = physicsIndex[p]
+        if (i >= 0) physics!!.setVelocity(i, vx, vy) else { localVx[p] = vx; localVy[p] = vy }
+    }
+
+    /** Добавить к скорости. Можно из параллельной стадии — только к своей частице. */
+    fun addVelocity(p: Int, dvx: Float, dvy: Float) {
+        if (physicsIndex[p] >= 0) { pushVx[p] += dvx; pushVy[p] += dvy }
+        else { localVx[p] += dvx; localVy[p] += dvy }
+    }
     var radius = FloatArray(maxAmount) { PARTICLE_MAX_RADIUS }
     var mass = FloatArray(maxAmount)
     var color = IntArray(maxAmount)
@@ -157,10 +234,10 @@ class ParticleEntity(
         gridId[particleIndex] = gridManager.cellIndexOf(x.toInt(), y.toInt())
         gridManager.registerParticle(particleIndex)
 
-        this.x[particleIndex] = x
-        this.y[particleIndex] = y
-        this.vx[particleIndex] = vx
-        this.vy[particleIndex] = vy
+        this.localX[particleIndex] = x
+        this.localY[particleIndex] = y
+        this.localVx[particleIndex] = vx
+        this.localVy[particleIndex] = vy
         this.radius[particleIndex] = radius
         this.mass[particleIndex] = radius * radius * PI.toFloat()
         this.color[particleIndex] = color
@@ -204,10 +281,14 @@ class ParticleEntity(
         // что помечено как !isAlive. Отдельная операция удаления не нужна.
         gridId[particleIndex] = -1
 
-        x[particleIndex] = 0f
-        y[particleIndex] = 0f
-        vx[particleIndex] = 0f
-        vy[particleIndex] = 0f
+        localX[particleIndex] = 0f
+        localY[particleIndex] = 0f
+        localVx[particleIndex] = 0f
+        localVy[particleIndex] = 0f
+        // Частицу мира физики гасит WorldPhysics в своей фазе (kill, removeFree); номер — сразу.
+        physicsIndex[particleIndex] = -1
+        pushVx[particleIndex] = 0f
+        pushVy[particleIndex] = 0f
         radius[particleIndex] = PARTICLE_MAX_RADIUS
         mass[particleIndex] = 0f
         color[particleIndex] = 0
@@ -224,10 +305,10 @@ class ParticleEntity(
 
     override fun persistFields(state: EntityState) {
         state.ints(::gridId)
-        state.floats(::x)
-        state.floats(::y)
-        state.floats(::vx)
-        state.floats(::vy)
+        state.floats(::localX)
+        state.floats(::localY)
+        state.floats(::localVx)
+        state.floats(::localVy)
         state.floats(::radius)
         state.floats(::mass)
         state.ints(::color)
@@ -274,10 +355,13 @@ class ParticleEntity(
 
     override fun onClear(bound: Int) {
         gridId.clear(-1)
-        x.clear()
-        y.clear()
-        vx.clear()
-        vy.clear()
+        localX.clear()
+        localY.clear()
+        localVx.clear()
+        localVy.clear()
+        physicsIndex.clear(-1)
+        pushVx.clear()
+        pushVy.clear()
         radius.clear(PARTICLE_MAX_RADIUS)
         mass.clear()
         color.clear()
@@ -296,10 +380,13 @@ class ParticleEntity(
 
     override fun onResize(oldMax: Int) {
         gridId = gridId.resize(-1)
-        x = x.resize()
-        y = y.resize()
-        vx = vx.resize()
-        vy = vy.resize()
+        localX = localX.resize()
+        localY = localY.resize()
+        localVx = localVx.resize()
+        localVy = localVy.resize()
+        physicsIndex = physicsIndex.resize(-1)
+        pushVx = pushVx.resize()
+        pushVy = pushVy.resize()
         radius = radius.resize(PARTICLE_MAX_RADIUS)
         mass = mass.resize()
         color = color.resize()

@@ -106,8 +106,8 @@ class EditorLogicSystem(
 
                 if (clickedCell != null && clickedCell.second) {
                     grabbedCellIndex = clickedCell.first
-                    lastGrabbedCellX = particleEntity.x[grabbedCellIndex]
-                    lastGrabbedCellY = particleEntity.y[grabbedCellIndex]
+                    lastGrabbedCellX = particleEntity.x(grabbedCellIndex)
+                    lastGrabbedCellY = particleEntity.y(grabbedCellIndex)
                     isDruggingCamera = false
                 } else {
                     grabbedCellIndex = -1

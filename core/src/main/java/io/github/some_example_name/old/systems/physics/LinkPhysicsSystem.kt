@@ -371,15 +371,15 @@ class LinkPhysicsSystem(
                         "B=$linkCellB particle=$linkParticleB alive=${particles.isAlive[linkParticleB]}"
                 )
             }
-            if ((particles.x[linkParticleA] == 0f && particles.y[linkParticleA] == 0f) ||
-                (particles.x[linkParticleB] == 0f && particles.y[linkParticleB] == 0f)
+            if ((particles.x(linkParticleA) == 0f && particles.y(linkParticleA) == 0f) ||
+                (particles.x(linkParticleB) == 0f && particles.y(linkParticleB) == 0f)
             ) {
                 throw IllegalStateException(
                     "связь $linkIndex ссылается на частицу в нулевой координате: " +
                         "A=$linkCellA particle=$linkParticleA " +
-                        "pos=(${particles.x[linkParticleA]}, ${particles.y[linkParticleA]}), " +
+                        "pos=(${particles.x(linkParticleA)}, ${particles.y(linkParticleA)}), " +
                         "B=$linkCellB particle=$linkParticleB " +
-                        "pos=(${particles.x[linkParticleB]}, ${particles.y[linkParticleB]})"
+                        "pos=(${particles.x(linkParticleB)}, ${particles.y(linkParticleB)})"
                 )
             }
         }

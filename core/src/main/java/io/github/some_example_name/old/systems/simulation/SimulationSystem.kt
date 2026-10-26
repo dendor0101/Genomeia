@@ -209,8 +209,7 @@ class SimulationSystem(
                 isAlive = particleEntity.isAlive,
                 particleCell = particleEntity.gridId,
                 inGrid = particleEntity.isInGrid,
-                px = particleEntity.x,
-                py = particleEntity.y
+                particles = particleEntity
             )
         }
 
@@ -325,8 +324,7 @@ class SimulationSystem(
         // Прежний предел скорости игры: смещение за тик — HALF_CHUNK_HEIGHT клеток мира. Мир
         // физики получает скорость через WorldPhysics (изменённая игрой vx/vy).
         val angle = debugRandom.nextFloat() * 2f * PI.toFloat()
-        particleEntity.vx[particleIndex] = cos(angle) * FLING_SPEED
-        particleEntity.vy[particleIndex] = sin(angle) * FLING_SPEED
+        particleEntity.setVelocity(particleIndex, cos(angle) * FLING_SPEED, sin(angle) * FLING_SPEED)
     }
 
     /**
@@ -470,7 +468,8 @@ class SimulationSystem(
                 Fnv.word(x, simulationData.stressSpawnEvery)
             },
             input = userCommandManager::hashInput,
-            grid = gridManager::hashOrder
+            grid = gridManager::hashOrder,
+            physics = worldPhysics::hash
         )
         if (BugReplay.isActive) {
             BugReplay.checkStateHash(SessionJournal.epoch, tick, state, stateHashNames)

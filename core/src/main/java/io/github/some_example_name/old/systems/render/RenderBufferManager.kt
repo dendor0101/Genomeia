@@ -226,8 +226,6 @@ class RenderBufferManager(
         val organEntity = cellEntity.organEntity
         val organs = organEntity.aliveList
 
-        val px = particleEntity.x
-        val py = particleEntity.y
         val pColor = particleEntity.color
         val pRadius = particleEntity.radius
         val cellAlive = cellEntity.isAlive
@@ -250,7 +248,7 @@ class RenderBufferManager(
                 // расхождение надо ловить явно, а не глазами.
                 if (DEBUG_CHECKS) checkArenaParallel(cellIndex, organIndex, particleIndex, cellFrom, particleBase)
 
-                writeCell(writeIndex, cellIndex, particleIndex, px, py, pColor, pRadius)
+                writeCell(writeIndex, cellIndex, particleIndex, pColor, pRadius)
                 writeIndex++
             }
         }
@@ -286,8 +284,6 @@ class RenderBufferManager(
         val organEntity = cellEntity.organEntity
         val alive = cellEntity.aliveList
 
-        val px = particleEntity.x
-        val py = particleEntity.y
         val pColor = particleEntity.color
         val pRadius = particleEntity.radius
 
@@ -297,7 +293,7 @@ class RenderBufferManager(
             val particleIndex = cellEntity.particleIndexes[cellIndex]
             if (particleIndex == -1) continue
 
-            writeCell(writeIndex, cellIndex, particleIndex, px, py, pColor, pRadius)
+            writeCell(writeIndex, cellIndex, particleIndex, pColor, pRadius)
             writeIndex++
         }
         return writeIndex
@@ -307,8 +303,6 @@ class RenderBufferManager(
     private fun writeNonCellParticles(startIndex: Int): Int {
         val target = instances
         val nonCells = particleEntity.nonCellList
-        val px = particleEntity.x
-        val py = particleEntity.y
         val pColor = particleEntity.color
         val pRadius = particleEntity.radius
 
@@ -320,8 +314,8 @@ class RenderBufferManager(
 
         for (i in 0 until nonCells.size) {
             val particleIndex = nonCells.getInt(i)
-            val x = px[particleIndex]
-            val y = py[particleIndex]
+            val x = particleEntity.x(particleIndex)
+            val y = particleEntity.y(particleIndex)
             // Направления у не-клетки нет: ни поворота, ни угла в истории.
             rememberPosition(i, particleIndex, x, y)
 
@@ -357,13 +351,11 @@ class RenderBufferManager(
         writeIndex: Int,
         cellIndex: Int,
         particleIndex: Int,
-        px: FloatArray,
-        py: FloatArray,
         pColor: IntArray,
         pRadius: FloatArray
     ) {
-        val x = px[particleIndex]
-        val y = py[particleIndex]
+        val x = particleEntity.x(particleIndex)
+        val y = particleEntity.y(particleIndex)
         val angleCos = cellEntity.angleCos[cellIndex]
         val angleSin = cellEntity.angleSin[cellIndex]
 
@@ -572,8 +564,6 @@ class RenderBufferManager(
      * клеткам этого же снимка (поэтому связи пишутся после него).
      */
     private fun writeNeuralLinks() = with(neuralLinkEntity) {
-        val px = particleEntity.x
-        val py = particleEntity.y
         val output = cellEntity.neuronImpulseOutput
 
         for (bufIndex in 0..<aliveList.size) {
@@ -595,10 +585,10 @@ class RenderBufferManager(
             val from = if (fromA) particleA else particleB
             val to = if (fromA) particleB else particleA
 
-            overlaySink.points(prevXOf(from, px[from]), prevYOf(from, py[from]), prevXOf(to, px[to]), prevYOf(to, py[to]))
+            overlaySink.points(prevXOf(from, particleEntity.x(from)), prevYOf(from, particleEntity.y(from)), prevXOf(to, particleEntity.x(to)), prevYOf(to, particleEntity.y(to)))
             // Индекс связи — ключ фазы импульсов: закреплён за связью на всю её жизнь.
             palette.writeNeuralLink(
-                overlaySink, px[from], py[from], px[to], py[to], color[i], output[source], seed = i
+                overlaySink, particleEntity.x(from), particleEntity.y(from), particleEntity.x(to), particleEntity.y(to), color[i], output[source], seed = i
             )
         }
     }
@@ -626,7 +616,7 @@ class RenderBufferManager(
         serial += if (tick == lastTick + 1) 1 else 2
         lastTick = tick
 
-        val particles = particleEntity.x.size
+        val particles = particleEntity.localX.size
         if (history.size < particles * HISTORY_STRIDE) {
             history = history.copyOf(particles * HISTORY_STRIDE)
         }

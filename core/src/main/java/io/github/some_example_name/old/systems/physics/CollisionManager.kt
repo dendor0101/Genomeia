@@ -60,12 +60,10 @@ class CollisionManager(
      */
     fun repulse(particleAId: Int, particleBId: Int, threadId: Int = 0) {
         val entity = entity
-        val positionsX = entity.x
-        val positionsY = entity.y
         val radii = entity.radius
 
-        val dx = positionsX[particleAId] - positionsX[particleBId]
-        val dy = positionsY[particleAId] - positionsY[particleBId]
+        val dx = entity.x(particleAId) - entity.x(particleBId)
+        val dy = entity.y(particleAId) - entity.y(particleBId)
         val distanceSquared = dx * dx + dy * dy
 
         if (distanceSquared > MAX_RADIUS_SQUARED) return

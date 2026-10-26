@@ -158,7 +158,15 @@ class PhysicsWorld(
             }
         }
         removedParticles = 0
+        compactions++
     }
+
+    /**
+     * Сколько раз мир уплотнялся: после уплотнения номера частиц сдвинуты, и клиент, который
+     * держит их у себя (игра: ParticleEntity.physicsIndex), пересчитывает их по номерам тел.
+     */
+    var compactions = 0
+        private set
 
     /**
      * Родить клетку растущего тела (addBody с born): частица оживает в точке ([x], [y]) со

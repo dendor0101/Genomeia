@@ -35,11 +35,10 @@ class Sucker(cellTypeId: Int) : Cell(
             } else {
                 val cellX = cellEntity.getX(cellIndex)
                 val cellY = cellEntity.getY(cellIndex)
-                val subX = particleEntity.x[particleIndexCollided]
-                val subY = particleEntity.y[particleIndexCollided]
+                val subX = particleEntity.x(particleIndexCollided)
+                val subY = particleEntity.y(particleIndexCollided)
 
-                particleEntity.vx[particleIndexCollided] += (cellX - subX) * 0.025f
-                particleEntity.vy[particleIndexCollided] += (cellY - subY) * 0.025f
+                particleEntity.addVelocity(particleIndexCollided, (cellX - subX) * 0.025f, (cellY - subY) * 0.025f)
             }
         }
     }

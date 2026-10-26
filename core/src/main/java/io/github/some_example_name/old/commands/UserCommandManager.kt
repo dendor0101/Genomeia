@@ -129,8 +129,8 @@ class UserCommandManager(
             val grabDrag = 0.5f // To reduce oscillations
 
             with(particleEntity) {
-                vx[grabbedParticleIndex] = vx[grabbedParticleIndex] * grabDrag + (tapX - x[grabbedParticleIndex]) * 0.02f
-                vy[grabbedParticleIndex] = vy[grabbedParticleIndex] * grabDrag + (tapY - y[grabbedParticleIndex]) * 0.02f
+                val p = grabbedParticleIndex
+                setVelocity(p, vx(p) * grabDrag + (tapX - x(p)) * 0.02f, vy(p) * grabDrag + (tapY - y(p)) * 0.02f)
             }
         }
     }
@@ -178,10 +178,8 @@ class UserCommandManager(
                     val grabDrag = 0.5f // To reduce oscillations
 
                     with(particleEntity) {
-                        vx[grabbedParticleIndex] =
-                            vx[grabbedParticleIndex] * grabDrag + (cmd.x - x[grabbedParticleIndex]) * 0.02f
-                        vy[grabbedParticleIndex] =
-                            vy[grabbedParticleIndex] * grabDrag + (cmd.y - y[grabbedParticleIndex]) * 0.02f
+                        val p = grabbedParticleIndex
+                        setVelocity(p, vx(p) * grabDrag + (cmd.x - x(p)) * 0.02f, vy(p) * grabDrag + (cmd.y - y(p)) * 0.02f)
                     }
                     isDragging = true
 

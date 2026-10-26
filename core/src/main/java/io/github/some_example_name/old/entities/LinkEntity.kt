@@ -74,8 +74,8 @@ class LinkEntity(
                     "вторая клетка $otherCellIndex"
             )
         }
-        val x = particleEntity.x[particleIndex]
-        val y = particleEntity.y[particleIndex]
+        val x = particleEntity.x(particleIndex)
+        val y = particleEntity.y(particleIndex)
         if (x == 0f && y == 0f) {
             throw IllegalStateException(
                 "связь к клетке $side=$cellIndex в нулевой координате " +

@@ -39,10 +39,8 @@ class Tail(cellTypeId: Int): Cell(
             }
 
             val tailMaxSpeedCoefficient = substrateSettings.data.tailMaxSpeedCoefficient
-            val vx = getVx(cellIndex)
-            val vy = getVy(cellIndex)
-            setVx(cellIndex, vx - angleCos[cellIndex] * 0.5f * speed * tailMaxSpeedCoefficient)
-            setVy(cellIndex, vy - angleSin[cellIndex] * 0.5f * speed * tailMaxSpeedCoefficient)
+            val thrust = 0.5f * speed * tailMaxSpeedCoefficient
+            addVelocity(cellIndex, -angleCos[cellIndex] * thrust, -angleSin[cellIndex] * thrust)
             energy[cellIndex] -= substrateSettings.cellsSettings[cellType[cellIndex].toInt()].energyActionCost
         }
     }

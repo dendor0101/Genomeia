@@ -43,14 +43,13 @@ class CellEntity(
     //Particle entity
     var particleIndexes = IntArray(maxAmount) { -1 }
     fun getParticleIndex(index: Int) = particleIndexes[index]
-    fun getX(index: Int) = particleEntity.x[particleIndexes[index]]
-    fun getY(index: Int) = particleEntity.y[particleIndexes[index]]
-    fun setX(index: Int, value: Float) { particleEntity.x[particleIndexes[index]] = value }
-    fun setY(index: Int, value: Float) { particleEntity.y[particleIndexes[index]] = value }
-    fun getVx(index: Int) = particleEntity.vx[particleIndexes[index]]
-    fun getVy(index: Int) = particleEntity.vy[particleIndexes[index]]
-    fun setVx(index: Int, value: Float) { particleEntity.vx[particleIndexes[index]] = value }
-    fun setVy(index: Int, value: Float) { particleEntity.vy[particleIndexes[index]] = value }
+    fun getX(index: Int) = particleEntity.x(particleIndexes[index])
+    fun getY(index: Int) = particleEntity.y(particleIndexes[index])
+    fun getVx(index: Int) = particleEntity.vx(particleIndexes[index])
+    fun getVy(index: Int) = particleEntity.vy(particleIndexes[index])
+
+    /** Добавить к скорости клетки (жгутик, плавник) — можно из параллельной стадии клеток. */
+    fun addVelocity(index: Int, dvx: Float, dvy: Float) = particleEntity.addVelocity(particleIndexes[index], dvx, dvy)
     fun getDragCoefficient(index: Int) = particleEntity.dragCoefficient[particleIndexes[index]]
     fun setDragCoefficient(index: Int, value: Float) { particleEntity.dragCoefficient[particleIndexes[index]] = value }
     fun getEffectOnContact(index: Int) = particleEntity.effectOnContact[particleIndexes[index]]

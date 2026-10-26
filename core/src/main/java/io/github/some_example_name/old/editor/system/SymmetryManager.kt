@@ -204,9 +204,9 @@ class SymmetryManager(
             )?.first
 
             val result = if (symmetryCellIndex != null) {
-                val y = 2f * AXIAL_LINE_Y - particleEntity.y[symmetryCellIndex]
+                val y = 2f * AXIAL_LINE_Y - particleEntity.y(symmetryCellIndex)
 
-                Pair(particleEntity.x[symmetryCellIndex], y)
+                Pair(particleEntity.x(symmetryCellIndex), y)
             } else it
 
             if (isFreePosition(result.first, result.second, cellIndex)) {
@@ -355,7 +355,7 @@ class SymmetryManager(
             itselfIndex = itselfIndex
         )?.first ?: return true
 
-        return !(abs(particleEntity.x[cellIndex] - x) < EPSILON && abs(particleEntity.y[cellIndex] - y) < EPSILON)
+        return !(abs(particleEntity.x(cellIndex) - x) < EPSILON && abs(particleEntity.y(cellIndex) - y) < EPSILON)
     }
 }
 

@@ -194,8 +194,8 @@ class WorldCommandsManager(
                             closestCells
                                 .filter { particleEntity.isCell[it] }
                                 .forEach {
-                                    val dx = particleEntity.x[it] - x
-                                    val dy = particleEntity.y[it] - y
+                                    val dx = particleEntity.x(it) - x
+                                    val dy = particleEntity.y(it) - y
                                     val squareDist = dx * dx + dy * dy
                                     if (squareDist < 0.36f) {
                                         isDivide = false

@@ -182,8 +182,8 @@ class Eye(cellTypeId: Int): Cell(
                                 y1,
                                 x2,
                                 y2,
-                                particleEntity.x[index],
-                                particleEntity.y[index],
+                                particleEntity.x(index),
+                                particleEntity.y(index),
                                 r = particleEntity.radius[index]
                             )
                         ) {
@@ -205,7 +205,7 @@ class Eye(cellTypeId: Int): Cell(
                 val index = checkedObjectListId[threadId][i]
                 val hit = segmentCircleIntersection(
                     x1, y1, x2, y2,
-                    particleEntity.x[index], particleEntity.y[index],
+                    particleEntity.x(index), particleEntity.y(index),
                     r = particleEntity.radius[index],
                     threadId = threadId
                 )

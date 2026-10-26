@@ -28,14 +28,14 @@ class Sticky(cellTypeId: Int) : Cell(
         val stiffness = 0.009f * cellEntity.neuronImpulseOutput[cellIndex].coerceIn(0f, 1f)
 
         val force = (distance - 0.35f) * stiffness
-        val dx = x[particleAId] - x[particleBId]
-        val dy = y[particleAId] - y[particleBId]
+        val dx = x(particleAId) - x(particleBId)
+        val dy = y(particleAId) - y(particleBId)
         val dirX = dx / distance
         val dirY = dy / distance
 
         // Spring dampening
-        val dvx = vx[particleAId] - vx[particleBId]
-        val dvy = vy[particleAId] - vy[particleBId]
+        val dvx = vx(particleAId) - vx(particleBId)
+        val dvy = vy(particleAId) - vy(particleBId)
 
         val dampeningConstant = 0.3f
         val dampeningForce = dampeningConstant * (dvx * dirX + dvy * dirY)
@@ -46,10 +46,8 @@ class Sticky(cellTypeId: Int) : Cell(
         val fx = (force + dampeningForce - forceRepulsion) * dirX
         val fy = (force + dampeningForce - forceRepulsion) * dirY
 
-        vx[particleBId] += fx
-        vy[particleBId] += fy
-        vx[particleAId] -= fx
-        vy[particleAId] -= fy
+        addVelocity(particleBId, fx, fy)
+        addVelocity(particleAId, -fx, -fy)
     }
 
 }
