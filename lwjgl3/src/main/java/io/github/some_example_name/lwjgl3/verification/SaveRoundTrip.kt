@@ -250,6 +250,8 @@ private class SaveRoundTrip(private val game: MyGame) : ApplicationListener by g
 /** Всё состояние мира, которое обязано пережить сохранение и загрузку. */
 private class Snapshot(
     val entities: Map<String, ByteArray>,
+    /** Мир физики-библиотеки (WorldPhysics.encodeState): позиции клеток живут только в нём. */
+    val physics: ByteArray,
     val derived: Map<String, String>,
     val cellActions: List<Any?>,
     val arenaLayouts: List<Any?>,
@@ -267,6 +269,9 @@ private class Snapshot(
             }
         }
 
+        check(physics.contentEquals(after.physics)) {
+            "мир физики разошёлся после загрузки (${physics.size} байт до, ${after.physics.size} после)"
+        }
         derived.forEach { (name, value) ->
             check(value == after.derived[name]) { "после загрузки разошлось: $name" }
         }
@@ -292,6 +297,11 @@ private class Snapshot(
         /** Звать между тиками. */
         fun take(): Snapshot = with(DISimulationContainer) {
             val entities = entityList.associate { it::class.java.simpleName to it.encodeState() }
+            // Запись уплотняет мир физики (как и само сохранение следом) — сравнивается
+            // каноническое состояние, которое пишет и читает снимок.
+            val physics = java.io.ByteArrayOutputStream().also { bytes ->
+                java.io.DataOutputStream(bytes).use { worldPhysics.encodeState(it) }
+            }.toByteArray()
 
             val grid = StringBuilder()
             for (cell in 0 until gridManager.gridSize) {
@@ -332,6 +342,7 @@ private class Snapshot(
 
             Snapshot(
                 entities = entities,
+                physics = physics,
                 derived = mapOf(
                     "сетка" to grid.toString(),
                     "organToIdToIndex" to idMap,

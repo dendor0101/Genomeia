@@ -135,6 +135,24 @@ class PhysicsBridge(
     /** Один тик игры — один шаг мира (DT, внутри подшаги). */
     fun step() = world.step()
 
+    // --- снимок (сохранение мира, этап B3) ----------------------------------------------
+
+    /**
+     * Снимок мира и соответствия «организм → тело». Мир при записи уплотняется
+     * (PhysicsWorld.write): номера частиц сдвигаются, номера тел и свободных частиц — нет.
+     */
+    fun write(out: java.io.DataOutput) {
+        world.write(out)
+        out.writeInt(bodyOfOrgan.size)
+        for (body in bodyOfOrgan) out.writeInt(body)
+    }
+
+    /** Прочитать снимок [write] в этот мост — новый, с тем же материалом. */
+    fun read(input: java.io.DataInput) {
+        world.read(input)
+        bodyOfOrgan = IntArray(input.readInt()) { input.readInt() }
+    }
+
     // --- чтение в единицах игры --------------------------------------------------------
 
     fun x(particle: Int): Float = (world.x[particle] * GAME_PER_PHYSICS).toFloat()

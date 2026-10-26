@@ -344,6 +344,7 @@ object DISimulationContainer : DIContext, Disposable {
 
     val mapSave by lazy {
         MapSave(
+            worldPhysics = worldPhysics,
             // Имена — это имена файлов в сохранении, их нельзя менять и брать из имён
             // классов: минификатор переименует классы, и старые сохранения перестанут читаться.
             entities = listOf(

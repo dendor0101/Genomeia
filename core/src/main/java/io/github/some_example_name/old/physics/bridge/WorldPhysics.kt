@@ -99,6 +99,70 @@ class WorldPhysics(
         updateGrid()
     }
 
+    // --- сохранение мира (MapSave, этап B3) --------------------------------------------
+
+    /**
+     * Снимок для сохранения мира: мир физики (PhysicsWorld.write — полный, с побитовым
+     * продолжением), тела организмов с поколениями, субстанции со свободными частицами и то,
+     * у каких клеток игры есть частица в мире физики (у клетки, выросшей заново в слоте
+     * умершей, её нет — по одному миру это не вывести). Запись уплотняет мир физики: номера
+     * частиц пересчитываются сразу, пишущий мир дальше идёт по тому же, что и загруженный.
+     * Однопоточно, между тиками.
+     */
+    fun encodeState(out: java.io.DataOutputStream) {
+        val hasWorld = bridge.world.particleCount > 0
+        out.writeBoolean(hasWorld)
+        if (!hasWorld) return
+        bridge.write(out)
+        remapIfCompacted()
+        val pe = particleEntity
+        out.writeInt(organsWithBody.size)
+        for (k in 0 until organsWithBody.size) {
+            val organ = organsWithBody.getInt(k)
+            out.writeInt(organ); out.writeInt(bodyGeneration[organ])
+            val particleBase = organEntity.particleArenaBase[organ]
+            val capacity = organEntity.cellArenaCapacity[organ]
+            out.writeInt(capacity)
+            for (slot in 0 until capacity) out.writeBoolean(pe.physicsIndex[particleBase + slot] >= 0)
+        }
+        out.writeInt(trackedSubstances.size)
+        for (k in 0 until trackedSubstances.size) {
+            val sub = trackedSubstances.getInt(k)
+            out.writeInt(sub); out.writeInt(freeOfSubstance[sub])
+            out.writeInt(substanceGeneration[sub]); out.writeFloat(substanceRadius[sub])
+        }
+    }
+
+    /** Прочитать снимок [encodeState]. Сущности игры к этому моменту уже загружены. */
+    fun decodeState(input: java.io.DataInputStream) {
+        reset()
+        if (!input.readBoolean()) return
+        bridge.read(input)
+        ensureCapacity()
+        val pe = particleEntity
+        repeat(input.readInt()) {
+            val organ = input.readInt()
+            bodyGeneration[organ] = input.readInt()
+            organsWithBody.add(organ)
+            val first = bridge.particleOf(organ, 0)
+            val particleBase = organEntity.particleArenaBase[organ]
+            val capacity = input.readInt()
+            check(capacity == organEntity.cellArenaCapacity[organ]) { "у организма $organ другая арена, чем в мире физики" }
+            for (slot in 0 until capacity) if (input.readBoolean()) pe.physicsIndex[particleBase + slot] = first + slot
+        }
+        repeat(input.readInt()) {
+            val sub = input.readInt()
+            val id = input.readInt()
+            freeOfSubstance[sub] = id
+            substanceGeneration[sub] = input.readInt()
+            substanceRadius[sub] = input.readFloat()
+            trackedSubstances.add(sub)
+            pe.physicsIndex[substancesEntity.particleIndex[sub]] = bridge.substanceParticle(id)
+        }
+        compactions = bridge.world.compactions
+        publish()
+    }
+
     /**
      * Часть хэша состояния мира (StateHash): позиции и скорости всех частиц мира физики,
      * побитово. Остальное его состояние (prev, контакты, сон) расходится вслед за ними за тик.
