@@ -63,7 +63,7 @@ internal fun BodyState.velocityAfterRange(from: Int, to: Int, lastStep: Boolean,
     var keep = 1.0 - MEDIUM_DRAG * hTick
     if (keep < 0.0) keep = 0.0
     val clamp = !dbgNoClamp
-    val maxV = MAX_SPEED_CELLS_PER_TICK * body.meanLinkLength / DT
+    val maxV = MAX_SPEED_CELLS_PER_TICK * linkScale / DT
     val maxV2 = maxV * maxV
     val tm = if (cancelSpinOn) tickMomentum else null
     for (i in from until to) {

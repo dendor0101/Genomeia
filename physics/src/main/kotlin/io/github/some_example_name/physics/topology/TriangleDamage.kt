@@ -67,11 +67,14 @@ internal fun BodyState.killTriangleNow(id: Int) {
 /** Упаковка один раз за тик, в прежнем порядке; счётчики инверсии имеют постоянные ID. */
 internal fun BodyState.compactTriangles() {
     val alive = baked.triAlive
+    // Нерождённый треугольник остаётся в списке: клетка родится, и он оживёт (рост тела).
+    val unborn = baked.triUnborn
+    fun keep(id: Int) = alive[id] || (id < unborn.size && unborn[id])
     var m = 0
-    while (m < triCount && alive[triId[m]]) m++
+    while (m < triCount && keep(triId[m])) m++
     var k = m
     while (k < triCount) {
-        if (alive[triId[k]]) {
+        if (keep(triId[k])) {
             constraintBlocks?.moveTriangle(k, m, triId[k])
             triA[m] = triA[k]; triB[m] = triB[k]; triC[m] = triC[k]
             if (triHold.size > k) triHold[m] = triHold[k]

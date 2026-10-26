@@ -25,7 +25,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     wakeByInput()
     // Положения в начале тика: средняя скорость за тик нужна сопротивлению среды. См. TickMotion.
     beginTickMotion()
-    if (cancelSpinOn) { tick0(); prepareAwakeSpans(); tickMomentum.begin(px, py, vx, vy, invMass, organismOf, sleep); tick1(16) }
+    if (cancelSpinOn) { tick0(); prepareAwakeSpans(); tickMomentum.begin(px, py, vx, vy, invMass, organismOf, sleep, cellUnborn); tick1(16) }
     for (step in 0 until SUBSTEPS) {
         // Длина покоя мышцы доезжает до своего значения за тик, а не прыгает в первом
         // же подшаге — см. muscleScaleOf.

@@ -61,6 +61,14 @@ internal class BoundaryLinkLimits {
         }
     }
 
+    /** Мир дописал тело: ёмкость по новому числу связей, прежний список как был. */
+    fun grow(capacity: Int) {
+        if (position.size >= capacity) return
+        val old = position.size
+        ids = ids.copyOf(capacity)
+        position = position.copyOf(capacity); java.util.Arrays.fill(position, old, capacity, -1)
+    }
+
     fun beginPass() { inPass = true }
 
     fun endPass() {
@@ -89,6 +97,11 @@ internal fun BodyState.rebuildBoundaryLinkLimits() {
 /** Вызывается на затронутых рёбрах сразу после изменения triUse, без обхода тела. */
 internal fun BodyState.updateBoundaryLinkLimit(e: Int) {
     val boundary = !baked.edgeDead[e] && baked.triUse[e] <= 1
+    // НЕРОЖДЁННАЯ СВЯЗЬ ОСТАЁТСЯ В БЛОКАХ: решатель пропускает её по conDead, а вынутую из
+    // плотного индекса назад не вставить — родившись, связь осталась бы без решателя.
+    // Сюда приходят и рёбра нерождённых соседей (refreshSurface обходит все рёбра задетой
+    // вершины): 400 рождений на месте покоя давали 464 разрыва (PartialBodyCheck 25.10).
+    val unborn = baked.isUnborn(e)
     var c = conOfEdge[e]
     while (c >= 0) {
         conBoundary[c] = boundary
@@ -96,7 +109,7 @@ internal fun BodyState.updateBoundaryLinkLimit(e: Int) {
         if (boundary && !conDead[c] && !sleep.isAsleep(organismOf[conA[c]])) boundaryLinkLimits.add(c)
         else boundaryLinkLimits.remove(c)
         constraintBlocks?.let { blocks ->
-            if (conDead[c]) blocks.links.remove(c)
+            if (conDead[c] && !unborn) blocks.links.remove(c)
             if (boundary && !conDead[c]) blocks.addLimit(c, conA[c], conB[c]) else blocks.limits.remove(c)
         }
         c = conNextForEdge[c]

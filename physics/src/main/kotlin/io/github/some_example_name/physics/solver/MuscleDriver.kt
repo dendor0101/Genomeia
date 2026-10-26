@@ -48,11 +48,12 @@ fun BodyState.muscleOfTri(i0: Int, i1: Int, i2: Int): Int {
  * Смотрим на ИСХОДНЫЙ список клеток, а не на растущий, иначе мышца расползлась бы по
  * телу на столько колец, сколько треугольников попадётся по дороге.
  */
-fun BodyState.growMuscles() {
+/** [fromTri] — первый треугольник нового тела, когда мир дописывает тело (appendBody). */
+fun BodyState.growMuscles(fromTri: Int = 0) {
     if (muscleTouch != 1) return
     val core = muscleOf
     val grown = core.copyOf()
-    for (t in 0 until body.triCount) {
+    for (t in fromTri until body.triCount) {
         val i0 = body.triA[t]; val i1 = body.triB[t]; val i2 = body.triC[t]
         val a = core[i0]; val b = core[i1]; val c = core[i2]
         var m = -1

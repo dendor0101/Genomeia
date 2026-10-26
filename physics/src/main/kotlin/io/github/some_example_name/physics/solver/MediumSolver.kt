@@ -310,9 +310,9 @@ fun BodyState.applyDragVelocity(h: Double) {
         cx /= mTotal; cy /= mTotal
     }
 
-    val force = DRAG_ACCEL * body.meanLinkLength / (DT * DT)
+    val force = DRAG_ACCEL * linkScale / (DT * DT)
     // Потолок тяги СВОЙ и может быть выше общего: см. clampSpeed.
-    val vLimit = DRAG_SPEED_LIMIT * MAX_SPEED_CELLS_PER_TICK * body.meanLinkLength / DT
+    val vLimit = DRAG_SPEED_LIMIT * MAX_SPEED_CELLS_PER_TICK * linkScale / DT
 
     // ЦЕЛЬ ОБЯЗАНА БЫТЬ ДОСТИЖИМОЙ, иначе сервотяга превращается в ракету.
     //
@@ -452,7 +452,7 @@ fun BodyState.applyDragVelocity(h: Double) {
 
 fun BodyState.clampSpeed() {
     if (dbgNoClamp) return
-    val maxV = MAX_SPEED_CELLS_PER_TICK * body.meanLinkLength / DT
+    val maxV = MAX_SPEED_CELLS_PER_TICK * linkScale / DT
     val maxV2 = maxV * maxV
     // ОСВОБОЖДАТЬ СХВАЧЕННУЮ КЛЕТКУ ОТ ОБЩЕГО ПОТОЛКА — ОТВЕРГНУТО.
     //

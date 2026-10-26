@@ -183,7 +183,7 @@ fun BodyState.buildContacts() {
             n, conA, conB, conCount, boundA, boundB, boundCount, boundOpp, radius,
             CONTACT_SCALE, CCD_CORE, CONTACT_RESTITUTION, CONTACT_FRICTION,
             body.x, body.y,
-            body.meanLinkLength.toDouble(), CONTACT_MAX_STEP, probeCells(), everLinked,
+            linkScale.toDouble(), CONTACT_MAX_STEP, probeCells(), everLinked,
             cellDead, restPairs, config.contacts,
         )
     } else {
@@ -275,12 +275,8 @@ fun BodyState.angleAt(v: Int, p: Int, q: Int): Double {
 
 fun BodyState.buildMasses() {
     restInvMass = DoubleArray(n)
-    var meanArea = 0.0
-    for (i in 0 until n) {
-        val r = body.radius[i].toDouble()
-        meanArea += r * r
-    }
-    meanArea /= n
+    // Нормировка — постоянная мира, а не среднее по загруженному: см. WorldScale.
+    val meanArea = worldScale!!.meanCellArea
     for (i in 0 until n) {
         val r = body.radius[i].toDouble()
         val m = if (meanArea > 0.0) (r * r) / meanArea else 1.0
@@ -507,18 +503,27 @@ fun BodyState.rebuildTimed() {
 }
 
 /** Погасить ребро немедленно и запомнить для пересборки в конце тика. */
-fun BodyState.killEdgeNow(e: Int) {
+fun BodyState.killEdgeNow(e: Int) = killEdge(e, split = true)
+
+/**
+ * Погасить ребро. [split] — разделить организм, если разрыв его рассёк; при удалении
+ * тела целиком (removeBody) делить незачем: организм исчезает весь, а поиск сторон на
+ * каждом ребре тела стоил бы порядка размера тела на ребро.
+ */
+internal fun BodyState.killEdge(e: Int, split: Boolean) {
     if (!baked.kill(e)) return
     structureVersion++
-    // Разрыв будит организм: у спящего связь рвёт только чужой удар (гибель клетки).
-    sleep.requestWake(baked.edgeU(e))
-    // Разделяем компоненту ДО следующего удаления. split ищет две стороны
-    // одного разрыва; если сначала погасить целую пачку рёбер, сторон может быть
-    // больше двух. Тогда несколько уже несвязанных кусков сохраняли общий ID,
-    // запас среды и коррекцию импульса (запись 21.10, метки 470/501/876).
-    // Обход остаётся локальным и двусторонним; полного пересчёта мира нет.
-    localComponents.split(e)
-    organismCount = localComponents.count
+    if (split) {
+        // Разрыв будит организм: у спящего связь рвёт только чужой удар (гибель клетки).
+        sleep.requestWake(baked.edgeU(e))
+        // Разделяем компоненту ДО следующего удаления. split ищет две стороны
+        // одного разрыва; если сначала погасить целую пачку рёбер, сторон может быть
+        // больше двух. Тогда несколько уже несвязанных кусков сохраняли общий ID,
+        // запас среды и коррекцию импульса (запись 21.10, метки 470/501/876).
+        // Обход остаётся локальным и двусторонним; полного пересчёта мира нет.
+        localComponents.split(e)
+        organismCount = localComponents.count
+    }
     // Все связи одной пары гаснут вместе; это не требует второй проверки
     // edgeDead на каждой связи в каждом проходе решателя.
     var c = conOfEdge[e]
@@ -528,6 +533,8 @@ fun BodyState.killEdgeNow(e: Int) {
     // в уже начатый проход пределов; refreshSurface обновит контакты следом.
     for (s in baked.edgeTriStart[e] until baked.edgeTriStart[e + 1]) {
         val t = baked.edgeTris[s]
+        // Нерождённый треугольник с порванной стороной уже не родится — умер насовсем.
+        baked.forgetTriUnborn(t)
         if (!baked.triAlive[t]) constraintBlocks?.removeTriangle(t)
         for (k in 0..2) {
             val adjacent = baked.triEdge[3 * t + k]
@@ -551,6 +558,8 @@ fun BodyState.restoreTopology() {
     // их восстановленные связи — в свежем теле появлялись дыры. Стенд столкновений
     // сбрасывается перед каждой вариацией, и мёртвые копились там от сцены к сцене.
     cellDead.fill(false)
+    cellUnborn.fill(false)
+    conGrowTarget.fill(0.0); triGrowTarget.fill(0f); growEdgeN = 0; growTriN = 0
     deadCount = 0
     crushedCell.fill(false)
     lnkCount = body.linkCount
@@ -608,6 +617,10 @@ fun BodyState.rebuildAfterTear() {
     }
     tornTotal += nd
     val edgeDead = baked.edgeDead
+    // Нерождённое ребро (рост тела) мертво, но из рабочих списков не выбрасывается:
+    // клетка родится, и связь оживёт на том же месте. См. BakedTopology.edgeUnborn.
+    val unborn = baked.edgeUnborn
+    fun kept(e: Int) = !edgeDead[e] || (e < unborn.size && unborn[e])
 
     // 1. Полный список связей. Сжатие НА МЕСТЕ: пишущий индекс никогда не обгоняет
     //    читающий, а массивы остаются прежней ёмкости — длина живёт в счётчике.
@@ -618,10 +631,10 @@ fun BodyState.rebuildAfterTear() {
     // в хвосте — почти ничего. Результат тот же до бита.
     run {
         var m = 0
-        while (m < lnkCount && !edgeDead[lnkEdge[m]]) m++
+        while (m < lnkCount && kept(lnkEdge[m])) m++
         var k = m
         while (k < lnkCount) {
-            if (!edgeDead[lnkEdge[k]]) {
+            if (kept(lnkEdge[k])) {
                 lnkA[m] = lnkA[k]; lnkB[m] = lnkB[k]; lnkEdge[m] = lnkEdge[k]; m++
             }
             k++
@@ -645,17 +658,22 @@ fun BodyState.rebuildAfterTear() {
     // рабочие без мёртвых, в том же порядке. Их и оставляем, вместе с длиной покоя.
     run {
         var m = 0
-        while (m < conCount && !edgeDead[conEdge[m]]) m++
+        while (m < conCount && kept(conEdge[m])) m++
         var c = m
         while (c < conCount) {
-            if (!edgeDead[conEdge[c]]) {
+            if (kept(conEdge[c])) {
                 constraintBlocks?.moveConstraint(c, m)
                 conA[m] = conA[c]; conB[m] = conB[c]; conRest[m] = conRest[c]
                 if (conHold.size > c) conHold[m] = conHold[c]
-                conMuscle[m] = conMuscle[c]; conEdge[m] = conEdge[c]; m++
+                conMuscle[m] = conMuscle[c]; conEdge[m] = conEdge[c]
+                if (conGrowTarget.size > c) conGrowTarget[m] = conGrowTarget[c]
+                m++
             }
             c++
         }
+        // Хвост за уплотнённым списком — свободные места: следующее дописанное тело займёт
+        // их своими связями, и чужая цель дорастания им не нужна.
+        if (conGrowTarget.size > m) java.util.Arrays.fill(conGrowTarget, m, minOf(conCount, conGrowTarget.size), 0.0)
         conCount = m
         constraintBlocks?.links?.packDirty()
     }
@@ -666,7 +684,8 @@ fun BodyState.rebuildAfterTear() {
     for (c in 0 until conCount) {
         conNextForEdge[c] = conOfEdge[conEdge[c]]
         conOfEdge[conEdge[c]] = c
-        conDead[c] = false; linkTorn[c] = false
+        // Живая связь — не мёртвая; нерождённая остаётся мёртвой до рождения клетки.
+        conDead[c] = edgeDead[conEdge[c]]; linkTorn[c] = false
         conBoundary[c] = baked.triUse[conEdge[c]] <= 1
         conTendon[c] = (muscleOf[conA[c]] >= 0) != (muscleOf[conB[c]] >= 0)
 

@@ -6,7 +6,13 @@ import kotlin.math.sqrt
 class VertexPairs(n: Int) {
     internal var blockLayout: ConstraintBlocks? = null
     internal var blockIndex: BlockIndex? = null
-    private val head = IntArray(n) { -1 }
+    private var head = IntArray(n) { -1 }
+
+    /** Мир дописал тело: новые клетки без пар. */
+    internal fun grow(n: Int) {
+        val old = head.size
+        head = head.copyOf(n); java.util.Arrays.fill(head, old, n, -1)
+    }
     private var owner = IntArray(maxOf(n, 16))
     private var next = IntArray(owner.size)
     private var prev = IntArray(owner.size)
@@ -53,25 +59,49 @@ class VertexPairs(n: Int) {
 
 /** Контур, изгиб и лоскуты обновляются на месте; полного обхода связей при разрыве нет. */
 class LocalBoundaryConstraints(
-    private val body: BodyDefinition,
+    private var body: BodyDefinition,
     private val topology: BakedTopology,
-    private val boneOf: IntArray,
+    private var boneOf: IntArray,
 ) {
-    val a = IntArray(topology.edgeCount)
-    val b = IntArray(topology.edgeCount)
-    val opposite = IntArray(topology.edgeCount)
+    var a = IntArray(topology.edgeCount); private set
+    var b = IntArray(topology.edgeCount); private set
+    var opposite = IntArray(topology.edgeCount); private set
     // 1 байт/ребро: знак стороны ткани считается при изменении топологии,
     // чтобы горячий проход не читал координаты покоя (~300 КБ на сетку 100k).
-    val orientation = ByteArray(topology.edgeCount)
-    private val edgeAt = IntArray(topology.edgeCount)
-    private val slotOf = IntArray(topology.edgeCount) { -1 }
+    var orientation = ByteArray(topology.edgeCount); private set
+    private var edgeAt = IntArray(topology.edgeCount)
+    private var slotOf = IntArray(topology.edgeCount) { -1 }
     var count = 0; private set
     /** Те же рёбра по блокам решателя — для ориентации со спящими. См. solveBoundaryOrientationAwake. */
     internal var blockLayout: ConstraintBlocks? = null
     internal var blockIndex: BlockIndex? = null
     val bend = VertexPairs(body.count)
     val flap = VertexPairs(body.count)
-    private val neighbors = IntArray(body.count)
+    private var neighbors = IntArray(body.count)
+
+    /**
+     * Мир дописал тело: места рёбер — по новому числу рёбер (новые свободны), пары
+     * вершин — по новому числу клеток. Порядок прежних рёбер контура, изгиба и
+     * лоскутов не меняется; новые вершины добавит updateVertex. Раскладку по блокам
+     * отключить до дописывания: блоки новых частиц ещё не построены.
+     */
+    internal fun grow(body: BodyDefinition, boneOf: IntArray) {
+        this.body = body; this.boneOf = boneOf
+        val m = topology.edgeCount
+        val old = slotOf.size
+        a = a.copyOf(m); b = b.copyOf(m); opposite = opposite.copyOf(m)
+        orientation = orientation.copyOf(m); edgeAt = edgeAt.copyOf(m)
+        slotOf = slotOf.copyOf(m); java.util.Arrays.fill(slotOf, old, m, -1)
+        bend.grow(body.count); flap.grow(body.count)
+        neighbors = IntArray(body.count)
+    }
+
+    /** Отключить раскладку по блокам: дописывание тела перестраивает блоки заново. */
+    internal fun detachBlocks() {
+        blockLayout = null; blockIndex = null
+        bend.blockLayout = null; bend.blockIndex = null
+        flap.blockLayout = null; flap.blockIndex = null
+    }
 
     fun updateEdge(e: Int) {
         val slot = slotOf[e]

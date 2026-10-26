@@ -112,7 +112,7 @@ internal class DemoWindow(val session: DemoSession) {
 
     internal fun create(logPath: String = PlayerLog.FILE, warmUp: Boolean = true) { with(session) { with(state) {
         renderer = DemoRenderer()
-        simulation.observer = interpolation
+        world.observer = interpolation
         camera = OrthographicCamera()
         viewport = FitViewport(VIEW_WIDTH, VIEW_HEIGHT, camera)
         hudCamera = OrthographicCamera()

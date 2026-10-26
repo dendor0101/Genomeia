@@ -182,7 +182,7 @@ fun BodyState.burstByPressure() {
     // Порванное в последнем проходе предела длины ещё не пересобрано, а признак
     // «осталась без связей» берётся из пересборки.
     if (trapKillTicks >= 0) { tick0(); scanTrapped(); tick1(10) }
-    val lim = pressureBurst * body.meanLinkLength
+    val lim = pressureBurst * linkScale
     var any = false
     // Спящие и так пропускаются по invMass <= 0: обходим только бодрствующих. См. BodySleep.
     prepareAwakeSpans()

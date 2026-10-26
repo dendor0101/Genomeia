@@ -6,7 +6,7 @@ package io.github.some_example_name.physics
  * 12 double + 2 int + boolean на частицу: ~10.5 МБ при 100k, больше L2.
  * Это цена прямого варианта; выигрыш должен подтвердить замер.
  */
-class TickMomentum(private val n: Int) {
+class TickMomentum(internal val n: Int) {
     private val parent = IntArray(n)
     private val first = IntArray(n)
     private val targetX = DoubleArray(n)
@@ -43,8 +43,12 @@ class TickMomentum(private val n: Int) {
         for (k in 0 until sleep.spanCount) body(sleep.spanStart[k], sleep.spanEnd[k])
     }
 
+    /**
+     * [unborn] — нерождённые клетки (BodyState.cellUnborn): в группу своего организма не
+     * входят, остаются одиночками без массы и группу организма не блокируют.
+     */
     fun begin(x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
-              invMass: DoubleArray, org: IntArray, sleep: BodySleep? = null) {
+              invMass: DoubleArray, org: IntArray, sleep: BodySleep? = null, unborn: BooleanArray? = null) {
         first.fill(-1)
         spans(sleep) { from, to ->
             java.util.Arrays.fill(blocked, from, to, false)
@@ -53,7 +57,7 @@ class TickMomentum(private val n: Int) {
         spans(sleep) { from, to ->
             for (i in from until to) {
                 val o = org[i]
-                if (o >= 0) { if (first[o] < 0) first[o] = i else union(first[o], i) }
+                if (o >= 0 && (unborn == null || !unborn[i])) { if (first[o] < 0) first[o] = i else union(first[o], i) }
                 val m = if (invMass[i] > 0.0) 1.0 / invMass[i] else 0.0
                 targetX[i] = m * vx[i]; targetY[i] = m * vy[i]
                 targetL[i] = m * (x[i] * vy[i] - y[i] * vx[i])

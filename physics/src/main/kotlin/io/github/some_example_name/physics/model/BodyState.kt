@@ -44,6 +44,14 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
 
     lateinit var body: BodyDefinition
 
+    /**
+     * Постоянные масштаба мира (см. WorldScale): заданы до загрузки или взяты из неё.
+     * [linkScale] — их средняя длина связи, опорный размер всех порогов решателя.
+     */
+    var worldScale: WorldScale? = null
+    var linkScale = 1f
+        internal set
+
     // --- частицы (SoA) ---
     var n = 0
 
@@ -97,6 +105,15 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * перенумеровать всё тело, а на это завязаны кости, мышцы и организмы.
      */
     lateinit var cellDead: BooleanArray
+
+    /**
+     * НЕРОЖДЁННАЯ КЛЕТКА растущего тела (этап A2.4): мертва (cellDead) до activateCell, но
+     * не погибла — её место в организме ждёт её. Коррекции импульса (TickMomentum,
+     * InternalMomentum) не считают её закреплённой частицей: иначе одна нерождённая
+     * клетка снимала бы коррекцию со всего растущего организма. Погибшая клетка
+     * закрепляет свою группу, как и раньше.
+     */
+    var cellUnborn = BooleanArray(0)
 
     var deadCount = 0
 
@@ -518,6 +535,25 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      */
     var conHold = ByteArray(0)
 
+    /**
+     * ДОРАСТАНИЕ НОВОРОЖДЁННОЙ ТКАНИ (рост тела, BodyGrowth.kt). Родившись, клетка встаёт
+     * туда, где ей место, но её связи и треугольники хотели бы своих длин и площадей покоя
+     * сразу, а у сжатой мышцы соседи растянуты: мгновенное рождение давало рывок. Поэтому
+     * длина покоя новой связи сначала равна фактической и за BIRTH_GROW_TICKS тиков
+     * подходит к цели; площадь треугольника — так же (easeNewborn).
+     *
+     * conGrowTarget — цель по рабочему номеру связи (0 — не дорастает), переезжает при
+     * уплотнении вместе с conRest. triGrowTarget — цель по постоянному номеру
+     * треугольника. growEdges/growTris — кого обходить в тике: рёбра и постоянные номера
+     * треугольников, в порядке рождения. Всё это влияет на будущие тики — состояние мира.
+     */
+    var conGrowTarget = DoubleArray(0)
+    var triGrowTarget = FloatArray(0)
+    var growEdges = IntArray(16)
+    var growEdgeN = 0
+    var growTris = IntArray(16)
+    var growTriN = 0
+
     var triHold = ByteArray(0)
 
     /**
@@ -628,6 +664,13 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
 
     /** То же, но НАКОПИТЕЛЬНО за весь прогон: хронология обнуляет посекундные. */
     val dbgRebuildTot = LongArray(5)
+
+    /**
+     * Разбор уплотнения мира (WorldCompaction), наносекунды последнего вызова: 0 разрывы,
+     * 1 карты и описание, 2 массивы и списки, 3 топология, 4 контур и поверхность,
+     * 5 сон и пределы, 6 контакты, 7 решатель (блоки, план).
+     */
+    val dbgCompactNs = LongArray(8)
 
     var dbgRebuildCount = 0L
 
@@ -789,7 +832,14 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * Контакты копят свои смещения в extDx/extDy, и из снимаемого они вычитаются.
      */
     var internalMom: InternalMomentum? = null
-    val tickMomentum by lazy { TickMomentum(n) }
+    private var tickMomentumState: TickMomentum? = null
+    /** Учёт импульса за тик; под нынешнее число частиц — после дописывания тела заводится заново. */
+    val tickMomentum: TickMomentum
+        get() {
+            val t = tickMomentumState
+            if (t != null && t.n == n) return t
+            return TickMomentum(n).also { tickMomentumState = it }
+        }
 
     /** Включено ли снятие. Переменной, а не константой, — ради A/B на журнале игрока. */
     var cancelSpinOn = CANCEL_INTERNAL_SPIN

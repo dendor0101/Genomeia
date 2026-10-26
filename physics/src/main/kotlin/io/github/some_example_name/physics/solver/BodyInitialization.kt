@@ -7,7 +7,12 @@ package io.github.some_example_name.physics
 internal fun BodyState.initialize(definition: BodyDefinition) {
     body = definition
     n = body.count
+    val scale = worldScale ?: WorldScale.of(definition)
+    worldScale = scale
+    linkScale = scale.meanLinkLength
     cellDead = BooleanArray(n)
+    cellUnborn = BooleanArray(n)
+    conGrowTarget = DoubleArray(0); triGrowTarget = FloatArray(0); growEdgeN = 0; growTriN = 0
 
     px = DoubleArray(n); py = DoubleArray(n)
     prevX = DoubleArray(n); prevY = DoubleArray(n)

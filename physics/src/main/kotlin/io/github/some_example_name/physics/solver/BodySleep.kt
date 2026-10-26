@@ -115,6 +115,55 @@ class BodySleep(var on: Boolean) {
     }
 
     /**
+     * МИР УПЛОТНЁН: организм [o] стал [orgNew][o] (-1 — удалён), частица [i] — [particleNew][i].
+     * Сон, спокойствие и занятость оставшихся едут с ними, диапазоны частиц переводятся в
+     * новые номера; просьбы разбудить удалённые клетки пропадают. Ёмкость — по числу частиц.
+     */
+    internal fun compact(orgNew: IntArray, orgCount: Int, particleNew: IntArray, n: Int) {
+        version++
+        val a = BooleanArray(n); val c = IntArray(n); val b = BooleanArray(n)
+        val f = IntArray(n); val l = IntArray(n)
+        var count = 0
+        if (asleep.size >= orgCount) for (o in 0 until orgCount) {
+            val k = orgNew[o]
+            if (k < 0) continue
+            a[k] = asleep[o]; c[k] = calmTicks[o]; b[k] = busy[o]
+            f[k] = particleNew[first[o]]; l[k] = particleNew[last[o]]
+            if (a[k]) count++
+        }
+        asleep = a; calmTicks = c; busy = b; first = f; last = l
+        asleepCount = count
+        var m = 0
+        for (k in 0 until wakeQueueN) { val v = particleNew[wakeQueue[k]]; if (v >= 0) wakeQueue[m++] = v }
+        wakeQueueN = m
+        java.util.Arrays.fill(wakeQueue, m, wakeQueue.size, 0)
+        spansDirty = true
+    }
+
+    /**
+     * Мир дописал тело: частицы [fromParticle, n), организмы [fromOrganism, organismCount).
+     * Новые бодрствуют; сон прежних не трогается. Ёмкость — по числу частиц, как в reset.
+     */
+    internal fun append(n: Int, organismOf: IntArray, fromParticle: Int, fromOrganism: Int, organismCount: Int) {
+        version++
+        if (asleep.size < n) {
+            asleep = asleep.copyOf(n); calmTicks = calmTicks.copyOf(n); busy = busy.copyOf(n)
+            first = first.copyOf(n); last = last.copyOf(n)
+        }
+        java.util.Arrays.fill(asleep, fromOrganism, organismCount, false)
+        java.util.Arrays.fill(calmTicks, fromOrganism, organismCount, 0)
+        java.util.Arrays.fill(busy, fromOrganism, organismCount, false)
+        java.util.Arrays.fill(first, fromOrganism, organismCount, Int.MAX_VALUE)
+        java.util.Arrays.fill(last, fromOrganism, organismCount, -1)
+        for (i in fromParticle until n) {
+            val o = organismOf[i]
+            if (i < first[o]) first[o] = i
+            last[o] = i
+        }
+        spansDirty = true
+    }
+
+    /**
      * Кусок [fresh] отделился от [old]: состояние сна наследуется. Частицы отделившегося
      * куска уже заморожены, если спал родитель, — флаг обязан совпадать с ними.
      */
@@ -224,7 +273,7 @@ internal fun BodyState.applyWakeRequests() {
 internal fun BodyState.noteSleepContacts(ct: BoundaryContacts) {
     val s = sleep
     if (s.asleepCount == 0 || tickJitterX.size != n) return
-    val wake = WAKE_DRIFT_CELLS * body.meanLinkLength
+    val wake = WAKE_DRIFT_CELLS * linkScale
     val wake2 = wake * wake
     for (k in 0 until ct.contactCount) {
         val i = ct.contactI(k); val j = ct.contactJ(k)
@@ -243,7 +292,7 @@ internal fun BodyState.noteSleepContacts(ct: BoundaryContacts) {
 internal fun BodyState.updateSleep() {
     val s = sleep
     if (!s.on) return
-    val drift = SLEEP_DRIFT_CELLS * body.meanLinkLength
+    val drift = SLEEP_DRIFT_CELLS * linkScale
     val drift2 = drift * drift
     for (o in 0 until organismCount) {
         if (s.asleep[o]) continue

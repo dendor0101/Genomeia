@@ -105,7 +105,7 @@ class InternalMomentum(val n: Int) {
     /** Конец позиционного цикла, до updateVelocities. */
     fun cancel(organismOf: IntArray, organismCount: Int,
                px: DoubleArray, py: DoubleArray, prevX: DoubleArray, prevY: DoubleArray,
-               invMass: DoubleArray) {
+               invMass: DoubleArray, unborn: BooleanArray? = null) {
         val c = organismCount
         if (c <= 0) return
         if (parent.size < c) {
@@ -150,7 +150,8 @@ class InternalMomentum(val n: Int) {
             val o = organismOf[i]
             if (o !in 0 until c) continue
             val g = parent[o]
-            if (invMass[i] <= 0.0) { gPinned[g] = true; continue }
+            // Нерождённая клетка (рост тела) не закрепляет организм: см. BodyState.cellUnborn.
+            if (invMass[i] <= 0.0) { if (unborn == null || !unborn[i]) gPinned[g] = true; continue }
             val m = 1.0 / invMass[i]
             gM[g] += m; gCx[g] += m * prevX[i]; gCy[g] += m * prevY[i]
         }

@@ -14,7 +14,7 @@ class DemoInterpolationTest {
 
     @Test fun headlessSessionHasNoHistoryObserver() {
         val session = DemoSession("unused-until-load")
-        assertNull(session.simulation.observer)
+        assertNull(session.world.observer)
     }
 
     @Test fun endpointsAndModeSwitchDoNotReadUnwrittenSubsteps() {

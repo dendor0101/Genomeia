@@ -53,7 +53,7 @@ internal fun BodyState.solveBlockAreas(h: Double, block: Int, layout: Constraint
     val alpha = AREA_COMPLIANCE / (h * h)
     // Вывернутым треугольникам своя, нулевая — см. AREA_COMPLIANCE_INVERTED.
     val alphaInverted = AREA_COMPLIANCE_INVERTED / (h * h)
-    val maxStep = AREA_MAX_STEP * body.meanLinkLength
+    val maxStep = AREA_MAX_STEP * linkScale
     // Всё в локальные: стадия идёт 32 раза за тик по трём тысячам треугольников.
     val px = px; val py = py; val invMass = invMass
     val ta = triA; val tb = triB; val tc = triC

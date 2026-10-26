@@ -41,13 +41,13 @@ import kotlin.math.sqrt
  * импульсом — кулоновский конус, а не произвольное торможение.
  */
 class BoundaryContacts(
-    internal val n: Int,
+    n: Int,
     /** Индексы граничных клеток. Только они участвуют в контактах. */
     private var verts: IntArray,
     /** Смежность в формате CSR: adjStart[i]..adjStart[i+1] — соседи клетки i. */
     private var adjStart: IntArray,
     private var adj: IntArray,
-    private val radius: DoubleArray,
+    radius: DoubleArray,
     /** Сторона ячейки сетки. Должна быть не меньше наибольшего диаметра контакта. */
     private var cellSize: Double,
     private val contactScale: Double,
@@ -87,9 +87,13 @@ class BoundaryContacts(
      * ближайшей несвязанной пары, кругами на вершинах мембрану уже не сшить, и
      * придётся сталкиваться с РЕБРОМ как с отрезком.
      */
-    private val contactRadius: DoubleArray,
+    contactRadius: DoubleArray,
     config: ContactConfig = ContactConfig(),
 ) {
+    /** Число частиц мира. Растёт, когда мир дописывает тело (grow). */
+    internal var n = n; private set
+    private var radius = radius
+    private var contactRadius = contactRadius
     private val optionContactOmegaH = config.CONTACT_OMEGA_H
     private val optionBpMargin = config.BP_MARGIN
     private val optionCtSweepFlip = config.CT_SWEEP_FLIP
@@ -172,7 +176,7 @@ class BoundaryContacts(
     var bpCalls = 0L
     /** Разбор: сколько перекрывшихся пар не попало в список кандидатов. См. CT_BPCHECK. */
     var bpMissed = 0L
-    private val mark = IntArray(n)
+    private var mark = IntArray(n)
     private var stamp = 0
 
     // --- контакты ---
@@ -188,23 +192,23 @@ class BoundaryContacts(
     private var cLamInit = DoubleArray(4096)
     private var cN = 0
 
-    private val toi = DoubleArray(n)
+    private var toi = DoubleArray(n)
     /** Острова CCD: клетки, связанные опасными парами. См. ccdClamp. */
-    private val ccdParent = IntArray(n)
-    private val islM = DoubleArray(n)
-    private val islX = DoubleArray(n)
-    private val islY = DoubleArray(n)
+    private var ccdParent = IntArray(n)
+    private var islM = DoubleArray(n)
+    private var islX = DoubleArray(n)
+    private var islY = DoubleArray(n)
 
     /** Накопитель сил на клетку за подшаг. См. applyForces. */
-    private val frcX = DoubleArray(n)
-    private val frcY = DoubleArray(n)
-    private val frcW = DoubleArray(n)
+    private var frcX = DoubleArray(n)
+    private var frcY = DoubleArray(n)
+    private var frcW = DoubleArray(n)
     /** Доля, на которую урезан суммарный толчок клетки потолком. См. applyForces. */
-    private val frcS = DoubleArray(n)
+    private var frcS = DoubleArray(n)
     /** Импульс каждого контакта, чтобы урезать его СИММЕТРИЧНО обоим концам. */
     private var cAx = DoubleArray(4096)
     private var cAy = DoubleArray(4096)
-    private val frcZ = IntArray(n)
+    private var frcZ = IntArray(n)
     /**
      * Число контактов ЖЁСТКОГО КЛАСТЕРА, а не отдельной его клетки.
      *
@@ -216,7 +220,7 @@ class BoundaryContacts(
      */
     private var boneZ = IntArray(0)
     private var boneZStamp = IntArray(0)
-    private val frcStamp = IntArray(n) { -1 }
+    private var frcStamp = IntArray(n) { -1 }
     private var frcList = IntArray(256)
     private var frcN = 0
     private var pass = 0
@@ -234,10 +238,10 @@ class BoundaryContacts(
      * разбирается с топологией после подшага. Убивать посреди обхода нельзя — список
      * контактов и смежность собраны на текущую топологию.
      */
-    private val damage = ContactDamageCandidates(n)
+    private var damage = ContactDamageCandidates(n)
     val killN: Int get() = damage.count
     val killList: IntArray get() = damage.ids
-    private val startDeep = ContactDamageCandidates(n)
+    private var startDeep = ContactDamageCandidates(n)
 
     /**
      * ПРОБИТАЯ МЕМБРАНА: рёбра контура, сквозь которые ПРОШЁЛ центр чужой клетки.
@@ -545,13 +549,13 @@ class BoundaryContacts(
     private var restTouchN = 0
     private var restSpacingN = 0
     /** Клетка в контактах на этой топологии. */
-    private val onBound = BooleanArray(n)
+    private var onBound = BooleanArray(n)
     private var vertCount = verts.size
-    private val vertSlot = IntArray(n) { -1 }
+    private var vertSlot = IntArray(n) { -1 }
     private var adjEnd = IntArray(n) { adjStart[it + 1] }
     private var bndEnd = IntArray(n)
     private var maxRadius = 0.0
-    private val radiusMinimum = ContactRadiusMinimum(n)
+    private var radiusMinimum = ContactRadiusMinimum(n)
     val minContactRadius: Double get() = radiusMinimum.value
 
     // Контакты получают только граница и свободные клетки. После разрыва новая
@@ -969,6 +973,96 @@ class BoundaryContacts(
         cfgLap(3)
     }
 
+    /**
+     * МИР ДОПИСАЛ ТЕЛО: частиц теперь [newN]. Массивы на частицу растут с копированием
+     * прежнего; новые частицы пока вне контура — их подключит updateSurface по новой
+     * поверхности. Сетка широкой фазы пересобирается целиком в ближайшем подшаге
+     * (bpValid = false): новое тело меняет её состав. Помощники параллельных частей
+     * заводятся заново под новое число частиц.
+     */
+    internal fun grow(newN: Int, radius: DoubleArray) {
+        val old = n
+        n = newN
+        this.radius = radius
+        contactRadius = contactRadius.copyOf(newN)
+        bpX = bpX.copyOf(newN); bpY = bpY.copyOf(newN); bpSweep = bpSweep.copyOf(newN)
+        mark = mark.copyOf(newN)
+        toi = toi.copyOf(newN); ccdParent = ccdParent.copyOf(newN)
+        islM = islM.copyOf(newN); islX = islX.copyOf(newN); islY = islY.copyOf(newN)
+        frcX = frcX.copyOf(newN); frcY = frcY.copyOf(newN); frcW = frcW.copyOf(newN)
+        frcS = frcS.copyOf(newN); frcZ = frcZ.copyOf(newN)
+        frcStamp = frcStamp.copyOf(newN).also { java.util.Arrays.fill(it, old, newN, -1) }
+        damage = ContactDamageCandidates(newN); startDeep = ContactDamageCandidates(newN)
+        onBound = onBound.copyOf(newN)
+        vertSlot = vertSlot.copyOf(newN).also { java.util.Arrays.fill(it, old, newN, -1) }
+        if (verts.size < newN) verts = verts.copyOf(newN)
+        prevRadius = prevRadius.copyOf(newN); prevBound = prevBound.copyOf(newN); prevDeg = prevDeg.copyOf(newN)
+        cfgDeg = IntArray(newN + 1)
+        movedMark = movedMark.copyOf(newN)
+        radiusMinimum = ContactRadiusMinimum(newN).also { it.reset(contactRadius) }
+        shards = Array(shards.size) { AnchoredContactGrid(newN) }
+        parallelCandidates = null; parallelPairs = null; parallelCcd = null
+        parallelBuild = null; parallelMoved = null; parallelReinsert = null; parallelBones = null
+        bpValid = false; staticValid = false
+    }
+
+    /**
+     * МИР УПЛОТНЁН: частиц теперь [newN], номера сдвинуты. Массивы на частицу заводятся
+     * заново: всё, что в них живёт дольше подшага (радиусы, контур, вершины, пары покоя),
+     * следом выставит reconfigure + attachSurface — тот же путь, что при загрузке. Объект
+     * остаётся прежним, вместе с настройками, которые выставил клиент.
+     */
+    internal fun resize(newN: Int, radius: DoubleArray) {
+        n = newN
+        this.radius = radius
+        contactRadius = DoubleArray(newN)
+        bpX = DoubleArray(newN); bpY = DoubleArray(newN); bpSweep = DoubleArray(newN)
+        mark = IntArray(newN)
+        toi = DoubleArray(newN); ccdParent = IntArray(newN)
+        islM = DoubleArray(newN); islX = DoubleArray(newN); islY = DoubleArray(newN)
+        frcX = DoubleArray(newN); frcY = DoubleArray(newN); frcW = DoubleArray(newN)
+        frcS = DoubleArray(newN); frcZ = IntArray(newN)
+        frcStamp = IntArray(newN).also { java.util.Arrays.fill(it, -1) }
+        damage = ContactDamageCandidates(newN); startDeep = ContactDamageCandidates(newN)
+        onBound = BooleanArray(newN)
+        vertSlot = IntArray(newN).also { java.util.Arrays.fill(it, -1) }
+        verts = IntArray(newN)
+        prevRadius = DoubleArray(newN); prevBound = BooleanArray(newN); prevDeg = IntArray(newN)
+        cfgDeg = IntArray(newN + 1)
+        movedMark = IntArray(newN)
+        radiusMinimum = ContactRadiusMinimum(newN)
+        shards = Array(shards.size) { AnchoredContactGrid(newN) }
+        parallelCandidates = null; parallelPairs = null; parallelCcd = null
+        parallelBuild = null; parallelMoved = null; parallelReinsert = null; parallelBones = null
+        bpValid = false; staticValid = false
+    }
+
+    /**
+     * Пары покоя нового тела ([add] — в номерах тела, первая частица [n0]) дописываются к
+     * прежним. Состояния новых пар пусты: их выставит updateSurface вместе с контуром.
+     */
+    internal fun appendRestPairs(add: RestPairs, n0: Int) {
+        val rp = rest
+        val m0 = rp.other.size
+        val addN = add.start.size - 1
+        val start = IntArray(n0 + addN + 1)
+        System.arraycopy(rp.start, 0, start, 0, minOf(rp.start.size, n0 + 1))
+        for (i in rp.start.size..n0) start[i] = m0
+        for (i in 1..addN) start[n0 + i] = m0 + add.start[i]
+        val total = m0 + add.other.size
+        val other = rp.other.copyOf(total); val mirror = rp.mirror.copyOf(total)
+        val d2 = rp.d2.copyOf(total); val dist = rp.dist.copyOf(total); val ever = rp.ever.copyOf(total)
+        for (s in add.other.indices) {
+            other[m0 + s] = add.other[s] + n0; mirror[m0 + s] = add.mirror[s] + m0
+            d2[m0 + s] = add.d2[s]; dist[m0 + s] = add.dist[s]; ever[m0 + s] = add.ever[s]
+        }
+        rest = RestPairs(start, other, mirror, d2, dist, ever)
+        restState = restState.copyOf(total)
+    }
+
+    /** Нынешние пары покоя мира — после дописывания тела их держит и состояние решателя. */
+    internal val restPairs: RestPairs get() = rest
+
     /** Подключение происходит только при загрузке/сбросе; строки имеют неизменную ёмкость. */
     fun attachSurface(surface: LocalSurface) {
         adjStart = surface.start; adj = surface.adj; adjEnd = surface.adjEnd
@@ -1033,7 +1127,7 @@ class BoundaryContacts(
     /** Разбор: смежность, контур, радиусы, пары покоя — наносекунды за прогон. */
     val cfgNs = LongArray(4)
 
-    private val cfgDeg = IntArray(n + 1)
+    private var cfgDeg = IntArray(n + 1)
 
     /** Разбор: пара последнего maxPenetration. */
     var worstI = -1
@@ -1139,7 +1233,7 @@ class BoundaryContacts(
     /** Вершины, которые перекладываются в этом подшаге, и пометка «перекладывается». */
     internal var moved = IntArray(0); private set
     internal var movedCount = 0; private set
-    private val movedMark = IntArray(n)
+    private var movedMark = IntArray(n)
     private var movedStamp = 0
 
     /**
@@ -2805,6 +2899,17 @@ class BoundaryContacts(
                         pa[pn] = i; pb[pn] = j; pn++
                     }
                 }
+            }
+            // ПОРЯДОК ПАР КАНОНИЧЕСКИЙ: по меньшему номеру, потом по большему. Иначе он
+            // зависел бы от размера ячейки поиска, а тот — от наибольшего радиуса набора:
+            // у тела, дописанного в мир (appendBody), и у того же тела в мире, загруженном
+            // разом, строки пар покоя шли бы в разном порядке. Для физики порядок в строке
+            // безразличен (поиск пары линейный, состояния выставляются по паре), но
+            // оракул дописывания сравнивает состояние побитово.
+            run {
+                val keys = LongArray(pn) { (pa[it].toLong() shl 32) or pb[it].toLong() }
+                keys.sort()
+                for (p in 0 until pn) { pa[p] = (keys[p] ushr 32).toInt(); pb[p] = keys[p].toInt() }
             }
             val start = IntArray(n + 1)
             for (p in 0 until pn) { start[pa[p] + 1]++; start[pb[p] + 1]++ }

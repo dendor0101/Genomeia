@@ -18,6 +18,13 @@ class LocalComponents(
     private val frontB = IntArray(of.size)
     private var stamp = 0
 
+    /** Клетка родилась (рост тела): снова считается в размере и массе своего организма. */
+    fun addCell(v: Int) {
+        val o = of[v]
+        size[o]++
+        if (restInvMass[v] > 0.0) mass[o] += 1.0 / restInvMass[v]
+    }
+
     fun removeCell(v: Int) {
         val o = of[v]
         size[o]--

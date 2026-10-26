@@ -219,7 +219,7 @@ internal fun BodyState.applyLinkLimitCorrection(i: Int, j: Int, len: Double, max
     val wi = invMass[i]; val wj = invMass[j]; val w = wi + wj
     val dx = (px[i] - px[j]) / len; val dy = (py[i] - py[j]) / len
     var dL = -(len - max) / w
-    val capL = LINK_MAX_STEP * body.meanLinkLength / w
+    val capL = LINK_MAX_STEP * linkScale / w
     if (dL < -capL) dL = -capL
     px[i] += dx * dL * wi; py[i] += dy * dL * wi
     px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
@@ -291,7 +291,7 @@ fun BodyState.solveAreas(h: Double) {
     val alpha = AREA_COMPLIANCE / (h * h)
     // Вывернутым треугольникам своя, нулевая — см. AREA_COMPLIANCE_INVERTED.
     val alphaInverted = AREA_COMPLIANCE_INVERTED / (h * h)
-    val maxStep = AREA_MAX_STEP * body.meanLinkLength
+    val maxStep = AREA_MAX_STEP * linkScale
     // Всё в локальные: стадия идёт 64 раза за тик по трём тысячам треугольников.
     val px = px; val py = py; val invMass = invMass
     val ta = triA; val tb = triB; val tc = triC
