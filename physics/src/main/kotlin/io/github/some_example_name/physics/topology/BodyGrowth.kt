@@ -119,7 +119,7 @@ private fun BodyState.startLinkGrowth(c: Int) {
     val target = conRest[c]
     if (target <= 0.0) return
     val dx = px[conA[c]] - px[conB[c]]; val dy = py[conA[c]] - py[conB[c]]
-    val start = sqrt(dx * dx + dy * dy) / muscleScale(conMuscle[c])
+    val start = sqrt(dx * dx + dy * dy) / (muscleScale(conMuscle[c]) * conCellScale[c])
     conGrowTarget[c] = target
     conRest[c] = maxOf(start, BIRTH_MIN_FRACTION * target)
 }
@@ -136,7 +136,7 @@ private fun BodyState.startTriangleGrowth(id: Int) {
     if (target <= 0f) return
     val i0 = triA[w]; val i1 = triB[w]; val i2 = triC[w]
     val area2 = (px[i1] - px[i0]) * (py[i2] - py[i0]) - (py[i1] - py[i0]) * (px[i2] - px[i0])
-    val s = muscleScale(triMuscle[w])
+    val s = muscleScale(triMuscle[w]) * triCellScale[w]
     triGrowTarget[id] = target
     triRestArea2[w] = maxOf(area2 / (s * s), BIRTH_MIN_FRACTION * target).toFloat()
     if (growTriN == growTris.size) growTris = growTris.copyOf(growTris.size * 2)

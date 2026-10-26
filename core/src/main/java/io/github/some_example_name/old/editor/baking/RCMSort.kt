@@ -77,9 +77,11 @@ class RCMSort(
         }
 
         val triangles = collectTriangles(organIndex, cellGenomeIds, adjacency, slotOfGenomeId)
+        val cells = cellsInSlotOrder(organIndex, cellIdsInSlotOrder)
+        val boneType = cellEntity.cellList.requireIndex("bone")
 
         return BakedLayout(
-            interiorLinks = interiorLinks(organIndex, cellIdsInSlotOrder).toList(),
+            interiorLinks = interiorLinks(cells).toList(),
             interiorVersion = INTERIOR_VERSION,
             triangleSlots = triangles.first,
             triangleRestArea2 = triangles.second,
@@ -95,8 +97,28 @@ class RCMSort(
                 slotOfGenomeId = slotOfGenomeId,
                 endpoints = ::neuralLinkEndpoints,
                 aliveIndices = neuralLinkEntity.aliveList.toIntArray()
-            )
+            ),
+            // Поза покоя для физики-библиотеки (BakedLayout.restX): тело в редакторе выращено
+            // целиком, координаты — геометрия раскладки клеток, без физики.
+            restX = cells.map { cellEntity.getX(it) },
+            restY = cells.map { cellEntity.getY(it) },
+            restRadius = cells.map { cellEntity.getRadius(it) },
+            restBone = cells.map { cellEntity.cellType[it].toInt() == boneType }
         )
+    }
+
+    /** Клетки организма [organIndex] редактора в порядке слотов. */
+    private fun cellsInSlotOrder(organIndex: Int, cellIdsInSlotOrder: IntArray): IntArray {
+        val cellOfGenomeId = Int2IntOpenHashMap(cellIdsInSlotOrder.size).apply {
+            defaultReturnValue(-1)
+            val alive = cellEntity.aliveList
+            for (i in 0 until alive.size) {
+                val cellIndex = alive.getInt(i)
+                if (cellEntity.organIndex[cellIndex] != organIndex) continue
+                put(cellEntity.cellGenomeId[cellIndex], cellIndex)
+            }
+        }
+        return IntArray(cellIdsInSlotOrder.size) { cellOfGenomeId.get(cellIdsInSlotOrder[it]) }
     }
 
     // ===================================================================================
@@ -110,17 +132,7 @@ class RCMSort(
      * Число — linkAmount, тот же счётчик, с которым его сравнивает мир
      * (CellEntity.refreshOnEdge): связи редактор растит тем же делением, что и мир.
      */
-    private fun interiorLinks(organIndex: Int, cellIdsInSlotOrder: IntArray): IntArray {
-        val cellOfGenomeId = Int2IntOpenHashMap(cellIdsInSlotOrder.size).apply {
-            defaultReturnValue(-1)
-            val alive = cellEntity.aliveList
-            for (i in 0 until alive.size) {
-                val cellIndex = alive.getInt(i)
-                if (cellEntity.organIndex[cellIndex] != organIndex) continue
-                put(cellEntity.cellGenomeId[cellIndex], cellIndex)
-            }
-        }
-        val cells = IntArray(cellIdsInSlotOrder.size) { cellOfGenomeId.get(cellIdsInSlotOrder[it]) }
+    private fun interiorLinks(cells: IntArray): IntArray {
         val interior = InteriorCells.find(
             xs = FloatArray(cells.size) { cellEntity.getX(cells[it]) },
             ys = FloatArray(cells.size) { cellEntity.getY(cells[it]) },

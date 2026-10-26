@@ -108,6 +108,11 @@ private class Scenario(val bodies: List<BodyDefinition>) {
         }
         minX = (0 until w.particleCount).minOf { w.x[it] }; maxX = (0 until w.particleCount).maxOf { w.x[it] }
         minY = (0 until w.particleCount).minOf { w.y[it] }; maxY = (0 until w.particleCount).maxOf { w.y[it] }
+        // Входы клиента-игры: рамка мира, масса и сопротивление клеток первого тела.
+        val pad = 0.2 * (maxX - minX)
+        w.setBounds(minX - pad, minY - pad, maxX + pad, maxY + pad)
+        val f = w.bodyFirst(ids[0])
+        for (k in 0 until 20) { w.setMass(f + k, 2.0 / w.state.restInvMass[f + k]); w.setDrag(f + k, 1.5) }
     }
 
     fun tick(worlds: List<PhysicsWorld>) {
@@ -119,7 +124,8 @@ private class Scenario(val bodies: List<BodyDefinition>) {
             val x = minX + rnd.nextDouble() * (maxX - minX); val y = minY + rnd.nextDouble() * (maxY - minY)
             val r = 0.5 * w0.meanLinkLength * (0.6 + 0.8 * rnd.nextDouble())
             var id = -1
-            for (w in worlds) id = w.addFree(x, y, r, 0.0, 0.0)
+            val drag = if (rnd.nextBoolean()) 1.0 else 0.4
+            for (w in worlds) id = w.addFree(x, y, r, 0.0, 0.0, drag = drag)
             free.add(id)
         }
         var k = 0
@@ -132,6 +138,13 @@ private class Scenario(val bodies: List<BodyDefinition>) {
             w.dragTo(w.x[c] + 0.02 * Math.cos(tick * 0.1), w.y[c] + 0.02 * Math.sin(tick * 0.1))
         }
         if (tick == 200) for (w in worlds) w.release()
+        // Мышцы клеток растущего тела — бегущая волна; гибель клетки первого тела раз в 50 тиков.
+        for (w in worlds) {
+            val f = w.bodyFirst(ids[grow])
+            for (j in 0 until bodies[grow].count) w.setCellScale(f + j, (1.0 + 0.3 * Math.sin(0.2 * tick + 0.05 * j)).toFloat())
+            if (tick % 50 == 25) w.kill(w.bodyFirst(ids[0]) + 30 + tick / 50)
+        }
+        // Свободные частицы: половина — со своим сопротивлением.
         val on = if (tick % 40 < 20) 1.0 else 0.0
         for (w in worlds) { w.setAllMuscleTargets(on); w.step() }
         tick++

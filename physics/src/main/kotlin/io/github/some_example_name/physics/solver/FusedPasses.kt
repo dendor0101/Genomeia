@@ -68,10 +68,20 @@ internal fun BodyState.velocityAfterRange(from: Int, to: Int, lastStep: Boolean,
     val tm = if (cancelSpinOn) tickMomentum else null
     for (i in from until to) {
         if (inContact[i] && vy[i] > 0.0) vy[i] *= GROUND_RESTITUTION
-        if (medium) { vx[i] *= keep; vy[i] *= keep }
+        if (medium) {
+            val d = dragScale[i]
+            val k = if (d == 1.0) keep else mediumKeep(hTick, d)
+            vx[i] *= k; vy[i] *= k
+        }
         if (clamp) { if (acc == null) clampOne(i, maxV, maxV2) else clampOneInto(i, maxV, maxV2, acc) }
         tm?.externalAt(i, px, py, vx, vy, invMass, inContact)
     }
+}
+
+/** Доля скорости, что остаётся за тик у частицы со своим множителем сопротивления [d]. */
+internal fun mediumKeep(hTick: Double, d: Double): Double {
+    val k = 1.0 - MEDIUM_DRAG * hTick * d
+    return if (k < 0.0) 0.0 else k
 }
 
 /** clampOne со счётчиками воркера: та же арифметика. */

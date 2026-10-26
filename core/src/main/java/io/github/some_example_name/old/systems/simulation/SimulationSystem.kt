@@ -28,7 +28,7 @@ import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem
 import io.github.some_example_name.old.systems.render.RenderBufferManager
 import io.github.some_example_name.old.features.worldeditor.WorldTerrainManager
 import io.github.some_example_name.old.systems.genomics.NeuralLinkManager
-import io.github.some_example_name.old.systems.physics.MovementManager
+import io.github.some_example_name.old.physics.bridge.WorldPhysics
 import io.github.some_example_name.old.systems.physics.CollisionManager.Companion.PARTICLE_MAX_RADIUS
 import io.github.some_example_name.old.systems.genomics.OrganismSpawner
 import io.github.some_example_name.old.cells.Zygote
@@ -67,7 +67,7 @@ class SimulationSystem(
     val entityList: List<Entity>,
     val renderBufferManager: RenderBufferManager,
     val pheromonesManager: PheromonesManager,
-    val movementManager: MovementManager,
+    val worldPhysics: WorldPhysics,
     val worldTerrainManager: WorldTerrainManager
 ) {
 
@@ -176,7 +176,8 @@ class SimulationSystem(
         profiler.measure(Phase.COLLIDE) { processParticleCollision() }
         profiler.measure(Phase.CELLS) { cellSystem.iterateCellInParallel() }
         profiler.measure(Phase.PHEROMONE) { pheromonesManager.iterate() }
-        profiler.measure(Phase.ARRANGE) { arrangementOfPositionsInTheGrid() }
+        // Физика-библиотека: силы, контакты, движение и копия позиций в ParticleEntity (B1).
+        profiler.measure(Phase.ARRANGE) { worldPhysics.tick() }
         profiler.measure(Phase.WORLD_CMD) { worldCommandsManager.executingCommandsFromTheWorld() }
         profiler.measure(Phase.ORGANS) { organManager.performOrgansNextStage() }
         profiler.measure(Phase.USER_CMD) { userCommandManager.processingCommandsFromUser() }
@@ -321,12 +322,11 @@ class SimulationSystem(
         val particleIndex = cellEntity.getParticleIndex(cellIndex)
         if (particleIndex == -1) return
 
-        // Ровно предел скорости: больше ставить бессмысленно, seedBump всё равно зажмёт.
-        // При MAX_SPEED смещение за тик равно HALF_CHUNK_HEIGHT, то есть связи длиной до
-        // sqrt(linkMaxLength2) рвутся за пару тиков.
+        // Прежний предел скорости игры: смещение за тик — HALF_CHUNK_HEIGHT клеток мира. Мир
+        // физики получает скорость через WorldPhysics (изменённая игрой vx/vy).
         val angle = debugRandom.nextFloat() * 2f * PI.toFloat()
-        particleEntity.vx[particleIndex] = cos(angle) * MovementManager.MAX_SPEED
-        particleEntity.vy[particleIndex] = sin(angle) * MovementManager.MAX_SPEED
+        particleEntity.vx[particleIndex] = cos(angle) * FLING_SPEED
+        particleEntity.vy[particleIndex] = sin(angle) * FLING_SPEED
     }
 
     /**
@@ -391,50 +391,6 @@ class SimulationSystem(
         }
     }
 
-    /**
-     * Интегрирование позиций. Работы здесь мало (позиция += скорость, ограничение
-     * по границам мира, пересчёт gridId), поэтому фаза почти целиком состояла из
-     * накладных расходов: два барьера на ExecutorService по ~8 submit + 8 Future.get
-     * каждый — это десятки микросекунд на десяток микросекунд полезной работы.
-     * Теперь барьер спиновый, а слоты раздаются динамически: в стеке одного чанка
-     * могут быть тысячи частиц, в соседнем — единицы.
-     *
-     * Две стадии (odd/even) пока сохранены, потому что буферы отложенных команд
-     * индексируются номером чанка, и слот odd-чанка совпал бы со слотом even-чанка.
-     * Само движение сетку больше не мутирует, так что после разведения буферов по
-     * чанкам обе стадии можно будет слить в одну.
-     */
-    fun arrangementOfPositionsInTheGrid() {
-        val alive = particleEntity.aliveList
-        val size = alive.size
-        if (size == 0) return
-
-        // Ровные блоки aliveList, а не стеки, набитые обходом сетки.
-        //
-        // Раньше список частиц для движения набирался ПОБОЧНЫМ ЭФФЕКТОМ фазы коллизий:
-        // проходя сетку, она складывала встреченные индексы в стеки чанков, и двигалось
-        // ровно то, что попало в сетку. Пока в сетке были все частицы, это работало и
-        // экономило отдельный обход. Как только из сетки убрали внутренние клетки
-        // (ParticleEntity.isInGrid), они перестали и двигаться — стояли на месте, потому
-        // что их никто не клал в стек.
-        //
-        // Связывать движение с сеткой не было причины и раньше: moveParticle трогает
-        // только свою же частицу, никакой пространственной изоляции ему не нужно.
-        // Чётность существовала лишь потому, что буферы команд индексировались номером
-        // чанка; теперь номер воркера приходит отдельно, и обе стадии слились в одну —
-        // на барьер меньше.
-        val blockCount = threadCount
-        val blockSize = (size + blockCount - 1) / blockCount
-
-        threadManager.runWorkStage(blockCount, Phase.ARRANGE) { block, workerId ->
-            val start = block * blockSize
-            val end = minOf(start + blockSize, size)
-            for (i in start until end) {
-                movementManager.moveParticle(alive.getInt(i), workerId)
-            }
-        }
-    }
-
     fun stopUpdateThread() {
         threadManager.stopSimulationLoop()
 
@@ -453,6 +409,7 @@ class SimulationSystem(
         entityList.forEach { it.clear() }
         simulationData.clear()
         worldCommandsManager.dispose()
+        worldPhysics.reset()
     }
 
     private fun restartSim() {
@@ -605,6 +562,9 @@ class SimulationSystem(
 
         /** Сколько спать, пока повтор держит мир на тике. */
         private const val HOLD_SLEEP_MS = 2L
+
+        /** Скорость броска отладочного стресса: HALF_CHUNK_HEIGHT клеток мира за тик (x += vx · 7.5). */
+        private const val FLING_SPEED = DISimulationContainer.HALF_CHUNK_HEIGHT / 7.5f
 
         /** Сколько клеток за тик убивает / разгоняет отладочный стресс-тест. */
         private const val DEBUG_STRESS_CELLS_PER_TICK = 55

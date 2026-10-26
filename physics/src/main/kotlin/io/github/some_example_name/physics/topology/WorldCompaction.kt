@@ -68,9 +68,10 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
 
     // --- частицы ---
     fun p(a: DoubleArray) = if (a.size < nOld) a else pick(a, pNew, nOld, nNew)
+    fun p(a: FloatArray) = if (a.size < nOld) a else pick(a, pNew, nOld, nNew)
     fun p(a: BooleanArray) = if (a.size < nOld) a else pick(a, pNew, nOld, nNew)
     fun p(a: IntArray, values: IntArray? = null) = if (a.size < nOld) a else pick(a, pNew, nOld, nNew, values)
-    cellDead = p(cellDead); cellUnborn = p(cellUnborn)
+    cellDead = p(cellDead); cellUnborn = p(cellUnborn); cellScale = p(cellScale); dragScale = p(dragScale)
     px = p(px); py = p(py); prevX = p(prevX); prevY = p(prevY); vx = p(vx); vy = p(vy)
     invMass = p(invMass); restInvMass = p(restInvMass); matchWeight = p(matchWeight)
     inContact = p(inContact); radius = p(radius); isFree = p(isFree)
@@ -205,6 +206,9 @@ internal fun BodyState.rebuildDerived(oldSurface: LocalSurface?, pNew: IntArray?
         dbgSealMinR = ct.minContactRadius
     }
     lap(6)
+    // Множители связей и треугольников — по нынешним множителям клеток (списки новые).
+    conCellScale = FloatArray(conA.size) { 1f }; triCellScale = FloatArray(triA.size) { 1f }
+    recomputeCellScales()
     internalMom = InternalMomentum(n)
     distanceSweepOrder = DistanceSweepOrder.create(this)
     constraintBlocks = null

@@ -42,6 +42,11 @@ internal fun BodyState.integrateRange(from: Int, to: Int, h: Double) {
             ny = GROUND_Y
             ground = true
         }
+        if (boundsOn) {
+            val r = radius[i]
+            if (nx < boundsMinX + r) nx = boundsMinX + r else if (nx > boundsMaxX - r) nx = boundsMaxX - r
+            if (ny < boundsMinY + r) ny = boundsMinY + r else if (ny > boundsMaxY - r) ny = boundsMaxY - r
+        }
         prevX[i] = x; prevY[i] = y; vy[i] = nvy
         px[i] = nx; py[i] = ny; inContact[i] = ground
     }
@@ -239,7 +244,11 @@ fun BodyState.applyMediumDrag(h: Double) {
     if (keep < 0.0) keep = 0.0
     prepareAwakeSpans()
     val s = sleep
-    for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) { vx[i] *= keep; vy[i] *= keep }
+    for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
+        val d = dragScale[i]
+        val kp = if (d == 1.0) keep else mediumKeep(h, d)
+        vx[i] *= kp; vy[i] *= kp
+    }
 }
 
 /**

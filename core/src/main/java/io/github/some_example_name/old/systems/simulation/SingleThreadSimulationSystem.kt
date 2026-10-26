@@ -14,7 +14,7 @@ import io.github.some_example_name.old.systems.genomics.OrganManager
 import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.old.systems.physics.GridManager
 import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem
-import io.github.some_example_name.old.systems.physics.MovementManager
+import io.github.some_example_name.old.physics.bridge.WorldPhysics
 import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem
 import io.github.some_example_name.old.systems.render.RenderBufferManager
 
@@ -34,7 +34,7 @@ class SingleThreadSimulationSystem(
     val userCommandManager: UserCommandManager,
     val renderBufferManager: RenderBufferManager,
     val pheromonesManager: PheromonesManager,
-    val movementManager: MovementManager,
+    val worldPhysics: WorldPhysics,
     val particlePhysicsSystem: ParticlePhysicsSystem,
     val entityList: List<Entity>
 ) {
@@ -63,9 +63,7 @@ class SingleThreadSimulationSystem(
         }
         pheromonesManager.iterate()
 
-        particleEntity.aliveList.forEach {
-            movementManager.moveParticle(it)
-        }
+        worldPhysics.tick()
 
         worldCommandsManager.executingCommandsFromTheWorld()
         organManager.performOrgansNextStage()
@@ -93,6 +91,7 @@ class SingleThreadSimulationSystem(
         entityList.forEach { it.clear() }
         simulationData.clear()
         worldCommandsManager.dispose()
+        worldPhysics.reset()
     }
 
     companion object {

@@ -35,7 +35,8 @@ import io.github.some_example_name.old.features.worldeditor.WorldTerrainManager
 import io.github.some_example_name.old.systems.genomics.NeuralLinkManager
 import io.github.some_example_name.old.systems.maps.MapSave
 import io.github.some_example_name.old.systems.physics.CollisionManager
-import io.github.some_example_name.old.systems.physics.MovementManager
+import io.github.some_example_name.old.physics.bridge.GamePhysicsWorkers
+import io.github.some_example_name.old.physics.bridge.WorldPhysics
 import kotlin.getValue
 
 object DISimulationContainer : DIContext, Disposable {
@@ -302,17 +303,15 @@ object DISimulationContainer : DIContext, Disposable {
         threadManager = threadManager
     )
 
-    val movementManager = MovementManager(
-        entity = particleEntity,
-        gridManager = gridManager,
-        substrateSettings = substrateSettings,
-        worldCommandsManager = worldCommandsManager,
-        simulationData = simulationData,
-        linkEntity = linkEntity,
-        cellList = cellList,
+    /** Физика-библиотека на воркерах игры (этап B1). */
+    val worldPhysics = WorldPhysics(
+        organEntity = organEntity,
         cellEntity = cellEntity,
+        particleEntity = particleEntity,
         substancesEntity = substancesEntity,
-        pheromonesManager = pheromonesManager
+        gridManager = gridManager,
+        pheromonesManager = pheromonesManager,
+        workers = GamePhysicsWorkers(threadManager)
     )
 
     val simulationSystem by lazy {
@@ -338,7 +337,7 @@ object DISimulationContainer : DIContext, Disposable {
             entityList = entityList,
             renderBufferManager = renderBufferManager,
             pheromonesManager = pheromonesManager,
-            movementManager = movementManager,
+            worldPhysics = worldPhysics,
             worldTerrainManager = worldTerrainManager
         )
     }

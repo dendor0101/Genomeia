@@ -121,6 +121,9 @@ private class BakeBundledGenomes(
             else if (layout.withInteriorFrom(rebaked.sortedGraph).interiorLinks != layout.interiorLinks) {
                 problems += "повторное выращивание дало другую границу"
             }
+            // Поза покоя (BakedLayout.restX) — из неё физика заводит тело.
+            if (layout == null || !layout.hasRestPose) problems += "нет позы покоя"
+            else if (layout.withRestPoseFrom(rebaked.sortedGraph) != layout) problems += "повторное выращивание дало другую позу покоя"
 
             val previewBytes = bytes.size - encodeGenome(genome.copy(preview = null)).size
             println(String.format(

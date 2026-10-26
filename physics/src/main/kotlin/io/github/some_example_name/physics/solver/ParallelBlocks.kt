@@ -380,16 +380,17 @@ internal fun BodyState.limitItemParallel(c: Int, s: WorkerScratch): Boolean {
     val dy = py[i] - py[j]
     val len2 = dx * dx + dy * dy
     val mus = conMuscle[c]
-    val scale = if (mus < 0) 1.0 else muscleScaleOf[mus]
+    val base = if (mus < 0) 1.0 else muscleScaleOf[mus]
+    val scale = if (cellScalesOn) base * conCellScale[c] else base
     val rest = conRest[c]
     val restScale = rest * scale
     val crushLim = LINK_CRUSH_RATIO * restScale
-    val max = LINK_MAX_STRETCH * rest
+    val max = linkMaxLength(rest, scale)
     val crushed = tearingOn && len2 < crushLim * crushLim
     val over = len2 > max * max
     if (!crushed && !over) return false
     if (invMass[i] + invMass[j] == 0.0) return false
-    if (limitViolationIsEvent(c, len2, crushed)) return true
+    if (limitViolationIsEvent(c, len2, crushed, scale)) return true
     val len = sqrt(len2)
     if (len < 1e-12) return false
     val overStrain = (len - max) / rest

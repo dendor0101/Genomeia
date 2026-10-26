@@ -202,12 +202,14 @@ class GenomeImportTest {
         // Старая раскладка: клетки 5, 7, 9 в этом порядке, границы нет.
         val oldLayout = BakedLayout(cellGenomeIdsInSlotOrder = listOf(5, 7, 9))
         val genome = bakedGenome("g").copy(sortedGraph = oldLayout)
-        // Новое запекание кладёт их иначе и знает границу; клетки 9 в нём нет.
+        // Новое запекание кладёт их иначе, знает границу и позу покоя; клетки 3 в старой нет.
         val bakerWithInterior = Baker { g, name ->
             g.copy(name = name, sortedGraph = BakedLayout(
-                cellGenomeIdsInSlotOrder = listOf(7, 5, 3),
-                interiorLinks = listOf(6, 0, 4),
-                interiorVersion = INTERIOR_VERSION
+                cellGenomeIdsInSlotOrder = listOf(7, 5, 3, 9),
+                interiorLinks = listOf(6, 0, 4, 0),
+                interiorVersion = INTERIOR_VERSION,
+                restX = listOf(1f, 2f, 3f, 4f), restY = listOf(-1f, -2f, -3f, -4f),
+                restRadius = listOf(0.5f, 0.4f, 0.3f, 0.2f), restBone = listOf(false, true, false, false)
             ))
         }
 
@@ -217,6 +219,12 @@ class GenomeImportTest {
         assertEquals(listOf(5, 7, 9), layout.cellGenomeIdsInSlotOrder)
         assertEquals(listOf(0, 6, 0), layout.interiorLinks)
         assertTrue(layout.hasInteriorLinks)
+        // Поза покоя перенесена по cellGenomeId тем же путём.
+        assertEquals(listOf(2f, 1f, 4f), layout.restX)
+        assertEquals(listOf(-2f, -1f, -4f), layout.restY)
+        assertEquals(listOf(0.4f, 0.5f, 0.2f), layout.restRadius)
+        assertEquals(listOf(true, false, false), layout.restBone)
+        assertTrue(layout.hasRestPose)
         // Снимок, который уже был, не перезаписан.
         assertTrue(rebaked.preview === genome.preview)
         // Второй раз печь нечего.
@@ -228,6 +236,15 @@ class GenomeImportTest {
         assertEquals(listOf(5, 7, 9), updated.cellGenomeIdsInSlotOrder)
         assertEquals(listOf(0, 6, 0), updated.interiorLinks)
         assertEquals(INTERIOR_VERSION, updated.interiorVersion)
+
+        // Клетки нет в новом запекании: граница считает её граничной, а позу не переносит
+        // вовсе — половинная поза собрала бы тело из клеток в нуле координат.
+        val without9 = BakedLayout(
+            cellGenomeIdsInSlotOrder = listOf(7, 5), interiorLinks = listOf(6, 0), interiorVersion = INTERIOR_VERSION,
+            restX = listOf(1f, 2f), restY = listOf(-1f, -2f), restRadius = listOf(0.5f, 0.4f), restBone = listOf(false, false)
+        )
+        assertEquals(listOf(0, 6, 0), oldLayout.withInteriorFrom(without9).interiorLinks)
+        assertEquals(oldLayout, oldLayout.withRestPoseFrom(without9))
     }
 
     @Test

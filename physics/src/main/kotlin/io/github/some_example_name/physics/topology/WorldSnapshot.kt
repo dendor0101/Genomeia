@@ -79,6 +79,10 @@ internal fun BodyState.writeCore(out: DataOutput) {
     for (a in listOf(px, py, prevX, prevY, vx, vy, invMass, restInvMass, matchWeight, radius,
             sleepAnchorX, sleepAnchorY, tickJitterX, tickJitterY, contactPressure)) out.writeDoubles(a, a.size)
     for (a in listOf(cellDead, cellUnborn, inContact, crushedCell)) out.writeBooleans(a, a.size)
+    out.writeFloats(cellScale, cellScale.size); out.writeBoolean(cellScalesOn)
+    out.writeDoubles(dragScale, dragScale.size)
+    out.writeBoolean(boundsOn)
+    for (b in doubleArrayOf(boundsMinX, boundsMinY, boundsMaxX, boundsMaxY)) out.writeLong(java.lang.Double.doubleToRawLongBits(b))
     for (a in listOf(trapTicks, trapOrg, foldTicks, contactPressureN, boneOf, muscleOf, organismOf)) out.writeInts(a, a.size)
     // Организмы.
     out.writeInts(organismSize, organismCount)
@@ -134,6 +138,11 @@ internal fun BodyState.readCore(input: DataInput) {
     tickJitterX = input.readDoubles(0); tickJitterY = input.readDoubles(0); contactPressure = input.readDoubles(0)
     cellDead = input.readBooleans(0); cellUnborn = input.readBooleans(0); inContact = input.readBooleans(0)
     crushedCell = input.readBooleans(0)
+    cellScale = input.readFloats(0); cellScalesOn = input.readBoolean()
+    dragScale = input.readDoubles(0)
+    boundsOn = input.readBoolean()
+    boundsMinX = input.readDouble64(); boundsMinY = input.readDouble64()
+    boundsMaxX = input.readDouble64(); boundsMaxY = input.readDouble64()
     trapTicks = input.readInts(0); trapOrg = input.readInts(0); foldTicks = input.readInts(0)
     contactPressureN = input.readInts(0); boneOf = input.readInts(0); muscleOf = input.readInts(0)
     organismOf = input.readInts(0)

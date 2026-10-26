@@ -99,8 +99,11 @@ class PhysicsWorld(
      */
     fun addBody(definition: BodyDefinition, born: BooleanArray? = null): Int {
         if (state.n == 0) {
-            require(born == null) { "первое тело — целиком; растущее дописывается в непустой мир" }
-            load(definition); reset(); return 0
+            if (born == null) { load(definition); reset(); return 0 }
+            // Растущее тело дописывается в непустой мир (загрузка строит тело целиком). Клиент-
+            // игра начинает с пустого мира и зиготы: первым телом встаёт пул свободных частиц
+            // (ему нужен WorldScale) — он игре всё равно нужен под субстанции.
+            growFreePool()
         }
         val first = state.n
         val muscles = state.muscleTarget.size
@@ -221,13 +224,15 @@ class PhysicsWorld(
 
     /**
      * Добавить свободную частицу в точку ([x], [y]) со скоростью ([vx], [vy]), радиусом
-     * [radius] и массой [mass] (NaN — как у клетки того же радиуса). Возвращает номер
+     * [radius], массой [mass] (NaN — как у клетки того же радиуса) и множителем сопротивления
+     * среды [drag] (1 — как среда мира). Возвращает номер
      * частицы. Цена — по соседям, кроме редкого роста пула (дописывание тела-пула).
      */
-    fun addFree(x: Double, y: Double, radius: Double, vx: Double = 0.0, vy: Double = 0.0, mass: Double = Double.NaN): Int {
+    fun addFree(x: Double, y: Double, radius: Double, vx: Double = 0.0, vy: Double = 0.0, mass: Double = Double.NaN,
+                drag: Double = 1.0): Int {
         if (freeStackN == 0) growFreePool()
         val id = freeStack[--freeStackN]
-        state.activateFree(freeParticle(id), x, y, vx, vy, radius, mass)
+        state.activateFree(freeParticle(id), x, y, vx, vy, radius, mass, drag)
         freeLive[id] = true; freeCount++
         return id
     }
@@ -266,7 +271,8 @@ class PhysicsWorld(
         // Масштаб мира (пороги, массы) берётся из первого тела; у пула связей нет.
         require(state.n > 0 || state.worldScale != null) { "пустому миру со свободными частицами нужен WorldScale" }
         val k = maxOf(FREE_POOL_BLOCK, freeSlots)
-        val r0 = 0.5f * (if (state.n > 0) state.linkScale else 1f)
+        // Радиус слота — масштаба мира: по наибольшему радиусу считается ячейка сетки контактов.
+        val r0 = 0.5f * (if (state.n > 0) state.linkScale else state.worldScale!!.meanLinkLength)
         val side = kotlin.math.ceil(kotlin.math.sqrt(k.toDouble())).toInt()
         val step = 8f * r0
         val def = BodyDefinition(
@@ -358,10 +364,13 @@ class PhysicsWorld(
     /**
      * Один тик: мышцы доезжают к своим целям за [dt], новорождённая ткань — на шаг к своим
      * длинам покоя, затем шаг решателя (внутри — SUBSTEPS подшагов). [dt] другой, чем DT, — только у стендов с ускоренными мышцами.
+     * Пустой мир (клиент-игра до первой подсадки) не шагает: решатель ещё не заведён.
      */
     fun step(dt: Double = DT) {
+        if (state.n == 0) return
         state.updateMuscles(dt)
         state.easeNewborn()
+        if (state.cellScalesDirty) state.recomputeCellScales()
         simulation.step()
     }
 
@@ -379,6 +388,57 @@ class PhysicsWorld(
     fun setMuscleTarget(m: Int, value: Double) { state.muscleTarget[m] = value }
     fun muscleTarget(m: Int): Double = state.muscleTarget[m]
     fun setAllMuscleTargets(value: Double) { state.muscleTarget.fill(value) }
+
+    /**
+     * Мышца клетки [cell]: множитель её длины покоя (1 — расслаблена; игра — 0.5..1.5, сжатие
+     * и растяжение). Действует со следующего тика: связи берут среднее гармоническое концов.
+     * Изменённая мышца будит свой организм, как мышечный кластер (wakeByInput): спящее тело
+     * иначе так и стояло бы с прежними длинами.
+     */
+    fun setCellScale(cell: Int, scale: Float) {
+        require(scale > 0f) { "множитель клетки должен быть больше нуля" }
+        if (state.cellScale[cell] != scale) {
+            state.cellScale[cell] = scale; state.cellScalesDirty = true
+            state.cellScalesOn = true
+            state.sleep.requestWake(cell)
+        }
+    }
+
+    fun cellScale(cell: Int): Float = state.cellScale[cell]
+
+    /**
+     * Масса клетки [cell] (по умолчанию — по радиусу, как у всех клеток мира). У живой клетки
+     * масса её организма пересчитывается сразу; у нерождённой — вступит при рождении.
+     */
+    fun setMass(cell: Int, mass: Double) {
+        require(mass > 0.0) { "масса должна быть больше нуля" }
+        val st = state
+        val alive = !st.cellDead[cell]
+        if (alive) st.localComponents.removeCell(cell)
+        st.restInvMass[cell] = 1.0 / mass
+        if (alive) { st.invMass[cell] = st.restInvMass[cell]; st.localComponents.addCell(cell) }
+    }
+
+    /** Множитель изотропного сопротивления среды частицы [cell]: 1 — как среда мира. */
+    fun setDrag(cell: Int, scale: Double) {
+        require(scale >= 0.0) { "множитель сопротивления не может быть меньше нуля" }
+        state.dragScale[cell] = scale
+    }
+
+    /** Рамка мира: частицы не выходят за прямоугольник (игра — границы сетки). */
+    fun setBounds(minX: Double, minY: Double, maxX: Double, maxY: Double) {
+        require(maxX > minX && maxY > minY) { "пустая рамка мира" }
+        val st = state
+        st.boundsOn = true; st.boundsMinX = minX; st.boundsMinY = minY; st.boundsMaxX = maxX; st.boundsMaxY = maxY
+    }
+
+    fun clearBounds() { state.boundsOn = false }
+
+    /**
+     * Убить клетку [cell] по причине клиента (голод, поедание): связи гаснут, организм
+     * делится, клетка замерзает и выходит из контактов. Зовётся между тиками.
+     */
+    fun kill(cell: Int) = state.killCell(cell)
 
     /** Схваченная клетка или -1. */
     val grabbed: Int get() = state.dragId

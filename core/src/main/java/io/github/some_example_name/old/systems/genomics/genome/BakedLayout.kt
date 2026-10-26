@@ -108,8 +108,52 @@ data class BakedLayout(
      * клетки»: такую границу GenomeImport.withBaking перепекает, как и отсутствующую.
      * Симуляция поле не читает — оно только для допекания.
      */
-    @ProtoNumber(7) val interiorVersion: Int = 0
+    @ProtoNumber(7) val interiorVersion: Int = 0,
+
+    /**
+     * ПОЗА ПОКОЯ ВЗРОСЛОГО ТЕЛА по слотам: координаты клетки в мире редактора (единицы мира
+     * игры) и её радиус. Физика-библиотека (`:physics`, мост — physics/bridge) заводит тело
+     * сразу всей раскладкой: длины покоя связей, площади треугольников, позы костей и место
+     * рождения клетки берутся отсюда (рождение — поворот и масштаб позы по рождённым соседям).
+     * Начало координат — любое: мост ставит тело зиготой в точку подсадки.
+     *
+     * Пусто у раскладок, запечённых раньше: GenomeImport.withBaking допекает позу, не трогая
+     * порядок слотов (как границу, [withRestPoseFrom]).
+     */
+    @ProtoNumber(8) val restX: List<Float> = emptyList(),
+    @ProtoNumber(9) val restY: List<Float> = emptyList(),
+    @ProtoNumber(10) val restRadius: List<Float> = emptyList(),
+
+    /**
+     * Кость во взрослом теле, по слотам (клетка типа «bone», cells/Bone.kt): связные куски
+     * костных клеток становятся кластерами shape matching. Тип клетки по ходу роста меняется
+     * (мутация), а тело в библиотеке заводится раз — поэтому берётся взрослый.
+     */
+    @ProtoNumber(11) val restBone: List<Boolean> = emptyList()
 ) {
+
+    /** Есть ли запечённая поза покоя — у старых раскладок её нет. */
+    val hasRestPose: Boolean
+        get() = cellsInLayout > 0 && restX.size == cellsInLayout && restY.size == cellsInLayout &&
+            restRadius.size == cellsInLayout && restBone.size == cellsInLayout
+
+    /**
+     * Эта же раскладка с позой покоя из [other] — для допекания старых геномов: порядок слотов
+     * свой, поза переносится по cellGenomeId. Клетка, которой в [other] нет, оставляет позу
+     * без изменений; если какой-то клетки не нашлось — поза не переносится вовсе (половинная
+     * поза хуже отсутствующей: тело собралось бы из клеток в нуле координат).
+     */
+    fun withRestPoseFrom(other: BakedLayout?): BakedLayout {
+        if (other == null || !other.hasRestPose) return this
+        val slots = IntArray(cellsInLayout) { other.slotByCellGenomeId.get(cellGenomeIdsInSlotOrder[it]) }
+        if (slots.any { it == -1 }) return this
+        return copy(
+            restX = slots.map { other.restX[it] },
+            restY = slots.map { other.restY[it] },
+            restRadius = slots.map { other.restRadius[it] },
+            restBone = slots.map { other.restBone[it] }
+        )
+    }
 
     /** Есть ли запечённая граница — у старых раскладок её нет. */
     val hasInteriorLinks: Boolean get() = interiorLinks.isNotEmpty() && interiorLinks.size == cellsInLayout

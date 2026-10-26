@@ -70,6 +70,25 @@ fun BodyState.growMuscles(fromTri: Int = 0) {
 
 fun BodyState.muscleScale(m: Int) = if (m < 0) 1.0 else muscleScaleOf[m]
 
+/**
+ * Множители связей и треугольников по множителям клеток (см. BodyState.cellScale): связь —
+ * среднее гармоническое концов, как LinkPhysicsSystem игры (при равных — сам множитель),
+ * треугольник — среднее трёх вершин (при равных — сам). Проход по рабочим спискам, раз в
+ * тик и только когда клетки менялись.
+ */
+internal fun BodyState.recomputeCellScales() {
+    val s = cellScale
+    for (c in 0 until conCount) {
+        val a = s[conA[c]]; val b = s[conB[c]]
+        conCellScale[c] = if (a == b) a else 2f * a * b / (a + b)
+    }
+    for (t in 0 until triCount) {
+        val a = s[triA[t]]; val b = s[triB[t]]; val c = s[triC[t]]
+        triCellScale[t] = if (a == b && b == c) a else (a + b + c) / 3f
+    }
+    cellScalesDirty = false
+}
+
 fun BodyState.updateMuscleScale(f: Double) {
     if (muscleScaleOf.size != muscleActivation.size) muscleScaleOf = DoubleArray(muscleActivation.size)
     if (muscleActivationPrev.size != muscleActivation.size) muscleActivationPrev = DoubleArray(muscleActivation.size)

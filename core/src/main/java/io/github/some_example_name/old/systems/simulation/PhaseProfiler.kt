@@ -45,7 +45,7 @@ object Phase {
         "3. Particle Collision",
         "4. Cell System",
         "5. Pheromones",
-        "6. Arrangement Grid",
+        "6. Physics World",
         "7. World Commands",
         "8. Organs",
         "9. User Commands",

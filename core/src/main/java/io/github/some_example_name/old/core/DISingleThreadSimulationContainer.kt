@@ -28,7 +28,7 @@ import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.old.systems.physics.CollisionManager
 import io.github.some_example_name.old.systems.physics.GridManager
 import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem
-import io.github.some_example_name.old.systems.physics.MovementManager
+import io.github.some_example_name.old.physics.bridge.WorldPhysics
 import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem
 import io.github.some_example_name.old.systems.render.RenderBufferManager
 import io.github.some_example_name.old.systems.render.RenderSystem
@@ -268,17 +268,15 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
         cellEntity = cellEntity
     )
 
-    val movementManager = MovementManager(
-        entity = particleEntity,
-        gridManager = gridManager,
-        substrateSettings = substrateSettings,
-        worldCommandsManager = worldCommandsManager,
-        simulationData = simulationData,
-        linkEntity = linkEntity,
-        cellList = cellList,
+    /** Фон меню — физика-библиотека в одном потоке. */
+    val worldPhysics = WorldPhysics(
+        organEntity = organEntity,
         cellEntity = cellEntity,
+        particleEntity = particleEntity,
         substancesEntity = substancesEntity,
-        pheromonesManager = pheromonesManager
+        gridManager = gridManager,
+        pheromonesManager = pheromonesManager,
+        workers = null
     )
 
     val worldTerrainManager = WorldTerrainManager(
@@ -305,7 +303,7 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
             entityList = entityList,
             renderBufferManager = renderBufferManager,
             pheromonesManager = pheromonesManager,
-            movementManager = movementManager
+            worldPhysics = worldPhysics
         )
     }
 

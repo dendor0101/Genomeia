@@ -70,6 +70,24 @@ fun BodyState.applyKills(ct: BoundaryContacts) {
     if (any) refreshSurface()
 }
 
+/**
+ * КЛЕТКУ УБИВАЕТ КЛИЕНТ (игра: голод, поедание, смерть по своим правилам) — тем же путём,
+ * что глубокий контакт: связи гаснут, организм делится, клетка замерзает и выходит из
+ * контактов, контур закрывается. Без решения отломков (fractureOrientation): смерть пришла
+ * не из итерации решателя, вывернутых треугольников от неё нет. Зовётся между тиками.
+ */
+fun BodyState.killCell(v: Int) {
+    if (cellDead[v]) return
+    if (dragId == v) { matchWeight[v] = 1.0; dragId = -1 }
+    cellDead[v] = true
+    deadCount++
+    killIncidentEdges(v)
+    vx[v] = 0.0; vy[v] = 0.0; invMass[v] = 0.0
+    contacts?.dropFromContacts(v)
+    refreshSurface()
+    structureVersion++
+}
+
 fun BodyState.killIncidentEdges(v: Int) {
     localComponents.removeCell(v)
     for (s in baked.vertStart[v] until baked.vertStart[v + 1]) {
@@ -132,7 +150,7 @@ internal fun BodyState.plasticLink(c: Int, k: Double) {
     // длину и тянуть перестаёт. Проверка ловила это сразу: тело переставало
     // останавливаться вовсе (замедление 1.0x вместо 20x за минуту), потому что
     // ползущая длина покоя вечно шевелила границу, а среда это выпрямляла в тягу.
-    if (conMuscle[c] >= 0) return
+    if (conMuscle[c] >= 0 || (cellScalesOn && conCellScale[c] != 1f)) return
     val target = conRest[c]
     if (target < 1e-12) return
     val dx = px[conA[c]] - px[conB[c]]
@@ -153,7 +171,7 @@ internal fun BodyState.plasticLink(c: Int, k: Double) {
 
 internal fun BodyState.plasticTriangle(t: Int, k: Double) {
     if (!baked.triAlive[triId[t]]) return
-    if (triMuscle[t] >= 0) return          // мышечные — по той же причине
+    if (triMuscle[t] >= 0 || (cellScalesOn && triCellScale[t] != 1f)) return          // мышечные — по той же причине
     val rest2 = triRestArea2[t].toDouble()
     if (abs(rest2) < 1e-18) return
     val i0 = triA[t]; val i1 = triB[t]; val i2 = triC[t]

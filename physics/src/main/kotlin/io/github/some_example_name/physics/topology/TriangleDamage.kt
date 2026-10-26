@@ -79,6 +79,7 @@ internal fun BodyState.compactTriangles() {
             triA[m] = triA[k]; triB[m] = triB[k]; triC[m] = triC[k]
             if (triHold.size > k) triHold[m] = triHold[k]
             triRestArea2[m] = triRestArea2[k]; triMuscle[m] = triMuscle[k]; triId[m] = triId[k]
+            triCellScale[m] = triCellScale[k]
             m++
         }
         k++

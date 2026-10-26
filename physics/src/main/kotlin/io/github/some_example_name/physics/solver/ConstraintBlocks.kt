@@ -23,6 +23,9 @@ class BlockIndex(capacity: Int, blocks: Int) {
     }
 
     fun remove(id: Int) {
+        // Номера за концом ещё не было в индексе (add наращивает, remove — нет): так новое
+        // ребро контура вынимается перед вставкой у мира, чьё первое тело — пул без рёбер.
+        if (id >= owner.size) return
         val block = owner[id]
         if (block < 0) return
         val p = prev[id]; val q = next[id]

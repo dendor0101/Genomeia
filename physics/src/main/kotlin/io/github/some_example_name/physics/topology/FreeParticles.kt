@@ -20,7 +20,8 @@ package io.github.some_example_name.physics
  * Родить свободную частицу в слоте [i] пула: точка ([x], [y]), скорость ([vx], [vy]), радиус
  * [r], масса [mass] (NaN — как у клетки радиуса [r]: r² на среднюю площадь клетки мира).
  */
-internal fun BodyState.activateFree(i: Int, x: Double, y: Double, vx0: Double, vy0: Double, r: Double, mass: Double) {
+internal fun BodyState.activateFree(i: Int, x: Double, y: Double, vx0: Double, vy0: Double, r: Double, mass: Double,
+                                    drag: Double = 1.0) {
     require(baked.vertStart[i] == baked.vertStart[i + 1]) { "слот $i — не одиночная клетка" }
     require(r > 0.0) { "радиус свободной частицы должен быть больше нуля" }
     radius[i] = r
@@ -29,6 +30,7 @@ internal fun BodyState.activateFree(i: Int, x: Double, y: Double, vx0: Double, v
         if (meanArea > 0.0) (r * r) / meanArea else 1.0
     }
     restInvMass[i] = if (m > 1e-12) 1.0 / m else 1.0
+    dragScale[i] = drag
     activateCell(i, x, y, vx0, vy0)
 }
 
@@ -48,7 +50,7 @@ internal fun BodyState.deactivateFree(i: Int, refresh: Boolean = true) {
     cellDead[i] = true; cellUnborn[i] = true
     invMass[i] = 0.0; matchWeight[i] = 0.0
     vx[i] = 0.0; vy[i] = 0.0; prevX[i] = px[i]; prevY[i] = py[i]
-    inContact[i] = false
+    inContact[i] = false; dragScale[i] = 1.0
     if (crushedCell.size > i) crushedCell[i] = false
     if (trapTicks.size > i) trapTicks[i] = 0
     if (trapOrg.size > i) trapOrg[i] = -1

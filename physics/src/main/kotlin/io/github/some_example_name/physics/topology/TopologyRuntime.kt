@@ -144,7 +144,9 @@ fun BodyState.buildContacts() {
     buildProbes()
     // Ёмкость по целому телу, длина — в conCount: после разрыва списки сжимаются на месте.
     val cap = conA.size
-    if (linkTorn.size != cap) {
+    // cap == 0 — мир, чьё первое тело без связей (пул свободных частиц у клиента-игры):
+    // linkTorn по умолчанию пустой, и без этой ветки conDead остался бы незаведённым.
+    if (linkTorn.size != cap || cap == 0) {
         linkTorn = BooleanArray(cap); conDead = BooleanArray(cap)
         conBoundary = BooleanArray(cap); conTendon = BooleanArray(cap)
     } else {
@@ -584,6 +586,10 @@ fun BodyState.restoreTopology() {
     tearQueueN = 0
     tornTotal = 0
     conHold.fill(0); triHold.fill(0)
+    // Множители клеток — вход клиента, сброс их не трогает; связи и треугольники — заново.
+    if (conCellScale.size < conA.size) conCellScale = FloatArray(conA.size) { 1f }
+    if (triCellScale.size < triA.size) triCellScale = FloatArray(triA.size) { 1f }
+    recomputeCellScales()
     buildBoundary(); buildBend(); buildFlaps(); buildOrganisms(); buildContacts()
     initializeConstraintBlocks()
 }
@@ -665,7 +671,7 @@ fun BodyState.rebuildAfterTear() {
                 constraintBlocks?.moveConstraint(c, m)
                 conA[m] = conA[c]; conB[m] = conB[c]; conRest[m] = conRest[c]
                 if (conHold.size > c) conHold[m] = conHold[c]
-                conMuscle[m] = conMuscle[c]; conEdge[m] = conEdge[c]
+                conMuscle[m] = conMuscle[c]; conEdge[m] = conEdge[c]; conCellScale[m] = conCellScale[c]
                 if (conGrowTarget.size > c) conGrowTarget[m] = conGrowTarget[c]
                 m++
             }

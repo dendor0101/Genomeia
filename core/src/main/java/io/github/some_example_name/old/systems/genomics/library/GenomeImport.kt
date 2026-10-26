@@ -90,7 +90,9 @@ object GenomeImport {
      *    перепекается: иначе у своего генома игрока остались бы клетки на краю тела, которые
      *    считаются внутренними и ни с чем не сталкиваются (A-11, отчёт 20.10 19:49).
      *  - пика нейросвязей (Genome.neuralLinksPeak) — без него у организма нет арены
-     *    нейросвязей, и они идут в общий пул.
+     *    нейросвязей, и они идут в общий пул;
+     *  - позы покоя (BakedLayout.restX) — без неё физике-библиотеке не из чего завести тело.
+     *    Переносится по cellGenomeId, как граница: порядок слотов остаётся своим.
      *
      * Сам геном не трогается — берётся только недостающее, остальное как в файле: имя,
      * версия, порядок стадий. В том числе уже лежащая раскладка: от неё зависит, как
@@ -105,14 +107,16 @@ object GenomeImport {
         val needsInterior = layout != null && layout.cellsInLayout > 0 && !layout.hasCurrentInterior
         // Пик нейросвязей (ёмкость их арены) появился ещё позже.
         val needsNeuralPeak = genome.neuralLinksPeak == null
-        if (!needsLayout && genome.preview != null && !needsInterior && !needsNeuralPeak) return null
+        // Поза покоя для физики-библиотеки (BakedLayout.restX) — позже всех.
+        val needsRestPose = layout != null && layout.cellsInLayout > 0 && !layout.hasRestPose
+        if (!needsLayout && genome.preview != null && !needsInterior && !needsNeuralPeak && !needsRestPose) return null
 
         val baked = baker.bake(genome, genome.name)
         // Раскладка остаётся своей — граница переносится в неё по cellGenomeId, порядок
         // слотов не меняется. Уже лежащий снимок тоже не трогается.
         if (!needsLayout) return genome.copy(
             preview = genome.preview ?: baked.preview,
-            sortedGraph = layout?.withInteriorFrom(baked.sortedGraph),
+            sortedGraph = layout?.withInteriorFrom(baked.sortedGraph)?.withRestPoseFrom(baked.sortedGraph),
             neuralLinksPeak = genome.neuralLinksPeak ?: baked.neuralLinksPeak
         )
         return genome.copy(
