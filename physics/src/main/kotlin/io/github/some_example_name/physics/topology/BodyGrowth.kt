@@ -85,6 +85,7 @@ internal fun BodyState.activateCell(i: Int, x: Double, y: Double, vx0: Double, v
     localComponents.addCell(i)
     baked.touch(i)
     val org = organismOf[i]
+    val edges0 = growEdgeN
     for (s in baked.vertStart[i] until baked.vertStart[i + 1]) {
         val e = baked.vertEdge[s]
         val other = baked.vertOther[s]
@@ -92,18 +93,29 @@ internal fun BodyState.activateCell(i: Int, x: Double, y: Double, vx0: Double, v
         if (cellDead[other] || organismOf[other] != org) { retireUnbornEdge(e); continue }
         baked.revive(e)
         var c = conOfEdge[e]
-        while (c >= 0) { conDead[c] = false; linkTorn[c] = false; startLinkGrowth(c); c = conNextForEdge[c] }
+        while (c >= 0) { conDead[c] = false; linkTorn[c] = false; c = conNextForEdge[c] }
         if (growEdgeN == growEdges.size) growEdges = growEdges.copyOf(growEdges.size * 2)
         growEdges[growEdgeN++] = e
         updateBoundaryLinkLimit(e)
     }
+    var tris = 0
     for (s in baked.vertexTriStart[i] until baked.vertexTriStart[i + 1]) {
         val t = baked.vertexTriangles[s] / 3
         if (!baked.reviveTriangle(t)) continue
-        startTriangleGrowth(t)
+        if (tris == bornTriScratch.size) bornTriScratch = bornTriScratch.copyOf(tris * 2)
+        bornTriScratch[tris++] = t
         // Ожившая площадь закрыла края: рёбра треугольника больше не граница.
         for (j in 0..2) { val a = baked.triEdge[3 * t + j]; if (a >= 0) updateBoundaryLinkLimit(a) }
     }
+    // Дорастание стартует от длины покоя в долях множителя связи, поэтому кольцо мышцы — раньше
+    // (иначе новорождённая связь у мышцы начала бы с прежнего множителя и рванулась к половине
+    // длины). Пределы контура длину покоя не читают — порядок им безразличен.
+    refreshCellScaleRing(i)
+    for (k in edges0 until growEdgeN) {
+        var c = conOfEdge[growEdges[k]]
+        while (c >= 0) { startLinkGrowth(c); c = conNextForEdge[c] }
+    }
+    for (k in 0 until tris) startTriangleGrowth(bornTriScratch[k])
     if (boneOf[i] >= 0) restPoseOfBornBone(boneOf[i])
     sleep.requestWake(i)
     refreshSurface()

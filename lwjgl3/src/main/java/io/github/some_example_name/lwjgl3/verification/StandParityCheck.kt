@@ -135,12 +135,14 @@ private fun growthSection(genome: Genome, layout: BakedLayout, def: BodyDefiniti
                 tears.count(w, first, def, muscle, bornAt, tick)
             }
         }
+        val mismatches = w.cellScaleMismatches()
         if (g.muscles) for (s in 0 until def.count) if (muscle[s]) w.setCellScale(first + s, 1f)
         repeat(120) { w.step() }
         val unborn = (0 until def.count).count { w.isUnborn(first + it) }
         println("  %-40s".format(g.name + " ($tick тиков)") + afterGrowth(w to first, def, muscle) +
             if (unborn > 0) ", не родилось $unborn" else "")
         if (tears.edges + tears.cells > 0) println("      во время роста: $tears")
+        if (mismatches > 0) println("      МНОЖИТЕЛИ ПО МЕСТУ РАЗОШЛИСЬ С ПОЛНЫМ ПЕРЕСЧЁТОМ: $mismatches")
     }
 }
 

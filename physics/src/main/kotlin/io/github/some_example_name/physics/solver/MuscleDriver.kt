@@ -76,36 +76,74 @@ internal fun strongerScale(a: Float, b: Float): Float {
     return if (da > db || (da == db && a <= b)) a else b
 }
 
-private fun BodyState.linkCellScale(c: Int): Float = strongerScale(cellScale[conA[c]], cellScale[conB[c]])
+/** Слабейшая мышца из двух: множитель ближе к 1, при равном удалении — больший. */
+internal fun weakerScale(a: Float, b: Float): Float = if (strongerScale(a, b) == a && a != b) b else a
+
+private fun BodyState.linkCellScale(c: Int): Float = weakerScale(cellScaleEff[conA[c]], cellScaleEff[conB[c]])
 
 private fun BodyState.triangleCellScale(t: Int): Float {
     val i0 = triA[t]; val i1 = triB[t]; val i2 = triC[t]
     if (boneOf[i0] >= 0 || boneOf[i1] >= 0 || boneOf[i2] >= 0) return 1f
-    return strongerScale(strongerScale(cellScale[i0], cellScale[i1]), cellScale[i2])
+    val e = cellScaleEff
+    return weakerScale(weakerScale(e[i0], e[i1]), e[i2])
+}
+
+/** Действующий множитель клетки [v]: сильнейший из своего и соседей по живому треугольнику. */
+private fun BodyState.effectiveScale(v: Int): Float {
+    val b = baked
+    var best = cellScale[v]
+    for (q in b.vertStart[v] until b.vertStart[v + 1]) {
+        val e = b.vertEdge[q]
+        if (b.edgeDead[e] || b.triUse[e] == 0) continue
+        best = strongerScale(best, cellScale[b.vertOther[q]])
+    }
+    return best
 }
 
 /**
- * Множители всех связей и треугольников по множителям клеток (см. BodyState.cellScale) —
- * после перестройки структуры (дописывание, уплотнение, снимок, сброс). Тик за тиком их
- * ведёт advanceCellScales по месту.
+ * Множители всех клеток, связей и треугольников (см. BodyState.cellScale) — после перестройки
+ * структуры (дописывание, уплотнение, снимок, сброс). Тик за тиком их ведут advanceCellScales
+ * и refreshCellScaleRing по месту.
  */
 internal fun BodyState.recomputeCellScales() {
+    if (cellScaleEff.size != n) cellScaleEff = FloatArray(n)
+    for (v in 0 until n) cellScaleEff[v] = effectiveScale(v)
     for (c in 0 until conCount) conCellScale[c] = linkCellScale(c)
     for (t in 0 until triCount) triCellScale[t] = triangleCellScale(t)
     cellScalesDirty = false
 }
 
 /**
+ * Множитель клетки [v] или её кольцо изменились (шаг мышцы, рождение, гибель ребра): заново
+ * действующие множители её самой и соседей по треугольнику, у изменившихся — связи и
+ * треугольники. Порядок клеток на результат не влияет: значения выбираются, а не считаются.
+ */
+internal fun BodyState.refreshCellScaleRing(v: Int) {
+    if (!cellScalesOn) return
+    if (cellScaleEff.size != n || constraintBlocks == null) { cellScalesDirty = true; return }
+    val b = baked
+    refreshEffective(v, always = true)
+    for (q in b.vertStart[v] until b.vertStart[v + 1]) refreshEffective(b.vertOther[q], always = false)
+}
+
+private fun BodyState.refreshEffective(u: Int, always: Boolean) {
+    val e = effectiveScale(u)
+    if (e == cellScaleEff[u] && !always) return
+    cellScaleEff[u] = e
+    refreshCellScaleAround(u)
+}
+
+/**
  * Множители клеток — шаг к цели с темпом мышцы стенда (как активация в updateMuscles):
  * удаление от 1 — muscleRateContract, возвращение к 1 — muscleRateRelax. Проход по клеткам
  * только пока хоть одна в пути (cellScalesMoving); у изменившейся клетки связи и
- * треугольники пересчитываются по её рёбрам (conOfEdge, triangleSlot), без прохода по миру.
- * Значение связи — один из множителей её концов, без арифметики: порядок клеток в проходе
- * на результат не влияет.
+ * треугольники пересчитываются по кольцу (refreshCellScaleRing), без прохода по миру.
+ * Значение связи — один из множителей клеток, без арифметики: порядок клеток в проходе на
+ * результат не влияет.
  */
 internal fun BodyState.advanceCellScales(dt: Double) {
     val s = cellScale; val target = cellScaleTarget
-    val byEdges = constraintBlocks != null && !cellScalesDirty
+    val byEdges = constraintBlocks != null && !cellScalesDirty && cellScaleEff.size == n
     var moving = false
     for (v in 0 until n) {
         val t = target[v]; val cur = s[v]
@@ -116,7 +154,7 @@ internal fun BodyState.advanceCellScales(dt: Double) {
         if (kotlin.math.abs(t - next) < CELL_SCALE_SNAP) next = t else moving = true
         s[v] = next
         sleep.requestWake(v)
-        if (byEdges) refreshCellScaleAround(v)
+        if (byEdges) refreshCellScaleRing(v)
     }
     cellScalesMoving = moving
     if (!byEdges) recomputeCellScales()

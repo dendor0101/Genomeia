@@ -549,6 +549,8 @@ internal fun BodyState.killEdge(e: Int, split: Boolean) {
     if (tearQueueN == tearQueue.size) tearQueue = tearQueue.copyOf(tearQueue.size * 2)
     tearQueue[tearQueueN++] = e
     tearsPending = true
+    // Погибли треугольники ребра — кольца мышц у его концов другие.
+    refreshCellScaleRing(baked.edgeU(e)); refreshCellScaleRing(baked.edgeV(e))
 }
 
 /**

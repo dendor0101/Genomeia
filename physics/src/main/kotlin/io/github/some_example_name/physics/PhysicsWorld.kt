@@ -432,6 +432,23 @@ class PhysicsWorld(
     fun cellScale(cell: Int): Float = state.cellScale[cell]
 
     /**
+     * ДИАГНОСТИКА: сколько действующих множителей клеток, связей и треугольников расходится с
+     * полным пересчётом (их ведут по месту — шаг мышцы, рождение, гибель ребра). 0 — пересчёт
+     * по месту ничего не пропустил. Значения остаются полного пересчёта.
+     */
+    fun cellScaleMismatches(): Int {
+        val st = state
+        if (!st.cellScalesOn || st.cellScaleEff.size != st.n) return 0
+        val eff = st.cellScaleEff.copyOf(); val con = st.conCellScale.copyOf(st.conCount); val tri = st.triCellScale.copyOf(st.triCount)
+        st.recomputeCellScales()
+        var bad = 0
+        for (v in 0 until st.n) if (eff[v] != st.cellScaleEff[v]) bad++
+        for (c in 0 until st.conCount) if (con[c] != st.conCellScale[c]) bad++
+        for (t in 0 until st.triCount) if (tri[t] != st.triCellScale[t]) bad++
+        return bad
+    }
+
+    /**
      * Масса клетки [cell] (по умолчанию — по радиусу, как у всех клеток мира). У живой клетки
      * масса её организма пересчитывается сразу; у нерождённой — вступит при рождении.
      */

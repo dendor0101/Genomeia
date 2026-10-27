@@ -201,7 +201,9 @@ private val scratchPrefixes = listOf("state.tickMomentumState.", "state.sleep.sp
     // Журналы событий для клиента (этап B2): чистятся в начале шага, при уплотнении и записи
     // снимка (счётчики edgeDeathN/cellDeathN сверяются и равны нулю); за счётчиком — остатки
     // прошлых шагов и разная ёмкость, на следующие тики они не влияют.
-    "state.cellDeathLog", "state.edgeDeathLog")
+    "state.cellDeathLog", "state.edgeDeathLog",
+    // Черновик activateCell: ожившие треугольники до старта дорастания, за пределами вызова не читается.
+    "state.bornTriScratch")
 private val contactScratch = setOf("boneCx", "boneCy", "boneI", "boneIds", "boneM", "boneOf", "bpMoved", "cAx", "cAy",
     "cI", "cJ", "cLam", "cLamTot", "cNx", "cNy", "cRR", "cVn", "ddaX", "ddaY", "dirtyBuf", "frcList", "frcN", "keptKeys",
     "lowKeys", "moved", "movedCount", "movedStamp", "moverCount", "movers", "nearA", "nearB", "nearN", "nearRestSlot",
