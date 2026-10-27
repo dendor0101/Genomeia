@@ -70,24 +70,75 @@ fun BodyState.growMuscles(fromTri: Int = 0) {
 
 fun BodyState.muscleScale(m: Int) = if (m < 0) 1.0 else muscleScaleOf[m]
 
+/** Сильнейшая мышца из двух: множитель дальше от 1, при равном удалении — меньший. */
+internal fun strongerScale(a: Float, b: Float): Float {
+    val da = kotlin.math.abs(a - 1f); val db = kotlin.math.abs(b - 1f)
+    return if (da > db || (da == db && a <= b)) a else b
+}
+
+private fun BodyState.linkCellScale(c: Int): Float = strongerScale(cellScale[conA[c]], cellScale[conB[c]])
+
+private fun BodyState.triangleCellScale(t: Int): Float {
+    val i0 = triA[t]; val i1 = triB[t]; val i2 = triC[t]
+    if (boneOf[i0] >= 0 || boneOf[i1] >= 0 || boneOf[i2] >= 0) return 1f
+    return strongerScale(strongerScale(cellScale[i0], cellScale[i1]), cellScale[i2])
+}
+
 /**
- * Множители связей и треугольников по множителям клеток (см. BodyState.cellScale): связь —
- * среднее гармоническое концов, как LinkPhysicsSystem игры (при равных — сам множитель),
- * треугольник — среднее трёх вершин (при равных — сам). Проход по рабочим спискам, раз в
- * тик и только когда клетки менялись.
+ * Множители всех связей и треугольников по множителям клеток (см. BodyState.cellScale) —
+ * после перестройки структуры (дописывание, уплотнение, снимок, сброс). Тик за тиком их
+ * ведёт advanceCellScales по месту.
  */
 internal fun BodyState.recomputeCellScales() {
-    val s = cellScale
-    for (c in 0 until conCount) {
-        val a = s[conA[c]]; val b = s[conB[c]]
-        conCellScale[c] = if (a == b) a else 2f * a * b / (a + b)
-    }
-    for (t in 0 until triCount) {
-        val a = s[triA[t]]; val b = s[triB[t]]; val c = s[triC[t]]
-        triCellScale[t] = if (a == b && b == c) a else (a + b + c) / 3f
-    }
+    for (c in 0 until conCount) conCellScale[c] = linkCellScale(c)
+    for (t in 0 until triCount) triCellScale[t] = triangleCellScale(t)
     cellScalesDirty = false
 }
+
+/**
+ * Множители клеток — шаг к цели с темпом мышцы стенда (как активация в updateMuscles):
+ * удаление от 1 — muscleRateContract, возвращение к 1 — muscleRateRelax. Проход по клеткам
+ * только пока хоть одна в пути (cellScalesMoving); у изменившейся клетки связи и
+ * треугольники пересчитываются по её рёбрам (conOfEdge, triangleSlot), без прохода по миру.
+ * Значение связи — один из множителей её концов, без арифметики: порядок клеток в проходе
+ * на результат не влияет.
+ */
+internal fun BodyState.advanceCellScales(dt: Double) {
+    val s = cellScale; val target = cellScaleTarget
+    val byEdges = constraintBlocks != null && !cellScalesDirty
+    var moving = false
+    for (v in 0 until n) {
+        val t = target[v]; val cur = s[v]
+        if (cur == t) continue
+        val away = kotlin.math.abs(t - 1f) > kotlin.math.abs(cur - 1f)
+        val k = minOf(1.0, (if (away) muscleRateContract else muscleRateRelax) * dt)
+        var next = (cur + (t - cur) * k).toFloat()
+        if (kotlin.math.abs(t - next) < CELL_SCALE_SNAP) next = t else moving = true
+        s[v] = next
+        sleep.requestWake(v)
+        if (byEdges) refreshCellScaleAround(v)
+    }
+    cellScalesMoving = moving
+    if (!byEdges) recomputeCellScales()
+}
+
+/** Множители связей и треугольников у клетки [v] — по её рёбрам. */
+private fun BodyState.refreshCellScaleAround(v: Int) {
+    val b = baked
+    val slot = constraintBlocks!!.triangleSlot
+    for (q in b.vertStart[v] until b.vertStart[v + 1]) {
+        val e = b.vertEdge[q]
+        var c = conOfEdge[e]
+        while (c >= 0) { conCellScale[c] = linkCellScale(c); c = conNextForEdge[c] }
+        for (r in b.edgeTriStart[e] until b.edgeTriStart[e + 1]) {
+            val w = slot[b.edgeTris[r]]
+            if (w in 0 until triCount) triCellScale[w] = triangleCellScale(w)
+        }
+    }
+}
+
+/** Ближе этого к цели множитель клетки встаёт точно на неё: путь кончается за конечное число тиков. */
+private const val CELL_SCALE_SNAP = 1e-4f
 
 fun BodyState.updateMuscleScale(f: Double) {
     if (muscleScaleOf.size != muscleActivation.size) muscleScaleOf = DoubleArray(muscleActivation.size)

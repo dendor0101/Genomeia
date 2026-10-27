@@ -59,6 +59,7 @@ internal fun BodyState.initialize(definition: BodyDefinition) {
     triMuscle = IntArray(triCount) { t -> muscleOfTri(triA[t], triB[t], triC[t]) }
     triInverted = BooleanArray(triCount)
     cellScale = FloatArray(n) { 1f }
+    cellScaleTarget = FloatArray(n) { 1f }
     dragScale = DoubleArray(n) { 1.0 }
     conCellScale = FloatArray(conA.size) { 1f }; triCellScale = FloatArray(triA.size) { 1f }
 

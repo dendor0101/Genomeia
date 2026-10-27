@@ -220,6 +220,7 @@ internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = nul
 private fun BodyState.growParticleArrays(n0: Int) {
     cellDead = cellDead.copyOf(n); cellUnborn = cellUnborn.copyOf(n)
     cellScale = cellScale.copyOf(n).also { java.util.Arrays.fill(it, n0, n, 1f) }
+    cellScaleTarget = cellScaleTarget.copyOf(n).also { java.util.Arrays.fill(it, n0, n, 1f) }
     dragScale = dragScale.copyOf(n).also { java.util.Arrays.fill(it, n0, n, 1.0) }
     px = px.copyOf(n); py = py.copyOf(n); prevX = prevX.copyOf(n); prevY = prevY.copyOf(n)
     vx = vx.copyOf(n); vy = vy.copyOf(n)

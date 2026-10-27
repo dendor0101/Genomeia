@@ -12,7 +12,11 @@ class SimulationData {
     var isPlay = true
     var maxSpeed = false
 
-    var targetUPS: Int = 60
+    /**
+     * Тиков в секунду по умолчанию. 30: тик игры — один шаг мира физики длиной DT = 1/30 с
+     * (physics/bridge/PhysicsUnits), так мир идёт в реальном времени, как стенд физики.
+     */
+    var targetUPS: Int = 30
         set(value) {
             field = value.coerceIn(1, 1000)
         }

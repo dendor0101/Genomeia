@@ -24,7 +24,8 @@ import java.io.DataOutput
  */
 
 internal const val SNAPSHOT_MAGIC = 0x50485753  // "PHWS"
-internal const val SNAPSHOT_VERSION = 1
+/** 2 — мышца клетки с темпом: цель множителя клетки и признак «в пути» (27.10). */
+internal const val SNAPSHOT_VERSION = 2
 
 // --- массивы: длина, затем значения; числа — сырыми битами, без нормализации NaN ---
 
@@ -80,6 +81,7 @@ internal fun BodyState.writeCore(out: DataOutput) {
             sleepAnchorX, sleepAnchorY, tickJitterX, tickJitterY, contactPressure)) out.writeDoubles(a, a.size)
     for (a in listOf(cellDead, cellUnborn, inContact, crushedCell)) out.writeBooleans(a, a.size)
     out.writeFloats(cellScale, cellScale.size); out.writeBoolean(cellScalesOn)
+    out.writeFloats(cellScaleTarget, cellScaleTarget.size); out.writeBoolean(cellScalesMoving)
     out.writeDoubles(dragScale, dragScale.size)
     out.writeBoolean(boundsOn)
     for (b in doubleArrayOf(boundsMinX, boundsMinY, boundsMaxX, boundsMaxY)) out.writeLong(java.lang.Double.doubleToRawLongBits(b))
@@ -139,6 +141,7 @@ internal fun BodyState.readCore(input: DataInput) {
     cellDead = input.readBooleans(0); cellUnborn = input.readBooleans(0); inContact = input.readBooleans(0)
     crushedCell = input.readBooleans(0)
     cellScale = input.readFloats(0); cellScalesOn = input.readBoolean()
+    cellScaleTarget = input.readFloats(0); cellScalesMoving = input.readBoolean()
     dragScale = input.readDoubles(0)
     boundsOn = input.readBoolean()
     boundsMinX = input.readDouble64(); boundsMinY = input.readDouble64()

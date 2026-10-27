@@ -390,6 +390,7 @@ class PhysicsWorld(
         if (state.n == 0) return
         state.clearDeathLogs()
         state.updateMuscles(dt)
+        if (state.cellScalesMoving) state.advanceCellScales(dt)
         state.easeNewborn()
         if (state.cellScalesDirty) state.recomputeCellScales()
         simulation.step()
@@ -411,20 +412,23 @@ class PhysicsWorld(
     fun setAllMuscleTargets(value: Double) { state.muscleTarget.fill(value) }
 
     /**
-     * Мышца клетки [cell]: множитель её длины покоя (1 — расслаблена; игра — 0.5..1.5, сжатие
-     * и растяжение). Действует со следующего тика: связи берут среднее гармоническое концов.
-     * Изменённая мышца будит свой организм, как мышечный кластер (wakeByInput): спящее тело
-     * иначе так и стояло бы с прежними длинами.
+     * Мышца клетки [cell]: множитель её длины покоя, к которому она идёт (1 — расслаблена;
+     * игра — 0.5..1.5, сжатие и растяжение). Нынешний множитель подходит к цели с темпом мышцы
+     * стенда (BodyState.cellScale, advanceCellScales), связь берёт сильнейшую мышцу концов.
+     * Изменённая цель будит организм, как мышечный кластер (wakeByInput): спящее тело иначе
+     * так и стояло бы с прежними длинами.
      */
     fun setCellScale(cell: Int, scale: Float) {
         require(scale > 0f) { "множитель клетки должен быть больше нуля" }
-        if (state.cellScale[cell] != scale) {
-            state.cellScale[cell] = scale; state.cellScalesDirty = true
+        if (state.cellScaleTarget[cell] != scale) {
+            state.cellScaleTarget[cell] = scale
             state.cellScalesOn = true
             state.sleep.requestWake(cell)
         }
+        if (state.cellScale[cell] != scale) state.cellScalesMoving = true
     }
 
+    /** Нынешний множитель длины покоя клетки (в пути к цели setCellScale). */
     fun cellScale(cell: Int): Float = state.cellScale[cell]
 
     /**

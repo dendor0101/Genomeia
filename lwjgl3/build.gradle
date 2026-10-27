@@ -39,6 +39,9 @@ dependencies {
   // проверки из verification (saveRoundTrip) не видят типов aliveList. В сборку не добавляет ничего:
   // в рантайме он и так приходит через core.
   implementation "it.unimi.dsi:fastutil:8.5.16"
+  // Физика-библиотека: у core она implementation, а проверки сверяют мир игры со стендом
+  // (standParityCheck) напрямую через PhysicsWorld.
+  implementation project(':physics')
 
   if(enableGraalNative == 'true') {
     implementation "io.github.berstanio:gdx-svmhelper-backend-lwjgl3:$graalHelperVersion"
@@ -243,6 +246,20 @@ tasks.register('worldSpecCheck', JavaExec) {
   mainClass = 'io.github.some_example_name.lwjgl3.verification.WorldSpecCheckKt'
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8'
+}
+
+// Тело стенда в мире игры: gradlew :lwjgl3:standParityCheck [-Pgenome=… -Pbody=…]
+// Одно взрослое тело (A-11) в мире по правилам стенда и в мире игры с теми же входами —
+// побитово ли, и какое отличие мира игры ломает биты; сопротивление (толчок) и гребок.
+tasks.register('standParityCheck', JavaExec) {
+  group = 'verification'
+  description = 'Взрослое тело в мире стенда и в мире игры: побитово, толчок, гребок'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.verification.StandParityCheckKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+  args = [project.findProperty('genome') ?: 'docs/physics/genomes/A-11.genome',
+          project.findProperty('body') ?: 'docs/physics/repros/detached-fragments-2026-10-21/body.txt']
 }
 
 // Регрессия сохранения мира: gradlew :lwjgl3:saveRoundTrip
