@@ -208,6 +208,9 @@ class PhysicsWorld(
      */
     fun setBone(cell: Int) = state.activateBone(cell)
 
+    /** Спит ли организм частицы [i] (BodySleep: заморожен до толчка). */
+    fun isAsleep(i: Int): Boolean = state.sleep.isAsleep(state.organismOf[i])
+
     /** Включена ли кость клетки. */
     fun isBone(cell: Int): Boolean = state.boneOf[cell] >= 0
 

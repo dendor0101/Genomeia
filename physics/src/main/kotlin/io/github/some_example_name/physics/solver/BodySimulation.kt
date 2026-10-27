@@ -93,9 +93,17 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         if (finalContacts != null && contactsOn) {
             tick0()
             finalContacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = false)
+            // УДАР БУДИТ СПЯЩЕГО ДО РЕШЕНИЯ КОНТАКТА. Спящий заморожен (обратная масса 0): решённый
+            // так контакт — удар о стену, налетевшая частица отскакивает, импульс не передан, а
+            // проснувшийся в следующем подшаге стоит (ClientInputsCheck: импульс цели 0 против
+            // удара без сна). Проснувшемуся — свои массы, контакты готовятся заново; редко — только
+            // в подшаге, где касание кого-то будит.
+            if (noteSleepContacts(finalContacts)) {
+                applyWakeRequests()
+                finalContacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = false)
+            }
             tick1(6); tick0()
             if (cancelSpinOn) tickMomentum.noteContacts(finalContacts, invMass)
-            noteSleepContacts(finalContacts)
             finalContacts.updateBones(px, py, invMass, if (bonesRigid) boneOf else null, rigidBones)
             tick1(13); tick0()
             finalContacts.solveContacts(px, py, vx, vy, invMass, h)

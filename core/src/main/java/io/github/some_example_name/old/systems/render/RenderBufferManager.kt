@@ -311,6 +311,8 @@ class RenderBufferManager(
         // Тип «не клетка» один на всех — считается один раз, а не на каждой частице.
         val nonCellType = (cellList.size + 1)
         val collisionFilter = frameFilter == DebugFilter.COLLISION
+        val sleepFilter = frameFilter == DebugFilter.SLEEP
+        val physics = particleEntity.physics
 
         for (i in 0 until nonCells.size) {
             val particleIndex = nonCells.getInt(i)
@@ -337,7 +339,11 @@ class RenderBufferManager(
                 ),
                 // В отладке — плоская и непрозрачная, как и была. Из фильтров её касается
                 // только «коллизии»: в сетке столкновений она, как и граничные клетки.
-                look = if (collisionFilter) CellLook.look(0, filter = CellLook.collisionFilterByte(inGrid[particleIndex])) else 0,
+                look = when {
+                    collisionFilter -> CellLook.look(0, filter = CellLook.collisionFilterByte(inGrid[particleIndex]))
+                    sleepFilter -> CellLook.look(0, filter = CellLook.sleepFilterByte(physics?.isAsleep(particleIndex) == true))
+                    else -> 0
+                },
                 dir = CellInstanceBuffer.DIR_NONE,
                 prevX = lastPrevX,
                 prevY = lastPrevY,
@@ -516,6 +522,7 @@ class RenderBufferManager(
         DebugFilter.ENERGY -> CellLook.energyFilterByte(cellEntity.energy[cellIndex], cellEntity.maxEnergy[cellIndex])
         DebugFilter.SIGNAL -> CellLook.signalFilterByte(signal)
         DebugFilter.COLLISION -> CellLook.collisionFilterByte(particleEntity.isInGrid[particleIndex])
+        DebugFilter.SLEEP -> CellLook.sleepFilterByte(particleEntity.physics?.isAsleep(particleIndex) == true)
     }
 
     /** Стрелка направления, луч глаза или жгутик хвоста — в оверлей, см. DebugCellPalette. */

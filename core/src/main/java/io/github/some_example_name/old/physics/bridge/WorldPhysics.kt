@@ -194,6 +194,12 @@ class WorldPhysics(
         return x
     }
 
+    /** Спит ли организм частицы игры [p] в мире физики (фильтр отладки «сон»). Между тиками. */
+    fun isAsleep(p: Int): Boolean {
+        val i = particleEntity.physicsIndex[p]
+        return i >= 0 && bridge.world.isAsleep(i)
+    }
+
     /** Однопоточная запись скорости в единицах игры (ParticleEntity.setVelocity). */
     fun setVelocity(i: Int, vx: Float, vy: Float) = bridge.setVelocity(i, vx, vy)
 

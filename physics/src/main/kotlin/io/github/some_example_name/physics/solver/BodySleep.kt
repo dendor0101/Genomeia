@@ -291,20 +291,23 @@ internal fun BodyState.applyWakeRequests() {
  * Касание бодрствующей клетки, ушедшей с начала тика дальше порога, будит спящего
  * соседа. Зовётся после каждой подготовки контактов, до removeTickJitter: в
  * tickJitter ещё лежат положения начала тика. Пока никто не спит — одна проверка.
+ * true — касание заказало пробуждение: будить надо до решения этих контактов (см. BodySimulation).
  */
-internal fun BodyState.noteSleepContacts(ct: BoundaryContacts) {
+internal fun BodyState.noteSleepContacts(ct: BoundaryContacts): Boolean {
     val s = sleep
-    if (s.asleepCount == 0 || tickJitterX.size != n) return
+    if (s.asleepCount == 0 || tickJitterX.size != n) return false
     val wake = WAKE_DRIFT_CELLS * linkScale
     val wake2 = wake * wake
+    var any = false
     for (k in 0 until ct.contactCount) {
         val i = ct.contactI(k); val j = ct.contactJ(k)
         val si = s.asleep[organismOf[i]]; val sj = s.asleep[organismOf[j]]
         if (si == sj) continue
         val mover = if (si) j else i
         val dx = px[mover] - tickJitterX[mover]; val dy = py[mover] - tickJitterY[mover]
-        if (dx * dx + dy * dy > wake2) s.requestWake(if (si) i else j)
+        if (dx * dx + dy * dy > wake2) { s.requestWake(if (si) i else j); any = true }
     }
+    return any
 }
 
 /**

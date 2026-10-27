@@ -123,6 +123,32 @@ fun main(args: Array<String>) {
         report("гибель клетки", w.state.cellDead[v] && liveEdges == 0 && w.state.invMass[v] == 0.0,
             "клетка мертва ${w.state.cellDead[v]}, живых рёбер $liveEdges")
     }
+    // 6. Удар по спящему. Спящий организм заморожен (обратная масса 0); налетевшая частица
+    // обязана будить его ДО решения контакта, иначе бьётся как в стену: импульс не передан,
+    // а налетевшая отскакивает. Сравнение — тот же удар в мире без сна.
+    for (target in listOf("частицу", "тело")) {
+        val got = DoubleArray(2)
+        for ((k, sleep) in listOf(false, true).withIndex()) {
+            val w = world(config, scale, null).apply { sleepOn = sleep }
+            w.addBody(grid)
+            val r = 0.5 * w.meanLinkLength
+            val y0 = (0 until w.particleCount).minOf { w.y[it] } - 30 * r
+            val x0 = (0 until w.particleCount).map { w.x[it] }.average()
+            // Цель — свободная частица под телом или само тело; пуля — снизу или слева.
+            val still = if (target == "частицу") w.freeParticle(w.addFree(x0, y0, r, drag = 0.0)) else -1
+            repeat(120) { w.step() }
+            val asleep = if (still >= 0) w.state.sleep.isAsleep(w.state.organismOf[still]) else w.state.sleep.isAsleep(w.state.organismOf[0])
+            if (sleep && !asleep) { report("удар по спящему: $target", false, "цель не уснула за 120 тиков"); continue }
+            val bullet = if (still >= 0) w.freeParticle(w.addFree(x0 - 12 * r, y0, r, 0.6, 0.0, drag = 0.0))
+                else w.freeParticle(w.addFree(x0, y0, r, 0.0, 0.6, drag = 0.0))
+            repeat(40) { w.step() }
+            got[k] = if (still >= 0) Math.hypot(w.vx[still], w.vy[still])
+                else (0 until grid.count).map { Math.hypot(w.vx[it], w.vy[it]) }.average() * grid.count
+            if (bullet < 0) got[k] = Double.NaN
+        }
+        val ratio = got[1] / got[0]
+        report("удар по спящему: $target", ratio > 0.8, "импульс цели со сном / без сна = %.3f".format(ratio))
+    }
     println(if (ok) "CLIENT OK" else "CLIENT FAILED")
     if (!ok) kotlin.system.exitProcess(1)
 }
