@@ -103,28 +103,33 @@ fun main(args: Array<String>) {
 private fun growthSection(genome: Genome, layout: BakedLayout, def: BodyDefinition, muscle: BooleanArray) {
     val stages = growthStages(genome, layout)
     val zygote = layout.slotByCellGenomeId.get(0)
-    println("\n== рост с нуля в мире игры: ${stages.size} стадий с делениями, зигота — слот $zygote")
+    val boneSlots = stages.sumOf { it.bones.size }
+    println("\n== рост с нуля в мире игры: ${stages.size} стадий, зигота — слот $zygote, костей по мутации $boneSlots " +
+        "из ${def.isBone.count { it }} костных клеток описания")
     val adultKick = afterGrowth(gameWorld(def, GAME_WORLD_SCALE, sleep = null, bounds = true), def, muscle)
     println("  %-40s".format("взрослое (сразу целиком)") + adultKick)
     val conditions = listOf(
         Growth("1 тик на стадию", 1, muscles = false, kicks = false),
         Growth("10 тиков на стадию", 10, muscles = false, kicks = false),
-        Growth("1 тик, гребок во время роста", 1, muscles = true, kicks = false),
-        Growth("5 тиков, гребок во время роста", 5, muscles = true, kicks = false),
-        Growth("20 тиков, гребок во время роста", 20, muscles = true, kicks = false),
-        Growth("5 тиков, толчки во время роста", 5, muscles = false, kicks = true),
+        Growth("1 тик, гребок", 1, muscles = true, kicks = false),
+        Growth("5 тиков, гребок", 5, muscles = true, kicks = false),
+        Growth("20 тиков, гребок", 20, muscles = true, kicks = false),
+        Growth("5 тиков, толчки", 5, muscles = false, kicks = true),
+        Growth("5 тиков, гребок, кости с рождения", 5, muscles = true, kicks = false, bonesAtBirth = true),
     )
     for (g in conditions) {
         val w = PhysicsWorld(PhysicsConfig(), workers = null, scale = GAME_WORLD_SCALE)
         w.state.quiet = true
         w.setBounds(0.0, 0.0, 128 * 0.048, 128 * 0.048)
-        val body = w.addBody(def, BooleanArray(def.count) { it == zygote })
+        val body = w.addBody(def, BooleanArray(def.count) { it == zygote },
+            boneOn = if (g.bonesAtBirth) null else BooleanArray(def.count))
         val first = w.bodyFirst(body)
         var tick = 0
         val bornAt = IntArray(def.count) { Int.MIN_VALUE / 2 }
         val tears = TearStats()
         for (stage in stages) {
-            for (slot in stage) if (w.isUnborn(first + slot)) { w.activate(first + slot); bornAt[slot] = tick }
+            for (slot in stage.births) if (w.isUnborn(first + slot)) { w.activate(first + slot); bornAt[slot] = tick }
+            if (!g.bonesAtBirth) for (slot in stage.bones) if (!w.isUnborn(first + slot)) w.setBone(first + slot)
             repeat(g.ticksPerStage) {
                 if (g.muscles) gaitCells(w, first, muscle, tick)
                 if (g.kicks && tick % 40 == 0) {
@@ -146,7 +151,11 @@ private fun growthSection(genome: Genome, layout: BakedLayout, def: BodyDefiniti
     }
 }
 
-private class Growth(val name: String, val ticksPerStage: Int, val muscles: Boolean, val kicks: Boolean)
+private class Growth(val name: String, val ticksPerStage: Int, val muscles: Boolean, val kicks: Boolean,
+                     val bonesAtBirth: Boolean = false)
+
+/** Стадия генома: кто родился делением и кто стал костью (мутация или деление с типом «кость»). */
+private class Stage(val births: IntArray, val bones: IntArray)
 
 /**
  * Разбор гибели во время роста: связь молодая (конец младше BIRTH_GROW_TICKS — она ещё
@@ -178,19 +187,25 @@ private class TearStats {
         "погибло клеток $cells (молодых $youngCells, мышечных $muscleCells, костных $boneCells)"
 }
 
-/** Слоты, рождённые на каждой стадии генома (только стадии с делениями), в порядке действий. */
-private fun growthStages(genome: Genome, layout: BakedLayout): List<IntArray> {
+/** Стадии генома с делениями или мутациями в кость: рождённые слоты и ставшие костью, в порядке действий. */
+private fun growthStages(genome: Genome, layout: BakedLayout): List<Stage> {
     val born = BooleanArray(layout.cellsInLayout)
     born[layout.slotByCellGenomeId.get(0)] = true
-    val result = ArrayList<IntArray>()
+    val result = ArrayList<Stage>()
     for (stage in genome.stageInstruction) {
-        val slots = ArrayList<Int>()
-        for ((_, action) in stage.cellActions) {
-            val child = action.divide?.id ?: continue
-            val slot = layout.slotByCellGenomeId.get(child)
-            if (slot >= 0 && !born[slot]) { born[slot] = true; slots.add(slot) }
+        val births = ArrayList<Int>(); val bones = ArrayList<Int>()
+        for ((cellId, action) in stage.cellActions) {
+            action.divide?.let { d ->
+                val slot = layout.slotByCellGenomeId.get(d.id)
+                if (slot >= 0 && !born[slot]) { born[slot] = true; births.add(slot) }
+                if (slot >= 0 && d.cellType == "bone") bones.add(slot)
+            }
+            if (action.mutate?.cellType == "bone") {
+                val slot = layout.slotByCellGenomeId.get(cellId)
+                if (slot >= 0) bones.add(slot)
+            }
         }
-        if (slots.isNotEmpty()) result.add(slots.toIntArray())
+        if (births.isNotEmpty() || bones.isNotEmpty()) result.add(Stage(births.toIntArray(), bones.toIntArray()))
     }
     return result
 }

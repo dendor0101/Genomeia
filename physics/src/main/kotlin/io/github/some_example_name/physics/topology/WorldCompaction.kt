@@ -76,7 +76,7 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
     invMass = p(invMass); restInvMass = p(restInvMass); matchWeight = p(matchWeight)
     inContact = p(inContact); radius = p(radius); isFree = p(isFree)
     probe = p(probe); probeAngle = p(probeAngle); crushedCell = p(crushedCell)
-    boneOf = p(boneOf, bNew); muscleOf = p(muscleOf, mNew); organismOf = p(organismOf, oNew)
+    boneOf = p(boneOf, bNew); boneClusterOf = p(boneClusterOf, bNew); muscleOf = p(muscleOf, mNew); organismOf = p(organismOf, oNew)
     trapTicks = p(trapTicks); trapOrg = p(trapOrg, oNew); foldTicks = p(foldTicks)
     sleepAnchorX = p(sleepAnchorX); sleepAnchorY = p(sleepAnchorY)
     tickJitterX = p(tickJitterX); tickJitterY = p(tickJitterY)

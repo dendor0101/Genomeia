@@ -29,6 +29,7 @@ internal fun BodyState.initialize(definition: BodyDefinition) {
     degenerateBones = body.boneClusters.size - rigid.size
     rigidBones = rigid.toTypedArray()
     rigidBones.forEachIndexed { b, ids -> for (i in ids) boneOf[i] = b }
+    boneClusterOf = boneOf.copyOf()
     buildBoneRestPose()
 
     body.muscleClusters.forEachIndexed { m, ids -> for (i in ids) muscleOf[i] = m }
@@ -80,7 +81,7 @@ internal fun BodyState.resetState() {
     for (i in 0 until n) {
         px[i] = body.x[i].toDouble(); py[i] = body.y[i].toDouble()
         vx[i] = 0.0; vy[i] = 0.0
-        invMass[i] = restInvMass[i]; matchWeight[i] = 1.0
+        invMass[i] = restInvMass[i]; matchWeight[i] = restMatchWeight(i)
     }
     trapTicks.fill(0); foldTicks.fill(0)
     flowVX.fill(0.0); flowVY.fill(0.0)

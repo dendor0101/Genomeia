@@ -47,7 +47,8 @@ class PhysicsBridge(
     /**
      * Организм [organ] появился зиготой в слоте [zygoteSlot] в точке ([x], [y]) игры: тело
      * заводится сразу всей раскладкой, рождена только зигота. Остальные клетки рождает
-     * [bornCell] по мере деления.
+     * [bornCell] по мере деления. Кости выключены: клетка становится костью мутацией —
+     * [setBone] (поза кости — форма на этот момент).
      */
     fun spawnOrganism(organ: Int, layout: BakedLayout, zygoteSlot: Int, x: Float, y: Float) {
         require(!hasBody(organ)) { "у организма $organ уже есть тело" }
@@ -59,7 +60,7 @@ class PhysicsBridge(
             bodyOfOrgan = bodyOfOrgan.copyOf(maxOf(organ + 1, old * 2))
             bodyOfOrgan.fill(-1, old, bodyOfOrgan.size)
         }
-        bodyOfOrgan[organ] = world.addBody(definition, born)
+        bodyOfOrgan[organ] = world.addBody(definition, born, boneOn = BooleanArray(definition.count))
     }
 
     /** Частица клетки слота [slot] организма [organ] — заново на каждый запрос (см. АДРЕСАЦИЯ). */
@@ -73,6 +74,9 @@ class PhysicsBridge(
      * повторный рост в том же слоте — TODO к B2.
      */
     fun bornCell(organ: Int, slot: Int) = world.activate(particleOf(organ, slot))
+
+    /** Клетка стала костью (мутация, деление с типом «кость»). */
+    fun setBone(particle: Int) = world.setBone(particle)
 
     /** Клетку убила игра (голод, поедание, DELETE_CELL). */
     fun killCell(organ: Int, slot: Int) = world.kill(particleOf(organ, slot))

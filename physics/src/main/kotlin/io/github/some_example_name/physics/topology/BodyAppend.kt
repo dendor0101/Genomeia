@@ -19,7 +19,7 @@ import kotlin.math.sqrt
  * Массивы растут копированием — на 100k это десятки мегабайт за рождение; ёмкость с
  * удвоением — следующий шаг, если замер покажет, что это заметно.
  */
-internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = null) {
+internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = null, boneOn: BooleanArray? = null) {
     check(n > 0) { "первое тело загружается load, дописывается — следующее" }
     val n0 = n; val l0 = body.linkCount; val t0 = body.triCount
     val bones0 = body.boneClusters.size; val muscles0 = body.muscleClusters.size
@@ -40,7 +40,7 @@ internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = nul
         restInvMass[i] = if (m > 1e-12) 1.0 / m else 1.0
         invMass[i] = restInvMass[i]; matchWeight[i] = 1.0
         radius[i] = r
-        boneOf[i] = -1; muscleOf[i] = -1
+        boneOf[i] = -1; boneClusterOf[i] = -1; muscleOf[i] = -1
     }
     // --- нерождённые клетки (рост тела, A2.4): мертвы до рождения, без массы и веса в кости ---
     if (born != null) {
@@ -66,10 +66,15 @@ internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = nul
     var maxBone = boneDx.size
     for (b in b0 until rigidBones.size) {
         val ids = rigidBones[b]
-        for (i in ids) boneOf[i] = b
-        restPoseOfBornBone(b)
+        for (i in ids) { boneOf[i] = b; boneClusterOf[i] = b }
         if (ids.size > maxBone) maxBone = ids.size
     }
+    // Кости, которые клиент включит позже (setBone): пока — мягкая ткань без веса в кости.
+    if (boneOn != null) {
+        require(boneOn.size == n - n0) { "boneOn — по клетке нового тела" }
+        for (k in boneOn.indices) if (!boneOn[k] && boneOf[n0 + k] >= 0) { boneOf[n0 + k] = -1; matchWeight[n0 + k] = 0.0 }
+    }
+    for (b in b0 until rigidBones.size) restPoseOfBornBone(b)
     if (maxBone > boneDx.size) { boneDx = DoubleArray(maxBone); boneDy = DoubleArray(maxBone) }
 
     // --- мышцы ---
@@ -226,7 +231,7 @@ private fun BodyState.growParticleArrays(n0: Int) {
     vx = vx.copyOf(n); vy = vy.copyOf(n)
     invMass = invMass.copyOf(n); restInvMass = restInvMass.copyOf(n); matchWeight = matchWeight.copyOf(n)
     inContact = inContact.copyOf(n)
-    boneOf = boneOf.copyOf(n); muscleOf = muscleOf.copyOf(n)
+    boneOf = boneOf.copyOf(n); boneClusterOf = boneClusterOf.copyOf(n); muscleOf = muscleOf.copyOf(n)
     radius = radius.copyOf(n); isFree = isFree.copyOf(n)
     probe = probe.copyOf(n); probeAngle = probeAngle.copyOf(n)
     crushedCell = crushedCell.copyOf(n)

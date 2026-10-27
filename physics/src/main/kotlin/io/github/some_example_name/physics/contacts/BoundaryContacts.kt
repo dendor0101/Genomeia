@@ -1962,9 +1962,12 @@ class BoundaryContacts(
     /** Масса, центр и момент инерции кластера [b]. */
     internal fun updateBone(b: Int, px: DoubleArray, py: DoubleArray, invMass: DoubleArray) {
         val ids = boneIds
+        // Только включённые клетки кости: клетку, которую клиент ещё не сделал костью (boneOf -1),
+        // кость не несёт. У стенда все клетки кости включены — те же биты.
+        val bo = boneOf!!
         var m = 0.0; var cx = 0.0; var cy = 0.0
         for (k in ids[b]) {
-            if (invMass[k] <= 0.0) continue
+            if (invMass[k] <= 0.0 || bo[k] != b) continue
             val w = 1.0 / invMass[k]
             m += w; cx += w * px[k]; cy += w * py[k]
         }
@@ -1974,7 +1977,7 @@ class BoundaryContacts(
         boneCx[b] = cx; boneCy[b] = cy
         var inert = 0.0
         for (k in ids[b]) {
-            if (invMass[k] <= 0.0) continue
+            if (invMass[k] <= 0.0 || bo[k] != b) continue
             val rx = px[k] - cx; val ry = py[k] - cy
             inert += (rx * rx + ry * ry) / invMass[k]
         }

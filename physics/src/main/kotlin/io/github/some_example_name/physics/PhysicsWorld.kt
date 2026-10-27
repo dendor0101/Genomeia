@@ -97,9 +97,9 @@ class PhysicsWorld(
      * [definition] с нулевыми скоростями; [born] — какие клетки рождены (рост, activate).
      * Возвращает НОМЕР ТЕЛА; его частицы — bodyFirst(номер) + смещение в [definition].
      */
-    fun addBody(definition: BodyDefinition, born: BooleanArray? = null): Int {
+    fun addBody(definition: BodyDefinition, born: BooleanArray? = null, boneOn: BooleanArray? = null): Int {
         if (state.n == 0) {
-            if (born == null) { load(definition); reset(); return 0 }
+            if (born == null && boneOn == null) { load(definition); reset(); return 0 }
             // Растущее тело дописывается в непустой мир (загрузка строит тело целиком). Клиент-
             // игра начинает с пустого мира и зиготы: первым телом встаёт пул свободных частиц
             // (ему нужен WorldScale) — он игре всё равно нужен под субстанции.
@@ -107,7 +107,7 @@ class PhysicsWorld(
         }
         val first = state.n
         val muscles = state.muscleTarget.size
-        state.appendBody(definition, born)
+        state.appendBody(definition, born, boneOn)
         return record(first, definition.count, muscles, definition.muscleClusters.size)
     }
 
@@ -200,6 +200,16 @@ class PhysicsWorld(
     /** Сколько клеток погибло за последний шаг и какие ([cellDeath]). */
     val cellDeathCount: Int get() = state.cellDeathN
     fun cellDeath(k: Int): Int = state.cellDeathLog[k]
+
+    /**
+     * Сделать клетку [cell] костью (клиент-игра: мутация в кость; тело дописано с boneOn): она
+     * входит в свою кость описания, поза кости — нынешняя форма её включённых клеток. Без кости
+     * в описании, мёртвой или уже включённой — ничего. Между тиками.
+     */
+    fun setBone(cell: Int) = state.activateBone(cell)
+
+    /** Включена ли кость клетки. */
+    fun isBone(cell: Int): Boolean = state.boneOf[cell] >= 0
 
     /** Ждёт ли клетка рождения. */
     fun isUnborn(cell: Int): Boolean = state.cellUnborn[cell]
@@ -498,7 +508,7 @@ class PhysicsWorld(
     fun release() {
         val i = state.dragId
         if (i < 0) return
-        state.matchWeight[i] = 1.0
+        state.matchWeight[i] = state.restMatchWeight(i)
         state.dragId = -1
     }
 

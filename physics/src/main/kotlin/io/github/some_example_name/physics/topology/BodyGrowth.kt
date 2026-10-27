@@ -79,7 +79,7 @@ internal fun BodyState.retireUnbornEdge(e: Int) {
 internal fun BodyState.activateCell(i: Int, x: Double, y: Double, vx0: Double, vy0: Double) {
     require(cellUnborn[i]) { "клетка $i не ждёт рождения" }
     cellUnborn[i] = false; cellDead[i] = false
-    invMass[i] = restInvMass[i]; matchWeight[i] = 1.0
+    invMass[i] = restInvMass[i]; matchWeight[i] = restMatchWeight(i)
     px[i] = x; py[i] = y; prevX[i] = x; prevY[i] = y
     vx[i] = vx0; vy[i] = vy0
     localComponents.addCell(i)
@@ -206,17 +206,70 @@ internal fun BodyState.easeNewborn() {
 internal fun BodyState.restPoseOfBornBone(b: Int) {
     val ids = rigidBones[b]
     var bornCount = 0
-    for (i in ids) if (!cellUnborn[i]) bornCount++
+    for (i in ids) if (!cellUnborn[i] && boneOf[i] == b) bornCount++
     if (bornCount == ids.size) { restPoseOfBone(b); return }
     val qx = boneRestQx[b]; val qy = boneRestQy[b]
     java.util.Arrays.fill(qx, 0.0); java.util.Arrays.fill(qy, 0.0)
     if (bornCount == 0) return
     var cx = 0.0; var cy = 0.0
-    for (i in ids) if (!cellUnborn[i]) { cx += body.x[i]; cy += body.y[i] }
+    for (i in ids) if (!cellUnborn[i] && boneOf[i] == b) { cx += body.x[i]; cy += body.y[i] }
     cx /= bornCount; cy /= bornCount
-    for (k in ids.indices) if (!cellUnborn[ids[k]]) {
+    for (k in ids.indices) if (!cellUnborn[ids[k]] && boneOf[ids[k]] == b) {
         qx[k] = body.x[ids[k]] - cx
         qy[k] = body.y[ids[k]] - cy
+    }
+}
+
+/** Вес клетки [i] в позе её кости без захвата мышью: 0 у кости, которую клиент ещё не включил. */
+internal fun BodyState.restMatchWeight(i: Int): Double =
+    if (boneClusterOf[i] >= 0 && boneOf[i] != boneClusterOf[i]) 0.0 else 1.0
+
+/**
+ * ВКЛЮЧИТЬ КОСТЬ КЛЕТКИ [i] (клиент: клетка стала костью мутацией). Клетка входит в свою кость
+ * с весом 1, её связи с уже включёнными клетками той же кости уходят из решателя насовсем — их
+ * держит проекция (как внутрикостные связи при загрузке; мутация в кость необратима, а блоки
+ * решателя вынутое обратно не вставляют). Поза кости — нынешнее положение её включённых клеток:
+ * форма на момент мутации, без рывка, даже если тело согнуто. Контур и поверхность — по месту.
+ * Ничего не делает у клетки не из кости описания, мёртвой или уже включённой. Между тиками.
+ */
+internal fun BodyState.activateBone(i: Int) {
+    val b = boneClusterOf[i]
+    if (b < 0 || boneOf[i] == b || cellDead[i]) return
+    boneOf[i] = b
+    if (dragId != i) matchWeight[i] = 1.0
+    val blocks = constraintBlocks
+    for (q in baked.vertStart[i] until baked.vertStart[i + 1]) {
+        val j = baked.vertOther[q]
+        baked.touch(j)
+        if (boneOf[j] != b) continue
+        var c = conOfEdge[baked.vertEdge[q]]
+        while (c >= 0) {
+            if (!conDead[c]) { conDead[c] = true; blocks?.links?.remove(c) }
+            c = conNextForEdge[c]
+        }
+    }
+    restPoseOfCurrentBone(b)
+    // Треугольник с костной вершиной у мышцы клетки не сокращается — кольцо заново.
+    refreshCellScaleRing(i)
+    baked.touch(i)
+    contacts?.invalidateStatic()
+    sleep.requestWake(i)
+    refreshSurface()
+    structureVersion++
+}
+
+/** Поза кости [b] — нынешнее положение её включённых живых клеток (от их центра, сумма в ноль). */
+private fun BodyState.restPoseOfCurrentBone(b: Int) {
+    val ids = rigidBones[b]
+    val qx = boneRestQx[b]; val qy = boneRestQy[b]
+    java.util.Arrays.fill(qx, 0.0); java.util.Arrays.fill(qy, 0.0)
+    var cx = 0.0; var cy = 0.0; var count = 0
+    for (i in ids) if (boneOf[i] == b && !cellDead[i]) { cx += px[i]; cy += py[i]; count++ }
+    if (count == 0) return
+    cx /= count; cy /= count
+    for (k in ids.indices) {
+        val i = ids[k]
+        if (boneOf[i] == b && !cellDead[i]) { qx[k] = px[i] - cx; qy[k] = py[i] - cy }
     }
 }
 

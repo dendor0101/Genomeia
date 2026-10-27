@@ -29,7 +29,8 @@ import it.unimi.dsi.fastutil.ints.IntArrayList
  *     — тело убирается. Так же субстанции: новая — свободная частица, исчезла — убрана,
  *     сменила радиус (слияние мелких) — заводится заново. Отдельных крючков в обработчиках
  *     команд нет: проход по слотам ловит любой путь создания и удаления, в том числе загрузку.
- *  2. ВХОДЫ. Мышца клетки — degreeOfShortening (0.5–1.5, среднее гармоническое на связи, как
+ *  2. ВХОДЫ. Кость — клетка игры стала типа «кость» (мутация) → setBone, форма на этот момент.
+ *     Мышца клетки — degreeOfShortening (0.5–1.5, среднее гармоническое на связи, как
  *     было в LinkPhysicsSystem). Приращения скорости из параллельных стадий (жгутик, плавник,
  *     липучка, присоска — ParticleEntity.pushVx/pushVy) уходят в мир с пробуждением организма.
  *     Однопоточные записи (мышь, отладочный бросок) идут в мир сразу — [setVelocity], [place].
@@ -61,6 +62,9 @@ class WorldPhysics(
 ) {
     var bridge = PhysicsBridge(workers)
         private set
+
+    /** Тип клетки «кость» (Bone) — по ключу: номер это место в реестре типов. */
+    private val boneType = cellEntity.cellList.requireIndex("bone")
 
     private var boundsWidth = -1
     private var boundsHeight = -1
@@ -263,6 +267,9 @@ class WorldPhysics(
             // в таком слоте номера в мире физики нет, она стоит там, куда её поставила игра.
             if (dead[i]) continue
             if (!alive[cell]) { world.kill(i); continue }
+            // Клетка стала костью (мутация, деление с типом «кость»): кость включается с формой
+            // на этот момент. У клетки не из кости раскладки и у уже включённой — ничего.
+            if (cellEntity.cellType[cell].toInt() == boneType && !world.isBone(i)) world.setBone(i)
             world.setCellScale(i, shortening[cell])
             push(particleBase + slot, i)
         }
