@@ -63,9 +63,7 @@ class BugReportDialog(
 ) : VisDialog(bundle.get(titleKey(kind, previousLaunch))) {
 
     private var bug: FileHandle? = existing
-    private var crashLabel: VisLabel? = null
-    private var crashButton: VisTextButton? = null
-    private var crashShown = false
+    private var crashLogDialog: CrashLogDialog? = null
     private val textures = mutableListOf<Texture>()
     private lateinit var description: VisTextArea
     private lateinit var status: VisLabel
@@ -175,37 +173,28 @@ class BugReportDialog(
             .setWrap(true)
     }
 
-    /** Кнопка «показать текст краша» и скрытый до нажатия текст из crash.txt внутри .bug. */
+    /** Просмотр лога отдельно от пояснения и кнопок отправки отчёта. */
     private fun VisTable.composeCrashText() {
-        val label = VisLabel("", Label.LabelStyle(game.smallFont, Color.WHITE)).apply { setWrap(true) }
-        crashLabel = label
         val button = makeStyledButton(bundle.get("bug.showCrash"), game, textures).apply {
             addListener(object : ChangeListener() {
-                override fun changed(event: ChangeEvent?, actor: Actor?) = toggleCrashText()
+                override fun changed(event: ChangeEvent?, actor: Actor?) = showCrashLog()
             })
         }
-        crashButton = button
         add(button).growX()
-        row()
-        // Ячейка с текстом пока пустая: пустой label занимал бы место.
-        crashCell = add().growX()
         row()
     }
 
-    private var crashCell: Cell<Actor>? = null
-
-    private fun toggleCrashText() {
-        val label = crashLabel ?: return
-        crashShown = !crashShown
-        if (crashShown && label.text.isEmpty()) {
-            val text = bug?.let { runCatching { BugFile.readEntry(it.file(), BugFile.CRASH) }.getOrNull() }
-                ?.toString(Charsets.UTF_8)
-            label.setText(text ?: bundle.get("bug.crashMissing"))
+    private fun showCrashLog() {
+        val stage = stage ?: return
+        crashLogDialog?.let {
+            it.toFront()
+            return
         }
-        crashCell?.setActor(if (crashShown) label else null)
-        crashButton?.setText(bundle.get(if (crashShown) "bug.hideCrash" else "bug.showCrash"))
-        label.invalidateHierarchy()
-        pack()
+        val text = bug?.let { runCatching { BugFile.readEntry(it.file(), BugFile.CRASH) }.getOrNull() }
+            ?.toString(Charsets.UTF_8) ?: bundle.get("bug.crashMissing")
+        val viewer = CrashLogDialog(text) { crashLogDialog = null }
+        crashLogDialog = viewer
+        viewer.show(stage)
     }
 
     private fun makeClearButton(): VisTextButton =
@@ -355,6 +344,8 @@ class BugReportDialog(
     public override fun close() {
         if (!closed) {
             closed = true
+            crashLogDialog?.remove()
+            crashLogDialog = null
             // Пояснение и картинки, изменённые после последней кнопки, не должны потеряться.
             if (bug != null && (description.text.trim() != writtenDescription || changes != writtenChanges)) ensureBug()
             if (kind == BugKind.CRASH) bug?.let { BugReports.clearPendingCrash(it) }
