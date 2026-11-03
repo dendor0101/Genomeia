@@ -60,6 +60,14 @@ class SimulationData {
     var stressFlingEvery = 0
     var stressSpawnEvery = 0
 
+    /**
+     * Отладка физики, см. PlayerCommand.SetPhysicsDebug (галочки отладочного режима): хвосты не
+     * толкают (Tail) — виден собственный дрейф тела; глубокое проникновение частиц не убивает
+     * (PhysicsWorld.deepKillOn). Состояние мира: в хэше, сбрасывается с началом сессии.
+     */
+    var debugNoTailThrust = false
+    var debugNoDeepKill = false
+
     fun clear() {
         isRestart = false
         isFinish = false

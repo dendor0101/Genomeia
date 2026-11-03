@@ -12,7 +12,7 @@ internal fun BodyState.initialize(definition: BodyDefinition) {
     linkScale = scale.meanLinkLength
     cellDead = BooleanArray(n)
     cellUnborn = BooleanArray(n)
-    conGrowTarget = DoubleArray(0); triGrowTarget = FloatArray(0); growEdgeN = 0; growTriN = 0
+    conGrowTarget = DoubleArray(0); conGrowAge = ByteArray(0); triGrowTarget = FloatArray(0); growEdgeN = 0; growTriN = 0
 
     px = DoubleArray(n); py = DoubleArray(n)
     prevX = DoubleArray(n); prevY = DoubleArray(n)
@@ -63,6 +63,8 @@ internal fun BodyState.initialize(definition: BodyDefinition) {
     cellScaleTarget = FloatArray(n) { 1f }
     dragScale = DoubleArray(n) { 1.0 }
     conCellScale = FloatArray(conA.size) { 1f }; triCellScale = FloatArray(triA.size) { 1f }
+    cellSoftness = FloatArray(n) { 1f }
+    conSoftness = FloatArray(conA.size) { 1f }; triSoftness = FloatArray(triA.size) { 1f }
 
     buildBoundary()
     buildBend(); buildFlaps()

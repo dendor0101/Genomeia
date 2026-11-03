@@ -58,6 +58,7 @@ internal fun BodyState.solveBlockAreas(h: Double, block: Int, layout: Constraint
     val px = px; val py = py; val invMass = invMass
     val ta = triA; val tb = triB; val tc = triC
     val rest2 = triRestArea2; val tm = triMuscle; val ms = muscleScaleOf; val ts = if (cellScalesOn) triCellScale else null
+    val ks = if (softnessOn) triSoftness else null
     val alive = baked.triAlive; val tid = triId
     val list = layout.areas
     for (slot in list.start[block] until list.start[block] + list.count[block]) {
@@ -88,11 +89,13 @@ internal fun BodyState.solveBlockAreas(h: Double, block: Int, layout: Constraint
         val s = if (ts == null) s0 else s0 * ts[t]
         val restArea2 = rest2[t].toDouble() * s * s
         val area2 = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0)
+        // Мягкость ткани (BodyState.cellSoftness) — множитель податливости; вывернутым своя, нулевая.
+        val alphaT = if (ks == null) alpha else alpha * ks[t]
         // Плавный переход вместо ступеньки — см. AREA_SMOOTH_RAMP.
         val a = if (AREA_SMOOTH_RAMP) {
             val q = (area2 / restArea2).coerceIn(0.0, 1.0)
-            alphaInverted + (alpha - alphaInverted) * q * q
-        } else if (area2 < 0.0) alphaInverted else alpha
+            alphaInverted + (alphaT - alphaInverted) * q * q
+        } else if (area2 < 0.0) alphaInverted else alphaT
         var dL = -(area2 - restArea2) / (denom + a)
         // Потолок на длину поправки — см. AREA_MAX_STEP.
         if (maxStep > 0.0) {

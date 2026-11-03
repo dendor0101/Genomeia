@@ -36,13 +36,26 @@ fun bodyDefinitionOf(layout: BakedLayout, anchorSlot: Int, anchorX: Float, ancho
     val bone = BooleanArray(n) { layout.restBone[it] }
 
     val links = layout.linksInLayout
-    val linkA = IntArray(links)
-    val linkB = IntArray(links)
+    val allA = IntArray(links)
+    val allB = IntArray(links)
     val pairs = layout.linkPairsInSlotOrder
     for (s in 0 until links) {
-        linkA[s] = layout.slotByCellGenomeId.get(pairs[2 * s])
-        linkB[s] = layout.slotByCellGenomeId.get(pairs[2 * s + 1])
-        check(linkA[s] >= 0 && linkB[s] >= 0) { "связь $s раскладки ссылается на клетку вне раскладки" }
+        allA[s] = layout.slotByCellGenomeId.get(pairs[2 * s])
+        allB[s] = layout.slotByCellGenomeId.get(pairs[2 * s + 1])
+        check(allA[s] >= 0 && allB[s] >= 0) { "связь $s раскладки ссылается на клетку вне раскладки" }
+    }
+    // Связи поперёк граней физика не получает (BakedLayout.crossingLinks): голая связь посреди
+    // ткани для неё край (контур, среда, касания). Опыт 03.11, вариант А заново: после того как
+    // дорастающая связь перестала рваться от падающего предела (isGrowingLink).
+    val skip = BooleanArray(links)
+    for (s in layout.crossingLinks) skip[s] = true
+    val kept = links - layout.crossingLinks.size
+    val linkA = IntArray(kept)
+    val linkB = IntArray(kept)
+    var m = 0
+    for (s in 0 until links) {
+        if (skip[s]) continue
+        linkA[m] = allA[s]; linkB[m] = allB[s]; m++
     }
 
     val tris = layout.trianglesInLayout
@@ -61,7 +74,8 @@ fun bodyDefinitionOf(layout: BakedLayout, anchorSlot: Int, anchorX: Float, ancho
         x = x, y = y, radius = r, isBone = bone, isMuscle = BooleanArray(n),
         linkA = linkA, linkB = linkB,
         triA = ta.copyOf(t), triB = tb.copyOf(t), triC = tc.copyOf(t), triRestArea2 = area.copyOf(t),
-        boneClusters = boneClusters(n, linkA, linkB, bone),
+        // Куски костей — по всем связям раскладки: связь поперёк граней тоже скрепляет кость.
+        boneClusters = boneClusters(n, allA, allB, bone),
         muscleClusters = emptyArray(),
         scale = k.toFloat()
     )

@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.commands
 
+import io.github.some_example_name.physics.DIVISION_START_FRACTION
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.utils.Disposable
 import io.github.some_example_name.old.cells.Cell
@@ -230,9 +231,21 @@ class WorldCommandsManager(
 
                             val specialModDataIndex = ints[7]
 
+                            // Деление в мире физики-библиотеки: клетка рождается почти в родителе
+                            // (WorldPhysics → PhysicsWorld.activateFromParent), но только на
+                            // следующем тике, а до того видна там, где стоит в игре. Поэтому и в
+                            // игре она ставится туда же — сразу, до сетки (иначе мелькала на месте
+                            // позы и ехала к родителю). Не ровно в центр: угол клетки считается по
+                            // направлению к родителю. Соседей для связей искали по точке команды.
+                            var bornX = x; var bornY = y
+                            if (!isEditor && parentIndex != -1) {
+                                val px0 = cellEntity.getX(parentIndex); val py0 = cellEntity.getY(parentIndex)
+                                bornX = px0 + (x - px0) * DIVISION_START_FRACTION.toFloat()
+                                bornY = py0 + (y - py0) * DIVISION_START_FRACTION.toFloat()
+                            }
                             val cellIndex = cellEntity.addCell(
-                                x = x,
-                                y = y,
+                                x = bornX,
+                                y = bornY,
                                 color = ints[0],
                                 radius = radius,
                                 cellGenomeId = cellGenomeId,

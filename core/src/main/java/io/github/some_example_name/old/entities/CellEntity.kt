@@ -103,12 +103,6 @@ class CellEntity(
     var degreeOfShortening = FloatArray(maxAmount) { 1f }
     var pheromoneType = IntArray(maxAmount) { -1 }
     var linkAmount = IntArray(maxAmount) { 0 }
-
-    /**
-     * Сколько треугольников тела вокруг клетки сейчас сформировано (все три связи живы),
-     * см. TriangleEntity. Внутренняя клетка обязана иметь их все — иначе рядом щель.
-     */
-    var formedTriangles = IntArray(maxAmount)
     @Transient val organToIdToIndex = OrderedIntPairMap(maxAmount)
     var neuralConnections = Int2ObjectOpenHashMap<IntArrayList>()
 
@@ -477,7 +471,6 @@ class CellEntity(
         this.degreeOfShortening[cellIndex] = 1f
         this.pheromoneType[cellIndex] = pheromoneType
         linkAmount[cellIndex] = 0
-        formedTriangles[cellIndex] = 0
         // Индексы переиспользуются через deadStack, поэтому слоты связей нужно
         // обязательно вычистить: иначе новая клетка унаследует соседей мёртвой.
         clearCellLinks(cellIndex)
@@ -595,39 +588,40 @@ class CellEntity(
     }
 
     /**
-     * Пересчитывает «клетка на границе тела» по числу её физических связей и синхронно
-     * решает, участвует ли её частица в пространственной сетке.
+     * «Клетка на границе тела» — она в сетке касаний (сенсоры, поедание, курсор) — по числу
+     * её связей; для клетки, которую ведёт мир физики, ничего не делает (см. [setOnEdge]).
      *
-     * ПОЧЕМУ ЧИСЛО СВЯЗЕЙ, А НЕ ГЕОМЕТРИЯ КАЖДЫЙ ТИК
-     * ---------------------------------------------
-     * Геометрия считается один раз, при запекании (InteriorCells): клетка внутренняя, если
-     * во взрослом теле её окружность не выходит на внешний контур тела (объединения дисков
-     * клеток с их радиусами) — снаружи до неё не дотронуться, и контур из граничных клеток
-     * без щелей. Для внутренней запоминается, сколько у неё связей
-     * (BakedLayout.interiorLinks). В мире клетка внутренняя, пока у неё не меньше связей,
-     * чем было во взрослом теле: пока тело растёт, части связей ещё нет; умер сосед или
-     * порвалась связь — их стало меньше. Так граница верна на любой стадии и для любой
-     * сетки, не зависит от того, как тело деформировано, и пересчитывается только при
-     * изменении числа связей.
+     * ОДИН КРАЙ НА ФИЗИКУ И ИГРУ (решение 03.11)
+     * ------------------------------------------
+     * Клетку организма, рождённую в мире физики (ParticleEntity.physicsIndex >= 0), на край
+     * ставит WorldPhysics по флагу физики PhysicsWorld.isSurfaceCell: у клетки есть ребро
+     * контура (живая связь не больше чем в одном живом треугольнике), щель в веере
+     * треугольников, или она одна. Это ровно те клетки, о которые тела сталкиваются.
+     * Прежнее своё правило игры — число связей против взрослого тела, запечённое в
+     * BakedLayout.interiorLinks, и все сформированные треугольники вокруг — с ним расходилось:
+     * 22 «краевые» клетки внутри Burdock leaf, отчёт 03.11.
      *
-     * Без запечённой границы (редактор, геном старше неё) — прежний порог
-     * [EDGE_LINK_THRESHOLD]: шесть соседей — полное окружение в треугольной упаковке.
-     *
-     * ЧЕГО ПРИЗНАК НЕ ВИДИТ
-     * ---------------------
-     * Порвалась связь между двумя соседями клетки, а её собственные целы — клетка
-     * остаётся внутренней, хотя рядом щель (сами соседи при этом стали граничными).
-     * Закрывается запеканием ещё и связей между соседями по кругу; см. TODO.md, 2.8.
+     * Здесь остаётся запасной порог [EDGE_LINK_THRESHOLD] для клеток без мира физики:
+     * редактор генома и клетка, ещё не рождённая в мире физики (до её первой фазы физики).
      *
      * ИНКРЕМЕНТАЛЬНОСТЬ
      * -----------------
      * Вызывается там, где linkAmount меняется — в addLink и deleteLink, — то есть
-     * несколько раз за жизнь клетки, а не каждый тик. Ранний выход по неизменившемуся
-     * флагу оставлен намеренно: смена состояния трогает чужой массив (частицы), и делать
-     * это на каждой связи, когда ничего не поменялось, незачем.
+     * несколько раз за жизнь клетки, а не каждый тик.
      */
     fun refreshOnEdge(cellIndex: Int) {
-        val onEdge = !isInterior(cellIndex)
+        val particleIndex = particleIndexes[cellIndex]
+        if (particleIndex != -1 && particleEntity.physicsIndex[particleIndex] >= 0) return
+        setOnEdge(cellIndex, linkAmount[cellIndex] < EDGE_LINK_THRESHOLD)
+    }
+
+    /**
+     * Поставить клетку на край ([onEdge]) или внутрь и синхронно решить, участвует ли её
+     * частица в пространственной сетке. Единственная запись isOnEdge и isInGrid клетки.
+     * Ранний выход по неизменившемуся флагу оставлен намеренно: смена состояния трогает чужой
+     * массив (частицы), и делать это, когда ничего не поменялось, незачем.
+     */
+    fun setOnEdge(cellIndex: Int, onEdge: Boolean) {
         if (isOnEdge[cellIndex] == onEdge) return
 
         isOnEdge[cellIndex] = onEdge
@@ -642,9 +636,9 @@ class CellEntity(
         // не сталкивается и не берётся курсором. Так падала проверка целостности сетки под
         // отладочным стресс-тестом «разогнать клетки» (клавиша D).
         //
-        // Звать отсюда безопасно: addLink/deleteLink работают только при применении команд
-        // мира, в одном потоке. Уход внутрь регистрации не требует: перестройка пропускает
-        // частицы с isInGrid == false сама.
+        // Звать отсюда безопасно: addLink/deleteLink и фаза физики работают однопоточно.
+        // Уход внутрь регистрации не требует: перестройка пропускает частицы с
+        // isInGrid == false сама.
         if (onEdge) particleEntity.gridManager.registerParticle(particleIndex)
     }
 
@@ -656,7 +650,7 @@ class CellEntity(
      *
      * Флаг возвращается к правде частицы, и refreshOnEdge решает заново — то же, что решил
      * бы тогда, не будь флаг выставлен заранее. У согласованного мира не меняется ничего.
-     * Только после OrganEntity.restoreArenaLayouts: решению нужна запечённая граница.
+     * Клетку мира физики refreshOnEdge не решает — её флаг уже из физики (setOnEdge).
      */
     fun repairEdgeFlagsAfterLoad() {
         for (i in 0 until aliveList.size) {
@@ -668,35 +662,6 @@ class CellEntity(
             isOnEdge[cellIndex] = inGrid
             refreshOnEdge(cellIndex)
         }
-    }
-
-    /**
-     * Со скольких связей клетка внутренняя: из запечённой границы её организма, а без неё
-     * прежний порог. Int.MAX_VALUE — клетка граничная при любом числе связей (во взрослом
-     * теле она у края).
-     */
-    /**
-     * Внутренняя ли клетка: по запечённой границе её организма, а без неё — по прежнему
-     * порогу числа связей.
-     *
-     * По запечённой: во взрослом теле она внутренняя (BakedLayout.interiorLinks), у неё
-     * не меньше связей, чем было там, и сформированы все её треугольники
-     * (BakedLayout.trianglesAroundSlot). Последнее ловит щель, которую число собственных
-     * связей не видит: порвалась связь между двумя соседями, а свои целы. У старых
-     * сохранений арены треугольников нет — тогда только по связям.
-     */
-    private fun isInterior(cellIndex: Int): Boolean {
-        val organ = organIndex[cellIndex]
-        if (!organEntity.hasArena(organ)) return linkAmount[cellIndex] >= EDGE_LINK_THRESHOLD
-        val layout = organEntity.arenaLayout[organ]
-        if (layout == null || !layout.hasInteriorLinks) return linkAmount[cellIndex] >= EDGE_LINK_THRESHOLD
-        val slot = cellIndex - organEntity.cellArenaBase[organ]
-        val links = layout.interiorLinksArray
-        if (slot >= links.size) return false
-        val required = links[slot]
-        if (required == 0 || linkAmount[cellIndex] < required) return false
-        if (organEntity.triangleArenaBase[organ] == -1) return true
-        return formedTriangles[cellIndex] >= layout.trianglesAroundSlot[slot]
     }
 
     fun deleteCell(cellIndex: Int) {
@@ -736,7 +701,6 @@ class CellEntity(
         this.degreeOfShortening[cellIndex] = 1f
         pheromoneType[cellIndex] = -1
         linkAmount[cellIndex] = 0
-        formedTriangles[cellIndex] = 0
         clearCellLinks(cellIndex)
         neuralConnections.remove(cellIndex)
 
@@ -770,7 +734,6 @@ class CellEntity(
         state.floats(::degreeOfShortening)
         state.ints(::pheromoneType)
         state.ints(::linkAmount)
-        state.ints(::formedTriangles)
         state.ints(::cellLinks, perSlot = MAX_LINKS_PER_CELL)
         state.ints(::cellLinkIds, perSlot = MAX_LINKS_PER_CELL)
         state.ints(::neuralIndexes)
@@ -910,7 +873,6 @@ class CellEntity(
         degreeOfShortening.clear(1f)
         pheromoneType.clear(-1)
         linkAmount.clear(0)
-        formedTriangles.clear()
         cellLinks.fill(-1, 0, bound shl LINKS_SHIFT)
         cellLinkIds.fill(-1, 0, bound shl LINKS_SHIFT)
         neuralConnections.clear()
@@ -949,7 +911,6 @@ class CellEntity(
         degreeOfShortening = degreeOfShortening.resize(1f)
         pheromoneType = pheromoneType.resize(-1)
         linkAmount = linkAmount.resize(0)
-        formedTriangles = formedTriangles.resize()
         // Массив связей растёт не как остальные: на клетку в нём MAX_LINKS_PER_CELL
         // слотов, поэтому и размер, и копируемый диапазон умножаются на них же.
         run {
@@ -974,8 +935,8 @@ class CellEntity(
          * Со скольких связей клетка считается ВНУТРЕННЕЙ (см. [refreshOnEdge]).
          *
          * Шесть — это полное окружение в треугольной упаковке. Это запасной порог: он
-         * работает только там, где нет запечённой границы (редактор, геномы старше неё),
-         * а в мире порог у каждой клетки свой — BakedLayout.interiorLinks.
+         * работает только у клеток без мира физики (редактор, ещё не рождённая в мире физики),
+         * а в мире край берётся из физики (PhysicsWorld.isSurfaceCell, WorldPhysics).
          */
         const val EDGE_LINK_THRESHOLD = 6
 

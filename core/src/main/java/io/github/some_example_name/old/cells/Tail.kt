@@ -40,7 +40,8 @@ class Tail(cellTypeId: Int): Cell(
 
             val tailMaxSpeedCoefficient = substrateSettings.data.tailMaxSpeedCoefficient
             val thrust = 0.5f * speed * tailMaxSpeedCoefficient
-            addVelocity(cellIndex, -angleCos[cellIndex] * thrust, -angleSin[cellIndex] * thrust)
+            // Галочка отладки «без хвостов»: виден собственный дрейф тела.
+            if (!simulationData.debugNoTailThrust) addVelocity(cellIndex, -angleCos[cellIndex] * thrust, -angleSin[cellIndex] * thrust)
             energy[cellIndex] -= substrateSettings.cellsSettings[cellType[cellIndex].toInt()].energyActionCost
         }
     }

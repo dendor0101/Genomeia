@@ -134,6 +134,8 @@ private fun BodyState.startLinkGrowth(c: Int) {
     val start = sqrt(dx * dx + dy * dy) / (muscleScale(conMuscle[c]) * conCellScale[c])
     conGrowTarget[c] = target
     conRest[c] = maxOf(start, BIRTH_MIN_FRACTION * target)
+    if (conGrowAge.size < conA.size) conGrowAge = conGrowAge.copyOf(conA.size)
+    conGrowAge[c] = 0
 }
 
 /**
@@ -156,11 +158,18 @@ private fun BodyState.startTriangleGrowth(id: Int) {
 }
 
 /**
- * ДОРАСТАНИЕ — раз в тик, до решателя: длины и площади покоя новорождённой ткани шагают к
- * целям на 1/BIRTH_GROW_TICKS цели (см. conGrowTarget). Обходятся только дорастающие;
- * порванные и удалённые выпадают из списков. Шаг до цели — ровно цель, без остатка.
+ * ДОРАСТАНИЕ — раз в тик, до решателя (см. conGrowTarget). Обходятся только дорастающие;
+ * порванные и удалённые выпадают из списков.
+ *
+ * СВЯЗЬ — МЯГКАЯ ПРУЖИНА, КОТОРАЯ ТВЕРДЕЕТ (деление, 02.11). Длина покоя молодой связи —
+ * фактическая длина плюс доля age/BIRTH_GROW_TICKS пути до цели: в первый тик связь почти
+ * ничего не требует, к BIRTH_GROW_TICKS она обычной твёрдости. Так и связь с родителем
+ * выталкивает новорождённую мягко, и связи с соседями не дёргают её, пока она выходит из
+ * родителя. Прежний шаг на 1/BIRTH_GROW_TICKS цели от начальной длины не смотрел, где клетка
+ * сейчас, и тянул её к заданной длине жёстко. Площадь треугольника — по-прежнему шагом.
  */
 internal fun BodyState.easeNewborn() {
+    markGrowingCells()
     if (growEdgeN == 0 && growTriN == 0) return
     var m = 0
     for (k in 0 until growEdgeN) {
@@ -171,11 +180,16 @@ internal fun BodyState.easeNewborn() {
         while (c >= 0) {
             val target = conGrowTarget[c]
             if (target > 0.0) {
-                val step = target / BIRTH_GROW_TICKS
-                val r = conRest[c]
-                val next = if (r < target) minOf(r + step, target) else maxOf(r - step, target)
-                conRest[c] = next
-                if (next == target) conGrowTarget[c] = 0.0 else growing = true
+                val age = conGrowAge[c] + 1
+                conGrowAge[c] = age.toByte()
+                if (age >= BIRTH_GROW_TICKS) {
+                    conRest[c] = target; conGrowTarget[c] = 0.0
+                } else {
+                    val dx = px[conA[c]] - px[conB[c]]; val dy = py[conA[c]] - py[conB[c]]
+                    val len = sqrt(dx * dx + dy * dy) / (muscleScale(conMuscle[c]) * conCellScale[c])
+                    conRest[c] = maxOf(len + (target - len) * (age.toDouble() / BIRTH_GROW_TICKS), BIRTH_MIN_FRACTION * target)
+                    growing = true
+                }
             }
             c = conNextForEdge[c]
         }
@@ -231,10 +245,20 @@ internal fun BodyState.restMatchWeight(i: Int): Double =
  * решателя вынутое обратно не вставляют). Поза кости — нынешнее положение её включённых клеток:
  * форма на момент мутации, без рывка, даже если тело согнуто. Контур и поверхность — по месту.
  * Ничего не делает у клетки не из кости описания, мёртвой или уже включённой. Между тиками.
+ *
+ * НОВОРОЖДЁННАЯ КОСТЬЮ НЕ СТАНОВИТСЯ, пока выходит из родителя ([isGrowingNewborn]): деление
+ * кладёт её почти в центр родителя (divisionPlacement), и поза, снятая в этот момент, держала бы
+ * кость сжатой навсегда. GrowthCheck 03.11: у Long bone связи внутри кости застывали на 0.08
+ * длины генома, у User genome (оболочка из костей) — 0.01…2.18, в среднем 0.58: оболочка
+ * сдавливала ткань внутри. Сначала дочь выходит мягкой тканью, костью — когда её связи
+ * доросли (BIRTH_GROW_TICKS), с позой на своём месте. Отказ — false: клиент повторяет вызов
+ * (игра зовёт каждый тик, пока клетка-кость не включена, — WorldPhysics.syncOrganism).
  */
-internal fun BodyState.activateBone(i: Int) {
+internal fun BodyState.activateBone(i: Int): Boolean {
     val b = boneClusterOf[i]
-    if (b < 0 || boneOf[i] == b || cellDead[i]) return
+    if (b < 0 || cellDead[i]) return false
+    if (boneOf[i] == b) return true
+    if (isGrowingNewborn(i)) return false
     boneOf[i] = b
     if (dragId != i) matchWeight[i] = 1.0
     val blocks = constraintBlocks
@@ -256,6 +280,7 @@ internal fun BodyState.activateBone(i: Int) {
     sleep.requestWake(i)
     refreshSurface()
     structureVersion++
+    return true
 }
 
 /** Поза кости [b] — нынешнее положение её включённых живых клеток (от их центра, сумма в ноль). */
@@ -286,6 +311,114 @@ private fun BodyState.restPoseOfCurrentBone(b: Int) {
  * соседей — треугольник рождается вывернутым. GrowthCheck 25.10: живых рёбер выросшего
  * тела 1706 из 2617 против 2483 у поворота с масштабом (у целой копии — 2612).
  */
+/**
+ * Метки неуязвимости делящихся (BoundaryContacts.immuneStamp): концы дорастающих рёбер —
+ * новорождённая и её соседи по связям. Раз в шаг, до контактов; O(дорастающих рёбер).
+ * Номер шага растёт и без них, чтобы прошлые метки истекали.
+ */
+internal fun BodyState.markGrowingCells() {
+    growStampNow++
+    if (growStamp.size != n) growStamp = IntArray(n)
+    val s = growStamp; val now = growStampNow
+    for (k in 0 until growEdgeN) {
+        val e = growEdges[k]
+        s[baked.edgeU(e)] = now; s[baked.edgeV(e)] = now
+    }
+    contacts?.let { it.immuneStamp = s; it.immuneNow = now }
+    rampNewbornContacts()
+}
+
+/**
+ * МЯГКИЙ СТАРТ КАСАНИЙ НОВОРОЖДЁННОЙ: расстояние упора её касаний — доля age/BIRTH_GROW_TICKS
+ * от обычного, как и длина покоя её связей (startLinkGrowth). Раз в шаг, после меток.
+ *
+ * Зачем (GrowthCheck 03.11, Burdock leaf): дочь рождается почти в центре родителя
+ * (divisionPlacement), а соседи родителя стоят от этого центра на длине связи — для двух
+ * несвязанных клеток это глубокое перекрытие (сумма радиусов больше связи). Касание
+ * расталкивало их в первом же подшаге: связь родителя с соседом растягивалась до 1.27–1.44
+ * длины покоя и рвалась по пределу. При быстром росте этого не видно — соседняя связь сама
+ * ещё дорастала и пределу не подчинялась; при 20+ тиках на стадию — 3 разрыва за рост.
+ * Пока дочь выходит из родителя, она его соседей не толкает; в своей точке позы она от них
+ * дальше суммы радиусов (иначе это была бы пара покоя), и полное касание к тому времени
+ * ничего не задевает. Пара остаётся в кандидатах широкой фазы — касание включается сразу.
+ *
+ * Новорождённая — клетка, у которой дорастают ВСЕ живые связи: у родителя и соседей есть
+ * взрослые, их касания обычные. Выводится из дорастающих связей (conGrowAge в снимке),
+ * поэтому само в снимок не входит. O(дорастающих рёбер · степень) за шаг; без роста — ноль,
+ * и BoundaryContacts.contactRamp = null (в паре касания — одна проверка).
+ */
+private fun BodyState.rampNewbornContacts() {
+    if (contactRamp.size != n) contactRamp = FloatArray(n) { 1f }
+    // Сброс по прошлому списку: после уплотнения номера в нём устарели, но все, кроме
+    // записанных в список, и так равны 1 — переставить их в 1 безвредно.
+    for (k in 0 until rampN) if (rampCells[k] < n) contactRamp[rampCells[k]] = 1f
+    rampN = 0
+    for (k in 0 until growEdgeN) {
+        val e = growEdges[k]
+        if (baked.edgeDead[e]) continue
+        val c = conOfEdge[e]
+        if (c < 0 || conGrowTarget[c] <= 0.0) continue
+        val f = conGrowAge[c].toFloat() / BIRTH_GROW_TICKS
+        rampIfNewborn(baked.edgeU(e), f)
+        rampIfNewborn(baked.edgeV(e), f)
+    }
+    contacts?.contactRamp = if (rampN > 0) contactRamp else null
+}
+
+private fun BodyState.rampIfNewborn(v: Int, f: Float) {
+    if (f >= contactRamp[v] || !isGrowingNewborn(v)) return
+    if (contactRamp[v] == 1f) {
+        if (rampN == rampCells.size) rampCells = rampCells.copyOf(rampN * 2)
+        rampCells[rampN++] = v
+    }
+    contactRamp[v] = f
+}
+
+/**
+ * Новорождённая, которая ещё выходит из родителя: у неё дорастают ВСЕ живые связи (у родителя и
+ * соседей есть взрослые). Выводится из дорастающих связей — в снимок не входит.
+ */
+internal fun BodyState.isGrowingNewborn(v: Int): Boolean {
+    var any = false
+    for (s in baked.vertStart[v] until baked.vertStart[v + 1]) {
+        val e = baked.vertEdge[s]
+        if (baked.edgeDead[e]) continue
+        val c = conOfEdge[e]
+        if (c < 0 || c >= conGrowTarget.size || conGrowTarget[c] <= 0.0) return false
+        any = true
+    }
+    return any
+}
+
+/**
+ * ДЕЛЕНИЕ: точка рождения клетки [i] у родителя [parent] — на DIVISION_START_FRACTION пути от
+ * центра родителя к её точке позы (birthPlacement), скорость — родителя. Дальше её выталкивают
+ * дорастающие связи (startLinkGrowth: длина покоя от фактической до цели за BIRTH_GROW_TICKS),
+ * а пока они дорастают, глубокое касание не убивает (markGrowingCells). Поиска свободного
+ * места (freeSpot) нет намеренно: клетка и должна родиться внутри родителя.
+ *
+ * ТОЛЬКО ПРИ СВЯЗИ С РОДИТЕЛЕМ. Родителя назначает игра, и по раскладке он не обязан быть
+ * соседом (отчёт 03.11 14:04, weighted_neural_link: s1 родится от s7, а связь у s1 только с
+ * s6). Без связи выталкивать некому: клетка ложится в родителя, контакт разводит перекрытие
+ * одним рывком, пара разлетается со скоростью 0.4 клетки/тик и рвёт соседние связи. Такая
+ * клетка рождается по позе, как без родителя.
+ */
+internal fun BodyState.divisionPlacement(i: Int, parent: Int, out: DoubleArray) {
+    birthPlacement(i, out)
+    if (!linkedInLayout(i, parent)) return
+    val f = DIVISION_START_FRACTION
+    out[0] = px[parent] + (out[0] - px[parent]) * f
+    out[1] = py[parent] + (out[1] - py[parent]) * f
+    out[2] = vx[parent]; out[3] = vy[parent]
+}
+
+/** Есть ли у [i] связь с [j] в раскладке тела (живая, нерождённая или порванная). */
+private fun BodyState.linkedInLayout(i: Int, j: Int): Boolean {
+    val vs = baked.vertStart; val vo = baked.vertOther
+    for (s in vs[i] until vs[i + 1]) if (vo[s] == j) return true
+    return false
+}
+
 internal fun BodyState.birthPlacement(i: Int, out: DoubleArray) {
     val vs = baked.vertStart; val vo = baked.vertOther
     // Опорные клетки подгонки: рождённые соседи; мало — ещё и их рождённые соседи.

@@ -81,6 +81,21 @@ class RenderBufferManager(
     var debugFilter: DebugFilter = DebugFilter.ORIGINAL
 
     /**
+     * Граница тел мира физики поверх клеток в отладочном режиме (галочка «Граница»): рёбра
+     * контура, включая края дыр и голые связи. Пишет GL-поток, читает поток симуляции раз за
+     * [updateBuffer] — как [debugFilter].
+     */
+    @Volatile
+    var showBoundary = false
+
+    /** Все связи тел мира физики тонкими линиями (галочка «Связи»); как [showBoundary]. */
+    @Volatile
+    var showLinks = false
+
+    /** Отметки игрока (средняя кнопка): позиции отмеченных клеток — в конце тика. null — фон меню. */
+    var playerMarks: io.github.some_example_name.old.features.simulation.PlayerMarks? = null
+
+    /**
      * Клетки, оверлей, феромоны и строка состояния — одним снимком. Раньше у них были
      * отдельные двойные буферы со своими индексами, и правило «клетки и оверлей
      * переключаются вместе» держалось на дисциплине. Теперь согласованность бесплатна:
@@ -198,6 +213,9 @@ class RenderBufferManager(
 
     /** Оверлей текущего снимка вместе с концами фигур в прошлом тике. */
     private val overlaySink = OverlayMotionSink()
+
+    /** Рёбра контура частицами игры, пары подряд (WorldPhysics.boundaryParticles); переиспользуется. */
+    private val boundaryPairs = it.unimi.dsi.fastutil.ints.IntArrayList()
 
     /** Цвета, стрелки и лучи отладочного режима — общие с редактором генома. */
     private val palette = DebugCellPalette(cellList)
@@ -561,6 +579,39 @@ class RenderBufferManager(
     }
 
     /**
+     * Контур тел мира физики — рёбра, которые омываются средой, включая края дыр и голые связи
+     * (как зелёная граница стенда). Концы едут каждый со своей частицей, как у нейросвязи: их
+     * прошлые позиции уже записаны проходом по клеткам. Цена — проход по рёбрам контура, только
+     * в отладочном режиме с галочкой.
+     */
+    private fun writeBoundary() {
+        val physics = particleEntity.physics ?: return
+        physics.boundaryParticles(boundaryPairs)
+        writePairs(OverlayInstanceBuffer.params(OverlayInstanceBuffer.KIND_EDGE, 0f, 0), BOUNDARY_COLOR)
+    }
+
+    /** Все живые связи тел мира физики — тонко, под контуром (галочка «Связи»). */
+    private fun writeLinks() {
+        val physics = particleEntity.physics ?: return
+        physics.linkParticles(boundaryPairs)
+        writePairs(OverlayInstanceBuffer.params(OverlayInstanceBuffer.KIND_LINK, 0f, 0), LINK_COLOR)
+    }
+
+    /** Отрезки между частицами пар [boundaryPairs]; концы едут каждый со своей частицей. */
+    private fun writePairs(params: Int, color: Int) {
+        var k = 0
+        while (k < boundaryPairs.size) {
+            val a = boundaryPairs.getInt(k)
+            val b = boundaryPairs.getInt(k + 1)
+            k += 2
+            val ax = particleEntity.x(a); val ay = particleEntity.y(a)
+            val bx = particleEntity.x(b); val by = particleEntity.y(b)
+            overlaySink.points(prevXOf(a, ax), prevYOf(a, ay), prevXOf(b, bx), prevYOf(b, by))
+            overlaySink.add(ax, ay, bx, by, color, params)
+        }
+    }
+
+    /**
      * Нейросвязи — от источника к приёмнику, с сигналом, который источник отдаёт в связь.
      *
      * Направление то же, что у NeuralLinkManager.transportNeuralSignal: при
@@ -634,6 +685,7 @@ class RenderBufferManager(
     }
 
     fun updateBuffer(performanceInfo: String = "") {
+        playerMarks?.follow(cellEntity)
         startSnapshot()
         val snapshot = snapshots.back()
         // Сколько инстансов вообще может быть записано: клетки (в аренах и вне их) и
@@ -671,6 +723,10 @@ class RenderBufferManager(
         }
         snapshot.instanceCount = written
         snapshot.filter = frameFilter
+
+        // Граница — над клетками, под нейросвязями.
+        if (debugFrame && showLinks) writeLinks()
+        if (debugFrame && showBoundary) writeBoundary()
 
         // ==================== NEURAL LINKS ====================
         if (debugFrame) writeNeuralLinks()
@@ -758,6 +814,12 @@ class RenderBufferManager(
     }
 
     private companion object {
+        /** Цвет границы — зелёный контура стенда (physics-lab, BOUNDARY_COLOR), упаковка Color.toIntBits. */
+        private val BOUNDARY_COLOR = com.badlogic.gdx.graphics.Color.valueOf("4BE08AFF").toIntBits()
+
+        /** Цвет связей — светло-серый полупрозрачный: сетка видна, контур поверх читается. */
+        private val LINK_COLOR = com.badlogic.gdx.graphics.Color.valueOf("D8DCE6A0").toIntBits()
+
         /** Поля [history] на частицу: номер снимка, ключ, x, y, dir, prevX, prevY, — — 32 байта. */
         const val HISTORY_STRIDE = 8
 

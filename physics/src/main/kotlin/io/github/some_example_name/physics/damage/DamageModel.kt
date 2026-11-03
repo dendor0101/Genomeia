@@ -47,7 +47,9 @@ fun BodyState.applyKills(ct: BoundaryContacts) {
     var any = false
     for (k in 0 until ct.killN) {
         val v = ct.killList[k]
-        if (cellDead[v]) continue
+        // Неподвижная бессмертна: заявку на неё контакт пишет, как на любую (у него нет масс
+        // покоя), партнёр по заявке гибнет своей.
+        if (cellDead[v] || isFixed(v)) continue
         cellDead[v] = true
         deadCount++
         any = true
@@ -77,7 +79,7 @@ fun BodyState.applyKills(ct: BoundaryContacts) {
  * не из итерации решателя, вывернутых треугольников от неё нет. Зовётся между тиками.
  */
 fun BodyState.killCell(v: Int) {
-    if (cellDead[v]) return
+    if (cellDead[v] || isFixed(v)) return
     if (dragId == v) { matchWeight[v] = 1.0; dragId = -1 }
     cellDead[v] = true
     deadCount++

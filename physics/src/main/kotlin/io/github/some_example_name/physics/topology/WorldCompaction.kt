@@ -72,6 +72,7 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
     fun p(a: BooleanArray) = if (a.size < nOld) a else pick(a, pNew, nOld, nNew)
     fun p(a: IntArray, values: IntArray? = null) = if (a.size < nOld) a else pick(a, pNew, nOld, nNew, values)
     cellDead = p(cellDead); cellUnborn = p(cellUnborn); cellScale = p(cellScale); cellScaleTarget = p(cellScaleTarget); dragScale = p(dragScale)
+    cellSoftness = p(cellSoftness)
     px = p(px); py = p(py); prevX = p(prevX); prevY = p(prevY); vx = p(vx); vy = p(vy)
     invMass = p(invMass); restInvMass = p(restInvMass); matchWeight = p(matchWeight)
     inContact = p(inContact); radius = p(radius); isFree = p(isFree)
@@ -208,6 +209,7 @@ internal fun BodyState.rebuildDerived(oldSurface: LocalSurface?, pNew: IntArray?
     lap(6)
     // Множители связей и треугольников — по нынешним множителям клеток (списки новые).
     conCellScale = FloatArray(conA.size) { 1f }; triCellScale = FloatArray(triA.size) { 1f }
+    conSoftness = FloatArray(conA.size) { 1f }; triSoftness = FloatArray(triA.size) { 1f }
     recomputeCellScales()
     internalMom = InternalMomentum(n)
     distanceSweepOrder = DistanceSweepOrder.create(this)
@@ -272,6 +274,7 @@ private fun BodyState.compactConstraints(pNew: IntArray, eNew: IntArray, mNew: I
     val dead = BooleanArray(cap); val torn = BooleanArray(cap)
     val hold = if (conHold.isNotEmpty()) ByteArray(cap) else conHold
     val grow = if (conGrowTarget.isNotEmpty()) DoubleArray(cap) else conGrowTarget
+    val growAge = if (conGrowAge.isNotEmpty()) ByteArray(cap) else conGrowAge
     var m = 0
     for (c in 0 until conCount) {
         val i = pNew[conA[c]]
@@ -281,10 +284,11 @@ private fun BodyState.compactConstraints(pNew: IntArray, eNew: IntArray, mNew: I
         edge[m] = eNew[conEdge[c]]; dead[m] = conDead[c]; torn[m] = linkTorn[c]
         if (hold.isNotEmpty() && c < conHold.size) hold[m] = conHold[c]
         if (grow.isNotEmpty() && c < conGrowTarget.size) grow[m] = conGrowTarget[c]
+        if (growAge.isNotEmpty() && c < conGrowAge.size) growAge[m] = conGrowAge[c]
         m++
     }
     conA = a; conB = b; conRest = rest; conMuscle = mus; conEdge = edge
-    conDead = dead; linkTorn = torn; conHold = hold; conGrowTarget = grow
+    conDead = dead; linkTorn = torn; conHold = hold; conGrowTarget = grow; conGrowAge = growAge
     conBoundary = BooleanArray(cap); conTendon = BooleanArray(cap)
     conCount = m
 }

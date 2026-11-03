@@ -25,7 +25,7 @@ package io.github.some_example_name.physics
  *
  * БУДИТ:
  *  - касание клетки другого тела, ушедшей с начала тика дальше WAKE_DRIFT_CELLS (см.
- *    там, почему не любое касание);
+ *    там, почему не любое касание); неподвижную частицу (isFixed) касание не будит;
  *  - мышь, схватившая клетку организма;
  *  - мышца организма, которой дали команду;
  *  - разрыв связи или гибель клетки организма (контакт может убить клетку спящего).
@@ -304,6 +304,7 @@ internal fun BodyState.noteSleepContacts(ct: BoundaryContacts): Boolean {
         val si = s.asleep[organismOf[i]]; val sj = s.asleep[organismOf[j]]
         if (si == sj) continue
         val mover = if (si) j else i
+        if (isFixed(if (si) i else j)) continue
         val dx = px[mover] - tickJitterX[mover]; val dy = py[mover] - tickJitterY[mover]
         if (dx * dx + dy * dy > wake2) { s.requestWake(if (si) i else j); any = true }
     }

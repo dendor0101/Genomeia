@@ -30,6 +30,8 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         // Длина покоя мышцы доезжает до своего значения за тик, а не прыгает в первом
         // же подшаге — см. muscleScaleOf.
         updateMuscleScale((step + 1).toDouble() / SUBSTEPS)
+        // Мышцы клеток — так же, по подшагам: см. MuscleDriver.applyCellScaleLerp.
+        applyCellScaleLerp(step, SUBSTEPS)
         // Удар или разрыв прошлого подшага будит спящих: см. BodySleep.
         applyWakeRequests()
         // КОНТАКТ ПРИКЛАДЫВАЕТСЯ К СКОРОСТИ ДО ИНТЕГРИРОВАНИЯ, как гравитация.

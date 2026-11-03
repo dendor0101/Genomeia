@@ -157,6 +157,10 @@ class UserCommandManager(
                 simulationData.stressFlingEvery = cmd.flingEvery
                 simulationData.stressSpawnEvery = cmd.spawnEvery
             }
+            is PlayerCommand.SetPhysicsDebug -> {
+                simulationData.debugNoTailThrust = cmd.noTailThrust
+                simulationData.debugNoDeepKill = cmd.noDeepKill
+            }
             PlayerCommand.StopDrag -> {
                 grabbedParticleIndex = -1
                 simulationData.selectedCellIndex = -1

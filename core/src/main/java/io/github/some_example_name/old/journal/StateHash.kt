@@ -63,8 +63,11 @@ object StateHash {
      *     треугольников, у клетки — их счётчик.
      * 13 — новая часть PhysicsWorld: позиции и скорости частиц мира физики-библиотеки; у
      *     частиц игры вместо x/y/vx/vy — свои позиции тех, кого мир физики не ведёт (local*).
+     * 14 — в часть SimulationData вошли флаги отладки физики (PlayerCommand.SetPhysicsDebug).
+     * 15 — у клетки нет счётчика сформированных треугольников (formedTriangles): край тела
+     *     клетки берётся из мира физики (PhysicsWorld.isSurfaceCell).
      */
-    const val VERSION = 13
+    const val VERSION = 15
 
     class Result(val hash: Long, val parts: LongArray)
 

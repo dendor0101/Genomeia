@@ -29,10 +29,22 @@ internal fun BodyState.activateFree(i: Int, x: Double, y: Double, vx0: Double, v
         val meanArea = worldScale!!.meanCellArea
         if (meanArea > 0.0) (r * r) / meanArea else 1.0
     }
+    // Бесконечная масса (PhysicsWorld.addFixed) даёт обратную ноль — неподвижная частица, см. isFixed.
     restInvMass[i] = if (m > 1e-12) 1.0 / m else 1.0
     dragScale[i] = drag
     activateCell(i, x, y, vx0, vy0)
 }
+
+/**
+ * НЕПОДВИЖНАЯ ЧАСТИЦА (стенка мира, рельеф — PhysicsWorld.addFixed): масса бесконечна,
+ * restInvMass = 0. Всё остальное следует из нуля обратной массы, как у спящего тела
+ * (BodySleep): интегрирование и решатель её не двигают, контакт отдаёт всю поправку партнёру,
+ * в широкой фазе она лежит в неподвижной сетке. Сверх того: она не гибнет (applyKills,
+ * killCell — глубокое касание убивает только партнёра, как у кости) и касание её не будит
+ * (noteSleepContacts): двигаться ей некуда, а каждое пробуждение — полная перестройка
+ * широкой фазы. У обычной клетки restInvMass > 0 всегда (BodyAppend, activateFree).
+ */
+internal fun BodyState.isFixed(i: Int): Boolean = restInvMass[i] == 0.0
 
 /**
  * Убрать свободную частицу [i]: слот снова нерождённый — мёртвый, без массы и контакта.

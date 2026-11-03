@@ -43,6 +43,8 @@ internal fun BodyState.integrateRange(from: Int, to: Int, h: Double) {
             ground = true
         }
         if (boundsOn) {
+            // Здесь стенку держит интегрирование; связи и контакты того же подшага могут
+            // вытолкнуть частицу за неё — к концу шага её возвращает clampToBounds.
             val r = radius[i]
             if (nx < boundsMinX + r) nx = boundsMinX + r else if (nx > boundsMaxX - r) nx = boundsMaxX - r
             if (ny < boundsMinY + r) ny = boundsMinY + r else if (ny > boundsMaxY - r) ny = boundsMaxY - r
@@ -484,3 +486,27 @@ fun BodyState.clampSpeed() {
 fun BodyState.comX(): Double { var s = 0.0; for (i in 0 until n) s += px[i]; return s / n }
 
 fun BodyState.comY(): Double { var s = 0.0; for (i in 0 until n) s += py[i]; return s / n }
+
+/**
+ * Конец шага: все частицы — внутрь рамки мира (с отступом в радиус). Интегрирование держит
+ * стенку, но связи и контакты подшага выталкивают частицу за неё (у клиента-игры сильная мышца
+ * выносила клетку за край сетки, и еда погибшей клетки ложилась вне сетки — падение игры
+ * 27.10). Проход по всем частицам раз в тик, только при включённой рамке; мёртвые тоже —
+ * клиент читает их позицию (место гибели).
+ */
+internal fun BodyState.clampToBounds() {
+    for (i in 0 until n) {
+        val r = radius[i]
+        val x = px[i]; val y = py[i]
+        // СКОРОСТЬ В СТЕНУ ГАСИТСЯ (неупругий удар, 03.11). Раньше возвращалась только позиция, а
+        // скорость «в стену» оставалась: тело, прижатое к стенке, стояло, а скорость его клеток к
+        // стене копилась, питала увлечённую среду (запас), и среда сопротивлением рёбер снова
+        // толкала тело в стену. Отчёт 03.11 02:51 (Burdock leaf): после отпускания мыши скорость к
+        // стене росла сама 200 тиков (0.06 → 0.083 клетки/тик при неподвижном центре), затем тело
+        // выстреливало прочь — 400–500 погибших клеток. «Стена засасывает, потом откидывает».
+        if (x < boundsMinX + r) { px[i] = boundsMinX + r; if (vx[i] < 0.0) vx[i] = 0.0 }
+        else if (x > boundsMaxX - r) { px[i] = boundsMaxX - r; if (vx[i] > 0.0) vx[i] = 0.0 }
+        if (y < boundsMinY + r) { py[i] = boundsMinY + r; if (vy[i] < 0.0) vy[i] = 0.0 }
+        else if (y > boundsMaxY - r) { py[i] = boundsMaxY - r; if (vy[i] > 0.0) vy[i] = 0.0 }
+    }
+}

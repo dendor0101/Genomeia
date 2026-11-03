@@ -123,19 +123,22 @@ internal fun BodyState.solveBlockLinks(h: Double, block: Int, layout: Constraint
     val px = px; val py = py; val mass = invMass
     val a = conA; val b = conB; val rest = conRest; val muscles = conMuscle
     val dead = conDead; val scales = muscleScaleOf; val cellScales = if (cellScalesOn) conCellScale else null
+    val soft = if (softnessOn) conSoftness else null; val cellScaleAll = conCellScale
     val list = layout.links
     if (sweepBackwards) {
         for (slot in list.start[block] + list.count[block] - 1 downTo list.start[block]) {
             val c = list.items[slot]
             if (c < 0) continue
-            if (cellScales == null) solveDistanceConstraint(c, c, px, py, mass, a, b, rest, muscles, dead, scales, alpha)
+            if (soft != null) solveDistanceConstraintSoft(c, c, px, py, mass, a, b, rest, muscles, dead, scales, cellScaleAll, soft, alpha)
+            else if (cellScales == null) solveDistanceConstraint(c, c, px, py, mass, a, b, rest, muscles, dead, scales, alpha)
             else solveDistanceConstraintScaled(c, c, px, py, mass, a, b, rest, muscles, dead, scales, cellScales, alpha)
         }
     } else {
         for (slot in list.start[block] until list.start[block] + list.count[block]) {
             val c = list.items[slot]
             if (c < 0) continue
-            if (cellScales == null) solveDistanceConstraint(c, c, px, py, mass, a, b, rest, muscles, dead, scales, alpha)
+            if (soft != null) solveDistanceConstraintSoft(c, c, px, py, mass, a, b, rest, muscles, dead, scales, cellScaleAll, soft, alpha)
+            else if (cellScales == null) solveDistanceConstraint(c, c, px, py, mass, a, b, rest, muscles, dead, scales, alpha)
             else solveDistanceConstraintScaled(c, c, px, py, mass, a, b, rest, muscles, dead, scales, cellScales, alpha)
         }
     }

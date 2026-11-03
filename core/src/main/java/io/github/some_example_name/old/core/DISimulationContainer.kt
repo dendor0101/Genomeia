@@ -82,7 +82,7 @@ object DISimulationContainer : DIContext, Disposable {
     override val organEntity = OrganEntity(
         organStartMaxAmount = 400
     )
-    val simulationData = SimulationData()
+    override val simulationData = SimulationData()
     override val particleEntity = ParticleEntity(
         particlesStartMaxAmount = 30_000,
         gridManager = gridManager
@@ -179,7 +179,7 @@ object DISimulationContainer : DIContext, Disposable {
     val renderSystem = RenderSystem(
         worldRenderer = worldRenderer,
         renderBufferManager = renderBufferManager
-    )
+    ).also { renderBufferManager.playerMarks = io.github.some_example_name.old.features.simulation.PlayerMarks() }
 
     val userCommandManager = UserCommandManager(
         organEntity = organEntity,

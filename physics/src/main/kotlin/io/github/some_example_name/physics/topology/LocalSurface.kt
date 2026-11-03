@@ -33,6 +33,31 @@ class LocalSurface(
     var active = BooleanArray(body.count); private set
 
     /**
+     * КЛЕТКИ, У КОТОРЫХ СМЕНИЛСЯ [active], с последней очистки — для клиента: игра берёт из
+     * [active] свой флаг «клетка на краю» (сетка касаний сенсоров и поедания), чтобы край тела
+     * был один на физику и игру (решение 03.11). Каждая клетка — не больше одного раза до
+     * очистки (метка), поэтому журнал не длиннее числа клеток, даже если клиент его не читает.
+     * Чистит клиент после чтения, а не шаг: рождение и гибель между шагами тоже меняют поверхность.
+     * Новая поверхность (уплотнение, снимок) начинает журнал заново — клиент тогда сверяет всё.
+     * Цена — сравнение в [update], то есть только на событиях топологии.
+     */
+    var activeChanged = IntArray(16); private set
+    var activeChangedN = 0; private set
+    private var activeChangedMark = BooleanArray(body.count)
+
+    fun clearActiveChanged() {
+        for (k in 0 until activeChangedN) activeChangedMark[activeChanged[k]] = false
+        activeChangedN = 0
+    }
+
+    private fun noteActiveChanged(v: Int) {
+        if (activeChangedMark[v]) return
+        activeChangedMark[v] = true
+        if (activeChangedN == activeChanged.size) activeChanged = activeChanged.copyOf(activeChangedN * 2)
+        activeChanged[activeChangedN++] = v
+    }
+
+    /**
      * Мир дописал тело (BakedTopology.append): строки прежних клеток стоят там же, их
      * состояние копируется как есть; строки новых заполнит update. Массивы клеток
      * мира (boneOf, dead, free, probe) после роста — новые объекты, ссылки обновляются.
@@ -47,6 +72,7 @@ class LocalSurface(
         boundary = boundary.copyOf(adj.size); opposite = opposite.copyOf(adj.size)
         adjEnd = adjEnd.copyOf(n); boundaryEnd = boundaryEnd.copyOf(n)
         radius = radius.copyOf(n); active = active.copyOf(n)
+        activeChangedMark = activeChangedMark.copyOf(n)
     }
 
     /**
@@ -91,7 +117,9 @@ class LocalSurface(
         free[v] = degree == 0
         probe[v] = free[v] || topology.surfaceAngle(v) < 2.0 * Math.PI - angleEps
         val exposed = free[v] || (probesEnabled && probe[v])
+        val was = active[v]
         active[v] = !dead[v] && (b > start[v] || exposed)
+        if (active[v] != was) noteActiveChanged(v)
         if (r == 0.0 && (a == start[v] || exposed)) r = cellRadius[v] * scale
         radius[v] = if (dead[v]) 0.0 else r
     }

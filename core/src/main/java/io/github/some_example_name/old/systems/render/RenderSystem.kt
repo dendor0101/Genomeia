@@ -58,6 +58,20 @@ class RenderSystem(
             renderBufferManager.debugFilter = value
         }
 
+    /** Граница тел в отладочном режиме; хранится у [renderBufferManager], см. пояснение там. */
+    var showBoundary: Boolean
+        get() = renderBufferManager.showBoundary
+        set(value) {
+            renderBufferManager.showBoundary = value
+        }
+
+    /** Все связи в отладочном режиме; хранится у [renderBufferManager]. */
+    var showLinks: Boolean
+        get() = renderBufferManager.showLinks
+        set(value) {
+            renderBufferManager.showLinks = value
+        }
+
     private lateinit var fontMatrix: Matrix4
     private lateinit var spriteBatch: SpriteBatch
     private lateinit var font: BitmapFont
@@ -187,6 +201,7 @@ class RenderSystem(
         }
 
         moveCameraAndDrawSelected(spec, lag)
+        drawPlayerMarks()
 
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)
         Gdx.gl.glDepthMask(false)
@@ -282,6 +297,27 @@ class RenderSystem(
         if (tick <= 0L) return 0f
         val age = System.nanoTime() - snapshot.publishedAtNanos
         return 1f - (age.toFloat() / tick.toFloat()).coerceIn(0f, 1f)
+    }
+
+    /**
+     * Отметки игрока (PlayerMarks): у живой отмеченной клетки — пурпурное кольцо, у погибшей —
+     * красный крест на месте гибели.
+     */
+    private fun drawPlayerMarks() {
+        val marks = renderBufferManager.playerMarks ?: return
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line)
+        Gdx.gl.glLineWidth(3f)
+        marks.forEach { m ->
+            if (m.alive || m.cell < 0) {
+                shapeRenderer.color = Color.MAGENTA
+                shapeRenderer.circle(m.x, m.y, 0.8f, 32)
+            } else {
+                shapeRenderer.color = Color.RED
+                shapeRenderer.line(m.x - 0.6f, m.y - 0.6f, m.x + 0.6f, m.y + 0.6f)
+                shapeRenderer.line(m.x - 0.6f, m.y + 0.6f, m.x + 0.6f, m.y - 0.6f)
+            }
+        }
+        shapeRenderer.end()
     }
 
     /** [lag] — та же доля тика, что у клеток: подсветка едет вместе с интерполированной клеткой. */

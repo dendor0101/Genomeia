@@ -62,7 +62,7 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
     override val organEntity = OrganEntity(
         organStartMaxAmount = 10
     )
-    val simulationData = SimulationData()
+    override val simulationData = SimulationData()
     override val particleEntity = ParticleEntity(
         particlesStartMaxAmount = 800,
         gridManager = gridManager

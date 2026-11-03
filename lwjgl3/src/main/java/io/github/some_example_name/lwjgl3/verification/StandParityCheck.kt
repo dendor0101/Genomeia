@@ -48,7 +48,7 @@ fun main(args: Array<String>) {
     val layout = base.copy(
         restX = ids.map { pose.getValue(it).x }, restY = ids.map { pose.getValue(it).y },
         restRadius = ids.map { pose.getValue(it).r }, restBone = ids.map { pose.getValue(it).bone }
-    )
+    ).withTrianglesFromLinks()     // в файле A-11 треугольники прежнего перебора (TRIANGLES_VERSION)
     val muscle = BooleanArray(ids.size) { pose.getValue(ids[it]).muscle }
     val def = bodyDefinitionOf(layout, 0, layout.restX[0], layout.restY[0])
     println("тело ${genome.name}: клеток ${def.count}, связей ${def.linkCount}, треугольников ${def.triCount}, " +
@@ -94,6 +94,7 @@ fun main(args: Array<String>) {
     exitProcess(0)
 }
 
+
 /**
  * РОСТ С НУЛЯ В МИРЕ ИГРЫ. Порядок рождения — стадии генома (на стадии родитель делится,
  * номер дочери — действие divide), как растёт тело в игре; время между стадиями в игре
@@ -108,6 +109,8 @@ private fun growthSection(genome: Genome, layout: BakedLayout, def: BodyDefiniti
         "из ${def.isBone.count { it }} костных клеток описания")
     val adultKick = afterGrowth(gameWorld(def, GAME_WORLD_SCALE, sleep = null, bounds = true), def, muscle)
     println("  %-40s".format("взрослое (сразу целиком)") + adultKick)
+    val whole = PhysicsWorld(PhysicsConfig(), workers = null, scale = GAME_WORLD_SCALE).also { it.state.quiet = true; it.addBody(def) }
+    println("      контур взрослого: расхождений с топологией ${whole.boundaryMismatches()}, рёбер в списке ${whole.boundaryEdgeCount}")
     val conditions = listOf(
         Growth("1 тик на стадию", 1, muscles = false, kicks = false),
         Growth("10 тиков на стадию", 10, muscles = false, kicks = false),
@@ -116,6 +119,8 @@ private fun growthSection(genome: Genome, layout: BakedLayout, def: BodyDefiniti
         Growth("20 тиков, гребок", 20, muscles = true, kicks = false),
         Growth("5 тиков, толчки", 5, muscles = false, kicks = true),
         Growth("5 тиков, гребок, кости с рождения", 5, muscles = true, kicks = false, bonesAtBirth = true),
+        Growth("1 тик на стадию, без костей", 1, muscles = false, kicks = false, noBones = true),
+        Growth("5 тиков, гребок, без костей", 5, muscles = true, kicks = false, noBones = true),
     )
     for (g in conditions) {
         val w = PhysicsWorld(PhysicsConfig(), workers = null, scale = GAME_WORLD_SCALE)
@@ -127,10 +132,20 @@ private fun growthSection(genome: Genome, layout: BakedLayout, def: BodyDefiniti
         var tick = 0
         val bornAt = IntArray(def.count) { Int.MIN_VALUE / 2 }
         val tears = TearStats()
+        // Кость, которую библиотека пока не включила (новорождённая выходит из родителя), — вызов
+        // повторяется каждый тик, как в игре (WorldPhysics.syncOrganism).
+        val wantBone = ArrayList<Int>()
         for (stage in stages) {
-            for (slot in stage.births) if (w.isUnborn(first + slot)) { w.activate(first + slot); bornAt[slot] = tick }
-            if (!g.bonesAtBirth) for (slot in stage.bones) if (!w.isUnborn(first + slot)) w.setBone(first + slot)
+            for ((k, slot) in stage.births.withIndex()) if (w.isUnborn(first + slot)) {
+                // Деление, как в игре (WorldPhysics.syncOrganism): почти в родителе, если он жив.
+                val p = stage.parents[k]
+                if (p >= 0 && !w.isUnborn(first + p) && !w.state.cellDead[first + p]) w.activateFromParent(first + slot, first + p)
+                else w.activate(first + slot)
+                bornAt[slot] = tick
+            }
+            if (!g.bonesAtBirth && !g.noBones) for (slot in stage.bones) if (!w.isUnborn(first + slot)) wantBone.add(slot)
             repeat(g.ticksPerStage) {
+                wantBone.removeAll { w.state.cellDead[first + it] || w.setBone(first + it) }
                 if (g.muscles) gaitCells(w, first, muscle, tick)
                 if (g.kicks && tick % 40 == 0) {
                     val v = (if ((tick / 40) % 2 == 0) 1.0 else -1.0) * w.meanLinkLength / DT
@@ -141,21 +156,23 @@ private fun growthSection(genome: Genome, layout: BakedLayout, def: BodyDefiniti
             }
         }
         val mismatches = w.cellScaleMismatches()
+        val boundary = w.boundaryMismatches()
         if (g.muscles) for (s in 0 until def.count) if (muscle[s]) w.setCellScale(first + s, 1f)
-        repeat(120) { w.step() }
+        repeat(120) { wantBone.removeAll { w.state.cellDead[first + it] || w.setBone(first + it) }; w.step() }
         val unborn = (0 until def.count).count { w.isUnborn(first + it) }
         println("  %-40s".format(g.name + " ($tick тиков)") + afterGrowth(w to first, def, muscle) +
             if (unborn > 0) ", не родилось $unborn" else "")
         if (tears.edges + tears.cells > 0) println("      во время роста: $tears")
         if (mismatches > 0) println("      МНОЖИТЕЛИ ПО МЕСТУ РАЗОШЛИСЬ С ПОЛНЫМ ПЕРЕСЧЁТОМ: $mismatches")
+        println("      контур после роста: расхождений с топологией $boundary, рёбер в списке ${w.boundaryEdgeCount}")
     }
 }
 
 private class Growth(val name: String, val ticksPerStage: Int, val muscles: Boolean, val kicks: Boolean,
-                     val bonesAtBirth: Boolean = false)
+                     val bonesAtBirth: Boolean = false, val noBones: Boolean = false)
 
 /** Стадия генома: кто родился делением и кто стал костью (мутация или деление с типом «кость»). */
-private class Stage(val births: IntArray, val bones: IntArray)
+internal class Stage(val births: IntArray, val parents: IntArray, val bones: IntArray)
 
 /**
  * Разбор гибели во время роста: связь молодая (конец младше BIRTH_GROW_TICKS — она ещё
@@ -188,16 +205,16 @@ private class TearStats {
 }
 
 /** Стадии генома с делениями или мутациями в кость: рождённые слоты и ставшие костью, в порядке действий. */
-private fun growthStages(genome: Genome, layout: BakedLayout): List<Stage> {
+internal fun growthStages(genome: Genome, layout: BakedLayout): List<Stage> {
     val born = BooleanArray(layout.cellsInLayout)
     born[layout.slotByCellGenomeId.get(0)] = true
     val result = ArrayList<Stage>()
     for (stage in genome.stageInstruction) {
-        val births = ArrayList<Int>(); val bones = ArrayList<Int>()
+        val births = ArrayList<Int>(); val parents = ArrayList<Int>(); val bones = ArrayList<Int>()
         for ((cellId, action) in stage.cellActions) {
             action.divide?.let { d ->
                 val slot = layout.slotByCellGenomeId.get(d.id)
-                if (slot >= 0 && !born[slot]) { born[slot] = true; births.add(slot) }
+                if (slot >= 0 && !born[slot]) { born[slot] = true; births.add(slot); parents.add(layout.slotByCellGenomeId.get(cellId)) }
                 if (slot >= 0 && d.cellType == "bone") bones.add(slot)
             }
             if (action.mutate?.cellType == "bone") {
@@ -205,7 +222,7 @@ private fun growthStages(genome: Genome, layout: BakedLayout): List<Stage> {
                 if (slot >= 0) bones.add(slot)
             }
         }
-        if (births.isNotEmpty() || bones.isNotEmpty()) result.add(Stage(births.toIntArray(), bones.toIntArray()))
+        if (births.isNotEmpty() || bones.isNotEmpty()) result.add(Stage(births.toIntArray(), parents.toIntArray(), bones.toIntArray()))
     }
     return result
 }

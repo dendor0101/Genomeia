@@ -103,6 +103,10 @@ class PhysicsBridge(
 
     fun removeSubstance(id: Int) = world.removeFree(id)
 
+    /** Неподвижная бессмертная частица стенки в точке ([x], [y]) игры радиусом [radius]; номер — как у субстанции. */
+    fun addWall(x: Float, y: Float, radius: Float): Int =
+        world.addFixed(x * PHYSICS_PER_GAME, y * PHYSICS_PER_GAME, radius * PHYSICS_PER_GAME)
+
     fun substanceParticle(id: Int): Int = world.freeParticle(id)
 
     // --- входы тика --------------------------------------------------------------------

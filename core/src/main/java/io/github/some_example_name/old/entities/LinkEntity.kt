@@ -228,10 +228,8 @@ class LinkEntity(
         cellEntity.addCellLink(cellIndex, otherCellIndex, addLinkIndex)
         cellEntity.addCellLink(otherCellIndex, cellIndex, addLinkIndex)
 
-        // Связь могла достроить треугольники тела — они формируются, и их вершины могут стать
-        // внутренними (TriangleEntity). Только после addCellLink: refreshOnEdge вершин читает
-        // уже полное состояние.
-        if (arenaLinkSlot != -1) organEntity.triangles?.onLinkChanged(organIndex, addLinkIndex, organEntity, this, cellEntity)
+        // Связь могла достроить треугольники тела — они формируются (TriangleEntity).
+        if (arenaLinkSlot != -1) organEntity.triangles?.onLinkChanged(organIndex, addLinkIndex, organEntity, this)
 
         return addLinkIndex
     }
@@ -318,7 +316,7 @@ class LinkEntity(
             // И треугольники на ней распались: их вершины теперь у щели. Владелец — запомненный
             // при выдаче: клетки связи могли уже умирать (detachAllLinks).
             val owner = arenaOwnerOf(linkIndex)
-            if (owner >= 0) organEntity.triangles?.onLinkChanged(owner, linkIndex, organEntity, this, cellEntity)
+            if (owner >= 0) organEntity.triangles?.onLinkChanged(owner, linkIndex, organEntity, this)
 
             links1[linkIndex] = -1
             links2[linkIndex] = -1

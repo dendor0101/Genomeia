@@ -7,7 +7,8 @@ import kotlin.math.roundToInt
 
 /**
  * Буфер фигур оверлея отладочного режима: нейросвязи, стрелки направлений, лучи глаз,
- * кольца феромонов, жгутики хвостов. Читает его DebugRenderer — инстансами, по кваду на фигуру.
+ * кольца феромонов, жгутики хвостов, рёбра контура тел. Читает его DebugRenderer — инстансами,
+ * по кваду на фигуру.
  *
  * Модуль рендера не знает, что такое глаз или нейрон: здесь только фигуры. Что из
  * клеток превращается в какую фигуру и каким цветом, решает :core (RenderSystem).
@@ -23,7 +24,7 @@ import kotlin.math.roundToInt
  *
  *   params = kind | signalByte<<8 | seed<<16 | 0<<24
  *
- *   kind       — [KIND_RING], [KIND_RAY], [KIND_ARROW], [KIND_NEURAL], [KIND_FLAGELLUM];
+ *   kind       — [KIND_RING], [KIND_RAY], [KIND_ARROW], [KIND_NEURAL], [KIND_FLAGELLUM], [KIND_EDGE], [KIND_LINK];
  *   signalByte — сигнал из -1..1 со смещением 127, см. [signalByte];
  *   seed       — сдвиг фазы импульсов или волны, чтобы фигуры не двигались в такт.
  *
@@ -176,6 +177,12 @@ class OverlayInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
         const val KIND_ARROW = 2
         const val KIND_NEURAL = 3
         const val KIND_FLAGELLUM = 4
+
+        /** Ребро контура тела: ровная линия цвета фигуры с тёмной обводкой, без сигнала. */
+        const val KIND_EDGE = 5
+
+        /** Связь мира физики: тонкая линия цвета фигуры без обводки, тоньше ребра контура. */
+        const val KIND_LINK = 6
 
         /**
          * Байт сигнала: -1..1 → 0..254, ноль — ровно 127.

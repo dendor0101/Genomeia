@@ -177,6 +177,7 @@ class SimulationSystem(
         profiler.measure(Phase.CELLS) { cellSystem.iterateCellInParallel() }
         profiler.measure(Phase.PHEROMONE) { pheromonesManager.iterate() }
         // Физика-библиотека: силы, контакты, движение и копия позиций в ParticleEntity (B1).
+        worldPhysics.deepKillOn = !simulationData.debugNoDeepKill
         profiler.measure(Phase.ARRANGE) { worldPhysics.tick() }
         profiler.measure(Phase.WORLD_CMD) { worldCommandsManager.executingCommandsFromTheWorld() }
         profiler.measure(Phase.ORGANS) { organManager.performOrgansNextStage() }
@@ -202,7 +203,7 @@ class SimulationSystem(
         // организма по диапазону в параллельных фазах. Стоит здесь, вместе с проверкой
         // сетки: обе ловят «сущность есть, но её никто не обсчитывает».
         if (DEBUG_CHECKS) cellEntity.verifyArenaIntegrity()
-        if (DEBUG_CHECKS) organEntity.triangles?.verify(organEntity, linkEntity, cellEntity)
+        if (DEBUG_CHECKS) organEntity.triangles?.verify(organEntity, linkEntity)
 
         if (DEBUG_CHECKS) {
             gridManager.verifyIntegrity(
@@ -408,6 +409,7 @@ class SimulationSystem(
         simulationData.clear()
         worldCommandsManager.dispose()
         worldPhysics.reset()
+        renderBufferManager.playerMarks?.clear()
     }
 
     private fun restartSim() {
@@ -440,6 +442,8 @@ class SimulationSystem(
         simulationData.stressKillEvery = 0
         simulationData.stressFlingEvery = 0
         simulationData.stressSpawnEvery = 0
+        simulationData.debugNoTailThrust = false
+        simulationData.debugNoDeepKill = false
         lastControllerKeysMask = 0
     }
 
@@ -465,7 +469,9 @@ class SimulationSystem(
                 x = Fnv.word(x, simulationData.selectedCellIndex)
                 x = Fnv.word(x, simulationData.stressKillEvery)
                 x = Fnv.word(x, simulationData.stressFlingEvery)
-                Fnv.word(x, simulationData.stressSpawnEvery)
+                x = Fnv.word(x, simulationData.stressSpawnEvery)
+                x = Fnv.word(x, if (simulationData.debugNoTailThrust) 1 else 0)
+                Fnv.word(x, if (simulationData.debugNoDeepKill) 1 else 0)
             },
             input = userCommandManager::hashInput,
             grid = gridManager::hashOrder,

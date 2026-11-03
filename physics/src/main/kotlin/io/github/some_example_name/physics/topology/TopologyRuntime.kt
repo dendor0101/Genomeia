@@ -210,7 +210,7 @@ fun BodyState.buildContacts() {
     contacts!!.also {
         // ПРАВИЛО ОБЩЕЕ, А НЕ ОПЦИЯ СТЕНДА: центр внутри чужого радиуса это
         // проникновение, и оно запрещено везде, а не только в лаборатории.
-        it.killOnDeep = KILL_ON_DEEP_OVERLAP
+        it.killOnDeep = deepKillOn
         it.killDepth = KILL_DEPTH
         if (internalMom?.n != n) internalMom = InternalMomentum(n)
         if (contactPressure.size != n) contactPressure = DoubleArray(n)
@@ -566,7 +566,7 @@ fun BodyState.restoreTopology() {
     // сбрасывается перед каждой вариацией, и мёртвые копились там от сцены к сцене.
     cellDead.fill(false)
     cellUnborn.fill(false)
-    conGrowTarget.fill(0.0); triGrowTarget.fill(0f); growEdgeN = 0; growTriN = 0
+    conGrowTarget.fill(0.0); conGrowAge.fill(0); triGrowTarget.fill(0f); growEdgeN = 0; growTriN = 0
     deadCount = 0
     crushedCell.fill(false)
     lnkCount = body.linkCount
@@ -594,6 +594,8 @@ fun BodyState.restoreTopology() {
     // Множители клеток — вход клиента, сброс их не трогает; связи и треугольники — заново.
     if (conCellScale.size < conA.size) conCellScale = FloatArray(conA.size) { 1f }
     if (triCellScale.size < triA.size) triCellScale = FloatArray(triA.size) { 1f }
+    if (conSoftness.size < conA.size) conSoftness = FloatArray(conA.size) { 1f }
+    if (triSoftness.size < triA.size) triSoftness = FloatArray(triA.size) { 1f }
     recomputeCellScales()
     buildBoundary(); buildBend(); buildFlaps(); buildOrganisms(); buildContacts()
     initializeConstraintBlocks()
@@ -676,8 +678,9 @@ fun BodyState.rebuildAfterTear() {
                 constraintBlocks?.moveConstraint(c, m)
                 conA[m] = conA[c]; conB[m] = conB[c]; conRest[m] = conRest[c]
                 if (conHold.size > c) conHold[m] = conHold[c]
-                conMuscle[m] = conMuscle[c]; conEdge[m] = conEdge[c]; conCellScale[m] = conCellScale[c]
+                conMuscle[m] = conMuscle[c]; conEdge[m] = conEdge[c]; conCellScale[m] = conCellScale[c]; conSoftness[m] = conSoftness[c]
                 if (conGrowTarget.size > c) conGrowTarget[m] = conGrowTarget[c]
+                if (conGrowAge.size > c) conGrowAge[m] = conGrowAge[c]
                 m++
             }
             c++

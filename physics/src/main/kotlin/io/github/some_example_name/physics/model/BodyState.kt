@@ -117,6 +117,25 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
 
     var deadCount = 0
 
+    /** Убивает ли глубокое проникновение — см. PhysicsWorld.deepKillOn; контакты берут его при сборке. */
+    var deepKillOn = KILL_ON_DEEP_OVERLAP
+
+    /**
+     * Клетки с дорастающей связью этого шага: growStamp[i] == growStampNow (BodyGrowth.
+     * markGrowingCells). Выводится из списка дорастающих рёбер, поэтому в снимок не входит.
+     */
+    var growStamp = IntArray(0)
+    var growStampNow = 0
+
+    /**
+     * Мягкий старт касаний новорождённой: доля расстояния упора 0..1 по клетке, 1 — обычная
+     * (BodyGrowth.rampNewbornContacts, BoundaryContacts.contactRamp). Выводится из дорастающих
+     * связей, поэтому в снимок не входит; [rampCells] — клетки с долей меньше 1.
+     */
+    var contactRamp = FloatArray(0)
+    var rampCells = IntArray(16)
+    var rampN = 0
+
     /** Максимальная длина каждой связи: LINK_MAX_STRETCH * длина покоя. */
     /**
      * ПРЕДЕЛА ДЛИНЫ КАК МАССИВА БОЛЬШЕ НЕТ.
@@ -558,11 +577,47 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     var cellScalesMoving = false
 
     /**
+     * ПЛАВНОСТЬ МЫШЦЫ КЛЕТКИ ПО ПОДШАГАМ (MuscleDriver.applyCellScaleLerp): связи (по ребру) и
+     * треугольники (по постоянному номеру), чей множитель сдвинул шаг мышцы, с «было» и «станет».
+     * Рабочие данные одного шага: собираются в advanceCellScales, к концу шага пусты — в снимок
+     * не входят. Метки — номер шага, чтобы не захватить элемент дважды.
+     */
+    var lerpCapturing = false
+    var lerpEdgeIds = IntArray(64); var lerpEdgeFrom = FloatArray(64); var lerpEdgeTo = FloatArray(64); var lerpEdgeN = 0
+    var lerpTriIds = IntArray(64); var lerpTriFrom = FloatArray(64); var lerpTriTo = FloatArray(64); var lerpTriN = 0
+    var lerpEdgeStamp = IntArray(0); var lerpTriStamp = IntArray(0); var lerpStampNow = 0
+
+    /**
      * Клиент задавал множители клеток (хоть один не 1). Пока нет — ядра идут прежним путём,
      * без чтения множителей: стенд (мышцы кластерами) не платит за мышцу по клетке. Флаг не
      * гаснет: однажды включённый, он входит в снимок и переживает уплотнение.
      */
     var cellScalesOn = false
+
+    /**
+     * МЯГКОСТЬ ТКАНИ ПО КЛЕТКЕ (клиент-игра: жир мягче листа, PhysicsWorld.setSoftness).
+     * cellSoftness — множитель податливости клетки (1 — обычная ткань, 2.5 — в 2.5 раза мягче).
+     * Связь берёт среднее концов — две половинки пружины подряд: податливости складываются;
+     * треугольник — среднее трёх вершин. В ядрах alpha = SOFT_COMPLIANCE (AREA_COMPLIANCE) ×
+     * множитель. При шаге 1/960 податливость связи (alpha/h² ≈ 9) больше массы в знаменателе
+     * поправки (w ≈ 1–2), поэтому жёсткость задаёт в основном она: множитель 2.5 даёт связь жир–жир
+     * в 2.43 раза мягче обычной (SoftnessTest), у площади (знаменатель ~3e-3) — почти ровно 2.5.
+     * Изгиб (выключен, bendLevel = 0) мягкость не трогает.
+     *
+     * conSoftness/triSoftness ведутся теми же путями, что conCellScale/triCellScale (полный
+     * пересчёт после перестройки структуры, кольцо клетки — refreshCellScaleRing): значение
+     * связи зависит только от её концов. 4 байта на связь и треугольник, читаются подряд по
+     * номеру — потоком, не случайно.
+     */
+    var cellSoftness = FloatArray(0)
+    var conSoftness = FloatArray(0)
+    var triSoftness = FloatArray(0)
+
+    /**
+     * Клиент задавал мягкость (хоть одна клетка не 1). Пока нет — ядра идут прежним путём, без
+     * чтения множителей. Как cellScalesOn: однажды включённый, не гаснет и входит в снимок.
+     */
+    var softnessOn = false
 
     /**
      * Множитель изотропного сопротивления среды по частице (1 — как среда мира). Клиент-игра:
@@ -616,6 +671,8 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * треугольников, в порядке рождения. Всё это влияет на будущие тики — состояние мира.
      */
     var conGrowTarget = DoubleArray(0)
+    /** Возраст дорастания связи в тиках (мягкость молодой связи, easeNewborn); переезжает с conGrowTarget. */
+    var conGrowAge = ByteArray(0)
     var triGrowTarget = FloatArray(0)
     var growEdges = IntArray(16)
     var growEdgeN = 0

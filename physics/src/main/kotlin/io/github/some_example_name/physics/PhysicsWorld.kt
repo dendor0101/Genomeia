@@ -190,6 +190,16 @@ class PhysicsWorld(
         state.activateCell(cell, p[0], p[1], p[2], p[3])
     }
 
+    /**
+     * Родить клетку делением живой клетки [parent] того же тела: почти в родителе, дальше её
+     * выталкивают дорастающие связи (BodyState.divisionPlacement, DIVISION_START_FRACTION).
+     */
+    fun activateFromParent(cell: Int, parent: Int) {
+        val p = DoubleArray(4)
+        state.divisionPlacement(cell, parent, p)
+        state.activateCell(cell, p[0], p[1], p[2], p[3])
+    }
+
     // --- события последнего шага (этап B2) ---
 
     /** Сколько рёбер погибло за последний шаг (разрыв, пробой, гибель клетки), в порядке гибели. */
@@ -202,11 +212,37 @@ class PhysicsWorld(
     fun cellDeath(k: Int): Int = state.cellDeathLog[k]
 
     /**
+     * Рёбра контура — то, что омывается средой (края дыр и голые связи тоже), как зелёная граница
+     * стенда. Для отладочной отрисовки клиента; концы [k]-го ребра — частицы мира.
+     */
+    val boundaryEdgeCount: Int get() = state.boundCount
+    fun boundaryEdgeA(k: Int): Int = state.boundA[k]
+    fun boundaryEdgeB(k: Int): Int = state.boundB[k]
+
+    /**
+     * Сталкивается ли клетка [i]: живая, и у неё есть ребро контура (живое ребро не больше чем
+     * в одном живом треугольнике), щель в веере треугольников или она одна. Тот же набор, по
+     * которому строятся касания мира физики. Игра берёт отсюда «клетка на краю» (сетка касаний).
+     */
+    fun isSurfaceCell(i: Int): Boolean = state.localSurface.active[i]
+
+    /**
+     * Клетки, у которых [isSurfaceCell] сменился с прошлого [clearSurfaceChanges], — номерами
+     * частиц, каждая не больше раза. Пишут и шаг, и рождение или гибель между шагами. После
+     * уплотнения ([compactions]) и загрузки снимка журнал начат заново — сверять все клетки.
+     */
+    val surfaceChangeCount: Int get() = state.localSurface.activeChangedN
+    fun surfaceChange(k: Int): Int = state.localSurface.activeChanged[k]
+    fun clearSurfaceChanges() = state.localSurface.clearActiveChanged()
+
+    /**
      * Сделать клетку [cell] костью (клиент-игра: мутация в кость; тело дописано с boneOn): она
      * входит в свою кость описания, поза кости — нынешняя форма её включённых клеток. Без кости
      * в описании, мёртвой или уже включённой — ничего. Между тиками.
+     * Новорождённая, которая ещё выходит из родителя (дорастают все её связи), костью не
+     * становится — false, клиент повторяет вызов в следующих тиках. true — клетка теперь кость.
      */
-    fun setBone(cell: Int) = state.activateBone(cell)
+    fun setBone(cell: Int): Boolean = state.activateBone(cell)
 
     /** Спит ли организм частицы [i] (BodySleep: заморожен до толчка). */
     fun isAsleep(i: Int): Boolean = state.sleep.isAsleep(state.organismOf[i])
@@ -269,6 +305,17 @@ class PhysicsWorld(
         freeLive[id] = true; freeCount++
         return id
     }
+
+    /**
+     * Добавить НЕПОДВИЖНУЮ частицу (стенка мира, рельеф) в точку ([x], [y]) радиусом [radius]:
+     * масса бесконечна — решатель её не двигает, контакт отдаёт всю поправку партнёру, гибели
+     * нет (глубокое касание убивает только партнёра, как у кости), касание её не будит
+     * (BodyState.isFixed). Слот и номер — из пула свободных частиц: убирается [removeFree],
+     * в снимок входит вместе с ними. Цена в шаге — почти ноль: в широкой фазе она лежит в
+     * неподвижной сетке, поштучные проходы пропускают её по нулю обратной массы, а при
+     * включённом сне через SLEEP_TICKS она засыпает насовсем.
+     */
+    fun addFixed(x: Double, y: Double, radius: Double): Int = addFree(x, y, radius, mass = Double.POSITIVE_INFINITY)
 
     /** Убрать свободную частицу [id] (живую или убитую физикой): её слот снова ждёт рождения. */
     fun removeFree(id: Int) {
@@ -407,6 +454,7 @@ class PhysicsWorld(
         state.easeNewborn()
         if (state.cellScalesDirty) state.recomputeCellScales()
         simulation.step()
+        if (state.boundsOn) state.clampToBounds()
     }
 
     /**
@@ -445,19 +493,62 @@ class PhysicsWorld(
     fun cellScale(cell: Int): Float = state.cellScale[cell]
 
     /**
+     * Мягкость ткани клетки [cell]: множитель податливости её связей и треугольников (1 —
+     * обычная ткань, 2.5 — в 2.5 раза мягче; связь берёт среднее концов — см.
+     * BodyState.cellSoftness). Длины покоя не меняются, поэтому спящее тело не будится. Первый
+     * вызов с не-единицей включает чтение множителей в ядрах — один полный пересчёт на мир;
+     * дальше — кольцо клетки.
+     */
+    fun setSoftness(cell: Int, softness: Float) {
+        require(softness > 0f) { "мягкость клетки должна быть больше нуля" }
+        val st = state
+        if (st.cellSoftness[cell] == softness) return
+        st.cellSoftness[cell] = softness
+        if (!st.softnessOn) { st.softnessOn = true; st.cellScalesDirty = true }
+        else st.refreshCellScaleRing(cell)
+    }
+
+    fun softness(cell: Int): Float = state.cellSoftness[cell]
+
+    /**
      * ДИАГНОСТИКА: сколько действующих множителей клеток, связей и треугольников расходится с
      * полным пересчётом (их ведут по месту — шаг мышцы, рождение, гибель ребра). 0 — пересчёт
      * по месту ничего не пропустил. Значения остаются полного пересчёта.
      */
     fun cellScaleMismatches(): Int {
         val st = state
-        if (!st.cellScalesOn || st.cellScaleEff.size != st.n) return 0
+        if (!(st.cellScalesOn || st.softnessOn) || st.cellScaleEff.size != st.n) return 0
         val eff = st.cellScaleEff.copyOf(); val con = st.conCellScale.copyOf(st.conCount); val tri = st.triCellScale.copyOf(st.triCount)
+        val conSoft = st.conSoftness.copyOf(st.conCount); val triSoft = st.triSoftness.copyOf(st.triCount)
         st.recomputeCellScales()
         var bad = 0
         for (v in 0 until st.n) if (eff[v] != st.cellScaleEff[v]) bad++
         for (c in 0 until st.conCount) if (con[c] != st.conCellScale[c]) bad++
         for (t in 0 until st.triCount) if (tri[t] != st.triCellScale[t]) bad++
+        if (st.softnessOn) {
+            for (c in 0 until st.conCount) if (conSoft[c] != st.conSoftness[c]) bad++
+            for (t in 0 until st.triCount) if (triSoft[t] != st.triSoftness[t]) bad++
+        }
+        return bad
+    }
+
+    /**
+     * ДИАГНОСТИКА: сколько рёбер контура расходится с топологией. Край по топологии — живое ребро
+     * не больше чем с одним живым треугольником; рабочий список контура (boundA/boundB — по нему
+     * сопротивление среды, ориентация и контакты) ведут по месту. Лишние в списке плюс недостающие;
+     * 0 — список верный.
+     */
+    fun boundaryMismatches(): Int {
+        val st = state
+        val b = st.baked
+        val listed = BooleanArray(b.edgeCount)
+        var bad = 0
+        for (k in 0 until st.boundCount) {
+            val e = b.edgeOf(st.boundA[k], st.boundB[k])
+            if (e < 0 || listed[e] || b.edgeDead[e] || b.triUse[e] > 1) { bad++; continue }
+            listed[e] = true
+        }
+        for (e in 0 until b.edgeCount) if (!listed[e] && !b.edgeDead[e] && b.triUse[e] <= 1) bad++
         return bad
     }
 
@@ -479,6 +570,31 @@ class PhysicsWorld(
         require(scale >= 0.0) { "множитель сопротивления не может быть меньше нуля" }
         state.dragScale[cell] = scale
     }
+
+    /**
+     * Глубокое проникновение (центр внутри чужого радиуса, KILL_ON_DEEP_OVERLAP) убивает обе
+     * клетки. Выключает клиент для отладки (игра — галочка «без смерти от проникновения»):
+     * касание тогда только расталкивает. В снимок не входит — клиент выставляет каждый тик.
+     */
+    var deepKillOn: Boolean
+        get() = state.deepKillOn
+        set(value) { state.deepKillOn = value; state.contacts?.killOnDeep = value }
+
+    /**
+     * Сколько живых связей у клетки [cell]: 0 — одиночная (зигота без соседей, оторвавшаяся,
+     * свободная частица). Рёбер контура у такой нет, и сопротивление среды ей даёт только
+     * изотропная часть — его клиент задаёт [setDrag].
+     */
+    fun liveDegree(cell: Int): Int {
+        val b = state.baked
+        var d = 0
+        for (q in b.vertStart[cell] until b.vertStart[cell + 1]) if (!b.edgeDead[b.vertEdge[q]]) d++
+        return d
+    }
+
+    /** Соседи клетки [cell] по описанию тела — с живыми и погибшими связями: [neighbor] k < [neighborCount]. */
+    fun neighborCount(cell: Int): Int = state.baked.vertStart[cell + 1] - state.baked.vertStart[cell]
+    fun neighbor(cell: Int, k: Int): Int = state.baked.vertOther[state.baked.vertStart[cell] + k]
 
     /** Рамка мира: частицы не выходят за прямоугольник (игра — границы сетки). */
     fun setBounds(minX: Double, minY: Double, maxX: Double, maxY: Double) {

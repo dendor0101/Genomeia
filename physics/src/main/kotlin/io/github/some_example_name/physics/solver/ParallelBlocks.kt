@@ -390,6 +390,7 @@ internal fun BodyState.limitItemParallel(c: Int, s: WorkerScratch): Boolean {
     val over = len2 > max * max
     if (!crushed && !over) return false
     if (invMass[i] + invMass[j] == 0.0) return false
+    if (isGrowingLink(c)) return false      // см. isGrowingLink
     if (limitViolationIsEvent(c, len2, crushed, scale)) return true
     val len = sqrt(len2)
     if (len < 1e-12) return false

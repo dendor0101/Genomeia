@@ -29,6 +29,38 @@ import java.util.Locale
 @Serializable
 sealed interface SimulationIntent : GameCommand {
 
+    /** Галочка «Связи» отладочного режима: рисовать ли тонко все связи тел мира физики. */
+    @Serializable
+    data class SetShowLinks(val show: Boolean) : SimulationIntent {
+        override val name get() = "SetShowLinks"
+        override val detail get() = show.toString()
+    }
+
+    /** Галочка «Граница» отладочного режима: рисовать ли контур тел мира физики. */
+    @Serializable
+    data class SetShowBoundary(val show: Boolean) : SimulationIntent {
+        override val name get() = "SetShowBoundary"
+        override val detail get() = show.toString()
+    }
+
+    /**
+     * Отметка игрока на клетке для отчёта о баге (средняя кнопка мыши, PlayerMarks): работает на
+     * паузе и на любой скорости, мир не меняет. Клетку под курсором экран находит между тиками
+     * и кладёт в команду значением — [cell] -1, если под курсором клетки нет.
+     */
+    @Serializable
+    data class MarkCell(
+        val x: Float,
+        val y: Float,
+        val cell: Int,
+        val generation: Int,
+        val organ: Int,
+        val cellGenomeId: Int
+    ) : SimulationIntent {
+        override val name get() = "MarkCell"
+        override val detail get() = "%.1f,%.1f cell=$cell organ=$organ id=$cellGenomeId".format(java.util.Locale.ROOT, x, y)
+    }
+
     @Serializable
     data class SetPaused(val paused: Boolean) : SimulationIntent {
         override val name get() = "SetPaused"
@@ -324,6 +356,17 @@ class SimulationViewModel(
             }
 
             is SimulationIntent.SetDebugFilter -> renderSystem.debugFilter = intent.filter
+
+            is SimulationIntent.SetShowBoundary -> renderSystem.showBoundary = intent.show
+
+            is SimulationIntent.SetShowLinks -> renderSystem.showLinks = intent.show
+
+            is SimulationIntent.MarkCell -> {
+                val marks = renderSystem.renderBufferManager.playerMarks ?: return
+                val number = marks.add(intent.cell, intent.generation, intent.x, intent.y)
+                println("Отметка игрока №$number: тик ${simulationData.tickCounter}, клетка ${intent.cell} " +
+                    "(организм ${intent.organ}, номер в геноме ${intent.cellGenomeId}), точка %.1f, %.1f".format(intent.x, intent.y))
+            }
 
             is SimulationIntent.SetControllerKeysVisible -> {
                 simulationData.showControllerKeys = intent.visible

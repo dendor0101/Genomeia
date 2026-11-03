@@ -8,6 +8,7 @@ import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.entities.SubstancesEntity
+import io.github.some_example_name.old.features.worldeditor.WorldTerrainManager
 import io.github.some_example_name.old.journal.Fnv
 import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.old.systems.physics.GridManager
@@ -29,7 +30,9 @@ import it.unimi.dsi.fastutil.ints.IntArrayList
  *     — тело убирается. Так же субстанции: новая — свободная частица, исчезла — убрана,
  *     сменила радиус (слияние мелких) — заводится заново. Отдельных крючков в обработчиках
  *     команд нет: проход по слотам ловит любой путь создания и удаления, в том числе загрузку.
+ *     Стенка вдоль рамки — неподвижные частицы на месте террейна, раз на размер мира ([buildWall]).
  *  2. ВХОДЫ. Кость — клетка игры стала типа «кость» (мутация) → setBone, форма на этот момент.
+ *     Мягкость — клетка типа «жир» → setSoftness([FAT_SOFTNESS]), с мутацией туда и обратно.
  *     Мышца клетки — degreeOfShortening (0.5–1.5, среднее гармоническое на связи, как
  *     было в LinkPhysicsSystem). Приращения скорости из параллельных стадий (жгутик, плавник,
  *     липучка, присоска — ParticleEntity.pushVx/pushVy) уходят в мир с пробуждением организма.
@@ -37,7 +40,8 @@ import it.unimi.dsi.fastutil.ints.IntArrayList
  *  3. ШАГ МИРА.
  *  4. СОБЫТИЯ (этап B2): что погибло в шаге, игра узнаёт командами мира этого же тика —
  *     клетка организма — DELETE_CELL, свободная частица — DELETE_SUBSTANCE, порванная связь
- *     между живыми клетками — DELETE_LINK ([reportDeaths]).
+ *     между живыми клетками — DELETE_LINK ([reportDeaths]). Край тела клеток игры (сетка
+ *     касаний) — по флагу физики «клетка сталкивается» ([syncSurface]).
  *  5. СЕТКА: смена клетки сетки — gridId и след феромона (как делал MovementManager); ссылки
  *     ParticleEntity.physics* — на массивы мира (он заводит их заново при росте и уплотнении);
  *     после уплотнения мира физики номера частиц пересчитываются по номерам тел.
@@ -66,9 +70,14 @@ class WorldPhysics(
     /** Тип клетки «кость» (Bone) — по ключу: номер это место в реестре типов. */
     private val boneType = cellEntity.cellList.requireIndex("bone")
 
+    /** Тип клетки «жир» (Fat) — мягкая ткань, [FAT_SOFTNESS]. */
+    private val fatType = cellEntity.cellList.requireIndex("fat")
+
     private var boundsWidth = -1
     private var boundsHeight = -1
     private var compactions = 0
+    /** Уплотнение, при котором флаги края клеток сверены с физикой целиком; -1 — ещё ни разу. */
+    private var surfaceCompactions = -1
 
     /** Организмы с телом в порядке подсадки и поколение организма при подсадке. */
     private val organsWithBody = IntArrayList()
@@ -80,6 +89,11 @@ class WorldPhysics(
     private var substanceGeneration = IntArray(256)
     private var substanceRadius = FloatArray(256)
 
+    /** Стенка вдоль рамки ([buildWall]): номера её неподвижных частиц и размер мира, под который она стоит. */
+    private val wallIds = IntArrayList()
+    private var wallWidth = -1
+    private var wallHeight = -1
+
     init {
         particleEntity.physics = this
         publish()
@@ -90,9 +104,11 @@ class WorldPhysics(
         bridge = PhysicsBridge(workers)
         boundsWidth = -1; boundsHeight = -1
         compactions = 0
+        surfaceCompactions = -1
         organsWithBody.clear()
         trackedSubstances.clear()
         freeOfSubstance.fill(-1)
+        wallIds.clear(); wallWidth = -1; wallHeight = -1
         particleEntity.physicsIndex.fill(-1)
         publish()
     }
@@ -103,6 +119,7 @@ class WorldPhysics(
             boundsWidth = gridManager.gridWidth; boundsHeight = gridManager.gridHeight
             bridge.setBounds(boundsWidth.toFloat(), boundsHeight.toFloat())
         }
+        if (wallWidth != gridManager.gridWidth || wallHeight != gridManager.gridHeight) buildWall()
         removeGone()
         spawnNewOrganisms()
         for (k in 0 until organsWithBody.size) syncOrganism(organsWithBody.getInt(k))
@@ -110,7 +127,25 @@ class WorldPhysics(
         bridge.step()
         publish()
         reportDeaths()
+        syncSurface()
         updateGrid()
+    }
+
+    /**
+     * СТЕНКА: на месте частиц террейна вдоль рамки — неподвижные бессмертные частицы мира физики
+     * (PhysicsWorld.addFixed) той же раскладки и радиуса (WorldTerrainManager.forEachWallParticle).
+     * Тела упираются в видимую стенку, а не в рамку за ней; рамка (clampToBounds) остаётся
+     * страховкой. Строится раз на размер мира, в снимке мира физики лежит вместе с ним, номера —
+     * в [encodeState]. Частицы террейна игры остаются как были (отрисовка): стенка не движется,
+     * и две копии мест не расходятся.
+     */
+    private fun buildWall() {
+        for (k in 0 until wallIds.size) bridge.removeSubstance(wallIds.getInt(k))
+        wallIds.clear()
+        wallWidth = gridManager.gridWidth; wallHeight = gridManager.gridHeight
+        WorldTerrainManager.forEachWallParticle(wallWidth, wallHeight) { x, y ->
+            wallIds.add(bridge.addWall(x, y, WorldTerrainManager.WALL_RADIUS))
+        }
     }
 
     // --- сохранение мира (MapSave, этап B3) --------------------------------------------
@@ -145,6 +180,9 @@ class WorldPhysics(
             out.writeInt(sub); out.writeInt(freeOfSubstance[sub])
             out.writeInt(substanceGeneration[sub]); out.writeFloat(substanceRadius[sub])
         }
+        out.writeInt(wallWidth); out.writeInt(wallHeight)
+        out.writeInt(wallIds.size)
+        for (k in 0 until wallIds.size) out.writeInt(wallIds.getInt(k))
     }
 
     /** Прочитать снимок [encodeState]. Сущности игры к этому моменту уже загружены. */
@@ -173,6 +211,8 @@ class WorldPhysics(
             trackedSubstances.add(sub)
             pe.physicsIndex[substancesEntity.particleIndex[sub]] = bridge.substanceParticle(id)
         }
+        wallWidth = input.readInt(); wallHeight = input.readInt()
+        repeat(input.readInt()) { wallIds.add(input.readInt()) }
         compactions = bridge.world.compactions
         publish()
     }
@@ -202,6 +242,11 @@ class WorldPhysics(
 
     /** Однопоточная запись скорости в единицах игры (ParticleEntity.setVelocity). */
     fun setVelocity(i: Int, vx: Float, vy: Float) = bridge.setVelocity(i, vx, vy)
+
+    /** Убивает ли глубокое проникновение частиц (галочка отладки, SimulationData.debugNoDeepKill). */
+    var deepKillOn: Boolean
+        get() = bridge.world.deepKillOn
+        set(value) { bridge.world.deepKillOn = value }
 
     /** Однопоточная перестановка частицы в точку игры (ParticleEntity.place). */
     fun place(i: Int, x: Float, y: Float) {
@@ -265,21 +310,33 @@ class WorldPhysics(
             val cell = cellBase + slot
             if (world.isUnborn(i)) {
                 if (!alive[cell]) continue
-                world.activate(i)
+                // Мягкость — до рождения: связи новорождённой клетки возьмут её сразу.
+                world.setSoftness(i, softnessOf(cell))
+                // Деление: родитель игры жив, в этом же теле и рождён в мире физики — клетка
+                // рождается почти в нём и выталкивается связями (activateFromParent). Иначе
+                // (зигота, родитель умер или в другом теле) — по позе, как раньше.
+                val parent = cellEntity.parentIndex[cell]
+                val ps = parent - cellBase
+                if (parent >= 0 && alive[parent] && ps in 0 until organEntity.cellArenaCapacity[organ] &&
+                    !world.isUnborn(first + ps) && !dead[first + ps]) world.activateFromParent(i, first + ps)
+                else world.activate(i)
                 onBorn(particleBase + slot, i)
                 continue
             }
             // Умершая в мире физики клетка заново не рождается (TODO к B2): у живой клетки игры
             // в таком слоте номера в мире физики нет, она стоит там, куда её поставила игра.
             if (dead[i]) continue
-            if (!alive[cell]) { world.kill(i); continue }
+            if (!alive[cell]) { world.kill(i); refreshDragAround(i); continue }
             // Клетка стала костью (мутация, деление с типом «кость»): кость включается с формой
             // на этот момент. У клетки не из кости раскладки и у уже включённой — ничего.
             if (cellEntity.cellType[cell].toInt() == boneType && !world.isBone(i)) world.setBone(i)
+            world.setSoftness(i, softnessOf(cell))
             world.setCellScale(i, shortening[cell])
             push(particleBase + slot, i)
         }
     }
+
+    private fun softnessOf(cell: Int): Float = if (cellEntity.cellType[cell].toInt() == fatType) FAT_SOFTNESS else 1f
 
     private fun syncSubstances() {
         val alive = substancesEntity.aliveList
@@ -316,18 +373,45 @@ class WorldPhysics(
         pe.pushVx[p] = 0f; pe.pushVy[p] = 0f
     }
 
-    /**
-     * Клетка родилась в мире физики. Сопротивление — вязкость мира игры в долях значения по
-     * умолчанию: при нём — материал стенда (среда библиотеки). Прежняя вязкость клетки
-     * (0.03 за тик, ослабленная числом связей) поверх среды библиотеки сделала бы тело вдесятеро
-     * вязче, чем его подбирали. Скорость рождения — от библиотеки.
-     */
+    /** Клетка родилась в мире физики; скорость рождения — от библиотеки. Сопротивление — [refreshDrag]. */
     private fun onBorn(p: Int, i: Int) {
         val pe = particleEntity
-        val drag = pe.dragCoefficient[p].toDouble() / DEFAULT_VISCOSITY.toDouble()
-        if (drag != 1.0) bridge.setDrag(i, drag)
         pe.physicsIndex[p] = i
         pe.pushVx[p] = 0f; pe.pushVy[p] = 0f
+        refreshDrag(p, i)
+        refreshDragAround(i)
+    }
+
+    /**
+     * Сопротивление среды клетки [i] мира физики (частица игры [p]).
+     *  - Со связями — вязкость мира игры в долях значения по умолчанию: при нём — материал стенда
+     *    (среда библиотеки). Основное сопротивление такой клетке дают рёбра контура (NORMAL_DRAG);
+     *    прежняя вязкость клетки (0.03 за тик) поверх среды библиотеки сделала бы тело вдесятеро
+     *    вязче, чем его подбирали.
+     *  - Без живых связей (зигота до первого соседа, оторвавшаяся клетка) — как у свободной частицы
+     *    той же вязкости (еда, PhysicsBridge.dragScaleOf): рёбер контура у неё нет, и одной среды
+     *    библиотеки (0.092/с, вдвое за ~7.5 с) хватало, чтобы оторванная клетка катилась через весь
+     *    мир (отчёт 27.10 19:40: клетка 237 Crayfish пролетела 65 клеток до стенки).
+     * Зовётся по событиям — рождение, гибель ребра, гибель клетки, — а не проходом по миру.
+     */
+    private fun refreshDrag(p: Int, i: Int) {
+        val pe = particleEntity
+        val scale = if (bridge.world.liveDegree(i) == 0) PhysicsBridge.dragScaleOf(pe.dragCoefficient[p])
+        else pe.dragCoefficient[p].toDouble() / DEFAULT_VISCOSITY.toDouble()
+        bridge.setDrag(i, scale)
+    }
+
+    /** [refreshDrag] у живых соседей клетки [i] мира физики: у них стало на связь больше или меньше. */
+    private fun refreshDragAround(i: Int) {
+        val world = bridge.world
+        for (k in 0 until world.neighborCount(i)) refreshDragAlive(world.neighbor(i, k))
+    }
+
+    private fun refreshDragAlive(i: Int) {
+        val world = bridge.world
+        if (world.isUnborn(i) || world.state.cellDead[i]) return
+        val p = gameParticleOf(i)
+        if (p >= 0) refreshDrag(p, i)
     }
 
     /** Приращение скорости из параллельных стадий — в мир, с пробуждением организма. */
@@ -371,6 +455,8 @@ class WorldPhysics(
         val dead = world.state.cellDead
         for (k in 0 until edges) {
             val a = world.edgeDeathA(k); val b = world.edgeDeathB(k)
+            // Связей у концов стало меньше — одиночная клетка получает сопротивление свободной.
+            refreshDragAlive(a); refreshDragAlive(b)
             if (dead[a] || dead[b]) continue
             val organ = organOf(a)
             if (organ < 0) continue
@@ -387,6 +473,47 @@ class WorldPhysics(
     }
 
     /**
+     * КРАЙ ТЕЛА ИЗ ФИЗИКИ (решение 03.11): клетка игры на краю — в сетке касаний сенсоров,
+     * поедания и курсора, — ровно когда она сталкивается в мире физики (PhysicsWorld.isSurfaceCell).
+     * Свой признак игры (число связей против взрослого тела) с контуром физики расходился.
+     * По журналу смен флага, который пишут и шаг, и рождение с гибелью в сверке до шага; после
+     * уплотнения, загрузки и в новом мире журнал начат заново — тогда сверка всех клеток. Цена —
+     * O(сменивших флаг клеток) на событиях топологии, двоичный поиск организма на каждую.
+     */
+    private fun syncSurface() {
+        val world = bridge.world
+        if (world.particleCount == 0) return
+        if (surfaceCompactions != world.compactions) {
+            surfaceCompactions = world.compactions
+            for (k in 0 until organsWithBody.size) syncAllSurface(organsWithBody.getInt(k))
+        } else {
+            for (k in 0 until world.surfaceChangeCount) syncSurfaceOf(world.surfaceChange(k))
+        }
+        world.clearSurfaceChanges()
+    }
+
+    private fun syncAllSurface(organ: Int) {
+        val world = bridge.world
+        val index = particleEntity.physicsIndex
+        val cellBase = organEntity.cellArenaBase[organ]
+        val particleBase = organEntity.particleArenaBase[organ]
+        for (slot in 0 until organEntity.cellArenaCapacity[organ]) {
+            val i = index[particleBase + slot]
+            if (i >= 0 && cellEntity.isAlive[cellBase + slot]) cellEntity.setOnEdge(cellBase + slot, world.isSurfaceCell(i))
+        }
+    }
+
+    private fun syncSurfaceOf(i: Int) {
+        val organ = organOf(i)
+        if (organ < 0) return
+        val slot = i - bridge.particleOf(organ, 0)
+        val cell = organEntity.cellArenaBase[organ] + slot
+        // Не рождённая в игре или выросшая заново в слоте умершей — частицы мира у неё нет.
+        if (!cellEntity.isAlive[cell] || particleEntity.physicsIndex[organEntity.particleArenaBase[organ] + slot] != i) return
+        cellEntity.setOnEdge(cell, bridge.world.isSurfaceCell(i))
+    }
+
+    /**
      * Организм частицы мира физики, -1 — не клетка организма (свободная частица, слот пула).
      * Организмы с телом идут в порядке подсадки, а тела в мире — в том же порядке (дописывание
      * в конец, уплотнение порядок сохраняет): двоичный поиск по началу тела.
@@ -400,6 +527,56 @@ class WorldPhysics(
         if (found < 0) return -1
         val organ = organsWithBody.getInt(found)
         return if (i < bridge.particleOf(organ, 0) + organEntity.cellArenaCapacity[organ]) organ else -1
+    }
+
+    /**
+     * Живые связи тел мира физики частицами игры — для отладочной отрисовки (галочка «Связи»):
+     * концы пар подряд в [out]. Поток симуляции, после тика. Проход по аренам организмов —
+     * только при включённой галочке.
+     */
+    fun linkParticles(out: IntArrayList) {
+        out.clear()
+        // Пустой мир (до первой подсадки): топологии ещё нет — baked не заведён.
+        if (organsWithBody.size == 0) return
+        val world = bridge.world
+        val st = world.state
+        val b = st.baked
+        for (k in 0 until organsWithBody.size) {
+            val organ = organsWithBody.getInt(k)
+            val first = bridge.particleOf(organ, 0)
+            val base = organEntity.particleArenaBase[organ]
+            for (s in 0 until organEntity.cellArenaCapacity[organ]) {
+                val i = first + s
+                if (world.isUnborn(i) || st.cellDead[i]) continue
+                for (q in b.vertStart[i] until b.vertStart[i + 1]) {
+                    val o = b.vertOther[q]
+                    if (o <= i || b.edgeDead[b.vertEdge[q]]) continue
+                    out.add(base + s); out.add(base + (o - first))
+                }
+            }
+        }
+    }
+
+    /**
+     * Рёбра контура мира физики частицами игры — для отладочной отрисовки границы (галочка
+     * «Граница», RenderBufferManager): концы пар подряд в [out]. Поток симуляции, после тика.
+     * Только по рёбрам контура, без прохода по миру.
+     */
+    fun boundaryParticles(out: IntArrayList) {
+        out.clear()
+        val world = bridge.world
+        for (k in 0 until world.boundaryEdgeCount) {
+            val a = gameParticleOf(world.boundaryEdgeA(k))
+            val b = gameParticleOf(world.boundaryEdgeB(k))
+            if (a < 0 || b < 0) continue
+            out.add(a); out.add(b)
+        }
+    }
+
+    /** Частица игры для частицы мира физики, -1 — не клетка организма. */
+    private fun gameParticleOf(i: Int): Int {
+        val organ = organOf(i)
+        return if (organ < 0) -1 else organEntity.particleArenaBase[organ] + (i - bridge.particleOf(organ, 0))
     }
 
     private fun substanceOf(i: Int): Int {
@@ -493,6 +670,13 @@ class WorldPhysics(
     private companion object {
         /** Вязкость среды мира по умолчанию — GlobalSettings.viscosityOfTheEnvironment. */
         const val DEFAULT_VISCOSITY = 0.03f
+
+        /**
+         * Мягкость жира: податливость его связей и треугольников в 5 раз больше обычной
+         * (PhysicsWorld.setSoftness; связь жира с листом — среднее, 3). Решение 03.11: сначала 2.5
+         * (в старой физике linkStiffness жира — вдвое меньше), после осмотра в игре — ещё вдвое мягче.
+         */
+        const val FAT_SOFTNESS = 5f
 
         val EMPTY = DoubleArray(0)
     }

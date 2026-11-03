@@ -27,6 +27,8 @@ import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.viewport.ScreenViewport
 import com.kotcrab.vis.ui.VisUI
+import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
+import com.kotcrab.vis.ui.widget.VisCheckBox
 import com.kotcrab.vis.ui.widget.VisDialog
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisTextButton
@@ -42,6 +44,7 @@ import io.github.some_example_name.old.core.ui.ConfirmDialog
 import io.github.some_example_name.old.core.ui.KeyboardFocus
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.DISimulationContainer
+import io.github.some_example_name.old.core.utils.pickParticle
 import io.github.some_example_name.old.core.ui.CameraControl
 import io.github.some_example_name.old.core.ui.STYLE_BEIGE
 import io.github.some_example_name.old.core.ui.h
@@ -56,6 +59,7 @@ import io.github.some_example_name.old.core.ui.w
 import io.github.some_example_name.old.features.editor.GenomeEditorCaller
 import io.github.some_example_name.old.features.settings.GlobalSettings
 import io.github.some_example_name.old.features.worldeditor.WorldSpec
+import io.github.some_example_name.old.game.applyCustomFont
 import io.github.some_example_name.old.game.applyCustomFontMedium
 import io.github.some_example_name.old.systems.genomics.library.GenomeCatalog
 import io.github.some_example_name.old.systems.simulation.ControllerKeys
@@ -96,6 +100,7 @@ class SimulationScreen(
             userCommandManager.push(PlayerCommand.TouchDown(x, y, isLeftButton = isLeft))
         },
         onTap = ::onWorldTap,
+        onMiddleClick = ::markCellAt,
         onFling = {
             userCommandManager.push(PlayerCommand.StopDrag)
         },
@@ -276,6 +281,25 @@ class SimulationScreen(
     }
 
     /** Касание мира: что делать, решает инструмент. */
+    /**
+     * Средняя кнопка: отметка клетки под курсором для отчёта о баге (PlayerMarks). Клетка ищется
+     * между тиками — сетку и позиции в это время никто не пишет; на паузе — сразу.
+     */
+    private fun markCellAt(x: Float, y: Float) {
+        val c = DISimulationContainer
+        val found = simulationSystem.betweenTicks {
+            val p = c.gridManager.pickParticle(x, y, c.particleEntity, c.cellEntity)
+            if (p < 0 || !c.particleEntity.isCell[p]) null else {
+                val cell = c.particleEntity.holderEntityIndex[p]
+                intArrayOf(cell, c.cellEntity.getGeneration(cell), c.cellEntity.organIndex[cell], c.cellEntity.cellGenomeId[cell])
+            }
+        }
+        viewModel.handle(
+            if (found == null) SimulationIntent.MarkCell(x, y, -1, 0, -1, -1)
+            else SimulationIntent.MarkCell(x, y, found[0], found[1], found[2], found[3])
+        )
+    }
+
     private fun onWorldTap(x: Float, y: Float, isLeft: Boolean) {
         // Решается здесь, при создании команды: в запись сессии уходит уже итоговое действие.
         when (val tool = viewModel.tool) {
@@ -565,7 +589,47 @@ class SimulationScreen(
                 viewModel.handle(SimulationIntent.SetDebugFilter(it))
             }
             filter.hint(bundle.get("debugFilter.hint"))
-            topBar.add(filter).expandX().center()
+            val boundary = VisCheckBox(bundle.get("debugBoundary"))
+            DIGameGlobalContainer.game.applyCustomFont(boundary)
+            boundary.isChecked = renderSystem.showBoundary
+            boundary.hint(bundle.get("debugBoundary.hint"))
+            boundary.addListener(object : ChangeListener() {
+                override fun changed(event: ChangeListener.ChangeEvent?, actor: Actor?) {
+                    viewModel.handle(SimulationIntent.SetShowBoundary(boundary.isChecked))
+                }
+            })
+            val links = VisCheckBox(bundle.get("debugLinks"))
+            DIGameGlobalContainer.game.applyCustomFont(links)
+            links.isChecked = renderSystem.showLinks
+            links.hint(bundle.get("debugLinks.hint"))
+            links.addListener(object : ChangeListener() {
+                override fun changed(event: ChangeListener.ChangeEvent?, actor: Actor?) {
+                    viewModel.handle(SimulationIntent.SetShowLinks(links.isChecked))
+                }
+            })
+            val sim = simulationSystem.simulationData
+            val noTail = VisCheckBox(bundle.get("debugNoTail"))
+            val noDeepKill = VisCheckBox(bundle.get("debugNoDeepKill"))
+            for (box in listOf(noTail, noDeepKill)) DIGameGlobalContainer.game.applyCustomFont(box)
+            noTail.isChecked = sim.debugNoTailThrust
+            noDeepKill.isChecked = sim.debugNoDeepKill
+            noTail.hint(bundle.get("debugNoTail.hint"))
+            noDeepKill.hint(bundle.get("debugNoDeepKill.hint"))
+            // Обе галочки меняют мир — командой мира, сразу с обоими значениями.
+            val physicsDebug = object : ChangeListener() {
+                override fun changed(event: ChangeListener.ChangeEvent?, actor: Actor?) {
+                    userCommandManager.push(PlayerCommand.SetPhysicsDebug(noTail.isChecked, noDeepKill.isChecked))
+                }
+            }
+            noTail.addListener(physicsDebug)
+            noDeepKill.addListener(physicsDebug)
+            val center = Table()
+            center.add(filter)
+            center.add(boundary).padLeft(pad)
+            center.add(links).padLeft(pad)
+            center.add(noTail).padLeft(pad)
+            center.add(noDeepKill).padLeft(pad)
+            topBar.add(center).expandX().center()
         } else {
             topBar.add().expandX()
         }

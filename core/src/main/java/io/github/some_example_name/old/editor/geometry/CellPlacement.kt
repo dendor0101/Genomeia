@@ -153,7 +153,7 @@ object CellPlacement {
             // Полуширина закрытой дуги — из треугольника (родитель, сосед, точка
             // окружности на расстоянии keep от соседа), по теореме косинусов.
             val cos = ((ring * ring + d * d - keep * keep) / (2.0 * ring * d)).coerceIn(-1.0, 1.0)
-            cover.block(StrictMath.atan2(dy, dx), StrictMath.acos(cos), k)
+            cover.block(StrictMath.atan2(dy, dx), StrictMath.acos(cos))
         }
         cover.computeFree(MIN_GAP)
 

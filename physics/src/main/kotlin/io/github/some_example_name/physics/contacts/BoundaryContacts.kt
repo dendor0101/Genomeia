@@ -519,6 +519,34 @@ class BoundaryContacts(
     var killOnDeep = false
     var killDepth = 1.0
 
+    /**
+     * НЕУЯЗВИМОСТЬ ДЕЛЯЩИХСЯ: клетка, у которой дорастает связь (новорождённая и её соседи по
+     * связям, BodyState.markGrowingCells), глубоким касанием не убивает и не гибнет — пара
+     * только расталкивается. Новорождённая появляется почти в родителе (деление), и соседи
+     * родителя иначе убили бы её в первом же подшаге. Метка — номер шага: immuneStamp[i] ==
+     * immuneNow. Читается только на пути смерти (редко). Ставит хозяин.
+     */
+    var immuneStamp = IntArray(0)
+    var immuneNow = -1
+
+    /**
+     * МЯГКИЙ СТАРТ КАСАНИЙ НОВОРОЖДЁННОЙ: доля расстояния упора по клетке (BodyGrowth.
+     * rampNewbornContacts), у пары — меньшая из двух. Null — никто не растёт: в паре одна
+     * проверка. Ставит хозяин раз в шаг.
+     */
+    var contactRamp: FloatArray? = null
+
+    private fun ramped(i: Int, j: Int, rr: Double): Double {
+        val ramp = contactRamp ?: return rr
+        val f = minOf(ramp[i], ramp[j])
+        return if (f < 1f) rr * f else rr
+    }
+
+    private fun killImmune(i: Int, j: Int): Boolean {
+        val s = immuneStamp
+        return (i < s.size && s[i] == immuneNow) || (j < s.size && s[j] == immuneNow)
+    }
+
     /** Сколько пар в списке контактов этого подшага и какие. Нужно снятию остатка по группам. */
     /**
      * ДАВЛЕНИЕ КОНТАКТА НА КЛЕТКУ: сумма модулей толчков, которые контакты дали клетке,
@@ -570,7 +598,9 @@ class BoundaryContacts(
         return REST_NONE
     }
 
-    private fun contactDistance(i: Int, j: Int): Double {
+    private fun contactDistance(i: Int, j: Int): Double = ramped(i, j, restContactDistance(i, j))
+
+    private fun restContactDistance(i: Int, j: Int): Double {
         val rr = contactRadius[i] + contactRadius[j]
         if (!CONTACT_REST_SPACING || optionAblegacy || restSpacingN == 0) return rr
         val rp = rest
@@ -583,7 +613,9 @@ class BoundaryContacts(
         return rr
     }
 
-    private fun pairContactDistance(p: Int, rr: Double): Double {
+    private fun pairContactDistance(p: Int, rr: Double): Double = ramped(nearA[p], nearB[p], pairRestDistance(p, rr))
+
+    private fun pairRestDistance(p: Int, rr: Double): Double {
         if (!CONTACT_REST_SPACING || optionAblegacy || restSpacingN == 0) return rr
         var s = nearRestSlot[p]
         if (s == -2) {
@@ -1712,7 +1744,7 @@ class BoundaryContacts(
             // но это не отменяет УЖЕ случившееся глубокое перекрытие.
             // Соседи отсеяны широкой фазой; порог смерти остаётся прежним.
             val depth = killDepth * maxOf(contactRadius[a], contactRadius[j])
-            if (d02 < depth * depth && invMass[a] + invMass[j] > 0.0) {
+            if (d02 < depth * depth && invMass[a] + invMass[j] > 0.0 && !killImmune(a, j)) {
                 startDeep.add(a); startDeep.add(j)
             }
         }
@@ -2405,6 +2437,7 @@ class BoundaryContacts(
      * костью о кость был бы единственным способом пройти сквозь тело.
      */
     private fun requestKill(i: Int, j: Int) {
+        if (killImmune(i, j)) return
         if (boneIdx(i) < 0) addKill(i)
         if (boneIdx(j) < 0) addKill(j)
     }

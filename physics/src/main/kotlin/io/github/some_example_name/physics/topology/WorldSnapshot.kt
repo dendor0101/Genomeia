@@ -24,8 +24,11 @@ import java.io.DataOutput
  */
 
 internal const val SNAPSHOT_MAGIC = 0x50485753  // "PHWS"
-/** 2 — мышца клетки с темпом: цель множителя клетки и признак «в пути» (27.10). */
-internal const val SNAPSHOT_VERSION = 2
+/**
+ * 2 — мышца клетки с темпом: цель множителя клетки и признак «в пути» (27.10).
+ * 3 — возраст дорастания связи (conGrowAge, мягкость молодой связи при делении, 02.11).
+ */
+internal const val SNAPSHOT_VERSION = 3
 
 // --- массивы: длина, затем значения; числа — сырыми битами, без нормализации NaN ---
 
@@ -83,6 +86,7 @@ internal fun BodyState.writeCore(out: DataOutput) {
     out.writeFloats(cellScale, cellScale.size); out.writeBoolean(cellScalesOn)
     out.writeFloats(cellScaleTarget, cellScaleTarget.size); out.writeBoolean(cellScalesMoving)
     out.writeDoubles(dragScale, dragScale.size)
+    out.writeFloats(cellSoftness, cellSoftness.size); out.writeBoolean(softnessOn)
     out.writeBoolean(boundsOn)
     for (b in doubleArrayOf(boundsMinX, boundsMinY, boundsMaxX, boundsMaxY)) out.writeLong(java.lang.Double.doubleToRawLongBits(b))
     for (a in listOf(trapTicks, trapOrg, foldTicks, contactPressureN, boneOf, muscleOf, organismOf)) out.writeInts(a, a.size)
@@ -102,6 +106,7 @@ internal fun BodyState.writeCore(out: DataOutput) {
     out.writeInts(conMuscle, conCount); out.writeInts(conEdge, conCount)
     out.writeBooleans(conDead, conCount); out.writeBooleans(linkTorn, conCount)
     out.writeBytes(conHold, minOf(conHold.size, conCount)); out.writeDoubles(conGrowTarget, minOf(conGrowTarget.size, conCount))
+    out.writeBytes(conGrowAge, minOf(conGrowAge.size, conCount))
     out.writeInts(triA, triCount); out.writeInts(triB, triCount); out.writeInts(triC, triCount)
     out.writeFloats(triRestArea2, triCount); out.writeInts(triId, triCount); out.writeInts(triMuscle, triCount)
     out.writeBooleans(triInverted, triCount); out.writeBytes(triHold, minOf(triHold.size, triCount))
@@ -143,6 +148,7 @@ internal fun BodyState.readCore(input: DataInput) {
     cellScale = input.readFloats(0); cellScalesOn = input.readBoolean()
     cellScaleTarget = input.readFloats(0); cellScalesMoving = input.readBoolean()
     dragScale = input.readDoubles(0)
+    cellSoftness = input.readFloats(0); softnessOn = input.readBoolean()
     boundsOn = input.readBoolean()
     boundsMinX = input.readDouble64(); boundsMinY = input.readDouble64()
     boundsMaxX = input.readDouble64(); boundsMaxY = input.readDouble64()
@@ -165,6 +171,7 @@ internal fun BodyState.readCore(input: DataInput) {
     conDead = input.readBooleans(lc); linkTorn = input.readBooleans(lc)
     conHold = input.readBytes(0).let { if (it.isEmpty()) it else it.copyOf(lc) }
     conGrowTarget = input.readDoubles(0).let { if (it.isEmpty()) it else it.copyOf(lc) }
+    conGrowAge = input.readBytes(0).let { if (it.isEmpty()) it else it.copyOf(lc) }
     triA = input.readInts(tc); triB = input.readInts(tc); triC = input.readInts(tc)
     triRestArea2 = input.readFloats(tc); triId = input.readInts(tc); triMuscle = input.readInts(tc)
     triInverted = input.readBooleans(tc)

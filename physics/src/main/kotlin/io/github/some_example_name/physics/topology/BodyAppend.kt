@@ -110,6 +110,7 @@ internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = nul
     triRestArea2 = triRestArea2.copyOf(triCap); triId = triId.copyOf(triCap)
     triMuscle = triMuscle.copyOf(triCap); triInverted = triInverted.copyOf(triCap)
     triCellScale = triCellScale.copyOf(triCap).also { java.util.Arrays.fill(it, tri0, triCap, 1f) }
+    triSoftness = triSoftness.copyOf(triCap).also { java.util.Arrays.fill(it, tri0, triCap, 1f) }
     if (triHold.isNotEmpty()) triHold = triHold.copyOf(maxOf(triHold.size, triCap))
     for (k in 0 until addTris) {
         val t = tri0 + k
@@ -124,6 +125,7 @@ internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = nul
     conA = conA.copyOf(conCap); conB = conB.copyOf(conCap); conRest = conRest.copyOf(conCap)
     conMuscle = conMuscle.copyOf(conCap); conEdge = conEdge.copyOf(conCap)
     conCellScale = conCellScale.copyOf(conCap).also { java.util.Arrays.fill(it, con0, conCap, 1f) }
+    conSoftness = conSoftness.copyOf(conCap).also { java.util.Arrays.fill(it, con0, conCap, 1f) }
     var c = con0
     for (k in lnk0 until lnkCount) {
         val i = lnkA[k]; val j = lnkB[k]
@@ -226,6 +228,7 @@ private fun BodyState.growParticleArrays(n0: Int) {
     cellDead = cellDead.copyOf(n); cellUnborn = cellUnborn.copyOf(n)
     cellScale = cellScale.copyOf(n).also { java.util.Arrays.fill(it, n0, n, 1f) }
     cellScaleTarget = cellScaleTarget.copyOf(n).also { java.util.Arrays.fill(it, n0, n, 1f) }
+    cellSoftness = cellSoftness.copyOf(n).also { java.util.Arrays.fill(it, n0, n, 1f) }
     dragScale = dragScale.copyOf(n).also { java.util.Arrays.fill(it, n0, n, 1.0) }
     px = px.copyOf(n); py = py.copyOf(n); prevX = prevX.copyOf(n); prevY = prevY.copyOf(n)
     vx = vx.copyOf(n); vy = vy.copyOf(n)
