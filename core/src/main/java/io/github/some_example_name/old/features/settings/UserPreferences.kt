@@ -17,6 +17,7 @@ import java.util.Locale
 object UserPreferences {
 
     private const val NAME = "genomeia"
+    private const val FEEDBACK_HINT_SEEN = "feedback_hint_seen"
     private const val MUSIC_VOLUME = "musicVolume"
     private const val SOUND_VOLUME = "soundVolume"
     private const val LANGUAGE = "language"
@@ -25,6 +26,15 @@ object UserPreferences {
     private const val SHOW_DEBUG_INFO = "show_debug_info"
 
     private val prefs by lazy { Gdx.app.getPreferences(NAME) }
+
+    fun shouldShowFeedbackHint(): Boolean =
+        !BugReplay.isActive && !prefs.getBoolean(FEEDBACK_HINT_SEEN, false)
+
+    fun markFeedbackHintSeen() {
+        if (BugReplay.isActive) return
+        prefs.putBoolean(FEEDBACK_HINT_SEEN, true)
+        prefs.flush()
+    }
 
     /** После создания контейнеров и до первого экрана. */
     fun load() {
