@@ -17,6 +17,7 @@ import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
 import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.viewport.ScreenViewport
 import io.github.some_example_name.old.core.DIGameGlobalContainer
+import io.github.some_example_name.old.features.settings.UserPreferences
 import java.io.ByteArrayOutputStream
 
 /**
@@ -30,6 +31,8 @@ import java.io.ByteArrayOutputStream
 object BugOverlay {
 
     private var stage: Stage? = null
+    private var feedbackHint: FeedbackHint? = null
+    private var hintChecked = false
     private val input = InputMultiplexer()
     private var icon: Texture? = null
     private var bugButton: ImageButton? = null
@@ -45,6 +48,7 @@ object BugOverlay {
     val isDialogOpen: Boolean get() = dialog != null
 
     fun create() {
+        hintChecked = false
         BugReports.rememberEnvironment()
         val stage = Stage(ScreenViewport())
         this.stage = stage
@@ -62,7 +66,7 @@ object BugOverlay {
             imageCell.size(size)
             addListener(object : ChangeListener() {
                 override fun changed(event: ChangeEvent?, actor: Actor?) {
-                    if (dialog == null) screenshotRequested = true
+                    requestReport()
                 }
             })
         }
@@ -86,7 +90,10 @@ object BugOverlay {
 
     /** Открыть окно отчёта, как кнопкой-жуком (снимок экрана — в следующем кадре). */
     fun requestReport() {
-        if (dialog == null) screenshotRequested = true
+        if (dialog == null) {
+            dismissFeedbackHint()
+            screenshotRequested = true
+        }
     }
 
     /** После отрисовки экрана. */
@@ -109,6 +116,14 @@ object BugOverlay {
             label.isVisible = text.isNotEmpty()
         }
 
+        if (!hintChecked && !replaying && dialog == null) {
+            hintChecked = true
+            if (UserPreferences.shouldShowFeedbackHint()) {
+                feedbackHint = FeedbackHint(::dismissFeedbackHint).also { stage.addActor(it) }
+                UserPreferences.markFeedbackHintSeen()
+            }
+        }
+        feedbackHint?.isVisible = !replaying && dialog == null
         stage.act(Gdx.graphics.deltaTime)
         stage.viewport.apply()
         stage.draw()
@@ -121,7 +136,13 @@ object BugOverlay {
         statusCell?.table?.invalidate()
     }
 
+    private fun dismissFeedbackHint() {
+        feedbackHint?.dispose()
+        feedbackHint = null
+    }
+
     fun dispose() {
+        dismissFeedbackHint()
         stage?.dispose()
         icon?.dispose()
         stage = null
