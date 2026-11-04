@@ -73,8 +73,12 @@ internal fun BodyState.velocityAfterRange(from: Int, to: Int, lastStep: Boolean,
             val k = if (d == 1.0) keep else mediumKeep(hTick, d)
             vx[i] *= k; vy[i] *= k
         }
-        if (clamp) { if (acc == null) clampOne(i, maxV, maxV2) else clampOneInto(i, maxV, maxV2, acc) }
+        // Потолок — после учёта внешнего импульса: срез скорости одной частицы — не сила среды,
+        // и учёт возвращает срезанный импульс организму целиком. Раньше срез шёл во внешнее, и
+        // упор новорождённой в потолок оставлял организму отдачу остальной ткани (BirthKickProbe
+        // 03.11: Crayfish разгонялся с 0.014 до 0.26 клетки за тик без единого разрыва).
         tm?.externalAt(i, px, py, vx, vy, invMass, inContact)
+        if (clamp) { if (acc == null) clampOne(i, maxV, maxV2) else clampOneInto(i, maxV, maxV2, acc) }
     }
 }
 

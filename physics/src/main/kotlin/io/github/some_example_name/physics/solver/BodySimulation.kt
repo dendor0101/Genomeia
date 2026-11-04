@@ -25,7 +25,8 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     wakeByInput()
     // Положения в начале тика: средняя скорость за тик нужна сопротивлению среды. См. TickMotion.
     beginTickMotion()
-    if (cancelSpinOn) { tick0(); prepareAwakeSpans(); tickMomentum.begin(px, py, vx, vy, invMass, organismOf, sleep, cellUnborn); tick1(16) }
+    if (cancelSpinOn) { tick0(); prepareAwakeSpans(); tickMomentum.begin(px, py, vx, vy, invMass, organismOf, sleep, cellDead); tick1(16) }
+    if (cancelSpinOn) noteJointsMomentum()
     for (step in 0 until SUBSTEPS) {
         // Длина покоя мышцы доезжает до своего значения за тик, а не прыгает в первом
         // же подшаге — см. muscleScaleOf.
@@ -71,6 +72,8 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
             solveBlockedIteration(h, integrate = iter == 0 && !cancel)
 
         }
+        // Временные связи между телами (липучка) — после внутренних, до пределов длины. См. Joints.kt.
+        solveJoints(h)
         // ПРЕДЕЛ ДЛИНЫ ПОВТОРНО, УЖЕ ПОСЛЕ КОСТИ.
         //
         // Первый вызов стоит после solveConstraints, но проекция кости идёт ПОЗЖЕ
@@ -123,6 +126,8 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         // См. FusedPasses.
         tick0()
         velocityPassBefore(h)
+        // Хватка (присоска-чашка) — после снимка скоростей: учёт импульса видит её внешней силой, как пол.
+        applyGrip(h)
         tick1(17); tick0()
         // Отскок: позиционная часть удар гасит целиком, см. solveRestitution.
         dbgMarkV()

@@ -72,7 +72,8 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
     fun p(a: BooleanArray) = if (a.size < nOld) a else pick(a, pNew, nOld, nNew)
     fun p(a: IntArray, values: IntArray? = null) = if (a.size < nOld) a else pick(a, pNew, nOld, nNew, values)
     cellDead = p(cellDead); cellUnborn = p(cellUnborn); cellScale = p(cellScale); cellScaleTarget = p(cellScaleTarget); dragScale = p(dragScale)
-    cellSoftness = p(cellSoftness)
+    cellSoftness = p(cellSoftness); cellNoContact = p(cellNoContact)
+    cellGrip = p(cellGrip); gripsDirty = true
     px = p(px); py = p(py); prevX = p(prevX); prevY = p(prevY); vx = p(vx); vy = p(vy)
     invMass = p(invMass); restInvMass = p(restInvMass); matchWeight = p(matchWeight)
     inContact = p(inContact); radius = p(radius); isFree = p(isFree)
@@ -87,6 +88,7 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
     dbgSnapX = DoubleArray(0); dbgSnapY = DoubleArray(0); dbgSnapVx = DoubleArray(0); dbgSnapVy = DoubleArray(0)
     orgQueue = IntArray(nNew)
     if (dragId >= 0) dragId = pNew[dragId]
+    remapJoints(pNew)
     if (watchCell in 0 until nOld) watchCell = pNew[watchCell]
     trapCrashCell = -1; trapCrashTri = -1
 
@@ -203,9 +205,11 @@ internal fun BodyState.rebuildDerived(oldSurface: LocalSurface?, pNew: IntArray?
             body.x, body.y, probeCells(), cellDead, restPairs, everLinked)
         ct.attachSurface(localSurface)
         ct.organismOf = organismOf
+        ct.noContact = cellNoContact
         ct.pressure = contactPressure; ct.pressureN = contactPressureN
         dbgSealMinR = ct.minContactRadius
     }
+    applyNoContact()
     lap(6)
     // Множители связей и треугольников — по нынешним множителям клеток (списки новые).
     conCellScale = FloatArray(conA.size) { 1f }; triCellScale = FloatArray(triA.size) { 1f }

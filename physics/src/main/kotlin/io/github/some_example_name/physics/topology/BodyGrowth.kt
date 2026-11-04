@@ -167,6 +167,8 @@ private fun BodyState.startTriangleGrowth(id: Int) {
  * выталкивает новорождённую мягко, и связи с соседями не дёргают её, пока она выходит из
  * родителя. Прежний шаг на 1/BIRTH_GROW_TICKS цели от начальной длины не смотрел, где клетка
  * сейчас, и тянул её к заданной длине жёстко. Площадь треугольника — по-прежнему шагом.
+ * Связь, рождённая много длиннее цели, тянет не сильнее BIRTH_MAX_PULL и дорастает, пока не
+ * подойдёт к цели, — дольше BIRTH_GROW_TICKS.
  */
 internal fun BodyState.easeNewborn() {
     markGrowingCells()
@@ -180,14 +182,18 @@ internal fun BodyState.easeNewborn() {
         while (c >= 0) {
             val target = conGrowTarget[c]
             if (target > 0.0) {
-                val age = conGrowAge[c] + 1
+                // Возраст не растёт дальше BIRTH_GROW_TICKS: далёкая связь (ниже) дорастает
+                // дольше, а байт переполнился бы.
+                val age = minOf(conGrowAge[c] + 1, BIRTH_GROW_TICKS)
                 conGrowAge[c] = age.toByte()
-                if (age >= BIRTH_GROW_TICKS) {
+                val dx = px[conA[c]] - px[conB[c]]; val dy = py[conA[c]] - py[conB[c]]
+                val len = sqrt(dx * dx + dy * dy) / (muscleScale(conMuscle[c]) * conCellScale[c])
+                val pull = BIRTH_MAX_PULL * target
+                if (age >= BIRTH_GROW_TICKS && len - target <= pull) {
                     conRest[c] = target; conGrowTarget[c] = 0.0
                 } else {
-                    val dx = px[conA[c]] - px[conB[c]]; val dy = py[conA[c]] - py[conB[c]]
-                    val len = sqrt(dx * dx + dy * dy) / (muscleScale(conMuscle[c]) * conCellScale[c])
-                    conRest[c] = maxOf(len + (target - len) * (age.toDouble() / BIRTH_GROW_TICKS), BIRTH_MIN_FRACTION * target)
+                    val eased = len + (target - len) * (age.toDouble() / BIRTH_GROW_TICKS)
+                    conRest[c] = maxOf(eased, len - pull, BIRTH_MIN_FRACTION * target)
                     growing = true
                 }
             }

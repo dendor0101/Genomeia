@@ -750,13 +750,12 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             // Зеркало ядра: сопротивление видит среднюю скорость за тик. См. TickMotion.
             if (s == substeps - 1) { removeTickJitter(dt); applyNormalDrag(h * substeps); restoreTickJitter() }
             if (s == substeps - 1) applyMediumDrag(h * substeps)
+            // Потолок — после учёта внешнего импульса, как в ядре (FusedPasses.velocityAfterRange).
+            if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.afterExternal(px, py, vx, vy, invMass)
             clampSpeed(dt)
-            if (DemoConst.CANCEL_INTERNAL_SPIN) {
-                tickMomentum.afterExternal(px, py, vx, vy, invMass)
-                if (s == substeps - 1) {
-                    tickMomentum.cancel(px, py, vx, vy, invMass)
-                    clampSpeed(dt)
-                }
+            if (DemoConst.CANCEL_INTERNAL_SPIN && s == substeps - 1) {
+                tickMomentum.cancel(px, py, vx, vy, invMass)
+                clampSpeed(dt)
             }
         }
         applyPlasticity(dt)
@@ -860,13 +859,12 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             // Зеркало ядра: сопротивление видит среднюю скорость за тик. См. TickMotion.
             if (s == substeps - 1) { removeTickJitter(dt); applyNormalDrag(h * substeps); restoreTickJitter() }
             if (s == substeps - 1) applyMediumDrag(h * substeps)
+            // Потолок — после учёта внешнего импульса, как в ядре (FusedPasses.velocityAfterRange).
+            if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.afterExternal(px, py, vx, vy, invMass)
             clampSpeed(dt)
-            if (DemoConst.CANCEL_INTERNAL_SPIN) {
-                tickMomentum.afterExternal(px, py, vx, vy, invMass)
-                if (s == substeps - 1) {
-                    tickMomentum.cancel(px, py, vx, vy, invMass)
-                    clampSpeed(dt)
-                }
+            if (DemoConst.CANCEL_INTERNAL_SPIN && s == substeps - 1) {
+                tickMomentum.cancel(px, py, vx, vy, invMass)
+                clampSpeed(dt)
             }
         }
         applyPlasticity(dt)

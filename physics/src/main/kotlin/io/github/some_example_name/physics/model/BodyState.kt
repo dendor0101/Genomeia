@@ -620,6 +620,28 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     var softnessOn = false
 
     /**
+     * КЛЕТКА БЕЗ КАСАНИЙ (клиент-игра: присоска, Sucker — isCollidable = false, PhysicsWorld.setContactless):
+     * в контактах не участвует вовсе — ни с чужими телами, ни с едой, ни со стенкой, как в прежней
+     * физике игры, где такую пару не расталкивали. Связи, площади и среда — как у всех. Контакты
+     * читают флаг только при перестройке набора клеток касания (BoundaryContacts.reconfigure,
+     * updateSurface), в горячем цикле пар его нет. Входит в снимок.
+     */
+    var cellNoContact = BooleanArray(0)
+
+    /** Хватка по частице 0..1 (присоска-чашка) — см. Grip.kt. Входит в снимок. */
+    var cellGrip = FloatArray(0)
+    var gripIds = IntArray(0); var gripN = 0
+    /** Список [gripIds] устарел: смена хватки, уплотнение, снимок. */
+    var gripsDirty = false
+
+    /** Временные связи между частицами разных тел (липучка) — см. Joints.kt. Слоты пула, входят в снимок. */
+    var jointA = IntArray(0); var jointB = IntArray(0)
+    var jointRest = DoubleArray(0); var jointCompliance = DoubleArray(0)
+    var jointLive = BooleanArray(0)
+    var jointSlots = 0; var jointLiveCount = 0
+    var jointFree = IntArray(0); var jointFreeN = 0
+
+    /**
      * Множитель изотропного сопротивления среды по частице (1 — как среда мира). Клиент-игра:
      * у субстанции и у клетки своё сопротивление (ParticleEntity.dragCoefficient; клетке
      * 0.003 за тик — это и есть MEDIUM_DRAG · DT). Считается только у частиц с множителем

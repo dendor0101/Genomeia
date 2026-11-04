@@ -216,10 +216,12 @@ fun BodyState.buildContacts() {
         if (contactPressure.size != n) contactPressure = DoubleArray(n)
         it.pressure = contactPressure
         it.organismOf = organismOf
+        it.noContact = cellNoContact
         if (contactPressureN.size != n) contactPressureN = IntArray(n)
         it.pressureN = contactPressureN
         if (crushedCell.size != n) crushedCell = BooleanArray(n)
     }
+    applyNoContact()
     if (!rebuilding && !quiet) println("[DemoSession] contact particles = ${boundCount} boundary edges, " +
         "contact radius from boundary edges, seal margin")
     // ПРАВИЛО СМЕРТИ ВИДНО В ЖУРНАЛЕ: иначе замер легко сделать с выключенным
@@ -759,4 +761,21 @@ fun BodyState.triTorn(t: Int): Boolean {
 fun BodyState.conIndexOf(i: Int, j: Int): Int {
     val e = baked.edgeOf(i, j)
     return if (e < 0) -1 else conOfEdge[e]
+}
+
+/**
+ * Клетки без касаний (cellNoContact) — вон из набора клеток касания после полной пересборки
+ * контактов: reconfigure строит набор по контуру и флага не знает. Тот же путь, что обновление по
+ * месту (updateSurface), — с парами покоя. Проход по миру, но только при перестройке.
+ */
+internal fun BodyState.applyNoContact() {
+    val ct = contacts ?: return
+    val nc = cellNoContact
+    var k = 0
+    for (i in 0 until minOf(n, nc.size)) if (nc[i]) k++
+    if (k == 0) return
+    val list = IntArray(k)
+    k = 0
+    for (i in 0 until minOf(n, nc.size)) if (nc[i]) list[k++] = i
+    ct.updateSurface(localSurface, list, k)
 }

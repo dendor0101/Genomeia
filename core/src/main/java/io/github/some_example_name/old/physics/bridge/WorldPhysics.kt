@@ -33,6 +33,8 @@ import it.unimi.dsi.fastutil.ints.IntArrayList
  *     Стенка вдоль рамки — неподвижные частицы на месте террейна, раз на размер мира ([buildWall]).
  *  2. ВХОДЫ. Кость — клетка игры стала типа «кость» (мутация) → setBone, форма на этот момент.
  *     Мягкость — клетка типа «жир» → setSoftness([FAT_SOFTNESS]), с мутацией туда и обратно.
+ *     Присоска-чашка — хватка (трение о дно) каждый тик — setGrip; клетка без столкновений
+ *     (isCollidable = false, присоска) — setContactless.
  *     Мышца клетки — degreeOfShortening (0.5–1.5, среднее гармоническое на связи, как
  *     было в LinkPhysicsSystem). Приращения скорости из параллельных стадий (жгутик, плавник,
  *     липучка, присоска — ParticleEntity.pushVx/pushVy) уходят в мир с пробуждением организма.
@@ -73,6 +75,12 @@ class WorldPhysics(
     /** Тип клетки «жир» (Fat) — мягкая ткань, [FAT_SOFTNESS]. */
     private val fatType = cellEntity.cellList.requireIndex("fat")
 
+    /** Тип клетки «присоска-чашка» (SuctionCup): хватка каждый тик (PhysicsWorld.setGrip). */
+    private val suctionCupType = cellEntity.cellList.requireIndex("suction_cup")
+
+    /** Липучки и их временные связи в мире физики ([requestStick], StickyJoints). */
+    private val sticks = StickyJoints(cellEntity, particleEntity, substancesEntity, cellEntity.cellList.requireIndex("sticky"))
+
     private var boundsWidth = -1
     private var boundsHeight = -1
     private var compactions = 0
@@ -109,6 +117,7 @@ class WorldPhysics(
         trackedSubstances.clear()
         freeOfSubstance.fill(-1)
         wallIds.clear(); wallWidth = -1; wallHeight = -1
+        sticks.clear()
         particleEntity.physicsIndex.fill(-1)
         publish()
     }
@@ -124,6 +133,7 @@ class WorldPhysics(
         spawnNewOrganisms()
         for (k in 0 until organsWithBody.size) syncOrganism(organsWithBody.getInt(k))
         syncSubstances()
+        sticks.sync(bridge.world)
         bridge.step()
         publish()
         reportDeaths()
@@ -183,6 +193,7 @@ class WorldPhysics(
         out.writeInt(wallWidth); out.writeInt(wallHeight)
         out.writeInt(wallIds.size)
         for (k in 0 until wallIds.size) out.writeInt(wallIds.getInt(k))
+        sticks.write(out)
     }
 
     /** Прочитать снимок [encodeState]. Сущности игры к этому моменту уже загружены. */
@@ -213,6 +224,7 @@ class WorldPhysics(
         }
         wallWidth = input.readInt(); wallHeight = input.readInt()
         repeat(input.readInt()) { wallIds.add(input.readInt()) }
+        sticks.read(input)
         compactions = bridge.world.compactions
         publish()
     }
@@ -231,7 +243,40 @@ class WorldPhysics(
             x = Fnv.long(x, px[i].toRawBits()); x = Fnv.long(x, py[i].toRawBits())
             x = Fnv.long(x, vx[i].toRawBits()); x = Fnv.long(x, vy[i].toRawBits())
         }
-        return x
+        return sticks.hash(x)
+    }
+
+    /**
+     * Липучка [c] поколения [gen] коснулась частицы игры [p] (команда STICK, однопоточно в порядке
+     * команд). Частица мира физики партнёра — её номер; у частицы стенки террейна номера нет, она
+     * находится по месту в раскладке стенки ([wallParticleAt]). Остров террейна в физике пока не
+     * живёт (B4) — к нему липучка не липнет.
+     */
+    fun requestStick(c: Int, gen: Int, p: Int) {
+        val pe = particleEntity
+        val j = pe.physicsIndex[p].takeIf { it >= 0 } ?: if (!pe.isCell[p] && !pe.isSub[p]) wallParticleAt(p) else -1
+        sticks.request(bridge.world, c, gen, p, j)
+    }
+
+    /**
+     * Частица мира физики для частицы стенки игры [p]: стенка стоит по раскладке
+     * WorldTerrainManager.forEachWallParticle, номера [wallIds] — в её порядке (низ, левый край,
+     * правый, верх). −1 — частица не на стенке (остров террейна) или стенка другого размера.
+     */
+    private fun wallParticleAt(p: Int): Int {
+        if (wallWidth < 0) return -1
+        val x = particleEntity.x(p); val y = particleEntity.y(p)
+        val across = wallWidth / 2 * 3 - 1; val along = wallHeight / 2 * 3 - 1
+        fun near(a: Float, b: Float) = kotlin.math.abs(a - b) < 1e-3f
+        fun step(v: Float): Int { val k = Math.round(v * 1.5f); return if (near(k / 1.5f, v)) k else -1 }
+        val idx = when {
+            near(y, 0.5f) -> step(x).let { if (it in 1..across) it - 1 else -1 }
+            near(x, 0.5f) -> step(y).let { if (it in 1..along) across + it - 1 else -1 }
+            near(x, wallWidth - 0.5f) -> step(y).let { if (it in 1..along) across + along + it - 1 else -1 }
+            near(y, wallHeight - 0.5f) -> step(x).let { if (it in 1..across) across + 2 * along + it - 1 else -1 }
+            else -> -1
+        }
+        return if (idx in 0 until wallIds.size) bridge.substanceParticle(wallIds.getInt(idx)) else -1
     }
 
     /** Спит ли организм частицы игры [p] в мире физики (фильтр отладки «сон»). Между тиками. */
@@ -312,6 +357,7 @@ class WorldPhysics(
                 if (!alive[cell]) continue
                 // Мягкость — до рождения: связи новорождённой клетки возьмут её сразу.
                 world.setSoftness(i, softnessOf(cell))
+                world.setContactless(i, !particleEntity.isCollidable[particleBase + slot])
                 // Деление: родитель игры жив, в этом же теле и рождён в мире физики — клетка
                 // рождается почти в нём и выталкивается связями (activateFromParent). Иначе
                 // (зигота, родитель умер или в другом теле) — по позе, как раньше.
@@ -332,6 +378,10 @@ class WorldPhysics(
             if (cellEntity.cellType[cell].toInt() == boneType && !world.isBone(i)) world.setBone(i)
             world.setSoftness(i, softnessOf(cell))
             world.setCellScale(i, shortening[cell])
+            // Присоска (isCollidable = false) ни с чем не сталкивается, как в прежней физике игры.
+            world.setContactless(i, !particleEntity.isCollidable[particleBase + slot])
+            // Присоска-чашка: хватка — её dragCoefficient (импульс 0..1, SuctionCup.doOnTick), каждый тик.
+            world.setGrip(i, if (cellEntity.cellType[cell].toInt() == suctionCupType) particleEntity.dragCoefficient[particleBase + slot] else 0f)
             push(particleBase + slot, i)
         }
     }
@@ -396,8 +446,11 @@ class WorldPhysics(
      */
     private fun refreshDrag(p: Int, i: Int) {
         val pe = particleEntity
-        val scale = if (bridge.world.liveDegree(i) == 0) PhysicsBridge.dragScaleOf(pe.dragCoefficient[p])
-        else pe.dragCoefficient[p].toDouble() / DEFAULT_VISCOSITY.toDouble()
+        // У чашки dragCoefficient — хватка (setGrip), а не вязкость: среда у неё как у обычной клетки.
+        val drag = if (pe.isCell[p] && cellEntity.cellType[pe.holderEntityIndex[p]].toInt() == suctionCupType) DEFAULT_VISCOSITY
+        else pe.dragCoefficient[p]
+        val scale = if (bridge.world.liveDegree(i) == 0) PhysicsBridge.dragScaleOf(drag)
+        else drag.toDouble() / DEFAULT_VISCOSITY.toDouble()
         bridge.setDrag(i, scale)
     }
 

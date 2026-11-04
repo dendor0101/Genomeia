@@ -44,11 +44,13 @@ class TickMomentum(internal val n: Int) {
     }
 
     /**
-     * [unborn] — нерождённые клетки (BodyState.cellUnborn): в группу своего организма не
-     * входят, остаются одиночками без массы и группу организма не блокируют.
+     * [outside] — мёртвые клетки (BodyState.cellDead; нерождённые тоже мертвы): в группу своего
+     * организма не входят, остаются одиночками без массы и группу организма не блокируют. Раньше
+     * исключались только нерождённые, и первая же погибшая клетка навсегда выключала учёт
+     * импульса всему организму (BirthKickProbe 03.11: у Crayfish со стадии 25 роста).
      */
     fun begin(x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
-              invMass: DoubleArray, org: IntArray, sleep: BodySleep? = null, unborn: BooleanArray? = null) {
+              invMass: DoubleArray, org: IntArray, sleep: BodySleep? = null, outside: BooleanArray? = null) {
         first.fill(-1)
         spans(sleep) { from, to ->
             java.util.Arrays.fill(blocked, from, to, false)
@@ -57,7 +59,7 @@ class TickMomentum(internal val n: Int) {
         spans(sleep) { from, to ->
             for (i in from until to) {
                 val o = org[i]
-                if (o >= 0 && (unborn == null || !unborn[i])) { if (first[o] < 0) first[o] = i else union(first[o], i) }
+                if (o >= 0 && (outside == null || !outside[i])) { if (first[o] < 0) first[o] = i else union(first[o], i) }
                 val m = if (invMass[i] > 0.0) 1.0 / invMass[i] else 0.0
                 targetX[i] = m * vx[i]; targetY[i] = m * vy[i]
                 targetL[i] = m * (x[i] * vy[i] - y[i] * vx[i])
@@ -82,6 +84,12 @@ class TickMomentum(internal val n: Int) {
      * частицей давало тот же итог — заблокированная группа не корректируется, — но у
      * спящих индексы вне диапазонов учёта, и их parent не обновлялся бы.
      */
+    /** Временная связь (BodyState.solveJoints) объединяет группы концов, как контакт ([noteContacts]). */
+    fun noteJoint(i: Int, j: Int, invMass: DoubleArray) {
+        if (invMass[i] <= 0.0 || invMass[j] <= 0.0) { blocked[i] = true; blocked[j] = true }
+        else union(i, j)
+    }
+
     fun noteContacts(c: BoundaryContacts, invMass: DoubleArray) {
         for (k in 0 until c.contactCount) {
             val i = c.contactI(k); val j = c.contactJ(k)

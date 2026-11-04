@@ -385,8 +385,13 @@ class BoundaryContacts(
     private fun pierceAround(qx: DoubleArray, qy: DoubleArray, px: DoubleArray, py: DoubleArray,
                              i: Int, j: Int, org: IntArray) {
         if (org[i] == org[j]) return
+        // Ребро с концом без касаний (присоска, cellNoContact) проницаемо: мембрана там дырявая
+        // нарочно, еду втягивают сквозь неё. Иначе втянутая еда «пробивала» ребро присоски
+        // (отчёт 04.11 18:42: связь зиготы с присоской рвалась при всасывании, причина «пробой»).
+        val nc = noContact
         for (s2 in bndStart[j] until bndEnd[j]) {
             val o = bndOther[s2]
+            if (nc != null && nc[o]) continue
             if (o != i && org[o] == org[j] && inward(qx, qy, px, py, i, j, o, bndOpp[s2])) {
                 pierce(j, o); if (i == pierceWatch) pwHits++
             }
@@ -394,7 +399,7 @@ class BoundaryContacts(
             if (org[o] != org[j]) continue
             for (s3 in bndStart[o] until bndEnd[o]) {
                 val o2 = bndOther[s3]
-                if (o2 == i || o2 == j || org[o2] != org[o]) continue
+                if (o2 == i || o2 == j || org[o2] != org[o] || (nc != null && nc[o2])) continue
                 if (inward(qx, qy, px, py, i, o, o2, bndOpp[s3])) {
                     pierce(o, o2); if (i == pierceWatch) pwHits++
                 }
@@ -488,6 +493,13 @@ class BoundaryContacts(
 
     /** Кто в каком организме — ставит хозяин тела. Нужно поиску пробоя. */
     var organismOf: IntArray? = null
+
+    /**
+     * Клетки без касаний (BodyState.cellNoContact) — ставит хозяин тела. Учитываются при обновлении
+     * набора по месту ([updateSurface]); после полной пересборки хозяин отдаёт их тем же путём
+     * (BodyState.applyNoContact).
+     */
+    var noContact: BooleanArray? = null
 
     // --- РАЗБОР ПРОБОЯ ПО ОДНОЙ КЛЕТКЕ (CT_WATCH=номер). Только для дознания. ---
     /** Клетка, по которой печатать разбор пробоя. -1 — молчать. */
@@ -1109,7 +1121,8 @@ class BoundaryContacts(
     fun updateSurface(surface: LocalSurface, changed: IntArray, count: Int) {
         for (k in 0 until count) {
             val v = changed[k]
-            val active = surface.active[v]
+            val nc = noContact
+            val active = surface.active[v] && !(nc != null && v < nc.size && nc[v])
             if (active != onBound[v]) {
                 if (active) { vertSlot[v] = vertCount; verts[vertCount++] = v }
                 else {

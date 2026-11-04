@@ -66,8 +66,9 @@ object StateHash {
      * 14 — в часть SimulationData вошли флаги отладки физики (PlayerCommand.SetPhysicsDebug).
      * 15 — у клетки нет счётчика сформированных треугольников (formedTriangles): край тела
      *     клетки берётся из мира физики (PhysicsWorld.isSurfaceCell).
+     * 16 — в часть PhysicsWorld вошли липучки: их временные связи мира физики (StickyJoints).
      */
-    const val VERSION = 15
+    const val VERSION = 16
 
     class Result(val hash: Long, val parts: LongArray)
 

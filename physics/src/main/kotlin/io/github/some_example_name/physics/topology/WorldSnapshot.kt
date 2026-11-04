@@ -87,6 +87,8 @@ internal fun BodyState.writeCore(out: DataOutput) {
     out.writeFloats(cellScaleTarget, cellScaleTarget.size); out.writeBoolean(cellScalesMoving)
     out.writeDoubles(dragScale, dragScale.size)
     out.writeFloats(cellSoftness, cellSoftness.size); out.writeBoolean(softnessOn)
+    out.writeBooleans(cellNoContact, cellNoContact.size)
+    out.writeFloats(cellGrip, cellGrip.size)
     out.writeBoolean(boundsOn)
     for (b in doubleArrayOf(boundsMinX, boundsMinY, boundsMaxX, boundsMaxY)) out.writeLong(java.lang.Double.doubleToRawLongBits(b))
     for (a in listOf(trapTicks, trapOrg, foldTicks, contactPressureN, boneOf, muscleOf, organismOf)) out.writeInts(a, a.size)
@@ -129,6 +131,7 @@ internal fun BodyState.writeCore(out: DataOutput) {
     for (d in doubleArrayOf(muscleContraction, muscleRateContract, muscleRateRelax, gaitDuty, tendonTear,
             linkTearStrain, tangentDrag, pressureBurst, membraneTearStrain)) out.writeDouble64(d)
     for (i in intArrayOf(gaitPeriod, muscleTouch, sweepFlip, trapKillTicks, bendLevel)) out.writeInt(i)
+    writeJoints(out)
 }
 
 /**
@@ -149,6 +152,8 @@ internal fun BodyState.readCore(input: DataInput) {
     cellScaleTarget = input.readFloats(0); cellScalesMoving = input.readBoolean()
     dragScale = input.readDoubles(0)
     cellSoftness = input.readFloats(0); softnessOn = input.readBoolean()
+    cellNoContact = input.readBooleans(0)
+    cellGrip = input.readFloats(0); gripsDirty = true
     boundsOn = input.readBoolean()
     boundsMinX = input.readDouble64(); boundsMinY = input.readDouble64()
     boundsMaxX = input.readDouble64(); boundsMaxY = input.readDouble64()
@@ -196,5 +201,6 @@ internal fun BodyState.readCore(input: DataInput) {
     tangentDrag = input.readDouble64(); pressureBurst = input.readDouble64(); membraneTearStrain = input.readDouble64()
     gaitPeriod = input.readInt(); muscleTouch = input.readInt(); sweepFlip = input.readInt()
     trapKillTicks = input.readInt(); bendLevel = input.readInt()
+    readJoints(input)
     rebuildDerived(null, null)
 }

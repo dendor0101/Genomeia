@@ -208,6 +208,7 @@ internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = nul
     restPairs = ct.restPairs
     ct.attachSurface(localSurface)
     val fresh = IntArray(addN) { n0 + it }
+    ct.noContact = cellNoContact
     ct.updateSurface(localSurface, fresh, addN)
     ct.organismOf = organismOf
     if (contactPressure.size != n) contactPressure = DoubleArray(n)
@@ -229,6 +230,8 @@ private fun BodyState.growParticleArrays(n0: Int) {
     cellScale = cellScale.copyOf(n).also { java.util.Arrays.fill(it, n0, n, 1f) }
     cellScaleTarget = cellScaleTarget.copyOf(n).also { java.util.Arrays.fill(it, n0, n, 1f) }
     cellSoftness = cellSoftness.copyOf(n).also { java.util.Arrays.fill(it, n0, n, 1f) }
+    cellNoContact = cellNoContact.copyOf(n)
+    cellGrip = cellGrip.copyOf(n)
     dragScale = dragScale.copyOf(n).also { java.util.Arrays.fill(it, n0, n, 1.0) }
     px = px.copyOf(n); py = py.copyOf(n); prevX = prevX.copyOf(n); prevY = prevY.copyOf(n)
     vx = vx.copyOf(n); vy = vy.copyOf(n)

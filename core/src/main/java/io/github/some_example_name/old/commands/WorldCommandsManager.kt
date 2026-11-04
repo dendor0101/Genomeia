@@ -431,6 +431,7 @@ class WorldCommandsManager(
                         if (!cellEntity.isAliveAndSameGen(cellIndex, ints[2])) return@consumeInOrder
                         specialEntity.addSpecialModData(cellIndex, specialModDataAt(threadId, ints[1]))
                     }
+                    WorldCommandType.STICK -> particleEntity.physics?.requestStick(ints[0], ints[1], ints[2])
                     else -> {}
                 }
             }

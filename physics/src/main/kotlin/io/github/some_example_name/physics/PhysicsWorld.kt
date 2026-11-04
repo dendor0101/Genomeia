@@ -320,6 +320,8 @@ class PhysicsWorld(
     /** Убрать свободную частицу [id] (живую или убитую физикой): её слот снова ждёт рождения. */
     fun removeFree(id: Int) {
         require(isFreeInUse(id)) { "свободной частицы $id нет" }
+        // Слот займёт следующая частица — связи этой с ней уйти не должны.
+        state.dropJointsOf(freeParticle(id))
         state.deactivateFree(freeParticle(id))
         freeLive[id] = false; freeCount--
         freeStack[freeStackN++] = id
@@ -452,6 +454,7 @@ class PhysicsWorld(
         state.updateMuscles(dt)
         if (state.cellScalesMoving) state.advanceCellScales(dt)
         state.easeNewborn()
+        state.prepareJoints()
         if (state.cellScalesDirty) state.recomputeCellScales()
         simulation.step()
         if (state.boundsOn) state.clampToBounds()
@@ -509,6 +512,71 @@ class PhysicsWorld(
     }
 
     fun softness(cell: Int): Float = state.cellSoftness[cell]
+
+    /**
+     * Клетка [cell] без касаний ([on]): ни с чем не сталкивается — ни с чужими телами, ни с едой,
+     * ни со стенкой (BodyState.cellNoContact; игра — присоска, isCollidable = false). Связи и среда
+     * как у всех. Цена смены — обновление набора касания по одной клетке; без смены — ничего.
+     */
+    fun setContactless(cell: Int, on: Boolean) {
+        val st = state
+        if (st.cellNoContact[cell] == on) return
+        st.cellNoContact[cell] = on
+        st.baked.touch(cell)
+        st.refreshSurface()
+    }
+
+    fun isContactless(cell: Int): Boolean = state.cellNoContact[cell]
+
+    /**
+     * Хватка частицы [cell] — трение о дно 0..1 (Grip.kt; игра — присоска-чашка): доля смещения,
+     * которую частица теряет за подшаг. 1 — сдвинуть нельзя ничем, 0.95 — очень тяжело, 0 — нет.
+     * Цена смены — пересборка списка проходом по миру при ближайшем подшаге; без смены — ничего.
+     */
+    fun setGrip(cell: Int, grip: Float) {
+        val g = grip.coerceIn(0f, 1f)
+        val st = state
+        if (st.cellGrip[cell] == g) return
+        st.cellGrip[cell] = g
+        st.gripsDirty = true
+    }
+
+    fun grip(cell: Int): Float = state.cellGrip[cell]
+
+    // --- временные связи между телами (липучка, Joints.kt) ---
+
+    /**
+     * Связать частицы [a] и [b] (разных тел; клетка, свободная частица, неподвижная) мягким
+     * ограничением расстояния: длина покоя [rest], податливость [compliance] (как SOFT_COMPLIANCE
+     * у связи тела; больше — мягче). Номер — слот, стабилен до [removeJoint]. Обе частицы живы и
+     * рождены. Будит спящий конец. Связь с погибшей частицей снимается сама при шаге мира.
+     */
+    fun addJoint(a: Int, b: Int, rest: Double, compliance: Double): Int {
+        val st = state
+        require(a != b && !st.cellDead[a] && !st.cellDead[b]) { "связь — между двумя живыми частицами" }
+        require(rest >= 0.0 && compliance >= 0.0) { "длина покоя и податливость не меньше нуля" }
+        if (!st.isFixed(a)) st.sleep.requestWake(a)
+        if (!st.isFixed(b)) st.sleep.requestWake(b)
+        return st.allocJoint(a, b, rest, compliance)
+    }
+
+    fun removeJoint(id: Int) = state.freeJoint(id)
+
+    /** Связь [id] жива: заведена и не снята — ни клиентом, ни гибелью конца. */
+    fun isJointLive(id: Int): Boolean = id in 0 until state.jointSlots && state.jointLive[id]
+
+    fun setJointCompliance(id: Int, compliance: Double) { state.jointCompliance[id] = compliance }
+
+    /** Концы связи — номера частиц мира (уплотнение их перенумеровывает). */
+    fun jointA(id: Int): Int = state.jointA[id]
+    fun jointB(id: Int): Int = state.jointB[id]
+    fun jointRest(id: Int): Double = state.jointRest[id]
+
+    /** Нынешняя длина связи в единицах физики. */
+    fun jointLength(id: Int): Double {
+        val a = state.jointA[id]; val b = state.jointB[id]
+        return kotlin.math.hypot(x[a] - x[b], y[a] - y[b])
+    }
 
     /**
      * ДИАГНОСТИКА: сколько действующих множителей клеток, связей и треугольников расходится с
