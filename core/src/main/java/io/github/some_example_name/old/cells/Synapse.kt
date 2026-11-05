@@ -14,11 +14,17 @@ import io.github.some_example_name.old.core.ui.visTable
 import io.github.some_example_name.old.core.ui.visTextField
 import io.github.some_example_name.old.core.utils.skyBlueColors
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.cellPalette
+import io.github.some_example_name.old.cells.base.SpecialModData
 import io.github.some_example_name.old.entities.CellEntity
+import io.github.some_example_name.old.entities.SpecialEntity
 import io.github.some_example_name.old.features.editor.dialog.CellDialog
 import io.github.some_example_name.old.features.editor.dialog.CellEditorSection
 import io.github.some_example_name.old.features.editor.dialog.NeuralSection
 import io.github.some_example_name.old.systems.genomics.genome.Action
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.protobuf.ProtoNumber
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.ln
@@ -53,9 +59,12 @@ import kotlin.random.Random
  *
  * СОСТОЯНИЕ
  * ---------
- * weight — вес; dTime — вход прошлого тика; remember — учительский сигнал прошлого тика;
- * tickRed / tickPain — тики последних входного и учительского спайков (NO_SPIKE — нет).
- * Пока синапс подключён неправильно, tickRed / tickPain заняты меткой, см. markMiswired.
+ * Своё — в [SynapseState] (SpecialModData, объект у каждого синапса свой): вес, тики
+ * последних входного и учительского спайков, метка неправильного подключения. Раньше вес
+ * и тики лежали в NeuralEntity и занимали 12 байт у КАЖДОЙ нейронной клетки (нейрон,
+ * мышца, глаз…), хотя нужны только синапсам.
+ * Из общих полей нейрона: dTime — вход прошлого тика, remember — учительский сигнал
+ * прошлого тика.
  *
  * РЕДАКТОР
  * --------
@@ -74,28 +83,38 @@ class Synapse(cellTypeId: Int): Cell(
 
     override fun editorSections(): List<CellEditorSection> = listOf(SynapseSection)
 
-    override fun onStart(cellIndex: Int, threadId: Int, genomeIndex: Int): Unit = with(cellEntity) {
-        // Случайный, но воспроизводимый: зависит только от индекса клетки.
-        setWeight(cellIndex, Random(cellIndex).nextFloat() * INITIAL_WEIGHT_MAX)
+    /** Объект на синапс: состояние меняется каждый тик, общим оно быть не может. */
+    override fun createSpecialData(action: Action): SpecialModData = SynapseState()
 
+    override fun onStart(cellIndex: Int, threadId: Int, genomeIndex: Int): Unit = with(cellEntity) {
         // Клетка могла мутировать из другого нейрона, у которого эти поля значат другое.
         // Хуже всего dTime: addNeural кладёт туда -1, и на первом же тике рост входа от -1
         // до 0 выглядел как входной спайк, которого не было.
         setDTime(cellIndex, 0f)
         setRemember(cellIndex, 0f)
-        setTickRed(cellIndex, NO_SPIKE)
-        setTickPain(cellIndex, NO_SPIKE)
         neuronImpulseOutput[cellIndex] = 0f
+        // Вес здесь не ставится: при мутации в синапс onStart (MUTATE_ON_START) применяется
+        // раньше, чем заводится SynapseState (ADD_SPECIAL_MOD_DATA), — объекта ещё нет.
+        // Вес ставит первый тик, см. startWeight.
     }
 
     override fun doOnTick(cellIndex: Int, threadId: Int): Unit = with(cellEntity) {
+        // Нет состояния — тик самой мутации в синапс: команда, которая его заводит, ещё не
+        // применилась. Синапс молчит один тик.
+        val state = specialEntity.getSpecialData(cellIndex) as? SynapseState
+        if (state == null) {
+            neuronImpulseOutput[cellIndex] = 0f
+            return
+        }
+        if (state.weight == NOT_STARTED) startWeight(cellIndex, state)
+
         val postCell = postsynapticCell(cellIndex)
         if (postCell == -1) {
             neuronImpulseOutput[cellIndex] = 0f
-            markMiswired(cellIndex)
+            markMiswired(cellIndex, state)
             return
         }
-        unmarkMiswired(cellIndex)
+        unmarkMiswired(cellIndex, state)
 
         val learningRate = learningRate(getB(cellIndex))
         val depression = depression(getC(cellIndex))
@@ -105,23 +124,24 @@ class Synapse(cellTypeId: Int): Cell(
 
         val rawInput = neuronImpulseInput[cellIndex]
         val input = if (rawInput.isNaN()) 0f else rawInput
-        var weight = getWeight(cellIndex)
+        var weight = state.weight
 
-        val inputSpiked = detectInputSpike(cellIndex, input, now, window)
+        val inputSpiked = detectInputSpike(cellIndex, state, input, now, window)
         val teacherSpiked = detectTeacherSpike(
             cellIndex,
+            state,
             teacher = neuronImpulseOutput[postCell] - input * weight,
             now = now,
             window = window
         )
 
-        val inputTick = getTickRed(cellIndex)
-        val teacherTick = getTickPain(cellIndex)
+        val inputTick = state.inputTick
+        val teacherTick = state.teacherTick
         if ((inputSpiked || teacherSpiked) && inputTick != NO_SPIKE && teacherTick != NO_SPIKE) {
             weight = plasticity(weight, teacherTick - inputTick, learningRate, depression, decayRate)
-            setWeight(cellIndex, weight)
-            setTickRed(cellIndex, NO_SPIKE)
-            setTickPain(cellIndex, NO_SPIKE)
+            state.weight = weight
+            state.inputTick = NO_SPIKE
+            state.teacherTick = NO_SPIKE
 
             if (weight <= 0f) {
                 worldCommandsManager.worldCommandBuffer[threadId].push(
@@ -133,6 +153,15 @@ class Synapse(cellTypeId: Int): Cell(
         }
 
         neuronImpulseOutput[cellIndex] = weight * input
+    }
+
+    /**
+     * Начальный вес — случайный, но воспроизводимый: зависит только от индекса клетки.
+     * Отдельным методом: ветка раз за жизнь синапса, а Random — аллокация, ей не место
+     * в теле горячего doOnTick.
+     */
+    private fun startWeight(cellIndex: Int, state: SynapseState) {
+        state.weight = Random(cellIndex).nextFloat() * INITIAL_WEIGHT_MAX
     }
 
     /**
@@ -161,54 +190,55 @@ class Synapse(cellTypeId: Int): Cell(
     }
 
     /** Входной спайк: вход вырос за тик на ~1. Заодно забывает слишком старый спайк. */
-    private fun CellEntity.detectInputSpike(cellIndex: Int, input: Float, now: Int, window: Int): Boolean {
+    private fun CellEntity.detectInputSpike(cellIndex: Int, state: SynapseState, input: Float, now: Int, window: Int): Boolean {
         val rise = input - getDTime(cellIndex)
         setDTime(cellIndex, input)
 
         if (rise >= SPIKE_RISE) {
-            setTickRed(cellIndex, now)
+            state.inputTick = now
             return true
         }
-        if (isForgotten(getTickRed(cellIndex), now, window)) setTickRed(cellIndex, NO_SPIKE)
+        if (isForgotten(state.inputTick, now, window)) state.inputTick = NO_SPIKE
         return false
     }
 
     /** Учительский спайк: то же самое для выхода постсинаптического нейрона. */
-    private fun CellEntity.detectTeacherSpike(cellIndex: Int, teacher: Float, now: Int, window: Int): Boolean {
+    private fun CellEntity.detectTeacherSpike(cellIndex: Int, state: SynapseState, teacher: Float, now: Int, window: Int): Boolean {
         val rise = teacher - getRemember(cellIndex)
         setRemember(cellIndex, teacher)
 
         if (rise >= SPIKE_RISE) {
-            setTickPain(cellIndex, now)
+            state.teacherTick = now
             return true
         }
-        if (isForgotten(getTickPain(cellIndex), now, window)) setTickPain(cellIndex, NO_SPIKE)
+        if (isForgotten(state.teacherTick, now, window)) state.teacherTick = NO_SPIKE
         return false
     }
 
     /**
-     * Красная подсветка неправильно подключённого синапса.
-     *
-     * Пока синапс не подключён, учиться ему нечем, поэтому поля спайков свободны: tickPain
-     * хранит метку MISWIRED, а tickRed — цвет, который вернётся после починки. Так после
-     * починки возвращается цвет из генома, а не цвет типа по умолчанию.
+     * Красная подсветка неправильно подключённого синапса. Цвет из генома запоминается в
+     * [SynapseState.savedColor] и после починки возвращается он, а не цвет типа по умолчанию.
+     * Недоученная пара спайков забывается: учиться неподключённому синапсу нечем.
      */
-    private fun CellEntity.markMiswired(cellIndex: Int) {
-        if (getTickPain(cellIndex) == MISWIRED) return
+    private fun CellEntity.markMiswired(cellIndex: Int, state: SynapseState) {
+        if (state.miswired) return
 
         val color = getColor(cellIndex)
         // Красный без метки остаётся от сохранений старой версии — его возвращать незачем.
-        setTickRed(cellIndex, if (color == MISWIRED_COLOR) defaultColorBits else color)
-        setTickPain(cellIndex, MISWIRED)
+        state.savedColor = if (color == MISWIRED_COLOR) defaultColorBits else color
+        state.miswired = true
+        state.inputTick = NO_SPIKE
+        state.teacherTick = NO_SPIKE
         setColor(cellIndex, MISWIRED_COLOR)
     }
 
-    private fun CellEntity.unmarkMiswired(cellIndex: Int) {
-        if (getTickPain(cellIndex) != MISWIRED) return
+    private fun CellEntity.unmarkMiswired(cellIndex: Int, state: SynapseState) {
+        if (!state.miswired) return
 
-        setColor(cellIndex, getTickRed(cellIndex))
-        setTickRed(cellIndex, NO_SPIKE)
-        setTickPain(cellIndex, NO_SPIKE)
+        setColor(cellIndex, state.savedColor)
+        state.miswired = false
+        state.inputTick = NO_SPIKE
+        state.teacherTick = NO_SPIKE
     }
 
     companion object {
@@ -222,8 +252,10 @@ class Synapse(cellTypeId: Int): Cell(
         /** Начальный вес — случайный в [0, INITIAL_WEIGHT_MAX). */
         const val INITIAL_WEIGHT_MAX = 0.2f
 
-        private const val NO_SPIKE = -1
-        private const val MISWIRED = Int.MIN_VALUE
+        const val NO_SPIKE = -1
+
+        /** Вес ещё не выставлен (см. startWeight). Настоящий вес живёт в [0, 1]. */
+        const val NOT_STARTED = -1f
         private val MISWIRED_COLOR = Color.RED.toIntBits()
 
         /** Рост сигнала за тик, который считается спайком. Чуть меньше 1 — запас на float. */
@@ -275,6 +307,32 @@ class Synapse(cellTypeId: Int): Cell(
             tick != NO_SPIKE && (now - tick > window || tick > now)
     }
 }
+
+/**
+ * Состояние синапса. Изменяемое — поэтому объект свой у каждого синапса
+ * (Synapse.createSpecialData), и пишет в него только воркер этой клетки.
+ *
+ * [weight] — вес в [0, 1] (NOT_STARTED — первый тик ещё не прошёл); [inputTick] /
+ * [teacherTick] — тики последних входного и учительского спайков (NO_SPIKE — нет);
+ * [miswired] — синапс подключён неправильно и покрашен в красный, [savedColor] — цвет,
+ * который вернётся после починки.
+ *
+ * Цена: объект ~40 байт на синапс и одно разыменование за тик против 12 байт у каждой
+ * нейронной клетки раньше. Синапсов в теле единицы–десятки, нейронных клеток — сотни.
+ */
+@OptIn(ExperimentalSerializationApi::class)
+@Serializable
+@SerialName("synapse")
+data class SynapseState(
+    @ProtoNumber(1) var weight: Float = Synapse.NOT_STARTED,
+    @ProtoNumber(2) var inputTick: Int = Synapse.NO_SPIKE,
+    @ProtoNumber(3) var teacherTick: Int = Synapse.NO_SPIKE,
+    @ProtoNumber(4) var miswired: Boolean = false,
+    @ProtoNumber(5) var savedColor: Int = 0,
+) : SpecialModData
+
+/** Состояние синапса [cellIndex] или null: клетка не синапс или её состояние ещё не заведено. */
+fun SpecialEntity.synapseState(cellIndex: Int): SynapseState? = getSpecialData(cellIndex) as? SynapseState
 
 /**
  * Параметры синапса в диалоге редактора вместо a, b, c обычного нейрона. Хранятся они в тех

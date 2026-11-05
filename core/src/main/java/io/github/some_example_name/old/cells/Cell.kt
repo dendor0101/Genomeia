@@ -102,6 +102,15 @@ abstract class Cell(
         defaultGenomeData?.let { default -> action.special?.takeIf { it.javaClass == default.javaClass } }
 
     /**
+     * Что из своих данных живой клетки [data] показать в геноме (диалог клетки в редакторе,
+     * ToEditorDataMapper); null — в геноме своих данных нет. Обычно это те же данные из
+     * генома. Клетка, у которой в мире лежит состояние, собранное из данных генома (буфер
+     * Delay из DelayData), отдаёт сами данные генома.
+     */
+    open fun genomeDataOf(data: SpecialModData?): SpecialModData? =
+        if (defaultGenomeData != null) data else null
+
+    /**
      * Из чего собран диалог клетки в редакторе генома, сверху вниз.
      *
      * Своя верстка клетки живёт рядом с её логикой (в файле клетки, см. Synapse) и

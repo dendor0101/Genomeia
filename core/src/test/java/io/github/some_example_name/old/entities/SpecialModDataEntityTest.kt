@@ -1,9 +1,12 @@
 package io.github.some_example_name.old.entities
 
 import io.github.some_example_name.old.cells.ControllerData
+import io.github.some_example_name.old.cells.DelayData
+import io.github.some_example_name.old.cells.DelayState
 import io.github.some_example_name.old.cells.EyeData
 import io.github.some_example_name.old.cells.PheromoneEmitterState
 import io.github.some_example_name.old.cells.ProducerState
+import io.github.some_example_name.old.cells.SynapseState
 import io.github.some_example_name.old.cells.TailState
 import io.github.some_example_name.old.systems.maps.decodeState
 import io.github.some_example_name.old.systems.maps.encodeState
@@ -37,7 +40,9 @@ class SpecialModDataEntityTest {
         val saved = SpecialModDataEntity(2)
         val all = listOf(
             EyeData(3, 2.5f), TailState(speed = 0.37f), ProducerState(reproductionRestriction = 42),
-            PheromoneEmitterState(lastImpulse = 1f), ControllerData("UP")
+            PheromoneEmitterState(lastImpulse = 1f), ControllerData("UP"),
+            SynapseState(weight = 0.3f, inputTick = 17, teacherTick = 21, miswired = true, savedColor = 0x7f00ff00),
+            DelayData(ticks = 12, binary = true), DelayState.of(DelayData(ticks = 5)).apply { push(0.5f); push(2f) }
         )
         val slots = all.map(saved::addModData)
         // Состояние меняется на месте — в сохранение идёт текущее значение.

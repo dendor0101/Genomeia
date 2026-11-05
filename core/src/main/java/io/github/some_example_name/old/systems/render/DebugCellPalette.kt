@@ -4,6 +4,7 @@ import io.github.some_example_name.old.cells.Bone
 import io.github.some_example_name.old.cells.Cell
 import io.github.some_example_name.old.cells.Chameleon
 import io.github.some_example_name.old.cells.Controller
+import io.github.some_example_name.old.cells.Delay
 import io.github.some_example_name.old.cells.Excreta
 import io.github.some_example_name.old.cells.Eye
 import io.github.some_example_name.old.cells.Fat
@@ -76,6 +77,7 @@ class DebugCellPalette(private val cellList: List<Cell>) {
             is Eye -> CellLook.EYE
             is TouchTrigger -> CellLook.TOUCH_NET
             is Synapse -> CellLook.SYNAPSE
+            is Delay -> CellLook.DELAY_COIL
             is PheromoneEmitter -> CellLook.EMITTER_GRANULES
             is PheromoneSensor -> CellLook.LONG_CILIA
             is SpeedSensor -> CellLook.SHORT_CILIA

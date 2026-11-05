@@ -45,7 +45,7 @@ internal class CellLabModel(val key: String) : Disposable {
     val p get() = world.particleEntity
     val primaryAlive get() = primary >= 0 && c.isAlive[primary]
     val powered = key in setOf("controller", "muscle", "excreta", "neuron", "suction_cup",
-        "sticky", "chameleon", "eye", "touch_trigger", "synapse", "pheromone_emitter", "pheromone_sensor")
+        "sticky", "chameleon", "eye", "touch_trigger", "synapse", "pheromone_emitter", "pheromone_sensor", "delay")
 
     init {
         require(key in CellLabCatalog.keys)
@@ -141,7 +141,14 @@ internal class CellLabModel(val key: String) : Disposable {
                 primary = ids[0]; source = ids[1]; companion = ids[2]
                 world.neuralLinkEntity.addNeuralLink(source, primary, false, Color.CYAN.toIntBits())
                 world.neuralLinkEntity.addNeuralLink(primary, companion, false, Color.CYAN.toIntBits())
-                c.setWeight(primary, 0.5f)
+                world.specialEntity.synapseState(primary)!!.weight = 0.5f
+            }
+            "delay" -> {
+                // Neuron слева -> Delay -> Neuron справа: вход и выход видны на соседях.
+                val ids = organ(listOf("neuron", "delay", "neuron"), floatArrayOf(2.9f, 4.0f, 5.1f), floatArrayOf(4.0f, 4.0f, 4.0f))
+                source = ids[0]; primary = ids[1]; companion = ids[2]
+                world.neuralLinkEntity.addNeuralLink(source, primary, false, Color.CYAN.toIntBits())
+                world.neuralLinkEntity.addNeuralLink(primary, companion, false, Color.CYAN.toIntBits())
             }
             "zygote" -> {
                 val genome = growthGenome()
@@ -219,6 +226,9 @@ internal class CellLabModel(val key: String) : Disposable {
             "a" -> c.setA(primary, value)
             "b" -> c.setB(primary, value)
             "key" -> world.specialEntity.setSpecialData(primary, ControllerData(KEYS[value.toInt()]))
+            // Новые параметры — новый пустой буфер, как при мутации клетки.
+            "ticks", "binary" -> world.specialEntity.setSpecialData(primary,
+                DelayState.of(DelayData(value("ticks").toInt(), value("binary") > 0f)))
             "learning" -> c.setB(primary, value)
             "depression" -> c.setC(primary, value)
             "decay" -> c.setA(primary, value)
@@ -249,6 +259,10 @@ internal class CellLabModel(val key: String) : Disposable {
                     c.energy[source] = c.maxEnergy[source]; c.energy[companion] = c.maxEnergy[companion]
                 }
                 "pheromone_emitter", "pheromone_sensor" -> c.neuronImpulseInput[source] = value("signal")
+                "delay" -> if (c.isAlive[source] && c.isAlive[companion]) {
+                    c.neuronImpulseInput[source] = delayWave(next)
+                    c.energy[source] = c.maxEnergy[source]; c.energy[companion] = c.maxEnergy[companion]
+                }
             }
         }
         if (key == "eye") for (i in 0..c.lastId) if (c.isAlive[i]) c.energy[i] = c.maxEnergy[i]
@@ -270,6 +284,18 @@ internal class CellLabModel(val key: String) : Disposable {
             food.deleteSubstance(i, food.getGeneration(i))
         }
         if (foodChanged) world.rebuildGrid()
+    }
+
+    /**
+     * Волна источника для Delay: короткий импульс раз в [DELAY_PERIOD] тиков или синус от 0
+     * до 1 того же периода. На синусе видно, что двоичный режим режет сигнал до 0 и 1.
+     * StrictMath — стенд обязан повторяться побитово, как мир.
+     */
+    private fun delayWave(tick: Int): Float {
+        val phase = tick % DELAY_PERIOD
+        return if (value("wave") > 0f) {
+            (0.5 + 0.5 * StrictMath.sin(2.0 * StrictMath.PI * phase / DELAY_PERIOD)).toFloat()
+        } else if (phase < DELAY_PULSE) 1f else 0f
     }
 
     val canSpawn: Boolean get() = when (key) {
@@ -380,5 +406,7 @@ internal class CellLabModel(val key: String) : Disposable {
         val PREY_TYPES = arrayOf("fat", "bone")
         val FORMULAS = arrayOf("linear", "sigmoid", "step_le", "sin")
         val KEYS = arrayOf("W", "A", "S", "D")
+        const val DELAY_PERIOD = 90
+        const val DELAY_PULSE = 10
     }
 }

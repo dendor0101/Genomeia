@@ -561,7 +561,8 @@ object SyntheticScene {
             Exhibit(CellLook.LONG_CILIA, rgba(0, 191, 255)),         // blueColors[2]
             Exhibit(CellLook.SPIKES, rgba(255, 0, 0)),               // redColors[0]
             Exhibit(CellLook.SHORT_CILIA, rgba(0, 70, 139), action = 0.6f), // blueColors[6]
-            Exhibit(CellLook.CHIP, rgba(153, 50, 204))               // purpleColors[3]
+            Exhibit(CellLook.CHIP, rgba(153, 50, 204)),              // purpleColors[3]
+            Exhibit(CellLook.DELAY_COIL, rgba(238, 130, 238), action = 0.7f) // purpleColors[6]
         )
 
         val cells = CellInstanceBuffer()

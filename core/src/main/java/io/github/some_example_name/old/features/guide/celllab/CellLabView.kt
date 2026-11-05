@@ -4,6 +4,7 @@ import com.badlogic.gdx.graphics.Color
 import com.kotcrab.vis.ui.widget.VisTextButton
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisTable
+import io.github.some_example_name.old.cells.synapseState
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
 import io.github.some_example_name.old.core.ui.*
@@ -81,16 +82,17 @@ internal class CellLabView(private val session: CellLabSession) {
                             }) { padRight(8.dp()) }
                     }
                 }
-            } else if (control.key in setOf("prey", "formula", "key")) {
+            } else if (control.key in setOf("prey", "formula", "key", "wave")) {
                 visLabel(name) { padTop(12.dp()) }; row()
                 val items = when (control.key) {
                     "prey" -> CellLabModel.PREY_TYPES.map { model.world.cellList[model.world.cellList.indexOfKey(it)].name }.toTypedArray()
                     "key" -> CellLabModel.KEYS
+                    "wave" -> arrayOf(bundle.get("guide.lab.wave.pulse"), bundle.get("guide.lab.wave.sine"))
                     else -> arrayOf("y = ax + b", "y = sigmoid(ax + b)", "x <= a", "y = sin(ax + b)")
                 }
                 visSelectBox(items = items, selectedIndex = model.value(control.key).toInt(),
                     onChange = { _, index -> session.input(CellLabInput("set", control.key, index.toFloat())) }) { fillX() }
-            } else if (control.key == "feed" || control.key == "pressed") {
+            } else if (control.key == "feed" || control.key == "pressed" || control.key == "binary") {
                 visToggleButton(name, checked = model.value(control.key) > 0f,
                     onCheckedChange = { session.input(CellLabInput("set", control.key, if (it) 1f else 0f)) }) { padTop(12.dp()).fillX() }
             } else {
@@ -156,7 +158,7 @@ internal class CellLabView(private val session: CellLabSession) {
                     metric("speed", sqrt(vx * vx + vy * vy))
                 }
                 "punisher" -> metric("kills", model.kills.toFloat())
-                "synapse" -> { metric("weight", c.getWeight(a)); metric("output", c.neuronImpulseOutput[a]) }
+                "synapse" -> { model.world.specialEntity.synapseState(a)?.let { metric("weight", it.weight) }; metric("output", c.neuronImpulseOutput[a]) }
                 "pheromone_emitter" -> if (c.isAlive[b]) metric("sensor", c.neuronImpulseOutput[b])
                 "zygote", "producer" -> metric("organisms", model.world.organEntity.aliveList.size.toFloat())
                 "fat" -> if (b >= 0 && c.isAlive[b]) metric("otherEnergy", c.energy[b])
@@ -166,6 +168,10 @@ internal class CellLabView(private val session: CellLabSession) {
                     if (model.source >= 0 && c.isAlive[model.source]) metric("storedEnergy", c.energy[model.source])
                 }
                 "chameleon" -> metric("output", c.neuronImpulseOutput[a])
+                "delay" -> {
+                    if (c.isAlive[model.source]) metric("input", c.neuronImpulseOutput[model.source])
+                    metric("output", c.neuronImpulseOutput[a])
+                }
             }
         }
         readout?.setText(text)

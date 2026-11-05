@@ -311,12 +311,6 @@ class CellEntity(
     fun setRemember(index: Int, value: Float) { neuralEntity.remember[neuralIndexes[index]] = value }
     fun getIsSum(index: Int) = neuralEntity.isSum[neuralIndexes[index]]
     fun setIsSum(index: Int, value: Boolean) {neuralEntity.isSum.set(neuralIndexes[index], value)}
-    fun getTickRed(index: Int) = neuralEntity.tickRed[neuralIndexes[index]]
-    fun setTickRed(index: Int, value: Int) { neuralEntity.tickRed[neuralIndexes[index]] = value }
-    fun getTickPain(index: Int) = neuralEntity.tickPain[neuralIndexes[index]]
-    fun setTickPain(index: Int, value: Int) { neuralEntity.tickPain[neuralIndexes[index]] = value }
-    fun getWeight(index: Int) = neuralEntity.weight[neuralIndexes[index]]
-    fun setWeight(index: Int, value: Float) { neuralEntity.weight[neuralIndexes[index]] = value}
 
     fun deleteNeural(cellIndex: Int, neuralGeneration: Int? = null) {
         val neuralIndex = neuralIndexes[cellIndex]

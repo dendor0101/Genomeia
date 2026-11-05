@@ -2,9 +2,12 @@ package io.github.some_example_name.old.cells.base
 
 import io.github.some_example_name.old.cells.ChameleonData
 import io.github.some_example_name.old.cells.ControllerData
+import io.github.some_example_name.old.cells.DelayData
+import io.github.some_example_name.old.cells.DelayState
 import io.github.some_example_name.old.cells.EyeData
 import io.github.some_example_name.old.cells.PheromoneEmitterState
 import io.github.some_example_name.old.cells.ProducerState
+import io.github.some_example_name.old.cells.SynapseState
 import io.github.some_example_name.old.cells.TailState
 import io.github.some_example_name.old.systems.genomics.genome.Action
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -94,6 +97,9 @@ object SpecialModDataTypes {
         Registration(TailState::class, TailState.serializer()),
         Registration(ProducerState::class, ProducerState.serializer()),
         Registration(PheromoneEmitterState::class, PheromoneEmitterState.serializer()),
+        Registration(SynapseState::class, SynapseState.serializer()),
+        Registration(DelayData::class, DelayData.serializer()),
+        Registration(DelayState::class, DelayState.serializer()),
     )
 
     private var frozen = false
