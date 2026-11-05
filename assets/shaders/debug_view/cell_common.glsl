@@ -656,6 +656,37 @@ vec4 chip(vec2 p, float r) {
     return over(paint(metal, cov(length(p - vec2(0.0, 0.42)) - 0.035)), ink);
 }
 
+/**
+ * Задержка: архимедова спираль r = 0.18 + pitch * (виток + θ/2π) от ядра к мембране, по ней
+ * бегут импульсы — сигнал идёт длинным путём. Расстояние до витка считается по радиусу в
+ * одну выборку, без перебора витков: s — номер витка с дробью, ближайший виток — round(s).
+ * На шве угла ±π номер витка сдвигается на единицу вместе с углом, линия непрерывна.
+ * Размах и яркость импульсов — от сигнала клетки.
+ */
+vec4 delayCoil(vec2 p, float r) {
+    vec4 h = v_rand;
+    float th = angleOf(p);
+    float turns = 3.0;
+    float pitch = 0.72 / turns;
+    float s = (r - 0.18) / pitch - th / TAU;
+    float k = floor(s + 0.5);
+    float dist = abs(s - k) * pitch;
+    float onCoil = (k >= 0.0 && k < turns) ? 1.0 : 0.0;
+    vec3 wire = mix(v_color, vec3(1.0), 0.3);
+    vec4 ink = paint(wire, stroke(dist, 0.018) * onCoil);
+
+    // Доля пути от ядра к мембране 0..1, по ней — бегущие импульсы.
+    float activity = min(abs(v_action), 1.0);
+    float along = (k + th / TAU + 0.5) / turns;
+    float blob = smoothstep(0.8, 1.0, fract(along * 3.0 - cycle(0.2, h.x)));
+    vec3 spark = mix(v_color, vec3(1.0), 0.6 + 0.4 * activity);
+    ink = over(paint(spark, stroke(dist, 0.035) * onCoil * blob * (0.35 + 0.65 * activity)), ink);
+
+    float d = length(p) - 0.14;
+    ink = over(paint(v_color * 0.4, cov(d)), ink);
+    return over(paint(v_color * 0.2, stroke(abs(d), 0.012)), ink);
+}
+
 vec4 patternInk(vec2 p, float r) {
     switch (v_pattern) {
         case P_CHLOROPLASTS: return chloroplasts(p, r);
@@ -681,6 +712,7 @@ vec4 patternInk(vec2 p, float r) {
         case P_SPIKES: return spikesInside(p, r);
         case P_SHORT_CILIA: return shortCilia(p, r);
         case P_CHIP: return chip(p, r);
+        case P_DELAY_COIL: return delayCoil(p, r);
         default: return vec4(0.0);
     }
 }

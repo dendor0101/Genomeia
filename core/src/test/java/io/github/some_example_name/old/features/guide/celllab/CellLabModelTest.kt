@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.features.guide.celllab
 
+import io.github.some_example_name.old.cells.synapseState
 import io.github.some_example_name.old.cells.base.CellPalette
 import io.github.some_example_name.old.cells.base.CellTypes
 import io.github.some_example_name.old.journal.CellLabInput
@@ -48,6 +49,39 @@ class CellLabModelTest {
         } finally { lab.dispose() }
     }
 
+    @Test fun `delay в живом мире отстаёт ровно на заданное число тиков`() {
+        // Первый тик, когда на выходе Delay появился импульс. Сам путь «нейрон -> Delay» тоже
+        // занимает тики, поэтому сравнивается разница с нулевой задержкой.
+        fun firstPulse(ticks: Int, binary: Boolean): Int {
+            val lab = CellLabModel("delay")
+            try {
+                lab.apply(CellLabInput("set", "ticks", ticks.toFloat()))
+                lab.apply(CellLabInput("set", "binary", if (binary) 1f else 0f))
+                repeat(200) {
+                    lab.step()
+                    if (lab.c.neuronImpulseOutput[lab.primary] > 0.5f) return lab.tick
+                }
+                fail("импульс не дошёл: ticks=$ticks binary=$binary")
+            } finally { lab.dispose() }
+        }
+        for (binary in listOf(false, true)) {
+            val base = firstPulse(0, binary)
+            assertEquals(15, firstPulse(15, binary) - base, "binary=$binary")
+            assertEquals(37, firstPulse(37, binary) - base, "binary=$binary")
+        }
+    }
+
+    @Test fun `delay в двоичном режиме выдаёт только 0 и 1 на синусе`() {
+        val lab = CellLabModel("delay")
+        try {
+            lab.apply(CellLabInput("set", "wave", 1f))
+            lab.apply(CellLabInput("set", "binary", 1f))
+            val seen = HashSet<Float>()
+            repeat(300) { lab.step(); seen += lab.c.neuronImpulseOutput[lab.primary] }
+            assertEquals(setOf(0f, 1f), seen)
+        } finally { lab.dispose() }
+    }
+
     @Test fun `мышца действительно меняет ширину тела а присоска сопротивляется тяге`() {
         fun span(signal: Float): Float {
             val lab = CellLabModel("muscle")
@@ -86,7 +120,7 @@ class CellLabModelTest {
                 when (key) {
                     "zygote" -> assertEquals(2, lab.c.aliveList.size)
                     "producer" -> assertTrue(lab.world.organEntity.aliveList.size >= 2)
-                    "synapse" -> assertTrue(lab.c.getWeight(lab.primary) > 0.5f)
+                    "synapse" -> assertTrue(lab.world.specialEntity.synapseState(lab.primary)!!.weight > 0.5f)
                     "pheromone_sensor" -> assertTrue(lab.c.neuronImpulseOutput[lab.primary] > 0f)
                 }
             } finally { lab.dispose() }

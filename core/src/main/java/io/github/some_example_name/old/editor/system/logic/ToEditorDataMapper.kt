@@ -70,9 +70,10 @@ class ToEditorDataMapper(
                 colorRecognition = eye?.colorRecognition,
                 lengthDirected = eye?.visibilityRange,
                 pheromoneType = cellReplay.getPheromone(currentTick, index),
-                // В Action.special — только то, что игрок задаёт в геноме (клавиша контроллера);
-                // состояние хвоста или продюсера в геном не попадает.
-                special = if (cell.defaultGenomeData != null) special else null
+                // В Action.special — только то, что игрок задаёт в геноме (клавиша контроллера,
+                // параметры задержки): состояние хвоста, продюсера или буфер задержки в геном
+                // не попадают, см. Cell.genomeDataOf.
+                special = cell.genomeDataOf(special)
             )
         } else {
             null

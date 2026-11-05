@@ -59,8 +59,10 @@ object StateHash {
      * 11 — у сущностей в хэш вошёл текущий блок пула вне арен (Entity.poolNext/poolEnd).
      * 12 — новая часть TriangleEntity (сформированные треугольники), у организма — арена
      *     треугольников, у клетки — их счётчик.
+     * 13 — вес и тики спайков синапса ушли из NeuralEntity в его SynapseState
+     *     (SpecialModDataEntity).
      */
-    const val VERSION = 12
+    const val VERSION = 13
 
     class Result(val hash: Long, val parts: LongArray)
 
