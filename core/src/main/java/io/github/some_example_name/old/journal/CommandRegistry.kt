@@ -129,6 +129,7 @@ object CommandRegistry {
 
         // --- Поддержка ---
         t<SupportIntent.CopyAddress>(400),
+        t<SupportIntent.OpenLink>(401),
 
         // --- Редактор мира ---
         t<WorldEditorIntent.NewSeed>(500),
