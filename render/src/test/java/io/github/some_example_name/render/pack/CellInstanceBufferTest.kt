@@ -33,7 +33,7 @@ import kotlin.test.assertTrue
  * ВНИМАНИЕ: здесь намеренно ЛИТЕРАЛЫ, а не константы из CellInstanceBuffer. Тест сверяет
  * Kotlin с ШЕЙДЕРОМ, а шейдер про константы Kotlin ничего не знает — в нём голые числа.
  * Если бы декодер брал RADIUS_SPAN из кодера, правка этой константы прошла бы тест
- * насквозь: обе стороны поехали бы синхронно, а circle_pc.vert остался бы со старым 0.7.
+ * насквозь: обе стороны поехали бы синхронно, а nostalgic.vert остался бы со старым 0.7.
  */
 class CellInstanceBufferTest {
 
@@ -43,7 +43,7 @@ class CellInstanceBufferTest {
     private fun normalized(packed: Int, index: Int): Float =
         ((packed ushr (index * 8)) and 0xFF) / 255f
 
-    /** `byteValue()` из circle_pc.vert: round(normalized * 255). */
+    /** `byteValue()` из nostalgic.vert: round(normalized * 255). */
     private fun byteValue(packed: Int, index: Int): Int =
         (normalized(packed, index) * 255f).roundToInt()
 
@@ -118,7 +118,7 @@ class CellInstanceBufferTest {
 
     @Test
     fun `раскладка инстанса ровно 40 байт и смещения выровнены`() {
-        assertEquals(40, CellInstanceBuffer.STRUCT_SIZE, "менять только вместе с CellGeometry и RenderSceneDump")
+        assertEquals(40, CellInstanceBuffer.STRUCT_SIZE, "менять только вместе с CellGeometry")
 
         // GL и особенно WebGL2 требуют, чтобы смещение атрибута было кратно размеру его
         // типа, а шаг — размеру самого крупного. У нас крупнейший тип float (4 байта).
@@ -146,11 +146,11 @@ class CellInstanceBufferTest {
 
     @Test
     fun `константы диапазонов совпадают с литералами в шейдере`() {
-        // Прямая сверка с `radius = 0.05 + a_shape.z * 0.7` из circle_pc.vert.
+        // Прямая сверка с `radius = 0.05 + a_shape.z * 0.7` из nostalgic.vert.
         // Падение этого теста означает: либо константу поменяли, не тронув шейдер,
         // либо шейдер поменяли, не тронув константу. Оба случая — молча битая картинка.
-        assertEquals(0.05f, CellInstanceBuffer.RADIUS_MIN, "circle_pc.vert: radius = 0.05 + ...")
-        assertEquals(0.7f, CellInstanceBuffer.RADIUS_SPAN, "circle_pc.vert: ... + a_shape.z * 0.7")
+        assertEquals(0.05f, CellInstanceBuffer.RADIUS_MIN, "nostalgic.vert: radius = 0.05 + ...")
+        assertEquals(0.7f, CellInstanceBuffer.RADIUS_SPAN, "nostalgic.vert: ... + a_shape.z * 0.7")
     }
 
     @Test

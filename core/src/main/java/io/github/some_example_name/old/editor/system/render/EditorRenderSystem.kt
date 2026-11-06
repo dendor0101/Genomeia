@@ -74,7 +74,7 @@ class EditorRenderSystem(
      * симуляции не связан. Смена режима требует перезаливки буфера (см. [fillBuffer]),
      * поэтому выставлять его — через этот сеттер, он об этом позаботится.
      */
-    var mode: RenderMode = RenderMode.REALISTIC
+    var mode: RenderMode = RenderMode.DEBUG
         set(value) {
             if (field != value) isUpdateBuffer = true
             field = value
@@ -110,16 +110,12 @@ class EditorRenderSystem(
             // показал бы чужие частицы. Экономия того не стоит.
             uploadCells = true
             // Редактор феромоны не рисует: в записи роста их нет.
-            pheromones = null
             // Каждый кадр, а не только при isUpdateBuffer: связи и стрелки идут за живыми
             // позициями частиц, как и линии DrawingHelperElements, которые они заменяют.
             overlay = if (mode.drawsDebugOverlay) fillOverlay() else null
             // Сигналов в записи роста нет, импульсам по связям бежать нечем, но рисунки
             // клеток живут и без сигнала: хлоропласты текут, реснички бьют.
             time = animationTime
-            blurAmount = -0.04f
-            zoom = camera.zoom
-            vignetteEnabled = 0f
             mode = this@EditorRenderSystem.mode
         }
         worldRenderer.render(frame)

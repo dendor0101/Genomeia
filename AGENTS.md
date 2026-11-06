@@ -18,14 +18,14 @@
 ## Модули и архитектура
 Зависимости строго в одну сторону: платформы → `:core` → `:render`.
 - `:render` — весь код, который говорит с GPU (шейдеры в `assets/shaders`). Про клетки и
-  симуляцию не знает: зависимости на `:core` нет и не будет. Стенд — `:render:renderLab`.
+  симуляцию не знает: зависимости на `:core` нет и не будет. Визуальные стенды удалены; проверки логики сохранены.
 - `:core`, пакет `io.github.some_example_name.old` (имя историческое, попутно не переименовывать):
   симуляция (`systems/`, `entities/`, `cells/`), команды (`commands/`), журнал и отчёты
   (`journal/`, `bug/`), редактор генома (`editor/`), экраны (`features/`), DI-контейнеры (`core/DI*`).
 - `:physics` — новая XPBD-физика без зависимостей на Gdx, игру, файлы и окно.
   `:physics-lab` — её сессии, окно, записи, проверки и замеры; зависит от physics/render.
 - `:lwjgl3` — лаунчер игры; в `src/lab/kotlin/.../demo` только запуск физического стенда.
-  Проверки основной игры (`bugReplayCheck`, `saveRoundTrip`, …) — в `verification/`.
+  Проверки основной игры (`bugReplayCheck`, `saveRoundTrip`, …) — в `src/verification/kotlin`; в JAR игры не входят.
   Source set `lab` не входит в JAR игры. Карта каталогов — в README двух модулей физики.
 - `:core` обязан работать на Android и iOS: никаких `java.awt`, LWJGL и прочих десктопных API.
   Платформенное — через поле или интерфейс, который выставляет лаунчер (образец —
@@ -172,7 +172,7 @@
 ## Сборка, запуск, проверки
 JDK 21. Если `JAVA_HOME` не задан — взять JBR из Android Studio.
 - Быстрая проверка после любой правки:
-  `./gradlew -q :core:compileKotlin :render:compileKotlin :render:compileLabKotlin :lwjgl3:compileKotlin :core:test :render:test`
+  `./gradlew -q :core:compileKotlin :render:compileKotlin :lwjgl3:compileVerificationKotlin :lwjgl3:compileKotlin :core:test :render:test`
 - После правок новой физики/стенда дополнительно:
   `./gradlew -q :physics:test :physics-lab:test :lwjgl3:compileLabKotlin`.
 - Тронул симуляцию, команды или журнал → `:lwjgl3:bugReplayCheck`

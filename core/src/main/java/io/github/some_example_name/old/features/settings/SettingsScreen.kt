@@ -1,5 +1,7 @@
 package io.github.some_example_name.old.features.settings
 
+import com.badlogic.gdx.Gdx
+
 import io.github.some_example_name.old.commands.GameCommand
 import io.github.some_example_name.old.bug.ReplayTarget
 import com.badlogic.gdx.graphics.Color
@@ -10,6 +12,7 @@ import com.kotcrab.vis.ui.widget.VisTextButton
 import io.github.some_example_name.old.commands.GoBack
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.PlatformWindow
+import io.github.some_example_name.old.core.PlatformGraphics
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DISimulationContainer.renderSystem
 import io.github.some_example_name.old.core.ui.StyledSelectBox
@@ -29,7 +32,8 @@ import io.github.some_example_name.render.RenderMode
 
 class SettingsScreen : VisDslScreen(
     background = Color(0.04f, 0.04f, 0.06f, 1f),
-    isScrollable = false
+    // Путь приложения и сведения о GPU могут занимать несколько строк на ПК.
+    isScrollable = true
 ), ReplayTarget {
 
     private val viewModel = SettingsViewModel()
@@ -158,8 +162,8 @@ class SettingsScreen : VisDslScreen(
         visTable(cellInit = { expandX().fillX() }) {
             visLabel("Default Render Mode: ", align = Align.left) {}
             val selectBox = renderModeSelectBox(
-                selected = RenderMode.entries[GlobalSettings.RENDER_MODE],
-                onSelect = { viewModel.handle(SettingsIntent.SetRenderMode(RenderMode.entries.indexOf(it))) }
+                selected = RenderMode.fromPreference(GlobalSettings.RENDER_MODE),
+                onSelect = { viewModel.handle(SettingsIntent.SetRenderMode(it.preferenceId)) }
             )
             this.add(selectBox) as Cell<StyledSelectBox<String>>
         }
@@ -186,6 +190,24 @@ class SettingsScreen : VisDslScreen(
                 checked = PlatformWindow.isFullscreen,
                 onCheckedChange = { viewModel.handle(SettingsIntent.SetFullscreen(it)) }
             ) { left().padTop(16.dp()) }
+            row()
+        }
+
+        PlatformGraphics.gpuSettings?.let { gpu ->
+            visLabel(bundle.format("settings.gpu.current", Gdx.graphics.glVersion.rendererString), align=Align.left) {
+                growX().padTop(16.dp())
+            }.setWrap(true)
+            row()
+            visLabel(bundle.format("settings.gpu.executable", gpu.executable), align=Align.left) { growX() }.setWrap(true)
+            row()
+            val status=visLabel(bundle.get("settings.gpu.restart"), align=Align.left) { growX().padTop(8.dp()) }
+            status.name="graphics-gpu-status"
+            status.setWrap(true)
+            row()
+            visTextButton(bundle.get("settings.gpu.open"), onClick={
+                viewModel.handle(SettingsIntent.OpenGpuSettings)
+                status.setText(bundle.get(if(viewModel.gpuSettingsFailed)"settings.gpu.failed" else "settings.gpu.restart"))
+            }) { growX().padTop(8.dp()) }.name="graphics-gpu-settings"
             row()
         }
     }

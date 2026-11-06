@@ -17,7 +17,6 @@ import io.github.some_example_name.render.RenderMode
 import io.github.some_example_name.render.pack.CellInstanceBuffer
 import io.github.some_example_name.render.pack.CellLook
 import io.github.some_example_name.render.pack.OverlayInstanceBuffer
-import io.github.some_example_name.render.pack.PheromoneInstanceBuffer
 import kotlin.math.round
 import kotlin.math.sqrt
 
@@ -53,8 +52,9 @@ class RenderBufferManager(
     val specialEntity: SpecialEntity,
     initialCellCapacity: Int = 50_000,
     initialOverlayCapacity: Int = 4_096,
-    initialPheromoneCapacity: Int = 1_000
+    genomes: List<io.github.some_example_name.old.systems.genomics.genome.Genome> = emptyList()
 ) {
+    private val materialCoordinates by lazy(LazyThreadSafetyMode.NONE){GenomeMaterialCoordinates(genomes)}
 
     /**
      * Режим рендера этого мира. Свой у каждого мира: у симуляции его выбирают списком,
@@ -68,7 +68,7 @@ class RenderBufferManager(
      * переключение никогда. Переключают руками раз в минуты, цена volatile-чтения ничто.
      */
     @Volatile
-    var mode: RenderMode = RenderMode.entries[GlobalSettings.RENDER_MODE]
+    var mode: RenderMode = RenderMode.fromPreference(GlobalSettings.RENDER_MODE)
 
     /**
      * Фильтр отладочного режима (энергия, нейросигнал). Как и [mode]: пишет GL-поток (список
@@ -87,9 +87,9 @@ class RenderBufferManager(
      * читатель получает весь снимок целиком или не получает ничего.
      */
     private val snapshots = TripleBuffer(
-        RenderSnapshot(initialCellCapacity, initialOverlayCapacity, initialPheromoneCapacity),
-        RenderSnapshot(initialCellCapacity, initialOverlayCapacity, initialPheromoneCapacity),
-        RenderSnapshot(initialCellCapacity, initialOverlayCapacity, initialPheromoneCapacity)
+        RenderSnapshot(initialCellCapacity, initialOverlayCapacity),
+        RenderSnapshot(initialCellCapacity, initialOverlayCapacity),
+        RenderSnapshot(initialCellCapacity, initialOverlayCapacity)
     )
 
     /**
@@ -151,6 +151,16 @@ class RenderBufferManager(
      * на время [updateBuffer].
      */
     private var instances = IntArray(0)
+    // Только полигональный эксперимент; не состояние мира. 12 B/клетку, без аллокаций за тик.
+    private var renderOfCell=IntArray(0)
+    private var renderCellStamp=IntArray(0)
+    private var cellOfRender=IntArray(0)
+    private var polygonFrame=false
+    private val polygonEpoch=Any()
+    private var opticalGroups = IntArray(0)
+    private var opticalColors = IntArray(0)
+    private var opticalBirthTicks = IntArray(0)
+    private var opticalCullRanges: io.github.some_example_name.render.pack.OpticalCullRanges? = null
 
     /**
      * Номер текущего снимка. С единицы: метка свежевыделенного слота — ноль, и она не
@@ -239,6 +249,8 @@ class RenderBufferManager(
             val cellFrom = organEntity.cellArenaBase[organIndex]
             val cellTo = organEntity.cellArenaEnd(organIndex)
             val particleBase = organEntity.particleArenaBase[organIndex]
+            val cull = opticalCullRanges
+            cull?.begin(writeIndex)
 
             for (cellIndex in cellFrom until cellTo) {
                 if (!cellAlive[cellIndex]) continue
@@ -251,8 +263,10 @@ class RenderBufferManager(
                 if (DEBUG_CHECKS) checkArenaParallel(cellIndex, organIndex, particleIndex, cellFrom, particleBase)
 
                 writeCell(writeIndex, cellIndex, particleIndex, px, py, pColor, pRadius)
+                cull?.include(px[particleIndex], py[particleIndex], lastPrevX, lastPrevY)
                 writeIndex++
             }
+            cull?.finish(writeIndex)
         }
         return writeIndex
     }
@@ -369,6 +383,12 @@ class RenderBufferManager(
 
         val dir = CellInstanceBuffer.dir(angleCos, angleSin)
         remember(particleIndex, cellEntity.getGeneration(cellIndex), x, y, dir)
+        if(polygonFrame){
+            renderOfCell[cellIndex]=writeIndex;renderCellStamp[cellIndex]=serial;cellOfRender[writeIndex]=cellIndex
+            opticalGroups[writeIndex] = if (cellEntity.organIndex[cellIndex] >= 0) cellEntity.organIndex[cellIndex] + 1 else -particleIndex - 1
+            opticalColors[writeIndex] = pColor[particleIndex]
+            opticalBirthTicks[writeIndex] = cellEntity.birthTick[cellIndex]
+        }
 
         CellInstanceBuffer.write(
             instances,
@@ -603,15 +623,7 @@ class RenderBufferManager(
         }
     }
 
-    private fun writePheromones(snapshot: RenderSnapshot) = with(pheromoneEntity) {
-        val pheromones = snapshot.pheromones
-        pheromones.begin(aliveList.size)
-        for (bufIndex in 0..<aliveList.size) {
-            val i = aliveList.getInt(bufIndex)
-            pheromones.put(x = x[i], y = y[i], a = time[i], color = color[i])
-        }
-        pheromones.end()
-    }
+
 
     /**
      * Начало снимка: номер, проверка разрыва и место в [history] под все частицы.
@@ -642,9 +654,25 @@ class RenderBufferManager(
         // Сколько инстансов вообще может быть записано: клетки (в аренах и вне их) и
         // не-клетки. Не aliveList частиц: если их сумма с ним разойдётся (это ловит
         // DEBUG_CHECKS), снимок не должен выйти за массив.
+        val snapshotMode=mode
+        polygonFrame=snapshotMode==RenderMode.TISSUE_MAP
         instances = snapshot.reserveInstances(cellEntity.aliveList.size + particleEntity.nonCellList.size)
+        snapshot.hasOptics=polygonFrame
+        if(polygonFrame){
+            snapshot.reserveOptics()
+            if(renderOfCell.size<cellEntity.isAlive.size){renderOfCell=IntArray(cellEntity.isAlive.size);renderCellStamp=IntArray(renderOfCell.size)}
+            if(cellOfRender.size<cellEntity.aliveList.size)cellOfRender=IntArray(cellEntity.aliveList.size*2)
+        }
+        opticalCullRanges=null
+        if(polygonFrame){
+            opticalGroups = snapshot.opticalGroups
+            opticalColors = snapshot.opticalColors
+            opticalBirthTicks = snapshot.opticalBirthTicks
+            opticalCullRanges = snapshot.opticalCullRanges.also{it.clear()}
+            opticalGroups.fill(0,0,cellEntity.aliveList.size+particleEntity.nonCellList.size)
+        }
 
-        debugFrame = mode.drawsDebugOverlay
+        debugFrame = snapshotMode.drawsDebugOverlay
         frameFilter = if (debugFrame) debugFilter else DebugFilter.ORIGINAL
 
         val overlay = snapshot.overlay
@@ -658,7 +686,9 @@ class RenderBufferManager(
         // ==================== CELL ====================
         var written = writeOrganismCells(0)
         written = writeOrphanCells(written)
+        val writtenCells=written
         written = writeNonCellParticles(written)
+        if(polygonFrame)writeOpticalLinks(snapshot,written,writtenCells)
 
         // Буфер обязан содержать РОВНО все живые частицы: клетки организмов, клетки вне
         // арен и не-клетки в сумме дают aliveList. Расхождение означает, что какие-то
@@ -680,9 +710,29 @@ class RenderBufferManager(
         overlay.end()
         snapshot.hasOverlay = debugFrame
 
-        writePheromones(snapshot)
         writeSpecific(snapshot.spec, performanceInfo)
         publish(snapshot)
+    }
+
+    private fun writeOpticalLinks(snapshot:RenderSnapshot,total:Int,cells:Int){
+        val graph=snapshot.opticalLinks
+        graph.epoch=polygonEpoch
+        graph.begin(total,linkEntity.aliveList.size*2)
+        for(i in 0 until total){
+            if(i>=cells){graph.vertex(i);continue}
+            val cell=cellOfRender[i];val base=cell*CellEntity.MAX_LINKS_PER_CELL
+            // Слот снимка сдвигается при рождении соседей. Ключ клетки сохраняется,
+            // а поколение отличает новую клетку, занявшую освобождённый слот.
+            graph.vertex(i,(cell.toLong() shl 32) or (cellEntity.getGeneration(cell).toLong() and 0xffffffffL))
+            val organ=cellEntity.organIndex[cell]
+            if(organ>=0)materialCoordinates.write(graph,i,cellEntity.organEntity.genomeIndex[organ],cellEntity.cellGenomeId[cell])
+            for(k in 0 until CellEntity.MAX_LINKS_PER_CELL){
+                val other=cellEntity.cellLinks[base+k]
+                if(other<0)break
+                if(renderCellStamp[other]==serial)graph.add(renderOfCell[other])
+            }
+        }
+        graph.end()
     }
 
     private fun writeSpecific(spec: RenderSpecificBufferData, performanceInfo: String) = with(spec) {
@@ -778,7 +828,7 @@ class RenderBufferManager(
  * Всё, что рендеру нужно от одного тика: буферы инстансов в раскладке GPU и строка
  * состояния. Один из трёх слотов [TripleBuffer]; пишет поток симуляции, читает рендер.
  */
-class RenderSnapshot(cellCapacity: Int, overlayCapacity: Int, pheromoneCapacity: Int) {
+class RenderSnapshot(cellCapacity: Int, overlayCapacity: Int) {
     /**
      * Инстансы клеток в раскладке GPU (CellInstanceBuffer.write), [instanceCount] штук.
      *
@@ -791,6 +841,17 @@ class RenderSnapshot(cellCapacity: Int, overlayCapacity: Int, pheromoneCapacity:
     var instances = IntArray(cellCapacity * CellInstanceBuffer.STRUCT_INTS)
         private set
     var instanceCount = 0
+    // Три массива (12 байт/инстанс) растут только в режиме микроскопа.
+    var hasOptics = false
+    var opticalGroups = IntArray(0)
+        private set
+    var opticalColors = IntArray(0)
+        private set
+    // 4 B/инстанс в каждом из трёх снимков; запись в существующем обходе.
+    var opticalBirthTicks = IntArray(0)
+        private set
+    val opticalLinks by lazy(LazyThreadSafetyMode.NONE){io.github.some_example_name.render.pack.OpticalLinks()}
+    val opticalCullRanges by lazy(LazyThreadSafetyMode.NONE){io.github.some_example_name.render.pack.OpticalCullRanges()}
 
     /** Массив минимум на [count] инстансов; рост ×1.5, старое содержимое не нужно. */
     fun reserveInstances(count: Int): IntArray {
@@ -801,8 +862,15 @@ class RenderSnapshot(cellCapacity: Int, overlayCapacity: Int, pheromoneCapacity:
         return instances
     }
 
+    fun reserveOptics() {
+        if(opticalGroups.size < instances.size / CellInstanceBuffer.STRUCT_INTS){
+            opticalGroups = IntArray(instances.size / CellInstanceBuffer.STRUCT_INTS)
+            opticalColors = IntArray(opticalGroups.size)
+            opticalBirthTicks = IntArray(opticalGroups.size) { -1 }
+        }
+    }
+
     val overlay = OverlayInstanceBuffer(overlayCapacity)
-    val pheromones = PheromoneInstanceBuffer(pheromoneCapacity)
 
     /** Под какой фильтр отладки упакованы байты look, см. RenderBufferManager.debugFilter. */
     var filter = DebugFilter.ORIGINAL
@@ -828,8 +896,6 @@ class RenderSnapshot(cellCapacity: Int, overlayCapacity: Int, pheromoneCapacity:
         // не мусор из неинициализированной ёмкости.
         overlay.begin()
         overlay.end()
-        pheromones.begin()
-        pheromones.end()
     }
 }
 

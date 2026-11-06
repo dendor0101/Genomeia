@@ -36,6 +36,7 @@ android {
     targetSdkVersion 36
     versionCode 1
     versionName "1.0"
+    manifestPlaceholders = [appLabel: '@string/app_name']
   }
   compileOptions {
     sourceCompatibility "21"
@@ -43,6 +44,14 @@ android {
     coreLibraryDesugaringEnabled = true
   }
   buildTypes {
+    shaderTest {
+      initWith debug
+      applicationIdSuffix '.shadertest'
+      versionNameSuffix '-shader-test'
+      manifestPlaceholders = [appLabel: 'Genomeia Shader Test']
+      matchingFallbacks = ['debug']
+      signingConfig signingConfigs.debug
+    }
     release {
       minifyEnabled true
       proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), 'proguard-rules.pro'

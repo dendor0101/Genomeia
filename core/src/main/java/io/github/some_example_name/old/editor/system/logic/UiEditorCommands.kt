@@ -214,7 +214,7 @@ class SetShowPhysicalLinks(val visible: Boolean): UiEditorCommands {
 }
 
 @Serializable
-class SetRenderMode(val mode: RenderMode): UiEditorCommands {
+class SetRenderMode(@Serializable(with=io.github.some_example_name.old.journal.SavedRenderMode::class) val mode: RenderMode): UiEditorCommands {
     override val name get() = "SetRenderMode"
     override val detail get() = mode.name
 }

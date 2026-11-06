@@ -79,6 +79,9 @@ class CellEntity(
     var orphanCellCount = 0
         private set
 
+    // Только при рождении и в снимке рендера: 4 B/слот, ~39 КиБ на 10k клеток.
+    // -1 — старое сохранение без истории; индекс арены НЕ является возрастом.
+    var birthTick = IntArray(maxAmount) { -1 }
     var cellGenomeId = IntArray(maxAmount) { -1 }
     var cellActions: Array<CellAction?> = arrayOfNulls(maxAmount)
     var organIndex = IntArray(maxAmount) { -1 }
@@ -456,6 +459,7 @@ class CellEntity(
         } else {
         }
 
+        birthTick[cellIndex] = simulationData.tickCounter
         this.cellGenomeId[cellIndex] = cellGenomeId
         cellActions[cellIndex] = null
         this.organIndex[cellIndex] = organIndex
@@ -748,6 +752,7 @@ class CellEntity(
     override fun persistFields(state: EntityState) {
         state.ints(::particleIndexes)
         state.ints(::cellGenomeId)
+        state.ints(::birthTick)
         state.ints(::organIndex)
         state.ints(::parentIndex)
         state.floats(::angleCos)
@@ -886,6 +891,7 @@ class CellEntity(
         orphanCellCount = 0
         particleIndexes.clear(-1)
         cellGenomeId.clear(-1)
+        birthTick.clear(-1)
         cellActions.fill(null, 0, bound)
         organIndex.clear(-1)
         parentIndex.clear(-1)
@@ -921,6 +927,7 @@ class CellEntity(
     override fun onResize(oldMax: Int) {
         particleIndexes = particleIndexes.resize(-1)
         cellGenomeId = cellGenomeId.resize(-1)
+        birthTick = birthTick.resize(-1)
         run {
             val old = cellActions
             cellActions = arrayOfNulls(maxAmount)
@@ -993,4 +1000,3 @@ class CellEntity(
     }
 
 }
-

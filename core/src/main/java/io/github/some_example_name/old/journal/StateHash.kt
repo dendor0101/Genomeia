@@ -60,7 +60,8 @@ object StateHash {
      * 12 — новая часть TriangleEntity (сформированные треугольники), у организма — арена
      *     треугольников, у клетки — их счётчик.
      */
-    const val VERSION = 12
+    // 13 — сохраняемый тик рождения клетки для возрастного рельефа.
+    const val VERSION = 13
 
     class Result(val hash: Long, val parts: LongArray)
 

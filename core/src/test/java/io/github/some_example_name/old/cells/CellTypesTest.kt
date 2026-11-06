@@ -16,6 +16,19 @@ class CellTypesTest {
     private val cells = CellTypes.createAll()
 
     @Test
+    fun `оптические материалы находятся по ключу а не по переставленным номерам игры`() {
+        val retired = setOf("food_sensor", "compass", "breakaway", "fin")
+        for (cell in cells) {
+            val material = io.github.some_example_name.render.microscope.TissueMaterials.forKey(cell.key)
+            if (cell.key in retired) assertEquals(27, material)
+            else assertTrue(material in 0..26, "нет материала ${cell.key}")
+        }
+        assertEquals(0, io.github.some_example_name.render.microscope.TissueMaterials.forKey("leaf"))
+        assertEquals(26, io.github.some_example_name.render.microscope.TissueMaterials.forKey("controller"))
+        assertEquals(27, io.github.some_example_name.render.microscope.TissueMaterials.forKey("unknown:cell"))
+    }
+
+    @Test
     fun `номер типа — место в реестре, ключ находит тот же тип`() {
         cells.forEachIndexed { index, cell ->
             assertEquals(index, cell.cellTypeId)

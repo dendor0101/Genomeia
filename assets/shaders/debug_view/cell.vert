@@ -84,7 +84,7 @@ float byteValue(float normalized) {
 }
 
 /**
- * Направление на долю u_lag назад — как lagDir() в circle_pc.vert.
+ * Направление на долю u_lag назад.
  * Длина — как у a_dir: у не-клетки он (-1, -1), и её текстура рисуется с этим масштабом.
  * Поворот ровно на 180° за тик смешивается в ноль — тогда без интерполяции.
  */
@@ -114,7 +114,7 @@ vec3 filterColor(int kind, float value) {
 }
 
 void main() {
-    // Распаковка — та же, что в circle_pc.vert: RADIUS_MIN + байт * RADIUS_SPAN.
+    // Распаковка: RADIUS_MIN + байт * RADIUS_SPAN.
     float radius = 0.05 + a_shape.z * 0.7;
 
     v_tPerPixel = u_pixelWorld / radius;

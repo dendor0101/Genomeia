@@ -141,6 +141,11 @@ class CellSystem(
         val dy = getY(cellIndex) - getY(parentCellIndex)
 
         val len = sqrt(dx * dx + dy * dy)
+        // В углу мира границы могут зажать обе клетки ровно в (radius, radius).
+        // У нулевого вектора нет направления: сохраняем прежнее до расхождения.
+        // Иначе 0/0 портит угол Tail, а его тяга в этом же тике — скорость и позицию.
+        // Воспроизведено .bug 20261102-220750: тик 16956, частицы 4057 и 4065.
+        if (len == 0f) return@with
         val toChildCos = dx / len
         val toChildSin = dy / len
 

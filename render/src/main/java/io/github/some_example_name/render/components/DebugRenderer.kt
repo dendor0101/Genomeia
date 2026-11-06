@@ -84,7 +84,7 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         fillShader = compile("cell.vert", "cell_fill.frag")
         edgeShader = compile("cell.vert", "cell_edge.frag")
         compositeShader = ShaderProgram(
-            Gdx.files.internal("shaders/post_process/post_process.vert").readString(),
+            Gdx.files.internal("shaders/common/fullscreen.vert").readString(),
             source("composite.frag")
         ).also(::check)
         overlayShader = compile("overlay.vert", "overlay.frag")
@@ -193,7 +193,7 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
 
         fillShader.bind()
         bindCellUniforms(fillShader, context, fringe = false)
-        cells.draw(context.numInstances, CellGeometry.Detail.HULL)
+        cells.draw(context.numInstances)
 
         target.end()
 
@@ -235,7 +235,7 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         // Texture.bind(unit) оставляет активным свой блок; остальные ждут нулевой.
         gl.glActiveTexture(GL20.GL_TEXTURE0)
 
-        cells.draw(context.numInstances, CellGeometry.Detail.HULL)
+        cells.draw(context.numInstances)
     }
 
     /**

@@ -1,5 +1,7 @@
 package io.github.some_example_name.old.features.settings
 
+import io.github.some_example_name.render.RenderMode
+
 import com.badlogic.gdx.Gdx
 import io.github.some_example_name.old.bug.BugReplay
 import io.github.some_example_name.old.core.DIGameGlobalContainer
@@ -26,6 +28,14 @@ object UserPreferences {
 
     private val prefs by lazy { Gdx.app.getPreferences(NAME) }
 
+    private val optical by lazy {
+        OpticalPreferences({Gdx.app.getPreferences("genomeia-optical")},{BugReplay.isActive},{prefs})
+    }
+    fun loadOptical()=optical.load()
+    fun saveOptical(settings:io.github.some_example_name.render.microscope.MicroscopeSettings,
+                    parameter:io.github.some_example_name.render.microscope.OpticalParameter?=null)=optical.stage(settings,parameter)
+    fun flushOptical(delta:Float=0f,force:Boolean=false)=optical.flush(delta,force)
+
     /** После создания контейнеров и до первого экрана. */
     fun load() {
         if (BugReplay.isActive) return
@@ -33,7 +43,7 @@ object UserPreferences {
         GlobalSettings.MUSIC_VOLUME = prefs.getInteger(MUSIC_VOLUME, GlobalSettings.MUSIC_VOLUME).coerceIn(0, 100)
         GlobalSettings.SOUND_VOLUME = prefs.getInteger(SOUND_VOLUME, GlobalSettings.SOUND_VOLUME).coerceIn(0, 100)
 
-        GlobalSettings.RENDER_MODE = prefs.getInteger(RENDER_MODE, GlobalSettings.RENDER_MODE)
+        GlobalSettings.RENDER_MODE = RenderMode.fromPreference(prefs.getInteger(RENDER_MODE, GlobalSettings.RENDER_MODE)).preferenceId
         GlobalSettings.SHOW_HINTS = prefs.getBoolean(SHOW_HINTS, GlobalSettings.SHOW_HINTS)
         GlobalSettings.SHOW_DEBUG_INFO = prefs.getBoolean(SHOW_DEBUG_INFO, GlobalSettings.SHOW_DEBUG_INFO)
 

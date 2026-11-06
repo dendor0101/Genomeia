@@ -18,6 +18,8 @@ import io.github.some_example_name.old.systems.simulation.SimulationSystem
 import io.github.some_example_name.render.DebugFilter
 import io.github.some_example_name.render.RenderMode
 import java.util.Locale
+import io.github.some_example_name.old.features.settings.UserPreferences
+import io.github.some_example_name.render.microscope.OpticalParameter
 
 /**
  * Что игрок делает на экране симуляции, кроме касаний самого мира.
@@ -90,9 +92,20 @@ sealed interface SimulationIntent : GameCommand {
     }
 
     @Serializable
-    data class SetRenderMode(val mode: RenderMode) : SimulationIntent {
+    data class SetRenderMode(@Serializable(with=io.github.some_example_name.old.journal.SavedRenderMode::class) val mode: RenderMode) : SimulationIntent {
         override val name get() = "SetRenderMode"
         override val detail get() = mode.name
+    }
+
+    @Serializable
+    data class SetMicroscopeParameter(val key: String, val value: Float) : SimulationIntent {
+        override val name get() = "SetMicroscopeParameter"
+        override val detail get() = "$key=$value"
+    }
+
+    @Serializable
+    data object ResetMicroscopeSettings : SimulationIntent {
+        override val name get() = "ResetMicroscopeSettings"
     }
 
     /**
@@ -259,6 +272,17 @@ class SimulationViewModel(
      */
     private var wasPlayingBeforeAppPause = true
 
+    private var opticalPreferencesLoaded=false
+    /** Первый кадр, ВНЕ команды навигации: восстановленные значения записываются
+     * обычными верхнеуровневыми командами и поэтому воспроизводятся из .bug. */
+    fun restoreOpticalPreferences(){
+        if(opticalPreferencesLoaded)return
+        opticalPreferencesLoaded=true
+        val saved=UserPreferences.loadOptical()?:return
+        for(parameter in OpticalParameter.entries)
+            handle(SimulationIntent.SetMicroscopeParameter(parameter.key,parameter.get(saved)))
+    }
+
     fun handle(intent: SimulationIntent) = SessionJournal.execute(CommandSource.SIMULATION, intent) { apply(it) }
 
     /**
@@ -318,12 +342,29 @@ class SimulationViewModel(
             is SimulationIntent.Restart -> if (!BugReplay.isActive) simulationData.isRestart = true
 
             is SimulationIntent.SetRenderMode -> {
+                if(renderSystem.mode==RenderMode.TISSUE_MAP && intent.mode!=RenderMode.TISSUE_MAP)UserPreferences.flushOptical(force=true)
+                val changed=renderSystem.mode!=intent.mode
                 renderSystem.mode = intent.mode
+                // На паузе нового тика не будет. Снимок под новый режим публикуем один раз.
+                if(changed&&!simulationData.isPlay)simulationSystem.betweenTicks{renderSystem.refreshPausedSnapshot()}
                 // Список фильтров сверху есть только в отладочном режиме.
                 onEffect?.invoke(SimulationEffect.RebuildMenu)
             }
 
             is SimulationIntent.SetDebugFilter -> renderSystem.debugFilter = intent.filter
+            is SimulationIntent.SetMicroscopeParameter -> {
+                val parameter=OpticalParameter.entries.firstOrNull { it.key==intent.key }
+                if(parameter!=null&&intent.value.isFinite()){
+                    parameter.set(renderSystem.opticalSettings,intent.value)
+                    UserPreferences.saveOptical(renderSystem.opticalSettings,parameter)
+                }
+            }
+            is SimulationIntent.ResetMicroscopeSettings -> {
+                val defaults=io.github.some_example_name.render.microscope.MicroscopeSettings.gameDefaults()
+                for(parameter in io.github.some_example_name.render.microscope.OpticalParameter.entries)
+                    parameter.set(renderSystem.opticalSettings,parameter.get(defaults))
+                UserPreferences.saveOptical(renderSystem.opticalSettings)
+            }
 
             is SimulationIntent.SetControllerKeysVisible -> {
                 simulationData.showControllerKeys = intent.visible

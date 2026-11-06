@@ -8,7 +8,7 @@ import io.github.some_example_name.render.RenderMode
  * Выпадающий список режима рендера — один на все экраны, где режим можно выбрать.
  *
  * Пункты — в порядке [RenderMode], подписи — из бандла по имени режима
- * (renderMode.realistic, renderMode.debug, renderMode.nostalgic). Где хранить выбор,
+ * (renderMode.debug, renderMode.nostalgic, renderMode.tissue_map). Где хранить выбор,
  * решает экран: у симуляции и редактора генома режимы свои и друг на друга не влияют.
  */
 fun renderModeSelectBox(
