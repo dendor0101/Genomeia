@@ -94,7 +94,7 @@ class MenuScreen : VisDslScreen(
             }) { growX() }
             row()
 
-            visTextButton(bundle.get("label.support"), onClick = {
+            visTextButton(bundle.get("about.title"), onClick = {
                 menuViewModel.handle(MenuIntent.OpenSupport)
             }) { growX() }
             row()
