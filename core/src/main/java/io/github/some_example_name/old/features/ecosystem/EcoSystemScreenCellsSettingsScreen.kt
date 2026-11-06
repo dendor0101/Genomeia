@@ -22,7 +22,7 @@ import io.github.some_example_name.old.commands.GoBack
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
-import io.github.some_example_name.old.core.DIGameGlobalContainer.particleTexturePaths
+import io.github.some_example_name.old.core.DIGameGlobalContainer.cellTypes
 import io.github.some_example_name.old.core.DIGameGlobalContainer.roundStyle
 import io.github.some_example_name.old.core.DIGameGlobalContainer.substrateSettings
 import io.github.some_example_name.old.core.GlobalSimulationSettings
@@ -91,7 +91,7 @@ class EcoSystemScreenCellsSettingsScreen: Screen {
             panel.background = VisUI.getSkin().getDrawable("window")
             panel.pad(20f)
 
-            val iconName = particleTexturePaths[i]
+            val iconName = "ui/cell-icons/" + cellTypes[i].textureName
 
             val texture = Texture(Gdx.files.internal(iconName))
             val cellImage = VisImage(texture)

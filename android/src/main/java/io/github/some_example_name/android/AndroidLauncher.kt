@@ -4,7 +4,6 @@ import android.content.Intent
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Rect
-import android.opengl.GLES32
 import android.os.Bundle
 import android.text.InputType
 import android.util.Log
@@ -56,12 +55,9 @@ class AndroidLauncher : AndroidApplication(), KeyBoardListener {
         val config = AndroidApplicationConfiguration().apply {
             useGyroscope = true
             useImmersiveMode = true
-            useGL30 = true          // ← Это включает OpenGL ES 3.2 на поддерживаемых устройствах
+            useGL30 = true          // Контекст OpenGL ES 3.0; compute не требуется.
 
         }
-
-        val buf = IntArray(1)
-        GLES32.glGenBuffers(1, buf, 0)
 
         val fileProvider = AndroidFileProvider(this, AndroidFileChooser(this))
         game = MyGame(fileProvider)

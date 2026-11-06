@@ -63,22 +63,15 @@ object DIGameGlobalContainer {
 
     private val cellListBuilder = CellListBuilder()
 
-    /**
-     * Типы клеток в порядке слоёв [particleTexturePaths]: номер типа — номер слоя текстуры.
-     * По нему превью генома переводит ключ типа из снимка в слой (GenomePreviewCache).
-     */
     val cellTypes: CellTypeList get() = cellListBuilder.instances
-
-    /** Текстуры по номеру типа клетки и последней — пустая (CellTypeList.emptyTextureLayer). */
-    val particleTexturePaths: List<String> = cellListBuilder.instances.map {
-        "cell_textures/" + it.textureName
-    } + "cell_textures/not_cell.png"
 
     val defaultCellSettingsMap = cellListBuilder.instances.associate {
         it.name to it.defaultCellSettings
     }
 
-    val worldRenderer: WorldRenderer = WorldRenderer(particleTexturePaths)
+    val worldRenderer: WorldRenderer = WorldRenderer(cellTypes.map { it.key } + "not_cell", materialFactory={
+        (cellTypes.map { io.github.some_example_name.render.microscope.TissueMaterials.forKey(it.key) } + 27).toIntArray()
+    })
 
     val morphogenesis = Morphogenesis()
 

@@ -10,7 +10,7 @@ import io.github.some_example_name.render.RenderMode
  * Ностальгический режим: кружки по диаграмме Вороного, как в первых версиях игры.
  *
  * Каждая частица — круг своего цвета; там, где круги перекрываются, граница проходит по
- * взвешенной диаграмме Вороного (её строит буфер глубины, см. circle_pc.vert). У клетки в
+ * взвешенной диаграмме Вороного (её строит буфер глубины, см. nostalgic.vert). У клетки в
  * центре чёрное ядро, у не-клетки ядра нет. По краю круга и вдоль границ с соседями —
  * контур темнее заливки. Фон чёрный, постпроцесса нет.
  *
@@ -46,7 +46,7 @@ import io.github.some_example_name.render.RenderMode
  * ТОЧНАЯ ГЛУБИНА ВМЕСТО КОНУСА
  * ----------------------------
  * f считается во фрагментном шейдере точно, length() от локальной координаты, и пишется
- * в gl_FragDepth; геометрия — восьмиугольник вокруг круга (CellGeometry.Detail.HULL), а
+ * в gl_FragDepth; геометрия — восьмиугольник вокруг круга (CellGeometry), а
  * лишнее за окружностью отсекает discard.
  *
  * Сначала f, как в реалистичном режиме, интерполировалась по вееру-конусу. Конус
@@ -66,7 +66,7 @@ import io.github.some_example_name.render.RenderMode
  * платформах, а у FBO он свой (WorldRenderer создаёт его с depth+stencil). Готовый кадр
  * копируется на экран одним квадом.
  *
- * Геометрия клеток общая с ParticleRenderer — [CellGeometry], залита до всех проходов.
+ * Геометрия клеток общая с DebugRenderer — [CellGeometry], залита до всех проходов.
  */
 class NostalgicRenderer(private val cells: CellGeometry) : RenderComponent {
 
@@ -79,7 +79,7 @@ class NostalgicRenderer(private val cells: CellGeometry) : RenderComponent {
         fillShader = compile("shaders/nostalgic/nostalgic.vert", "shaders/nostalgic/nostalgic.frag")
         countShader = compile("shaders/nostalgic/nostalgic.vert", "shaders/nostalgic/count.frag")
         planeShader = compile("shaders/nostalgic/plane.vert", "shaders/nostalgic/plane.frag")
-        presentShader = compile("shaders/post_process/post_process.vert", "shaders/nostalgic/present.frag")
+        presentShader = compile("shaders/common/fullscreen.vert", "shaders/nostalgic/present.frag")
     }
 
     private fun compile(vertexPath: String, fragmentPath: String): ShaderProgram {
@@ -139,7 +139,7 @@ class NostalgicRenderer(private val cells: CellGeometry) : RenderComponent {
         fillShader.setUniformf("u_nucleusAtFullEnergy", NUCLEUS_AT_FULL_ENERGY)
         fillShader.setUniformf("u_depthBias", CONTOUR_WIDTH)
         fillShader.setUniformf("u_depthScale", DEPTH_SCALE)
-        cells.draw(context.numInstances, CellGeometry.Detail.HULL)
+        cells.draw(context.numInstances)
     }
 
     /** Проход 2: сколько частиц ближе порога — в stencil. Цвет и глубина не пишутся. */
@@ -158,7 +158,7 @@ class NostalgicRenderer(private val cells: CellGeometry) : RenderComponent {
         countShader.setUniformf("u_depthScale", DEPTH_SCALE)
         // Тот же корпус и та же точная d/R, что у заливки, — без подъёма на δ. Поверхности
         // совпадают до бита, так что владелец засчитывает свой пиксель всегда.
-        cells.draw(context.numInstances, CellGeometry.Detail.HULL)
+        cells.draw(context.numInstances)
 
         // Внешний обод — граница с пустотой. Плоскость на глубине «f = 1 - RIM_WIDTH»
         // проходит тест там, где f владельца + δ больше неё, то есть ровно на ободе.

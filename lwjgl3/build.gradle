@@ -22,6 +22,25 @@ import io.github.fourlastor.construo.Target
 sourceSets.main.resources.srcDirs += [ rootProject.file('assets').path ]
 application.mainClass = 'io.github.some_example_name.lwjgl3.Lwjgl3Launcher'
 application.applicationName = appName
+// Проверки игровой логики доступны Gradle, но не входят в распространяемый JAR.
+sourceSets {
+  verification {
+    compileClasspath += sourceSets.main.output
+    runtimeClasspath += sourceSets.main.output
+  }
+}
+configurations {
+  verificationImplementation.extendsFrom implementation
+  verificationRuntimeOnly.extendsFrom runtimeOnly
+}
+
+
+tasks.register('opticalPreferencesRestartCheck', JavaExec) {
+  group = 'verification'
+  classpath = sourceSets.verification.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.verification.OpticalPreferencesRestartCheckKt'
+  workingDir = rootProject.projectDir
+}
 eclipse.project.name = appName + '-lwjgl3'
 java.sourceCompatibility = 21
 java.targetCompatibility = 21
@@ -239,7 +258,7 @@ dependencies {
 tasks.register('worldSpecCheck', JavaExec) {
   group = 'verification'
   description = 'Совпадает ли карта по рецепту с картой на экране редактора'
-  classpath = sourceSets.main.runtimeClasspath
+  classpath = sourceSets.verification.runtimeClasspath
   mainClass = 'io.github.some_example_name.lwjgl3.verification.WorldSpecCheckKt'
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8'
@@ -251,7 +270,7 @@ tasks.register('worldSpecCheck', JavaExec) {
 tasks.register('saveRoundTrip', JavaExec) {
   group = 'verification'
   description = 'Сохранение и загрузка мира восстанавливают его состояние побайтно'
-  classpath = sourceSets.main.runtimeClasspath
+  classpath = sourceSets.verification.runtimeClasspath
   mainClass = 'io.github.some_example_name.lwjgl3.verification.SaveRoundTripKt'
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
@@ -265,7 +284,7 @@ tasks.register('saveRoundTrip', JavaExec) {
 tasks.register('genomeJsonCheck', JavaExec) {
   group = 'verification'
   description = 'Старые JSON-геномы переводятся в .genome так же, как их сохранил бы редактор'
-  classpath = sourceSets.main.runtimeClasspath
+  classpath = sourceSets.verification.runtimeClasspath
   mainClass = 'io.github.some_example_name.lwjgl3.verification.GenomeJsonCheckKt'
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
@@ -279,7 +298,7 @@ tasks.register('genomeJsonCheck', JavaExec) {
 tasks.register('bakeBundledGenomes', JavaExec) {
   group = 'verification'
   description = 'Встроенные геномы допекаются, как свои при запуске игры, и снимок превью повторяется'
-  classpath = sourceSets.main.runtimeClasspath
+  classpath = sourceSets.verification.runtimeClasspath
   mainClass = 'io.github.some_example_name.lwjgl3.verification.BakeBundledGenomesKt'
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
@@ -292,7 +311,7 @@ tasks.register('bakeBundledGenomes', JavaExec) {
 tasks.register('bugUploadCheck', JavaExec) {
   group = 'verification'
   description = 'Отправляет указанный .bug на сервер тем же кодом, что кнопка игры'
-  classpath = sourceSets.main.runtimeClasspath
+  classpath = sourceSets.verification.runtimeClasspath
   mainClass = 'io.github.some_example_name.lwjgl3.verification.BugUploadCheckKt'
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
@@ -307,7 +326,7 @@ tasks.register('bugUploadCheck', JavaExec) {
 tasks.register('bugReplayCheckRecord', JavaExec) {
   group = 'verification'
   description = 'Сценарий игрока через команды и .bug в конце (первая половина bugReplayCheck)'
-  classpath = sourceSets.main.runtimeClasspath
+  classpath = sourceSets.verification.runtimeClasspath
   mainClass = 'io.github.some_example_name.lwjgl3.verification.BugReplayCheckKt'
   args 'record'
   workingDir = rootProject.projectDir
@@ -327,7 +346,7 @@ tasks.register('bugReplayCheck', JavaExec) {
   group = 'verification'
   description = 'Повтор .bug совпадает с записью: команды, контрольные суммы, хэши состояния мира'
   dependsOn 'bugReplayCheckRecord'
-  classpath = sourceSets.main.runtimeClasspath
+  classpath = sourceSets.verification.runtimeClasspath
   mainClass = 'io.github.some_example_name.lwjgl3.verification.BugReplayCheckKt'
   args 'replay'
   workingDir = rootProject.projectDir
@@ -344,21 +363,6 @@ tasks.register('bugReplayCheck', JavaExec) {
   if (project.hasProperty('killEvery')) systemProperty 'bugReplayCheck.killEvery', project.property('killEvery')
   if (project.hasProperty('flingEvery')) systemProperty 'bugReplayCheck.flingEvery', project.property('flingEvery')
   if (project.hasProperty('spawnEvery')) systemProperty 'bugReplayCheck.spawnEvery', project.property('spawnEvery')
-}
-
-// Снимки отладочного режима на настоящих организмах: gradlew :lwjgl3:debugViewShot
-// По организму каждого запечённого генома, рост, PNG и дамп сцены на каждый (для renderLab).
-//   -PshotTicks=600 -PshotZoom=0.012 -PshotDir=lwjgl3/build/debugViewShot
-tasks.register('debugViewShot', JavaExec) {
-  group = 'verification'
-  description = 'Снимки отладочного режима: организмы из папки genomes, PNG и дамп сцены'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.lwjgl3.verification.DebugViewShotKt'
-  workingDir = rootProject.projectDir
-  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
-  if (project.hasProperty('shotTicks')) systemProperty 'debugViewShot.ticks', project.property('shotTicks')
-  if (project.hasProperty('shotZoom')) systemProperty 'debugViewShot.zoom', project.property('shotZoom')
-  if (project.hasProperty('shotDir')) systemProperty 'debugViewShot.dir', project.property('shotDir')
 }
 
 // Физический стенд с окном: то же тело и тот же решатель, что в collisionBench,

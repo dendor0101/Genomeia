@@ -28,17 +28,6 @@ class RenderContext {
     /** Отставание кадра от снимка в долях тика — униформ u_lag, см. RenderFrame.interpolationLag. */
     var interpolationLag: Float = 0f
 
-    // Pheromone data
-    var pheromoneData: ByteBuffer? = null
-    var numPheromoneInstances: Int = 0
-
-    /**
-     * Коэффициенты спада концентрации феромона: радиус пятна = (a/P - 1)/K.
-     * Приходят из RenderFrame — см. пояснение там, почему их здесь не хардкодят.
-     */
-    var pheromoneK: Float = 0f
-    var pheromoneP: Float = 0f
-
     /** Фигуры оверлея отладочного режима, см. RenderFrame.overlay. */
     var overlayData: ByteBuffer? = null
     var numOverlayInstances: Int = 0
@@ -55,29 +44,9 @@ class RenderContext {
      */
     var pixelWorld: Float = 1f
 
-    // Render parameters
-    var blurAmount: Float = 0f
-    var zoom: Float = 1f
-    var vignetteEnabled: Float = 0f
+    var mode: RenderMode = RenderMode.DEBUG
 
-    /**
-     * Хроматическая аберрация: на сколько пикселей расходятся каналы у края кадра
-     * (DistortRenderer). Сдвиг в пикселях, а не в долях кадра, поэтому на маленьком кадре
-     * превью он во столько же раз сильнее — WorldRenderer.renderOffscreen его уменьшает.
-     */
-    var chromaticAberration: Float = SCREEN_CHROMATIC_ABERRATION
-    var mode: RenderMode = RenderMode.REALISTIC
-
-    /** Короткая запись для проходов постпроцесса: все они рисуют только в этом случае. */
-    val usePostProcess: Boolean get() = mode.usesPostProcess
-
-    // Texture passing between components
-    var currentTexture: Texture? = null
-
-    // FBO references for component communication
     var sceneFbo: FrameBuffer? = null
-    var blurFbo: FrameBuffer? = null
-    var distortFbo: FrameBuffer? = null
 
     /**
      * Куда выводит готовый кадр последний проход (виньетка, вывод ностальгического режима).
@@ -94,9 +63,6 @@ class RenderContext {
         outputFbo?.end()
     }
 }
-
-/** Аберрация экранного кадра — сколько было зашито в ca_distort.frag до превью. */
-const val SCREEN_CHROMATIC_ABERRATION = 4.5f
 
 /**
  * Interface for all rendering components in the pipeline.

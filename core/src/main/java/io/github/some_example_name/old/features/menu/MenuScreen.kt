@@ -3,7 +3,6 @@ package io.github.some_example_name.old.features.menu
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.files.FileHandle
 import com.badlogic.gdx.graphics.Color
-import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.OrthographicCamera
 import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
@@ -16,6 +15,7 @@ import io.github.some_example_name.old.bug.ReplayTarget
 import io.github.some_example_name.old.commands.GameCommand
 import io.github.some_example_name.old.core.FileDropTarget
 import io.github.some_example_name.old.core.GameVersion
+import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
 import io.github.some_example_name.old.core.ui.STYLE_BEIGE_BLACK
@@ -34,7 +34,8 @@ class MenuScreen : VisDslScreen(
     isScrollable = false
 ), ReplayTarget, FileDropTarget {
 
-    private val batch = SpriteBatch()
+    private var backgroundOptics: io.github.some_example_name.render.microscope.MenuMicroscopeBackground? = null
+    private val backgroundBudget = io.github.some_example_name.render.microscope.MenuBackgroundBudget()
     private val camera = OrthographicCamera()
     var onResize: (() -> Unit)? = null
     private val spriteBatch = SpriteBatch()
@@ -46,11 +47,10 @@ class MenuScreen : VisDslScreen(
 
     init {
         menuViewModel.onMapImportFailed = ::showImportFailed
+        menuViewModel.renderSystem.mode = RenderMode.TISSUE_MAP
         menuViewModel.startMenuSimulation()
         menuViewModel.renderSystem.isRenderUi = false
-        // Мир за меню — всегда реалистичный. У него свой RenderSystem, и выбор режима в
-        // симуляции или редакторе сюда не доходит; здесь это зафиксировано явно.
-        menuViewModel.renderSystem.mode = RenderMode.REALISTIC
+        // Меню отдельно выбирает качество фона; настройка игрока в симуляции не меняется.
 
         menuViewModel.renderSystem.create(
             fontMatrix = fontMatrix,
@@ -62,6 +62,9 @@ class MenuScreen : VisDslScreen(
     }
 
     override fun dslShow() {
+        backgroundBudget.beginVisit()
+        backgroundOptics = io.github.some_example_name.render.microscope.MenuMicroscopeBackground(
+            DIGameGlobalContainer.worldRenderer, backgroundBudget)
         camera.setToOrtho(false, w, h)
         camera.position.set(24f, 24f, 0f)
         camera.zoom = 0.02f
@@ -165,16 +168,8 @@ class MenuScreen : VisDslScreen(
     }
 
     override fun dslRender(delta: Float) {
-        menuViewModel.updateFrame()
+        menuViewModel.updateFrame(checkNotNull(backgroundOptics))
         menuViewModel.moveCamera(camera, delta)
-
-        batch.projectionMatrix = camera.combined
-        batch.begin()
-        batch.end()
-
-        Gdx.gl.glEnable(GL20.GL_BLEND)
-        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
-        Gdx.gl.glDisable(GL20.GL_BLEND)
     }
 
     override fun dslResize(width: Int, height: Int) {
@@ -190,8 +185,15 @@ class MenuScreen : VisDslScreen(
         onResize?.invoke()
     }
 
+    override fun hide() {
+        super.hide()
+        backgroundOptics?.dispose()
+        backgroundOptics = null
+    }
+
     override fun dslDispose() {
-        batch.dispose()
+        backgroundOptics?.dispose()
+        backgroundOptics = null
         spriteBatch.dispose()
         font.dispose()
         shapeRenderer.dispose()

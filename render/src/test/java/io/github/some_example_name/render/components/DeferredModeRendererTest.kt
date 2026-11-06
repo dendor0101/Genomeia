@@ -10,7 +10,7 @@ class DeferredModeRendererTest {
         val renderer = DeferredModeRenderer(RenderMode.DEBUG) { error("unused mode created") }
         renderer.create()
         renderer.resize(1280, 720)
-        renderer.render(RenderContext().apply { mode = RenderMode.REALISTIC })
+        renderer.render(RenderContext().apply { mode = RenderMode.TISSUE_MAP })
         renderer.dispose()
     }
 

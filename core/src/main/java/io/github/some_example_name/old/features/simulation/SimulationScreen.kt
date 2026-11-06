@@ -1,10 +1,10 @@
 package io.github.some_example_name.old.features.simulation
 
+import io.github.some_example_name.old.features.settings.UserPreferences
 import com.badlogic.gdx.Application
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
 import com.badlogic.gdx.Screen
-import com.badlogic.gdx.files.FileHandle
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.OrthographicCamera
@@ -60,8 +60,6 @@ import io.github.some_example_name.old.game.applyCustomFontMedium
 import io.github.some_example_name.old.systems.genomics.library.GenomeCatalog
 import io.github.some_example_name.old.systems.simulation.ControllerKeys
 import io.github.some_example_name.render.RenderMode
-import io.github.some_example_name.render.debug.RenderSceneDump
-import java.io.File
 
 class SimulationScreen(
     /** Рецепт мира из редактора. null — мир не из редактора (тест генома). */
@@ -377,6 +375,10 @@ class SimulationScreen(
     }
 
     override fun render(delta: Float) {
+        if(renderSystem.mode==RenderMode.TISSUE_MAP){
+            viewModel.restoreOpticalPreferences()
+            UserPreferences.flushOptical(delta)
+        }
         // Пока игрок печатает (окно отчёта, поле ввода), клавиатура — его тексту, а не игре:
         // иначе «в» в описании бага — это клавиша D, а «н» — Y. Нажатые клавиши при этом
         // отпускаются, чтобы не залипли.
@@ -419,60 +421,6 @@ class SimulationScreen(
             viewModel.handle(SimulationIntent.SetUiVisible(true))
         }
 
-        // ВРЕМЕННОЕ: F9 выгружает вход рендера в файл для стенда RenderLab.
-        //
-        // Именно после renderSystem.render(), а не до: пишется тот кадр, который только
-        // что ушёл на GPU. Открывается потом так:
-        //   gradlew :render:renderLab
-        // Удалять — вместе с dumpSceneToFile ниже.
-        if (Gdx.app.type == Application.ApplicationType.Desktop && !typing &&
-            Gdx.input.isKeyJustPressed(Input.Keys.F9)
-        ) {
-            dumpSceneToFile()
-        }
-    }
-
-    /**
-     * ВРЕМЕННОЕ: см. обработчик F9 выше.
-     *
-     * Пишется два файла: с меткой времени — чтобы прошлые снимки не затирались, и
-     * scene-last.scene — чтобы стенд можно было запускать вообще без аргументов.
-     */
-    private fun dumpSceneToFile() {
-        val stamp = System.currentTimeMillis()
-        try {
-            val directory = sceneDumpDirectory()
-            val file = directory.child("scene-$stamp.${RenderSceneDump.EXTENSION}")
-            renderSystem.dumpScene(file)
-            renderSystem.dumpScene(directory.child("scene-last.${RenderSceneDump.EXTENSION}"))
-            // Путь именно АБСОЛЮТНЫЙ: относительный ничего не говорит, пока не знаешь
-            // рабочий каталог, а он у игры разный — см. sceneDumpDirectory.
-            Gdx.app.log("SceneDump", "сцена выгружена: ${file.file().absolutePath}")
-        } catch (e: Exception) {
-            Gdx.app.error("SceneDump", "не удалось выгрузить сцену", e)
-        }
-    }
-
-    /**
-     * Куда складывать дампы.
-     *
-     * Рабочий каталог у игры РАЗНЫЙ: задача gradlew :lwjgl3:run запускает её из assets/
-     * (так надо шейдерам и текстурам), а из IDE она стартует в корне проекта. Поэтому
-     * жёсткий относительный путь верен ровно в одном из двух случаев — и промах тихий:
-     * файл пишется, лог рапортует об успехе, а в проекте ничего не появляется.
-     *
-     * Отсюда: пляшем от рабочего каталога, но если это assets — поднимаемся на уровень
-     * выше. Складывать дампы в assets нельзя ни при каком раскладе, их подхватит
-     * generateAssetList и они уедут в сборку игры.
-     *
-     * Переопределяется: -Dgenomeia.sceneDumpDir=C:\куда\надо
-     */
-    private fun sceneDumpDirectory(): FileHandle {
-        System.getProperty("genomeia.sceneDumpDir")?.let { return Gdx.files.absolute(it) }
-
-        val working = File("").absoluteFile
-        val root = if (working.name.equals("assets", ignoreCase = true)) working.parentFile else working
-        return Gdx.files.absolute(File(root, "scene-dumps").absolutePath)
     }
 
     override fun resize(width: Int, height: Int) {
@@ -502,6 +450,7 @@ class SimulationScreen(
     }
 
     override fun pause() {
+        UserPreferences.flushOptical(force=true)
         viewModel.handle(SimulationIntent.AppPaused)
     }
 
@@ -509,9 +458,10 @@ class SimulationScreen(
         viewModel.handle(SimulationIntent.AppResumed)
     }
 
-    override fun hide() { }
+    override fun hide() { UserPreferences.flushOptical(force=true) }
 
     override fun dispose() {
+        UserPreferences.flushOptical(force=true)
         viewModel.stopWorld()
         renderSystem.dispose()
         simulationSystem.simulationData.isFinish = true
@@ -558,6 +508,9 @@ class SimulationScreen(
         if (viewModel.isSandbox) {
             topBar.add(iconButton(icons.organism).hint(bundle.get("button.selectGenome")).onClick { showGenomeList() })
                 .size(size)
+        }
+        if(renderSystem.mode==RenderMode.TISSUE_MAP){
+            topBar.add(iconButton(icons.optics).apply{name="microscope-settings-button"}.hint(bundle.get("microscope.settings")).onClick { showMicroscopeSettings() }).size(size).padLeft(pad)
         }
         // Сверху по центру — фильтр отладочного режима: только в нём он что-то значит.
         if (renderSystem.mode == RenderMode.DEBUG) {
@@ -684,8 +637,15 @@ class SimulationScreen(
             // возвращаются в редактор.
             onSave = if (viewModel.isSandbox) ({ showSaveDialog(exitAfter = false) }) else null,
             onSaveAndExit = if (viewModel.isSandbox) ({ showSaveDialog(exitAfter = true) }) else null,
-            onExit = ::exit
+            onExit = ::exit,
         ).show(stage)
+    }
+
+    private fun showMicroscopeSettings() {
+        io.github.some_example_name.old.core.ui.TissueSettingsDialog(DIGameGlobalContainer.game, DIGameGlobalContainer.bundle, renderSystem.opticalSettings,
+            reset={viewModel.handle(SimulationIntent.ResetMicroscopeSettings)}) { key, value ->
+            viewModel.handle(SimulationIntent.SetMicroscopeParameter(key, value))
+        }.show(stage)
     }
 
     private fun showToolMenu(anchor: Actor) {

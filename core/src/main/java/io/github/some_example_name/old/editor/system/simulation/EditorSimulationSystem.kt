@@ -105,6 +105,7 @@ class EditorSimulationSystem(
         worldCommandsManager.mapCellGenomeIdToIndex.clear()
         gridManager.clearAll()
         entityList.forEach { it.clear() }
+        cellEntity.simulationData.tickCounter = 0
         newGenome()
 
         userCommandManager.pushInternal(
@@ -124,6 +125,7 @@ class EditorSimulationSystem(
         var stageStartCreated = neuralLinkEntity.createdCount
         neuralLinksPeak = stageStartAlive
         for (tick in 0..TIME_SIMULATION) {
+            cellEntity.simulationData.tickCounter = tick + 1
             updateTick()
             replays.forEach { it.copy() }
 

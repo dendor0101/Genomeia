@@ -125,6 +125,7 @@ object CommandRegistry {
         t<SettingsIntent.SetShowHints>(306),
         t<SettingsIntent.SetFullscreen>(307),
         t<SettingsIntent.SetShowDebugInfo>(308),
+        t<SettingsIntent.OpenGpuSettings>(309),
 
         // --- Поддержка ---
         t<SupportIntent.CopyAddress>(400),
@@ -162,6 +163,8 @@ object CommandRegistry {
         t<SimulationIntent.SetTool>(615),
         t<SimulationIntent.UseSavedGenome>(616),
         t<SimulationIntent.SetDebugFilter>(617),
+        t<SimulationIntent.SetMicroscopeParameter>(618),
+        t<SimulationIntent.ResetMicroscopeSettings>(619),
 
         // --- Касания мира ---
         t<PlayerCommand.TouchDown>(700),

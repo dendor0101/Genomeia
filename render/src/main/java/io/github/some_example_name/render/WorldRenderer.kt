@@ -9,85 +9,32 @@ import com.badlogic.gdx.graphics.VertexAttributes
 import com.badlogic.gdx.graphics.glutils.FrameBuffer
 import com.badlogic.gdx.graphics.glutils.ShaderProgram
 import com.badlogic.gdx.math.Matrix4
-import io.github.some_example_name.render.components.BlurPostProcessRenderer
 import io.github.some_example_name.render.components.CellGeometry
 import io.github.some_example_name.render.components.DebugRenderer
 import io.github.some_example_name.render.components.DeferredModeRenderer
-import io.github.some_example_name.render.components.DistortRenderer
 import io.github.some_example_name.render.components.NostalgicRenderer
-import io.github.some_example_name.render.components.ParticleRenderer
-import io.github.some_example_name.render.components.PheromoneRenderer
-import io.github.some_example_name.render.components.PostProcessRenderer
 import io.github.some_example_name.render.components.RenderComponent
 import io.github.some_example_name.render.components.RenderContext
-import io.github.some_example_name.render.components.SCREEN_CHROMATIC_ABERRATION
-import io.github.some_example_name.render.components.VignetteRenderer
 import io.github.some_example_name.render.pack.CellInstanceBuffer
 import io.github.some_example_name.render.pack.OverlayInstanceBuffer
-import io.github.some_example_name.render.pack.PheromoneInstanceBuffer
 import java.nio.ByteBuffer
 
-/**
- * Единственная точка входа модуля рендера: отдаёшь [RenderFrame] — получаешь картинку.
- *
- * Конвейер выполняется по порядку:
- *  1. ParticleRenderer      — клетки реалистичного режима инстансингом в scene FBO
- *  2. DebugRenderer         — отладочный режим целиком: клетки, связи, стрелки, лучи
- *  3. NostalgicRenderer     — клетки ностальгического режима, сам выводит кадр на экран
- *  4. PostProcessRenderer   — собель и пастельная стилизация
- *  5. DistortRenderer       — хроматическая аберрация
- *  6. BlurPostProcessRenderer — гауссов блюр
- *  7. PheromoneRenderer     — феромоны поверх
- *  8. VignetteRenderer      — виньетка, единственный проход прямо в экран (или в буфер
- *                             превью, см. [renderOffscreen])
- *
- * Какие из них работают, решает [RenderFrame.mode]: проход, которому в этом режиме делать
- * нечего, сразу возвращается. В реалистичном режиме идут все, кроме второго и третьего;
- * в отладочном — только второй; в ностальгическом — только третий.
- *
- * Порядок задаётся списком [components] — чтобы вставить свой проход, достаточно
- * добавить [RenderComponent] в нужную позицию.
- *
- * Клетки заливаются на GPU один раз за кадр, до всех проходов, в общую [CellGeometry] —
- * её рисуют ParticleRenderer, DebugRenderer и NostalgicRenderer.
- *
- * ПРО ВЛАДЕНИЕ И ЖИЗНЕННЫЙ ЦИКЛ
- * -----------------------------
- * Экземпляр владеет ВСЕМИ своими GL-ресурсами: меш, геометрия клеток, три FBO, шейдеры
- * и текстуры внутри компонентов. Отсюда правило: у кого экземпляр — тот и зовёт
- * [dispose], и только он.
- *
- * Раньше это правило было нарушено, и молча. Один ShaderManager лежал синглтоном в
- * DIGameGlobalContainer, а пользовались им три экрана сразу — меню, симуляция и редактор
- * генома. Диспозить его при закрытии одного экрана было нельзя, потому что два других
- * продолжали бы рисовать уже удалёнными шейдерами; в итоге RenderSystem.dispose() был
- * пустым TODO, и ресурсы не освобождались вообще никогда. Пока экземпляр один на игру,
- * это ничего не стоит, но именно эта конструкция и мешала завести второй.
- *
- * Требуется живой GL-контекст: [create] дёргается из конструктора, так что создавать
- * объект можно только после инициализации графики.
- */
+/** Общий рендерер симуляции, редактора и превью. Ресурсы микроскопа создаются по запросу. */
 class WorldRenderer(
-    /**
-     * Слои TextureArray по порядку: тип клетки — это индекс в этом списке.
-     *
-     * Публичный, потому что порядок нужен снимку сцены (RenderSceneDump): без него дамп
-     * открылся бы с чужими текстурами. Снаружи список только читают.
-     */
-    val texturePaths: List<String>
+    /** Ключи типов в порядке игровых инстансов. */
+    typeKeys: List<String>,
+    materials: IntArray? = null,
+    materialFactory: (() -> IntArray)? = null
 ) {
+    val opticalMaterials by lazy(LazyThreadSafetyMode.NONE){ materials ?: materialFactory?.invoke() ?: IntArray(typeKeys.size){27} }
 
     // Общие ресурсы
     private lateinit var mesh: Mesh
     private val cellGeometry = CellGeometry()
-    private lateinit var fbo: FrameBuffer
-    private lateinit var blurFbo: FrameBuffer
-    private lateinit var distortFbo: FrameBuffer
+    private var fbo: FrameBuffer? = null
 
     /** Промежуточные FBO превью, см. [renderOffscreen]. null — превью ещё не рисовали. */
     private var offscreenScene: FrameBuffer? = null
-    private var offscreenBlur: FrameBuffer? = null
-    private var offscreenDistort: FrameBuffer? = null
     private var offscreenWidth = 0
     private var offscreenHeight = 0
 
@@ -100,6 +47,8 @@ class WorldRenderer(
      * без этой пометки кадр после превью нарисовал бы клетки превью.
      */
     private var uploadedCells: ByteBuffer? = null
+    private var tissue: io.github.some_example_name.render.microscope.TissueMicroscopeRenderer? = null
+    private var tissuePreview: io.github.some_example_name.render.microscope.TissueMicroscopeRenderer? = null
 
     private val components = mutableListOf<RenderComponent>()
 
@@ -128,18 +77,11 @@ class WorldRenderer(
 
     private fun create() {
         createFullscreenMesh()
-        createFBOs()
         cellGeometry.create()
 
         // Порядок в списке = порядок проходов.
-        components.add(ParticleRenderer(texturePaths, cellGeometry))
         components.add(DeferredModeRenderer(RenderMode.DEBUG) { DebugRenderer(cellGeometry) })
         components.add(DeferredModeRenderer(RenderMode.NOSTALGIC) { NostalgicRenderer(cellGeometry) })
-        components.add(PostProcessRenderer())
-        components.add(DistortRenderer())
-        components.add(BlurPostProcessRenderer())
-        components.add(PheromoneRenderer())
-        components.add(VignetteRenderer())
 
         components.forEach { it.create() }
     }
@@ -154,24 +96,6 @@ class WorldRenderer(
             )
         )
         mesh = Mesh(false, 4, 0, attributes).apply { setVertices(vertices) }
-    }
-
-    private fun createFBOs() {
-        val width = Gdx.graphics.width.coerceAtLeast(1)
-        val height = Gdx.graphics.height.coerceAtLeast(1)
-
-        fbo = createSceneFbo(width, height)
-        println("✅ FBO создан: ${width}×${height} (для пост-процессинга)")
-
-        blurFbo = FrameBuffer(Pixmap.Format.RGBA8888, width, height, false)
-        blurFbo.colorBufferTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
-        fbo.colorBufferTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
-
-        distortFbo = FrameBuffer(Pixmap.Format.RGBA8888, width, height, false)
-        distortFbo.colorBufferTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
-
-        currentWidth = width
-        currentHeight = height
     }
 
     /**
@@ -189,103 +113,51 @@ class WorldRenderer(
         val safeW = width.coerceAtLeast(1)
         val safeH = height.coerceAtLeast(1)
 
-        if (::fbo.isInitialized) fbo.dispose()
-        fbo = createSceneFbo(safeW, safeH)
-
-        if (::blurFbo.isInitialized) blurFbo.dispose()
-        blurFbo = FrameBuffer(Pixmap.Format.RGBA8888, safeW, safeH, false)
-
-        if (::distortFbo.isInitialized) distortFbo.dispose()
-        distortFbo = FrameBuffer(Pixmap.Format.RGBA8888, safeW, safeH, false)
-
-        // Linear filtering for smooth sampling
-        fbo.colorBufferTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
-        blurFbo.colorBufferTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
-        distortFbo.colorBufferTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
-
+        fbo?.dispose()
+        fbo = null
         currentWidth = safeW
         currentHeight = safeH
-
-        println("✅ FBOs resized → scene: ${safeW}×${safeH}, blur: ${safeW}×${safeH}")
 
         components.forEach { it.resize(safeW, safeH) }
     }
 
     fun render(frame: RenderFrame) {
-        draw(
-            frame, fbo, blurFbo, distortFbo, output = null,
-            pixelWidth = Gdx.graphics.backBufferWidth,
-            chromaticAberration = SCREEN_CHROMATIC_ABERRATION
-        )
-    }
-
-    /**
-     * Кадр не в экран, а в [output]: превью генома в списках. Конвейер тот же, что у
-     * [render], — превью выглядит ровно как организм в игре, — но промежуточные FBO свои,
-     * размером с [output]: экранные трогать нельзя, превью рисуется между кадрами живого
-     * экрана (список геномов в симуляции).
-     *
-     * Свои FBO заводятся при первом вызове и пересоздаются, только когда меняется размер:
-     * все превью одного списка одного размера, так что на список это одно создание.
-     * Объём: три буфера RGBA8 и один D24S8, на 256×256 — около 1 МБ видеопамяти.
-     *
-     * DebugRenderer подбирает размер своего буфера по выходной текстуре: чтение по
-     * gl_FragCoord совпадает с размером превью.
-     *
-     * Звать из потока рендера вне [render] (между кадрами). Геометрия клеток общая с
-     * экраном, но превью ему не мешает: следующий кадр экрана увидит в VBO чужой буфер и
-     * перезальёт свой (см. [uploadedCells]). После вызова привязан экранный буфер.
-     */
-    fun renderOffscreen(frame: RenderFrame, output: FrameBuffer) {
-        val width = output.width
-        val height = output.height
-        if (offscreenWidth != width || offscreenHeight != height) createOffscreenFbos(width, height)
-
-        // Фон превью свой, а не тот, что оставил экран: реалистичный режим чистит сцену
-        // текущим цветом очистки.
-        Gdx.gl.glClearColor(0f, 0f, 0f, 1f)
-        // Превью — уменьшенный экран: аберрация в той же доле кадра, что на экране. Без этого
-        // на картинке в 100 пикселей каналы расходились на 5% её ширины — цветные ореолы.
-        val screenWidth = Gdx.graphics.backBufferWidth.coerceAtLeast(width)
-        draw(
-            frame, offscreenScene!!, offscreenBlur!!, offscreenDistort!!, output,
-            pixelWidth = width,
-            chromaticAberration = SCREEN_CHROMATIC_ABERRATION * width / screenWidth
-        )
-    }
-
-    private fun createOffscreenFbos(width: Int, height: Int) {
-        disposeOffscreenFbos()
-        offscreenScene = createSceneFbo(width, height)
-        offscreenBlur = FrameBuffer(Pixmap.Format.RGBA8888, width, height, false)
-        offscreenDistort = FrameBuffer(Pixmap.Format.RGBA8888, width, height, false)
-        listOf(offscreenScene!!, offscreenBlur!!, offscreenDistort!!).forEach {
-            it.colorBufferTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
+        // GLFW может запросить кадр во время сворачивания окна с размером 0×0.
+        val width = Gdx.graphics.backBufferWidth
+        if (width <= 0 || Gdx.graphics.backBufferHeight <= 0) return
+        if (frame.mode == RenderMode.NOSTALGIC && fbo == null) {
+            fbo = createSceneFbo(currentWidth, currentHeight)
+            fbo!!.colorBufferTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
         }
-        offscreenWidth = width
-        offscreenHeight = height
+        draw(frame, fbo, null, width)
     }
 
-    private fun disposeOffscreenFbos() {
-        offscreenScene?.dispose()
-        offscreenBlur?.dispose()
-        offscreenDistort?.dispose()
-        offscreenScene = null
-        offscreenBlur = null
-        offscreenDistort = null
-        offscreenWidth = 0
-        offscreenHeight = 0
+    /** Превью Debug и микроскоп выводят прямо в output; Nostalgic нужен промежуточный depth/stencil. */
+    fun renderOffscreen(frame: RenderFrame, output: FrameBuffer) {
+        if (frame.mode == RenderMode.NOSTALGIC && (offscreenScene == null ||
+            offscreenWidth != output.width || offscreenHeight != output.height)) {
+            offscreenScene?.dispose()
+            offscreenScene = createSceneFbo(output.width, output.height)
+            offscreenWidth = output.width
+            offscreenHeight = output.height
+        }
+        draw(frame, offscreenScene, output, output.width)
     }
 
-    private fun draw(
-        frame: RenderFrame,
-        scene: FrameBuffer,
-        blur: FrameBuffer,
-        distort: FrameBuffer,
-        output: FrameBuffer?,
-        pixelWidth: Int,
-        chromaticAberration: Float
-    ) {
+    private fun draw(frame: RenderFrame, scene: FrameBuffer?, output: FrameBuffer?, pixelWidth: Int) {
+        if (frame.mode == RenderMode.TISSUE_MAP) {
+            uploadedCells=null // После микроскопа VBO обычного режима надо заполнить заново.
+            val renderer = if (output == null) {
+                tissue ?: io.github.some_example_name.render.microscope.TissueMicroscopeRenderer(opticalMaterials).also { tissue = it }
+            } else {
+                tissuePreview ?: io.github.some_example_name.render.microscope.TissueMicroscopeRenderer(opticalMaterials).also { tissuePreview = it }
+            }
+            renderer.render(frame, output, pixelWidth, output?.height ?: currentHeight)
+            return
+        }
+        // Освобождаем карты и программы при выходе из микроскопа.
+        if(output==null && tissue!=null){ tissue!!.dispose(); tissue=null }
+        if(output!=null && tissuePreview!=null){ tissuePreview!!.dispose(); tissuePreview=null }
         val cells = frame.cells
 
         // Один раз за кадр и до всех проходов: сколько бы их ни рисовало клетки, байты
@@ -304,30 +176,17 @@ class WorldRenderer(
             numInstances = cells?.let { it.remaining() / CellInstanceBuffer.STRUCT_SIZE } ?: 0
             interpolationLag = frame.interpolationLag
 
-            pheromoneData = frame.pheromones
-            numPheromoneInstances =
-                frame.pheromones?.let { it.remaining() / PheromoneInstanceBuffer.STRUCT_SIZE } ?: 0
-            pheromoneK = frame.pheromoneK
-            pheromoneP = frame.pheromoneP
-
             overlayData = frame.overlay
             numOverlayInstances =
                 frame.overlay?.let { it.remaining() / OverlayInstanceBuffer.STRUCT_SIZE } ?: 0
             time = frame.time
             pixelWorld = pixelWorld(frame.cameraProjection, pixelWidth)
 
-            blurAmount = frame.blurAmount
-            zoom = frame.zoom
-            vignetteEnabled = frame.vignetteEnabled
-            this.chromaticAberration = chromaticAberration
             mode = frame.mode
             debugFilter = frame.debugFilter
 
             sceneFbo = scene
-            blurFbo = blur
-            distortFbo = distort
             outputFbo = output
-            currentTexture = null
         }
 
         components.forEach { component ->
@@ -414,6 +273,8 @@ class WorldRenderer(
     }
 
     fun dispose() {
+        tissue?.dispose(); tissue = null
+        tissuePreview?.dispose(); tissuePreview = null
         components.forEach { it.dispose() }
         components.clear()
 
@@ -421,10 +282,8 @@ class WorldRenderer(
         uploadedCells = null
         if (::mesh.isInitialized) mesh.dispose()
 
-        if (::fbo.isInitialized) fbo.dispose()
-        if (::blurFbo.isInitialized) blurFbo.dispose()
-        if (::distortFbo.isInitialized) distortFbo.dispose()
-        disposeOffscreenFbos()
+        fbo?.dispose(); fbo = null
+        offscreenScene?.dispose(); offscreenScene = null
     }
 
     // === Управление конвейером ===

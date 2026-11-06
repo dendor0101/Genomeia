@@ -62,7 +62,8 @@ object StateHash {
      * 13 — вес и тики спайков синапса ушли из NeuralEntity в его SynapseState
      *     (SpecialModDataEntity).
      */
-    const val VERSION = 13
+    // 14 — сохраняемый тик рождения клетки для возрастного рельефа; совместно с SynapseState.
+    const val VERSION = 14
 
     class Result(val hash: Long, val parts: LongArray)
 
