@@ -2,7 +2,6 @@ package io.github.some_example_name.old.systems.simulation
 
 class SimulationData {
     var isRestart = false
-    var isFinish = false
     var tickCounter = 0
     var timeSimulation = 0f
 
@@ -70,7 +69,6 @@ class SimulationData {
 
     fun clear() {
         isRestart = false
-        isFinish = false
         tickCounter = 0
         timeSimulation = 0f
         selectedCellIndex = -1

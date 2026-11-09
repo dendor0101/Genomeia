@@ -1,6 +1,7 @@
 package io.github.some_example_name.old.systems.genomics.library
 
 import com.badlogic.gdx.files.FileHandle
+import io.github.some_example_name.old.core.GameFilePaths
 import io.github.some_example_name.old.systems.genomics.genome.Genome
 import io.github.some_example_name.old.systems.genomics.genome.decodeGenome
 import io.github.some_example_name.old.systems.genomics.genome.encodeGenome
@@ -52,7 +53,11 @@ object GenomeImport {
      *
      * @throws IllegalArgumentException файл не геном (или испорчен) — текст годится для лога.
      */
-    fun importFile(source: FileHandle, targetDir: FileHandle, baker: Baker): FileHandle {
+    fun importFile(source: FileHandle, targetDir: FileHandle, baker: Baker): FileHandle =
+        importFile(source, targetDir, baker, null)
+
+    fun importFile(source: FileHandle, targetDir: FileHandle, baker: Baker,
+                   beforePlace: ((FileHandle, ByteArray) -> Unit)?): FileHandle {
         val bytes = source.readBytes()
         val baseName = fileBaseName(source.name())
 
@@ -63,8 +68,8 @@ object GenomeImport {
             } catch (e: Exception) {
                 throw IllegalArgumentException("файл .genome не читается: ${e.message}", e)
             }
-            val baked = withBaking(genome, baker) ?: return place(targetDir, baseName) { bytes }
-            return place(targetDir, baseName) { encodeGenome(baked) }
+            val baked = withBaking(genome, baker) ?: return place(targetDir, baseName, beforePlace) { bytes }
+            return place(targetDir, baseName, beforePlace) { encodeGenome(baked) }
         }
 
         require(LegacyGenomeJson.looksLikeJson(bytes)) { "ни .genome, ни JSON" }
@@ -72,7 +77,7 @@ object GenomeImport {
         // Имя внутри генома запекание не трогает: печётся один раз, а имя подставляется
         // под каждый перебираемый вариант.
         val baked = baker.bake(genome, baseName)
-        return place(targetDir, baseName) { name -> encodeGenome(baked.copy(name = name)) }
+        return place(targetDir, baseName, beforePlace) { name -> encodeGenome(baked.copy(name = name)) }
     }
 
     /**
@@ -174,17 +179,19 @@ object GenomeImport {
      * пробуемое имя (у JSON имя лежит и внутри генома). Занятое теми же байтами — это уже
      * импортированный этот же геном: он и возвращается, без второй копии.
      */
-    private fun place(targetDir: FileHandle, baseName: String, content: (String) -> ByteArray): FileHandle {
+    private fun place(targetDir: FileHandle, baseName: String, beforePlace: ((FileHandle, ByteArray) -> Unit)?, content: (String) -> ByteArray): FileHandle {
         targetDir.mkdirs()
         for (n in 1..MAX_SUFFIX) {
             val name = if (n == 1) baseName else "$baseName ($n)"
-            val target = targetDir.child(name + EXTENSION)
+            val target = GameFilePaths.child(targetDir, name + EXTENSION)
             val bytes = content(name)
-            if (!target.exists()) {
-                target.writeBytes(bytes, false)
-                return target
+            val exists = target.exists()
+            if (exists && !target.readBytes().contentEquals(bytes)) continue
+            beforePlace?.invoke(target, bytes)
+            if (!exists) {
+                GameFilePaths.writeAtomically(target) { it.writeBytes(bytes, false) }
             }
-            if (target.readBytes().contentEquals(bytes)) return target
+            return target
         }
         throw IllegalArgumentException("в ${targetDir.path()} занято $MAX_SUFFIX имён «$baseName (n)»")
     }

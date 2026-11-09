@@ -49,7 +49,8 @@ data class StateHashed(val hash: Long, val version: Int = 0, val parts: List<Lon
 }
 
 /**
- * Мир записан в слот [slot] — ровно между этими тиками. Сохранение читает мир из потока
+ * Снят мир для записи в слот [slot]. О последующей ошибке записи сообщает SaveWorldFailed.
+ * Сохранение читает мир из потока
  * рендера, и при повторе симуляция держится на этом тике, пока сохранение не случится:
  * иначе в файл попал бы другой тик, и следующая загрузка этого слота разошлась бы.
  */
@@ -57,4 +58,11 @@ data class StateHashed(val hash: Long, val version: Int = 0, val parts: List<Lon
 data class WorldSaveCommitted(val slot: String) : SimEvent {
     override val name get() = "WorldSaveCommitted"
     override val detail get() = slot
+}
+
+/** Последний завершённый тик перед удалением мира. Подготовка следующего экрана может
+ * занять несколько тиков уже после нажатия кнопки перехода. */
+@Serializable
+data object WorldStopped : SimEvent {
+    override val name get() = "WorldStopped"
 }

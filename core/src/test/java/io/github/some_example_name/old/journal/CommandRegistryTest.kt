@@ -60,6 +60,20 @@ class CommandRegistryTest {
     )
 
     @Test
+    fun `обе записи с историческим номером 620 читаются своим типом`() {
+        val failure = SimulationIntent.SaveWorldFailed("Мир")
+        val (id, payload) = checkNotNull(CommandRegistry.encode(failure))
+        assertEquals(623, id)
+        assertEquals(failure, CommandRegistry.decode(620, payload))
+        assertEquals(failure, CommandRegistry.decode(id, payload))
+
+        val mark = SimulationIntent.MarkCell(1f, 2f, 3, 4, 5, 6)
+        val (markId, markPayload) = checkNotNull(CommandRegistry.encode(mark))
+        assertEquals(620, markId)
+        assertEquals(mark, CommandRegistry.decode(markId, markPayload))
+    }
+
+    @Test
     fun `каждая команда каждого семейства есть в реестре`() {
         val missing = families.flatMap { leaves(it) }.filterNot { CommandRegistry.isRegistered(it) }
         assertTrue(missing.isEmpty(), "нет в CommandRegistry: ${missing.joinToString { it.qualifiedName ?: it.toString() }}")

@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.bug
 
+import io.github.some_example_name.old.core.GameFilePaths
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.DataInputStream
@@ -85,8 +86,7 @@ object BugFile {
             zip.finish()
             zip.flush()
         }
-        if (target.exists()) target.delete()
-        check(temp.renameTo(target)) { "не удалось переименовать ${temp.path} в ${target.name}" }
+        GameFilePaths.replaceFile(temp, target)
     }
 
     /** Проверить сигнатуру и отдать поток ZIP-части. */
@@ -121,14 +121,14 @@ object BugFile {
     /** Распаковать .bug в каталог — для повтора. */
     fun unpack(file: File, toDir: File) {
         toDir.mkdirs()
-        val root = toDir.canonicalFile
+        val names = HashSet<File>()
         openZip(BufferedInputStream(FileInputStream(file), BUFFER)).use { zip ->
             while (true) {
                 val entry = zip.nextEntry ?: break
+                val components = entry.name.removeSuffix("/").split('/')
+                val target = components.fold(toDir) { parent, name -> GameFilePaths.child(parent, name) }
+                require(names.add(target)) { "Повторяющееся имя в .bug: ${entry.name}" }
                 if (entry.isDirectory) continue
-                val target = File(toDir, entry.name).canonicalFile
-                // Файл приходит от игрока: путь вида ../../ не должен выйти из песочницы.
-                require(target.path.startsWith(root.path + File.separator)) { "недопустимый путь в .bug: ${entry.name}" }
                 target.parentFile.mkdirs()
                 FileOutputStream(target).use { zip.copyTo(it, BUFFER) }
             }

@@ -179,7 +179,7 @@ class GenomePreviewCache(
         if (GenomeCatalog.isBundled(name)) 0L
         else genomeFile(name).lastModified()
 
-    private fun genomeFile(name: String) = GameFiles.genomesDir().child(name + GenomeImport.EXTENSION)
+    private fun genomeFile(name: String) = GameFiles.genomeFile(name)
 
     private companion object {
         const val TAG = "GenomePreview"

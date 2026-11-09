@@ -6,7 +6,7 @@ import io.github.some_example_name.old.commands.GameCommand
 import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.bug.BugReplay
 import io.github.some_example_name.old.journal.CommandSource
-import io.github.some_example_name.old.journal.SessionAttachments
+import io.github.some_example_name.old.core.ReplayFileException
 import io.github.some_example_name.old.journal.SessionJournal
 import kotlinx.serialization.Serializable
 import io.github.some_example_name.old.features.worldeditor.WorldSpec
@@ -178,6 +178,13 @@ sealed interface SimulationIntent : GameCommand {
     @Serializable
     data class SaveWorld(val slot: String) : SimulationIntent {
         override val name get() = "SaveWorld"
+        override val detail get() = slot
+    }
+
+    /** Ошибка файловой системы игрока: на машине повтора запись могла бы пройти. */
+    @Serializable
+    data class SaveWorldFailed(val slot: String) : SimulationIntent {
+        override val name get() = "SaveWorldFailed"
         override val detail get() = slot
     }
 
@@ -418,6 +425,7 @@ class SimulationViewModel(
                 simulationData.controllerKeyTouched[intent.index] = intent.pressed
 
             is SimulationIntent.SaveWorld -> saveWorld(intent.slot)
+            is SimulationIntent.SaveWorldFailed -> onEffect?.invoke(SimulationEffect.WorldSaved(false))
 
             is SimulationIntent.SetUiVisible -> {
                 if (isUiVisible == intent.visible) return
@@ -471,6 +479,7 @@ class SimulationViewModel(
         genomeNames = genomeNames + fileName
         index
     } catch (e: Exception) {
+        if (BugReplay.isActive) BugReplay.fileFailure("не удалось прочитать геном $fileName: ${e.message}")
         Gdx.app.error("Genome", "не удалось прочитать геном '$fileName'", e)
         -1
     }
@@ -492,11 +501,6 @@ class SimulationViewModel(
      *   показать ошибку.
      */
     fun startWorld(): Boolean {
-        // Чистый лист под любой мир. Прошлая сессия ставит isFinish, но её поток обычно
-        // останавливается раньше, чем доходит до тика, который бы его обработал. Тогда
-        // первый же тик ЭТОЙ сессии вызвал бы dispose() и стёр только что построенный —
-        // или только что загруженный — мир.
-        //
         // Сетка — по размеру мира из редактора карты. Раньше она была жёстко 256×256, а
         // рельеф 128×128 лежал в её углу: мир в симуляции был вдвое больше, чем в редакторе.
         // Сохранённый мир поправит размер сам, при загрузке (MapSave.load).
@@ -545,13 +549,15 @@ class SimulationViewModel(
 
     private fun loadSavedWorld(slot: String): Boolean = try {
         // Файл мира — с машины игрока: при первой загрузке за сессию он уходит в снимки.
-        SessionAttachments.attachMapBeforeLoad(slot)
         worldSpec = DISimulationContainer.mapSave.load(slot)
         // Рельеф не строится заново — он уже в загруженных частицах. Карта нужна
         // только «Перезапуску».
         DISimulationContainer.worldTerrainManager.map = worldSpec?.buildMap()
         true
     } catch (e: Exception) {
+        if (BugReplay.isActive && (e is ReplayFileException || !MapSave.exists(slot))) {
+            BugReplay.fileFailure("не удалось восстановить мир $slot: ${e.message}")
+        }
         Gdx.app.error("MapSave", "не удалось загрузить мир $slot", e)
         // Битый файл не перезаписываем: следующее сохранение уйдёт в новый слот.
         saveSlot = null
@@ -564,19 +570,24 @@ class SimulationViewModel(
      * сохранённый мир.
      */
     private fun saveWorld(slot: String) {
-        SessionAttachments.markMapWritten(slot)
+        val recorded = BugReplay.injectedSave
+        // Команду могло вытеснить следующее превью или выход с экрана до снимка мира.
+        if (recorded != null && recorded.tick == null && !BugReplay.replayingCrash) return
         renderSystem.requestPreview(MapSave.PREVIEW_SIZE) { preview ->
-            val saved = try {
+            if (recorded?.failed == true) {
+                // Не трогаем прежний файл. Сообщение игроку покажет записанная SaveWorldFailed.
+                if (recorded.tick != null) simulationSystem.betweenTicks { simulationSystem.onWorldSaved(slot) }
+                return@requestPreview
+            }
+            try {
                 saveSlot = DISimulationContainer.mapSave.save(slot, worldSpec, preview)
-                true
             } catch (e: Exception) {
                 Gdx.app.error("MapSave", "не удалось сохранить мир", e)
-                // Повтор держит мир на тике сохранения, пока оно не случится. Упало —
-                // отпускаем, иначе мир так и простоит.
-                BugReplay.onWorldSaveFinished()
-                false
+                if (BugReplay.isActive) BugReplay.fileFailure("не удалось повторить сохранение $slot: ${e.message}")
+                else handle(SimulationIntent.SaveWorldFailed(slot))
+                return@requestPreview
             }
-            onEffect?.invoke(SimulationEffect.WorldSaved(saved))
+            onEffect?.invoke(SimulationEffect.WorldSaved(true))
         }
     }
 }

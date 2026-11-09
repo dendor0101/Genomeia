@@ -23,7 +23,7 @@ class ThreadManager(
     var executor = ParallelExecutor(workerCount())
         private set
 
-    var isRunning = false
+    @Volatile var isRunning = false
 
     /**
      * Ключи порядка отложенных команд мира (см. WorkOrder): стадия выставляет буферу ключ

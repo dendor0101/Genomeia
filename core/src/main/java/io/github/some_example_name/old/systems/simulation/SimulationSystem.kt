@@ -41,6 +41,7 @@ import io.github.some_example_name.old.journal.SessionStarted
 import io.github.some_example_name.old.journal.SimRestarted
 import io.github.some_example_name.old.journal.StateHash
 import io.github.some_example_name.old.journal.StateHashed
+import io.github.some_example_name.old.journal.WorldStopped
 import io.github.some_example_name.old.journal.WorldSaveCommitted
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -145,10 +146,6 @@ class SimulationSystem(
     private fun tick() {
         val tickStart = System.nanoTime()
 
-        if (simulationData.isFinish) {
-            dispose()
-            return
-        }
         if (BugReplay.isActive) {
             // При повторе рестарт берётся из записи — в том тике, где он случился у
             // игрока, а не когда до флага дошёл бы этот поток.
@@ -391,7 +388,17 @@ class SimulationSystem(
         }
     }
 
-    fun stopUpdateThread() {
+    fun closeWorld() {
+        stopUpdateThread()
+        betweenTicks {
+            val tick = simulationData.tickCounter
+            if (BugReplay.isActive) BugReplay.onWorldStopped(SessionJournal.epoch, tick)
+            else SessionJournal.recordSim(CommandSource.SYSTEM, WorldStopped, SessionJournal.epoch, tick)
+            dispose()
+        }
+    }
+
+    private fun stopUpdateThread() {
         threadManager.stopSimulationLoop()
 
         simulationThread?.let { thread ->
@@ -508,7 +515,7 @@ class SimulationSystem(
      */
     fun onWorldSaved(slot: String) {
         if (BugReplay.isActive) {
-            BugReplay.onWorldSaveFinished()
+            BugReplay.onWorldSaveFinished(slot, simulationData.tickCounter)
         } else {
             SessionJournal.recordSim(
                 CommandSource.SYSTEM, WorldSaveCommitted(slot), SessionJournal.epoch, simulationData.tickCounter

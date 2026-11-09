@@ -2,6 +2,7 @@ package io.github.some_example_name.old.features.genomes
 
 import com.badlogic.gdx.files.FileHandle
 import io.github.some_example_name.old.core.GameFiles
+import io.github.some_example_name.old.core.ReplayFileException
 import io.github.some_example_name.old.systems.genomics.genome.Genome
 import io.github.some_example_name.old.systems.genomics.genome.decodeGenome
 import io.github.some_example_name.old.systems.genomics.genome.encodeGenome
@@ -42,6 +43,18 @@ class GenomesViewModelTest {
 
     private fun put(name: String) =
         genomes.child("$name.genome").writeBytes(encodeGenome(Genome(version = 24, name = name, cellsAmount = 3)), false)
+
+    @Test
+    fun commandsRejectNestedNamesBeforeChangingTheLibrary() {
+        val before = files()
+        assertFailsWith<ReplayFileException> {
+            viewModel.handle(GenomesIntent.Delete("folder/Glist"))
+        }
+        assertFailsWith<ReplayFileException> {
+            viewModel.handle(GenomesIntent.Rename("Glist", "folder/new"))
+        }
+        assertEquals(before, files())
+    }
 
     private fun files() = genomes.list().map { it.name() }.sorted()
 

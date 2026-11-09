@@ -257,6 +257,7 @@ object BugReports {
         values["final.epoch"] = SessionJournal.epoch.toString()
         values["final.tick"] = (SessionJournal.simTick?.invoke() ?: -1).toString()
         if (journal != null) {
+            values["journal.complete"] = journal.complete.toString()
             values["journal.ui"] = journal.uiCount.toString()
             values["journal.uiHash"] = Fnv.hex(journal.uiHash)
             values["journal.sim"] = journal.simCount.toString()
@@ -286,7 +287,8 @@ object BugReports {
      * Подпись краша для группировки: класс исключения и пять верхних кадров — без номеров
      * строк, чтобы правка соседнего кода не делила одну ошибку на две группы.
      */
-    private fun crashSignature(root: Throwable): String {
+    internal fun crashSignature(error: Throwable): String {
+        val root = generateSequence(error) { it.cause }.last()
         val key = buildString {
             append(root::class.java.name)
             root.stackTrace.take(SIGNATURE_FRAMES).forEach { append('|').append(it.className).append('.').append(it.methodName) }

@@ -32,6 +32,7 @@ object SessionJournal {
     private var file: FileHandle? = null
     private var startNanos = 0L
     private var entriesSinceFlush = 0
+    private var writeFailed = false
 
     val isRecording: Boolean get() = synchronized(lock) { out != null }
 
@@ -76,6 +77,8 @@ object SessionJournal {
             stream.flush()
             out = stream
             file = target
+            writeFailed = false
+            unregistered = 0
             startNanos = System.nanoTime()
             uiCount = 0
             simCount = 0
@@ -96,7 +99,7 @@ object SessionJournal {
     }
 
     /** Журнал на момент снимка и его контрольные суммы — согласованные между собой. */
-    class Snapshot(val file: java.io.File, val uiCount: Int, val uiHash: Long, val simCount: Int, val simHash: Long)
+    class Snapshot(val file: java.io.File, val uiCount: Int, val uiHash: Long, val simCount: Int, val simHash: Long, val complete: Boolean)
 
     /**
      * Копия журнала для .bug. Под локом: поток симуляции дописывает журнал прямо сейчас,
@@ -107,7 +110,7 @@ object SessionJournal {
         try {
             out?.flush()
             source.copyTo(target, overwrite = true)
-            Snapshot(target, uiCount, uiHash, simCount, simHash)
+            Snapshot(target, uiCount, uiHash, simCount, simHash, !writeFailed && unregistered == 0)
         } catch (e: Exception) {
             Gdx.app?.error(TAG, "не удалось снять журнал", e)
             null
@@ -215,6 +218,7 @@ object SessionJournal {
 
     /** Ошибка записи не должна ронять игру: журнал просто выключается. */
     private fun fail(e: Exception) {
+        writeFailed = true
         Gdx.app?.error(TAG, "журнал сессии остановлен", e)
         close()
     }
