@@ -44,6 +44,14 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
 
     lateinit var body: BodyDefinition
 
+    /**
+     * Постоянные масштаба мира (см. WorldScale): заданы до загрузки или взяты из неё.
+     * [linkScale] — их средняя длина связи, опорный размер всех порогов решателя.
+     */
+    var worldScale: WorldScale? = null
+    var linkScale = 1f
+        internal set
+
     // --- частицы (SoA) ---
     var n = 0
 
@@ -98,7 +106,35 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      */
     lateinit var cellDead: BooleanArray
 
+    /**
+     * НЕРОЖДЁННАЯ КЛЕТКА растущего тела (этап A2.4): мертва (cellDead) до activateCell, но
+     * не погибла — её место в организме ждёт её. Коррекции импульса (TickMomentum,
+     * InternalMomentum) не считают её закреплённой частицей: иначе одна нерождённая
+     * клетка снимала бы коррекцию со всего растущего организма. Погибшая клетка
+     * закрепляет свою группу, как и раньше.
+     */
+    var cellUnborn = BooleanArray(0)
+
     var deadCount = 0
+
+    /** Убивает ли глубокое проникновение — см. PhysicsWorld.deepKillOn; контакты берут его при сборке. */
+    var deepKillOn = KILL_ON_DEEP_OVERLAP
+
+    /**
+     * Клетки с дорастающей связью этого шага: growStamp[i] == growStampNow (BodyGrowth.
+     * markGrowingCells). Выводится из списка дорастающих рёбер, поэтому в снимок не входит.
+     */
+    var growStamp = IntArray(0)
+    var growStampNow = 0
+
+    /**
+     * Мягкий старт касаний новорождённой: доля расстояния упора 0..1 по клетке, 1 — обычная
+     * (BodyGrowth.rampNewbornContacts, BoundaryContacts.contactRamp). Выводится из дорастающих
+     * связей, поэтому в снимок не входит; [rampCells] — клетки с долей меньше 1.
+     */
+    var contactRamp = FloatArray(0)
+    var rampCells = IntArray(16)
+    var rampN = 0
 
     /** Максимальная длина каждой связи: LINK_MAX_STRETCH * длина покоя. */
     /**
@@ -328,6 +364,17 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      */
     lateinit var rigidBones: Array<IntArray>
 
+    /**
+     * КОСТЬ ВКЛЮЧАЕТСЯ ПО КЛЕТКЕ (клиент-игра: клетка становится костью мутацией на своей стадии,
+     * решение 27.10 — вариант «заморозить форму»). boneClusterOf — в какой кости клетка окажется
+     * (кластер описания), boneOf — включена ли уже (-1 — нет). Не включённая клетка — обычная
+     * мягкая ткань: вес в кости 0, связи с костью — обычные; setBone (activateBone) вводит её в
+     * кость, связи с уже включёнными клетками той же кости уходят из решателя (их держит
+     * проекция), поза кости — нынешнее положение её включённых клеток. Тела стенда заводятся со
+     * всеми костями включёнными и позой из описания — прежний путь.
+     */
+    var boneClusterOf = IntArray(0)
+
     var degenerateBones = 0
 
     /** Номер кости у вершины, -1 если не в жёсткой кости. */
@@ -498,6 +545,139 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      */
     var muscleScaleOf = DoubleArray(0)
 
+    /**
+     * МЫШЦА ПО КЛЕТКЕ (клиент-игра: у каждого миоцита своя активация, сжатие и растяжение).
+     * cellScaleTarget — множитель длины покоя, который велел клиент (1 — не мышца или
+     * расслаблена; игра даёт 0.5..1.5); cellScale — нынешний: подходит к цели с темпом мышцы
+     * стенда (advanceCellScales: удаление от 1 — muscleRateContract, возвращение — Relax).
+     * Скачок длины покоя за тик XPBD выполняет почти сразу — ткань рвало (standParityCheck,
+     * 27.10: 15–21 разрыв за 240 тиков гребка; с темпом — ни одного).
+     *
+     * МЫШЦА ЗАХВАТЫВАЕТ СОСЕДЕЙ НА ОДНО РЕБРО, как мышца стенда (growMuscles, MUSCLE_TOUCH 1:
+     * треугольник с мышечной вершиной отдаёт мышце все три клетки). cellScaleEff — действующий
+     * множитель клетки: сильнейший (дальше от 1, при равном удалении — меньший) из своего и
+     * множителей соседей по живому треугольнику. Связь берёт слабейший действующий множитель
+     * концов — сокращается, только если оба конца в кольце мышцы (связь из кольца наружу — нет,
+     * как у стенда); треугольник — слабейший из трёх вершин, с костной вершиной не сокращается
+     * (кость держит сторону, площадь уронила бы вершину на кость — см. muscleOfTri). Площадь —
+     * квадрат множителя. Без захвата (сильнейшая мышца концов, 27.10) A-11 плыл 7.5 связи за 600
+     * тиков гребка против 22.8 у стенда. В ядрах масштаб = масштаб кластера мышцы × множитель
+     * связи; при всех множителях 1 — те же биты: x · 1 = x.
+     */
+    var cellScale = FloatArray(0)
+    var cellScaleTarget = FloatArray(0)
+    var cellScaleEff = FloatArray(0)
+    /** Черновик activateCell: ожившие треугольники до старта их дорастания. */
+    var bornTriScratch = IntArray(16)
+    var conCellScale = FloatArray(0)
+    var triCellScale = FloatArray(0)
+    /** Множители связей и треугольников — заново целиком (после перестройки структуры). */
+    var cellScalesDirty = false
+    /** Есть клетки, чей множитель ещё не дошёл до цели. */
+    var cellScalesMoving = false
+
+    /**
+     * ПЛАВНОСТЬ МЫШЦЫ КЛЕТКИ ПО ПОДШАГАМ (MuscleDriver.applyCellScaleLerp): связи (по ребру) и
+     * треугольники (по постоянному номеру), чей множитель сдвинул шаг мышцы, с «было» и «станет».
+     * Рабочие данные одного шага: собираются в advanceCellScales, к концу шага пусты — в снимок
+     * не входят. Метки — номер шага, чтобы не захватить элемент дважды.
+     */
+    var lerpCapturing = false
+    var lerpEdgeIds = IntArray(64); var lerpEdgeFrom = FloatArray(64); var lerpEdgeTo = FloatArray(64); var lerpEdgeN = 0
+    var lerpTriIds = IntArray(64); var lerpTriFrom = FloatArray(64); var lerpTriTo = FloatArray(64); var lerpTriN = 0
+    var lerpEdgeStamp = IntArray(0); var lerpTriStamp = IntArray(0); var lerpStampNow = 0
+
+    /**
+     * Клиент задавал множители клеток (хоть один не 1). Пока нет — ядра идут прежним путём,
+     * без чтения множителей: стенд (мышцы кластерами) не платит за мышцу по клетке. Флаг не
+     * гаснет: однажды включённый, он входит в снимок и переживает уплотнение.
+     */
+    var cellScalesOn = false
+
+    /**
+     * МЯГКОСТЬ ТКАНИ ПО КЛЕТКЕ (клиент-игра: жир мягче листа, PhysicsWorld.setSoftness).
+     * cellSoftness — множитель податливости клетки (1 — обычная ткань, 2.5 — в 2.5 раза мягче).
+     * Связь берёт среднее концов — две половинки пружины подряд: податливости складываются;
+     * треугольник — среднее трёх вершин. В ядрах alpha = SOFT_COMPLIANCE (AREA_COMPLIANCE) ×
+     * множитель. При шаге 1/960 податливость связи (alpha/h² ≈ 9) больше массы в знаменателе
+     * поправки (w ≈ 1–2), поэтому жёсткость задаёт в основном она: множитель 2.5 даёт связь жир–жир
+     * в 2.43 раза мягче обычной (SoftnessTest), у площади (знаменатель ~3e-3) — почти ровно 2.5.
+     * Изгиб (выключен, bendLevel = 0) мягкость не трогает.
+     *
+     * conSoftness/triSoftness ведутся теми же путями, что conCellScale/triCellScale (полный
+     * пересчёт после перестройки структуры, кольцо клетки — refreshCellScaleRing): значение
+     * связи зависит только от её концов. 4 байта на связь и треугольник, читаются подряд по
+     * номеру — потоком, не случайно.
+     */
+    var cellSoftness = FloatArray(0)
+    var conSoftness = FloatArray(0)
+    var triSoftness = FloatArray(0)
+
+    /**
+     * Клиент задавал мягкость (хоть одна клетка не 1). Пока нет — ядра идут прежним путём, без
+     * чтения множителей. Как cellScalesOn: однажды включённый, не гаснет и входит в снимок.
+     */
+    var softnessOn = false
+
+    /**
+     * КЛЕТКА БЕЗ КАСАНИЙ (клиент-игра: присоска, Sucker — isCollidable = false, PhysicsWorld.setContactless):
+     * в контактах не участвует вовсе — ни с чужими телами, ни с едой, ни со стенкой, как в прежней
+     * физике игры, где такую пару не расталкивали. Связи, площади и среда — как у всех. Контакты
+     * читают флаг только при перестройке набора клеток касания (BoundaryContacts.reconfigure,
+     * updateSurface), в горячем цикле пар его нет. Входит в снимок.
+     */
+    var cellNoContact = BooleanArray(0)
+
+    /**
+     * ГРУППА КАСАНИЙ по частице: две частицы одной ненулевой группы не сталкиваются (BoundaryContacts.bonded,
+     * в широкой фазе — при перекладке вершины, не в каждом подшаге). Клиент-игра: плитки террейна —
+     * одна группа; соседние плитки перекрываются по шву и держатся связями (Joints.kt), касание
+     * расталкивало бы шов, и плитки не засыпали бы никогда. 0 — без группы. Входит в снимок.
+     */
+    var cellGroup = IntArray(0)
+
+    /** Хватка по частице 0..1 (присоска-чашка) — см. Grip.kt. Входит в снимок. */
+    var cellGrip = FloatArray(0)
+    /**
+     * Пружина к своему месту (террейн: точка на карте) — податливость по частице, 0 — нет пружины;
+     * место — cellHomeX/Y. Решается вместе с хваткой (Grip.kt). Входит в снимок.
+     */
+    var cellHomeCompliance = DoubleArray(0)
+    var cellHomeX = DoubleArray(0); var cellHomeY = DoubleArray(0)
+    var gripN = 0
+    /** Список [gripIds] устарел: смена хватки, уплотнение, снимок. */
+    var gripsDirty = false
+
+    /** Временные связи между частицами разных тел (липучка) — см. Joints.kt. Слоты пула, входят в снимок. */
+    var jointA = IntArray(0); var jointB = IntArray(0)
+    var jointRest = DoubleArray(0); var jointCompliance = DoubleArray(0)
+    var jointLive = BooleanArray(0)
+    /** Порог пробуждения соседа по связи, доля длины покоя; 0 — будит всегда (липучка), см. prepareJoints. */
+    var jointWakeStrain = DoubleArray(0)
+    /** Связи, у которых хоть один конец движется, — на этот тик (prepareJoints); в снимок не входят. */
+    var jointActive = IntArray(0); var jointActiveN = 0
+    var jointSlots = 0; var jointLiveCount = 0
+    var jointFree = IntArray(0); var jointFreeN = 0
+
+    /**
+     * Множитель изотропного сопротивления среды по частице (1 — как среда мира). Клиент-игра:
+     * у субстанции и у клетки своё сопротивление (ParticleEntity.dragCoefficient; клетке
+     * 0.003 за тик — это и есть MEDIUM_DRAG · DT). Считается только у частиц с множителем
+     * не 1: остальные — прежняя арифметика, те же биты.
+     */
+    var dragScale = DoubleArray(0)
+
+    /**
+     * РАМКА МИРА (клиент-игра: границы сетки мира). Включена — частица не выходит за неё:
+     * интегрирование ставит её на стенку с отступом в свой радиус, скорость к стенке гаснет
+     * сама (prev). Выключена — без стенок, как стенд.
+     */
+    var boundsOn = false
+    var boundsMinX = 0.0
+    var boundsMinY = 0.0
+    var boundsMaxX = 0.0
+    var boundsMaxY = 0.0
+
     /** Активация на НАЧАЛО тика — между ней и текущей идёт разгон по подшагам. */
     var muscleActivationPrev = DoubleArray(0)
 
@@ -517,6 +697,27 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * останется — просто переедет со связей на площади.
      */
     var conHold = ByteArray(0)
+
+    /**
+     * ДОРАСТАНИЕ НОВОРОЖДЁННОЙ ТКАНИ (рост тела, BodyGrowth.kt). Родившись, клетка встаёт
+     * туда, где ей место, но её связи и треугольники хотели бы своих длин и площадей покоя
+     * сразу, а у сжатой мышцы соседи растянуты: мгновенное рождение давало рывок. Поэтому
+     * длина покоя новой связи сначала равна фактической и за BIRTH_GROW_TICKS тиков
+     * подходит к цели; площадь треугольника — так же (easeNewborn).
+     *
+     * conGrowTarget — цель по рабочему номеру связи (0 — не дорастает), переезжает при
+     * уплотнении вместе с conRest. triGrowTarget — цель по постоянному номеру
+     * треугольника. growEdges/growTris — кого обходить в тике: рёбра и постоянные номера
+     * треугольников, в порядке рождения. Всё это влияет на будущие тики — состояние мира.
+     */
+    var conGrowTarget = DoubleArray(0)
+    /** Возраст дорастания связи в тиках (мягкость молодой связи, easeNewborn); переезжает с conGrowTarget. */
+    var conGrowAge = ByteArray(0)
+    var triGrowTarget = FloatArray(0)
+    var growEdges = IntArray(16)
+    var growEdgeN = 0
+    var growTris = IntArray(16)
+    var growTriN = 0
 
     var triHold = ByteArray(0)
 
@@ -623,11 +824,33 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
 
     var tornTotal = 0
 
+    /**
+     * СОБЫТИЯ ДЛЯ КЛИЕНТА (игра, этап B2): что погибло за последний шаг мира, в порядке гибели.
+     * Рёбра — парами частиц (номер ребра меняет уплотнение, частицы между шагами — нет),
+     * клетки — номером частицы. Пишут killEdge (разрыв, пробой, гибель клетки; удаление тела
+     * целиком — нет) и killIncidentEdges (любая гибель клетки: глубокий контакт, давление,
+     * раздавливание, причина клиента). Однопоточно, как tearQueue. Чистит PhysicsWorld:
+     * в начале шага, при уплотнении и записи снимка — номера там уже другие или прочитаны.
+     */
+    var edgeDeathLog = IntArray(64)
+    var edgeDeathN = 0
+    var cellDeathLog = IntArray(32)
+    var cellDeathN = 0
+
+    fun clearDeathLogs() { edgeDeathN = 0; cellDeathN = 0 }
+
     /** Разбор цены пересборки по частям: списки, контур, изгиб+лоскуты, организмы, контакты. */
     val dbgRebuildSec = LongArray(5)
 
     /** То же, но НАКОПИТЕЛЬНО за весь прогон: хронология обнуляет посекундные. */
     val dbgRebuildTot = LongArray(5)
+
+    /**
+     * Разбор уплотнения мира (WorldCompaction), наносекунды последнего вызова: 0 разрывы,
+     * 1 карты и описание, 2 массивы и списки, 3 топология, 4 контур и поверхность,
+     * 5 сон и пределы, 6 контакты, 7 решатель (блоки, план).
+     */
+    val dbgCompactNs = LongArray(8)
 
     var dbgRebuildCount = 0L
 
@@ -789,7 +1012,14 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * Контакты копят свои смещения в extDx/extDy, и из снимаемого они вычитаются.
      */
     var internalMom: InternalMomentum? = null
-    val tickMomentum by lazy { TickMomentum(n) }
+    private var tickMomentumState: TickMomentum? = null
+    /** Учёт импульса за тик; под нынешнее число частиц — после дописывания тела заводится заново. */
+    val tickMomentum: TickMomentum
+        get() {
+            val t = tickMomentumState
+            if (t != null && t.n == n) return t
+            return TickMomentum(n).also { tickMomentumState = it }
+        }
 
     /** Включено ли снятие. Переменной, а не константой, — ради A/B на журнале игрока. */
     var cancelSpinOn = CANCEL_INTERNAL_SPIN

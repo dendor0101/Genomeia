@@ -25,7 +25,15 @@ object SceneFile {
 
     private class Entry(val raw: BodyFile.RawBody, val copies: Int)
 
-    fun load(path: String): BodyDefinition {
+    /** Сцена одним описанием — склейка тел по порядку (BodyDefinition.concat). */
+    fun load(path: String): BodyDefinition = loadBodies(path).reduce { a, b -> a.concat(b) }
+
+    /**
+     * Тела сцены по отдельности, уже расставленные в мире, — для мира, который
+     * добавляет их по одному (PhysicsWorld.addBody). Свободные частицы — последним
+     * описанием (каждая частица — свой организм).
+     */
+    fun loadBodies(path: String): List<BodyDefinition> {
         val file = File(path)
         require(file.isFile) { "нет файла сцены: $path" }
         val entries = ArrayList<Entry>()
@@ -49,47 +57,37 @@ object SceneFile {
         val scale = 2.6f / maxOf(span(first.x), span(first.y) * 2.6f / 1.7f)
         val gap = 0.35f
 
-        var total = free
         var area = 0f
-        for (e in entries) {
-            total += e.raw.n * e.copies
-            area += (span(e.raw.x) * scale + gap) * (span(e.raw.y) * scale + gap) * e.copies
-        }
+        for (e in entries) area += (span(e.raw.x) * scale + gap) * (span(e.raw.y) * scale + gap) * e.copies
         if (rowWidth <= 0f) rowWidth = kotlin.math.sqrt(area * 1.6f)
 
-        val x = FloatArray(total); val y = FloatArray(total); val r = FloatArray(total)
-        val isBone = BooleanArray(total); val isMuscle = BooleanArray(total)
-        val la = ArrayList<Int>(); val lb = ArrayList<Int>()
+        val bodies = ArrayList<BodyDefinition>()
         var cursorX = 0f; var cursorY = 0f; var rowHeight = 0f
-        var off = 0
         for (e in entries) {
             val raw = e.raw
             val w = span(raw.x) * scale; val h = span(raw.y) * scale
             val minX = raw.x.min(); val minY = raw.y.min()
             repeat(e.copies) {
                 if (cursorX > 0f && cursorX + w > rowWidth) { cursorX = 0f; cursorY -= rowHeight + gap; rowHeight = 0f }
-                for (i in 0 until raw.n) {
-                    x[off + i] = cursorX + (raw.x[i] - minX) * scale
-                    y[off + i] = cursorY - h + (raw.y[i] - minY) * scale
-                    r[off + i] = raw.r[i] * scale
-                    isBone[off + i] = raw.bone[i]; isMuscle[off + i] = raw.muscle[i]
-                }
-                for (k in raw.linkA.indices) { la.add(raw.linkA[k] + off); lb.add(raw.linkB[k] + off) }
-                off += raw.n
+                val x = FloatArray(raw.n) { cursorX + (raw.x[it] - minX) * scale }
+                val y = FloatArray(raw.n) { cursorY - h + (raw.y[it] - minY) * scale }
+                val r = FloatArray(raw.n) { raw.r[it] * scale }
+                bodies.add(BodyFile.build(x, y, r, raw.bone.copyOf(), raw.muscle.copyOf(),
+                    raw.linkA.toList(), raw.linkB.toList(), scale))
                 cursorX += w + gap
                 if (h > rowHeight) rowHeight = h
             }
         }
         // Свободные частицы — ряд под всеми телами, шаг в четыре радиуса.
-        val rFree = 0.5f * scale
-        val bottom = cursorY - rowHeight - gap - 6f * rFree
-        for (k in 0 until free) {
-            val i = off + k
-            x[i] = (k * 4f * rFree) % rowWidth
-            y[i] = bottom - (k * 4f * rFree / rowWidth).toInt() * 4f * rFree
-            r[i] = rFree
+        if (free > 0) {
+            val rFree = 0.5f * scale
+            val bottom = cursorY - rowHeight - gap - 6f * rFree
+            val x = FloatArray(free) { k -> (k * 4f * rFree) % rowWidth }
+            val y = FloatArray(free) { k -> bottom - (k * 4f * rFree / rowWidth).toInt() * 4f * rFree }
+            bodies.add(BodyFile.build(x, y, FloatArray(free) { rFree }, BooleanArray(free), BooleanArray(free),
+                emptyList(), emptyList(), scale))
         }
-        return BodyFile.build(x, y, r, isBone, isMuscle, la, lb, scale)
+        return bodies
     }
 
     /** Мягкая сетка как writeScaleGrid у scaleBench: шаг 0.6, радиус 0.5, диагональ. */

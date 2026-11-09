@@ -12,7 +12,11 @@ class SimulationData {
     var isPlay = true
     var maxSpeed = false
 
-    var targetUPS: Int = 60
+    /**
+     * Тиков в секунду по умолчанию. 30: тик игры — один шаг мира физики длиной DT = 1/30 с
+     * (physics/bridge/PhysicsUnits), так мир идёт в реальном времени, как стенд физики.
+     */
+    var targetUPS: Int = 30
         set(value) {
             field = value.coerceIn(1, 1000)
         }
@@ -55,6 +59,14 @@ class SimulationData {
     var stressKillEvery = 0
     var stressFlingEvery = 0
     var stressSpawnEvery = 0
+
+    /**
+     * Отладка физики, см. PlayerCommand.SetPhysicsDebug (галочки отладочного режима): хвосты не
+     * толкают (Tail) — виден собственный дрейф тела; глубокое проникновение частиц не убивает
+     * (PhysicsWorld.deepKillOn). Состояние мира: в хэше, сбрасывается с началом сессии.
+     */
+    var debugNoTailThrust = false
+    var debugNoDeepKill = false
 
     fun clear() {
         isRestart = false

@@ -19,41 +19,51 @@ package io.github.some_example_name.physics
  * Треугольник, у которого пара вершин не связана вовсе, по этому ребру не умирает никогда —
  * тоже как раньше.
  */
-class BakedTopology(private val body: BodyDefinition) {
+class BakedTopology(private var body: BodyDefinition, build: Boolean = true) {
+    // Массивы — var: мир дописывает тела (append). Ссылки на них берутся заново после
+    // дописывания, держать их у себя дольше одной стадии нельзя.
     /** Число рёбер — различных пар среди связей выгрузки. */
-    val edgeCount: Int
+    var edgeCount = 0; private set
     /** Ребро каждой связи выгрузки, по номеру в body.linkA / body.linkB. */
-    val linkEdge: IntArray
-    private val edgeKeys: LongArray
+    var linkEdge = IntArray(0); private set
+    private var edgeKeys = LongArray(0)
     /** Рёбра треугольника t выгрузки: 3t, 3t+1, 3t+2 — пары (A,B), (B,C), (C,A); -1 — таких связей нет. */
-    val triEdge: IntArray
-    internal val edgeTriStart: IntArray
-    internal val edgeTris: IntArray
-    private val useInit: IntArray
+    var triEdge = IntArray(0); private set
+    internal var edgeTriStart = IntArray(1); private set
+    internal var edgeTris = IntArray(0); private set
+    private var useInit = IntArray(0)
     /** Связи каждой клетки: vertStart[i]..vertStart[i+1] — соседи vertOther и рёбра vertEdge. */
-    val vertStart: IntArray
-    val vertOther: IntArray
-    val vertEdge: IntArray
+    var vertStart = IntArray(1); private set
+    var vertOther = IntArray(0); private set
+    var vertEdge = IntArray(0); private set
 
-    val edgeDead: BooleanArray
+    var edgeDead = BooleanArray(0); private set
+    /**
+     * НЕРОЖДЁННОЕ РЕБРО (рост тела, этап A2.4): мертво для контура, организмов и решателя,
+     * но рабочие списки при уплотнении его не выбрасывают — клетка родится, и ребро
+     * оживёт (revive). Отличает «ещё не выросло» от «порвано навсегда».
+     */
+    var edgeUnborn = BooleanArray(0); private set
+    /** То же для треугольника: умер из-за нерождённой клетки, оживёт с ней. */
+    var triUnborn = BooleanArray(0); private set
     /** Жив ли треугольник выгрузки. */
-    val triAlive: BooleanArray
+    var triAlive = BooleanArray(0); private set
     /** Счётчик по постоянному номеру треугольника: упаковка рабочих списков его не меняет. */
-    internal val invertedTicks = ByteArray(body.triCount)
+    internal var invertedTicks = ByteArray(body.triCount); private set
     var liveTriangleCount = body.triCount
         private set
     /** Сколько живых треугольников опирается на ребро: 0 — голая связь, 1 — граница, 2 — внутри ткани. */
-    val triUse: IntArray
+    var triUse = IntArray(0); private set
 
-    val dirtyVertices = IntArray(body.count)
-    private val dirty = BooleanArray(body.count)
+    var dirtyVertices = IntArray(body.count); private set
+    private var dirty = BooleanArray(body.count)
     var dirtyCount = 0
         private set
-    internal val vertexTriangles: IntArray
-    internal val vertexTriStart: IntArray
-    private val restAngles: DoubleArray
+    internal var vertexTriangles = IntArray(0); private set
+    internal var vertexTriStart = IntArray(1); private set
+    private var restAngles = DoubleArray(0)
 
-    private fun touch(v: Int) {
+    internal fun touch(v: Int) {
         if (dirty[v]) return
         dirty[v] = true; dirtyVertices[dirtyCount++] = v
     }
@@ -93,6 +103,10 @@ class BakedTopology(private val body: BodyDefinition) {
         private set
 
     init {
+        if (build) buildAll()
+    }
+
+    private fun buildAll() {
         val n = body.count
         val lc = body.linkCount
         val keys = LongArray(lc) { key(body.linkA[it], body.linkB[it]) }
@@ -165,10 +179,248 @@ class BakedTopology(private val body: BodyDefinition) {
         for (e in triUse.indices) if (triUse[e] == 0) bareEdges++
     }
 
+    /**
+     * ДОПИСАТЬ ТЕЛО: [combined] — прежний набор тел и новое после него; новые частицы —
+     * [n0] и дальше, связи — с [l0], треугольники — с [t0]. Те же правила, что в init,
+     * только по новому телу: номера частиц нового тела больше всех прежних, поэтому его
+     * рёбра в сортированном списке ключей встают после всех прежних, и ни один прежний
+     * номер ребра, ни одна прежняя строка смежности не сдвигаются. Состояние прежних
+     * рёбер и треугольников (смерть, счётчики) остаётся как было. Стоимость — по телу,
+     * плюс копирование массивов при росте.
+     */
+    internal fun append(combined: BodyDefinition, n0: Int, l0: Int, t0: Int) {
+        body = combined
+        val n = combined.count; val lc = combined.linkCount; val tc = combined.triCount
+        val keys = LongArray(lc - l0) { key(combined.linkA[l0 + it], combined.linkB[l0 + it]) }
+        val uniq = keys.copyOf()
+        uniq.sort()
+        var m1 = 0
+        for (k in uniq.indices) if (k == 0 || uniq[k] != uniq[k - 1]) uniq[m1++] = uniq[k]
+        val m0 = edgeCount; val m = m0 + m1
+        check(m1 == 0 || m0 == 0 || uniq[0] > edgeKeys[m0 - 1]) { "новое тело обязано идти после прежних" }
+        edgeKeys = edgeKeys.copyOf(m); System.arraycopy(uniq, 0, edgeKeys, m0, m1)
+        edgeCount = m
+        linkEdge = linkEdge.copyOf(lc)
+        for (k in l0 until lc) linkEdge[k] = m0 + java.util.Arrays.binarySearch(uniq, 0, m1, keys[k - l0])
+
+        triEdge = triEdge.copyOf(tc * 3)
+        for (t in t0 until tc) {
+            val a = combined.triA[t]; val b = combined.triB[t]; val c = combined.triC[t]
+            triEdge[3 * t] = edgeIndex(edgeKeys, a, b)
+            triEdge[3 * t + 1] = edgeIndex(edgeKeys, b, c)
+            triEdge[3 * t + 2] = edgeIndex(edgeKeys, c, a)
+        }
+        useInit = useInit.copyOf(m)
+        for (q in 3 * t0 until 3 * tc) { val e = triEdge[q]; if (e >= 0) useInit[e]++ }
+        edgeTriStart = edgeTriStart.copyOf(m + 1)
+        for (e in m0 until m) edgeTriStart[e + 1] = edgeTriStart[e] + useInit[e]
+        edgeTris = edgeTris.copyOf(edgeTriStart[m])
+        run {
+            val fill = edgeTriStart.copyOf()
+            for (q in 3 * t0 until 3 * tc) {
+                val e = triEdge[q]
+                if (e >= 0) edgeTris[fill[e]++] = q / 3
+            }
+        }
+
+        val deg = IntArray(n - n0)
+        for (e in m0 until m) { deg[(edgeKeys[e] ushr 32).toInt() - n0]++; deg[edgeKeys[e].toInt() - n0]++ }
+        vertStart = vertStart.copyOf(n + 1)
+        for (i in n0 until n) vertStart[i + 1] = vertStart[i] + deg[i - n0]
+        vertOther = vertOther.copyOf(vertStart[n]); vertEdge = vertEdge.copyOf(vertStart[n])
+        run {
+            val fill = vertStart.copyOf()
+            for (e in m0 until m) {
+                val u = (edgeKeys[e] ushr 32).toInt(); val v = edgeKeys[e].toInt()
+                vertOther[fill[u]] = v; vertEdge[fill[u]++] = e
+                vertOther[fill[v]] = u; vertEdge[fill[v]++] = e
+            }
+        }
+
+        vertexTriStart = vertexTriStart.copyOf(n + 1)
+        for (t in t0 until tc) {
+            vertexTriStart[combined.triA[t] + 1]++
+            vertexTriStart[combined.triB[t] + 1]++
+            vertexTriStart[combined.triC[t] + 1]++
+        }
+        for (v in n0 until n) vertexTriStart[v + 1] += vertexTriStart[v]
+        vertexTriangles = vertexTriangles.copyOf(tc * 3)
+        restAngles = restAngles.copyOf(tc * 3)
+        run {
+            val fillTri = vertexTriStart.copyOf()
+            for (t in t0 until tc) {
+                val a = combined.triA[t]; val b = combined.triB[t]; val c = combined.triC[t]
+                vertexTriangles[fillTri[a]++] = 3 * t
+                vertexTriangles[fillTri[b]++] = 3 * t + 1
+                vertexTriangles[fillTri[c]++] = 3 * t + 2
+                restAngles[3 * t] = angle(a, b, c)
+                restAngles[3 * t + 1] = angle(b, a, c)
+                restAngles[3 * t + 2] = angle(c, a, b)
+            }
+        }
+
+        edgeDead = edgeDead.copyOf(m)
+        edgeUnborn = edgeUnborn.copyOf(m)
+        triUnborn = triUnborn.copyOf(tc)
+        triAlive = triAlive.copyOf(tc).also { java.util.Arrays.fill(it, t0, tc, true) }
+        invertedTicks = invertedTicks.copyOf(tc)
+        liveTriangleCount += tc - t0
+        triUse = triUse.copyOf(m)
+        for (e in m0 until m) { triUse[e] = useInit[e]; if (triUse[e] == 0) bareEdges++ }
+        dirtyVertices = dirtyVertices.copyOf(n)
+        dirty = dirty.copyOf(n)
+    }
+
+    /**
+     * МИР УПЛОТНЁН (WorldCompaction): эта топология (создана с build = false по уплотнённому
+     * описанию) заполняется фильтром из [old] — без сортировки ключей и без углов покоя
+     * заново: на 100k постройка стоила ~80 мс, фильтр — линейные проходы. Номера частиц
+     * уплотнены с сохранением порядка, поэтому оставшиеся рёбра, строки смежности и
+     * треугольники идут в прежнем порядке, а результат — ровно тот, что дала бы постройка
+     * по новому описанию (CompactCheck сверяет). Изменяемое — смерть и нерождённость
+     * рёбер и треугольников, счётчики инверсии, живые треугольники на рёбрах — переезжает.
+     * [pNew], [eNew], [tNew] — новые номера частиц, рёбер, треугольников (-1 — выброшены);
+     * [linkKept] — оставшиеся связи описания.
+     */
+    internal fun compactFrom(old: BakedTopology, pNew: IntArray, eNew: IntArray, tNew: IntArray, linkKept: BooleanArray) {
+        val n = body.count; val tc = body.triCount
+        var m = 0
+        for (e in 0 until old.edgeCount) if (eNew[e] >= 0) m++
+        edgeCount = m
+        edgeKeys = LongArray(m); useInit = IntArray(m); triUse = IntArray(m); edgeDead = BooleanArray(m)
+        edgeUnborn = BooleanArray(if (old.edgeUnborn.size >= old.edgeCount) m else 0)
+        edgeTriStart = IntArray(m + 1)
+        for (e in 0 until old.edgeCount) {
+            val k = eNew[e]
+            if (k < 0) continue
+            edgeKeys[k] = key(pNew[old.edgeU(e)], pNew[old.edgeV(e)])
+            useInit[k] = old.useInit[e]; triUse[k] = old.triUse[e]; edgeDead[k] = old.edgeDead[e]
+            if (edgeUnborn.isNotEmpty()) edgeUnborn[k] = old.edgeUnborn[e]
+            edgeTriStart[k + 1] = edgeTriStart[k] + (old.edgeTriStart[e + 1] - old.edgeTriStart[e])
+        }
+        edgeTris = IntArray(edgeTriStart[m])
+        for (e in 0 until old.edgeCount) {
+            val k = eNew[e]
+            if (k < 0) continue
+            var w = edgeTriStart[k]
+            for (s in old.edgeTriStart[e] until old.edgeTriStart[e + 1]) edgeTris[w++] = tNew[old.edgeTris[s]]
+        }
+        linkEdge = IntArray(body.linkCount)
+        run { var l = 0; for (o in linkKept.indices) if (linkKept[o]) linkEdge[l++] = eNew[old.linkEdge[o]] }
+        triEdge = IntArray(tc * 3); restAngles = DoubleArray(tc * 3)
+        triAlive = BooleanArray(tc); invertedTicks = ByteArray(tc)
+        triUnborn = BooleanArray(if (old.triUnborn.size >= old.body.triCount) tc else 0)
+        for (t in 0 until old.body.triCount) {
+            val k = tNew[t]
+            if (k < 0) continue
+            for (j in 0..2) {
+                val e = old.triEdge[3 * t + j]
+                triEdge[3 * k + j] = if (e < 0) -1 else eNew[e]
+                restAngles[3 * k + j] = old.restAngles[3 * t + j]
+            }
+            triAlive[k] = old.triAlive[t]; invertedTicks[k] = old.invertedTicks[t]
+            if (triUnborn.isNotEmpty()) triUnborn[k] = old.triUnborn[t]
+        }
+        vertStart = IntArray(n + 1); vertexTriStart = IntArray(n + 1)
+        for (i in 0 until old.body.count) {
+            val j = pNew[i]
+            if (j < 0) continue
+            vertStart[j + 1] = vertStart[j] + (old.vertStart[i + 1] - old.vertStart[i])
+            vertexTriStart[j + 1] = vertexTriStart[j] + (old.vertexTriStart[i + 1] - old.vertexTriStart[i])
+        }
+        vertOther = IntArray(vertStart[n]); vertEdge = IntArray(vertStart[n]); vertexTriangles = IntArray(vertexTriStart[n])
+        for (i in 0 until old.body.count) {
+            val j = pNew[i]
+            if (j < 0) continue
+            var w = vertStart[j]
+            for (s in old.vertStart[i] until old.vertStart[i + 1]) {
+                vertOther[w] = pNew[old.vertOther[s]]; vertEdge[w] = eNew[old.vertEdge[s]]; w++
+            }
+            w = vertexTriStart[j]
+            for (s in old.vertexTriStart[i] until old.vertexTriStart[i + 1]) {
+                val corner = old.vertexTriangles[s]
+                vertexTriangles[w++] = 3 * tNew[corner / 3] + corner % 3
+            }
+        }
+        liveTriangleCount = 0
+        for (k in 0 until tc) if (triAlive[k]) liveTriangleCount++
+        bareEdges = 0
+        for (k in 0 until m) if (!edgeDead[k] && triUse[k] == 0) bareEdges++
+        dirtyVertices = IntArray(n); dirty = BooleanArray(n); dirtyCount = 0
+    }
+
+    /** Изменяемое состояние в снимок мира (WorldSnapshot): структура выводится из описания. */
+    internal fun writeState(out: java.io.DataOutput) {
+        out.writeBooleans(edgeDead, edgeCount); out.writeInts(triUse, edgeCount)
+        out.writeBooleans(edgeUnborn, edgeUnborn.size)
+        out.writeBooleans(triAlive, body.triCount); out.writeBytes(invertedTicks, body.triCount)
+        out.writeBooleans(triUnborn, triUnborn.size)
+    }
+
+    /** Состояние из снимка поверх топологии, построенной по тому же описанию. */
+    internal fun readState(input: java.io.DataInput) {
+        edgeDead = input.readBooleans(edgeCount); triUse = input.readInts(edgeCount)
+        edgeUnborn = input.readBooleans(0)
+        triAlive = input.readBooleans(body.triCount); invertedTicks = input.readBytes(body.triCount)
+        triUnborn = input.readBooleans(0)
+        check(edgeDead.size == edgeCount && triAlive.size == body.triCount) { "снимок не от этого описания" }
+        liveTriangleCount = 0
+        for (t in 0 until body.triCount) if (triAlive[t]) liveTriangleCount++
+        bareEdges = 0
+        for (e in 0 until edgeCount) if (!edgeDead[e] && triUse[e] == 0) bareEdges++
+        clearDirty()
+    }
+
+    /** Ребро [e] не рождено: гаснет вместе со своими треугольниками, помечается к оживлению. */
+    internal fun markUnborn(e: Int) {
+        if (edgeUnborn.size < edgeCount) edgeUnborn = edgeUnborn.copyOf(edgeCount)
+        if (triUnborn.size < body.triCount) triUnborn = triUnborn.copyOf(body.triCount)
+        if (edgeDead[e]) return
+        for (s in edgeTriStart[e] until edgeTriStart[e + 1]) {
+            val t = edgeTris[s]
+            if (triAlive[t]) triUnborn[t] = true
+        }
+        kill(e)
+        edgeUnborn[e] = true
+    }
+
+    internal fun isUnborn(e: Int): Boolean = e < edgeUnborn.size && edgeUnborn[e]
+    internal fun isTriUnborn(t: Int): Boolean = t < triUnborn.size && triUnborn[t]
+
+    /** Нерождённое ребро или треугольник больше не родится (тело удалено, ребро порвано): просто мёртв. */
+    internal fun forgetUnborn(e: Int) { if (isUnborn(e)) edgeUnborn[e] = false }
+    internal fun forgetTriUnborn(t: Int) { if (isTriUnborn(t)) triUnborn[t] = false }
+
+    /** Оживить нерождённое ребро (обе клетки родились). false — ребро не было нерождённым. */
+    internal fun revive(e: Int): Boolean {
+        if (e >= edgeUnborn.size || !edgeUnborn[e]) return false
+        edgeUnborn[e] = false
+        edgeDead[e] = false
+        if (triUse[e] == 0) bareEdges++
+        touch(edgeU(e)); touch(edgeV(e))
+        return true
+    }
+
+    /** Оживить нерождённый треугольник, если все его рёбра живы. */
+    internal fun reviveTriangle(t: Int): Boolean {
+        if (t >= triUnborn.size || !triUnborn[t]) return false
+        for (k in 0..2) { val e = triEdge[3 * t + k]; if (e >= 0 && edgeDead[e]) return false }
+        triUnborn[t] = false
+        triAlive[t] = true
+        liveTriangleCount++
+        touch(body.triA[t]); touch(body.triB[t]); touch(body.triC[t])
+        for (k in 0..2) {
+            val e = triEdge[3 * t + k]
+            if (e >= 0 && triUse[e]++ == 0 && !edgeDead[e]) bareEdges--
+        }
+        return true
+    }
+
     /** Топология снова целая. */
     fun restore() {
         clearDirty()
         edgeDead.fill(false)
+        edgeUnborn.fill(false); triUnborn.fill(false)
         triAlive.fill(true)
         invertedTicks.fill(0)
         liveTriangleCount = body.triCount

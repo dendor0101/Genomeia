@@ -3,6 +3,7 @@ package io.github.some_example_name.old.features.worldeditor
 import com.badlogic.gdx.graphics.Color
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.entities.SubstancesEntity
+import io.github.some_example_name.old.physics.bridge.TerrainBodies
 import kotlin.Float
 import kotlin.random.Random
 
@@ -39,9 +40,9 @@ class WorldTerrainManager(
                     if (x == 0 || x == element.size - 1 || y == 0 || y == it.size - 1) continue
                     if (element1) {
                         if (scaleX < gridWidth && scaleY < gridHeight) {
-                            particleEntity.addParticle(
-                                x = scaleX + (random.nextFloat() - 0.5f) * 0.75f,
-                                y = scaleY + (random.nextFloat() - 0.5f) * 0.75f,
+                            val p = particleEntity.addParticle(
+                                x = scaleX + (random.nextFloat() - 0.5f) * 0.1f,
+                                y = scaleY + (random.nextFloat() - 0.5f) * 0.1f,
                                 radius = 0.5f,
                                 color = getColor(random),
                                 isCell = false,
@@ -49,6 +50,8 @@ class WorldTerrainManager(
                                 holderEntityIndex = -1,
                                 dragCoefficient = 0.4f
                             )
+                            // Клетка карты — по ней мост физики режет террейн на плитки (TerrainBodies).
+                            particleEntity.terrainCell[p] = TerrainBodies.packCell(x, y)
                         }
 
                     } else {
@@ -65,54 +68,39 @@ class WorldTerrainManager(
                 }
             }
         }
-        for (i in 1..<(gridWidth / 2 * 3)) {
-            particleEntity.addParticle(
-                x = i.toFloat() / 1.5f,
-                y = 0.5f,
-                radius = 0.5f,
+        var wall = 0
+        forEachWallParticle(gridWidth, gridHeight) { x, y ->
+            val p = particleEntity.addParticle(
+                x = x,
+                y = y,
+                radius = WALL_RADIUS,
                 color = getColor(random),
                 isCell = false,
                 isSub = false,
                 holderEntityIndex = -1,
                 dragCoefficient = 1.0f
             )
+            // Номер в раскладке стенки — по нему мост физики привязывает частицу к стенке мира физики.
+            particleEntity.terrainCell[p] = TerrainBodies.wallMark(wall++)
         }
-        for (i in 1..<(gridHeight / 2 * 3)) {
-            particleEntity.addParticle(
-                x = 0.5f,
-                y = i.toFloat() / 1.5f,
-                radius = 0.5f,
-                color = getColor(random),
-                isCell = false,
-                isSub = false,
-                holderEntityIndex = -1,
-                dragCoefficient = 1.0f
-            )
-        }
+    }
 
-        for (i in 1..<(gridHeight / 2 * 3)) {
-            particleEntity.addParticle(
-                x = gridWidth - 0.5f,
-                y = i.toFloat() / 1.5f,
-                radius = 0.5f,
-                color = getColor(random),
-                isCell = false,
-                isSub = false,
-                holderEntityIndex = -1,
-                dragCoefficient = 1.0f
-            )
-        }
-        for (i in 1..<(gridWidth / 2 * 3)) {
-            particleEntity.addParticle(
-                x = i.toFloat() / 1.5f,
-                y = gridHeight - 0.5f,
-                radius = 0.5f,
-                color = getColor(random),
-                isCell = false,
-                isSub = false,
-                holderEntityIndex = -1,
-                dragCoefficient = 1.0f
-            )
+    companion object {
+        /** Радиус частицы стенки — как у клетки по умолчанию: ячейка сетки контактов физики не растёт. */
+        const val WALL_RADIUS = 0.5f
+
+        /**
+         * СТЕНКА ВДОЛЬ РАМКИ МИРА: частицы с шагом 1/1.5 клетки вплотную к рамке — снизу, слева,
+         * справа, сверху. Одна раскладка на двоих: террейн игры рисует эти частицы, мир физики
+         * ставит на те же места неподвижные бессмертные (WorldPhysics.buildWall), и тела
+         * останавливаются о видимую стенку, а не о рамку за ней. Соседние частицы перекрываются
+         * (шаг 0.67 < диаметра 1), поэтому щелей нет и контур между ними не нужен.
+         */
+        inline fun forEachWallParticle(gridWidth: Int, gridHeight: Int, action: (x: Float, y: Float) -> Unit) {
+            for (i in 1..<(gridWidth / 2 * 3)) action(i.toFloat() / 1.5f, 0.5f)
+            for (i in 1..<(gridHeight / 2 * 3)) action(0.5f, i.toFloat() / 1.5f)
+            for (i in 1..<(gridHeight / 2 * 3)) action(gridWidth - 0.5f, i.toFloat() / 1.5f)
+            for (i in 1..<(gridWidth / 2 * 3)) action(i.toFloat() / 1.5f, gridHeight - 0.5f)
         }
     }
 }

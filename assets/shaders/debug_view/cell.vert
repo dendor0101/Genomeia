@@ -37,12 +37,13 @@ uniform float u_pixelWorld;
 /** 1 — раздуть корпус на бахрому рисунка (проход сглаживания), 0 — нет (заливка). */
 uniform float u_fringe;
 
-/** Фильтр отладки — DebugFilter.ordinal: 0 оригинал, 1 энергия, 2 нейросигнал, 3 коллизии. */
+/** Фильтр отладки — DebugFilter.ordinal: 0 оригинал, 1 энергия, 2 нейросигнал, 3 коллизии, 4 сон. */
 uniform int u_filter;
 
 const int FILTER_ENERGY = 1;
 const int FILTER_SIGNAL = 2;
 const int FILTER_COLLISION = 3;
+const int FILTER_SLEEP = 4;
 
 /** На сколько пикселей корпус выходит за окружность: полоса сглаживания края. */
 const float AA_MARGIN_PX = 1.5;
@@ -141,7 +142,14 @@ void main() {
 
     v_color = a_color.rgb;
     v_filtered = 0.0;
-    if (u_filter != 0) {
+    if (u_filter == FILTER_SLEEP) {
+        // Сон: спящая частица (клетка или нет) — ледяная, бодрствующая остаётся как есть —
+        // так спящие участки видны поверх обычного отладочного вида.
+        if (byteValue(a_look.w) > 0.0) {
+            v_color = vec3(0.55, 0.9, 1.0);
+            v_filtered = 1.0;
+        }
+    } else if (u_filter != 0) {
         // Не-клетка (еда, субстанции) ни энергии, ни сигнала не несёт — гасим её до
         // серого, чтобы не путалась со шкалой фильтра. В коллизиях же она участвует, как
         // и клетки, — её фильтр закрашивает тоже.

@@ -25,11 +25,14 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     wakeByInput()
     // Положения в начале тика: средняя скорость за тик нужна сопротивлению среды. См. TickMotion.
     beginTickMotion()
-    if (cancelSpinOn) { tick0(); prepareAwakeSpans(); tickMomentum.begin(px, py, vx, vy, invMass, organismOf, sleep); tick1(16) }
+    if (cancelSpinOn) { tick0(); prepareAwakeSpans(); momentumBegin(); tick1(16) }
+    if (cancelSpinOn) noteJointsMomentum()
     for (step in 0 until SUBSTEPS) {
         // Длина покоя мышцы доезжает до своего значения за тик, а не прыгает в первом
         // же подшаге — см. muscleScaleOf.
         updateMuscleScale((step + 1).toDouble() / SUBSTEPS)
+        // Мышцы клеток — так же, по подшагам: см. MuscleDriver.applyCellScaleLerp.
+        applyCellScaleLerp(step, SUBSTEPS)
         // Удар или разрыв прошлого подшага будит спящих: см. BodySleep.
         applyWakeRequests()
         // КОНТАКТ ПРИКЛАДЫВАЕТСЯ К СКОРОСТИ ДО ИНТЕГРИРОВАНИЯ, как гравитация.
@@ -69,6 +72,8 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
             solveBlockedIteration(h, integrate = iter == 0 && !cancel)
 
         }
+        // Временные связи между телами (липучка) — после внутренних, до пределов длины. См. Joints.kt.
+        solveJoints(h)
         // ПРЕДЕЛ ДЛИНЫ ПОВТОРНО, УЖЕ ПОСЛЕ КОСТИ.
         //
         // Первый вызов стоит после solveConstraints, но проекция кости идёт ПОЗЖЕ
@@ -93,9 +98,17 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         if (finalContacts != null && contactsOn) {
             tick0()
             finalContacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = false)
+            // УДАР БУДИТ СПЯЩЕГО ДО РЕШЕНИЯ КОНТАКТА. Спящий заморожен (обратная масса 0): решённый
+            // так контакт — удар о стену, налетевшая частица отскакивает, импульс не передан, а
+            // проснувшийся в следующем подшаге стоит (ClientInputsCheck: импульс цели 0 против
+            // удара без сна). Проснувшемуся — свои массы, контакты готовятся заново; редко — только
+            // в подшаге, где касание кого-то будит.
+            if (noteSleepContacts(finalContacts)) {
+                applyWakeRequests()
+                finalContacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = false)
+            }
             tick1(6); tick0()
             if (cancelSpinOn) tickMomentum.noteContacts(finalContacts, invMass)
-            noteSleepContacts(finalContacts)
             finalContacts.updateBones(px, py, invMass, if (bonesRigid) boneOf else null, rigidBones)
             tick1(13); tick0()
             finalContacts.solveContacts(px, py, vx, vy, invMass, h)
@@ -113,6 +126,8 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         // См. FusedPasses.
         tick0()
         velocityPassBefore(h)
+        // Хватка (присоска-чашка) — после снимка скоростей: учёт импульса видит её внешней силой, как пол.
+        applyGrip(h)
         tick1(17); tick0()
         // Отскок: позиционная часть удар гасит целиком, см. solveRestitution.
         dbgMarkV()
@@ -133,7 +148,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         dbgMeasureV(11); tick1(9)
         if (cancelSpinOn && step == SUBSTEPS - 1) {
             tick0()
-            tickMomentum.cancel(px, py, vx, vy, invMass, sleep)
+            momentumCancel()
             // Коррекция тоже меняет скорости: потолок должен оставаться последним.
             clampSpeed()
             tick1(16)

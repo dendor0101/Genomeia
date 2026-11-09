@@ -26,6 +26,7 @@ class HudIcons : Disposable {
     val play = icon(::drawPlay)
     val organism = icon(::drawOrganism)
     val optics by lazy { icon { p -> ring(p,54,54,32,7); white(p); thickLine(p,75,75,107,107,6) } }
+    val options by lazy { icon { p -> white(p); thickLine(p,24,40,104,40,5); thickLine(p,24,88,104,88,5); p.fillCircle(46,40,13); p.fillCircle(82,88,13) } }
     val spawnCell = icon(::drawSpawnCell)
     val spawnFood = icon(::drawFood)
     val killCell = icon(::drawKill)

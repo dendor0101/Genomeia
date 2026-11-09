@@ -145,6 +145,8 @@ class EditorRenderSystem(
         DebugFilter.SIGNAL -> CellLook.signalFilterByte(0f)
         DebugFilter.COLLISION -> CellLook.collisionFilterByte(cellReplay.collides[index])
         DebugFilter.ENERGY -> cellReplay.energyFill[index].toInt() and 255
+        // В редакторе нет мира физики и сна: все клетки «не спят».
+        DebugFilter.SLEEP -> CellLook.sleepFilterByte(false)
     }
 
     private fun fillBuffer() {
@@ -161,8 +163,8 @@ class EditorRenderSystem(
         cellReplay.forEachInTick(currentTick) { cellType, index, _, angleCos, angleSin, color ->
             val type = cellType.toInt()
             cellBuffer.putCell(
-                x = particleEntity.x[index],
-                y = particleEntity.y[index],
+                x = particleEntity.x(index),
+                y = particleEntity.y(index),
                 color = if (debug) palette.color(type, color) else color,
                 angleCos = angleCos,
                 angleSin = angleSin,
@@ -196,8 +198,8 @@ class EditorRenderSystem(
                     val ownColor = (divide.color ?: Color.WHITE).toIntBits()
 
                     cellBuffer.putCell(
-                        x = particleEntity.x[index],
-                        y = particleEntity.y[index],
+                        x = particleEntity.x(index),
+                        y = particleEntity.y(index),
                         color = if (debug && futureType >= 0) palette.color(futureType, ownColor) else ownColor,
                         angleCos = cos(angle),
                         angleSin = sin(angle),
@@ -230,8 +232,8 @@ class EditorRenderSystem(
         cellReplay.forEachInTick(currentTick) { cellType, index, _, angleCos, angleSin, _ ->
             if (index == grabbed) return@forEachInTick
             val type = cellType.toInt()
-            val x = particleEntity.x[index]
-            val y = particleEntity.y[index]
+            val x = particleEntity.x(index)
+            val y = particleEntity.y(index)
             val radius = particleEntity.radius[index]
             if (palette.isEye(type)) {
                 palette.writeEyeRay(
@@ -254,8 +256,8 @@ class EditorRenderSystem(
             val to = if (isLink1NeuralDirected) cellA else cellB
             palette.writeNeuralLink(
                 overlaySink,
-                particleEntity.x[from], particleEntity.y[from],
-                particleEntity.x[to], particleEntity.y[to],
+                particleEntity.x(from), particleEntity.y(from),
+                particleEntity.x(to), particleEntity.y(to),
                 color,
                 signal = 0f,
                 seed = from

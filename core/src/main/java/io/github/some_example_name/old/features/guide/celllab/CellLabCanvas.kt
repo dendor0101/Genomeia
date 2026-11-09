@@ -88,16 +88,16 @@ internal class CellLabCanvas(private val session: CellLabSession) : Widget(), Di
             val signal = if (isCell) c.neuronImpulseOutput[cell] else 0f
             val cos = if (isCell) c.angleCos[cell] else 1f
             val sin = if (isCell) c.angleSin[cell] else 0f
-            cells.putCell(p.x[i], p.y[i], if (isCell) palette.color(type, p.color[i]) else p.color[i],
+            cells.putCell(p.x(i), p.y(i), if (isCell) palette.color(type, p.color[i]) else p.color[i],
                 cos, sin, p.radius[i], if (isCell) c.energy[cell] else 0f, type, i,
                 isCell = isCell, look = if (isCell) palette.look(type, signal) else 0)
             if (isCell && palette.isEye(type)) {
                 val range = model.world.specialEntity.eyeData(cell).visibilityRange
-                overlay.putRay(p.x[i] + cos * p.radius[i], p.y[i] + sin * p.radius[i],
-                    p.x[i] + cos * range, p.y[i] + sin * range, palette.defaultColor(type), signal)
+                overlay.putRay(p.x(i) + cos * p.radius[i], p.y(i) + sin * p.radius[i],
+                    p.x(i) + cos * range, p.y(i) + sin * range, palette.defaultColor(type), signal)
             } else if (isCell && palette.hasFlagellum(type)) {
-                overlay.putFlagellum(p.x[i] + cos * p.radius[i], p.y[i] + sin * p.radius[i],
-                    p.x[i] + cos * 1.7f, p.y[i] + sin * 1.7f, palette.defaultColor(type), signal, i)
+                overlay.putFlagellum(p.x(i) + cos * p.radius[i], p.y(i) + sin * p.radius[i],
+                    p.x(i) + cos * 1.7f, p.y(i) + sin * 1.7f, palette.defaultColor(type), signal, i)
             }
         }
         val links = model.world.linkEntity
@@ -125,7 +125,7 @@ internal class CellLabCanvas(private val session: CellLabSession) : Widget(), Di
         }
         if (model.primaryAlive) overlay.putRing(c.getX(model.primary), c.getY(model.primary), 0.67f, Color.GOLD.toIntBits())
         if (model.grabbed >= 0 && p.isAlive[model.grabbed]) {
-            overlay.putRay(p.x[model.grabbed], p.y[model.grabbed], model.targetX, model.targetY, Color.WHITE.toIntBits())
+            overlay.putRay(p.x(model.grabbed), p.y(model.grabbed), model.targetX, model.targetY, Color.WHITE.toIntBits())
         }
         frame.cells = cells.end()
         frame.overlay = overlay.end()

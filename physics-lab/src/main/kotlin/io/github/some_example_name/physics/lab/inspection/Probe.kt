@@ -198,8 +198,8 @@ internal object Probe {
         DemoInspector.write(demo, "sweepBackwards", !(DemoInspector.read(demo, "sweepBackwards") as Boolean))
     }
 
-    /** Настоящий simulate() демо, без пересборки стадий. */
-    private fun simulate() { demo.simulate() }
+    /** Настоящий тик демо (мышцы за [dt] и решатель), без пересборки стадий. */
+    private fun tick(dt: Double) { demo.tick(dt) }
 
     /**
      * Один кадр.
@@ -222,10 +222,9 @@ internal object Probe {
      * показывало совсем другую картину, чем видел человек.
      */
     fun frameWithMuscles(dt: Double, targets: DoubleArray) {
-        muscleTarget.fill(0.0)
-        for (m in targets.indices) if (m < muscleTarget.size) muscleTarget[m] = targets[m]
-        updateMuscles(dt)
-        simulate()
+        demo.world.setAllMuscleTargets(0.0)
+        for (m in targets.indices) if (m < demo.world.muscleCount) demo.world.setMuscleTarget(m, targets[m])
+        tick(dt)
     }
 
     /**
@@ -237,10 +236,9 @@ internal object Probe {
      */
     /** Одна мышца держится сокращённой — как при наведении мышью в окне. */
     fun frameHold(dt: Double, muscle: Int) {
-        muscleTarget.fill(0.0)
-        if (muscle in muscleTarget.indices) muscleTarget[muscle] = 1.0
-        updateMuscles(dt)
-        simulate()
+        demo.world.setAllMuscleTargets(0.0)
+        if (muscle in 0 until demo.world.muscleCount) demo.world.setMuscleTarget(muscle, 1.0)
+        tick(dt)
     }
 
     fun frameGait(dt: Double, frame: Int) {
@@ -248,17 +246,15 @@ internal object Probe {
         // замера, см. RB_PERIOD в DemoSession.
         val period = demo.state.gaitPeriod
         val duty = (period * demo.state.gaitDuty).toInt().coerceAtLeast(1)
-        muscleTarget.fill(0.0)
-        if (frame % period < duty) muscleTarget.fill(1.0)
-        updateMuscles(dt)
-        simulate()
+        demo.world.setAllMuscleTargets(if (frame % period < duty) 1.0 else 0.0)
+        tick(dt)
     }
 
     fun frame(dt: Double, sub: Int, contract: Boolean, hydro: Boolean = true) {
-        muscleTarget.fill(0.0)
-        if (contract && muscleTarget.isNotEmpty()) muscleTarget[0] = 1.0
+        demo.world.setAllMuscleTargets(0.0)
+        if (contract && demo.world.muscleCount > 0) demo.world.setMuscleTarget(0, 1.0)
+        if (hydro) { tick(dt); return }
         updateMuscles(dt)
-        if (hydro) { simulate(); return }
         val h = dt / sub
         for (s in 0 until sub) {
             integrate(h)

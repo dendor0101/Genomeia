@@ -13,7 +13,9 @@ fun BodyState.solveConstraints(h: Double) {
     // числе проходов заметно даже обращение к полю: у lateinit оно с проверкой.
     val px = px; val py = py; val invMass = invMass
     val conA = conA; val conB = conB; val conRest = conRest; val conMuscle = conMuscle
-    val conDead = conDead; val ms = muscleScaleOf
+    val conDead = conDead; val ms = muscleScaleOf; val cs = if (cellScalesOn) conCellScale else null
+    // Мягкость (BodyState.cellSoftness) — своим ядром; множители мышцы при ней ведутся всегда.
+    val soft = if (softnessOn) conSoftness else null; val cellScaleAll = conCellScale
     val plan = distanceSweepOrder
     // План целого графа не должен оставлять цену умерших связей после упаковки.
     // Для укороченного списка используем плотный проход ниже; reset возвращает
@@ -26,12 +28,16 @@ fun BodyState.solveConstraints(h: Double) {
         if (sweepBackwards) {
             for (k in order.lastIndex downTo 0) {
                 val c = order[k]
-                solveDistanceConstraint(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, alpha)
+                if (soft != null) solveDistanceConstraintSoft(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, cellScaleAll, soft, alpha)
+                else if (cs == null) solveDistanceConstraint(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, alpha)
+                else solveDistanceConstraintScaled(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, cs, alpha)
             }
         } else {
             for (k in order.indices) {
                 val c = order[k]
-                solveDistanceConstraint(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, alpha)
+                if (soft != null) solveDistanceConstraintSoft(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, cellScaleAll, soft, alpha)
+                else if (cs == null) solveDistanceConstraint(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, alpha)
+                else solveDistanceConstraintScaled(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, cs, alpha)
             }
         }
         return
@@ -40,11 +46,15 @@ fun BodyState.solveConstraints(h: Double) {
     // обычный счётный цикл; формула ниже разворачивается Kotlin-компилятором.
     if (sweepBackwards) {
         for (c in conCount - 1 downTo 0) {
-            solveDistanceConstraint(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, alpha)
+            if (soft != null) solveDistanceConstraintSoft(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, cellScaleAll, soft, alpha)
+            else if (cs == null) solveDistanceConstraint(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, alpha)
+            else solveDistanceConstraintScaled(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, cs, alpha)
         }
     } else {
         for (c in 0 until conCount) {
-            solveDistanceConstraint(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, alpha)
+            if (soft != null) solveDistanceConstraintSoft(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, cellScaleAll, soft, alpha)
+            else if (cs == null) solveDistanceConstraint(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, alpha)
+            else solveDistanceConstraintScaled(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, cs, alpha)
         }
     }
 }
@@ -73,6 +83,61 @@ internal inline fun solveDistanceConstraint(
     px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
 }
 
+/**
+ * То же ядро с мышцей клетки (BodyState.cellScale): длина покоя × множитель связи [cs].
+ * Отдельной функцией, а не параметром прежней: мир без множителей клеток (стенд) идёт
+ * прежним байткодом — лишнее чтение и параметр в самом горячем ядре стоили ~5% тика.
+ */
+internal fun solveDistanceConstraintScaled(
+    c: Int, endpoint: Int, px: DoubleArray, py: DoubleArray, invMass: DoubleArray,
+    conA: IntArray, conB: IntArray, conRest: DoubleArray, conMuscle: IntArray,
+    conDead: BooleanArray, ms: DoubleArray, cs: FloatArray, alpha: Double,
+) {
+    if (conDead[c]) return
+    val i = conA[endpoint]; val j = conB[endpoint]
+    val wi = invMass[i]; val wj = invMass[j]
+    val w = wi + wj
+    if (w == 0.0) return
+    var dx = px[i] - px[j]
+    var dy = py[i] - py[j]
+    val len = sqrt(dx * dx + dy * dy)
+    if (len < 1e-12) return
+    dx /= len; dy /= len
+    val m = conMuscle[c]
+    val rest = conRest[c] * ((if (m < 0) 1.0 else ms[m]) * cs[c])
+    val dL = -(len - rest) / (w + alpha)
+    px[i] += dx * dL * wi; py[i] += dy * dL * wi
+    px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
+}
+
+/**
+ * То же ядро с мягкостью ткани (BodyState.cellSoftness): податливость × множитель связи
+ * [soft]. Множитель мышцы [cs] при мягкости ведётся всегда (refreshCellScaleRing), поэтому
+ * ядро одно на оба. Отдельной функцией по той же причине, что и Scaled: мир без мягких
+ * клеток не читает лишний массив.
+ */
+internal fun solveDistanceConstraintSoft(
+    c: Int, endpoint: Int, px: DoubleArray, py: DoubleArray, invMass: DoubleArray,
+    conA: IntArray, conB: IntArray, conRest: DoubleArray, conMuscle: IntArray,
+    conDead: BooleanArray, ms: DoubleArray, cs: FloatArray, soft: FloatArray, alpha: Double,
+) {
+    if (conDead[c]) return
+    val i = conA[endpoint]; val j = conB[endpoint]
+    val wi = invMass[i]; val wj = invMass[j]
+    val w = wi + wj
+    if (w == 0.0) return
+    var dx = px[i] - px[j]
+    var dy = py[i] - py[j]
+    val len = sqrt(dx * dx + dy * dy)
+    if (len < 1e-12) return
+    dx /= len; dy /= len
+    val m = conMuscle[c]
+    val rest = conRest[c] * ((if (m < 0) 1.0 else ms[m]) * cs[c])
+    val dL = -(len - rest) / (w + alpha * soft[c])
+    px[i] += dx * dL * wi; py[i] += dy * dL * wi
+    px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
+}
+
 fun BodyState.solveLinkMaxLength() {
     if (tearingOn) SealStats.tearingOnTicks++ else SealStats.tearingOffTicks++
     val w = activeWorkers
@@ -84,7 +149,7 @@ fun BodyState.solveLinkMaxLength() {
     // Всё в локальные: при MAXLEN_EARLY стадия идёт 144 раза за тик.
     val px = px; val py = py; val invMass = invMass
     val conA = conA; val conB = conB; val conRest = conRest; val conMuscle = conMuscle
-    val conDead = conDead; val ms = muscleScaleOf
+    val conDead = conDead; val ms = muscleScaleOf; val cs = if (cellScalesOn) conCellScale else null
     // Список дополняется killEdgeNow прямо в этом проходе. Внутренние связи
     // по-прежнему участвуют в solveConstraints, но здесь их координаты не читаем.
     val limits = boundaryLinkLimits
@@ -106,11 +171,12 @@ fun BodyState.solveLinkMaxLength() {
         // длины сравниваются их квадраты — ровно то же самое, без корня.
         val len2 = dx * dx + dy * dy
         val mus = conMuscle[c]
-        val scale = if (mus < 0) 1.0 else ms[mus]
+        val base = if (mus < 0) 1.0 else ms[mus]
+        val scale = if (cs == null) base else base * cs[c]
         val rest = conRest[c]
         val restScale = rest * scale
         val crushLim = LINK_CRUSH_RATIO * restScale
-        val max = LINK_MAX_STRETCH * rest
+        val max = linkMaxLength(rest, scale)
         val crushed = tearingOn && len2 < crushLim * crushLim
         val over = len2 > max * max
         // Запас до разрыва за прогон — только когда он кому-то интересен: у худших
@@ -145,11 +211,12 @@ internal fun BodyState.solveLimitItemSerial(c: Int) {
     val dy = py[i] - py[j]
     val len2 = dx * dx + dy * dy
     val mus = conMuscle[c]
-    val scale = if (mus < 0) 1.0 else muscleScaleOf[mus]
+    val base = if (mus < 0) 1.0 else muscleScaleOf[mus]
+    val scale = if (cellScalesOn) base * conCellScale[c] else base
     val rest = conRest[c]
     val restScale = rest * scale
     val crushLim = LINK_CRUSH_RATIO * restScale
-    val max = LINK_MAX_STRETCH * rest
+    val max = linkMaxLength(rest, scale)
     val crushed = tearingOn && len2 < crushLim * crushLim
     val over = len2 > max * max
     if (!crushed && !over) return
@@ -157,11 +224,30 @@ internal fun BodyState.solveLimitItemSerial(c: Int) {
     solveLinkLimitViolation(c, len2, crushed, scale)
 }
 
+/**
+ * ПРЕДЕЛ ДЛИНЫ СВЯЗИ — LINK_MAX_STRETCH длины покоя. У растянутой мышцы клетки ([scale] > 1,
+ * игра растягивает миоцит до 1.5) — от растянутой длины: иначе предел резал бы растяжение и
+ * рвал мышцу. Сжатие предела не трогает — прежняя арифметика, те же биты.
+ */
+internal fun linkMaxLength(rest: Double, scale: Double): Double =
+    if (scale > 1.0) LINK_MAX_STRETCH * rest * scale else LINK_MAX_STRETCH * rest
+
+/**
+ * ДОРАСТАЮЩАЯ СВЯЗЬ ВНЕ ПРЕДЕЛА И РАЗРЫВА (деление, 02.11). Её длина покоя сама идёт от
+ * фактической к цели (easeNewborn): новорождённая у родителя далеко от части соседей, и падающий
+ * вслед за длиной покоя предел рвал бы связь «растяжением», хотя её никто не тянул (A-11: ~980 из
+ * ~1030 разрывов роста — молодые связи, растяжение до 4.3 длины покоя; у правильной треугольной
+ * сетки расстояние от родителя до общих соседей равно длине связи, и разрывов нет). Читается
+ * только на редком пути нарушения.
+ */
+internal fun BodyState.isGrowingLink(c: Int): Boolean = c < conGrowTarget.size && conGrowTarget[c] > 0.0
+
 /** Редкие разрывы отдельно от цикла: меньше байткода и живых локальных в обычном проходе. */
 fun BodyState.solveLinkLimitViolation(c: Int, len2: Double, crushed: Boolean, scale: Double) {
+    if (isGrowingLink(c)) return
     val i = conA[c]; val j = conB[c]
     val mus = conMuscle[c]
-    val max = LINK_MAX_STRETCH * conRest[c]
+    val max = linkMaxLength(conRest[c], scale)
     val len = sqrt(len2)
     // РАЗДАВЛЕННАЯ СВЯЗЬ РВЁТСЯ ТАК ЖЕ, КАК ПЕРЕРАСТЯНУТАЯ. См. LINK_CRUSH_RATIO.
     if (crushed) {
@@ -219,7 +305,7 @@ internal fun BodyState.applyLinkLimitCorrection(i: Int, j: Int, len: Double, max
     val wi = invMass[i]; val wj = invMass[j]; val w = wi + wj
     val dx = (px[i] - px[j]) / len; val dy = (py[i] - py[j]) / len
     var dL = -(len - max) / w
-    val capL = LINK_MAX_STEP * body.meanLinkLength / w
+    val capL = LINK_MAX_STEP * linkScale / w
     if (dL < -capL) dL = -capL
     px[i] += dx * dL * wi; py[i] += dy * dL * wi
     px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
@@ -231,7 +317,7 @@ internal fun BodyState.applyLinkLimitCorrection(i: Int, j: Int, len: Double, max
  * solveLinkLimitViolation; параллельный проход по такому нарушению останавливает
  * блок, и событие исполняется в одном потоке в исходном порядке. См. ParallelBlocks.
  */
-internal fun BodyState.limitViolationIsEvent(c: Int, len2: Double, crushed: Boolean): Boolean {
+internal fun BodyState.limitViolationIsEvent(c: Int, len2: Double, crushed: Boolean, scale: Double): Boolean {
     if (crushed) return true
     val i = conA[c]; val j = conB[c]
     val len = sqrt(len2)
@@ -239,7 +325,7 @@ internal fun BodyState.limitViolationIsEvent(c: Int, len2: Double, crushed: Bool
         len > (contacts?.contactRadiusOf(i) ?: 0.0) +
             (contacts?.contactRadiusOf(j) ?: 0.0) + 2.0 * dbgSealMinR) return true
     if (len < 1e-12) return false
-    val max = LINK_MAX_STRETCH * conRest[c]
+    val max = linkMaxLength(conRest[c], scale)
     val tear = if (conTendon[c]) linkTearStrain * tendonTear else linkTearStrain
     if (len - max > tear * conRest[c]) return true
     return tearingOn && membraneTearStrain >= 0.0 && conBoundary[c] && !conDead[c] &&
@@ -291,11 +377,12 @@ fun BodyState.solveAreas(h: Double) {
     val alpha = AREA_COMPLIANCE / (h * h)
     // Вывернутым треугольникам своя, нулевая — см. AREA_COMPLIANCE_INVERTED.
     val alphaInverted = AREA_COMPLIANCE_INVERTED / (h * h)
-    val maxStep = AREA_MAX_STEP * body.meanLinkLength
+    val maxStep = AREA_MAX_STEP * linkScale
     // Всё в локальные: стадия идёт 64 раза за тик по трём тысячам треугольников.
     val px = px; val py = py; val invMass = invMass
     val ta = triA; val tb = triB; val tc = triC
-    val rest2 = triRestArea2; val tm = triMuscle; val ms = muscleScaleOf
+    val rest2 = triRestArea2; val tm = triMuscle; val ms = muscleScaleOf; val ts = if (cellScalesOn) triCellScale else null
+    val ks = if (softnessOn) triSoftness else null
     val alive = baked.triAlive; val tid = triId
     for (t in 0 until triCount) {
         // Треугольник умирает вместе с любым своим ребром И СРАЗУ, ещё до пересборки:
@@ -319,14 +406,17 @@ fun BodyState.solveAreas(h: Double) {
         // Площадь покоя едет вместе с длинами: иначе мышца тянет треугольник вниз,
         // а несжимаемая площадь держит его на месте, и ткань запирает.
         val m = tm[t]
-        val s = if (m < 0) 1.0 else ms[m]
+        val s0 = if (m < 0) 1.0 else ms[m]
+        val s = if (ts == null) s0 else s0 * ts[t]
         val restArea2 = rest2[t].toDouble() * s * s
         val area2 = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0)
+        // Мягкость ткани (BodyState.cellSoftness) — множитель податливости; вывернутым своя, нулевая.
+        val alphaT = if (ks == null) alpha else alpha * ks[t]
         // Плавный переход вместо ступеньки — см. AREA_SMOOTH_RAMP.
         val a = if (AREA_SMOOTH_RAMP) {
             val q = (area2 / restArea2).coerceIn(0.0, 1.0)
-            alphaInverted + (alpha - alphaInverted) * q * q
-        } else if (area2 < 0.0) alphaInverted else alpha
+            alphaInverted + (alphaT - alphaInverted) * q * q
+        } else if (area2 < 0.0) alphaInverted else alphaT
         var dL = -(area2 - restArea2) / (denom + a)
         // Потолок на длину поправки — см. AREA_MAX_STEP.
         if (maxStep > 0.0) {

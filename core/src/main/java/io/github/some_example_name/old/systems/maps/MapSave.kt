@@ -16,6 +16,7 @@ import io.github.some_example_name.old.entities.NeuralEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.features.worldeditor.WorldEdit
 import io.github.some_example_name.old.features.worldeditor.WorldSpec
+import io.github.some_example_name.old.physics.bridge.WorldPhysics
 import io.github.some_example_name.old.systems.genomics.genome.Genome
 import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.genomics.genome.GenomeProto
@@ -41,7 +42,9 @@ class SavedMap(val slot: String, val lastModified: Long)
  *  - genomes.bin        геномы, на которые ссылаются организмы;
  *  - cellActions.bin    из какой стадии генома взято действие каждой клетки;
  *  - types.bin          ключи типов клеток и формул по номерам, какими они были при сохранении;
- *  - entities/<имя>.bin состояние каждой сущности, см. EntityState.
+ *  - entities/<имя>.bin состояние каждой сущности, см. EntityState;
+ *  - physics.bin        мир физики-библиотеки целиком (WorldPhysics.encodeState): позиции
+ *                       клеток и субстанций живут только в нём.
  */
 class MapSave(
     /** Сущности мира под стабильными именами: имя — это имя файла в архиве. */
@@ -51,6 +54,7 @@ class MapSave(
     private val genomeManager: GenomeManager,
     private val simulationData: SimulationData,
     private val simulationSystem: SimulationSystem,
+    private val worldPhysics: WorldPhysics,
     private val diContext: DIContext,
     /** Пересобрать сетку под размер загружаемого мира: у каждого мира он свой. */
     private val resizeWorld: (width: Int, height: Int) -> Unit
@@ -85,6 +89,9 @@ class MapSave(
             for ((name, entity) in entities) {
                 entries[entityEntry(name)] = entity.encodeState()
             }
+            // Последним: запись уплотняет мир физики (номера его частиц), а сущности игры
+            // номеров мира физики не хранят — им всё равно, до или после.
+            entries[PHYSICS] = writeBytes { worldPhysics.encodeState(it) }
         }
 
         writeArchive(target, entries)
@@ -136,6 +143,8 @@ class MapSave(
         cellEntity.restoreCellActions(decodeInts(entries[CELL_ACTIONS] ?: ByteArray(0)), genomeManager.genomes)
         organEntity.restoreArenaLayouts(genomeManager.genomes)
         cellEntity.repairEdgeFlagsAfterLoad()
+        // Последним: номера частиц мира физики раздаются по аренам организмов и субстанциям.
+        worldPhysics.decodeState(DataInputStream((entries[PHYSICS] ?: throw IllegalStateException("в мире нет $PHYSICS")).inputStream()))
 
         simulationData.tickCounter = meta.tickCounter
         simulationData.timeSimulation = meta.timeSimulation
@@ -396,13 +405,19 @@ class MapSave(
          * продюсеры и излучатели лежат своими данными в specialModData.bin. С него сохранения
          * миров выходят в релиз; формат 1 был только у сборок до этого и не читается.
          */
-        private const val FORMAT_VERSION = 2
+        /**
+         * 3 — мир физики-библиотеки (physics.bin); у частиц вместо x/y/vx/vy — свои позиции
+         * тех, кого мир физики не ведёт (ParticleEntity.local*). Формат 2 не читается: позиций
+         * клеток в нём для нового мира нет (решение 1 плана физики — без обратной совместимости).
+         */
+        private const val FORMAT_VERSION = 3
 
         private const val PREVIEW = "preview.png"
         private const val META = "meta.bin"
         private const val GENOMES = "genomes.bin"
         private const val CELL_ACTIONS = "cellActions.bin"
         private const val TYPES = "types.bin"
+        private const val PHYSICS = "physics.bin"
         private fun entityEntry(name: String) = "entities/$name.bin"
 
         private const val EDIT_STROKE = 0
@@ -465,7 +480,7 @@ class MapSave(
                     while (zip.read(buffer) != -1) { /* CRC проверяется в конце записи. */ }
                 }
             }
-            for (required in arrayOf(META, TYPES, GENOMES, CELL_ACTIONS)) {
+            for (required in arrayOf(META, TYPES, GENOMES, CELL_ACTIONS, PHYSICS)) {
                 require(required in names) { "в карте нет $required" }
             }
             require(names.any { it.startsWith("entities/") }) { "в карте нет сущностей" }

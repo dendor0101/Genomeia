@@ -26,10 +26,27 @@ tasks.withType(JavaExec).configureEach {
   // запусках, весь тик 255 / 298 / 319 мс. С участком 32 МБ массивы до 16 МБ ложатся
   // подряд всегда. Худший случай для проверки стадий: -PheapRegion=1m.
   jvmArgs "-XX:G1HeapRegionSize=${project.findProperty('heapRegion') ?: '32m'}"
+  // Число подшагов физики: -Psubsteps=16 (см. SolverParameters.SUBSTEPS).
+  if (project.hasProperty('substeps')) systemProperty 'genomeia.substeps', project.property('substeps')
   if (System.properties['os.name'].toLowerCase(Locale.ROOT).contains('mac')) {
     jvmArgs '-XstartOnFirstThread'
   }
 }
+// Толпа тел без мышц и сна — цель 100k клеток в 30 UPS. См. CrowdBench.kt.
+//   gradlew :physics-lab:crowdBench -Pcells=100000 -Pworkers=8 -Pwarm=150 -Pmeasure=150
+tasks.register('crowdBench', JavaExec) {
+  group = 'verification'
+  description = 'Толпа толкающихся тел: мс на тик, стадии и контрольная сумма мира'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.bench.CrowdBenchKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('cells') ?: '100000', project.findProperty('workers') ?: '8',
+          project.findProperty('warm') ?: '150', project.findProperty('measure') ?: '150',
+          project.findProperty('push') ?: '1']
+  jvmArgs '-Xmx3g', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+  if (project.hasProperty('jfr')) jvmArgs "-XX:StartFlightRecording=filename=${project.property('jfr')},settings=profile"
+}
+
 // Стенд честности физики RealBodyDemo: gradlew :physics-lab:physicsAudit
 // Считает сохранение импульса и момента по стадиям решателя и печатает таблицы.
 // Опорные числа — в комментариях PhysicsAudit.kt и у констант RealBodyDemo.
@@ -145,6 +162,19 @@ tasks.register('perfBench', JavaExec) {
   workingDir = rootProject.projectDir
   args = [project.findProperty('body') ?: 'body-export.txt']
   jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+
+// Мягкий террейн из плиток со швами: сон, пробуждение, обстрел, таран. См. TerrainLab.kt.
+//   gradlew :physics-lab:terrainLab -Pgrip=0,0.3,0.6 -Pworld=64 -Pworkers=7
+tasks.register('terrainLab', JavaExec) {
+  group = 'verification'
+  description = 'Мягкий террейн из плиток: сон, волна пробуждения, проникновение, цена тика'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.scenes.TerrainLabKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('grip') ?: '0,0.3,0.6', project.findProperty('world') ?: '64',
+          project.findProperty('workers') ?: '0']
+  jvmArgs '-Xmx3g', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
 }
 
 tasks.register('materialCheck', JavaExec) {

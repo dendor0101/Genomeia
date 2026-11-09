@@ -25,7 +25,7 @@ class CellLabModelTest {
                     a.step(); b.step()
                     if (tick % 60 == 59) assertEquals(a.stateHash(), b.stateHash(), "$key tick=$tick")
                     for (i in 0..a.p.lastId) if (a.p.isAlive[i]) {
-                        assertTrue(a.p.x[i].isFinite() && a.p.y[i].isFinite(), "$key particle=$i")
+                        assertTrue(a.p.x(i).isFinite() && a.p.y(i).isFinite(), "$key particle=$i")
                     }
                 }
                 assertTrue(a.c.aliveList.size <= CellLabModel.MAX_CELLS, key)
@@ -141,7 +141,7 @@ class CellLabModelTest {
                     assertTrue(lab.c.aliveList.size <= CellLabModel.MAX_CELLS, "$key: cells=${lab.c.aliveList.size}")
                     assertTrue(lab.world.substancesEntity.aliveList.size <= CellLabModel.MAX_FOOD, key)
                     for (i in 0..lab.p.lastId) if (lab.p.isAlive[i]) {
-                        assertTrue(lab.p.x[i].isFinite() && lab.p.y[i].isFinite(), "$key particle=$i")
+                        assertTrue(lab.p.x(i).isFinite() && lab.p.y(i).isFinite(), "$key particle=$i")
                     }
                 }
                 times.sort()
@@ -200,8 +200,8 @@ class CellLabModelTest {
                 val organ = lab.c.organIndex[lab.primary]
                 for (i in 0..lab.p.lastId) if (lab.p.isAlive[i]) {
                     if (lab.p.isCell[i] && lab.c.organIndex[lab.p.holderEntityIndex[i]] == organ) continue
-                    val dx = lab.p.x[i] - lab.c.getX(lab.primary)
-                    val dy = lab.p.y[i] - lab.c.getY(lab.primary)
+                    val dx = lab.p.x(i) - lab.c.getX(lab.primary)
+                    val dy = lab.p.y(i) - lab.c.getY(lab.primary)
                     assertTrue(dx * dx + dy * dy >= 4f, "$key point=$i")
                     if (key == "punisher") assertEquals("fat", lab.world.cellList[lab.c.cellType[lab.p.holderEntityIndex[i]].toInt()].key)
                 }
@@ -243,7 +243,7 @@ class CellLabModelTest {
                 lab.apply(CellLabInput("spawn"))
                 val target = lab.p.aliveList.getInt(lab.p.aliveList.size - 1)
                 val energy = lab.c.energy[lab.primary]
-                lab.apply(CellLabInput("grab", x = lab.p.x[target], y = lab.p.y[target]))
+                lab.apply(CellLabInput("grab", x = lab.p.x(target), y = lab.p.y(target)))
                 lab.apply(CellLabInput("drag", x = lab.c.getX(lab.primary), y = lab.c.getY(lab.primary)))
                 repeat(300) { lab.step() }
                 if (key == "sucker") {

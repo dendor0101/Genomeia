@@ -30,15 +30,8 @@ import kotlin.system.exitProcess
  *  3. печатается время выращивания (столько игра стоит при первом запуске на каждом
  *     своём геноме без снимка) и сколько снимок добавил к файлу.
  *
- * Запуск: gradlew :lwjgl3:bakeBundledGenomes [-Pdir=каталог] [-PrebakeInterior], по
+ * Запуск: gradlew :lwjgl3:bakeBundledGenomes [-Pdir=каталог], по
  * умолчанию assets/genomes. Ненулевой код — хоть один геном не допёкся или снимок не повторился.
- *
- * -PrebakeInterior — перед проверкой пересчитать границу тела (BakedLayout.interiorLinks)
- * у всех файлов, а не только у тех, где её нет: так встроенные геномы переходят на новый
- * признак границы (InteriorCells) без удаления и пересохранения. Граница переносится в
- * СВОЮ раскладку по cellGenomeId (withInteriorFrom): порядок слотов, стадии и снимок не
- * меняются. Повтор .bug, записанного на прежней сборке с встроенным геномом в мире,
- * после этого разойдётся — граница влияет на столкновения.
  */
 fun main(args: Array<String>) {
     val dir = File(args.getOrNull(0) ?: "assets/genomes")
@@ -50,19 +43,15 @@ fun main(args: Array<String>) {
         // Как в Lwjgl3Launcher: контейнеры игры поднимают рендер, а ему нужен GL30.
         setOpenGLEmulation(Lwjgl3ApplicationConfiguration.GLEmulation.GL30, 3, 3)
     }
-    val rebakeInterior = args.contains(REBAKE_INTERIOR)
-    Lwjgl3Application(BakeBundledGenomes(MyGame(DesktopFileProvider()), dir, rebakeInterior), config)
+    Lwjgl3Application(BakeBundledGenomes(MyGame(DesktopFileProvider()), dir), config)
     exitProcess(exitCode)
 }
 
 private var exitCode = 1
 
-private const val REBAKE_INTERIOR = "--rebake-interior"
-
 private class BakeBundledGenomes(
     private val game: MyGame,
-    private val dir: File,
-    private val rebakeInterior: Boolean
+    private val dir: File
 ) : ApplicationListener by game {
 
     private var frames = 0
@@ -84,8 +73,6 @@ private class BakeBundledGenomes(
         require(dir.isDirectory) { "нет каталога ${dir.absolutePath}" }
         val baker = DIGenomeEditorContainer.genomeBaker
         val folder = Gdx.files.absolute(dir.absolutePath)
-
-        if (rebakeInterior) rebakeInterior(baker)
 
         val started = System.nanoTime()
         val (baked, failed) = GenomeLibrary.bakeUnbaked(baker, folder)
@@ -112,16 +99,16 @@ private class BakeBundledGenomes(
             val rebaked = baker.bake(genome, genome.name)
             val ms = (System.nanoTime() - growStarted) / 1_000_000.0
             if (rebaked.preview != preview) problems += "повторное выращивание дало другой снимок"
-            // Граница тела (BakedLayout.interiorLinks) влияет на симуляцию — она обязана
-            // повторяться так же, как снимок.
             val layout = genome.sortedGraph
             if (genome.neuralLinksPeak == null) problems += "нет пика нейросвязей"
             else if (rebaked.neuralLinksPeak != genome.neuralLinksPeak) problems += "повторное выращивание дало другой пик нейросвязей"
-            if (layout == null || !layout.hasInteriorLinks) problems += "нет границы тела"
-            else if (!layout.hasCurrentInterior) problems += "граница прежнего признака (interiorVersion ${layout.interiorVersion})"
-            else if (layout.withInteriorFrom(rebaked.sortedGraph).interiorLinks != layout.interiorLinks) {
-                problems += "повторное выращивание дало другую границу"
-            }
+            // Поза покоя (BakedLayout.restX) — из неё физика заводит тело.
+            if (layout == null || !layout.hasRestPose) problems += "нет позы покоя"
+            else if (layout.withRestPoseFrom(rebaked.sortedGraph) != layout) problems += "повторное выращивание дало другую позу покоя"
+            // Треугольники (BakedLayout.triangleSlots) — все тройки связей: из них площадь ткани и
+            // контур тела в физике.
+            else if (!layout.hasCurrentTriangles) problems += "треугольники прежнего перебора (trianglesVersion ${layout.trianglesVersion})"
+            else if (layout.withTrianglesFromLinks() != layout) problems += "треугольники не совпадают с перебором по связям"
 
             val previewBytes = bytes.size - encodeGenome(genome.copy(preview = null)).size
             println(String.format(
@@ -134,26 +121,5 @@ private class BakeBundledGenomes(
 
         println(if (failures == 0) "Все ${files.size} со снимком, снимки повторяются." else "НЕ ПРОШЛИ: $failures из ${files.size}.")
         return failures == 0
-    }
-
-    /** Граница тела заново у всех файлов; печатает, сколько граничных было и стало. */
-    private fun rebakeInterior(baker: Baker) {
-        val files = dir.listFiles { f -> f.isFile && f.extension.equals("genome", ignoreCase = true) }
-            ?.sortedBy { it.name }.orEmpty()
-        for (file in files) {
-            val genome = decodeGenome(file.readBytes())
-            val layout = genome.sortedGraph
-            if (layout == null || layout.cellsInLayout == 0) continue
-            val rebaked = layout.withInteriorFrom(baker.bake(genome, genome.name).sortedGraph)
-            if (rebaked.interiorLinks == layout.interiorLinks) {
-                println("граница ${file.name}: без изменений")
-                continue
-            }
-            file.writeBytes(encodeGenome(genome.copy(sortedGraph = rebaked)))
-            println(
-                "граница ${file.name}: граничных ${layout.interiorLinks.count { it == 0 }} -> " +
-                    "${rebaked.interiorLinks.count { it == 0 }} из ${layout.cellsInLayout}"
-            )
-        }
     }
 }

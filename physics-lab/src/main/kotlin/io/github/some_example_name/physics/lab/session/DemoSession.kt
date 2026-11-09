@@ -8,11 +8,9 @@ import io.github.some_example_name.physics.lab.io.SceneFile
 import io.github.some_example_name.physics.lab.io.PlayerLog
 import io.github.some_example_name.physics.lab.scenes.BenchScenes
 import io.github.some_example_name.physics.lab.scenes.applyLabDamage
-import io.github.some_example_name.physics.BodyState
-import io.github.some_example_name.physics.BodySimulation
+import io.github.some_example_name.physics.PhysicsWorld
 import io.github.some_example_name.physics.comX
 import io.github.some_example_name.physics.comY
-import io.github.some_example_name.physics.updateMuscles
 import kotlin.math.abs
 import kotlin.math.sqrt
 
@@ -33,7 +31,12 @@ internal class DemoSession(internal val bodyPath: String,
     internal val physicsConfig: PhysicsConfig = DemoSettings.fromEnvironment(),
 ) {
 
-    internal val state = BodyState(physicsConfig)
+    /**
+     * Мир физики — единственный вход в решатель для загрузки, шага и входов тика. [state]
+     * открыт стенду для рисования, проверок и разбора по стадиям, не для управления.
+     */
+    internal val world = PhysicsWorld(physicsConfig)
+    internal val state get() = world.state
 
     init {
         // СЕССИЯ СТЕНДА СТАРТУЕТ БЕЗ СНА, окно включает его строкой журнала 'Z'.
@@ -42,7 +45,6 @@ internal class DemoSession(internal val bodyPath: String,
         // и спящее тело такой толчок проигнорировало бы. Включить для замера: RB_SLEEP=1.
         state.sleep.on = physicsConfig["RB_SLEEP"] == "1"
     }
-    internal val simulation = BodySimulation(state)
     // Только окно устанавливает эти обработчики. Безоконная сессия не знает Gdx.
     internal var onReset: (() -> Unit)? = null
     internal var onCamera: ((Double, Double) -> Unit)? = null
@@ -68,7 +70,7 @@ internal class DemoSession(internal val bodyPath: String,
 
     internal fun buildFromFile() { with(state) {
         // Сцена из разных тел (*.scene) — см. SceneFile; иначе копии одного тела.
-        simulation.load(if (SceneFile.isScene(bodyPath)) SceneFile.load(bodyPath)
+        world.load(if (SceneFile.isScene(bodyPath)) SceneFile.load(bodyPath)
             else BodyFile.load(bodyPath, copies = copies, freeParticles = freeParticles))
 
         if (!quiet) println("[DemoSession] " + body.describe())
@@ -87,7 +89,7 @@ internal class DemoSession(internal val bodyPath: String,
     } }
 
     internal fun reset() { with(state) {
-        simulation.reset()
+        world.reset()
         gaitFrame = 0
         hoveredMuscle = -1
         onReset?.invoke()
@@ -154,12 +156,11 @@ internal class DemoSession(internal val bodyPath: String,
         // наведения: окна там нет, а записано ровно то, что получилось в игре.
         if (replay != null) replayTickInputs() else { sampleInput?.invoke(); updateMuscleTargets(); recordTickInputs() }
         recordMuscles()
-        updateMuscles(DT)
         recordDrag()
         // Номер тика нужен разбору пробоя по одной клетке (CT_WATCH), иначе строки
         // трассы нельзя привязать к событию из журнала игрока.
         contacts?.tickNo = playTick
-        simulate()
+        tick(DT)
         simTime += DT
         logTick++
         playTick++
@@ -285,26 +286,26 @@ internal class DemoSession(internal val bodyPath: String,
      * наведение мышью, удержание цифровой клавиши и автоматический гребок.
      */
     internal fun updateMuscleTargets() { with(state) {
-        muscleTarget.fill(0.0)
+        world.setAllMuscleTargets(0.0)
 
         // Проверка верхней границы не лишняя: тело может не иметь мышц вовсе
         // (у текущей выгрузки muscle = 0), и тогда массив пуст.
-        if (hoveredMuscle in muscleTarget.indices) muscleTarget[hoveredMuscle] = 1.0
+        if (hoveredMuscle in 0 until world.muscleCount) world.setMuscleTarget(hoveredMuscle, 1.0)
 
         // Цифры 1..9 — держать соответствующую мышцу сокращённой.
-        val keys = minOf(9, muscleTarget.size)
+        val keys = minOf(9, world.muscleCount)
         for (m in 0 until keys) {
-            if (pressedMuscleMask and (1 shl m) != 0) muscleTarget[m] = 1.0
+            if (pressedMuscleMask and (1 shl m) != 0) world.setMuscleTarget(m, 1.0)
         }
         // 0 — все сразу.
-        if (pressedMuscleMask and (1 shl 9) != 0) muscleTarget.fill(1.0)
+        if (pressedMuscleMask and (1 shl 9) != 0) world.setAllMuscleTargets(1.0)
 
         // Автоматический гребок. Доля рабочей фазы — GAIT_DUTY, минимум один кадр:
         // при коротком периоде округление вниз может дать ноль, и гребка не будет вовсе.
         if (gait) {
             gaitFrame++
             val duty = (gaitPeriod * gaitDuty).toInt().coerceAtLeast(1)
-            if (gaitFrame % gaitPeriod < duty) muscleTarget.fill(1.0)
+            if (gaitFrame % gaitPeriod < duty) world.setAllMuscleTargets(1.0)
         }
     } }
 
@@ -330,6 +331,7 @@ internal class DemoSession(internal val bodyPath: String,
             ticks, (System.nanoTime() - t0) / 1e6))
     } }
 
-    internal fun simulate() { simulation.step(); if (state.trapCrash > 0) trapCrashScan() }
+    /** Тик мира: мышцы за [dt] и решатель; затем разбор застрявших, если включён. */
+    internal fun tick(dt: Double) { world.step(dt); if (state.trapCrash > 0) trapCrashScan() }
 
 }

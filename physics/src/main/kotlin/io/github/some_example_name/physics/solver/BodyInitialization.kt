@@ -7,7 +7,12 @@ package io.github.some_example_name.physics
 internal fun BodyState.initialize(definition: BodyDefinition) {
     body = definition
     n = body.count
+    val scale = worldScale ?: WorldScale.of(definition)
+    worldScale = scale
+    linkScale = scale.meanLinkLength
     cellDead = BooleanArray(n)
+    cellUnborn = BooleanArray(n)
+    conGrowTarget = DoubleArray(0); conGrowAge = ByteArray(0); triGrowTarget = FloatArray(0); growEdgeN = 0; growTriN = 0
 
     px = DoubleArray(n); py = DoubleArray(n)
     prevX = DoubleArray(n); prevY = DoubleArray(n)
@@ -24,6 +29,7 @@ internal fun BodyState.initialize(definition: BodyDefinition) {
     degenerateBones = body.boneClusters.size - rigid.size
     rigidBones = rigid.toTypedArray()
     rigidBones.forEachIndexed { b, ids -> for (i in ids) boneOf[i] = b }
+    boneClusterOf = boneOf.copyOf()
     buildBoneRestPose()
 
     body.muscleClusters.forEachIndexed { m, ids -> for (i in ids) muscleOf[i] = m }
@@ -53,6 +59,16 @@ internal fun BodyState.initialize(definition: BodyDefinition) {
 
     triMuscle = IntArray(triCount) { t -> muscleOfTri(triA[t], triB[t], triC[t]) }
     triInverted = BooleanArray(triCount)
+    cellScale = FloatArray(n) { 1f }
+    cellScaleTarget = FloatArray(n) { 1f }
+    dragScale = DoubleArray(n) { 1.0 }
+    conCellScale = FloatArray(conA.size) { 1f }; triCellScale = FloatArray(triA.size) { 1f }
+    cellSoftness = FloatArray(n) { 1f }
+    cellNoContact = BooleanArray(n)
+    cellGroup = IntArray(n)
+    cellGrip = FloatArray(n); gripsDirty = true
+    cellHomeCompliance = DoubleArray(n); cellHomeX = DoubleArray(n); cellHomeY = DoubleArray(n)
+    conSoftness = FloatArray(conA.size) { 1f }; triSoftness = FloatArray(triA.size) { 1f }
 
     buildBoundary()
     buildBend(); buildFlaps()
@@ -71,7 +87,7 @@ internal fun BodyState.resetState() {
     for (i in 0 until n) {
         px[i] = body.x[i].toDouble(); py[i] = body.y[i].toDouble()
         vx[i] = 0.0; vy[i] = 0.0
-        invMass[i] = restInvMass[i]; matchWeight[i] = 1.0
+        invMass[i] = restInvMass[i]; matchWeight[i] = restMatchWeight(i)
     }
     trapTicks.fill(0); foldTicks.fill(0)
     flowVX.fill(0.0); flowVY.fill(0.0)

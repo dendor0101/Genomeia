@@ -56,8 +56,15 @@ internal class CellLabModel(val key: String) : Disposable {
 
     fun value(key: String): Float = values[key] ?: 0f
 
-    private fun organ(types: List<String>, xs: FloatArray, ys: FloatArray, pairs: List<Int> = emptyList()): IntArray {
-        val layout = BakedLayout(types.indices.toList(), pairs)
+    private fun organ(types: List<String>, xs: FloatArray, ys: FloatArray, pairs: List<Int> = emptyList(), triangles: List<Int> = emptyList()): IntArray {
+        // Поза покоя для физики-библиотеки — те же координаты, по которым расставлены клетки.
+        val areas = List(triangles.size / 3) { t ->
+            val a = triangles[3 * t]; val b = triangles[3 * t + 1]; val d = triangles[3 * t + 2]
+            (xs[b] - xs[a]) * (ys[d] - ys[a]) - (ys[b] - ys[a]) * (xs[d] - xs[a])
+        }
+        val layout = BakedLayout(types.indices.toList(), pairs, triangleSlots = triangles, triangleRestArea2 = areas,
+            restX = xs.toList(), restY = ys.toList(),
+            restRadius = List(types.size) { 0.5f }, restBone = types.map { it == "bone" })
         val o = world.organEntity.addOrgan(0, 0)
         world.organEntity.allocateArenas(o, layout, 8)
         world.organEntity.alreadyGrownUp[o] = true
@@ -89,11 +96,18 @@ internal class CellLabModel(val key: String) : Disposable {
         // У связанных клеток радиус 0.5, исходная длина связи 0.55: компактное тело,
         // как в редакторе. Свободные цели стоят дальше, чтобы сразу не расталкиваться.
         when (key) {
-            "muscle", "bone" -> {
-                val ids = organ(listOf(key, "bone", "bone"), floatArrayOf(4.0f, 3.45f, 4.55f),
+            "muscle" -> {
+                // Треугольником, а не цепочкой: мышца сокращает только связи внутри своего кольца
+                // (соседи по треугольнику, BodyState.cellScaleEff), в цепочке длины не менялись бы.
+                val ids = organ(listOf("muscle", "leaf", "leaf"), floatArrayOf(4.0f, 3.725f, 4.275f),
+                    floatArrayOf(4.476f, 4.0f, 4.0f), listOf(0, 1, 0, 2, 1, 2), triangles = listOf(0, 1, 2))
+                primary = ids[0]; companion = ids[1]; source = ids[2]
+            }
+            "bone" -> {
+                val ids = organ(listOf("bone", "bone", "bone"), floatArrayOf(4.0f, 3.45f, 4.55f),
                     floatArrayOf(4.0f, 4.0f, 4.0f), listOf(0, 1, 0, 2))
                 primary = ids[0]; companion = ids[1]; source = ids[2]
-                if (key == "bone") organ(listOf("fat", "fat", "fat"), floatArrayOf(3.45f, 4.0f, 4.55f),
+                organ(listOf("fat", "fat", "fat"), floatArrayOf(3.45f, 4.0f, 4.55f),
                     floatArrayOf(2.5f, 2.5f, 2.5f), listOf(0, 1, 1, 2))
             }
             "fat", "punisher", "producer", "tail" -> {
@@ -162,7 +176,8 @@ internal class CellLabModel(val key: String) : Disposable {
     /** Небольшой настоящий геном: зигота делится, затем превращается в лист. */
     private fun growthGenome(): Int = world.genomeManager.addSavedGenome(Genome(
         version = 1, name = "guide-two-leaves", cellsAmount = 2, linksAmount = 1, neuralLinksPeak = 0,
-        sortedGraph = BakedLayout(listOf(0, 1), listOf(0, 1)),
+        sortedGraph = BakedLayout(listOf(0, 1), listOf(0, 1), restX = listOf(0f, 0.55f), restY = listOf(0f, 0f),
+            restRadius = listOf(0.5f, 0.5f), restBone = listOf(false, false)),
         stageInstruction = listOf(
             GenomeStage(mapOf(0 to CellAction(divide = Action(id = 1, cellType = "leaf", angle = 0f,
                 physicalLink = mapOf(0 to LinkData(length = 0.55f)))))),
@@ -361,7 +376,7 @@ internal class CellLabModel(val key: String) : Disposable {
         if (!x.isFinite() || !y.isFinite()) return -1
         var nearest = -1; var best = 0.85f * 0.85f
         for (i in 0..p.lastId) if (p.isAlive[i]) {
-            val dx = p.x[i] - x; val dy = p.y[i] - y
+            val dx = p.x(i) - x; val dy = p.y(i) - y
             val d = dx * dx + dy * dy
             if (d < best) { best = d; nearest = i }
         }
@@ -372,12 +387,11 @@ internal class CellLabModel(val key: String) : Disposable {
         val i = grabbed
         if (i < 0) return
         if (!p.isAlive[i] || p.getGeneration(i) != grabGeneration) { grabbed = -1; return }
-        val dx = targetX - p.x[i]; val dy = targetY - p.y[i]
+        val dx = targetX - p.x(i); val dy = targetY - p.y(i)
         val scale = 0.003f / sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
         // Мягкая тяга с гашением разгона: клетка не пролетает через точку захвата.
         // Сопротивление SuctionCup и связей по-прежнему считает обычная физика.
-        p.vx[i] += dx * scale - p.vx[i] * 0.3f
-        p.vy[i] += dy * scale - p.vy[i] * 0.3f
+        p.addVelocity(i, dx * scale - p.vx(i) * 0.3f, dy * scale - p.vy(i) * 0.3f)
     }
 
     fun stateHash(): Long = StateHash.compute(world.entityList, simulation = { h ->
@@ -396,7 +410,7 @@ internal class CellLabModel(val key: String) : Disposable {
         v = Fnv.word(v, targetX.toRawBits()); v = Fnv.word(v, targetY.toRawBits())
         for (control in controls) v = Fnv.word(v, value(control.key).toRawBits())
         v
-    }, grid = world.gridManager::hashOrder).hash
+    }, grid = world.gridManager::hashOrder, physics = world.worldPhysics::hash).hash
 
     override fun dispose() = world.dispose()
 

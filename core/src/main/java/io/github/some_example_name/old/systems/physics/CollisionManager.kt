@@ -60,12 +60,10 @@ class CollisionManager(
      */
     fun repulse(particleAId: Int, particleBId: Int, threadId: Int = 0) {
         val entity = entity
-        val positionsX = entity.x
-        val positionsY = entity.y
         val radii = entity.radius
 
-        val dx = positionsX[particleAId] - positionsX[particleBId]
-        val dy = positionsY[particleAId] - positionsY[particleBId]
+        val dx = entity.x(particleAId) - entity.x(particleBId)
+        val dy = entity.y(particleAId) - entity.y(particleBId)
         val distanceSquared = dx * dx + dy * dy
 
         if (distanceSquared > MAX_RADIUS_SQUARED) return
@@ -114,46 +112,9 @@ class CollisionManager(
         }
 
 
-        // Две частицы могут совпасть ТОЧНО, и это не теоретическая возможность.
-        //
-        // processWorldBorders зажимает координату ровно в radius, поэтому все частицы,
-        // прилетевшие в один угол мира, получают буквально одинаковые x и y. Тогда
-        // distance == 0, invDistance == Infinity, направление становится 0 * Infinity = NaN,
-        // и NaN расползается в vx/vy, а оттуда в позицию.
-        //
-        // Дальше начинается самое неприятное: x.toInt() для NaN даёт 0, поэтому все
-        // испорченные частицы сваливаются в клетку сетки номер 0 и остаются там навсегда —
-        // NaN самовоспроизводится. Наблюдалось 627 частиц в одной клетке, а это ~196 тысяч
-        // пар внутри неё; клетка неделима и достаётся одному воркеру, поэтому фаза коллизий
-        // сериализуется: util_collide падал с 0.70 до 0.175 при семикратном росте времени.
-        //
-        // Порог, а не проверка на строгий ноль: около нуля 1/distance уже даёт огромные
-        // силы, то есть взрыв вместо разведения. Направление при совпадении берётся
-        // детерминированное и зависящее от индексов, чтобы разные пары расходились в разные
-        // стороны, а не выстраивались в линию.
-        val distance: Float
-        val invDistance: Float
-        val dirX: Float
-        val dirY: Float
-        if (distanceSquared > MIN_SEPARATION_SQUARED) {
-            distance = sqrt(distanceSquared)
-            // Одна обратная длина на всё касание: нормализация обеих компонент — это
-            // умножения, и 1/distanceSquared тоже получается умножением
-            // (invDistance * invDistance), без второго деления.
-            invDistance = 1f / distance
-            dirX = dx * invDistance
-            dirY = dy * invDistance
-        } else {
-            distance = MIN_SEPARATION
-            invDistance = 1f / MIN_SEPARATION
-            if ((particleAId + particleBId) and 1 == 0) {
-                dirX = 1f
-                dirY = 0f
-            } else {
-                dirX = 0f
-                dirY = 1f
-            }
-        }
+        // Расстояние касания для onContact; совпавшие точно частицы получают порог
+        // MIN_SEPARATION, а не ноль.
+        val distance = if (distanceSquared > MIN_SEPARATION_SQUARED) sqrt(distanceSquared) else MIN_SEPARATION
 
         val effectOnContact = entity.effectOnContact
 
@@ -188,106 +149,34 @@ class CollisionManager(
             }
         }
 
-        // Скорости берутся после вызовов onContact, но ссылки на массивы всё равно
-        // локальные: дальше идёт по 4 записи в vx/vy, и перечитывать поля перед каждой
-        // не нужно.
-        val velocitiesX = entity.vx
-        val velocitiesY = entity.vy
-
+        // Отталкивание, притяжение мелких субстанций и пружина крупных — физика-библиотека
+        // (physics/bridge/WorldPhysics, этап B1). Здесь осталась логика игры: касание клеток
+        // (onContact) выше и слияние мелких субстанций.
         if (!isParticleAIsCell && !isParticleBIsCell) {
             //TODO вынести в SubManager
             val rA2 = radiusA * radiusA
             val rB2 = radiusB * radiusB
             val radiusSumSquared = rA2 + rB2
-
-            if (radiusSumSquared < PARTICLE_MAX_RADIUS_SQUARED) {
-
-                val maxRadius = if (radiusA > radiusB) radiusA else radiusB
-                if (distance < maxRadius && entity.isSub[particleAId] && entity.isSub[particleBId]) {
-                    val mergedRadius = sqrt(radiusSumSquared)
-                    val deleteIndex = if (radiusA < radiusB) {
-                        radii[particleBId] = mergedRadius
-                        holderIndices[particleAId]
-                    } else {
-                        radii[particleAId] = mergedRadius
-                        holderIndices[particleBId]
-                    }
-
-                    // Скалярный push: без intArrayOf и без arraycopy на два int'а.
-                    worldCommandsManager.worldCommandBuffer[threadId].push(
-                        WorldCommandType.DELETE_SUBSTANCE,
-                        deleteIndex,
-                        substancesEntity.getGeneration(deleteIndex)
-                    )
+            val maxRadius = if (radiusA > radiusB) radiusA else radiusB
+            if (radiusSumSquared < PARTICLE_MAX_RADIUS_SQUARED && distance < maxRadius &&
+                entity.isSub[particleAId] && entity.isSub[particleBId]
+            ) {
+                val mergedRadius = sqrt(radiusSumSquared)
+                val deleteIndex = if (radiusA < radiusB) {
+                    radii[particleBId] = mergedRadius
+                    holderIndices[particleAId]
                 } else {
-                    // 1/distanceSquared через уже посчитанный invDistance, без деления.
-                    val invDistanceSquared = invDistance * invDistance
-                    val force = 0.02f * rA2 * rB2 * invDistanceSquared
-                    val fx = force * dirX
-                    val fy = force * dirY
-                    velocitiesX[particleBId] += fx
-                    velocitiesY[particleBId] += fy
-                    velocitiesX[particleAId] -= fx
-                    velocitiesY[particleAId] -= fy
-                }
-            } else {
-
-                val stiffness = 0.009f
-
-                if (DEBUG_CHECKS && distanceSquared < 0) {
-                    throw Exception("distanceSquared < 0, distanceSquared = $distanceSquared")
+                    radii[particleAId] = mergedRadius
+                    holderIndices[particleBId]
                 }
 
-                val force = (distance - 0.35f) * stiffness
-
-                // Spring dampening
-                val dvx = velocitiesX[particleAId] - velocitiesX[particleBId]
-                val dvy = velocitiesY[particleAId] - velocitiesY[particleBId]
-
-                val dampeningConstant = 0.3f
-                val dampeningForce = dampeningConstant * (dvx * dirX + dvy * dirY)
-
-                val cellStrengthAverage = 0.01f
-                // c - c * d2/r2 свёрнуто в c * (1 - d2/r2): на одно умножение меньше.
-                val forceRepulsion =
-                    cellStrengthAverage * (1f - distanceSquared / radiusSquared)
-
-                // Сумма сил считается один раз, а не отдельно для каждой компоненты.
-                val totalForce = force + dampeningForce - forceRepulsion
-
-                val fx = totalForce * dirX
-                val fy = totalForce * dirY
-
-                velocitiesX[particleBId] += fx
-                velocitiesY[particleBId] += fy
-                velocitiesX[particleAId] -= fx
-                velocitiesY[particleAId] -= fy
+                // Скалярный push: без intArrayOf и без arraycopy на два int'а.
+                worldCommandsManager.worldCommandBuffer[threadId].push(
+                    WorldCommandType.DELETE_SUBSTANCE,
+                    deleteIndex,
+                    substancesEntity.getGeneration(deleteIndex)
+                )
             }
-
-            return
-        }
-
-        val isCollidable = entity.isCollidable
-        if (isCollidable[particleAId] && isCollidable[particleBId]) {
-            // Квадратичная зависимость силы
-            val cellStiffness = entity.cellStiffness
-            val stiffnessA = cellStiffness[particleAId]
-            val stiffnessB = cellStiffness[particleBId]
-            // Гармоническое среднее. У клеток одного типа жёсткости совпадают, а это
-            // самый частый случай, поэтому равенство проверяется отдельно: ветка
-            // предсказывается почти идеально и экономит деление.
-            val cellStrengthAverage = if (stiffnessA == stiffnessB) stiffnessA
-            else 2f * stiffnessA * stiffnessB / (stiffnessA + stiffnessB)
-
-            val force = cellStrengthAverage * (1f - distanceSquared / radiusSquared)
-            // Нормализация вектора расстояния — умножением на обратную длину.
-            val vectorX = dirX * force
-            val vectorY = dirY * force
-
-            velocitiesX[particleAId] += vectorX
-            velocitiesY[particleAId] += vectorY
-            velocitiesX[particleBId] -= vectorX
-            velocitiesY[particleBId] -= vectorY
         }
     }
 

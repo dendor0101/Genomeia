@@ -40,14 +40,10 @@ interface PhysicsWorkers {
  * подробный разбор цены ExecutorService). Подшаг — это несколько стадий по десяткам
  * микросекунд, 32 раза за тик: на парковке и пробуждении потоков такое не живёт.
  *
- * РАЗДАЧА КУСКОВ СТАТИЧЕСКАЯ: воркер w берёт куски w, w + count, w + 2·count, ...
- * Блок решателя (1000 частиц, ~160 КБ с ограничениями) влезает в L2 ядра, и если его
- * каждый подшаг считает одно и то же ядро, данные блока между подшагами и стадиями
- * так и остаются в этом L2. Общая очередь (getAndIncrement) раздавала бы блоки кому
- * попало, и каждый подшаг тянул бы их из L3 чужого ядра. Цена — неравномерность:
- * её сглаживает то, что блоков в разы больше воркеров. Опыт 25.10 с общей очередью:
- * 100k 3.62x против 3.62x в среднем по два прогона, 11k 2.90x против 2.92x — разницы
- * нет, оставлена статическая.
+ * РАЗДАЧА КУСКОВ — ОБЩИЙ КУРСОР, как у ParallelExecutor игры: блоки в толпе разного размера
+ * (тело 300 клеток — один блок, тело 3000 — три по 1000), и равный по штукам дележ оставлял
+ * воркеров ждать самого загруженного. Статическая раздача ради L2 ядра выигрыша не дала: опыт
+ * 25.10 — 100k 3.62x против 3.62x; опыт 06.11 с постоянными наборами блоков — в пределах шума.
  *
  * Память (JMM): задание публикуется volatile-записью [epoch] после обычных записей
  * задания; воркер читает epoch, потом задание. Завершение — getAndDecrement счётчика,
@@ -62,7 +58,9 @@ class SpinPhysicsWorkers(override val count: Int,
     private var chunks = 0
 
     /** Счётчик незавершённых и флаги парковки — каждый в своей кэш-линии. */
-    private val control = AtomicIntegerArray((count + 2) * PADDING)
+    private val control = AtomicIntegerArray((count + 5) * PADDING)
+    /** Курсор — единственная общая запись стадии: 128 байт от соседей, префетчер тянет линии парой. */
+    private val cursor = (count + 3) * PADDING
 
     private val threads = Array(count - 1) { k ->
         Thread({ loop(k + 1) }, "Physics-Worker-${k + 1}").apply { isDaemon = true; start() }
@@ -96,6 +94,7 @@ class SpinPhysicsWorkers(override val count: Int,
 
     private fun runShared(chunks: Int, job: PhysicsJob) {
         this.job = job; this.chunks = chunks
+        control.set(cursor, 0)
         control.set(PENDING, count)
         epoch++
         for (k in threads.indices) if (control.get(parkSlot(k + 1)) != 0) LockSupport.unpark(threads[k])
@@ -114,8 +113,11 @@ class SpinPhysicsWorkers(override val count: Int,
     }
 
     private fun drain(worker: Int, job: PhysicsJob, chunks: Int) {
-        var k = worker
-        while (k < chunks) { job.run(k, worker); k += count }
+        while (true) {
+            val k = control.getAndIncrement(cursor)
+            if (k >= chunks) return
+            job.run(k, worker)
+        }
     }
 
     private fun loop(worker: Int) {

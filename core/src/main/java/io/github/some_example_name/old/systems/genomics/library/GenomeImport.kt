@@ -84,13 +84,13 @@ object GenomeImport {
      *    клетке (UserCommandManager, «арена клеток организма исчерпана (ёмкость 0)»): так
      *    падала игра, когда в мир ставили старый геном;
      *  - снимка для превью (preview == null) — геном сохранён до появления превью;
-     *  - границы тела в раскладке (BakedLayout.interiorLinks) — геном сохранён до неё.
-     *    Без неё граничные клетки определяются прежним порогом в шесть связей. Граница,
-     *    запечённая прежним признаком (BakedLayout.interiorVersion меньше нынешнего), тоже
-     *    перепекается: иначе у своего генома игрока остались бы клетки на краю тела, которые
-     *    считаются внутренними и ни с чем не сталкиваются (A-11, отчёт 20.10 19:49).
      *  - пика нейросвязей (Genome.neuralLinksPeak) — без него у организма нет арены
-     *    нейросвязей, и они идут в общий пул.
+     *    нейросвязей, и они идут в общий пул;
+     *  - позы покоя (BakedLayout.restX) — без неё физике-библиотеке не из чего завести тело.
+     *    Переносится по cellGenomeId: порядок слотов остаётся своим.
+     *  - треугольников нынешнего перебора (BakedLayout.trianglesVersion) — прежний терял треть.
+     *    Они выводятся из самой раскладки (связи и поза покоя), поэтому, если не хватает только
+     *    их, тело заново не выращивается.
      *
      * Сам геном не трогается — берётся только недостающее, остальное как в файле: имя,
      * версия, порядок стадий. В том числе уже лежащая раскладка: от неё зависит, как
@@ -100,19 +100,24 @@ object GenomeImport {
         if (genome.stageInstruction.isEmpty()) return null
         val needsLayout = genome.cellsAmount <= 0
         val layout = genome.sortedGraph
-        // Граница тела (BakedLayout.interiorLinks) появилась позже раскладки, а её признак
-        // с тех пор менялся (BakedLayout.interiorVersion).
-        val needsInterior = layout != null && layout.cellsInLayout > 0 && !layout.hasCurrentInterior
-        // Пик нейросвязей (ёмкость их арены) появился ещё позже.
+        // Пик нейросвязей (ёмкость их арены) появился позже раскладки.
         val needsNeuralPeak = genome.neuralLinksPeak == null
-        if (!needsLayout && genome.preview != null && !needsInterior && !needsNeuralPeak) return null
+        // Поза покоя для физики-библиотеки (BakedLayout.restX) — позже всех.
+        val needsRestPose = layout != null && layout.cellsInLayout > 0 && !layout.hasRestPose
+        // Треугольники прежнего перебора (BakedLayout.trianglesVersion) — терялась треть.
+        val needsTriangles = layout != null && layout.cellsInLayout > 0 && !layout.hasCurrentTriangles
+        val needsGrowth = needsLayout || genome.preview == null || needsNeuralPeak || needsRestPose
+        if (!needsGrowth && !needsTriangles) return null
+        // Только треугольники: они из самой раскладки, выращивать тело ради них незачем.
+        if (!needsGrowth) return genome.copy(sortedGraph = layout!!.withTrianglesFromLinks())
 
         val baked = baker.bake(genome, genome.name)
-        // Раскладка остаётся своей — граница переносится в неё по cellGenomeId, порядок
+        // Раскладка остаётся своей — поза покоя переносится в неё по cellGenomeId, порядок
         // слотов не меняется. Уже лежащий снимок тоже не трогается.
         if (!needsLayout) return genome.copy(
             preview = genome.preview ?: baked.preview,
-            sortedGraph = layout?.withInteriorFrom(baked.sortedGraph),
+            sortedGraph = layout?.withRestPoseFrom(baked.sortedGraph)
+                ?.withTrianglesFromLinks(),
             neuralLinksPeak = genome.neuralLinksPeak ?: baked.neuralLinksPeak
         )
         return genome.copy(

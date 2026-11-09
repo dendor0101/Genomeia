@@ -393,3 +393,45 @@ internal class ParallelCandidates(private val ct: BoundaryContacts, workers: Int
         java.util.Arrays.sort(out.lowKeys, 0, out.lowN)
     }
 }
+
+/** Пробитые рёбра куска пар подряд: концы (a, b) двумя числами на ребро. */
+internal class PierceBuffer {
+    var edges = IntArray(32)
+    var n = 0
+
+    fun add(a: Int, b: Int) {
+        if (n == edges.size) edges = edges.copyOf(n * 2)
+        edges[n++] = a; edges[n++] = b
+    }
+}
+
+/**
+ * ПОИСК ПРОБОЯ ПО ВОРКЕРАМ — побитово тот же список. Проверка только читает позиции и контур,
+ * найденные рёбра каждый кусок копит у себя; склейка кусков по порядку даёт порядок прохода
+ * по парам подряд, а от порядка рёбер зависит порядок разрывов.
+ *
+ * Куски мелкие: у пары своего организма работы нет, а у чужой до четырёх проверок отрезков.
+ * Раздачу уравнивает общий курсор воркеров. Замер 09.11, толпа 100k клеток, 8 воркеров: поиск
+ * был 13% главного потока (~14 мс из 111), воркеры в это время стояли.
+ */
+internal class ParallelPierce(private val ct: BoundaryContacts, workers: Int) {
+    private val buffers = Array(16 * workers) { PierceBuffer() }
+    private val from = IntArray(16 * workers + 1)
+    private var px = DoubleArray(0); private var py = DoubleArray(0)
+    private var qx = DoubleArray(0); private var qy = DoubleArray(0)
+    private var org = IntArray(0)
+    private val job = PhysicsJob { k, _ ->
+        val out = buffers[k]
+        out.n = 0
+        ct.findPierceRange(from[k], from[k + 1], px, py, qx, qy, org, out)
+    }
+
+    fun run(w: PhysicsWorkers, px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray, org: IntArray) {
+        this.px = px; this.py = py; this.qx = qx; this.qy = qy; this.org = org
+        val pairs = ct.candidatePairCount
+        val k = minOf(buffers.size, maxOf(1, pairs / 64))
+        for (c in 0..k) from[c] = (pairs.toLong() * c / k).toInt()
+        w.run(k, job)
+        for (c in 0 until k) ct.addPierces(buffers[c])
+    }
+}

@@ -161,6 +161,8 @@ class OverlayInstanceBufferTest {
         assertEquals(OverlayInstanceBuffer.KIND_ARROW, constInt("KIND_ARROW"))
         assertEquals(OverlayInstanceBuffer.KIND_NEURAL, constInt("KIND_NEURAL"))
         assertEquals(OverlayInstanceBuffer.KIND_FLAGELLUM, constInt("KIND_FLAGELLUM"))
+        assertEquals(OverlayInstanceBuffer.KIND_EDGE, constInt("KIND_EDGE"))
+        assertEquals(OverlayInstanceBuffer.KIND_LINK, constInt("KIND_LINK"))
 
         // Часы анимации идут по кругу с периодом TIME_WRAP. Если за период импульсы не
         // делают целого числа шагов, на обороте они прыгают.

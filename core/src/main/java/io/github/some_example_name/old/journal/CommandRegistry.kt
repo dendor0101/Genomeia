@@ -166,6 +166,9 @@ object CommandRegistry {
         t<SimulationIntent.SetDebugFilter>(617),
         t<SimulationIntent.SetMicroscopeParameter>(618),
         t<SimulationIntent.ResetMicroscopeSettings>(619),
+        t<SimulationIntent.MarkCell>(620),
+        t<SimulationIntent.SetShowBoundary>(621),
+        t<SimulationIntent.SetShowLinks>(622),
 
         // --- Касания мира ---
         t<PlayerCommand.TouchDown>(700),
@@ -174,6 +177,7 @@ object CommandRegistry {
         t<PlayerCommand.StopDrag>(703),
         t<PlayerCommand.KillCell>(704),
         t<PlayerCommand.SetStress>(705),
+        t<PlayerCommand.SetPhysicsDebug>(706),
 
         // --- Редактор генома ---
         t<PrevTickButtonTap>(800),

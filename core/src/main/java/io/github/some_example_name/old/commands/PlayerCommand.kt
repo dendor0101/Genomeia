@@ -60,4 +60,15 @@ sealed interface PlayerCommand : GameCommand {
         override val name get() = "SetStress"
         override val detail get() = "kill=$killEvery fling=$flingEvery spawn=$spawnEvery"
     }
+
+    /**
+     * Отладка физики — галочки отладочного режима: [noTailThrust] — хвосты не толкают, [noDeepKill]
+     * — глубокое проникновение частиц друг в друга никого не убивает. Командой мира, как стресс:
+     * меняет мир, поэтому лежит в журнале и повторяется в тот же тик.
+     */
+    @Serializable
+    data class SetPhysicsDebug(val noTailThrust: Boolean, val noDeepKill: Boolean) : PlayerCommand {
+        override val name get() = "SetPhysicsDebug"
+        override val detail get() = "noTail=$noTailThrust noDeepKill=$noDeepKill"
+    }
 }

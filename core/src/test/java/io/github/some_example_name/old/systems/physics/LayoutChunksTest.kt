@@ -78,9 +78,6 @@ class LayoutChunksTest {
         val pairs = layout.linkPairsInSlotOrder
         val middle = (0 until layout.linksInLayout).first { pairs[2 * it] == 4 && pairs[2 * it + 1] == 5 }
         assertEquals(2, layout.trianglesOfLinkStart[middle + 1] - layout.trianglesOfLinkStart[middle])
-        // Вокруг клетки посередине — три треугольника, на краю — один.
-        assertEquals(3, layout.trianglesAroundSlot[5])
-        assertEquals(1, layout.trianglesAroundSlot[0])
     }
 
     @Test

@@ -58,6 +58,9 @@ dependencies {
   // проверки из verification (saveRoundTrip) не видят типов aliveList. В сборку не добавляет ничего:
   // в рантайме он и так приходит через core.
   implementation "it.unimi.dsi:fastutil:8.5.16"
+  // Физика-библиотека: у core она implementation, а проверки сверяют мир игры со стендом
+  // (standParityCheck) напрямую через PhysicsWorld.
+  implementation project(':physics')
 
   if(enableGraalNative == 'true') {
     implementation "io.github.berstanio:gdx-svmhelper-backend-lwjgl3:$graalHelperVersion"
@@ -75,6 +78,11 @@ dependencies {
 }
 
 def os = System.properties['os.name'].toLowerCase(Locale.ROOT)
+
+// Число подшагов физики на глаз: gradlew :lwjgl3:run -Psubsteps=16 (см. SolverParameters.SUBSTEPS).
+tasks.withType(JavaExec).configureEach {
+  if (project.hasProperty('substeps')) systemProperty 'genomeia.substeps', project.property('substeps')
+}
 
 run {
   workingDir = rootProject.file('assets').path
@@ -264,6 +272,47 @@ tasks.register('worldSpecCheck', JavaExec) {
   jvmArgs '-Dfile.encoding=UTF-8'
 }
 
+// Тело стенда в мире игры: gradlew :lwjgl3:standParityCheck [-Pgenome=… -Pbody=…]
+// Одно взрослое тело (A-11) в мире по правилам стенда и в мире игры с теми же входами —
+// побитово ли, и какое отличие мира игры ломает биты; сопротивление (толчок) и гребок.
+tasks.register('standParityCheck', JavaExec) {
+  group = 'verification'
+  description = 'Взрослое тело в мире стенда и в мире игры: побитово, толчок, гребок'
+  classpath = sourceSets.verification.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.verification.StandParityCheckKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+  args = [project.findProperty('genome') ?: 'docs/physics/genomes/A-11.genome',
+          project.findProperty('body') ?: 'docs/physics/repros/detached-fragments-2026-10-21/body.txt']
+}
+
+// Рост тела с нуля в мире игры с разбором каждого разрыва: gradlew :lwjgl3:growthCheck
+// [-Pgenome=… -Pticks=1,5,20]. По умолчанию Burdock leaf.
+tasks.register('growthCheck', JavaExec) {
+  group = 'verification'
+  description = 'Рост тела по стадиям генома в мире игры: каждый разрыв с причиной'
+  classpath = sourceSets.verification.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.verification.GrowthCheckKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+  args = [project.findProperty('genome') ?: 'assets/genomes/Burdock leaf.genome',
+          project.findProperty('ticks') ?: '1,5,20']
+}
+
+// Замер производительности настоящей игры: мир 256×256, сетка организмов одного генома. См. PerfCheck.kt.
+//   gradlew :lwjgl3:perfCheck -Pgenome="Burdock leaf" -Pcount=4 -Pterrain=1
+tasks.register('perfCheck', JavaExec) {
+  group = 'verification'
+  description = 'UPS, загрузка процессора и фазы тика на сетке организмов, с террейном и без'
+  classpath = sourceSets.verification.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.verification.PerfCheckKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+  ['genome', 'count', 'terrain', 'grow', 'measure', 'workers', 'clear', 'stages', 'sleep', 'jfr', 'snapshot', 'warm', 'render'].each { p ->
+    if (project.hasProperty(p)) systemProperty "perf.$p", project.property(p)
+  }
+}
+
 // Регрессия сохранения мира: gradlew :lwjgl3:saveRoundTrip
 // Игра в окне сохраняет мир, загружает его и сверяет состояние побайтно; ненулевой код — регрессия.
 // -Pkeep оставляет файл сохранения в maps/.
@@ -292,9 +341,8 @@ tasks.register('genomeJsonCheck', JavaExec) {
 }
 
 // Допекание встроенных геномов (снимок для превью и т.п.) тем же кодом, что свои при запуске:
-// gradlew :lwjgl3:bakeBundledGenomes [-Pdir=каталог] [-PrebakeInterior]. Ненулевой код — не
-// допёкся или снимок не повторился при втором выращивании. -PrebakeInterior — сначала
-// пересчитать границу тела у всех файлов (см. BakeBundledGenomes.kt).
+// gradlew :lwjgl3:bakeBundledGenomes [-Pdir=каталог]. Ненулевой код — не
+// допёкся или снимок не повторился при втором выращивании.
 tasks.register('bakeBundledGenomes', JavaExec) {
   group = 'verification'
   description = 'Встроенные геномы допекаются, как свои при запуске игры, и снимок превью повторяется'
@@ -302,8 +350,7 @@ tasks.register('bakeBundledGenomes', JavaExec) {
   mainClass = 'io.github.some_example_name.lwjgl3.verification.BakeBundledGenomesKt'
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
-  args = [project.findProperty('dir') ?: 'assets/genomes'] +
-    (project.hasProperty('rebakeInterior') ? ['--rebake-interior'] : [])
+  args = [project.findProperty('dir') ?: 'assets/genomes']
 }
 
 // Запись и повтор бага целиком: gradlew :lwjgl3:bugReplayCheck

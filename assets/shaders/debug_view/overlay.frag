@@ -195,6 +195,27 @@ vec4 flagellum(vec2 p) {
     return over(paint(mix(v_color.rgb, vec3(1.0), 0.3), cover(d) * thin), result);
 }
 
+/**
+ * Ребро контура тела (граница мира физики, галочка «Граница»): ровная линия цвета фигуры с
+ * тёмной обводкой. Скруглённые концы соседних рёбер сходятся в вершине без щели.
+ */
+vec4 boundaryEdge(vec2 p) {
+    float pw = u_pixelWorld;
+    float halfWidth = max(EDGE_HALF, EDGE_MIN_HALF_PX * pw);
+    float d = segmentDistance(p, v_length) - halfWidth;
+    vec4 result = paint(vec3(0.0), cover(d - OUTLINE_PX * pw) * 0.55);
+    return over(paint(v_color.rgb, cover(d)), result);
+}
+
+/**
+ * Связь мира физики (галочка «Связи»): тонкая линия цвета фигуры без обводки — тоньше контура,
+ * чтобы с ним не сливаться. Прозрачность — альфа цвета.
+ */
+vec4 thinLink(vec2 p) {
+    float halfWidth = max(LINK_LINE_HALF, LINK_LINE_MIN_HALF_PX * u_pixelWorld);
+    return paint(v_color.rgb, cover(segmentDistance(p, v_length) - halfWidth));
+}
+
 /** Кольцо — радиус действия феромона: тонкая окружность и едва заметная заливка. */
 vec4 ring(vec2 p) {
     float pw = u_pixelWorld;
@@ -211,6 +232,10 @@ void main() {
         color = directionArrow(v_local);
     } else if (v_kind == KIND_RAY) {
         color = eyeRay(v_local);
+    } else if (v_kind == KIND_EDGE) {
+        color = boundaryEdge(v_local);
+    } else if (v_kind == KIND_LINK) {
+        color = thinLink(v_local);
     } else if (v_kind == KIND_FLAGELLUM) {
         // Жгутик виден только над пустотой: над клетками — своей или чужой — его закрывает
         // тело, как и бахрому ресничек (cell_edge.frag).

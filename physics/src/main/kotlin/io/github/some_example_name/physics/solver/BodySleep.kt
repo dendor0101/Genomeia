@@ -25,7 +25,7 @@ package io.github.some_example_name.physics
  *
  * БУДИТ:
  *  - касание клетки другого тела, ушедшей с начала тика дальше WAKE_DRIFT_CELLS (см.
- *    там, почему не любое касание);
+ *    там, почему не любое касание); неподвижную частицу (isFixed) касание не будит;
  *  - мышь, схватившая клетку организма;
  *  - мышца организма, которой дали команду;
  *  - разрыв связи или гибель клетки организма (контакт может убить клетку спящего).
@@ -112,6 +112,77 @@ class BodySleep(var on: Boolean) {
             if (i < first[o]) first[o] = i
             last[o] = i
         }
+    }
+
+    /**
+     * МИР УПЛОТНЁН: организм [o] стал [orgNew][o] (-1 — удалён), частица [i] — [particleNew][i].
+     * Сон, спокойствие и занятость оставшихся едут с ними, диапазоны частиц переводятся в
+     * новые номера; просьбы разбудить удалённые клетки пропадают. Ёмкость — по числу частиц.
+     */
+    internal fun compact(orgNew: IntArray, orgCount: Int, particleNew: IntArray, n: Int) {
+        version++
+        val a = BooleanArray(n); val c = IntArray(n); val b = BooleanArray(n)
+        val f = IntArray(n); val l = IntArray(n)
+        var count = 0
+        if (asleep.size >= orgCount) for (o in 0 until orgCount) {
+            val k = orgNew[o]
+            if (k < 0) continue
+            a[k] = asleep[o]; c[k] = calmTicks[o]; b[k] = busy[o]
+            f[k] = particleNew[first[o]]; l[k] = particleNew[last[o]]
+            if (a[k]) count++
+        }
+        asleep = a; calmTicks = c; busy = b; first = f; last = l
+        asleepCount = count
+        var m = 0
+        for (k in 0 until wakeQueueN) { val v = particleNew[wakeQueue[k]]; if (v >= 0) wakeQueue[m++] = v }
+        wakeQueueN = m
+        java.util.Arrays.fill(wakeQueue, m, wakeQueue.size, 0)
+        spansDirty = true
+    }
+
+    /** Сон в снимок мира (WorldSnapshot): по организму, [orgCount] штук; просьбы разбудить. */
+    internal fun write(out: java.io.DataOutput, orgCount: Int) {
+        out.writeBoolean(on)
+        out.writeBooleans(asleep, orgCount); out.writeInts(calmTicks, orgCount); out.writeBooleans(busy, orgCount)
+        out.writeInts(first, orgCount); out.writeInts(last, orgCount)
+        out.writeInts(wakeQueue, wakeQueueN)
+    }
+
+    /** Сон из снимка; ёмкость — по числу частиц [n], как в reset. Диапазоны соберутся заново. */
+    internal fun read(input: java.io.DataInput, n: Int) {
+        version++
+        on = input.readBoolean()
+        asleep = input.readBooleans(n); calmTicks = input.readInts(n); busy = input.readBooleans(n)
+        first = input.readInts(n); last = input.readInts(n)
+        val q = input.readInts(0)
+        wakeQueueN = q.size
+        wakeQueue = q.copyOf(maxOf(16, q.size))
+        asleepCount = 0
+        for (o in asleep.indices) if (asleep[o]) asleepCount++
+        spansDirty = true
+    }
+
+    /**
+     * Мир дописал тело: частицы [fromParticle, n), организмы [fromOrganism, organismCount).
+     * Новые бодрствуют; сон прежних не трогается. Ёмкость — по числу частиц, как в reset.
+     */
+    internal fun append(n: Int, organismOf: IntArray, fromParticle: Int, fromOrganism: Int, organismCount: Int) {
+        version++
+        if (asleep.size < n) {
+            asleep = asleep.copyOf(n); calmTicks = calmTicks.copyOf(n); busy = busy.copyOf(n)
+            first = first.copyOf(n); last = last.copyOf(n)
+        }
+        java.util.Arrays.fill(asleep, fromOrganism, organismCount, false)
+        java.util.Arrays.fill(calmTicks, fromOrganism, organismCount, 0)
+        java.util.Arrays.fill(busy, fromOrganism, organismCount, false)
+        java.util.Arrays.fill(first, fromOrganism, organismCount, Int.MAX_VALUE)
+        java.util.Arrays.fill(last, fromOrganism, organismCount, -1)
+        for (i in fromParticle until n) {
+            val o = organismOf[i]
+            if (i < first[o]) first[o] = i
+            last[o] = i
+        }
+        spansDirty = true
     }
 
     /**
@@ -220,20 +291,28 @@ internal fun BodyState.applyWakeRequests() {
  * Касание бодрствующей клетки, ушедшей с начала тика дальше порога, будит спящего
  * соседа. Зовётся после каждой подготовки контактов, до removeTickJitter: в
  * tickJitter ещё лежат положения начала тика. Пока никто не спит — одна проверка.
+ * true — касание заказало пробуждение: будить надо до решения этих контактов (см. BodySimulation).
  */
-internal fun BodyState.noteSleepContacts(ct: BoundaryContacts) {
+internal fun BodyState.noteSleepContacts(ct: BoundaryContacts): Boolean {
     val s = sleep
-    if (s.asleepCount == 0 || tickJitterX.size != n) return
-    val wake = WAKE_DRIFT_CELLS * body.meanLinkLength
+    if (s.asleepCount == 0 || tickJitterX.size != n) return false
+    val wake = WAKE_DRIFT_CELLS * linkScale
     val wake2 = wake * wake
+    val ground = GROUND_WAKE_DRIFT_CELLS * linkScale
+    val ground2 = ground * ground
+    var any = false
     for (k in 0 until ct.contactCount) {
         val i = ct.contactI(k); val j = ct.contactJ(k)
         val si = s.asleep[organismOf[i]]; val sj = s.asleep[organismOf[j]]
         if (si == sj) continue
         val mover = if (si) j else i
+        val sleeper = if (si) i else j
+        if (isFixed(sleeper)) continue
         val dx = px[mover] - tickJitterX[mover]; val dy = py[mover] - tickJitterY[mover]
-        if (dx * dx + dy * dy > wake2) s.requestWake(if (si) i else j)
+        val limit2 = if (cellHomeCompliance.size > sleeper && cellHomeCompliance[sleeper] > 0.0) ground2 else wake2
+        if (dx * dx + dy * dy > limit2) { s.requestWake(sleeper); any = true }
     }
+    return any
 }
 
 /**
@@ -243,7 +322,7 @@ internal fun BodyState.noteSleepContacts(ct: BoundaryContacts) {
 internal fun BodyState.updateSleep() {
     val s = sleep
     if (!s.on) return
-    val drift = SLEEP_DRIFT_CELLS * body.meanLinkLength
+    val drift = SLEEP_DRIFT_CELLS * linkScale
     val drift2 = drift * drift
     for (o in 0 until organismCount) {
         if (s.asleep[o]) continue
@@ -319,4 +398,16 @@ private fun BodyState.parkBoundaryLimits(o: Int, park: Boolean) {
 fun BodyState.setSleepOn(value: Boolean) {
     if (!value) for (o in 0 until organismCount) if (sleep.asleep.size > o && sleep.asleep[o]) wakeOrganism(o)
     sleep.on = value
+}
+
+/**
+ * Усыпить организм частицы [i] сейчас, не дожидаясь SLEEP_TICKS покоя (клиент: только что собранный
+ * террейн стоит в покое по построению; ждать 60 тиков значило бы 60 тиков считать его целиком). Между
+ * тиками; при выключенном сне — ничего.
+ */
+internal fun BodyState.sleepNow(i: Int) {
+    if (!sleep.on || cellDead[i]) return
+    val o = organismOf[i]
+    if (o < 0 || sleep.isAsleep(o)) return
+    sleepOrganism(o)
 }

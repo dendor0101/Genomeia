@@ -68,17 +68,17 @@ class DrawingHelperElements(
 
         if (DIGenomeEditorContainer.grabbedCellIndex != -1) {
             cellSearchManager.getAllCloseNeighboursEditor(
-                particleEntity.x[DIGenomeEditorContainer.grabbedCellIndex],
-                particleEntity.y[DIGenomeEditorContainer.grabbedCellIndex],
+                particleEntity.x(DIGenomeEditorContainer.grabbedCellIndex),
+                particleEntity.y(DIGenomeEditorContainer.grabbedCellIndex),
                 grabbedRadius = particleEntity.radius[DIGenomeEditorContainer.grabbedCellIndex],
                 DIGenomeEditorContainer.grabbedCellIndex
             ).forEach {
                 shapeRenderer.color = Color.RED
                 shapeRenderer.line(
-                    particleEntity.x[DIGenomeEditorContainer.grabbedCellIndex],
-                    particleEntity.y[DIGenomeEditorContainer.grabbedCellIndex],
-                    particleEntity.x[it],
-                    particleEntity.y[it]
+                    particleEntity.x(DIGenomeEditorContainer.grabbedCellIndex),
+                    particleEntity.y(DIGenomeEditorContainer.grabbedCellIndex),
+                    particleEntity.x(it),
+                    particleEntity.y(it)
                 )
             }
         }
@@ -104,8 +104,8 @@ class DrawingHelperElements(
                         }
 
                         shapeRenderer.color = Color(1f - colorOfCellFrom.a, 1f - colorOfCellFrom.g, 1f - colorOfCellFrom.b, 1f)
-                        val x = particleEntity.x[index]
-                        val y = particleEntity.y[index]
+                        val x = particleEntity.x(index)
+                        val y = particleEntity.y(index)
                         val radius = 0.125f
 
                         shapeRenderer.circle(x, y, radius, 32)
@@ -136,8 +136,8 @@ class DrawingHelperElements(
                         val halfSide = side / 2f
 
                         shapeRenderer.rect(
-                            particleEntity.x[index] - halfSide,
-                            particleEntity.y[index] - halfSide,
+                            particleEntity.x(index) - halfSide,
+                            particleEntity.y(index) - halfSide,
                             side,
                             side
                         )
@@ -150,8 +150,8 @@ class DrawingHelperElements(
                     cell is Eye -> {
                         shapeRenderer.color = Color.CYAN
                         shapeRenderer.drawArrowWithRotationAngle(
-                            startX = particleEntity.x[index],
-                            startY = particleEntity.y[index],
+                            startX = particleEntity.x(index),
+                            startY = particleEntity.y(index),
                             angleCos = angleCos,
                             angleSin = angleSin,
                             length = cellEntity.specialEntity.eyeData(index).visibilityRange,
@@ -162,8 +162,8 @@ class DrawingHelperElements(
                     cell.isDirected -> {
                         shapeRenderer.color = Color.CYAN
                         shapeRenderer.drawArrowWithRotationAngle(
-                            startX = particleEntity.x[index],
-                            startY = particleEntity.y[index],
+                            startX = particleEntity.x(index),
+                            startY = particleEntity.y(index),
                             angleCos = angleCos,
                             angleSin = angleSin,
                             length = 0.375f
@@ -175,8 +175,8 @@ class DrawingHelperElements(
 
         if (previousCtrlClicked != -1 && cellReplay.getCellIndex(
                 DIGenomeEditorContainer.nextStageTick, previousCtrlClicked) != null) {
-            val x = particleEntity.x[previousCtrlClicked]
-            val y = particleEntity.y[previousCtrlClicked]
+            val x = particleEntity.x(previousCtrlClicked)
+            val y = particleEntity.y(previousCtrlClicked)
 
             shapeRenderer.color = Color.CYAN
             shapeRenderer.circle(x, y,  0.125f, 32)
@@ -191,8 +191,8 @@ class DrawingHelperElements(
 
             if (clickedCell != null) {
                 shapeRenderer.color = Color.CYAN
-                val x = particleEntity.x[clickedCell.first]
-                val y = particleEntity.y[clickedCell.first]
+                val x = particleEntity.x(clickedCell.first)
+                val y = particleEntity.y(clickedCell.first)
                 shapeRenderer.circle(x, y,  0.125f, 32)
             }
         }
@@ -211,8 +211,8 @@ class DrawingHelperElements(
         val grabbed = DIGenomeEditorContainer.grabbedCellIndex
         if (grabbed == -1 || (grabbed != cellA && grabbed != cellB)) return true
 
-        val dx = particleEntity.x[cellB] - particleEntity.x[cellA]
-        val dy = particleEntity.y[cellB] - particleEntity.y[cellA]
+        val dx = particleEntity.x(cellB) - particleEntity.x(cellA)
+        val dy = particleEntity.y(cellB) - particleEntity.y(cellA)
         val r = particleEntity.radius[cellA] + particleEntity.radius[cellB]
         return dx * dx + dy * dy <= r * r
     }
@@ -234,18 +234,18 @@ class DrawingHelperElements(
                 shapeRenderer.color = colorOfLink
                 if (isLink1NeuralDirected) {
                     shapeRenderer.drawTriangleMiddle(
-                        particleEntity.x[cellB],
-                        particleEntity.y[cellB],
-                        particleEntity.x[cellA],
-                        particleEntity.y[cellA],
+                        particleEntity.x(cellB),
+                        particleEntity.y(cellB),
+                        particleEntity.x(cellA),
+                        particleEntity.y(cellA),
                         0.1f
                     )
                 } else {
                     shapeRenderer.drawTriangleMiddle(
-                        particleEntity.x[cellA],
-                        particleEntity.y[cellA],
-                        particleEntity.x[cellB],
-                        particleEntity.y[cellB],
+                        particleEntity.x(cellA),
+                        particleEntity.y(cellA),
+                        particleEntity.x(cellB),
+                        particleEntity.y(cellB),
                         0.1f
                     )
                 }
@@ -255,10 +255,10 @@ class DrawingHelperElements(
 
             if (showPhysicalLink || isNeural) {
                 shapeRenderer.line(
-                    particleEntity.x[cellB],
-                    particleEntity.y[cellB],
-                    particleEntity.x[cellA],
-                    particleEntity.y[cellA]
+                    particleEntity.x(cellB),
+                    particleEntity.y(cellB),
+                    particleEntity.x(cellA),
+                    particleEntity.y(cellA)
                 )
             }
         }

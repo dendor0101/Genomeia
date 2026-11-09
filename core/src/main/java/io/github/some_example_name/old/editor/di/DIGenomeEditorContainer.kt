@@ -91,7 +91,7 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
         }
     val zygote = cellListBuilder.zygote
 
-    val simulationData = SimulationData()
+    override val simulationData = SimulationData()
 
     override val genomeManager = GenomeManager(
         simulationData = simulationData
