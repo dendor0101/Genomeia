@@ -72,6 +72,17 @@ sealed interface GuideIntent : GameCommand {
         override val name get() = "SetCombine"
         override val detail get() = if (isSum) "sum" else "product"
     }
+
+    /**
+     * Импульсы на входе 1: раз в [period] тиков вход 1 подаёт своё значение на один тик,
+     * остальное время молчит; 0 — ровный вход. Так на стенде видно, как trace превращает
+     * частоту спайков в ровный сигнал.
+     */
+    @Serializable
+    data class SetPulse(val period: Int) : GuideIntent {
+        override val name get() = "SetPulse"
+        override val detail get() = period.toString()
+    }
 }
 
 class GuideViewModel {
@@ -107,6 +118,7 @@ class GuideViewModel {
             is GuideIntent.SetInputCount ->
                 lab.inputCount = intent.count.coerceIn(1, NeuronLabSettings.MAX_INPUTS)
             is GuideIntent.SetCombine -> lab.isSum = intent.isSum
+            is GuideIntent.SetPulse -> lab.pulsePeriod = intent.period.coerceIn(0, NeuronLabSettings.MAX_PULSE_PERIOD)
         }
     }
 }

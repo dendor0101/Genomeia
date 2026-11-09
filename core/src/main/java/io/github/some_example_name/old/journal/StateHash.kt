@@ -70,8 +70,10 @@ object StateHash {
      * 17 — у частицы клетка карты террейна (ParticleEntity.terrainCell); террейн — тело мира физики.
      * 18 — слияние с веткой, где вес и тики спайков синапса ушли из NeuralEntity в SynapseState
      *     (SpecialModDataEntity), а тик рождения клетки стал сохраняемым полем для возрастного рельефа.
+     * 19 — синапс учится по следам спайков (SynapseState.preTrace/postTrace) вместо тиков
+     *     последней пары; новые формулы lif и trace.
      */
-    const val VERSION = 18
+    const val VERSION = 19
 
     class Result(val hash: Long, val parts: LongArray)
 

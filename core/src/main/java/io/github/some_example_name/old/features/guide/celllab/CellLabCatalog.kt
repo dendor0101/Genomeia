@@ -22,14 +22,16 @@ internal object CellLabCatalog {
         "punisher" -> listOf(feed, Control("prey", 0f, 1f, 1f, 0f), light)
         "pumper" -> emptyList()
         "producer" -> listOf(signal(), light)
-        "neuron" -> listOf(signal(), Control("formula", 0f, 3f, 1f, 0f),
+        "neuron" -> listOf(signal(), Control("formula", 0f, 4f, 1f, 0f),
             Control("a", -3f, 3f, 0.05f, 1f), Control("b", -2f, 2f, 0.05f, 0f))
         "chameleon" -> listOf(signal(), channels)
         "eye" -> listOf(channels, angle, Control("range", 1f, 6f, 0.1f, 4f))
         "touch_trigger" -> emptyList()
-        "synapse" -> listOf(Control("delay", -30f, 30f, 1f, 8f),
+        // Учитель будит Neuron справа (lif, порог CellLabModel.SYNAPSE_THRESHOLD); выключенный
+        // учитель показывает, научился ли синапс будить его сам.
+        "synapse" -> listOf(Control("teacher", 0f, 1f, 1f, 1f), Control("delay", -30f, 30f, 1f, 8f),
             Control("learning", 0.01f, 0.3f, 0.01f, 0.1f), Control("depression", 0.01f, 0.3f, 0.01f, 0.1f),
-            Control("decay", 0.01f, 0.3f, 0.01f, 0.05f))
+            Control("decay", 0.01f, 0.3f, 0.01f, 0.05f), Control("inhibitory", 0f, 1f, 1f, 0f))
         // Источник шлёт волну (импульсы или синус), Delay повторяет её с отставанием.
         "delay" -> listOf(Control("wave", 0f, 1f, 1f, 0f), Control("ticks", 0f, 60f, 1f, 15f),
             Control("binary", 0f, 1f, 1f, 0f))

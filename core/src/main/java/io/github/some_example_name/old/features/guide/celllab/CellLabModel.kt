@@ -24,6 +24,9 @@ internal class CellLabModel(val key: String) : Disposable {
         private set
     var kills = 0
         private set
+    /** Сколько раз сработал Neuron справа на стенде синапса. */
+    var postSpikes = 0
+        private set
     var spawned = 0
         private set
     var paused = false
@@ -156,6 +159,12 @@ internal class CellLabModel(val key: String) : Disposable {
                 world.neuralLinkEntity.addNeuralLink(source, primary, false, Color.CYAN.toIntBits())
                 world.neuralLinkEntity.addNeuralLink(primary, companion, false, Color.CYAN.toIntBits())
                 world.specialEntity.synapseState(primary)!!.weight = 0.5f
+                // Справа — спайковый нейрон: копит вклады и срабатывает по порогу. Порог выше
+                // начального веса: пока синапс не научился, вход сам нейрон не будит.
+                c.setActivationFuncType(companion, Formulas.requireIndex("lif").toByte())
+                c.setA(companion, SYNAPSE_LEAK)
+                c.setB(companion, SYNAPSE_THRESHOLD)
+                c.setC(companion, 1f)
             }
             "delay" -> {
                 // Neuron слева -> Delay -> Neuron справа: вход и выход видны на соседях.
@@ -247,6 +256,7 @@ internal class CellLabModel(val key: String) : Disposable {
             "learning" -> c.setB(primary, value)
             "depression" -> c.setC(primary, value)
             "decay" -> c.setA(primary, value)
+            "inhibitory" -> world.specialEntity.synapseState(primary)?.inhibitory = value > 0f
             "emitterType" -> c.pheromoneType[source] = value.toInt()
             "sensorType" -> c.pheromoneType[companion] = value.toInt()
         }
@@ -270,7 +280,8 @@ internal class CellLabModel(val key: String) : Disposable {
                     // Вход и учитель — по одному фронту за цикл; задержка меняет порядок спайков.
                     val phase = next % 120
                     c.neuronImpulseInput[source] = if (phase == 40) 1f else 0f
-                    c.neuronImpulseInput[companion] = if (phase == 40 + value("delay").toInt()) 1f else 0f
+                    val teach = value("teacher") > 0f && phase == 40 + value("delay").toInt()
+                    c.neuronImpulseInput[companion] = if (teach) 1f else 0f
                     c.energy[source] = c.maxEnergy[source]; c.energy[companion] = c.maxEnergy[companion]
                 }
                 "pheromone_emitter", "pheromone_sensor" -> c.neuronImpulseInput[source] = value("signal")
@@ -284,6 +295,7 @@ internal class CellLabModel(val key: String) : Disposable {
         if (value("feed") > 0f && next % 180 == 0) spawn()
         applyDrag()
         world.tick()
+        if (key == "synapse" && companion >= 0 && c.isAlive[companion] && c.neuronImpulseOutput[companion] >= 1f) postSpikes++
         world.simulationData.controllerKeys[selected] = hardwarePressed
         for (slot in preyIds.indices) {
             val prey = preyIds[slot]
@@ -401,7 +413,7 @@ internal class CellLabModel(val key: String) : Disposable {
         for (i in preyIds.indices) {
             v = Fnv.word(v, preyIds[i]); v = Fnv.word(v, preyGenerations[i]); v = Fnv.word(v, preyBirth[i])
         }
-        v = Fnv.word(v, kills); v = Fnv.word(v, spawned); v = Fnv.word(v, spawnSerial)
+        v = Fnv.word(v, kills); v = Fnv.word(v, spawned); v = Fnv.word(v, spawnSerial); v = Fnv.word(v, postSpikes)
         for (on in world.simulationData.controllerKeys) v = Fnv.word(v, if (on) 1 else 0)
         v
     }, input = { h ->
@@ -418,7 +430,11 @@ internal class CellLabModel(val key: String) : Disposable {
         const val MAX_CELLS = 32
         const val MAX_FOOD = 24
         val PREY_TYPES = arrayOf("fat", "bone")
-        val FORMULAS = arrayOf("linear", "sigmoid", "step_le", "sin")
+        val FORMULAS = arrayOf("linear", "sigmoid", "step_le", "sin", "lif")
+
+        /** Neuron справа на стенде синапса: доля накопленного, теряемая за тик, и порог. */
+        const val SYNAPSE_LEAK = 0.2f
+        const val SYNAPSE_THRESHOLD = 0.6f
         val KEYS = arrayOf("W", "A", "S", "D")
         const val DELAY_PERIOD = 90
         const val DELAY_PULSE = 10

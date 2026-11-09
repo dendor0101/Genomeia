@@ -239,6 +239,7 @@ object CommandRegistry {
         t<GuideIntent.OpenCellLab>(1107),
         t<GuideIntent.CloseCellLab>(1108),
         t<CellLabInput>(1109),
+        t<GuideIntent.SetPulse>(1110),
     )
 
     private val byClass: Map<KClass<*>, Type<*>> = types.associateBy { it.kClass }

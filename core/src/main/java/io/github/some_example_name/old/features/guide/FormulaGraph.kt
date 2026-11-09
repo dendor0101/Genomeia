@@ -33,6 +33,7 @@ class FormulaGraph(private val font: BitmapFont) : Widget() {
 
     private var xs = FloatArray(0)
     private var ys = FloatArray(0)
+    private var memory: FloatArray? = null
     private var count = 0
     private var overTime = false
     private var markerX = 0f
@@ -50,6 +51,7 @@ class FormulaGraph(private val font: BitmapFont) : Widget() {
         this.ys = ys
         count = xs.size
         overTime = false
+        memory = null
         markerX = x
         markerY = y
         minX = xs.first()
@@ -62,23 +64,28 @@ class FormulaGraph(private val font: BitmapFont) : Widget() {
 
     /**
      * Сигнал во времени: [historyX] — вход, [historyY] — выход, [size] последних тиков из
-     * [capacity]; [ticksPerSecond] — сколько тиков мира в секунде (подпись окна).
+     * [capacity]; [ticksPerSecond] — сколько тиков мира в секунде (подпись окна);
+     * [memory] — память нейрона третьей линией (накопленное у lif) или null.
      */
-    fun showHistory(historyX: FloatArray, historyY: FloatArray, size: Int, capacity: Int, ticksPerSecond: Int) {
+    fun showHistory(
+        historyX: FloatArray, historyY: FloatArray, size: Int, capacity: Int, ticksPerSecond: Int,
+        memory: FloatArray? = null
+    ) {
         historySeconds = capacity / ticksPerSecond
         xs = historyX
         ys = historyY
+        this.memory = memory
         count = size
         overTime = true
         minX = 0f
         maxX = (capacity - 1).toFloat()
         markerX = (size - 1).coerceAtLeast(0).toFloat()
         markerY = if (size > 0) historyY[size - 1] else 0f
-        fitY(historyY, size, if (size > 0) historyX[size - 1] else 0f, historyX)
+        fitY(historyY, size, if (size > 0) historyX[size - 1] else 0f, historyX, memory)
     }
 
     /** Диапазон по Y — по видимым значениям с запасом; бесконечности и гигантские хвосты отсекаются. */
-    private fun fitY(values: FloatArray, size: Int, extra: Float, also: FloatArray? = null) {
+    private fun fitY(values: FloatArray, size: Int, extra: Float, also: FloatArray? = null, third: FloatArray? = null) {
         var lo = min(0f, finite(extra))
         var hi = max(0f, finite(extra))
         for (i in 0 until size) {
@@ -87,6 +94,10 @@ class FormulaGraph(private val font: BitmapFont) : Widget() {
             if (also != null) {
                 val u = finite(also[i])
                 lo = min(lo, u); hi = max(hi, u)
+            }
+            if (third != null) {
+                val m = finite(third[i])
+                lo = min(lo, m); hi = max(hi, m)
             }
         }
         if (hi - lo < 1e-3f) { lo -= 1f; hi += 1f }
@@ -112,6 +123,7 @@ class FormulaGraph(private val font: BitmapFont) : Widget() {
         if (minY < 0f && maxY > 0f) line(batch, x, py(0f), x + width, py(0f), AXIS, 1.dp())
 
         if (overTime) {
+            memory?.let { series(batch, it, MEMORY, 2.dp()) }
             series(batch, xs, INPUT, 2.dp())
             series(batch, ys, OUTPUT, 3.dp())
         } else {
@@ -212,6 +224,7 @@ class FormulaGraph(private val font: BitmapFont) : Widget() {
         val AXIS = Color(0.45f, 0.45f, 0.42f, 1f)
         val INPUT = Color(0.45f, 0.75f, 0.95f, 1f)
         val OUTPUT = Color(0.95f, 0.80f, 0.35f, 1f)
+        val MEMORY = Color(0.55f, 0.85f, 0.45f, 1f)
         val MARKER = Color(0.95f, 0.45f, 0.35f, 1f)
         val MARKER_LINE = Color(0.95f, 0.45f, 0.35f, 0.7f)
         val LABEL = Color(0.65f, 0.62f, 0.56f, 1f)
