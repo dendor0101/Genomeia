@@ -56,7 +56,7 @@ class SettingsScreen : VisDslScreen(
     override fun VisTable.compose() {
         visTable(cellInit = {
             growX().fillX()
-            width(w * 0.5f)
+            width(minOf(w - 32.dp(), 640.dp()))
         }) {
             // === Табы (теперь локализованные) ===
             visTable {
@@ -160,12 +160,13 @@ class SettingsScreen : VisDslScreen(
 
 
         visTable(cellInit = { expandX().fillX() }) {
-            visLabel("Default Render Mode: ", align = Align.left) {}
+            visLabel(bundle.get("label.renderMode"), align = Align.left) {}
+            row()
             val selectBox = renderModeSelectBox(
                 selected = RenderMode.fromPreference(GlobalSettings.RENDER_MODE),
                 onSelect = { viewModel.handle(SettingsIntent.SetRenderMode(it.preferenceId)) }
             )
-            this.add(selectBox) as Cell<StyledSelectBox<String>>
+            add(selectBox).width(minOf(w - 52.dp(), 600.dp()))
         }
         row()
 
@@ -173,14 +174,14 @@ class SettingsScreen : VisDslScreen(
             text = bundle.get("settings.showHints"),
             checked = GlobalSettings.SHOW_HINTS,
             onCheckedChange = { viewModel.handle(SettingsIntent.SetShowHints(it)) }
-        ) { left().padTop(16.dp()) }
+        ) { width(minOf(w - 52.dp(), 600.dp())).padTop(16.dp()) }.label.setWrap(true)
         row()
 
         visToggleButton(
             text = bundle.get("settings.showDebugInfo"),
             checked = GlobalSettings.SHOW_DEBUG_INFO,
             onCheckedChange = { viewModel.handle(SettingsIntent.SetShowDebugInfo(it)) }
-        ) { left().padTop(16.dp()) }
+        ) { width(minOf(w - 52.dp(), 600.dp())).padTop(16.dp()) }.label.setWrap(true)
         row()
 
         // Полный экран есть только на ПК; состояние берём у окна, а не храним: из него можно выйти и мимо кнопки.
@@ -189,7 +190,7 @@ class SettingsScreen : VisDslScreen(
                 text = bundle.get("settings.fullscreen"),
                 checked = PlatformWindow.isFullscreen,
                 onCheckedChange = { viewModel.handle(SettingsIntent.SetFullscreen(it)) }
-            ) { left().padTop(16.dp()) }
+            ) { width(minOf(w - 52.dp(), 600.dp())).padTop(16.dp()) }.label.setWrap(true)
             row()
         }
 
@@ -251,7 +252,7 @@ class SettingsScreen : VisDslScreen(
         row()
 
         visTable(cellInit = { expandX().fillX() }) {
-            visTextButton("Go to Github", onClick = {
+            visTextButton(bundle.get("settings.github"), onClick = {
                 viewModel.handle(SettingsIntent.OpenGithub)
             })
         }

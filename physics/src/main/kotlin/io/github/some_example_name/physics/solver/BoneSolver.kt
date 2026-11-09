@@ -8,7 +8,7 @@ fun BodyState.markInternal() {
 }
 
 fun BodyState.cancelInternalSpin() {
-    internalMom?.cancel(organismOf, organismCount, px, py, prevX, prevY, invMass)
+    internalMom?.cancel(organismOf, organismCount, px, py, prevX, prevY, invMass, cellUnborn)
 }
 
 fun BodyState.cancelInternalDrift(beforeX: Double, beforeY: Double) {
@@ -93,6 +93,8 @@ internal fun BodyState.projectBoneInto(b: Int, boneDx: DoubleArray, boneDy: Doub
         cx += w * (px[i] - ox); cy += w * (py[i] - oy)
         wsum += w
     }
+    // Кость без рождённых клеток (рост тела: у нерождённых вес ноль) не проецируется.
+    if (wsum <= 0.0) return false
     cx /= wsum; cy /= wsum
 
     var s = 0.0; var t = 0.0
@@ -128,18 +130,21 @@ internal fun BodyState.projectBoneInto(b: Int, boneDx: DoubleArray, boneDy: Doub
     // масс, ради которого весь этот код и переписан, сломалось бы сразу.
     var maxD2 = 0.0
     for (k in ids.indices) {
+        // Нерождённая клетка (вес ноль, рост тела) кость не ограничивает и не двигается ею.
+        if (matchWeight[ids[k]] == 0.0) continue
         val dx = boneDx[k] - mdx
         val dy = boneDy[k] - mdy
         val d2 = dx * dx + dy * dy
         if (d2 > maxD2) maxD2 = d2
     }
     var scale = 1.0
-    val cap = BONE_MAX_STEP * body.meanLinkLength
+    val cap = BONE_MAX_STEP * linkScale
     val capped = maxD2 > cap * cap
     if (capped) scale = cap / sqrt(maxD2)
 
     for (k in ids.indices) {
         val i = ids[k]
+        if (matchWeight[i] == 0.0) continue
         px[i] += (boneDx[k] - mdx) * scale
         py[i] += (boneDy[k] - mdy) * scale
     }

@@ -98,7 +98,7 @@ internal fun DemoSession.act(op: Char, a: Int = 0) { with(state) {
         'P' -> fireBullet()
         'O' -> slamOrganisms()
         'D' -> {
-            dragId = a; matchWeight[a] = DRAG_MATCH_WEIGHT
+            world.grab(a)
             // Курсор обязан попасть в журнал на первом же тике захвата.
             plogCurX = Double.NaN
             // Отсечка счётчиков на момент захвата: строка DRAG обязана
@@ -110,7 +110,7 @@ internal fun DemoSession.act(op: Char, a: Int = 0) { with(state) {
             // вычитать из максимума базу бессмысленно.
             peakSpeed2 = 0.0
         }
-        'U' -> if (dragId >= 0) { matchWeight[dragId] = 1.0; dragId = -1 }
+        'U' -> world.release()
     }
 } }
 
@@ -268,11 +268,11 @@ internal fun DemoSession.replayTickInputs() { with(state) {
                 if (m < replayMuscle.size) replayMuscle[m] = part.substring(k + 1).toDouble()
             }
         } else if (ln.op == "C") {
-            mouseX = ln.args[0].toDouble(); mouseY = ln.args[1].toDouble()
+            world.dragTo(ln.args[0].toDouble(), ln.args[1].toDouble())
         } else break
         replayAt++
     }
-    System.arraycopy(replayMuscle, 0, muscleTarget, 0, muscleTarget.size)
+    for (m in 0 until world.muscleCount) world.setMuscleTarget(m, replayMuscle[m])
 } }
 
 internal fun DemoSession.replayCheckHash(ln: PlayerLog.Line) { with(state) {

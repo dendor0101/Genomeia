@@ -53,6 +53,13 @@ class NavigationCommandsManager {
         SessionJournal.execute(CommandSource.NAVIGATION, command, logAction = false) { perform(it) }
 
     private fun perform(navigationCommands: NavigationCommands) {
+        val target = when (navigationCommands) {
+            is Menu -> navigationCommands
+            is GoReplace -> navigationCommands.target
+            else -> null
+        }
+        val factory = target?.let { screenFactory(it) }
+        if (target != null && factory == null) return
         val destination = when (navigationCommands) {
             is Menu -> {
                 val old = game.screen
@@ -64,7 +71,7 @@ class NavigationCommandsManager {
                 }
 
                 currentCommand = navigationCommands
-                game.screen = createScreen(navigationCommands)
+                game.screen = factory!!.invoke()
                 navigationCommands.name
             }
 
@@ -72,7 +79,7 @@ class NavigationCommandsManager {
                 val old = game.screen
                 clearStack()
                 currentCommand = navigationCommands.target
-                game.screen = createScreen(navigationCommands.target)
+                game.screen = factory!!.invoke()
                 old?.dispose()
                 navigationCommands.target.name
             }
@@ -99,19 +106,18 @@ class NavigationCommandsManager {
         onCommand?.invoke(navigationCommands, destination)
     }
 
-    private fun createScreen(command: Menu): Screen = when (command) {
-        GoMenu -> MenuScreen()
-        GoEcoSystem -> EcoSystemScreen()
-        is GoGenomeEditor -> GenomeEditorScreen(command.genomeName)
-        GoGenomes -> GenomesScreen()
-        GoGuide -> GuideScreen()
-        GoTutorial -> GenomeEditorScreen(genomeName = null, isTutorial = true)
-        GoSettings -> SettingsScreen()
-        is GoWorldEditor -> WorldEditorScreen(command.seed)
-        GoSupport -> SupportScreen()
-        EcoSystemScreenCellsSettings -> TODO()
-        EcoSystemScreenGlobalSettings -> TODO()
-        is GoSimulation -> SimulationScreen(command.world, command.genomeName, command.savedWorld)
+    private fun screenFactory(command: Menu): (() -> Screen)? = when (command) {
+        GoMenu -> ::MenuScreen
+        GoEcoSystem -> ::EcoSystemScreen
+        is GoGenomeEditor -> ({ GenomeEditorScreen(command.genomeName) })
+        GoGenomes -> ::GenomesScreen
+        GoGuide -> ::GuideScreen
+        GoTutorial -> ({ GenomeEditorScreen(genomeName = null, isTutorial = true) })
+        GoSettings -> ::SettingsScreen
+        is GoWorldEditor -> ({ WorldEditorScreen(command.seed) })
+        GoSupport -> ::SupportScreen
+        EcoSystemScreenCellsSettings, EcoSystemScreenGlobalSettings -> null
+        is GoSimulation -> ({ SimulationScreen(command.world, command.genomeName, command.savedWorld) })
     }
 
     /**

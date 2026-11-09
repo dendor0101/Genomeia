@@ -28,8 +28,8 @@ internal fun BodyState.removePersistentInversions() {
         return
     }
     val areas = layout.areas
-    for (block in 0..layout.seam) {
-        if (block != layout.seam && layout.awake[block] == 0) continue
+    for (block in 0 until layout.buckets) {
+        if (block < layout.seam && layout.awake[block] == 0) continue
         for (slot in areas.start[block] until areas.start[block] + areas.count[block]) {
             val t = areas.items[slot]
             if (t >= 0) checkInversion(t)
@@ -67,15 +67,19 @@ internal fun BodyState.killTriangleNow(id: Int) {
 /** Упаковка один раз за тик, в прежнем порядке; счётчики инверсии имеют постоянные ID. */
 internal fun BodyState.compactTriangles() {
     val alive = baked.triAlive
+    // Нерождённый треугольник остаётся в списке: клетка родится, и он оживёт (рост тела).
+    val unborn = baked.triUnborn
+    fun keep(id: Int) = alive[id] || (id < unborn.size && unborn[id])
     var m = 0
-    while (m < triCount && alive[triId[m]]) m++
+    while (m < triCount && keep(triId[m])) m++
     var k = m
     while (k < triCount) {
-        if (alive[triId[k]]) {
+        if (keep(triId[k])) {
             constraintBlocks?.moveTriangle(k, m, triId[k])
             triA[m] = triA[k]; triB[m] = triB[k]; triC[m] = triC[k]
             if (triHold.size > k) triHold[m] = triHold[k]
             triRestArea2[m] = triRestArea2[k]; triMuscle[m] = triMuscle[k]; triId[m] = triId[k]
+            triCellScale[m] = triCellScale[k]; triSoftness[m] = triSoftness[k]
             m++
         }
         k++

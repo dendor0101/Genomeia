@@ -4,7 +4,6 @@ import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.NeuralLinkEntity
 import io.github.some_example_name.old.systems.genomics.genome.BakedLayout
-import io.github.some_example_name.old.systems.genomics.genome.INTERIOR_VERSION
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
 
 /**
@@ -76,13 +75,10 @@ class RCMSort(
             cellIdsInSlotOrder.forEachIndexed { slot, genomeId -> put(genomeId, slot) }
         }
 
-        val triangles = collectTriangles(organIndex, cellGenomeIds, adjacency, slotOfGenomeId)
+        val cells = cellsInSlotOrder(organIndex, cellIdsInSlotOrder)
+        val boneType = cellEntity.cellList.requireIndex("bone")
 
         return BakedLayout(
-            interiorLinks = interiorLinks(organIndex, cellIdsInSlotOrder).toList(),
-            interiorVersion = INTERIOR_VERSION,
-            triangleSlots = triangles.first,
-            triangleRestArea2 = triangles.second,
             cellGenomeIdsInSlotOrder = cellIdsInSlotOrder.toList(),
             linkPairsInSlotOrder = orderLinks(
                 organIndex = organIndex,
@@ -95,22 +91,20 @@ class RCMSort(
                 slotOfGenomeId = slotOfGenomeId,
                 endpoints = ::neuralLinkEndpoints,
                 aliveIndices = neuralLinkEntity.aliveList.toIntArray()
-            )
-        )
+            ),
+            // Поза покоя для физики-библиотеки (BakedLayout.restX): тело в редакторе выращено
+            // целиком, координаты — геометрия раскладки клеток, без физики.
+            restX = cells.map { cellEntity.getX(it) },
+            restY = cells.map { cellEntity.getY(it) },
+            restRadius = cells.map { cellEntity.getRadius(it) },
+            restBone = cells.map { cellEntity.cellType[it].toInt() == boneType }
+        // Треугольники — по связям раскладки и позе покоя, тем же перебором, что и допекание
+        // старых раскладок (trianglesOfLinks): запечённое и допечённое не расходятся.
+        ).withTrianglesFromLinks()
     }
 
-    // ===================================================================================
-    // ГРАНИЦА ТЕЛА
-    // ===================================================================================
-
-    /**
-     * По слотам: число физических связей внутренней клетки во взрослом теле, 0 у граничной
-     * (см. BakedLayout.interiorLinks, [InteriorCells]).
-     *
-     * Число — linkAmount, тот же счётчик, с которым его сравнивает мир
-     * (CellEntity.refreshOnEdge): связи редактор растит тем же делением, что и мир.
-     */
-    private fun interiorLinks(organIndex: Int, cellIdsInSlotOrder: IntArray): IntArray {
+    /** Клетки организма [organIndex] редактора в порядке слотов. */
+    private fun cellsInSlotOrder(organIndex: Int, cellIdsInSlotOrder: IntArray): IntArray {
         val cellOfGenomeId = Int2IntOpenHashMap(cellIdsInSlotOrder.size).apply {
             defaultReturnValue(-1)
             val alive = cellEntity.aliveList
@@ -120,128 +114,7 @@ class RCMSort(
                 put(cellEntity.cellGenomeId[cellIndex], cellIndex)
             }
         }
-        val cells = IntArray(cellIdsInSlotOrder.size) { cellOfGenomeId.get(cellIdsInSlotOrder[it]) }
-        val interior = InteriorCells.find(
-            xs = FloatArray(cells.size) { cellEntity.getX(cells[it]) },
-            ys = FloatArray(cells.size) { cellEntity.getY(cells[it]) },
-            rs = FloatArray(cells.size) { cellEntity.getRadius(cells[it]) }
-        )
-        return IntArray(cells.size) { slot ->
-            if (interior[slot]) cellEntity.linkAmount[cells[slot]] else 0
-        }
-    }
-
-    // ===================================================================================
-    // ТРЕУГОЛЬНИКИ
-    // ===================================================================================
-
-    /**
-     * Треугольники сетки тела: тройки взаимно связанных клеток.
-     *
-     * ЗАЧЕМ
-     * -----
-     * Сеть пружин с фиксированными длинами в 2D жёсткая на сдвиг и растяжение, но НЕ
-     * защищена от выворачивания: вершина проходит сквозь противоположное ребро, все три
-     * длины остаются в норме, а тело складывается наизнанку. Раньше это блокировал
-     * внутренний repulse — он физически не давал клеткам сойтись; после того как внутренние
-     * клетки убрали из сетки коллизий, остался только этот вырожденный путь, и тело
-     * складывается даже от собственных мышц.
-     *
-     * Знаковая площадь при выворачивании меняет ЗНАК, поэтому ограничение на неё ловит
-     * именно этот случай, а не просто «стало тесно».
-     *
-     * ПОЧЕМУ ЭТО ПЕЧЁТСЯ
-     * ------------------
-     * Треугольник — это топология: пара соседей клетки, связанных между собой. Найти их
-     * значит перебрать C(deg,2) пар на клетку и для каждой спросить смежность — в рантайме
-     * это тысячи проверок за тик, при запекании ноль.
-     *
-     * ПОРЯДОК ВЕРШИН
-     * --------------
-     * Тройка разворачивается так, чтобы площадь покоя была положительной. Иначе знак у
-     * половины треугольников оказался бы отрицательным просто из-за порядка обхода, и
-     * «вывернулся» стало бы неотличимо от «так и было».
-     *
-     * Сортировка по минимальному слоту — та же причина, что у связей: обход треугольников
-     * идёт вдоль ленты RCM и попадает в то же горячее окно, что и обход связей.
-     */
-    private fun collectTriangles(
-        organIndex: Int,
-        cellGenomeIds: IntArray,
-        adjacency: Array<MutableList<Int>>,
-        slotOfGenomeId: Int2IntOpenHashMap
-    ): Pair<List<Int>, List<Float>> {
-        // Клетка по геномному id — нужна за позициями: площадь покоя снимается с реального
-        // выращенного тела, а не выводится из длин связей.
-        val cellOfGenomeId = Int2IntOpenHashMap(cellGenomeIds.size).apply {
-            defaultReturnValue(-1)
-            val alive = cellEntity.aliveList
-            for (i in 0 until alive.size) {
-                val cellIndex = alive.getInt(i)
-                if (cellEntity.organIndex[cellIndex] != organIndex) continue
-                put(cellEntity.cellGenomeId[cellIndex], cellIndex)
-            }
-        }
-
-        data class Tri(val minSlot: Int, val s0: Int, val s1: Int, val s2: Int, val restArea2: Float)
-
-        val result = ArrayList<Tri>()
-
-        for (v in adjacency.indices) {
-            val neighbours = adjacency[v]
-            for (i in neighbours.indices) {
-                val a = neighbours[i]
-                // v < a < b — канонический порядок, чтобы каждый треугольник встретился
-                // ровно один раз, а не трижды (по разу от каждой вершины).
-                if (a <= v) continue
-                for (j in i + 1 until neighbours.size) {
-                    val b = neighbours[j]
-                    if (b <= a) continue
-                    if (!adjacency[a].contains(b)) continue
-
-                    val cell0 = cellOfGenomeId.get(cellGenomeIds[v])
-                    val cell1 = cellOfGenomeId.get(cellGenomeIds[a])
-                    val cell2 = cellOfGenomeId.get(cellGenomeIds[b])
-                    if (cell0 == -1 || cell1 == -1 || cell2 == -1) continue
-
-                    var slot0 = slotOfGenomeId.get(cellGenomeIds[v])
-                    var slot1 = slotOfGenomeId.get(cellGenomeIds[a])
-                    var slot2 = slotOfGenomeId.get(cellGenomeIds[b])
-                    if (slot0 == -1 || slot1 == -1 || slot2 == -1) continue
-
-                    val x0 = cellEntity.getX(cell0); val y0 = cellEntity.getY(cell0)
-                    var x1 = cellEntity.getX(cell1); var y1 = cellEntity.getY(cell1)
-                    var x2 = cellEntity.getX(cell2); var y2 = cellEntity.getY(cell2)
-
-                    var area2 = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0)
-                    if (area2 < 0f) {
-                        // Разворачиваем обход, чтобы площадь покоя была положительной.
-                        val ts = slot1; slot1 = slot2; slot2 = ts
-                        val tx = x1; x1 = x2; x2 = tx
-                        val ty = y1; y1 = y2; y2 = ty
-                        area2 = -area2
-                    }
-
-                    // Вырожденный треугольник: три клетки на одной прямой. Обратная площадь
-                    // ушла бы в бесконечность, а ограничение — в NaN.
-                    if (area2 < MIN_REST_AREA2) continue
-
-                    result.add(
-                        Tri(minOf(slot0, slot1, slot2), slot0, slot1, slot2, area2)
-                    )
-                }
-            }
-        }
-
-        result.sortBy { it.minSlot }
-
-        val slots = ArrayList<Int>(result.size * 3)
-        val areas = ArrayList<Float>(result.size)
-        for (t in result) {
-            slots.add(t.s0); slots.add(t.s1); slots.add(t.s2)
-            areas.add(t.restArea2)
-        }
-        return slots to areas
+        return IntArray(cellIdsInSlotOrder.size) { cellOfGenomeId.get(cellIdsInSlotOrder[it]) }
     }
 
     // ===================================================================================
@@ -433,15 +306,4 @@ class RCMSort(
 
     /** Связь на время сортировки: ключ — пара слотов, значение — пара cellGenomeId. */
     private data class LinkEntry(val low: Int, val high: Int, val idA: Int, val idB: Int)
-
-    private companion object {
-        /**
-         * Ниже этой удвоенной площади треугольник считается вырожденным и не запекается.
-         *
-         * Три клетки на одной прямой дают нулевую площадь, обратная к ней — бесконечность,
-         * а ограничение — NaN, который расползётся по vx/vy всего тела. Порог на порядки
-         * меньше площади нормального треугольника (сторона ~0.5 даёт ~0.2).
-         */
-        const val MIN_REST_AREA2 = 1e-6f
-    }
 }

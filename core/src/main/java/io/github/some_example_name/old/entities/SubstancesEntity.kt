@@ -9,14 +9,10 @@ class SubstancesEntity(
 ): Entity(startMaxAmount) {
 
     var particleIndex = IntArray(maxAmount) { -1 }
-    fun getX(index: Int) = particleEntity.x[particleIndex[index]]
-    fun getY(index: Int) = particleEntity.y[particleIndex[index]]
-    fun setX(index: Int, value: Float) { particleEntity.x[particleIndex[index]] = value }
-    fun setY(index: Int, value: Float) { particleEntity.y[particleIndex[index]] = value }
-    fun getVx(index: Int) = particleEntity.vx[particleIndex[index]]
-    fun getVy(index: Int) = particleEntity.vy[particleIndex[index]]
-    fun setVx(index: Int, value: Float) { particleEntity.vx[particleIndex[index]] = value }
-    fun setVy(index: Int, value: Float) { particleEntity.vy[particleIndex[index]] = value }
+    fun getX(index: Int) = particleEntity.x(particleIndex[index])
+    fun getY(index: Int) = particleEntity.y(particleIndex[index])
+    fun getVx(index: Int) = particleEntity.vx(particleIndex[index])
+    fun getVy(index: Int) = particleEntity.vy(particleIndex[index])
     fun getDragCoefficient(index: Int) = particleEntity.dragCoefficient[particleIndex[index]]
     fun setDragCoefficient(index: Int, value: Float) { particleEntity.dragCoefficient[particleIndex[index]] = value }
     fun getEffectOnContact(index: Int) = particleEntity.effectOnContact[particleIndex[index]]

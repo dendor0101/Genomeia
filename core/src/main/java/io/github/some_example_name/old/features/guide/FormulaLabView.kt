@@ -6,6 +6,7 @@ import com.kotcrab.vis.ui.widget.VisTable
 import com.kotcrab.vis.ui.widget.VisTextButton
 import io.github.some_example_name.old.cells.base.CellPalette
 import io.github.some_example_name.old.cells.base.Formula
+import io.github.some_example_name.old.cells.base.FormulaGroup
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
 import io.github.some_example_name.old.core.ui.disableParentFlickScrollWhileDragging
@@ -18,6 +19,7 @@ import io.github.some_example_name.old.core.ui.visTable
 import io.github.some_example_name.old.core.ui.visTextButton
 import io.github.some_example_name.old.core.ui.visToggleButton
 import io.github.some_example_name.old.features.guide.NeuronLabSettings.Companion.MAX_INPUTS
+import io.github.some_example_name.old.features.guide.NeuronLabSettings.Companion.MAX_PULSE_PERIOD
 import io.github.some_example_name.old.features.guide.NeuronLabSettings.Companion.MAX_VALUE
 import io.github.some_example_name.old.features.guide.NeuronLabSettings.Companion.MIN_VALUE
 import java.util.Locale
@@ -68,7 +70,10 @@ class FormulaLabView(
         if (width >= TWO_COLUMNS_FROM.dp()) {
             val column = (inner - 24.dp()) / 2
             visTable({ padTop(16.dp()) }) {
-                visTable({ top().width(column).padRight(24.dp()) }) {
+                // spaceRight(0): VisTable сам ставит 6 px между колонками, и строка выходила
+                // на них шире страницы — таблица центрировала лишнее, левая колонка уезжала под
+                // край прокрутки и обрезала первые буквы. Зазор между колонками — padRight.
+                visTable({ top().width(column).padRight(24.dp()).spaceRight(0f) }) {
                     defaults().left().width(column)
                     controls()
                 }
@@ -88,14 +93,29 @@ class FormulaLabView(
             row()
         }
 
-        // --- справочник: все формулы сразу
+        // --- как собрать спайковую сеть: формулы lif и trace вместе с Synapse
+        visLabel(bundle.get("guide.formulas.snn.title"), font = game.extraLargeFont) { padTop(24.dp()) }
+        row()
+        visLabel(bundle.get("guide.formulas.snn.text")).setWrap(true)
+        row()
+
+        // --- справочник: все формулы по разделам
         visLabel(bundle.get("guide.formulas.all"), font = game.extraLargeFont) { padTop(24.dp()) }
         row()
-        for (formula in formulas) {
-            visLabel(formula.label, textColor = OUTPUT) { padTop(8.dp()) }
+        for (group in FormulaGroup.entries) {
+            val inGroup = formulas.filter { it.group == group }
+            if (inGroup.isEmpty()) continue
+            val name = group.name.lowercase()
+            visLabel(bundle.get("guide.formulas.group.$name"), font = game.largeFont) { padTop(16.dp()) }
             row()
-            visLabel(formula.description).setWrap(true)
+            visLabel(bundle.get("guide.formulas.group.$name.text"), textColor = MUTED).setWrap(true)
             row()
+            for (formula in inGroup) {
+                visLabel(formula.label, textColor = OUTPUT) { padTop(8.dp()) }
+                row()
+                visLabel(formula.description).setWrap(true)
+                row()
+            }
         }
 
         onFormulaChanged()
@@ -118,6 +138,8 @@ class FormulaLabView(
                 .hint(bundle.get("guide.formulas.addInput"))
         }
         row()
+
+        pulseControl()
 
         // Отдельной строкой: рядом с «-» и «+» в половине экрана не помещается.
         visTable({ padTop(8.dp()) }) {
@@ -156,6 +178,8 @@ class FormulaLabView(
             visLabel(bundle.get("guide.formulas.neuron"), font = game.extraLargeFont) { colspan(3) }
             row()
 
+            // minWidth(0): желаемая ширина списка — по самой длинной формуле, и с ней карточка
+            // выходила шире колонки, а содержимое съезжало за её левый край.
             visSelectBox(
                 items = formulas.map { it.label }.toTypedArray(),
                 selectedIndex = formulas.indexOfFirst { it.key == settings.formulaKey }.coerceAtLeast(0),
@@ -163,7 +187,7 @@ class FormulaLabView(
                     viewModel.handle(GuideIntent.SelectFormula(formulas[i].key))
                     onFormulaChanged()
                 }
-            ) { colspan(3).padBottom(8.dp()) }.hint(bundle.get("editor.hint.formula"))
+            ) { colspan(3).minWidth(0f).growX().padBottom(8.dp()) }.hint(bundle.get("editor.hint.formula"))
             row()
 
             coefficient(0, "a", settings.a, "editor.hint.coefA")
@@ -192,14 +216,20 @@ class FormulaLabView(
         row()
     }
 
-    /** Кадр экрана: формулы с памятью живут во времени, остальным хватает пересчёта по изменению. */
+    /**
+     * Кадр экрана: формулы с памятью и импульсы на входе живут во времени, остальным хватает
+     * пересчёта по изменению.
+     */
     fun update(delta: Float) {
         lab.configure(settings)
         val x = settings.x()
         val formula = lab.formula(settings)
-        if (formula.dependsOnTime) {
-            lab.advance(delta, x)
-            graph.showHistory(lab.historyX, lab.historyY, lab.historySize, lab.historyX.size, NeuronLab.TICKS_PER_SECOND)
+        if (overTime(formula)) {
+            lab.advance(delta, settings)
+            graph.showHistory(
+                lab.historyX, lab.historyY, lab.historySize, lab.historyX.size, NeuronLab.TICKS_PER_SECOND,
+                memory = if (formula.showsMemory) lab.historyMemory else null
+            )
             yLabel.setText("y = ${format(lab.lastY)}")
         } else if (curveChanged) {
             curveChanged = false
@@ -218,8 +248,8 @@ class FormulaLabView(
             viewModel.handle(GuideIntent.SetCoefficient(index, v))
             valueLabel.setText(format(v))
             curveChanged = true
-        }) { growX().minWidth(200.dp()) }.apply { disableParentFlickScrollWhileDragging() }.hint(bundle.get(hintKey))
-        valueLabel = visLabel(format(value)) { width(90.dp()).padLeft(8.dp()) }
+        }) { growX().minWidth(48.dp()) }.apply { disableParentFlickScrollWhileDragging() }.hint(bundle.get(hintKey))
+        valueLabel = visLabel(format(value)) { width(54.dp()).padLeft(8.dp()) }
         row()
     }
 
@@ -235,8 +265,8 @@ class FormulaLabView(
                 viewModel.handle(GuideIntent.SetInput(i, v))
                 valueLabel.setText(format(v))
                 refreshInputs()
-            }) { growX().minWidth(200.dp()) }.disableParentFlickScrollWhileDragging()
-            valueLabel = inputs.visLabel(format(settings.inputs[i])) { width(90.dp()).padLeft(8.dp()) }
+            }) { growX().minWidth(48.dp()) }.disableParentFlickScrollWhileDragging()
+            valueLabel = inputs.visLabel(format(settings.inputs[i])) { width(54.dp()).padLeft(8.dp()) }
             inputs.row()
         }
         inputs.invalidateHierarchy()
@@ -253,18 +283,50 @@ class FormulaLabView(
     /** Вход поменялся: подпись x = … и отметка на кривой. */
     private fun refreshInputs() {
         val parts = (0 until settings.inputCount).joinToString(if (settings.isSum) " + " else " * ") {
-            format(settings.inputs[it]).let { v -> if (settings.inputs[it] < 0) "($v)" else v }
+            val v = format(settings.inputs[it]).let { v -> if (settings.inputs[it] < 0) "($v)" else v }
+            // Импульсный вход — то значение, что он подаёт в тик импульса.
+            if (it == 0 && settings.pulsePeriod > 0) bundle.format("guide.formulas.pulseValue", v) else v
         }
-        xLabel.setText("x = $parts = ${format(settings.x())}")
+        // При импульсах x меняется каждый тик — его показывает голубая линия графика.
+        xLabel.setText(if (settings.pulsePeriod > 0) "x = $parts" else "x = $parts = ${format(settings.x())}")
         curveChanged = true
     }
 
     private fun onFormulaChanged() {
         val formula = lab.formula(settings)
         description.setText(formula.description)
-        graphNote.setText(bundle.get(if (formula.dependsOnTime) "guide.formulas.overTime" else "guide.formulas.curve"))
+        refreshGraphNote()
         curveChanged = true
     }
+
+    private fun refreshGraphNote() {
+        val formula = lab.formula(settings)
+        val note = bundle.get(if (overTime(formula)) "guide.formulas.overTime" else "guide.formulas.curve")
+        graphNote.setText(if (formula.showsMemory) note + " " + bundle.get("guide.formulas.memoryLine") else note)
+    }
+
+    /** Ползунок импульсов на входе 1: 0 — ровный вход. */
+    private fun VisTable.pulseControl() {
+        fun text(period: Int) =
+            if (period == 0) bundle.get("guide.formulas.pulse.off") else bundle.format("guide.formulas.pulse", period)
+        val label = visLabel(text(settings.pulsePeriod)) { padTop(12.dp()) }.hint(bundle.get("guide.formulas.pulse.hint"))
+        label.setWrap(true)
+        row()
+        visSlider(0f, MAX_PULSE_PERIOD.toFloat(), 1f, value = settings.pulsePeriod.toFloat(), onValueChange = {
+            val period = it.roundToInt()
+            if (period != settings.pulsePeriod) {
+                viewModel.handle(GuideIntent.SetPulse(period))
+                label.setText(text(period))
+                refreshInputs()
+                refreshGraphNote()
+            }
+        }) { growX().minWidth(200.dp()) }.apply { disableParentFlickScrollWhileDragging() }
+            .hint(bundle.get("guide.formulas.pulse.hint"))
+        row()
+    }
+
+    /** Рисовать сигнал во времени, а не кривую y(x). */
+    private fun overTime(formula: Formula) = formula.dependsOnTime || settings.pulsePeriod > 0
 
     private fun round(v: Float) = (v / STEP).roundToInt() * STEP
 

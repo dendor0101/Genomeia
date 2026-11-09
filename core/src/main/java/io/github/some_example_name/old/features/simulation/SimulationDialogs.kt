@@ -83,21 +83,22 @@ class SimulationMenuDialog(
         game.applyCustomFontMedium(shaderLabel)
         val shaderSelect = renderModeSelectBox(selected = renderMode, onSelect = onRenderMode)
 
-        contentTable.pad(pad)
-        contentTable.defaults().growX().padBottom(pad)
-        contentTable.add(upsLabel).left().row()
-        contentTable.add(upsSlider).minWidth(280f * density).row()
-        contentTable.add(maxSpeedToggle).row()
+        val options = VisTable()
+        options.pad(pad)
+        options.defaults().growX().padBottom(pad)
+        options.add(upsLabel).left().row()
+        options.add(upsSlider).minWidth(0f).row()
+        options.add(maxSpeedToggle).row()
 
         val shaderRow = VisTable()
-        shaderRow.add(shaderLabel).left().padRight(pad)
-        shaderRow.add(shaderSelect).growX()
-        contentTable.add(shaderRow).padBottom(pad * 2).row()
+        shaderRow.add(shaderLabel).left().row()
+        shaderRow.add(shaderSelect).minWidth(0f).growX()
+        options.add(shaderRow).padBottom(pad * 2).row()
 
         // --- Действия: окно закрывается до действия, чтобы не висело над новым экраном ---
         fun action(key: String, label: String = bundle.get(key), block: () -> Unit) {
             val button = makeStyledButton(label, game, textures).onChange { fadeOut(); block() }
-            contentTable.add(button).row()
+            options.add(button).row()
         }
         action("button.restart", block = onRestart)
         action("button.settings", block = onSettings)
@@ -105,10 +106,16 @@ class SimulationMenuDialog(
         if (onSaveAndExit != null) action("button.saveAndExit", block = onSaveAndExit)
         action("button.exit", label = exitLabel, block = onExit)
 
+        val scroll = com.badlogic.gdx.scenes.scene2d.ui.ScrollPane(options)
+        scroll.setScrollingDisabled(true, false)
+        contentTable.add(scroll).minSize(0f).grow()
         closeOnEscape()
         pack()
         centerWindow()
     }
+
+    override fun getPrefWidth() = minOf(super.getPrefWidth(), Gdx.graphics.width * .96f)
+    override fun getPrefHeight() = minOf(super.getPrefHeight(), Gdx.graphics.height * .96f)
 
     /** Окно ушло со сцены (закрыли, выбрали) — рамки кнопок больше не рисуются. */
     override fun remove(): Boolean {

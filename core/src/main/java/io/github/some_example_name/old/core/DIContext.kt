@@ -14,6 +14,7 @@ import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.old.systems.genomics.OrganManager
 import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.physics.GridManager
+import io.github.some_example_name.old.systems.simulation.SimulationData
 
 interface DIContext {
     var gridWidth: Int
@@ -34,6 +35,7 @@ interface DIContext {
     val pheromoneEntity: PheromoneEntity
 
     val gridManager: GridManager
+    val simulationData: SimulationData
     val organManager: OrganManager
     val entityList: List<Entity>
 }

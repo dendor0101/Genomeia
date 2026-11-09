@@ -137,6 +137,7 @@ abstract class Cell(
     val organEntity get() = context.organEntity
     val genomeManager get() = context.genomeManager
     val pheromoneEntity get() = context.pheromoneEntity
+    val simulationData get() = context.simulationData
 
     val gridManager get() = context.gridManager
     val organManager get() = context.organManager

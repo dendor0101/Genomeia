@@ -166,6 +166,10 @@ object CommandRegistry {
         t<SimulationIntent.SetDebugFilter>(617),
         t<SimulationIntent.SetMicroscopeParameter>(618),
         t<SimulationIntent.ResetMicroscopeSettings>(619),
+        t<SimulationIntent.MarkCell>(620),
+        t<SimulationIntent.SetShowBoundary>(621),
+        t<SimulationIntent.SetShowLinks>(622),
+        t<SimulationIntent.SaveWorldFailed>(623),
 
         // --- Касания мира ---
         t<PlayerCommand.TouchDown>(700),
@@ -174,6 +178,7 @@ object CommandRegistry {
         t<PlayerCommand.StopDrag>(703),
         t<PlayerCommand.KillCell>(704),
         t<PlayerCommand.SetStress>(705),
+        t<PlayerCommand.SetPhysicsDebug>(706),
 
         // --- Редактор генома ---
         t<PrevTickButtonTap>(800),
@@ -204,6 +209,7 @@ object CommandRegistry {
         t<ExportGenome>(825),
         t<EditorZoomCamera>(826),
         t<TutorialNextStep>(827),
+        t<io.github.some_example_name.old.editor.system.logic.SetEditorDebugFilter>(828),
 
         // --- События потока симуляции ---
         t<SessionStarted>(900),
@@ -213,6 +219,7 @@ object CommandRegistry {
         t<WorldSaveCommitted>(904),
         t<CellLabAdvanced>(905),
         t<CellLabChecked>(906),
+        t<WorldStopped>(907),
 
         // --- Экран «Геномы» ---
         t<GenomesIntent.SelectTab>(1000),
@@ -234,6 +241,7 @@ object CommandRegistry {
         t<GuideIntent.OpenCellLab>(1107),
         t<GuideIntent.CloseCellLab>(1108),
         t<CellLabInput>(1109),
+        t<GuideIntent.SetPulse>(1110),
     )
 
     private val byClass: Map<KClass<*>, Type<*>> = types.associateBy { it.kClass }
@@ -255,7 +263,12 @@ object CommandRegistry {
 
     /** Команда по номеру типа и телу, или null — тип неизвестен или тело испорчено. */
     fun decode(typeId: Int, payload: ByteArray): GameCommand? {
-        val type = byId[typeId] ?: return null
+        val registered = byId[typeId] ?: return null
+        // В ранних записях ветки replay-files код 620 означал ошибку сохранения.
+        // Первое поле у неё — строка (тег 0x0A), у MarkCell — координата Float (0x0D).
+        val type = if (registered.kClass == SimulationIntent.MarkCell::class && payload.firstOrNull() == 0x0A.toByte()) {
+            byClass.getValue(SimulationIntent.SaveWorldFailed::class)
+        } else registered
         return try {
             GenomeProto.decodeFromByteArray(type.serializer, payload)
         } catch (e: Exception) {

@@ -82,7 +82,7 @@ object BugOverlay {
         val root = Table().apply {
             setFillParent(true)
             top().right()
-            add(button).size(size + pad).pad(pad).top().right().row()
+            add(button).size(48f * Gdx.graphics.density).pad(pad).top().right().row()
             statusCell = add(status).expandX().fillX().pad(pad).top().right().width(Gdx.graphics.width * STATUS_WIDTH)
         }
         stage.addActor(root)
@@ -132,6 +132,7 @@ object BugOverlay {
     fun resize(width: Int, height: Int) {
         BugReports.rememberEnvironment()
         stage?.viewport?.update(width, height, true)
+        dialog?.fitToViewport()
         statusCell?.width(width * STATUS_WIDTH)
         statusCell?.table?.invalidate()
     }

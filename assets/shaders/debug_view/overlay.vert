@@ -2,7 +2,7 @@
 precision highp float;
 
 // Оверлей отладочного режима: нейросвязи, стрелки направлений, лучи глаз, кольца
-// феромонов. Один инстансный проход, один квад на фигуру — раскладка в
+// феромонов, рёбра контура тел. Один инстансный проход, один квад на фигуру — раскладка в
 // OverlayInstanceBuffer.
 //
 // Квад вытянут вдоль отрезка и расширен на полуширину самой широкой части фигуры плюс
@@ -46,6 +46,8 @@ float halfExtent(int kind, float pw) {
     }
     if (kind == KIND_ARROW) return HEAD_HALF + pad;
     if (kind == KIND_RAY) return max(RAY_GLOW_HALF * 1.5, RAY_TICK_HALF) + pad;
+    if (kind == KIND_EDGE) return max(EDGE_HALF, EDGE_MIN_HALF_PX * pw) + pad;
+    if (kind == KIND_LINK) return max(LINK_LINE_HALF, LINK_LINE_MIN_HALF_PX * pw) + 2.0 * pw;
     return RING_HALF_PX * pw + pad;
 }
 

@@ -53,11 +53,12 @@ internal fun BodyState.solveBlockAreas(h: Double, block: Int, layout: Constraint
     val alpha = AREA_COMPLIANCE / (h * h)
     // Вывернутым треугольникам своя, нулевая — см. AREA_COMPLIANCE_INVERTED.
     val alphaInverted = AREA_COMPLIANCE_INVERTED / (h * h)
-    val maxStep = AREA_MAX_STEP * body.meanLinkLength
+    val maxStep = AREA_MAX_STEP * linkScale
     // Всё в локальные: стадия идёт 32 раза за тик по трём тысячам треугольников.
     val px = px; val py = py; val invMass = invMass
     val ta = triA; val tb = triB; val tc = triC
-    val rest2 = triRestArea2; val tm = triMuscle; val ms = muscleScaleOf
+    val rest2 = triRestArea2; val tm = triMuscle; val ms = muscleScaleOf; val ts = if (cellScalesOn) triCellScale else null
+    val ks = if (softnessOn) triSoftness else null
     val alive = baked.triAlive; val tid = triId
     val list = layout.areas
     for (slot in list.start[block] until list.start[block] + list.count[block]) {
@@ -84,14 +85,17 @@ internal fun BodyState.solveBlockAreas(h: Double, block: Int, layout: Constraint
         // Площадь покоя едет вместе с длинами: иначе мышца тянет треугольник вниз,
         // а несжимаемая площадь держит его на месте, и ткань запирает.
         val m = tm[t]
-        val s = if (m < 0) 1.0 else ms[m]
+        val s0 = if (m < 0) 1.0 else ms[m]
+        val s = if (ts == null) s0 else s0 * ts[t]
         val restArea2 = rest2[t].toDouble() * s * s
         val area2 = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0)
+        // Мягкость ткани (BodyState.cellSoftness) — множитель податливости; вывернутым своя, нулевая.
+        val alphaT = if (ks == null) alpha else alpha * ks[t]
         // Плавный переход вместо ступеньки — см. AREA_SMOOTH_RAMP.
         val a = if (AREA_SMOOTH_RAMP) {
             val q = (area2 / restArea2).coerceIn(0.0, 1.0)
-            alphaInverted + (alpha - alphaInverted) * q * q
-        } else if (area2 < 0.0) alphaInverted else alpha
+            alphaInverted + (alphaT - alphaInverted) * q * q
+        } else if (area2 < 0.0) alphaInverted else alphaT
         var dL = -(area2 - restArea2) / (denom + a)
         // Потолок на длину поправки — см. AREA_MAX_STEP.
         if (maxStep > 0.0) {
@@ -109,7 +113,7 @@ internal fun BodyState.solveBlockLimits(block: Int, layout: ConstraintBlocks, fr
     // Локальный проход контура. Общая проверка после швов вызывается отдельно.
     val px = px; val py = py; val invMass = invMass
     val conA = conA; val conB = conB; val conRest = conRest; val conMuscle = conMuscle
-    val conDead = conDead; val ms = muscleScaleOf
+    val conDead = conDead; val ms = muscleScaleOf; val cs = if (cellScalesOn) conCellScale else null
     // Список дополняется killEdgeNow прямо в этом проходе. Внутренние связи
     // по-прежнему участвуют в solveConstraints, но здесь их координаты не читаем.
     val limits = layout
@@ -131,11 +135,12 @@ internal fun BodyState.solveBlockLimits(block: Int, layout: ConstraintBlocks, fr
         // длины сравниваются их квадраты — ровно то же самое, без корня.
         val len2 = dx * dx + dy * dy
         val mus = conMuscle[c]
-        val scale = if (mus < 0) 1.0 else ms[mus]
+        val base = if (mus < 0) 1.0 else ms[mus]
+        val scale = if (cs == null) base else base * cs[c]
         val rest = conRest[c]
         val restScale = rest * scale
         val crushLim = LINK_CRUSH_RATIO * restScale
-        val max = LINK_MAX_STRETCH * rest
+        val max = linkMaxLength(rest, scale)
         val crushed = tearingOn && len2 < crushLim * crushLim
         val over = len2 > max * max
         // Запас до разрыва за прогон — только когда он кому-то интересен: у худших

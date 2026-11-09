@@ -106,8 +106,8 @@ class EditorLogicSystem(
 
                 if (clickedCell != null && clickedCell.second) {
                     grabbedCellIndex = clickedCell.first
-                    lastGrabbedCellX = particleEntity.x[grabbedCellIndex]
-                    lastGrabbedCellY = particleEntity.y[grabbedCellIndex]
+                    lastGrabbedCellX = particleEntity.x(grabbedCellIndex)
+                    lastGrabbedCellY = particleEntity.y(grabbedCellIndex)
                     isDruggingCamera = false
                 } else {
                     grabbedCellIndex = -1
@@ -210,6 +210,7 @@ class EditorLogicSystem(
 
             is SetShowPhysicalLinks -> showPhysicalLink = command.visible
 
+            is SetEditorDebugFilter -> DIGenomeEditorContainer.editorRenderSystem.debugFilter = command.filter
             is SetRenderMode -> DIGenomeEditorContainer.editorRenderSystem.mode = command.mode
 
             is SaveGenome -> saveCurrentGenome(command.genomeName)

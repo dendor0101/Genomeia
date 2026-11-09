@@ -26,9 +26,9 @@ import io.github.some_example_name.old.systems.genomics.OrganManager
 import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.old.systems.physics.CollisionManager
+import io.github.some_example_name.old.physics.bridge.WorldPhysics
 import io.github.some_example_name.old.systems.physics.GridManager
 import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem
-import io.github.some_example_name.old.systems.physics.MovementManager
 import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem
 import io.github.some_example_name.old.systems.simulation.SimulationData
 import io.github.some_example_name.old.systems.simulation.SingleThreadSimulationSystem
@@ -64,7 +64,7 @@ internal class CellLabWorld : DIContext, Disposable {
     override val organEntity = OrganEntity(
         organStartMaxAmount = 10
     )
-    val simulationData = SimulationData()
+    override val simulationData = SimulationData()
     override val particleEntity = ParticleEntity(
         particlesStartMaxAmount = 128,
         gridManager = gridManager
@@ -234,7 +234,6 @@ internal class CellLabWorld : DIContext, Disposable {
         cellEntity = cellEntity,
         worldCommandsManager = worldCommandsManager,
         cellSystem = cellSystem,
-        maximumLinkLengthSquared = 9f,
         simulationData = simulationData,
         diContext = this
     )
@@ -244,25 +243,28 @@ internal class CellLabWorld : DIContext, Disposable {
         cellEntity = cellEntity
     )
 
-    val movementManager = MovementManager(
-        entity = particleEntity,
-        gridManager = gridManager,
-        substrateSettings = substrateSettings,
-        worldCommandsManager = worldCommandsManager,
-        simulationData = simulationData,
-        linkEntity = linkEntity,
-        cellList = cellList,
+    /**
+     * Та же физика-библиотека, что у мира игры, в одном потоке. Без смерти от проникновения:
+     * рука стенда вдавливает клетку прямо в другую (Pumper и донор), а изучают тут саму клетку.
+     */
+    val worldPhysics = WorldPhysics(
+        organEntity = organEntity,
         cellEntity = cellEntity,
+        linkEntity = linkEntity,
+        particleEntity = particleEntity,
         substancesEntity = substancesEntity,
-        pheromonesManager = pheromonesManager
-    )
+        gridManager = gridManager,
+        pheromonesManager = pheromonesManager,
+        worldCommandsManager = worldCommandsManager,
+        workers = null
+    ).also { it.deepKillOn = false }
 
     // Тот же цикл, что у однопоточного мира игры; у стенда нет очереди игрового
     // ввода и снимков основного рендера. Состав стадий больше не копируется сюда.
     private val simulation = SingleThreadSimulationSystem(
         gridManager, worldCommandsManager, organManager, organEntity, cellEntity,
         linkEntity, neuralLinkEntity, neuralLinkManager, particleEntity, linkPhysicsSystem,
-        simulationData, cellSystem, null, null, pheromonesManager, movementManager,
+        simulationData, cellSystem, null, null, pheromonesManager, worldPhysics,
         particlePhysicsSystem, entityList
     )
 

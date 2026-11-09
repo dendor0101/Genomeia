@@ -38,7 +38,7 @@ internal object StateReader {
             val i = first + offset
             val p = replay.index[i]
             obj("id" to replay.cellGenomeId[i], "type" to Editor.cellList[replay.cellType[i].toInt()].key,
-                "x" to Editor.particleEntity.x[p], "y" to Editor.particleEntity.y[p], "radius" to Editor.particleEntity.radius[p],
+                "x" to Editor.particleEntity.x(p), "y" to Editor.particleEntity.y(p), "radius" to Editor.particleEntity.radius[p],
                 "angleCos" to replay.angleCos[i], "angleSin" to replay.angleSin[i])
         })
     }

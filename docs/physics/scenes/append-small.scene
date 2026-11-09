@@ -1,0 +1,7 @@
+# Малая сцена для оракула дописывания тел (AppendCheck): по разу каждого тела стендов.
+docs/physics/repros/detached-fragments-2026-10-21/body.txt 2
+body-export-медуза.txt 1
+body-export-кирпич.txt 2
+grid:12 1
+body-export.txt 3
+free 20

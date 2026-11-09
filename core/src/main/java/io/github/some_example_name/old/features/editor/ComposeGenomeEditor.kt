@@ -1,5 +1,17 @@
 package io.github.some_example_name.old.features.editor
 
+import com.badlogic.gdx.graphics.Texture
+import com.badlogic.gdx.scenes.scene2d.ui.ScrollPane
+import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
+import com.kotcrab.vis.ui.widget.VisDialog
+import com.kotcrab.vis.ui.widget.VisTable
+import io.github.some_example_name.old.core.ui.makeStyledIconButton
+import io.github.some_example_name.old.core.ui.setupTitleSize
+import io.github.some_example_name.old.core.ui.showDebugFilterDialog
+import io.github.some_example_name.old.core.DIGameGlobalContainer.game
+import io.github.some_example_name.old.features.simulation.HudIcons
+import io.github.some_example_name.old.editor.system.logic.SetEditorDebugFilter
+import io.github.some_example_name.render.RenderMode
 import com.badlogic.gdx.Application
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Color
@@ -55,6 +67,13 @@ import io.github.some_example_name.old.core.ui.visToggleButton
  */
 class ComposeGenomeEditor {
 
+    private val icons = HudIcons()
+    private val textures = mutableListOf<Texture>()
+    fun dispose() {
+        icons.dispose()
+        textures.forEach { it.dispose() }
+    }
+
     var isProgrammaticChange = false
 
     lateinit var tickLabel: VisLabel
@@ -77,17 +96,13 @@ class ComposeGenomeEditor {
         // Ряд кнопок раскладывается по строкам один раз, по ширине окна в момент сборки
         // (visFlowRow), поэтому при смене размера окна вёрстка собирается заново.
         rootTable?.remove()
+        textures.forEach { it.dispose() }
+        textures.clear()
         val rootTable = globalVisTable {
             setFillParent(true)
 
-            add().expandX().fillX().padTop(16.dp())
-            row()
-
-            visFlowRow(
-                alignment = FlowAlignment.Center,
-                horizontalSpacing = 12.dp(),
-                verticalSpacing = 8.dp()
-            ) {
+            val compact = stage.width < 820.dp() || stage.height < 540.dp()
+            val tools: VisTable.() -> Unit = {
                 visLeftArrowButton(onClick = {
                     stage.saveDialog(isGoToMenu = true, genomeName = editorSimulationSystem.getGenome().name, editorLogicSystem)
                 }).hint(bundle.get("editor.hint.back"))
@@ -144,30 +159,69 @@ class ComposeGenomeEditor {
                     ).hint(bundle.get("editor.hint.repeatLast"))
                 }
 
-//                visSelectBox(arrayOf("Main genome", "arm", "head", "tail", "neuron"))
-
+            }
+            visTable({ growX().pad(4.dp(), 4.dp(), 4.dp(), 56.dp()) }) {
+                if (compact) {
+                    visTextButton(bundle.get("button.menu"), onClick = {
+                        val column = VisTable()
+                        val source = VisTable().apply(tools)
+                        for (actor in source.children.toList()) {
+                            column.add(actor).minWidth(0f).growX().pad(2.dp()).row()
+                        }
+                        val viewport = stage.viewport
+                        val dialog = object : VisDialog(bundle.get("button.menu")) {
+                            override fun getPrefWidth() = minOf(viewport.worldWidth - 8.dp(), 400.dp())
+                            override fun getPrefHeight() = viewport.worldHeight * .85f
+                        }
+                        dialog.setupTitleSize(game)
+                        val scroll = ScrollPane(column)
+                        scroll.setScrollingDisabled(true, false)
+                        dialog.contentTable.add(scroll).minSize(0f).grow()
+                        dialog.closeOnEscape()
+                        dialog.show(stage)
+                        dialog.centerWindow()
+                    }) { left() }.name = "editor-tools"
+                } else {
+                    visFlowRow(maxWidth = stage.width - 128.dp(), content = tools)
+                }
+                if (editorRenderSystem.mode == RenderMode.DEBUG) {
+                    val filter = makeStyledIconButton(icons.optics, textures)
+                    filter.name = "debug-filter-button"
+                    filter.imageCell.grow()
+                    filter.pad(6.dp())
+                    filter.addListener(object : ChangeListener() {
+                        override fun changed(event: ChangeEvent?, actor: Actor?) {
+                            stage.showDebugFilterDialog(editorRenderSystem.debugFilter) {
+                                editorLogicSystem.putUiCommand(SetEditorDebugFilter(it))
+                            }
+                        }
+                    })
+                    add(filter.hint(bundle.get("debugFilter.hint"))).size(48.dp())
+                }
             }
             row()
 
             // Пустая ячейка ввод не перехватывает: нажатия идут в поле. Панель занимает
             // только свой размер и не налезает ни на кнопки, ни на шкалу времени.
-            if (sidePanel != null) add(sidePanel).expand().right().padRight(12.dp())
+            if (sidePanel != null) {
+                add(sidePanel).minHeight(0f).fillY().expand().right().padRight(4.dp())
+            }
             else add().expand().fill()
             row()
 
             visTable(
                 cellInit = {
                     expandX().fillX().bottom()
-                    pad(20.dp(), 16.dp(), 0.dp(), 16.dp())
+                    pad(2.dp())
                 }
             ) {
-                defaults().pad(8.dp()).center()
+                defaults().pad(2.dp()).center()
 
                 undoButton = visTextButton(bundle.get("button.undo"), onClick = {
                     editorLogicSystem.putUiCommand(CtrlZ)
                 }).hint(bundle.get("editor.hint.undo"))
 
-                tickLabel = visLabel(text = "${bundle.get("button.tick")}0", textColor = STYLE_BLACK, align = Align.center) {
+                tickLabel = visLabel(text = "${bundle.get("button.tick")}0", textColor = Color.WHITE, align = Align.center) {
                     expandX().fillX()
                     center()
                 }.hint(bundle.get("editor.hint.tick"))
@@ -182,18 +236,18 @@ class ComposeGenomeEditor {
             visTable(
                 cellInit = {
                     expandX().fillX().bottom()
-                    pad(0.dp(), 16.dp(), 20.dp(), 16.dp())
+                    pad(2.dp())
                 }
             ) {
-                defaults().pad(8.dp()).center()
+                defaults().pad(2.dp()).center()
 
                 visTextButton("<<", onClick = {
                     editorLogicSystem.putUiCommand(GoToStartOfTimeLine)
-                }).hint(bundle.get("editor.hint.timelineStart"))
+                }) { width(48.dp()) }.hint(bundle.get("editor.hint.timelineStart"))
 
                 visTextButton("<", onClick = {
                     editorLogicSystem.putUiCommand(PrevTickButtonTap)
-                }).hint(bundle.get("editor.hint.prevStage"))
+                }) { width(48.dp()) }.hint(bundle.get("editor.hint.prevStage"))
 
                 timeSlider = visSlider(
                     min = 0f,
@@ -208,17 +262,16 @@ class ComposeGenomeEditor {
                         }
                     }
                 ) {
-                    expandX().fillX()
-                    pad(0f, 24.dp(), 0f, 24.dp())
+                    minWidth(0f).growX()
                 }.hint(bundle.get("editor.hint.timeline"))
 
                 visTextButton(">", onClick = {
                     editorLogicSystem.putUiCommand(NextTickButtonTap)
-                }).hint(bundle.get("editor.hint.nextStage"))
+                }) { width(48.dp()) }.hint(bundle.get("editor.hint.nextStage"))
 
                 visTextButton(">>", onClick = {
                     editorLogicSystem.putUiCommand(GoToEndOfTimeLine)
-                }).hint(bundle.get("editor.hint.timelineEnd"))
+                }) { width(48.dp()) }.hint(bundle.get("editor.hint.timelineEnd"))
             }
         }
         // Под окнами, а не поверх: при пересборке на открытый диалог вёрстка не ложится.

@@ -141,6 +141,13 @@ enum class WorldCommandType(
         intParamsCount = 3,
         floatParamsCount = 0,
         booleanParamsCount = 0
+    ),
+    // Липучка (Sticky.onContact) коснулась частицы и хочет к ней прилипнуть — временная связь в
+    // мире физики (WorldPhysics.requestStick).
+    STICK( // cellIndex липучки, поколение клетки, частица игры, которой коснулась
+        intParamsCount = 3,
+        floatParamsCount = 0,
+        booleanParamsCount = 0
     );
 
     companion object {

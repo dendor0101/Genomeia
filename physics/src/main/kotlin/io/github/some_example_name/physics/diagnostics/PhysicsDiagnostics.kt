@@ -11,7 +11,7 @@ fun BodyState.dbgSeal(c: Int, i: Int, j: Int, len: Double) {
     if (need <= 0.0) return
     val q = (len - ra - rb) / need
     SealStats.checks++
-    SealStats.minR = dbgSealMinR / body.meanLinkLength
+    SealStats.minR = dbgSealMinR / linkScale
     if (q > SealStats.worst) {
         SealStats.worst = q; SealStats.worstI = i; SealStats.worstJ = j
         SealStats.worstStretch = len / conRest[c]
@@ -84,7 +84,7 @@ fun BodyState.watchReport() {
     if (i < 0 || i >= n) return
     var sum = 0.0
     for (v in watchStage) sum += v
-    val ml = body.meanLinkLength.toDouble()
+    val ml = linkScale.toDouble()
     if (sum > 1e-12) {
         val sb = StringBuilder()
         sb.append("[стадии] клетка #").append(i).append(" тик ").append(playTick)
@@ -201,7 +201,7 @@ fun BodyState.scanTrapped() {
     if (trapGridStart.size < h + 1) { trapGridStart = IntArray(h + 1); trapGridCount = IntArray(h + 1) }
     val start = trapGridStart; val cur = trapGridCount
     java.util.Arrays.fill(start, 0, h + 1, 0)
-    val inv = 1.0 / (2.0 * body.meanLinkLength)
+    val inv = 1.0 / (2.0 * linkScale)
     val off = 1048576.0         // сдвиг, чтобы отбросить дробь без floor у отрицательных
     if (trapTriBox.size < tn * 4) trapTriBox = IntArray(tn * 8)
     val box = trapTriBox

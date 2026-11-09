@@ -88,7 +88,7 @@ class TopologyRegressionTest {
         val body = body(); val topology = BakedTopology(body)
         assertEquals(6, body.triCount)
         val surface = LocalSurface(body, topology, IntArray(7) { -1 }, BooleanArray(7),
-            1.0, 1.05, 1e-5, BooleanArray(7), BooleanArray(7))
+            DoubleArray(7) { body.radius[it].toDouble() }, 1.0, 1.05, 1e-5, BooleanArray(7), BooleanArray(7))
         val constraints = LocalBoundaryConstraints(body, topology, IntArray(7) { -1 })
         for (v in 0..6) { surface.update(v); constraints.updateVertex(v) }
         assertFalse(surface.active[0])
@@ -159,8 +159,8 @@ class TopologyRegressionTest {
     @Test fun resetAfterLocalTearRestoresContactExclusions() {
         val body = body(); val topology = BakedTopology(body)
         val bones = IntArray(7) { -1 }; val dead = BooleanArray(7)
-        val surface = LocalSurface(body, topology, bones, dead, 1.0, 1.05, 1e-5,
-            BooleanArray(7), BooleanArray(7))
+        val surface = LocalSurface(body, topology, bones, dead, DoubleArray(7) { body.radius[it].toDouble() },
+            1.0, 1.05, 1e-5, BooleanArray(7), BooleanArray(7))
         val boundary = LocalBoundaryConstraints(body, topology, bones)
         for (v in 0..6) { surface.update(v); boundary.updateVertex(v) }
         val a = boundary.a.copyOf(); val b = boundary.b.copyOf(); val opp = boundary.opposite.copyOf()

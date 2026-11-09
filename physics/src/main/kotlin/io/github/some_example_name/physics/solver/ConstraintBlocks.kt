@@ -23,6 +23,9 @@ class BlockIndex(capacity: Int, blocks: Int) {
     }
 
     fun remove(id: Int) {
+        // Номера за концом ещё не было в индексе (add наращивает, remove — нет): так новое
+        // ребро контура вынимается перед вставкой у мира, чьё первое тело — пул без рёбер.
+        if (id >= owner.size) return
         val block = owner[id]
         if (block < 0) return
         val p = prev[id]; val q = next[id]
@@ -57,13 +60,24 @@ class BlockIndex(capacity: Int, blocks: Int) {
  * 1000 клеток: px/py/invMass — 23,4 КиБ, вместе со связями/площадями больше L1,
  * но меньше обычного L2. Контактные барьеры остаются общими.
  */
-class ConstraintBlocks(n: Int, organismOf: IntArray, blockSize: Int,
+class ConstraintBlocks(n: Int, bodyOf: IntArray, blockSize: Int,
                        linkCapacity: Int, triangleCapacity: Int, boneCount: Int) {
     val particleBlock = IntArray(n)
     /** Частицы блока b — [firstParticle[b], firstParticle[b + 1]). Шов своих частиц не имеет. */
     val firstParticle: IntArray
     val blockCount: Int
+    /** Первый набор швов; наборы швов — [seam, buckets), свой на организм из нескольких блоков. */
     val seam: Int
+    /** Всего наборов ограничений: блоки и наборы швов. */
+    val buckets: Int
+    /** Набор швов тела, которому принадлежит блок. */
+    val seamBucket: IntArray
+    /** Порядковый номер тела по блокам: блоки одного тела идут подряд. */
+    val bodyRunOf: IntArray
+    val bodyRuns: Int
+    /** Блоки тел, которым нельзя параллельный обход (BodyState.computeSerialBlocks): их считает один поток, остальных — воркеры. */
+    val serialBlock: BooleanArray
+    var serialBlocks = 0
     val links: DenseBlockIndex
     val areas: DenseBlockIndex
     val limits: BlockIndex
@@ -78,11 +92,24 @@ class ConstraintBlocks(n: Int, organismOf: IntArray, blockSize: Int,
     private var queueSize = 0
 
     init {
-        var block = -1; var size = blockSize; var organism = -1
+        // Организмы из одной частицы (каждая частица стенки, свободные частицы) идут подряд
+        // в общий блок до blockSize. Раньше каждый был своим блоком: в мире 256×256 с
+        // девятью листьями 2075 блоков вместо 30, тысяча крошечных задач на чётность через
+        // общий курсор 64 раза за тик. Замер 05.11 (perfCheck -Psleep=0, 9 листьев, 8 воркеров):
+        // 28.4 → 22.6–23.2 мс/тик, один лист 11.5 → 7.7, один поток 97 → 87. Связей внутри
+        // одиночного организма нет, спящая одиночная частица в integrateRange — пустая работа.
+        // Числа мира меняются только сдвигом чётности следующих блоков: старая запись,
+        // проигранная с подогнанной чётностью, сошлась побитово (bugReplayCheck, 10 361 сверка).
+        var maxBody = -1
+        for (i in 0 until n) if (bodyOf[i] > maxBody) maxBody = bodyOf[i]
+        val bodySize = IntArray(maxBody + 1)
+        for (i in 0 until n) if (bodyOf[i] >= 0) bodySize[bodyOf[i]]++
+        var block = -1; var size = blockSize; var body = -1; var prevSingle = false
         for (i in 0 until n) {
-            if (size == blockSize || organismOf[i] != organism) {
-                block++; size = 0; organism = organismOf[i]
-            }
+            val o = bodyOf[i]
+            val single = o >= 0 && bodySize[o] == 1
+            if (size == blockSize || (o != body && !(single && prevSingle))) { block++; size = 0 }
+            body = o; prevSingle = single
             particleBlock[i] = block; size++
         }
         blockCount = block + 1; seam = blockCount
@@ -90,13 +117,51 @@ class ConstraintBlocks(n: Int, organismOf: IntArray, blockSize: Int,
         firstParticle = IntArray(blockCount + 1)
         for (i in n - 1 downTo 0) firstParticle[particleBlock[i]] = i
         firstParticle[blockCount] = n
-        links = DenseBlockIndex(linkCapacity, blockCount + 1)
-        limits = BlockIndex(linkCapacity, blockCount + 1)
-        areas = DenseBlockIndex(triangleCapacity, blockCount + 1)
-        bones = BlockIndex(boneCount, blockCount + 1)
-        bends = BlockIndex(maxOf(n, 16), blockCount + 1)
-        flaps = BlockIndex(maxOf(n, 16), blockCount + 1)
-        edges = BlockIndex(maxOf(n, 16), blockCount + 1)
+        // Швы — свой набор у каждого тела из нескольких блоков: тела не делят частицы,
+        // поэтому их швы считаются параллельно, а порядок внутри тела прежний.
+        seamBucket = IntArray(blockCount)
+        bodyRunOf = IntArray(blockCount)
+        var seams = 0; var runs = 0; var b = 0
+        while (b < blockCount) {
+            val o = bodyOf[firstParticle[b]]
+            var e = b + 1
+            while (e < blockCount && bodyOf[firstParticle[e]] == o) e++
+            val bucket = if (e - b > 1) seam + seams++ else seam
+            for (k in b until e) { seamBucket[k] = bucket; bodyRunOf[k] = runs }
+            runs++
+            b = e
+        }
+        bodyRuns = runs
+        serialBlock = BooleanArray(blockCount)
+        buckets = seam + maxOf(1, seams)
+        links = DenseBlockIndex(linkCapacity, buckets)
+        limits = BlockIndex(linkCapacity, buckets)
+        areas = DenseBlockIndex(triangleCapacity, buckets)
+        bones = BlockIndex(boneCount, buckets)
+        bends = BlockIndex(maxOf(n, 16), buckets)
+        flaps = BlockIndex(maxOf(n, 16), buckets)
+        edges = BlockIndex(maxOf(n, 16), buckets)
+    }
+
+    /**
+     * Блоки каждой чётности: сначала самые тяжёлые. Блоки одной чётности независимы, так что
+     * порядок раздачи не влияет на результат, а воркер, освободившийся последним, берёт
+     * маленький блок вместо большого и барьер ждёт его меньше. Вес — частицы и ограничения
+     * на момент сборки (разрывы его почти не меняют).
+     */
+    var dispatchOrder: Array<IntArray> = arrayOf(IntArray(0), IntArray(0))
+        private set
+
+    fun buildDispatchOrder() {
+        dispatchOrder = Array(2) { parity ->
+            val keys = LongArray((blockCount - parity + 1) / 2) { k ->
+                val block = parity + 2 * k
+                val weight = firstParticle[block + 1] - firstParticle[block] + links.liveCount[block] + areas.liveCount[block]
+                ((Int.MAX_VALUE - weight).toLong() shl 32) or block.toLong()
+            }
+            keys.sort()
+            IntArray(keys.size) { keys[it].toInt() }
+        }
     }
 
     /**
@@ -106,18 +171,18 @@ class ConstraintBlocks(n: Int, organismOf: IntArray, blockSize: Int,
      */
     val awake = IntArray(blockCount + 1)
 
-    /** Блоки одной чётности можно считать параллельно — см. ParallelBlocks и computeParallelSafe. */
-    var parallelSafe = false
-
-    fun hasSeams(): Boolean = links.liveCount[seam] > 0 || areas.liveCount[seam] > 0 ||
-        limits.head[seam] >= 0 || bones.head[seam] >= 0 || bends.head[seam] >= 0 || flaps.head[seam] >= 0
+    fun hasSeams(): Boolean {
+        for (s in seam until buckets) if (links.liveCount[s] > 0 || areas.liveCount[s] > 0 ||
+            limits.head[s] >= 0 || bones.head[s] >= 0 || bends.head[s] >= 0 || flaps.head[s] >= 0) return true
+        return false
+    }
 
     fun blockOf(a: Int, b: Int): Int =
-        if (particleBlock[a] == particleBlock[b]) particleBlock[a] else seam
+        if (particleBlock[a] == particleBlock[b]) particleBlock[a] else seamBucket[particleBlock[a]]
 
     fun blockOf(a: Int, b: Int, c: Int): Int {
         val block = blockOf(a, b)
-        return if (block == particleBlock[c]) block else seam
+        return if (block == particleBlock[c]) block else seamBucket[particleBlock[a]]
     }
 
     fun addLimit(c: Int, a: Int, b: Int) {

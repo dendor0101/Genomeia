@@ -161,7 +161,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         for (b in topo.rigidBones.indices) {
             val ids = topo.rigidBones[b]
             var block = layout.particleBlock[ids[0]]
-            for (i in ids) if (layout.particleBlock[i] != block) { block = layout.seam; break }
+            for (i in ids) if (layout.particleBlock[i] != block) { block = layout.seamBucket[layout.particleBlock[ids[0]]]; break }
             layout.bones.add(b, block)
         }
     }
@@ -171,7 +171,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             var block = parity
             while (block < blocks.blockCount) { solveConstraintBlock(h, block); block += 2 }
         }
-        solveConstraintBlock(h, blocks.seam)
+        for (bucket in blocks.seam until blocks.buckets) solveConstraintBlock(h, bucket)
         if (blocks.hasSeams()) solveLinkMaxLength()
     }
 
@@ -750,13 +750,12 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             // Зеркало ядра: сопротивление видит среднюю скорость за тик. См. TickMotion.
             if (s == substeps - 1) { removeTickJitter(dt); applyNormalDrag(h * substeps); restoreTickJitter() }
             if (s == substeps - 1) applyMediumDrag(h * substeps)
+            // Потолок — после учёта внешнего импульса, как в ядре (FusedPasses.velocityAfterRange).
+            if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.afterExternal(px, py, vx, vy, invMass)
             clampSpeed(dt)
-            if (DemoConst.CANCEL_INTERNAL_SPIN) {
-                tickMomentum.afterExternal(px, py, vx, vy, invMass)
-                if (s == substeps - 1) {
-                    tickMomentum.cancel(px, py, vx, vy, invMass)
-                    clampSpeed(dt)
-                }
+            if (DemoConst.CANCEL_INTERNAL_SPIN && s == substeps - 1) {
+                tickMomentum.cancel(px, py, vx, vy, invMass)
+                clampSpeed(dt)
             }
         }
         applyPlasticity(dt)
@@ -860,13 +859,12 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             // Зеркало ядра: сопротивление видит среднюю скорость за тик. См. TickMotion.
             if (s == substeps - 1) { removeTickJitter(dt); applyNormalDrag(h * substeps); restoreTickJitter() }
             if (s == substeps - 1) applyMediumDrag(h * substeps)
+            // Потолок — после учёта внешнего импульса, как в ядре (FusedPasses.velocityAfterRange).
+            if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.afterExternal(px, py, vx, vy, invMass)
             clampSpeed(dt)
-            if (DemoConst.CANCEL_INTERNAL_SPIN) {
-                tickMomentum.afterExternal(px, py, vx, vy, invMass)
-                if (s == substeps - 1) {
-                    tickMomentum.cancel(px, py, vx, vy, invMass)
-                    clampSpeed(dt)
-                }
+            if (DemoConst.CANCEL_INTERNAL_SPIN && s == substeps - 1) {
+                tickMomentum.cancel(px, py, vx, vy, invMass)
+                clampSpeed(dt)
             }
         }
         applyPlasticity(dt)

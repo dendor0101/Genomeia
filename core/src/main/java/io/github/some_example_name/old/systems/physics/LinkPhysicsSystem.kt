@@ -1,15 +1,11 @@
 package io.github.some_example_name.old.systems.physics
 
-import com.badlogic.gdx.graphics.Color
 import io.github.some_example_name.old.commands.WorldCommandsManager
-import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.core.DEBUG_CHECKS
 import io.github.some_example_name.old.core.PROFILE_COUNTERS
 import io.github.some_example_name.old.core.DIContext
-import io.github.some_example_name.old.core.DISimulationContainer.linkMaxLength2
 import io.github.some_example_name.old.core.DISimulationContainer.threadManager
 import io.github.some_example_name.old.core.SubstrateSettings
-import io.github.some_example_name.old.core.utils.invSqrt
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.ParticleEntity
@@ -26,57 +22,12 @@ class LinkPhysicsSystem(
     val cellSystem: CellSystem,
     val worldCommandsManager: WorldCommandsManager,
     val diContext: DIContext,
-    val simulationData: SimulationData,
-    private val maximumLinkLengthSquared: Float = linkMaxLength2
+    val simulationData: SimulationData
 ) {
 
     companion object {
-        /**
-         * Какую ДОЛЮ ошибки площади ограничение исправляет за тик.
-         *
-         * Благодаря нормировке на |grad|^2 (см. processTriangles) величина безразмерна и
-         * не зависит ни от размера треугольника, ни от размера клеток: 0.2 означает
-         * «убрать пятую часть расхождения за тик», и это читается напрямую.
-         *
-         * Осмысленный диапазон — (0, 1). Ближе к единице тело становится почти
-         * нерастяжимым; выше единицы поправка перелетает цель и начинается раскачка.
-         */
-        const val TRIANGLE_STIFFNESS = 0.5f
-
-        /**
-         * Демпфирование: сколько скорости изменения площади гасится за тик.
-         *
-         * Без него ограничение чисто консервативно — возвращает вершину на место, но не
-         * забирает набранную по дороге энергию, и тело раскачивается до разлёта. У пружин
-         * рядом ровно та же конструкция (dampeningConstant = 0.3).
-         *
-         * Единица — «погасить всё изменение площади за тик»; больше единицы это
-         * переторможение с отдачей в обратную сторону.
-         */
-        const val TRIANGLE_DAMPING = 0.7f
-
-        /**
-         * Относительная ошибка площади, ниже которой треугольник не трогается.
-         *
-         * Зона покоя нужна не столько ради экономии деления, сколько ради устойчивости:
-         * без неё ограничение постоянно поправляет вершины на уровне численного шума,
-         * а поправки складываются — каждая клетка входит примерно в шесть треугольников.
-         */
-        const val TRIANGLE_TOLERANCE = 0.002f
-
-        /**
-         * Ниже этой суммы квадратов градиента треугольник считается вырожденным.
-         *
-         * У схлопнувшегося в отрезок градиент стремится к нулю, а деление на него — к
-         * бесконечности. Такую тройку правильнее пропустить: направление восстановления
-         * у неё не определено, и вытащить её ограничением площади всё равно нельзя.
-         */
-        const val MIN_GRAD_SQUARED = 1e-8f
-
         /** Номер куска «организм целиком» в работах фазы связей. */
         private const val WHOLE = -1
-
-        private val NO_FLAGS = BooleanArray(0)
     }
 
     /**
@@ -198,19 +149,13 @@ class LinkPhysicsSystem(
         val base = organEntity.linkArenaBase[organIndex]
         val from: Int
         val to: Int
-        val triangleFrom: Int
-        val triangleTo: Int
         if (chunk == WHOLE) {
             from = base
             to = organEntity.linkArenaEnd(organIndex)
-            triangleFrom = 0
-            triangleTo = Int.MAX_VALUE
         } else {
             val chunks = organEntity.arenaLayout[organIndex]!!.chunks
             from = base + chunks.linkStart[chunk]
             to = base + chunks.linkStart[chunk + 1]
-            triangleFrom = chunks.triangleStart[chunk]
-            triangleTo = chunks.triangleStart[chunk + 1]
             if (DEBUG_CHECKS) verifyChunkWindow(organIndex, chunk, chunks, from, to)
         }
 
@@ -220,14 +165,6 @@ class LinkPhysicsSystem(
             if (!alive[linkIndex]) continue
             processLink(linkIndex, workerId)
         }
-
-        // Треугольники того же куска — здесь же, в той же работе.
-        //
-        // Не отдельной стадией: это ещё один барьер и, главное, второй проход по
-        // тем же клеткам. Здесь они только что прочитаны обходом связей и лежат
-        // в кэше — треугольники отсортированы по тому же минимальному слоту, то
-        // есть идут вдоль той же ленты RCM.
-        processTriangles(organIndex, triangleFrom, triangleTo)
     }
 
     /**
@@ -249,147 +186,6 @@ class LinkPhysicsSystem(
                         "вне окна [$low, $high) — чётные куски могут гоняться"
                 )
             }
-        }
-    }
-
-    /**
-     * Ограничение знаковой площади треугольников тела — то, что держит форму.
-     *
-     * ЧТО ИМЕННО ЛОВИТСЯ
-     * ------------------
-     * Сеть пружин в 2D жёсткая на растяжение и сдвиг, но не мешает треугольнику
-     * ВЫВЕРНУТЬСЯ: вершина проходит сквозь противоположное ребро, все три длины остаются
-     * в норме, и тело складывается наизнанку. Именно это и происходило после того, как
-     * внутренние клетки убрали из сетки коллизий: раньше складываться им не давал
-     * внутренний repulse.
-     *
-     * Знаковая площадь при выворачивании меняет знак, поэтому ошибка становится не просто
-     * большой, а превышающей площадь покоя вдвое — сила гарантированно выталкивает вершину
-     * обратно. Ограничение на длины или на угол этот случай не различает.
-     *
-     * ПОЧЕМУ НЕ shape matching
-     * ------------------------
-     * Здесь на треугольник приходятся три вершины и одно число покоя, а вся математика —
-     * два вычитания на координату и одно умножение крест-накрест. Shape matching потребовал
-     * бы rest-позиций кольца, центроида, оптимального поворота и обратного корня на каждую
-     * клетку, причём кольца перекрываются и каждая клетка попадала бы в семь из них.
-     *
-     * ЛОКАЛЬНОСТЬ И ПАРАЛЛЕЛЬНОСТЬ
-     * ----------------------------
-     * Слоты берутся прямо из запечённой раскладки, а параллельность арен клеток и частиц
-     * превращает переход в арифметику: `particleIndex = particleArenaBase + slot`. Ни
-     * одного поиска, ни одного чтения particleIndexes. Организм целиком принадлежит одному
-     * воркеру, поэтому записи в vx/vy никем не разделяются — синхронизация не нужна.
-     */
-    private fun processTriangles(organIndex: Int, from: Int, to: Int) {
-        val organEntity = linkEntity.organEntity
-
-        // На любой стадии — но только СФОРМИРОВАННЫЕ треугольники (все три связи живы,
-        // TriangleEntity).
-        //
-        // Раньше ограничение включалось только у взрослого тела и для треугольника хватало
-        // трёх живых клеток. У растущего тела три клетки уже есть, а связей между ними ещё
-        // нет: свежая клетка лежит вплотную к родителю, треугольник во много раз меньше
-        // взрослой площади, и ограничение тянуло вершины без пружин — тело шевелилось весь
-        // рост, а текстуры клеток вращались (угол клетки — из направления на родителя). Со
-        // всеми тремя связями цель площади (снятая со взрослого тела, то есть согласованная
-        // с длинами покоя этих же связей) тянет туда же, куда пружины.
-        //
-        // Старые сохранения: арены треугольников нет — прежнее правило, только у взрослого.
-        val triangleBase = organEntity.triangleArenaBase[organIndex]
-        if (triangleBase == -1 && !organEntity.alreadyGrownUp[organIndex]) return
-        // Без арены треугольников флаги не читаются — пустой массив вместо null, чтобы в цикле
-        // не было проверки на null.
-        val formed = organEntity.triangles?.formed ?: NO_FLAGS
-
-        val layout = organEntity.arenaLayout[organIndex] ?: return
-
-        val slots = layout.triangleSlotsArray
-        val restArea2 = layout.triangleRestArea2Array
-        val invRestArea2 = layout.triangleInvRestArea2
-        if (restArea2.isEmpty()) return
-
-        val cellBase = organEntity.cellArenaBase[organIndex]
-        val particleBase = organEntity.particleArenaBase[organIndex]
-
-        val cellAlive = cellEntity.isAlive
-        val x = particleEntity.x
-        val y = particleEntity.y
-        val vx = particleEntity.vx
-        val vy = particleEntity.vy
-
-        // Диапазон треугольников куска (или все, если организм считается целиком).
-        val end = minOf(to, restArea2.size)
-        var t = from
-        var base = 3 * from
-        while (t < end) {
-            val s0 = slots[base]
-            val s1 = slots[base + 1]
-            val s2 = slots[base + 2]
-            base += 3
-            val triangle = t
-            t++
-
-            // Не сформирован (связи ещё не выросли или порвались) — пропуск. Один байт подряд по
-            // арене вместо трёх случайных чтений isAlive клеток.
-            if (triangleBase != -1) {
-                if (!formed[triangleBase + triangle]) continue
-            } else if (!cellAlive[cellBase + s0] ||
-                !cellAlive[cellBase + s1] ||
-                !cellAlive[cellBase + s2]
-            ) continue
-
-            val p0 = particleBase + s0
-            val p1 = particleBase + s1
-            val p2 = particleBase + s2
-
-            val x0 = x[p0]; val y0 = y[p0]
-            val x1 = x[p1]; val y1 = y[p1]
-            val x2 = x[p2]; val y2 = y[p2]
-
-            val area2 = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0)
-            val error = area2 - restArea2[triangle]
-
-            // Мёртвая зона: треугольник в пределах допуска не трогаем вовсе.
-            //
-            // Это не только экономия деления ниже — это ещё и стабильность: без зоны
-            // покоя ограничение постоянно дёргает вершины на уровне численного шума.
-            if (error * invRestArea2[triangle] < TRIANGLE_TOLERANCE &&
-                error * invRestArea2[triangle] > -TRIANGLE_TOLERANCE
-            ) continue
-
-            // Градиент удвоенной площади по каждой вершине.
-            val g0x = y1 - y2; val g0y = x2 - x1
-            val g1x = y2 - y0; val g1y = x0 - x2
-            val g2x = y0 - y1; val g2y = x1 - x0
-
-            val gradSquared =
-                g0x * g0x + g0y * g0y + g1x * g1x + g1y * g1y + g2x * g2x + g2y * g2y
-            if (gradSquared < MIN_GRAD_SQUARED) continue
-
-            // Скорость изменения ограничения — проекция скоростей вершин на градиент.
-            // Это то, что гасит демпфирование: у пружины такой член есть (dampeningForce),
-            // а у площади его не было вообще, и любое колебание накачивало энергию.
-            val cDot =
-                g0x * vx[p0] + g0y * vy[p0] +
-                    g1x * vx[p1] + g1y * vy[p1] +
-                    g2x * vx[p2] + g2y * vy[p2]
-
-            // Нормировка на |grad|^2 делает поправку САМОМАСШТАБИРУЕМОЙ: lambda получается
-            // безразмерной, а lambda * grad — сразу нужное смещение вершины. Поэтому
-            // TRIANGLE_STIFFNESS читается как «какую долю ошибки площади исправить за тик»
-            // и не зависит ни от размера треугольника, ни от размера клеток.
-            //
-            // Деление на SIM_STEP переводит смещение в скорость: позиция интегрируется как
-            // pos += v * SIM_STEP, и без этого поправка прикладывалась бы в 7.5 раз
-            // сильнее нужного — именно это и разносило тело.
-            val lambda =
-                -(TRIANGLE_STIFFNESS * error + TRIANGLE_DAMPING * cDot) /
-                    (gradSquared * MovementManager.SIM_STEP)
-
-            vx[p0] += lambda * g0x; vy[p0] += lambda * g0y
-            vx[p1] += lambda * g1x; vy[p1] += lambda * g1y
-            vx[p2] += lambda * g2x; vy[p2] += lambda * g2y
         }
     }
 
@@ -575,26 +371,22 @@ class LinkPhysicsSystem(
                         "B=$linkCellB particle=$linkParticleB alive=${particles.isAlive[linkParticleB]}"
                 )
             }
-            if ((particles.x[linkParticleA] == 0f && particles.y[linkParticleA] == 0f) ||
-                (particles.x[linkParticleB] == 0f && particles.y[linkParticleB] == 0f)
+            if ((particles.x(linkParticleA) == 0f && particles.y(linkParticleA) == 0f) ||
+                (particles.x(linkParticleB) == 0f && particles.y(linkParticleB) == 0f)
             ) {
                 throw IllegalStateException(
                     "связь $linkIndex ссылается на частицу в нулевой координате: " +
                         "A=$linkCellA particle=$linkParticleA " +
-                        "pos=(${particles.x[linkParticleA]}, ${particles.y[linkParticleA]}), " +
+                        "pos=(${particles.x(linkParticleA)}, ${particles.y(linkParticleA)}), " +
                         "B=$linkCellB particle=$linkParticleB " +
-                        "pos=(${particles.x[linkParticleB]}, ${particles.y[linkParticleB]})"
+                        "pos=(${particles.x(linkParticleB)}, ${particles.y(linkParticleB)})"
                 )
             }
         }
 
-        val positionsX = particleEntity.x
-        val positionsY = particleEntity.y
-
-        val dx = positionsX[linkParticleA] - positionsX[linkParticleB]
-        val dy = positionsY[linkParticleA] - positionsY[linkParticleB]
-        val distanceSquared = dx * dx + dy * dy
-
+        // Силы связи (пружина, демпфер), разрыв по длине и площадь треугольников считает
+        // физика-библиотека (physics/bridge/WorldPhysics, этап B1). Здесь — логика игры по
+        // связям: энергия, угол клетки к родителю, сам родитель.
         cellSystem.transportEnergy(linkCellA, linkCellB)
 
         //TODO можно попробовать сделать отдельную сущность под углы, там будут только пары родитель - потомок
@@ -609,73 +401,6 @@ class LinkPhysicsSystem(
             if (PROFILE_COUNTERS) SimCounters.increment(threadId, SimCounters.LINK_ANGLES)
             cellSystem.processCellAngle(linkCellA, linkCellB)
         }
-
-        if (distanceSquared > maximumLinkLengthSquared) {
-            if (PROFILE_COUNTERS) SimCounters.increment(threadId, SimCounters.LINK_BREAKS)
-            linkEntity.reinitParentLink(linkIndex)
-            worldCommandsManager.worldCommandBuffer[threadId].push(
-                WorldCommandType.DELETE_LINK,
-                linkIndex,
-                linkEntity.getGeneration(linkIndex)
-            )
-            // Граница — не здесь: её откроет применение DELETE_LINK (LinkEntity.deleteLink ->
-            // CellEntity.refreshOnEdge) в этом же тике. Прямая запись isOnEdge отсюда
-            // рассинхронизировала его с ParticleEntity.isInGrid (см. LinkEntity.detachAllLinks)
-            // и к тому же писала в чужие клетки из параллельной стадии.
-            cellEntity.setColor(linkCellB, Color.RED.toIntBits())
-            cellEntity.setColor(linkCellA, Color.RED.toIntBits())
-            return
-        }
-
-        val cellStiffness = particleEntity.cellStiffness
-        val stiffnessA = cellStiffness[linkParticleA]
-        val stiffnessB = cellStiffness[linkParticleB]
-        // Гармоническое среднее. У клеток одного типа значения совпадают — самый частый
-        // случай, — поэтому равенство проверяется отдельно и деление пропускается по
-        // хорошо предсказываемой ветке.
-        val stiffness = if (stiffnessA == stiffnessB) stiffnessA
-        else 2f * stiffnessA * stiffnessB / (stiffnessA + stiffnessB)
-
-        // Отладочная проверка: distanceSquared это сумма двух квадратов, отрицательной
-        // она может стать только при NaN/inf в координатах. При DEBUG_CHECKS = false
-        // конструкция вырезается компилятором, в байткоде не остаётся ни сравнения,
-        // ни конкатенации строки, ни throw внутри горячего метода.
-        if (DEBUG_CHECKS && distanceSquared < 0) {
-            throw Exception("distanceSquared < 0, distanceSquared = $distanceSquared")
-        }
-
-        val invDist = invSqrt(distanceSquared)
-        val dist = distanceSquared * invDist
-
-        val dirX = dx * invDist
-        val dirY = dy * invDist
-
-        val degreeOfShorteningArray = cellEntity.degreeOfShortening
-        val degreeOfShorteningA = degreeOfShorteningArray[linkCellA]
-        val degreeOfShorteningB = degreeOfShorteningArray[linkCellB]
-        val degreeOfShortening = if (degreeOfShorteningA == degreeOfShorteningB) degreeOfShorteningA
-        else 2f * degreeOfShorteningA * degreeOfShorteningB / (degreeOfShorteningA + degreeOfShorteningB)
-
-        val force = (dist - linkEntity.linksNaturalLength[linkIndex] * degreeOfShortening) * stiffness
-
-        // Spring dampening
-        val velocitiesX = particleEntity.vx
-        val velocitiesY = particleEntity.vy
-
-        val dvx = velocitiesX[linkParticleA] - velocitiesX[linkParticleB]
-        val dvy = velocitiesY[linkParticleA] - velocitiesY[linkParticleB]
-
-        val dampeningConstant = 0.3f
-        val dampeningForce = dampeningConstant * (dvx * dirX + dvy * dirY)
-
-        val totalForce = force + dampeningForce
-        val fx = totalForce * dirX
-        val fy = totalForce * dirY
-
-        velocitiesX[linkParticleB] += fx
-        velocitiesY[linkParticleB] += fy
-        velocitiesX[linkParticleA] -= fx
-        velocitiesY[linkParticleA] -= fy
 
         //TODO сделать инкрементально
         //Элементы читаются заново (а не берутся из parentCellA/B): reinitParentIndex

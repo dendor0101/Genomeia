@@ -1,7 +1,7 @@
 // node lwjgl3/src/verification/mcp/smoke.mjs <desktop.jar> [GoMenu|GoGenomeEditor|GoSimulation]
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, copyFile, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, copyFile, writeFile, readFile, readdir } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { createWriteStream } from 'node:fs';
 import { resolve, join } from 'node:path';
@@ -55,7 +55,8 @@ try {
         const lib = await tool('list_genomes');
         assert.ok(lib.bundled.length > 0);
         assert.ok((await tool('read_genome', { id:lib.bundled[0], limit:1 })).stages.total > 0);
-        const stages = [...catalog.exampleStages, {cellActions:{1:{divide:{id:2,angle:1,cellType:'muscle',physicalLink:{1:{length:0.6}}}}}}];
+        assert.ok(catalog.formulas.some(f => f.key === 'lif'));
+        const stages = [...catalog.exampleStages, {cellActions:{1:{divide:{id:2,angle:1,cellType:'neuron',funActivation:'lif',physicalLink:{1:{length:0.6}}}}}}];
         const draft = await tool('create_genome', {name:'Test organism', stages});
         assert.equal((await raw('create_genome', {name:'bad', stages:[{cellActions:{404:{divide:{id:1,angle:0,cellType:'leaf'}}}}]})).isError, true);
         const validation = await tool('validate_genome', {id:draft.id});
@@ -63,6 +64,9 @@ try {
         const last = await tool('read_growth', {id:draft.id,tick:first.lastTick});
         assert.ok(first.cells.total < last.cells.total);
         assert.equal(last.cells.total, 3);
+        const parent = last.cells.items.find(cell => cell.id === 1);
+        const child = last.cells.items.find(cell => cell.id === 2);
+        assert.ok(Math.abs(Math.hypot(child.x - parent.x, child.y - parent.y) - 0.6) < 0.001);
         assert.equal(validation.cells, 3);
         assert.equal(validation.physicalLinks, 2);
         const geometry = await tool('read_genome', {id:draft.id,view:'cells'});
@@ -75,10 +79,15 @@ try {
         const saved = await tool('save_genome', {id:draft.id});
         assert.equal(saved.id, 'Test organism');
         assert.ok((await tool('list_genomes')).player.includes(saved.id));
-        assert.equal((await tool('save_genome', {id:draft.id})).id, saved.id);
         assert.deepEqual(await tool('read_genome',{id:saved.id,view:'cells'}), geometry);
         assert.equal((await tool('read_genome',{id:saved.id,limit:1})).stages.nextOffset,1);
-        assert.ok((await readFile(join(dir,'genomes',saved.fileName))).length > 0);
+        const genomeBytes = await readFile(join(dir, 'genomes', saved.fileName));
+        assert.ok(genomeBytes.length > 0);
+        const imported = join(dir, 'session', 'attachments', 'imported');
+        const snapshots = (await readdir(imported)).filter(name => name.endsWith('-' + saved.fileName));
+        assert.equal(snapshots.length, 1, 'The save command must have its replay attachment');
+        assert.deepEqual(await readFile(join(imported, snapshots[0])), genomeBytes);
+        assert.equal((await tool('save_genome', {id:draft.id})).id, saved.id);
         console.log(JSON.stringify({validation, saved, pngBytes:bytes.length, dir}));
     } else {
         if (route === 'GoSimulation') {

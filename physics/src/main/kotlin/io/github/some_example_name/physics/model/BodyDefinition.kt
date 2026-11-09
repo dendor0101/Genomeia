@@ -47,6 +47,31 @@ class BodyDefinition(
         s / linkCount
     }
 
+    /**
+     * Этот набор тел и [other] после него: номера частиц other сдвинуты на [count], его
+     * связи, треугольники и кластеры — следом за своими. Так мир дописывает тело
+     * (BodyState.appendBody): поза покоя мира — склейка поз покоя тел.
+     */
+    fun concat(other: BodyDefinition): BodyDefinition {
+        val off = count
+        fun cat(a: FloatArray, b: FloatArray) = a.copyOf(a.size + b.size).also { System.arraycopy(b, 0, it, a.size, b.size) }
+        fun cat(a: BooleanArray, b: BooleanArray) = a.copyOf(a.size + b.size).also { System.arraycopy(b, 0, it, a.size, b.size) }
+        fun catShift(a: IntArray, b: IntArray) = a.copyOf(a.size + b.size).also { for (k in b.indices) it[a.size + k] = b[k] + off }
+        fun clusters(a: Array<IntArray>, b: Array<IntArray>) = Array(a.size + b.size) { k ->
+            if (k < a.size) a[k] else IntArray(b[k - a.size].size) { i -> b[k - a.size][i] + off }
+        }
+        return BodyDefinition(
+            x = cat(x, other.x), y = cat(y, other.y), radius = cat(radius, other.radius),
+            isBone = cat(isBone, other.isBone), isMuscle = cat(isMuscle, other.isMuscle),
+            linkA = catShift(linkA, other.linkA), linkB = catShift(linkB, other.linkB),
+            triA = catShift(triA, other.triA), triB = catShift(triB, other.triB), triC = catShift(triC, other.triC),
+            triRestArea2 = cat(triRestArea2, other.triRestArea2),
+            boneClusters = clusters(boneClusters, other.boneClusters),
+            muscleClusters = clusters(muscleClusters, other.muscleClusters),
+            scale = scale,
+        )
+    }
+
     fun describe(): String = String.format(
         Locale.ROOT,
         "cells=%d links=%d triangles=%d (%.2f per cell)  bone=%d in %d clusters  muscle=%d in %d clusters  meanLink=%.4f",

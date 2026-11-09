@@ -41,13 +41,13 @@ import kotlin.math.sqrt
  * импульсом — кулоновский конус, а не произвольное торможение.
  */
 class BoundaryContacts(
-    internal val n: Int,
+    n: Int,
     /** Индексы граничных клеток. Только они участвуют в контактах. */
     private var verts: IntArray,
     /** Смежность в формате CSR: adjStart[i]..adjStart[i+1] — соседи клетки i. */
     private var adjStart: IntArray,
     private var adj: IntArray,
-    private val radius: DoubleArray,
+    radius: DoubleArray,
     /** Сторона ячейки сетки. Должна быть не меньше наибольшего диаметра контакта. */
     private var cellSize: Double,
     private val contactScale: Double,
@@ -87,9 +87,13 @@ class BoundaryContacts(
      * ближайшей несвязанной пары, кругами на вершинах мембрану уже не сшить, и
      * придётся сталкиваться с РЕБРОМ как с отрезком.
      */
-    private val contactRadius: DoubleArray,
+    contactRadius: DoubleArray,
     config: ContactConfig = ContactConfig(),
 ) {
+    /** Число частиц мира. Растёт, когда мир дописывает тело (grow). */
+    internal var n = n; private set
+    private var radius = radius
+    private var contactRadius = contactRadius
     private val optionContactOmegaH = config.CONTACT_OMEGA_H
     private val optionBpMargin = config.BP_MARGIN
     private val optionCtSweepFlip = config.CT_SWEEP_FLIP
@@ -172,39 +176,39 @@ class BoundaryContacts(
     var bpCalls = 0L
     /** Разбор: сколько перекрывшихся пар не попало в список кандидатов. См. CT_BPCHECK. */
     var bpMissed = 0L
-    private val mark = IntArray(n)
+    private var mark = IntArray(n)
     private var stamp = 0
 
     // --- контакты ---
-    private var cI = IntArray(4096)
-    private var cJ = IntArray(4096)
-    private var cNx = DoubleArray(4096)
-    private var cNy = DoubleArray(4096)
+    internal var cI = IntArray(4096)
+    internal var cJ = IntArray(4096)
+    internal var cNx = DoubleArray(4096)
+    internal var cNy = DoubleArray(4096)
     private var cVn = DoubleArray(4096)
-    private var cLam = DoubleArray(4096)
+    internal var cLam = DoubleArray(4096)
     /** Накопленный множитель контакта. См. optionXpbdWarmStart. */
-    private var cLamTot = DoubleArray(4096)
+    internal var cLamTot = DoubleArray(4096)
     /** Перенесённая часть множителя после потолка; ниже неё множитель не опускается. -1 — ещё не считана. */
     private var cLamInit = DoubleArray(4096)
-    private var cN = 0
+    internal var cN = 0
 
-    private val toi = DoubleArray(n)
+    private var toi = DoubleArray(n)
     /** Острова CCD: клетки, связанные опасными парами. См. ccdClamp. */
-    private val ccdParent = IntArray(n)
-    private val islM = DoubleArray(n)
-    private val islX = DoubleArray(n)
-    private val islY = DoubleArray(n)
+    private var ccdParent = IntArray(n)
+    private var islM = DoubleArray(n)
+    private var islX = DoubleArray(n)
+    private var islY = DoubleArray(n)
 
     /** Накопитель сил на клетку за подшаг. См. applyForces. */
-    private val frcX = DoubleArray(n)
-    private val frcY = DoubleArray(n)
-    private val frcW = DoubleArray(n)
+    internal var frcX = DoubleArray(n)
+    internal var frcY = DoubleArray(n)
+    internal var frcW = DoubleArray(n)
     /** Доля, на которую урезан суммарный толчок клетки потолком. См. applyForces. */
-    private val frcS = DoubleArray(n)
+    internal var frcS = DoubleArray(n)
     /** Импульс каждого контакта, чтобы урезать его СИММЕТРИЧНО обоим концам. */
-    private var cAx = DoubleArray(4096)
-    private var cAy = DoubleArray(4096)
-    private val frcZ = IntArray(n)
+    internal var cAx = DoubleArray(4096)
+    internal var cAy = DoubleArray(4096)
+    private var frcZ = IntArray(n)
     /**
      * Число контактов ЖЁСТКОГО КЛАСТЕРА, а не отдельной его клетки.
      *
@@ -216,10 +220,10 @@ class BoundaryContacts(
      */
     private var boneZ = IntArray(0)
     private var boneZStamp = IntArray(0)
-    private val frcStamp = IntArray(n) { -1 }
+    internal var frcStamp = IntArray(n) { -1 }
     private var frcList = IntArray(256)
     private var frcN = 0
-    private var pass = 0
+    internal var pass = 0
     /**
      * ЗАЯВКИ НА СМЕРТЬ КЛЕТКИ: центр одной зашёл внутрь радиуса другой.
      *
@@ -234,10 +238,10 @@ class BoundaryContacts(
      * разбирается с топологией после подшага. Убивать посреди обхода нельзя — список
      * контактов и смежность собраны на текущую топологию.
      */
-    private val damage = ContactDamageCandidates(n)
+    private var damage = ContactDamageCandidates(n)
     val killN: Int get() = damage.count
     val killList: IntArray get() = damage.ids
-    private val startDeep = ContactDamageCandidates(n)
+    private var startDeep = ContactDamageCandidates(n)
 
     /**
      * ПРОБИТАЯ МЕМБРАНА: рёбра контура, сквозь которые ПРОШЁЛ центр чужой клетки.
@@ -379,23 +383,44 @@ class BoundaryContacts(
      * ПРОБОЙ КЛЕТКИ [i] ПО РЁБРАМ ВОКРУГ КЛЕТКИ КОНТУРА [j] И ЕЁ СОСЕДЕЙ. См. findPierce.
      */
     private fun pierceAround(qx: DoubleArray, qy: DoubleArray, px: DoubleArray, py: DoubleArray,
-                             i: Int, j: Int, org: IntArray) {
+                             i: Int, j: Int, org: IntArray, out: PierceBuffer) {
         if (org[i] == org[j]) return
+        // Ребро с концом без касаний (присоска, cellNoContact) проницаемо: мембрана там дырявая
+        // нарочно, еду втягивают сквозь неё. Иначе втянутая еда «пробивала» ребро присоски
+        // (отчёт 04.11 18:42: связь зиготы с присоской рвалась при всасывании, причина «пробой»).
+        val nc = noContact
+        // Контур частицы с группой касаний (террейн) пробоем не рвётся: сквозь террейн не пускают
+        // касания с CCD, а рвать его незачем. Пары с террейном — большая часть пар у пещер, и поиск
+        // пробоя по ним занимал треть тика (профиль 04.11).
+        val g = group
+        if (g != null && g[j] != 0) return
         for (s2 in bndStart[j] until bndEnd[j]) {
             val o = bndOther[s2]
+            if (nc != null && nc[o]) continue
             if (o != i && org[o] == org[j] && inward(qx, qy, px, py, i, j, o, bndOpp[s2])) {
-                pierce(j, o); if (i == pierceWatch) pwHits++
+                out.add(j, o); if (i == pierceWatch) pwHits++
             }
             // Второй шаг: рёбра соседа по контуру.
             if (org[o] != org[j]) continue
             for (s3 in bndStart[o] until bndEnd[o]) {
                 val o2 = bndOther[s3]
-                if (o2 == i || o2 == j || org[o2] != org[o]) continue
+                if (o2 == i || o2 == j || org[o2] != org[o] || (nc != null && nc[o2])) continue
                 if (inward(qx, qy, px, py, i, o, o2, bndOpp[s3])) {
-                    pierce(o, o2); if (i == pierceWatch) pwHits++
+                    out.add(o, o2); if (i == pierceWatch) pwHits++
                 }
             }
         }
+    }
+
+    private val serialPierce = PierceBuffer()
+    private var parallelPierce: ParallelPierce? = null
+
+    internal val candidatePairCount: Int get() = pairN
+
+    /** Найденные рёбра — в общий список, в порядке кусков (см. ParallelPierce). */
+    internal fun addPierces(found: PierceBuffer) {
+        var k = 0
+        while (k < found.n) { pierce(found.edges[k], found.edges[k + 1]); k += 2 }
     }
 
     /**
@@ -406,6 +431,13 @@ class BoundaryContacts(
      * Полный перебор (каждая вершина против всех 436 рёбер) обошёлся бы в 190 тысяч
      * проверок за подшаг, три миллиона за тик — вот это было бы дорого. По кандидатам
      * выходит порядка тысячи за подшаг.
+     *
+     * На толпе это уже не тысяча. Замер 09.11, 34 червя (96k клеток, 16 подшагов): ~186 тысяч пар и
+     * ~500 тысяч проверок рёбер за подшаг, подтверждается 0.07%; в профиле 34% тика в одном потоке.
+     * Удешевить саму проверку не вышло, все варианты побитово совпали, мс на тик в одном потоке (два
+     * прогона): как есть 597/626; конец подшага первым 603/615; без повторной проверки ребра той же
+     * клеткой 637/716; нормали рёбер заранее, одной записью на ребро 685/702. На 8 воркерах разницы
+     * тоже нет. Снизить цену можно только числом проверок, а это уже другая физика.
      */
     private fun findPierce(px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray) {
         if (bndStart.size != n + 1) return
@@ -421,24 +453,14 @@ class BoundaryContacts(
         //
         // Второй: клетка должна ЗАМЕТНО сдвинуться. Пересечение на нулевом отрезке —
         // всегда про округление, а не про движение.
-        val minMove = 1e-3 * meanLink
-        val minMove2 = minMove * minMove
-        for (p in 0 until pairN) {
-            val i = pairA[p]; val j = pairB[p]
-            if (org[i] == org[j]) continue
-            val mi = (px[i] - qx[i]) * (px[i] - qx[i]) + (py[i] - qy[i]) * (py[i] - qy[i])
-            val mj = (px[j] - qx[j]) * (px[j] - qx[j]) + (py[j] - qy[j]) * (py[j] - qy[j])
-            // ДВА ШАГА ПО КОНТУРУ, А НЕ ОДИН.
-            //
-            // Раньше клетка проверялась только против рёбер СВОЕГО партнёра по паре, и
-            // покрытие выходило 6%: 78 пробоев на 1004 входа в ткань. Пересечь она может
-            // ребро, оба конца которого ей не партнёры — достаточно оказаться ближе к
-            // третьей клетке. Второй шаг по соседям контура это закрывает, а стоит он
-            // по-прежнему ничего: у клетки контура не больше двух граничных рёбер, то
-            // есть добавляется до четырёх проверок на пару.
-            if (mi > minMove2) pierceAround(qx, qy, px, py, i, j, org)
-            if (mj > minMove2) pierceAround(qx, qy, px, py, j, i, org)
-            if (i == pierceWatch || j == pierceWatch) pwPairs++
+        val w = workers
+        // Разбор по одной клетке (CT_WATCH) пишет общие счётчики — только в одном потоке.
+        if (w != null && w.count > 1 && pairN >= PARALLEL_PAIRS_MIN && pierceWatch < 0) {
+            (parallelPierce ?: ParallelPierce(this, w.count).also { parallelPierce = it }).run(w, px, py, qx, qy, org)
+        } else {
+            serialPierce.n = 0
+            findPierceRange(0, pairN, px, py, qx, qy, org, serialPierce)
+            addPierces(serialPierce)
         }
         // ОДНА СТРОКА НА ПОДШАГ, И ТОЛЬКО КОГДА КЛЕТКА РЕАЛЬНО ШЛА: «чужих пар 0»
         // означает, что пробой её даже не смотрел, а «уже была внутри» — что смотрел и
@@ -482,8 +504,45 @@ class BoundaryContacts(
         pwPairs = 0; pwEdges = 0; pwEndedIn = 0; pwWasIn = 0; pwOffEnd = 0; pwHits = 0
     }
 
+    /** Пары кандидатов [from, to): найденные рёбра в [out], в порядке пар. См. findPierce. */
+    internal fun findPierceRange(from: Int, to: Int, px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray,
+                                 org: IntArray, out: PierceBuffer) {
+        val minMove = 1e-3 * meanLink
+        val minMove2 = minMove * minMove
+        val grp = group
+        for (p in from until to) {
+            val i = pairA[p]; val j = pairB[p]
+            if (org[i] == org[j]) continue
+            // Пара с террейном (группа касаний) пробоем не проверяется ни в какую сторону: см. pierceAround.
+            if (grp != null && (grp[i] != 0 || grp[j] != 0)) continue
+            val mi = (px[i] - qx[i]) * (px[i] - qx[i]) + (py[i] - qy[i]) * (py[i] - qy[i])
+            val mj = (px[j] - qx[j]) * (px[j] - qx[j]) + (py[j] - qy[j]) * (py[j] - qy[j])
+            // ДВА ШАГА ПО КОНТУРУ, А НЕ ОДИН.
+            //
+            // Раньше клетка проверялась только против рёбер СВОЕГО партнёра по паре, и
+            // покрытие выходило 6%: 78 пробоев на 1004 входа в ткань. Пересечь она может
+            // ребро, оба конца которого ей не партнёры — достаточно оказаться ближе к
+            // третьей клетке. Второй шаг по соседям контура это закрывает, а стоит он
+            // по-прежнему ничего: у клетки контура не больше двух граничных рёбер, то
+            // есть добавляется до четырёх проверок на пару.
+            if (mi > minMove2) pierceAround(qx, qy, px, py, i, j, org, out)
+            if (mj > minMove2) pierceAround(qx, qy, px, py, j, i, org, out)
+            if (i == pierceWatch || j == pierceWatch) pwPairs++
+        }
+    }
+
     /** Кто в каком организме — ставит хозяин тела. Нужно поиску пробоя. */
     var organismOf: IntArray? = null
+
+    /**
+     * Клетки без касаний (BodyState.cellNoContact) — ставит хозяин тела. Учитываются при обновлении
+     * набора по месту ([updateSurface]); после полной пересборки хозяин отдаёт их тем же путём
+     * (BodyState.applyNoContact).
+     */
+    var noContact: BooleanArray? = null
+
+    /** Группы касаний (BodyState.cellGroup) — ставит хозяин тела; одна ненулевая группа не сталкивается ([bonded]). */
+    var group: IntArray? = null
 
     // --- РАЗБОР ПРОБОЯ ПО ОДНОЙ КЛЕТКЕ (CT_WATCH=номер). Только для дознания. ---
     /** Клетка, по которой печатать разбор пробоя. -1 — молчать. */
@@ -515,6 +574,34 @@ class BoundaryContacts(
     var killOnDeep = false
     var killDepth = 1.0
 
+    /**
+     * НЕУЯЗВИМОСТЬ ДЕЛЯЩИХСЯ: клетка, у которой дорастает связь (новорождённая и её соседи по
+     * связям, BodyState.markGrowingCells), глубоким касанием не убивает и не гибнет — пара
+     * только расталкивается. Новорождённая появляется почти в родителе (деление), и соседи
+     * родителя иначе убили бы её в первом же подшаге. Метка — номер шага: immuneStamp[i] ==
+     * immuneNow. Читается только на пути смерти (редко). Ставит хозяин.
+     */
+    var immuneStamp = IntArray(0)
+    var immuneNow = -1
+
+    /**
+     * МЯГКИЙ СТАРТ КАСАНИЙ НОВОРОЖДЁННОЙ: доля расстояния упора по клетке (BodyGrowth.
+     * rampNewbornContacts), у пары — меньшая из двух. Null — никто не растёт: в паре одна
+     * проверка. Ставит хозяин раз в шаг.
+     */
+    var contactRamp: FloatArray? = null
+
+    private fun ramped(i: Int, j: Int, rr: Double): Double {
+        val ramp = contactRamp ?: return rr
+        val f = minOf(ramp[i], ramp[j])
+        return if (f < 1f) rr * f else rr
+    }
+
+    private fun killImmune(i: Int, j: Int): Boolean {
+        val s = immuneStamp
+        return (i < s.size && s[i] == immuneNow) || (j < s.size && s[j] == immuneNow)
+    }
+
     /** Сколько пар в списке контактов этого подшага и какие. Нужно снятию остатка по группам. */
     /**
      * ДАВЛЕНИЕ КОНТАКТА НА КЛЕТКУ: сумма модулей толчков, которые контакты дали клетке,
@@ -529,8 +616,8 @@ class BoundaryContacts(
     fun contactI(c: Int): Int = cI[c]
     fun contactJ(c: Int): Int = cJ[c]
 
-    private var toVelocity = false
-    private var velH = 1.0
+    internal var toVelocity = false
+    internal var velH = 1.0
     /** Перенесённые множители: при optionXpbdWarmStart или в старом режиме optionAblegacy. */
     private val lam = ContactLambdaCache()
 
@@ -545,13 +632,13 @@ class BoundaryContacts(
     private var restTouchN = 0
     private var restSpacingN = 0
     /** Клетка в контактах на этой топологии. */
-    private val onBound = BooleanArray(n)
+    private var onBound = BooleanArray(n)
     private var vertCount = verts.size
-    private val vertSlot = IntArray(n) { -1 }
+    private var vertSlot = IntArray(n) { -1 }
     private var adjEnd = IntArray(n) { adjStart[it + 1] }
     private var bndEnd = IntArray(n)
     private var maxRadius = 0.0
-    private val radiusMinimum = ContactRadiusMinimum(n)
+    private var radiusMinimum = ContactRadiusMinimum(n)
     val minContactRadius: Double get() = radiusMinimum.value
 
     // Контакты получают только граница и свободные клетки. После разрыва новая
@@ -566,7 +653,9 @@ class BoundaryContacts(
         return REST_NONE
     }
 
-    private fun contactDistance(i: Int, j: Int): Double {
+    private fun contactDistance(i: Int, j: Int): Double = ramped(i, j, restContactDistance(i, j))
+
+    private fun restContactDistance(i: Int, j: Int): Double {
         val rr = contactRadius[i] + contactRadius[j]
         if (!CONTACT_REST_SPACING || optionAblegacy || restSpacingN == 0) return rr
         val rp = rest
@@ -579,7 +668,9 @@ class BoundaryContacts(
         return rr
     }
 
-    private fun pairContactDistance(p: Int, rr: Double): Double {
+    private fun pairContactDistance(p: Int, rr: Double): Double = ramped(nearA[p], nearB[p], pairRestDistance(p, rr))
+
+    private fun pairRestDistance(p: Int, rr: Double): Double {
         if (!CONTACT_REST_SPACING || optionAblegacy || restSpacingN == 0) return rr
         var s = nearRestSlot[p]
         if (s == -2) {
@@ -969,6 +1060,99 @@ class BoundaryContacts(
         cfgLap(3)
     }
 
+    /**
+     * МИР ДОПИСАЛ ТЕЛО: частиц теперь [newN]. Массивы на частицу растут с копированием
+     * прежнего; новые частицы пока вне контура — их подключит updateSurface по новой
+     * поверхности. Сетка широкой фазы пересобирается целиком в ближайшем подшаге
+     * (bpValid = false): новое тело меняет её состав. Помощники параллельных частей
+     * заводятся заново под новое число частиц.
+     */
+    internal fun grow(newN: Int, radius: DoubleArray) {
+        val old = n
+        n = newN
+        this.radius = radius
+        contactRadius = contactRadius.copyOf(newN)
+        bpX = bpX.copyOf(newN); bpY = bpY.copyOf(newN); bpSweep = bpSweep.copyOf(newN)
+        mark = mark.copyOf(newN)
+        toi = toi.copyOf(newN); ccdParent = ccdParent.copyOf(newN)
+        islM = islM.copyOf(newN); islX = islX.copyOf(newN); islY = islY.copyOf(newN)
+        frcX = frcX.copyOf(newN); frcY = frcY.copyOf(newN); frcW = frcW.copyOf(newN)
+        frcS = frcS.copyOf(newN); frcZ = frcZ.copyOf(newN)
+        frcStamp = frcStamp.copyOf(newN).also { java.util.Arrays.fill(it, old, newN, -1) }
+        damage = ContactDamageCandidates(newN); startDeep = ContactDamageCandidates(newN)
+        onBound = onBound.copyOf(newN)
+        vertSlot = vertSlot.copyOf(newN).also { java.util.Arrays.fill(it, old, newN, -1) }
+        if (verts.size < newN) verts = verts.copyOf(newN)
+        prevRadius = prevRadius.copyOf(newN); prevBound = prevBound.copyOf(newN); prevDeg = prevDeg.copyOf(newN)
+        cfgDeg = IntArray(newN + 1)
+        movedMark = movedMark.copyOf(newN)
+        radiusMinimum = ContactRadiusMinimum(newN).also { it.reset(contactRadius) }
+        shards = Array(shards.size) { AnchoredContactGrid(newN) }
+        parallelCandidates = null; parallelPairs = null; parallelCcd = null
+        parallelBuild = null; parallelMoved = null; parallelReinsert = null; parallelBones = null
+        bpValid = false; staticValid = false
+    }
+
+    /**
+     * МИР УПЛОТНЁН ИЛИ ЗАГРУЖЕН ИЗ СНИМКА: частиц теперь [newN]. Массивы на частицу заводятся
+     * заново: всё, что в них живёт дольше подшага (радиусы, контур, вершины, пары покоя),
+     * следом выставит reconfigure + attachSurface — тот же путь, что при загрузке. Объект
+     * остаётся прежним, вместе с настройками, которые выставил клиент.
+     */
+    internal fun resize(newN: Int, radius: DoubleArray) {
+        n = newN
+        this.radius = radius
+        contactRadius = DoubleArray(newN)
+        bpX = DoubleArray(newN); bpY = DoubleArray(newN); bpSweep = DoubleArray(newN)
+        mark = IntArray(newN)
+        toi = DoubleArray(newN); ccdParent = IntArray(newN)
+        islM = DoubleArray(newN); islX = DoubleArray(newN); islY = DoubleArray(newN)
+        frcX = DoubleArray(newN); frcY = DoubleArray(newN); frcW = DoubleArray(newN)
+        frcS = DoubleArray(newN); frcZ = IntArray(newN)
+        frcStamp = IntArray(newN).also { java.util.Arrays.fill(it, -1) }
+        damage = ContactDamageCandidates(newN); startDeep = ContactDamageCandidates(newN)
+        onBound = BooleanArray(newN)
+        vertSlot = IntArray(newN).also { java.util.Arrays.fill(it, -1) }
+        verts = IntArray(newN)
+        prevRadius = DoubleArray(newN); prevBound = BooleanArray(newN); prevDeg = IntArray(newN)
+        cfgDeg = IntArray(newN + 1)
+        movedMark = IntArray(newN)
+        radiusMinimum = ContactRadiusMinimum(newN)
+        shards = Array(shards.size) { AnchoredContactGrid(newN) }
+        parallelCandidates = null; parallelPairs = null; parallelCcd = null
+        parallelBuild = null; parallelMoved = null; parallelReinsert = null; parallelBones = null
+        // Тёплый старт (необязательный) — множители прошлых подшагов по парам: после
+        // пересборки мир начинает без них, как после загрузки снимка.
+        lam.clear()
+        bpValid = false; staticValid = false
+    }
+
+    /**
+     * Пары покоя нового тела ([add] — в номерах тела, первая частица [n0]) дописываются к
+     * прежним. Состояния новых пар пусты: их выставит updateSurface вместе с контуром.
+     */
+    internal fun appendRestPairs(add: RestPairs, n0: Int) {
+        val rp = rest
+        val m0 = rp.other.size
+        val addN = add.start.size - 1
+        val start = IntArray(n0 + addN + 1)
+        System.arraycopy(rp.start, 0, start, 0, minOf(rp.start.size, n0 + 1))
+        for (i in rp.start.size..n0) start[i] = m0
+        for (i in 1..addN) start[n0 + i] = m0 + add.start[i]
+        val total = m0 + add.other.size
+        val other = rp.other.copyOf(total); val mirror = rp.mirror.copyOf(total)
+        val d2 = rp.d2.copyOf(total); val dist = rp.dist.copyOf(total); val ever = rp.ever.copyOf(total)
+        for (s in add.other.indices) {
+            other[m0 + s] = add.other[s] + n0; mirror[m0 + s] = add.mirror[s] + m0
+            d2[m0 + s] = add.d2[s]; dist[m0 + s] = add.dist[s]; ever[m0 + s] = add.ever[s]
+        }
+        rest = RestPairs(start, other, mirror, d2, dist, ever)
+        restState = restState.copyOf(total)
+    }
+
+    /** Нынешние пары покоя мира — после дописывания тела их держит и состояние решателя. */
+    internal val restPairs: RestPairs get() = rest
+
     /** Подключение происходит только при загрузке/сбросе; строки имеют неизменную ёмкость. */
     fun attachSurface(surface: LocalSurface) {
         adjStart = surface.start; adj = surface.adj; adjEnd = surface.adjEnd
@@ -980,7 +1164,8 @@ class BoundaryContacts(
     fun updateSurface(surface: LocalSurface, changed: IntArray, count: Int) {
         for (k in 0 until count) {
             val v = changed[k]
-            val active = surface.active[v]
+            val nc = noContact
+            val active = surface.active[v] && !(nc != null && v < nc.size && nc[v])
             if (active != onBound[v]) {
                 if (active) { vertSlot[v] = vertCount; verts[vertCount++] = v }
                 else {
@@ -999,8 +1184,16 @@ class BoundaryContacts(
         // Размер ячейки не уменьшаем при разрыве; увеличение требуется только при
         // открытии более длинного ребра. Список кандидатов сразу недействителен.
         bpMargin = Math.abs(optionBpMargin) * maxRadius
+        val oldCell = cellSize
         cellSize = maxOf(2.0 * maxRadius + bpMargin, 1e-6)
-        bpValid = false; staticValid = false
+        bpValid = false
+        // НЕПОДВИЖНАЯ СЕТКА — ТОЛЬКО ЕСЛИ ЗАДЕТА ОНА. Поверхность меняется на каждое рождение и разрыв,
+        // а меняются почти всегда бодрствующие клетки — они в подвижной сетке. Прежде любое обновление
+        // заново раскладывало и все неподвижные: в мире с террейном это поверхность всех пещер, и
+        // растущие организмы перестраивали её каждый подшаг (замер в игре 04.11: подготовка касаний —
+        // 27 мс тика из 45). Задета — если изменилась её вершина ([inStatic]), если новая вершина
+        // контура неподвижна или подвижность её неизвестна (ещё не было prepare), или сменился шаг.
+        if (cellSize != oldCell || touchesStatic(changed, count)) staticValid = false
         val rp = rest
         for (k in 0 until count) {
             val v = changed[k]
@@ -1033,7 +1226,7 @@ class BoundaryContacts(
     /** Разбор: смежность, контур, радиусы, пары покоя — наносекунды за прогон. */
     val cfgNs = LongArray(4)
 
-    private val cfgDeg = IntArray(n + 1)
+    private var cfgDeg = IntArray(n + 1)
 
     /** Разбор: пара последнего maxPenetration. */
     var worstI = -1
@@ -1121,6 +1314,8 @@ class BoundaryContacts(
      */
     private fun bonded(i: Int, j: Int): Boolean {
         for (k in adjStart[i] until adjEnd[i]) if (adj[k] == j) return true
+        val g = group
+        if (g != null && i < g.size && j < g.size && g[i] != 0 && g[i] == g[j]) return true
         return restTouchN > 0 && restStateOf(i, j) == REST_TOUCH
     }
 
@@ -1139,7 +1334,7 @@ class BoundaryContacts(
     /** Вершины, которые перекладываются в этом подшаге, и пометка «перекладывается». */
     internal var moved = IntArray(0); private set
     internal var movedCount = 0; private set
-    private val movedMark = IntArray(n)
+    private var movedMark = IntArray(n)
     private var movedStamp = 0
 
     /**
@@ -1477,14 +1672,31 @@ class BoundaryContacts(
         return dx * dx + dy * dy <= lim * lim
     }
 
+    /** Вершины, лежащие в неподвижной сетке (по последней её перестройке). См. updateSurface. */
+    private var inStatic = BooleanArray(0)
+    /** Обратные массы последнего prepare — подвижность новых вершин контура в updateSurface. */
+    private var lastInvMass: DoubleArray? = null
+
+    private fun touchesStatic(changed: IntArray, count: Int): Boolean {
+        val m = lastInvMass ?: return true
+        for (k in 0 until count) {
+            val v = changed[k]
+            if (v < inStatic.size && inStatic[v]) return true
+            if (onBound[v] && (v >= m.size || m[v] <= 0.0)) return true
+        }
+        return false
+    }
+
     private fun rebuildStaticGrid(px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray,
                                   invMass: DoubleArray) {
         staticCount = 0
         for (a in 0 until vertCount) if (invMass[verts[a]] <= 0.0) staticCount++
         staticGrid.begin(staticCount)
+        if (inStatic.size != n) inStatic = BooleanArray(n) else java.util.Arrays.fill(inStatic, false)
         for (a in 0 until vertCount) {
             val v = verts[a]
             if (invMass[v] > 0.0) continue
+            inStatic[v] = true
             val c = dda(qx[v], qy[v], px[v], py[v])
             for (k in 0 until c) staticGrid.insert(key(ddaX[k], ddaY[k]), v)
         }
@@ -1532,7 +1744,7 @@ class BoundaryContacts(
     }
 
     /** Текущее направление обхода контактов. См. optionCtSweepFlip. */
-    private var ctBackwards = false
+    internal var ctBackwards = false
 
     /**
      * Обрезка подшага по времени первого контакта.
@@ -1615,7 +1827,7 @@ class BoundaryContacts(
             // но это не отменяет УЖЕ случившееся глубокое перекрытие.
             // Соседи отсеяны широкой фазой; порог смерти остаётся прежним.
             val depth = killDepth * maxOf(contactRadius[a], contactRadius[j])
-            if (d02 < depth * depth && invMass[a] + invMass[j] > 0.0) {
+            if (d02 < depth * depth && invMass[a] + invMass[j] > 0.0 && !killImmune(a, j)) {
                 startDeep.add(a); startDeep.add(j)
             }
         }
@@ -1777,6 +1989,7 @@ class BoundaryContacts(
         invMass: DoubleArray,
         continuing: Boolean = false,
     ) {
+        lastInvMass = invMass
         if (continuing) passCache.save(cN, cI, cJ, cLamTot, cLamInit, cVn)
         // Перенос множителя: таблица каждый подшаг собирается заново из контактов
         // прошлого подшага. Пара, выскочившая из радиуса, в неё просто не попадёт —
@@ -1865,9 +2078,12 @@ class BoundaryContacts(
     /** Масса, центр и момент инерции кластера [b]. */
     internal fun updateBone(b: Int, px: DoubleArray, py: DoubleArray, invMass: DoubleArray) {
         val ids = boneIds
+        // Только включённые клетки кости: клетку, которую клиент ещё не сделал костью (boneOf -1),
+        // кость не несёт. У стенда все клетки кости включены — те же биты.
+        val bo = boneOf!!
         var m = 0.0; var cx = 0.0; var cy = 0.0
         for (k in ids[b]) {
-            if (invMass[k] <= 0.0) continue
+            if (invMass[k] <= 0.0 || bo[k] != b) continue
             val w = 1.0 / invMass[k]
             m += w; cx += w * px[k]; cy += w * py[k]
         }
@@ -1877,7 +2093,7 @@ class BoundaryContacts(
         boneCx[b] = cx; boneCy[b] = cy
         var inert = 0.0
         for (k in ids[b]) {
-            if (invMass[k] <= 0.0) continue
+            if (invMass[k] <= 0.0 || bo[k] != b) continue
             val rx = px[k] - cx; val ry = py[k] - cy
             inert += (rx * rx + ry * ry) / invMass[k]
         }
@@ -1985,169 +2201,222 @@ class BoundaryContacts(
             bumpZ(i); bumpZ(j)
         }
         pass++
-        val kSpring = optionContactOmegaH * optionContactOmegaH
-        val cDamp = 2.0 * CONTACT_DAMPING * optionContactOmegaH * h
-        val splitScale = (optionContactOmegaH / CONTACT_SPLIT_LIMIT) * (optionContactOmegaH / CONTACT_SPLIT_LIMIT)
         // НАПРАВЛЕНИЕ ОБХОДА КОНТАКТОВ ЧЕРЕДУЕТСЯ — по той же причине, что и у связей,
         // см. SWEEP_FLIP в DemoSession. Список решается Гауссом-Зейделем, поэтому первая
         // пара всегда получает нетронутую геометрию, а последняя — уже исправленную, и
         // перекос копится в одну сторону. У связей это крутило тело, здесь — трясёт кучу.
         if (optionCtSweepFlip) ctBackwards = !ctBackwards
+        val workersNow = workers
+        // Разбор одной пары и старый контакт (ablegacy) пишут общие поля — только в одном потоке.
+        if (XPBD && workersNow != null && workersNow.count > 1 && cN >= PARALLEL_SOLVE_MIN && dbgPair < 0 && !optionAblegacy) {
+            (parallelSolve ?: ParallelContactSolve(this, workersNow.count).also { parallelSolve = it })
+                .run(workersNow, px, py, vx, vy, invMass, h)
+            return
+        }
         val step = if (ctBackwards) -1 else 1
         var cc0 = if (ctBackwards) cN - 1 else 0
         var left = cN
+        val sink = parallelSolveSerial
+        sink.reset()
         while (left > 0) {
             left--
             val c = cc0
             cc0 += step
-            val i = cI[c]; val j = cJ[c]
-            val dx = px[i] - px[j]; val dy = py[i] - py[j]
-            val d = sqrt(dx * dx + dy * dy)
-            val rr = cRR[c]
-            val nx: Double; val ny: Double; val cc: Double
-            if (d < 1e-12) { nx = cNx[c]; ny = cNy[c]; cc = -rr }
-            else { nx = dx / d; ny = dy / d; cc = d - rr }
-            cNx[c] = nx; cNy[c] = ny
-            cLam[c] = 0.0
-            cAx[c] = 0.0; cAy[c] = 0.0
-            // Пара разошлась — накопленный множитель обязан обнулиться, иначе при
-            // следующем касании он отработает как разжатая пружина.
-            if (cc >= 0) {
-                if (XPBD) { cLamTot[c] = 0.0; cLamInit[c] = 0.0; if (optionAblegacy) lam.remove(pairKey(i, j)) }
-                continue
+            if (solveContactPair(c, px, py, vx, vy, invMass, h, scale, sink)) {
+                addForce(cI[c], cAx[c], cAy[c], sink.wi)
+                addForce(cJ[c], -cAx[c], -cAy[c], sink.wj)
             }
-            // Сопротивление считается по ТЕЛУ, а не по клетке: для клетки в жёсткой
-            // кости это масса всего кластера плюс вклад вращения. См. updateBones.
-            val wi = effInvMass(i, nx, ny, px, py, invMass)
-            val wj = effInvMass(j, nx, ny, px, py, invMass)
-            val w = wi + wj
-            if (w <= 0) continue
-
-            // ЦЕНТР ВНУТРИ ЧУЖОГО РАДИУСА — заявка на смерть. См. killList.
-            if (killOnDeep && d < killDepth * maxOf(contactRadius[i], contactRadius[j])) {
-                requestKill(i, j)
-            }
-
-            val rvx = vx[i] - vx[j]
-            val rvy = vy[i] - vy[j]
-            val vn = rvx * nx + rvy * ny
-
-            // Пружина плюс демпфер, сразу в единицах перекрытия за подшаг.
-            if (XPBD) {
-                // КОНТАКТ КАК ОГРАНИЧЕНИЕ С НАКОПЛЕНИЕМ МНОЖИТЕЛЯ.
-                //
-                // Сила в равновесии не обнуляется никогда: нагруженный контакт давит
-                // каждый подшаг, и его вклад целиком уходит в скорость. Замер: остаток
-                // строго пропорционален жёсткости (0.0956, 0.0374, 0.0183, 0.0057 при
-                // omega*h 0.2, 0.1, 0.05, 0.02), то есть это и есть сама сила.
-                //
-                // У ограничения с накопленным множителем всё иначе. Множитель растёт,
-                // пока нарушение не уравновешено податливостью, после чего ПРИРАЩЕНИЕ
-                // становится нулём — а в скорость идёт именно приращение. Равновесие
-                // получается настоящим: позиции стоят, скорость ноль.
-                //
-                // Множитель переносится между подшагами, но в пределах, в которых он ещё
-                // сила, а не клей. См. optionXpbdWarmStart.
-                // ПОДАТЛИВОСТЬ НА ПАРУ, А НЕ ОДНА НА ВСЕХ. См. optionContactOmegaPair.
-                //
-                // Глобальная податливость означает одну и ту же ЖЁСТКОСТЬ для любой пары,
-                // а собственная частота пары есть sqrt(k/m) — значит тяжёлая клетка
-                // получает мягкий контакт, лёгкая жёсткий, и одно значение никогда не
-                // годится обоим телам сразу (замер 22.09: 1e-5 лечит медузу и ломает
-                // body-export). Если же взять alpha = w / omega^2, то omega у всех пар
-                // одна, а поправка перестаёт зависеть от массы вовсе.
-                val alphaT = if (optionContactOmegaPair > 0.0) w / (optionContactOmegaPair * optionContactOmegaPair)
-                             else optionContactCompliance / (h * h)
-                var l = cLamTot[c]
-                if (optionAblegacy) cLamInit[c] = 0.0
-                if (cLamInit[c] < 0.0) {
-                    // ПОТОЛОК: перенесённое не больше, чем держит нынешнее перекрытие.
-                    val cap = -cc / alphaT
-                    if (l > cap) l = cap
-                    cLamInit[c] = l
-                }
-                var dLam = (-cc - alphaT * l) / (w + alphaT)
-                if (dLam < 0.0) attractN++
-                // ПОЛ: забрать назад можно только толчок ЭТОГО подшага. Перенесённая
-                // часть уже отработала в прошлых подшагах, забрать её — значит притянуть.
-                val floor = cLamInit[c]
-                if (l + dLam < floor) dLam = floor - l
-                if (dbgPair >= 0 && pairKey(i, j) == dbgPair) {
-                    if (dLam < 0.0) dbgPairPull += -dLam * w else dbgPairPush += dLam * w
-                    dbgPairLam = l + dLam
-                }
-                l += dLam
-                cLamTot[c] = l
-                if (optionAblegacy) lam.put(pairKey(i, j), l)
-                cLam[c] = if (dLam > 0.0) dLam else 0.0
-                impulseAccum += cLam[c]
-                if (dLam != 0.0) {
-                    cAx[c] = dLam * nx; cAy[c] = dLam * ny
-                    addForce(i, cAx[c], cAy[c], wi)
-                    addForce(j, -cAx[c], -cAy[c], wj)
-                }
-                continue
-            }
-
-            // ДЕЛЕНИЕ НА ЧИСЛО КОНТАКТОВ — ЭТО РАСЩЕПЛЕНИЕ МАССЫ, а не ослабление
-            // ради красоты. Предел устойчивости явной схемы стоит НА КЛЕТКУ: у клетки
-            // с z соседями суммарная жёсткость вырастает в z раз, собственная частота
-            // в корень из z, а затухание в z. При шести соседях затухание вылетает за
-            // предел вчетверо, и куча идёт вразнос — первый замер силового контакта
-            // дал 6-8 клеток за тик, то есть упор в потолок скорости.
-            //
-            // Делитель ОДИН НА ПАРУ, наибольший из двух концов. Так вклад в i и в j
-            // остаётся равным и противоположным, и импульс пары сохраняется точно.
-            // Брать каждому свой делитель нельзя: это разъедет импульс и даст тягу.
-            val zi = zOf(i); val zj = zOf(j)
-            val zMax = if (zi > zj) zi else zj
-            // Делитель НЕ равен числу контактов: это был бы запас в корень из z.
-            // Собственная частота клетки с z контактами равна корень(z/делитель)
-            // умножить на optionContactOmegaH, и держать её надо не на исходном
-            // значении, а на пределе устойчивости CONTACT_SPLIT_LIMIT.
-            var z = zMax * splitScale
-            if (z < 1.0) z = 1.0
-            // ГЛУБИНА В ПРУЖИНЕ НАСЫЩАЕТСЯ. Дальше порога сила перестаёт расти, и
-            // запасённая энергия растёт с глубиной ЛИНЕЙНО, а не квадратично. Без
-            // этого рывок мышью за кость вдавливает тело глубоко, пружина копит
-            // энергию руки и выстреливает: замер дал 262 срабатывания потолка
-            // скорости, а он импульс не сохраняет. Демпфер при этом работает в
-            // полную силу и разряд гасит.
-            var depth = -cc
-            val dCap = CONTACT_DEPTH_CAP * meanLink
-            if (depth > dCap) depth = dCap
-            val pull = kSpring * depth - cDamp * vn
-            if (pull <= 0.0) continue         // растягивать контакт нельзя никогда
-            val dl = scale * pull / (w * z)
-            cLam[c] = dl
-            impulseAccum += dl
-
-            var ax = dl * nx; var ay = dl * ny
-
-            // ТРЕНИЕ ТОЖЕ СИЛОЙ, В ТОМ ЖЕ ПРОХОДЕ. Оно только отнимает: больше, чем
-            // нужно на обнуление касательной скорости пары, не берётся никогда, и
-            // сверх того ограничено конусом Кулона по нормальной части.
-            if (friction > 0.0) {
-                val tvx = rvx - vn * nx
-                val tvy = rvy - vn * ny
-                val tl = sqrt(tvx * tvx + tvy * tvy)
-                if (tl > 1e-12) {
-                    var dt = scale * tl * h / w    // ровно до остановки скольжения
-                    val coulomb = friction * dl
-                    if (dt > coulomb) dt = coulomb
-                    ax -= dt * tvx / tl; ay -= dt * tvy / tl
-                }
-            }
-
-            cAx[c] = ax; cAy[c] = ay
-            addForce(i, ax, ay, wi)
-            addForce(j, -ax, -ay, wj)
         }
+        addSolved(sink)
         applyForces(px, py, invMass, vx, vy)
     }
 
+    private var parallelSolve: ParallelContactSolve? = null
+    /** Итог обхода в одном потоке; имя с parallel — черновик, в сверки снимка не входит (SnapshotCheck.skip). */
+    private val parallelSolveSerial = ContactSolveSink()
+
+    /** Заявки на смерть и счётчики куска — в общие, в порядке обхода. */
+    internal fun addSolved(sink: ContactSolveSink) {
+        for (k in 0 until sink.killN) addKill(sink.kills[k])
+        attractN += sink.attract
+        impulseAccum += sink.impulse
+    }
+
+    /** Потолок поправки контакта за подшаг в единицах мира. */
+    internal val forceCapPerSubstep: Double get() = contactMaxStep * meanLink
+
+    /** Сила в клетку жёсткой кости идёт в общий кластер (applyForces, четвёртый шаг). */
+    internal val rigidForcesApply: Boolean get() = !toVelocity && boneOf != null
+
+    /** [order] — (ранг первого касания << 32) | клетка, по возрастанию: порядок frcList в одном потоке. */
+    internal fun applyRigidForces(order: LongArray, count: Int, px: DoubleArray, py: DoubleArray, invMass: DoubleArray) {
+        rigidBatch.begin(boneM.size)
+        for (k in 0 until count) {
+            val i = order[k].toInt()
+            val ax = frcX[i]; val ay = frcY[i]
+            if (ax == 0.0 && ay == 0.0) continue
+            val b = boneIdx(i)
+            rigidBatch.add(b, px[i] - boneCx[b], py[i] - boneCy[b], ax, ay)
+        }
+        rigidBatch.apply(boneIds, boneM, boneI, boneCx, boneCy, px, py, invMass, px, py, positions = true)
+    }
+
+    /**
+     * Контакт [c] от состояния на входе в подшаг: пишет только поля самого контакта и [sink], поэтому
+     * контакты можно считать в любом порядке и на любых воркерах (ParallelContactSolve). true —
+     * есть приращение: действующая сила в cAx/cAy, обратные массы концов в sink, складывает вызывающий.
+     */
+    internal fun solveContactPair(c: Int, px: DoubleArray, py: DoubleArray, vx: DoubleArray, vy: DoubleArray,
+                                  invMass: DoubleArray, h: Double, scale: Double, sink: ContactSolveSink): Boolean {
+        val i = cI[c]; val j = cJ[c]
+        val dx = px[i] - px[j]; val dy = py[i] - py[j]
+        val d = sqrt(dx * dx + dy * dy)
+        val rr = cRR[c]
+        val nx: Double; val ny: Double; val cc: Double
+        if (d < 1e-12) { nx = cNx[c]; ny = cNy[c]; cc = -rr }
+        else { nx = dx / d; ny = dy / d; cc = d - rr }
+        cNx[c] = nx; cNy[c] = ny
+        cLam[c] = 0.0
+        cAx[c] = 0.0; cAy[c] = 0.0
+        // Пара разошлась — накопленный множитель обязан обнулиться, иначе при
+        // следующем касании он отработает как разжатая пружина.
+        if (cc >= 0) {
+            if (XPBD) { cLamTot[c] = 0.0; cLamInit[c] = 0.0; if (optionAblegacy) lam.remove(pairKey(i, j)) }
+            return false
+        }
+        // Сопротивление считается по ТЕЛУ, а не по клетке: для клетки в жёсткой
+        // кости это масса всего кластера плюс вклад вращения. См. updateBones.
+        val wi = effInvMass(i, nx, ny, px, py, invMass)
+        val wj = effInvMass(j, nx, ny, px, py, invMass)
+        val w = wi + wj
+        if (w <= 0) return false
+
+        // ЦЕНТР ВНУТРИ ЧУЖОГО РАДИУСА — заявка на смерть. См. killList.
+        if (killOnDeep && d < killDepth * maxOf(contactRadius[i], contactRadius[j])) {
+            requestKill(i, j, sink)
+        }
+
+        val rvx = vx[i] - vx[j]
+        val rvy = vy[i] - vy[j]
+        val vn = rvx * nx + rvy * ny
+
+        // Пружина плюс демпфер, сразу в единицах перекрытия за подшаг.
+        if (XPBD) {
+            // КОНТАКТ КАК ОГРАНИЧЕНИЕ С НАКОПЛЕНИЕМ МНОЖИТЕЛЯ.
+            //
+            // Сила в равновесии не обнуляется никогда: нагруженный контакт давит
+            // каждый подшаг, и его вклад целиком уходит в скорость. Замер: остаток
+            // строго пропорционален жёсткости (0.0956, 0.0374, 0.0183, 0.0057 при
+            // omega*h 0.2, 0.1, 0.05, 0.02), то есть это и есть сама сила.
+            //
+            // У ограничения с накопленным множителем всё иначе. Множитель растёт,
+            // пока нарушение не уравновешено податливостью, после чего ПРИРАЩЕНИЕ
+            // становится нулём — а в скорость идёт именно приращение. Равновесие
+            // получается настоящим: позиции стоят, скорость ноль.
+            //
+            // Множитель переносится между подшагами, но в пределах, в которых он ещё
+            // сила, а не клей. См. optionXpbdWarmStart.
+            // ПОДАТЛИВОСТЬ НА ПАРУ, А НЕ ОДНА НА ВСЕХ. См. optionContactOmegaPair.
+            //
+            // Глобальная податливость означает одну и ту же ЖЁСТКОСТЬ для любой пары,
+            // а собственная частота пары есть sqrt(k/m) — значит тяжёлая клетка
+            // получает мягкий контакт, лёгкая жёсткий, и одно значение никогда не
+            // годится обоим телам сразу (замер 22.09: 1e-5 лечит медузу и ломает
+            // body-export). Если же взять alpha = w / omega^2, то omega у всех пар
+            // одна, а поправка перестаёт зависеть от массы вовсе.
+            val alphaT = if (optionContactOmegaPair > 0.0) w / (optionContactOmegaPair * optionContactOmegaPair)
+                         else optionContactCompliance / (h * h)
+            var l = cLamTot[c]
+            if (optionAblegacy) cLamInit[c] = 0.0
+            if (cLamInit[c] < 0.0) {
+                // ПОТОЛОК: перенесённое не больше, чем держит нынешнее перекрытие.
+                val cap = -cc / alphaT
+                if (l > cap) l = cap
+                cLamInit[c] = l
+            }
+            var dLam = (-cc - alphaT * l) / (w + alphaT)
+            if (dLam < 0.0) sink.attract++
+            // ПОЛ: забрать назад можно только толчок ЭТОГО подшага. Перенесённая
+            // часть уже отработала в прошлых подшагах, забрать её — значит притянуть.
+            val floor = cLamInit[c]
+            if (l + dLam < floor) dLam = floor - l
+            if (dbgPair >= 0 && pairKey(i, j) == dbgPair) {
+                if (dLam < 0.0) dbgPairPull += -dLam * w else dbgPairPush += dLam * w
+                dbgPairLam = l + dLam
+            }
+            l += dLam
+            cLamTot[c] = l
+            if (optionAblegacy) lam.put(pairKey(i, j), l)
+            cLam[c] = if (dLam > 0.0) dLam else 0.0
+            sink.impulse += cLam[c]
+            if (dLam == 0.0) return false
+            cAx[c] = dLam * nx; cAy[c] = dLam * ny
+            sink.wi = wi; sink.wj = wj
+            return true
+        }
+
+        val kSpring = optionContactOmegaH * optionContactOmegaH
+        val cDamp = 2.0 * CONTACT_DAMPING * optionContactOmegaH * h
+        val splitScale = (optionContactOmegaH / CONTACT_SPLIT_LIMIT) * (optionContactOmegaH / CONTACT_SPLIT_LIMIT)
+
+        // ДЕЛЕНИЕ НА ЧИСЛО КОНТАКТОВ — ЭТО РАСЩЕПЛЕНИЕ МАССЫ, а не ослабление
+        // ради красоты. Предел устойчивости явной схемы стоит НА КЛЕТКУ: у клетки
+        // с z соседями суммарная жёсткость вырастает в z раз, собственная частота
+        // в корень из z, а затухание в z. При шести соседях затухание вылетает за
+        // предел вчетверо, и куча идёт вразнос — первый замер силового контакта
+        // дал 6-8 клеток за тик, то есть упор в потолок скорости.
+        //
+        // Делитель ОДИН НА ПАРУ, наибольший из двух концов. Так вклад в i и в j
+        // остаётся равным и противоположным, и импульс пары сохраняется точно.
+        // Брать каждому свой делитель нельзя: это разъедет импульс и даст тягу.
+        val zi = zOf(i); val zj = zOf(j)
+        val zMax = if (zi > zj) zi else zj
+        // Делитель НЕ равен числу контактов: это был бы запас в корень из z.
+        // Собственная частота клетки с z контактами равна корень(z/делитель)
+        // умножить на optionContactOmegaH, и держать её надо не на исходном
+        // значении, а на пределе устойчивости CONTACT_SPLIT_LIMIT.
+        var z = zMax * splitScale
+        if (z < 1.0) z = 1.0
+        // ГЛУБИНА В ПРУЖИНЕ НАСЫЩАЕТСЯ. Дальше порога сила перестаёт расти, и
+        // запасённая энергия растёт с глубиной ЛИНЕЙНО, а не квадратично. Без
+        // этого рывок мышью за кость вдавливает тело глубоко, пружина копит
+        // энергию руки и выстреливает: замер дал 262 срабатывания потолка
+        // скорости, а он импульс не сохраняет. Демпфер при этом работает в
+        // полную силу и разряд гасит.
+        var depth = -cc
+        val dCap = CONTACT_DEPTH_CAP * meanLink
+        if (depth > dCap) depth = dCap
+        val pull = kSpring * depth - cDamp * vn
+        if (pull <= 0.0) return false     // растягивать контакт нельзя никогда
+        val dl = scale * pull / (w * z)
+        cLam[c] = dl
+        sink.impulse += dl
+
+        var ax = dl * nx; var ay = dl * ny
+
+        // ТРЕНИЕ ТОЖЕ СИЛОЙ, В ТОМ ЖЕ ПРОХОДЕ. Оно только отнимает: больше, чем
+        // нужно на обнуление касательной скорости пары, не берётся никогда, и
+        // сверх того ограничено конусом Кулона по нормальной части.
+        if (friction > 0.0) {
+            val tvx = rvx - vn * nx
+            val tvy = rvy - vn * ny
+            val tl = sqrt(tvx * tvx + tvy * tvy)
+            if (tl > 1e-12) {
+                var dt = scale * tl * h / w    // ровно до остановки скольжения
+                val coulomb = friction * dl
+                if (dt > coulomb) dt = coulomb
+                ax -= dt * tvx / tl; ay -= dt * tvy / tl
+            }
+        }
+
+        cAx[c] = ax; cAy[c] = ay
+        addForce(i, ax, ay, wi)
+        addForce(j, -ax, -ay, wj)
+        return false
+    }
+
     /** Номер жёсткого кластера клетки, или -1. */
-    private fun boneIdx(i: Int): Int {
+    internal fun boneIdx(i: Int): Int {
         val bo = boneOf ?: return -1
         val b = bo[i]
         if (b < 0 || b >= boneM.size || boneM[b] <= 0.0) return -1
@@ -2304,9 +2573,10 @@ class BoundaryContacts(
      * Клетка кости не умирает (кость бессмертна), но её партнёр умирает: иначе удар
      * костью о кость был бы единственным способом пройти сквозь тело.
      */
-    private fun requestKill(i: Int, j: Int) {
-        if (boneIdx(i) < 0) addKill(i)
-        if (boneIdx(j) < 0) addKill(j)
+    private fun requestKill(i: Int, j: Int, sink: ContactSolveSink) {
+        if (killImmune(i, j)) return
+        if (boneIdx(i) < 0) sink.addKill(i)
+        if (boneIdx(j) < 0) sink.addKill(j)
     }
 
     private fun addKill(v: Int) {
@@ -2433,6 +2703,8 @@ class BoundaryContacts(
         private const val PARALLEL_QUERY_MIN = 64
         /** Меньше пар — отбор и слияние в одном потоке. */
         private const val PARALLEL_PAIRS_MIN = 1024
+        /** Меньше контактов — решатель в одном потоке: пять барьеров дороже десятка микросекунд работы. */
+        private const val PARALLEL_SOLVE_MIN = 2048
 
         /**
          * Запас на сшивание мембраны. Окно у этого числа узкое с обеих сторон:
@@ -2520,7 +2792,7 @@ class BoundaryContacts(
          * Запас стороны ячейки в долях наибольшего радиуса контакта. См. bpX.
          * 0 — прежнее поведение, перестройка каждый подшаг.
          */
-        val BP_MARGIN = 1.0
+        val BP_MARGIN = 0.5
         /** Чередовать ли направление обхода контактов. Переменная окружения CT_SWEEP. */
         val CT_SWEEP_FLIP = true
         /**
@@ -2805,6 +3077,17 @@ class BoundaryContacts(
                         pa[pn] = i; pb[pn] = j; pn++
                     }
                 }
+            }
+            // ПОРЯДОК ПАР КАНОНИЧЕСКИЙ: по меньшему номеру, потом по большему. Иначе он
+            // зависел бы от размера ячейки поиска, а тот — от наибольшего радиуса набора:
+            // у тела, дописанного в мир (appendBody), и у того же тела в мире, загруженном
+            // разом, строки пар покоя шли бы в разном порядке. Для физики порядок в строке
+            // безразличен (поиск пары линейный, состояния выставляются по паре), но
+            // оракул дописывания сравнивает состояние побитово.
+            run {
+                val keys = LongArray(pn) { (pa[it].toLong() shl 32) or pb[it].toLong() }
+                keys.sort()
+                for (p in 0 until pn) { pa[p] = (keys[p] ushr 32).toInt(); pb[p] = keys[p].toInt() }
             }
             val start = IntArray(n + 1)
             for (p in 0 until pn) { start[pa[p] + 1]++; start[pb[p] + 1]++ }

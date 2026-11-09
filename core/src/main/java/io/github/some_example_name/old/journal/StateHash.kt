@@ -24,7 +24,9 @@ import kotlin.reflect.KProperty0
  *  - SimulationData: номер тика, время, выбранная клетка (выбранного генома нет — см.
  *    SimulationSystem.hashState);
  *  - ввод игрока: схваченная частица, точка касания, генератор случайностей команд;
- *  - порядок частиц в пространственной сетке: по нему идёт перебор столкновений.
+ *  - порядок частиц в пространственной сетке: по нему идёт перебор столкновений;
+ *  - мир физики-библиотеки: позиции и скорости его частиц (клетки организмов и субстанции
+ *    читаются прямо из него — ParticleEntity.x/y, решение 2 плана физики).
  *
  * Значения — побитово (floatToRawIntBits), массивы — по всем слотам до lastId.
  *
@@ -59,25 +61,34 @@ object StateHash {
      * 11 — у сущностей в хэш вошёл текущий блок пула вне арен (Entity.poolNext/poolEnd).
      * 12 — новая часть TriangleEntity (сформированные треугольники), у организма — арена
      *     треугольников, у клетки — их счётчик.
-     * 13 — вес и тики спайков синапса ушли из NeuralEntity в его SynapseState
-     *     (SpecialModDataEntity).
+     * 13 — новая часть PhysicsWorld: позиции и скорости частиц мира физики-библиотеки; у
+     *     частиц игры вместо x/y/vx/vy — свои позиции тех, кого мир физики не ведёт (local*).
+     * 14 — в часть SimulationData вошли флаги отладки физики (PlayerCommand.SetPhysicsDebug).
+     * 15 — у клетки нет счётчика сформированных треугольников (formedTriangles): край тела
+     *     клетки берётся из мира физики (PhysicsWorld.isSurfaceCell).
+     * 16 — в часть PhysicsWorld вошли липучки: их временные связи мира физики (StickyJoints).
+     * 17 — у частицы клетка карты террейна (ParticleEntity.terrainCell); террейн — тело мира физики.
+     * 18 — слияние с веткой, где вес и тики спайков синапса ушли из NeuralEntity в SynapseState
+     *     (SpecialModDataEntity), а тик рождения клетки стал сохраняемым полем для возрастного рельефа.
+     * 19 — синапс учится по следам спайков (SynapseState.preTrace/postTrace) вместо тиков
+     *     последней пары; новые формулы lif и trace.
      */
-    // 14 — сохраняемый тик рождения клетки для возрастного рельефа; совместно с SynapseState.
-    const val VERSION = 14
+    const val VERSION = 19
 
     class Result(val hash: Long, val parts: LongArray)
 
     /** Имена частей — в том порядке, в каком идут хэши в [Result.parts]. */
     fun partNames(entities: List<Entity>): List<String> =
-        entities.map { it::class.simpleName ?: "Entity" } + listOf(SIMULATION, INPUT, GRID)
+        entities.map { it::class.simpleName ?: "Entity" } + listOf(SIMULATION, INPUT, GRID, PHYSICS)
 
     fun compute(
         entities: List<Entity>,
         simulation: (Long) -> Long,
         input: (Long) -> Long,
-        grid: (Long) -> Long
+        grid: (Long) -> Long,
+        physics: (Long) -> Long
     ): Result {
-        val parts = LongArray(entities.size + 3)
+        val parts = LongArray(entities.size + 4)
         entities.forEachIndexed { i, entity ->
             val state = HashingState(slots = entity.lastId + 1)
             entity.saveState(state)
@@ -86,6 +97,7 @@ object StateHash {
         parts[entities.size] = simulation(Fnv.OFFSET)
         parts[entities.size + 1] = input(Fnv.OFFSET)
         parts[entities.size + 2] = grid(Fnv.OFFSET)
+        parts[entities.size + 3] = physics(Fnv.OFFSET)
 
         var total = Fnv.int(Fnv.OFFSET, VERSION)
         for (part in parts) total = Fnv.long(total, part)
@@ -99,6 +111,7 @@ object StateHash {
     private const val SIMULATION = "SimulationData"
     private const val INPUT = "PlayerInput"
     private const val GRID = "Grid"
+    private const val PHYSICS = "PhysicsWorld"
 
     /**
      * Сохранение мира наоборот: вместо записи поля в файл — в хэш. Имя поля входит в хэш,

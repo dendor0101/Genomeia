@@ -158,6 +158,9 @@ object CellLook {
     /** Фильтр «коллизии»: частица в сетке столкновений — 255, вне её — 0. */
     fun collisionFilterByte(inGrid: Boolean): Int = if (inGrid) 255 else 0
 
+    /** Фильтр «сон»: частица спящего организма мира физики — 255, бодрствующая — 0. */
+    fun sleepFilterByte(asleep: Boolean): Int = if (asleep) 255 else 0
+
     /** |сигнал|, при котором фильтр «нейросигнал» проходит половину шкалы. */
     const val SIGNAL_KNEE = 0.25f
 }

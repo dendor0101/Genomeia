@@ -58,13 +58,11 @@ fun GridManager.pickParticle(
     var best = -1
     var bestDistSq = Float.MAX_VALUE
 
-    val px = particleEntity.x
-    val py = particleEntity.y
     val radius = particleEntity.radius
 
     forEachParticle(x.toInt(), y.toInt(), radius = 1) { p ->
-        val dx = px[p] - x
-        val dy = py[p] - y
+        val dx = particleEntity.x(p) - x
+        val dy = particleEntity.y(p) - y
         val distSq = dx * dx + dy * dy
         val r = radius[p]
         if (distSq < r * r && distSq < bestDistSq) {
@@ -79,8 +77,8 @@ fun GridManager.pickParticle(
     for (i in 0 until cells.size) {
         val p = particleIndexes[cells.getInt(i)]
         if (p == -1 || inGrid[p]) continue
-        val dx = px[p] - x
-        val dy = py[p] - y
+        val dx = particleEntity.x(p) - x
+        val dy = particleEntity.y(p) - y
         val distSq = dx * dx + dy * dy
         val r = radius[p]
         if (distSq < r * r && distSq < bestDistSq) {

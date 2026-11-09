@@ -8,6 +8,14 @@ package io.github.some_example_name.physics
 class LinkedPairs private constructor(private val keys: LongArray) {
     fun contains(key: Long): Boolean = java.util.Arrays.binarySearch(keys, key) >= 0
 
+    /** Эти пары и [other] вместе (мир дописал тело — его пары с большими номерами). */
+    fun plus(other: LinkedPairs): LinkedPairs {
+        val merged = keys.copyOf(keys.size + other.keys.size)
+        System.arraycopy(other.keys, 0, merged, keys.size, other.keys.size)
+        merged.sort()
+        return LinkedPairs(merged)
+    }
+
     companion object {
         fun from(a: IntArray, b: IntArray, count: Int): LinkedPairs {
             val keys = LongArray(count) { c ->

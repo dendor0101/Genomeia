@@ -1,6 +1,7 @@
 package io.github.some_example_name.old.systems.genomics.library
 
 import com.badlogic.gdx.files.FileHandle
+import io.github.some_example_name.old.core.GameFilePaths
 import io.github.some_example_name.old.systems.genomics.genome.Genome
 import io.github.some_example_name.old.systems.genomics.genome.decodeGenome
 import io.github.some_example_name.old.systems.genomics.genome.encodeGenome
@@ -52,7 +53,11 @@ object GenomeImport {
      *
      * @throws IllegalArgumentException файл не геном (или испорчен) — текст годится для лога.
      */
-    fun importFile(source: FileHandle, targetDir: FileHandle, baker: Baker): FileHandle {
+    fun importFile(source: FileHandle, targetDir: FileHandle, baker: Baker): FileHandle =
+        importFile(source, targetDir, baker, null)
+
+    fun importFile(source: FileHandle, targetDir: FileHandle, baker: Baker,
+                   beforePlace: ((FileHandle, ByteArray) -> Unit)?): FileHandle {
         val bytes = source.readBytes()
         val baseName = fileBaseName(source.name())
 
@@ -63,8 +68,8 @@ object GenomeImport {
             } catch (e: Exception) {
                 throw IllegalArgumentException("файл .genome не читается: ${e.message}", e)
             }
-            val baked = withBaking(genome, baker) ?: return place(targetDir, baseName) { bytes }
-            return place(targetDir, baseName) { encodeGenome(baked) }
+            val baked = withBaking(genome, baker) ?: return place(targetDir, baseName, beforePlace) { bytes }
+            return place(targetDir, baseName, beforePlace) { encodeGenome(baked) }
         }
 
         require(LegacyGenomeJson.looksLikeJson(bytes)) { "ни .genome, ни JSON" }
@@ -72,7 +77,7 @@ object GenomeImport {
         // Имя внутри генома запекание не трогает: печётся один раз, а имя подставляется
         // под каждый перебираемый вариант.
         val baked = baker.bake(genome, baseName)
-        return place(targetDir, baseName) { name -> encodeGenome(baked.copy(name = name)) }
+        return place(targetDir, baseName, beforePlace) { name -> encodeGenome(baked.copy(name = name)) }
     }
 
     /**
@@ -84,13 +89,13 @@ object GenomeImport {
      *    клетке (UserCommandManager, «арена клеток организма исчерпана (ёмкость 0)»): так
      *    падала игра, когда в мир ставили старый геном;
      *  - снимка для превью (preview == null) — геном сохранён до появления превью;
-     *  - границы тела в раскладке (BakedLayout.interiorLinks) — геном сохранён до неё.
-     *    Без неё граничные клетки определяются прежним порогом в шесть связей. Граница,
-     *    запечённая прежним признаком (BakedLayout.interiorVersion меньше нынешнего), тоже
-     *    перепекается: иначе у своего генома игрока остались бы клетки на краю тела, которые
-     *    считаются внутренними и ни с чем не сталкиваются (A-11, отчёт 20.10 19:49).
      *  - пика нейросвязей (Genome.neuralLinksPeak) — без него у организма нет арены
-     *    нейросвязей, и они идут в общий пул.
+     *    нейросвязей, и они идут в общий пул;
+     *  - позы покоя (BakedLayout.restX) — без неё физике-библиотеке не из чего завести тело.
+     *    Переносится по cellGenomeId: порядок слотов остаётся своим.
+     *  - треугольников нынешнего перебора (BakedLayout.trianglesVersion) — прежний терял треть.
+     *    Они выводятся из самой раскладки (связи и поза покоя), поэтому, если не хватает только
+     *    их, тело заново не выращивается.
      *
      * Сам геном не трогается — берётся только недостающее, остальное как в файле: имя,
      * версия, порядок стадий. В том числе уже лежащая раскладка: от неё зависит, как
@@ -100,19 +105,24 @@ object GenomeImport {
         if (genome.stageInstruction.isEmpty()) return null
         val needsLayout = genome.cellsAmount <= 0
         val layout = genome.sortedGraph
-        // Граница тела (BakedLayout.interiorLinks) появилась позже раскладки, а её признак
-        // с тех пор менялся (BakedLayout.interiorVersion).
-        val needsInterior = layout != null && layout.cellsInLayout > 0 && !layout.hasCurrentInterior
-        // Пик нейросвязей (ёмкость их арены) появился ещё позже.
+        // Пик нейросвязей (ёмкость их арены) появился позже раскладки.
         val needsNeuralPeak = genome.neuralLinksPeak == null
-        if (!needsLayout && genome.preview != null && !needsInterior && !needsNeuralPeak) return null
+        // Поза покоя для физики-библиотеки (BakedLayout.restX) — позже всех.
+        val needsRestPose = layout != null && layout.cellsInLayout > 0 && !layout.hasRestPose
+        // Треугольники прежнего перебора (BakedLayout.trianglesVersion) — терялась треть.
+        val needsTriangles = layout != null && layout.cellsInLayout > 0 && !layout.hasCurrentTriangles
+        val needsGrowth = needsLayout || genome.preview == null || needsNeuralPeak || needsRestPose
+        if (!needsGrowth && !needsTriangles) return null
+        // Только треугольники: они из самой раскладки, выращивать тело ради них незачем.
+        if (!needsGrowth) return genome.copy(sortedGraph = layout!!.withTrianglesFromLinks())
 
         val baked = baker.bake(genome, genome.name)
-        // Раскладка остаётся своей — граница переносится в неё по cellGenomeId, порядок
+        // Раскладка остаётся своей — поза покоя переносится в неё по cellGenomeId, порядок
         // слотов не меняется. Уже лежащий снимок тоже не трогается.
         if (!needsLayout) return genome.copy(
             preview = genome.preview ?: baked.preview,
-            sortedGraph = layout?.withInteriorFrom(baked.sortedGraph),
+            sortedGraph = layout?.withRestPoseFrom(baked.sortedGraph)
+                ?.withTrianglesFromLinks(),
             neuralLinksPeak = genome.neuralLinksPeak ?: baked.neuralLinksPeak
         )
         return genome.copy(
@@ -165,25 +175,27 @@ object GenomeImport {
     }
 
     /** Уже проверенный результат роста: коллизии имён обрабатываем как при импорте JSON. */
-    fun storeBaked(genome: Genome, targetDir: FileHandle): FileHandle =
-        place(targetDir, fileBaseName(genome.name + EXTENSION)) { name -> encodeGenome(genome.copy(name = name)) }
+    fun storeBaked(genome: Genome, targetDir: FileHandle, beforePlace: (FileHandle, ByteArray) -> Unit): FileHandle =
+        place(targetDir, fileBaseName(genome.name + EXTENSION), beforePlace) { name -> encodeGenome(genome.copy(name = name)) }
 
     /**
      * Свободное место под геном: «X», «X (2)», «X (3)»… [content] строит байты под каждое
      * пробуемое имя (у JSON имя лежит и внутри генома). Занятое теми же байтами — это уже
      * импортированный этот же геном: он и возвращается, без второй копии.
      */
-    private fun place(targetDir: FileHandle, baseName: String, content: (String) -> ByteArray): FileHandle {
+    private fun place(targetDir: FileHandle, baseName: String, beforePlace: ((FileHandle, ByteArray) -> Unit)?, content: (String) -> ByteArray): FileHandle {
         targetDir.mkdirs()
         for (n in 1..MAX_SUFFIX) {
             val name = if (n == 1) baseName else "$baseName ($n)"
-            val target = targetDir.child(name + EXTENSION)
+            val target = GameFilePaths.child(targetDir, name + EXTENSION)
             val bytes = content(name)
-            if (!target.exists()) {
-                target.writeBytes(bytes, false)
-                return target
+            val exists = target.exists()
+            if (exists && !target.readBytes().contentEquals(bytes)) continue
+            beforePlace?.invoke(target, bytes)
+            if (!exists) {
+                GameFilePaths.writeAtomically(target) { it.writeBytes(bytes, false) }
             }
-            if (target.readBytes().contentEquals(bytes)) return target
+            return target
         }
         throw IllegalArgumentException("в ${targetDir.path()} занято $MAX_SUFFIX имён «$baseName (n)»")
     }

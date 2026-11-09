@@ -111,6 +111,7 @@ class CellLookTest {
         assertEquals(DebugFilter.ENERGY.ordinal, constInt("FILTER_ENERGY"))
         assertEquals(DebugFilter.SIGNAL.ordinal, constInt("FILTER_SIGNAL"))
         assertEquals(DebugFilter.COLLISION.ordinal, constInt("FILTER_COLLISION"))
+        assertEquals(DebugFilter.SLEEP.ordinal, constInt("FILTER_SLEEP"))
         assertEquals(0, DebugFilter.ORIGINAL.ordinal, "u_filter = 0 — без фильтра")
     }
 

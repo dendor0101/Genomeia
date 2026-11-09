@@ -48,8 +48,14 @@ class TutorialPanel(
     val inputBridge: Actor = InputBridge()
 
     /** Не `width`: внутри лямбд DSL это имя берётся у таблицы-получателя (а там 0). */
-    private val panelWidth = min(w * 0.38f, 480.dp())
+    private val panelWidth get() = min(w * 0.56f, 420.dp())
 
+    fun resize() {
+        composedStep = -1
+        refresh()
+    }
+
+    private lateinit var footer: VisTable
     private lateinit var tasks: VisTable
 
     /** Шаг, для которого собран текст; -1 — ещё не собран. */
@@ -69,31 +75,22 @@ class TutorialPanel(
         val step = tutorial.step
 
         root.clearChildren()
-        root.visTable(backgroundColor = BACKGROUND) {
-            pad(16.dp())
-            defaults().left().width(panelWidth)
-
-            visLabel(
-                bundle.format("tutorial.progress", tutorial.stepIndex + 1, tutorial.steps.size),
-                textColor = MUTED,
-                font = game.mediumFont
-            )
-            row()
-
-            visLabel(bundle.get("tutorial.${step.id}.title"), font = game.extraLargeFont)
-                .setWrap(true)
-            row()
-
-            // Текст шага бывает длинным — он прокручивается, а задания и кнопка остаются
-            // на месте.
-            visScrollPane({ maxHeight(h * 0.33f).padTop(8.dp()) }, scrollingDisabledX = true) {
-                // Ширину тексту даёт сама прокрутка (по X она выключена): заданная вручную
-                // не учитывала отступы содержимого, и край текста уходил под панель.
-                visLabel(bundle.get("tutorial.${step.id}.text")) { growX() }.setWrap(true)
+        root.visTable(cellInit = { grow() }, backgroundColor = BACKGROUND) {
+            pad(6.dp())
+            visScrollPane({ width(panelWidth).minHeight(0f).growY() }, scrollingDisabledX = true) {
+                top()
+                defaults().left().width(panelWidth - 16.dp())
+                visLabel(bundle.format("tutorial.progress", tutorial.stepIndex + 1, tutorial.steps.size),
+                    textColor = MUTED, font = game.mediumFont).setWrap(true)
+                row()
+                visLabel(bundle.get("tutorial." + step.id + ".title"), font = game.largeFont).setWrap(true)
+                row()
+                visLabel(bundle.get("tutorial." + step.id + ".text")).setWrap(true)
+                row()
+                tasks = visTable { }
             }
             row()
-
-            tasks = visTable { }
+            footer = visTable { }
         }
         root.invalidateHierarchy()
     }
@@ -105,7 +102,7 @@ class TutorialPanel(
 
         // Задания — в рамке: без неё они сливались с текстом шага.
         if (step.tasks.isNotEmpty()) {
-            tasks.visTable(cellInit = { width(panelWidth).padTop(12.dp()) }) {
+            tasks.visTable(cellInit = { width(panelWidth - 16.dp()).padTop(8.dp()) }) {
                 background = tasksFrame
                 pad(10.dp(), 12.dp(), 10.dp(), 12.dp())
                 defaults().left().growX()
@@ -127,13 +124,14 @@ class TutorialPanel(
         }
 
         lateinit var next: VisTextButton
-        next = tasks.visTextButton(
+        footer.clearChildren()
+        next = footer.visTextButton(
             bundle.get(if (tutorial.isLastStep) "tutorial.finish" else "tutorial.next"),
             onClick = {
                 if (next.isDisabled) return@visTextButton
                 if (tutorial.isLastStep) onFinish() else onNext()
             }
-        ) { padTop(12.dp()).width(panelWidth * 0.5f).expandX().right() }
+        ) { padTop(4.dp()).width(panelWidth).expandX().right() }
         next.isDisabled = !tutorial.isStepDone
         if (next.isDisabled) next.hint(bundle.get("tutorial.next.locked"))
 

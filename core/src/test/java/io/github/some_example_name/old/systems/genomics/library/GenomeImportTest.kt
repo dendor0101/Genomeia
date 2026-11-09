@@ -2,7 +2,6 @@ package io.github.some_example_name.old.systems.genomics.library
 
 import com.badlogic.gdx.files.FileHandle
 import io.github.some_example_name.old.systems.genomics.genome.BakedLayout
-import io.github.some_example_name.old.systems.genomics.genome.INTERIOR_VERSION
 import io.github.some_example_name.old.systems.genomics.genome.Genome
 import io.github.some_example_name.old.systems.genomics.genome.GenomePreview
 import io.github.some_example_name.old.systems.genomics.genome.decodeGenome
@@ -198,36 +197,41 @@ class GenomeImportTest {
     }
 
     @Test
-    fun `граница тела допекается в старую раскладку без смены порядка слотов`() {
-        // Старая раскладка: клетки 5, 7, 9 в этом порядке, границы нет.
+    fun `поза покоя допекается в старую раскладку без смены порядка слотов`() {
+        // Старая раскладка: клетки 5, 7, 9 в этом порядке, позы покоя нет.
         val oldLayout = BakedLayout(cellGenomeIdsInSlotOrder = listOf(5, 7, 9))
         val genome = bakedGenome("g").copy(sortedGraph = oldLayout)
-        // Новое запекание кладёт их иначе и знает границу; клетки 9 в нём нет.
-        val bakerWithInterior = Baker { g, name ->
+        // Новое запекание кладёт их иначе и знает позу покоя; клетки 3 в старой нет.
+        val bakerWithPose = Baker { g, name ->
             g.copy(name = name, sortedGraph = BakedLayout(
-                cellGenomeIdsInSlotOrder = listOf(7, 5, 3),
-                interiorLinks = listOf(6, 0, 4),
-                interiorVersion = INTERIOR_VERSION
+                cellGenomeIdsInSlotOrder = listOf(7, 5, 3, 9),
+                restX = listOf(1f, 2f, 3f, 4f), restY = listOf(-1f, -2f, -3f, -4f),
+                restRadius = listOf(0.5f, 0.4f, 0.3f, 0.2f), restBone = listOf(false, true, false, false)
             ))
         }
 
-        val rebaked = assertNotNull(GenomeImport.withBaking(genome, bakerWithInterior))
+        val rebaked = assertNotNull(GenomeImport.withBaking(genome, bakerWithPose))
         val layout = assertNotNull(rebaked.sortedGraph)
 
         assertEquals(listOf(5, 7, 9), layout.cellGenomeIdsInSlotOrder)
-        assertEquals(listOf(0, 6, 0), layout.interiorLinks)
-        assertTrue(layout.hasInteriorLinks)
+        // Поза покоя перенесена по cellGenomeId.
+        assertEquals(listOf(2f, 1f, 4f), layout.restX)
+        assertEquals(listOf(-2f, -1f, -4f), layout.restY)
+        assertEquals(listOf(0.4f, 0.5f, 0.2f), layout.restRadius)
+        assertEquals(listOf(true, false, false), layout.restBone)
+        assertTrue(layout.hasRestPose)
         // Снимок, который уже был, не перезаписан.
         assertTrue(rebaked.preview === genome.preview)
         // Второй раз печь нечего.
-        assertEquals(null, GenomeImport.withBaking(rebaked, bakerWithInterior))
+        assertEquals(null, GenomeImport.withBaking(rebaked, bakerWithPose))
 
-        // Граница прежнего признака (версия 0) перепекается, хотя она есть; порядок слотов свой.
-        val outdated = rebaked.copy(sortedGraph = layout.copy(interiorLinks = listOf(1, 1, 1), interiorVersion = 0))
-        val updated = assertNotNull(GenomeImport.withBaking(outdated, bakerWithInterior)).sortedGraph!!
-        assertEquals(listOf(5, 7, 9), updated.cellGenomeIdsInSlotOrder)
-        assertEquals(listOf(0, 6, 0), updated.interiorLinks)
-        assertEquals(INTERIOR_VERSION, updated.interiorVersion)
+        // Клетки нет в новом запекании: поза не переносится вовсе — половинная поза собрала
+        // бы тело из клеток в нуле координат.
+        val without9 = BakedLayout(
+            cellGenomeIdsInSlotOrder = listOf(7, 5),
+            restX = listOf(1f, 2f), restY = listOf(-1f, -2f), restRadius = listOf(0.5f, 0.4f), restBone = listOf(false, false)
+        )
+        assertEquals(oldLayout, oldLayout.withRestPoseFrom(without9))
     }
 
     @Test

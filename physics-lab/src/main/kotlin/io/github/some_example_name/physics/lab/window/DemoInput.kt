@@ -23,7 +23,7 @@ import kotlin.math.sqrt
 internal fun DemoWindow.handleInput() { with(session) { with(state) {
     tmp.set(Gdx.input.x.toFloat(), Gdx.input.y.toFloat(), 0f)
     viewport.unproject(tmp)
-    mouseX = tmp.x.toDouble(); mouseY = tmp.y.toDouble()
+    world.dragTo(tmp.x.toDouble(), tmp.y.toDouble())
 
     // Диалог забирает мышь ПЕРВЫМ. Иначе клик по ползунку, который висит поверх
     // тела, одновременно хватал бы вершину под ним.

@@ -44,8 +44,8 @@ class CellSearchManager(
                 val index = currentCellIndex ?: cellReplay.getCellIndex(nextStageTick, p) ?: continue
                 if (index == itselfIndex) continue
 
-                val px = particleEntity.x[index]
-                val py = particleEntity.y[index]
+                val px = particleEntity.x(index)
+                val py = particleEntity.y(index)
                 val r = particleEntity.radius[index]
 
                 val d = distanceTo(clickX, clickY, px, py)
@@ -82,8 +82,8 @@ class CellSearchManager(
                 val currentCellIndex = cellReplay.getCellIndex(currentTick, p)
                 val index = currentCellIndex ?: cellReplay.getCellIndex(nextStageTick, p) ?: continue
 
-                val dx = particleEntity.x[index] - grabbedX
-                val dy = particleEntity.y[index] - grabbedY
+                val dx = particleEntity.x(index) - grabbedX
+                val dy = particleEntity.y(index) - grabbedY
                 val rr = particleEntity.radius[index] + grabbedRadius
 
                 if (dx * dx + dy * dy <= rr * rr) {
@@ -136,8 +136,8 @@ class CellSearchManager(
      * дочь могла встать вплотную к клетке, которую поиск не видел.
      */
     private fun collectPlacementNeighbours(clickedCellIndex: Int, symmetryManager: SymmetryManager): PlacementNeighbours {
-        val cx = particleEntity.x[clickedCellIndex]
-        val cy = particleEntity.y[clickedCellIndex]
+        val cx = particleEntity.x(clickedCellIndex)
+        val cy = particleEntity.y(clickedCellIndex)
         val reach = maxOf(
             CellPlacement.neighbourReach(particleEntity.radius[clickedCellIndex]),
             symmetryManager.candidateReach()
@@ -149,8 +149,8 @@ class CellSearchManager(
         for (i in -layers..layers) for (j in -layers..layers) {
             for (p in gridManager.getParticles(gx + i, gy + j)) {
                 if (p == clickedCellIndex) continue
-                val x = particleEntity.x[p]
-                val y = particleEntity.y[p]
+                val x = particleEntity.x(p)
+                val y = particleEntity.y(p)
                 val dx = x - cx
                 val dy = y - cy
                 if (dx * dx + dy * dy >= reach * reach) continue

@@ -272,7 +272,7 @@ val GenomeProto: ProtoBuf get() = SpecialModDataTypes.proto
 // ==================== СОХРАНЕНИЕ ====================
 fun saveGenome(genome: Genome, fileName: String) {
     // Сохраняем файл с расширением .genome
-    GameFiles.genomesDir().child("$fileName.genome").writeBytes(encodeGenome(genome), false)
+    GameFiles.genomeFile(fileName).writeBytes(encodeGenome(genome), false)
 }
 
 /**
@@ -305,7 +305,7 @@ fun encodeGenome(genome: Genome): ByteArray {
 
 // ==================== ЗАГРУЗКА ====================
 fun loadGenome(fileName: String): Genome {
-    val file = GameFiles.genomesDir().child("$fileName.genome")
+    val file = GameFiles.genomeFile(fileName)
 
     if (!file.exists()) {
         throw IllegalStateException("Файл генома не найден: $fileName.genome")

@@ -81,29 +81,53 @@ class BugReportDialog(
     private var changes = 0
     private var writtenChanges = 0
 
+    private val bodyCell: Cell<VisTable>
+    private val scrollCell: Cell<ScrollPane>
+    private val actionsCell: Cell<VisTable>
+
     init {
         setupTitleSize(game)
         isModal = true
         isMovable = true
-
-        val width = minOf(w * 0.9f, 640f.dp())
+        titleLabel.setEllipsis(false)
+        titleLabel.setWrap(true)
+        titleTable.getCell(titleLabel).minWidth(0f).growX()
 
         // Прокручивается только содержимое: на телефоне в высоту оно не влезает. Ширина у
         // него фиксированная — иначе длинный текст растянул бы его шире окна. Кнопки
         // действий — под прокруткой, всегда на виду.
         val content = globalVisTable { composeContent() }
-        val holder = VisTable().apply { add(content).width(width - SCROLLBAR_ROOM.dp()) }
+        val holder = VisTable()
+        bodyCell = holder.add(content)
         val scroll = ScrollPane(holder).apply {
             setScrollingDisabled(true, false)
             setFadeScrollBars(false)
             setOverscroll(false, false)
         }
-        contentTable.add(scroll).width(width).maxHeight(h * 0.6f)
+        scrollCell = contentTable.add(scroll).minHeight(0f)
         contentTable.row()
-        contentTable.add(globalVisTable { composeActions() }).width(width)
+        actionsCell = contentTable.add(globalVisTable { composeActions() })
 
         closeOnEscape()
+        fitToViewport()
+    }
+
+    override fun getPrefWidth() = minOf(super.getPrefWidth(), w)
+    override fun getPrefHeight() = minOf(super.getPrefHeight(), h)
+
+    fun fitToViewport() {
+        val bodyWidth = minOf(w - padLeft - padRight - 8.dp(), 640.dp()).coerceAtLeast(1f)
+        val closeWidth = titleTable.getCell(titleTable.children.peek()).prefWidth
+        titleLabel.width = (bodyWidth - titleTable.padLeft - titleTable.padRight - closeWidth).coerceAtLeast(1f)
+        titleTable.invalidateHierarchy()
+        padTop(titleTable.prefHeight)
+        bodyCell.width((bodyWidth - SCROLLBAR_ROOM.dp()).coerceAtLeast(1f))
+        actionsCell.width(bodyWidth)
+        scrollCell.width(bodyWidth).maxHeight((h - padTop - padBottom - actionsCell.actor.prefHeight - 20.dp()).coerceAtLeast(1f))
+        bodyCell.table.invalidateHierarchy()
+        scrollCell.table.invalidateHierarchy()
         pack()
+        setSize(minOf(width, w), minOf(height, h))
         centerWindow()
     }
 

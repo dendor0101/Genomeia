@@ -19,7 +19,7 @@ import io.github.some_example_name.old.commands.PlayerCommand
 import io.github.some_example_name.old.commands.UserCommandManager
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.DISingleThreadSimulationContainer
-import io.github.some_example_name.old.core.GameFiles
+import io.github.some_example_name.old.core.GameFilePaths
 import io.github.some_example_name.old.features.worldeditor.WorldEditorIntent
 import io.github.some_example_name.old.features.worldeditor.WorldGenerator
 import io.github.some_example_name.old.features.worldeditor.WorldSpec
@@ -195,12 +195,11 @@ class MenuViewModel(
 
             // Только из старых .bug: файл приходит из приложений сессии, как и раньше.
             is MenuIntent.GenomeImported -> {
-                SessionAttachments.restore(intent.attachment, GameFiles.genomesDir().child(intent.fileName))
+                SessionAttachments.restoreGenome(intent.attachment, intent.fileName)
             }
 
             is MenuIntent.MapImported -> {
-                val target = GameFiles.mapsDir().child("${intent.slot}.map")
-                check(SessionAttachments.restore(intent.attachment, target)) { "нет снимка импортированной карты" }
+                if (BugReplay.isActive) SessionAttachments.restoreMap(intent.attachment, intent.slot)
                 // Снимок уже есть в attachment: не дублируем весь мир второй раз в .bug.
                 SessionAttachments.markMapWritten(intent.slot)
                 navigation.performCommand(GoSimulation(world = null, genomeName = null, savedWorld = intent.slot))
@@ -226,7 +225,10 @@ class MenuViewModel(
             MapSave.validateImport(file)
             val slot = MapNames.fromFileName(file.nameWithoutExtension())?.let(MapSave::uniqueSlot)
                 ?: ((MapSave.listMaps().maxOfOrNull { it.slot.toIntOrNull() ?: 0 } ?: 0) + 1).toString()
-            val attachment = SessionAttachments.attachImported(file)
+            val attachment = SessionAttachments.attachImported("$slot.map") { file.copyTo(it) }
+            if (SessionAttachments.dir != null) SessionAttachments.restoreMap(attachment, slot)
+            else GameFilePaths.writeAtomically(MapSave.mapFile(slot)) { file.copyTo(it) }
+            // Команда означает успешный импорт: ошибка записи цели не должна попасть в повтор.
             handle(MenuIntent.MapImported(slot, attachment))
         } catch (e: Exception) {
             Gdx.app.error(TAG_MAPS, "не удалось открыть ${file.path()}", e)

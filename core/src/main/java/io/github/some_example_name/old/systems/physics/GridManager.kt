@@ -356,8 +356,7 @@ class GridManager (
         isAlive: BooleanArray,
         particleCell: IntArray,
         inGrid: BooleanArray,
-        px: FloatArray,
-        py: FloatArray
+        particles: io.github.some_example_name.old.entities.ParticleEntity
     ) {
         val seen = BooleanArray(isAlive.size)
 
@@ -396,17 +395,17 @@ class GridManager (
             if (!seen[particleIndex]) {
                 throw IllegalStateException(
                     "сетка: живой частицы $particleIndex нет в сетке; " +
-                        "x=${px[particleIndex]} y=${py[particleIndex]} " +
-                        "gridId=${particleCell[particleIndex]} (строка ${py[particleIndex].toInt()})"
+                        "x=${particles.x(particleIndex)} y=${particles.y(particleIndex)} " +
+                        "gridId=${particleCell[particleIndex]} (строка ${particles.y(particleIndex).toInt()})"
                 )
             }
 
-            val actual = cellIndexOfClamped(px[particleIndex].toInt(), py[particleIndex].toInt())
+            val actual = cellIndexOfClamped(particles.x(particleIndex).toInt(), particles.y(particleIndex).toInt())
             if (particleCell[particleIndex] != actual) {
                 throw IllegalStateException(
                     "сетка: частица $particleIndex лежит в чужой клетке; " +
                         "gridId=${particleCell[particleIndex]} а по позиции должна быть $actual; " +
-                        "x=${px[particleIndex]} y=${py[particleIndex]} (строка ${py[particleIndex].toInt()})"
+                        "x=${particles.x(particleIndex)} y=${particles.y(particleIndex)} (строка ${particles.y(particleIndex).toInt()})"
                 )
             }
         }

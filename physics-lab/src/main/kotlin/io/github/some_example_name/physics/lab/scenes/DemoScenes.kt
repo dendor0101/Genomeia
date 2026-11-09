@@ -1,5 +1,7 @@
 package io.github.some_example_name.physics.lab.scenes
 
+import io.github.some_example_name.physics.lab.inspection.trapCrashScan
+
 import io.github.some_example_name.physics.CONTACT_SCALE
 import io.github.some_example_name.physics.DT
 import io.github.some_example_name.physics.MAX_SPEED_CELLS_PER_TICK
@@ -59,7 +61,7 @@ internal fun DemoSession.sceneCtx() = with(state) { SceneCtx(
     shatter = { o ->
         for (c in 0 until conCount) if (organismOf[conA[c]] == o) { conDead[c] = true; killEdgeNow(conEdge[c]) }
         tearsPending = true
-        simulate()
+        world.stepSolverOnly(); if (trapCrash > 0) trapCrashScan()
     },
     step = { stepOnce() },
     stepContract = { gait = true; stepOnce() },
@@ -85,7 +87,7 @@ internal fun DemoSession.slamOrganisms() { with(state) {
     // противоречивая пара действий: таран НАЗНАЧАЕТ скорость всем частицам, а
     // рука тут же начинает с ней бороться. Замер: пик 9.32 при потолке 8.0 и
     // 136 срабатываний clampSpeed, хотя сам таран на кирпиче проходит чисто.
-    if (dragId >= 0) { matchWeight[dragId] = 1.0; dragId = -1 }
+    world.release()
     // Два самых крупных организма — это тела; свободные частицы отсеиваются
     // сами, они размером в одну клетку.
     val order = (0 until organismCount).sortedByDescending { organismSize[it] }
@@ -112,8 +114,8 @@ internal fun DemoSession.slamOrganisms() { with(state) {
     val speed = BULLET_SPEED_FRACTION * MAX_SPEED_CELLS_PER_TICK * body.meanLinkLength / DT
     for (i in 0 until n) {
         when (organismOf[i]) {
-            a -> { vx[i] = dx * speed; vy[i] = dy * speed }
-            b -> { vx[i] = -dx * speed; vy[i] = -dy * speed }
+            a -> world.setVelocity(i, dx * speed, dy * speed)
+            b -> world.setVelocity(i, -dx * speed, -dy * speed)
         }
     }
     // Скорость задана мимо решателя: спящие тела надо разбудить, иначе её обнулят.
@@ -122,7 +124,7 @@ internal fun DemoSession.slamOrganisms() { with(state) {
         if (cellA < 0 && organismOf[i] == a) cellA = i
         if (cellB < 0 && organismOf[i] == b) cellB = i
     }
-    sleep.requestWake(cellA); sleep.requestWake(cellB)
+    world.wake(cellA); world.wake(cellB)
     if (!quiet) println("[DemoSession] таран: организмы $a и $b, по " +
         "%.1f клеток/тик навстречу".format(speed * DT / body.meanLinkLength))
 } }
@@ -143,12 +145,10 @@ internal fun DemoSession.fireBullet() { with(state) {
     }
     if (cnt == 0) return
     val speed = BULLET_SPEED_FRACTION * MAX_SPEED_CELLS_PER_TICK * body.meanLinkLength / DT
-    px[i] = maxX + body.meanLinkLength * 8.0
-    py[i] = sumY / cnt
-    prevX[i] = px[i]; prevY[i] = py[i]
-    vx[i] = -speed; vy[i] = 0.0
+    world.place(i, maxX + body.meanLinkLength * 8.0, sumY / cnt)
+    world.setVelocity(i, -speed, 0.0)
     // Пуля — свободная частица, она тоже могла уснуть.
-    sleep.requestWake(i)
+    world.wake(i)
     println("[DemoSession] пуля: клетка #$i, скорость " +
         "%.1f клеток/тик".format(speed * DT / body.meanLinkLength))
 } }

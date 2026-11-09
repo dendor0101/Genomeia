@@ -32,6 +32,21 @@ abstract class Formula(val key: String, val label: String) {
      */
     open val dependsOnTime: Boolean get() = false
 
+    /** Раздел справочника формул в гайде. Симуляция этим не пользуется. */
+    open val group: FormulaGroup get() = if (dependsOnTime) FormulaGroup.MEMORY else FormulaGroup.SIGNAL
+
+    /**
+     * Стенд гайда рисует третьей линией память нейрона (NeuralEntity.remember): у формулы
+     * она значит что-то своё, что стоит видеть (накопленное у lif). Симуляция этим не пользуется.
+     */
+    open val showsMemory: Boolean get() = false
+
+    /**
+     * Входы такой формулы обязаны складываться: редактор ставит «Сложение» и не даёт его
+     * сменить. У lif произведение входов бессмысленно — один молчащий вход обнулял бы всё.
+     */
+    open val requiresSum: Boolean get() = false
+
     /**
      * Что делает формула — для гайда. Ключ в I18NBundle: `formula.<key>.description`; у
      * формулы мода без описания — пустая строка. Лениво: тесты :core живут без Gdx.
@@ -43,6 +58,24 @@ abstract class Formula(val key: String, val label: String) {
             ""
         }
     }
+}
+
+/**
+ * Разделы справочника формул в гайде, в порядке показа. Заголовок раздела в I18NBundle —
+ * `guide.formulas.group.<имя в нижнем регистре>`.
+ */
+enum class FormulaGroup {
+    /** Без памяти: каждому входу x свой выход y. */
+    SIGNAL,
+
+    /** Вход не важен: выход — время, сытость клетки, клавиша, число связей. */
+    SOURCE,
+
+    /** Помнят прошлые тики. */
+    MEMORY,
+
+    /** Для спайковых сетей: выход — короткие импульсы 0/1 или их частота. */
+    SPIKES,
 }
 
 /**
@@ -63,7 +96,7 @@ object Formulas {
     private val builtIn = listOf<Formula>(
         Linear, Sine, Cosine, Sigmoid, StepLe, StepLt, Time, Impulse, InRange, Pow,
         Remember, RandomRange, Red, Green, Blue, Energy, ControllerKey, Decay, Spike, Abs,
-        LinksAmount, Identity,
+        LinksAmount, Identity, Lif, Trace,
     )
 
     private val modded = mutableListOf<Formula>()
@@ -105,6 +138,9 @@ object Formulas {
     val DEFAULT: Formula get() = Linear
 
     val defaultIndex: Int by lazy { requireIndex(DEFAULT.key) }
+
+    /** Номер lif: Synapse по нему узнаёт спайковый постсинаптический нейрон. */
+    val lifIndex: Int by lazy { requireIndex(Lif.key) }
 }
 
 // ---------------------------------------------------------------- встроенные формулы
@@ -142,12 +178,14 @@ private object StepLt : Formula("step_lt", "y = b, x < a; y = c, x >= a") {
 }
 
 private object Time : Formula("time", "y = t") {
+    override val group get() = FormulaGroup.SOURCE
     override val dependsOnTime get() = true
     override fun compute(cells: CellEntity, cellIndex: Int, x: Float) =
         cells.simulationData.timeSimulation + cellIndex
 }
 
 private object Impulse : Formula("impulse", "y = impulse(a), x>=1") {
+    override val group get() = FormulaGroup.SPIKES
     override val dependsOnTime get() = true
     override fun compute(cells: CellEntity, cellIndex: Int, x: Float): Float = with(cells) {
         if (x >= 1f && simulationData.timeSimulation > getDTime(cellIndex)) {
@@ -210,6 +248,7 @@ private object Blue : Formula("blue", "y = b(x)") {
 }
 
 private object Energy : Formula("energy", "y = energy") {
+    override val group get() = FormulaGroup.SOURCE
     override val dependsOnTime get() = true
     override fun compute(cells: CellEntity, cellIndex: Int, x: Float) =
         cells.energy[cellIndex] / cells.maxEnergy[cellIndex]
@@ -220,6 +259,7 @@ private object Energy : Formula("energy", "y = energy") {
  * в новых для этого есть клетка Controller, у которой клавиша хранится по имени.
  */
 private object ControllerKey : Formula("controller", "y = controller(a)") {
+    override val group get() = FormulaGroup.SOURCE
     override val dependsOnTime get() = true
     override fun compute(cells: CellEntity, cellIndex: Int, x: Float) =
         if (cells.simulationData.controllerKeys[cells.getA(cellIndex).toInt()]) 1f else 0f + x
@@ -249,6 +289,7 @@ private object Decay : Formula("decay", "y = decay(x - a), (b, c)") {
 }
 
 private object Spike : Formula("spike", "y = spike(x) = 1, dx >= a") {
+    override val group get() = FormulaGroup.SPIKES
     override val dependsOnTime get() = true
     override fun compute(cells: CellEntity, cellIndex: Int, x: Float): Float = with(cells) {
         val dx = x - getRemember(cellIndex)
@@ -266,6 +307,7 @@ private object Abs : Formula("abs", "y = |x|") {
 }
 
 private object LinksAmount : Formula("links_amount", "y = links amount") {
+    override val group get() = FormulaGroup.SOURCE
     override val dependsOnTime get() = true
     override fun compute(cells: CellEntity, cellIndex: Int, x: Float) = cells.linkAmount[cellIndex].toFloat()
 }
@@ -276,4 +318,97 @@ private object LinksAmount : Formula("links_amount", "y = links amount") {
  */
 private object Identity : Formula(LegacyTypeIds.IDENTITY_FORMULA, "y = x") {
     override fun compute(cells: CellEntity, cellIndex: Int, x: Float) = x
+}
+
+/**
+ * Спайковый нейрон «копит, теряет, срабатывает» (leaky integrate-and-fire):
+ * v = v·(1 − a) + x; v ≥ b — выход 1 ровно на один тик, v = 0 и пауза на c тиков; иначе 0.
+ *
+ * Так ровный вход становится частотой спайков: чем сильнее x, тем чаще на выходе 1. Этим
+ * сенсор кодирует силу сигнала для Synapse, который понимает только спайки, а нейрон
+ * за синапсами складывает их взвешенные вклады и срабатывает, когда их набралось на порог.
+ *
+ *  - a — какая доля накопленного теряется за тик, в [0, 1]: 1 — не копит совсем (просто
+ *    порог), 0 — не теряет ничего;
+ *  - b — порог; 0 и меньше — порог 1: у нового нейрона b = 0, а с порогом 0 он срабатывал
+ *    бы от тишины;
+ *  - c — пауза после спайка в тиках, не меньше 1: два спайка подряд — это ровная 1, и
+ *    Synapse увидел бы в них один (он ловит рост сигнала).
+ * Тормозящий вход опускает v не ниже −порога: иначе долгое торможение копилось бы без
+ * предела, и нейрон потом молчал бы сотни тиков.
+ *
+ * Состояние: remember — накопленное v, dTime — сколько тиков паузы осталось. Обратный
+ * отсчёт, а не номер тика конца паузы: dTime — float, и номер тика в нём точен только до
+ * 2^24 (~6 суток мира при 30 UPS). У нового нейрона dTime = -1 — паузы нет.
+ *
+ * Только умножение, сложение и сравнения: на ПК и Android результат побитово одинаковый.
+ * По цене — как linear.
+ */
+private object Lif : Formula("lif", "y = lif(x): v(1 - a) + x >= b") {
+    override val dependsOnTime get() = true
+    override val group get() = FormulaGroup.SPIKES
+    override val showsMemory get() = true
+    override val requiresSum get() = true
+
+    /** Предел паузы: дальше это уже не пауза, а выключенный нейрон. */
+    private const val MAX_PAUSE = 100_000
+
+    override fun compute(cells: CellEntity, cellIndex: Int, x: Float): Float = with(cells) {
+        val pause = getDTime(cellIndex)
+        if (pause > 0f) {
+            setDTime(cellIndex, pause - 1f)
+            return 0f
+        }
+
+        // Сравнения, а не coerceIn: NaN из генома проходит coerceIn насквозь.
+        val a = getA(cellIndex)
+        val leak = if (a >= 1f) 1f else if (a > 0f) a else 0f
+        val b = getB(cellIndex)
+        val threshold = if (b > 0f) b else 1f
+
+        val v = getRemember(cellIndex) * (1f - leak) + x
+        if (v >= threshold) {
+            setRemember(cellIndex, 0f)
+            setDTime(cellIndex, getC(cellIndex).toInt().coerceIn(1, MAX_PAUSE).toFloat())
+            return 1f
+        }
+        setRemember(cellIndex, if (v < -threshold) -threshold else v)
+        0f
+    }
+}
+
+/**
+ * След: y = y·(1 − a) + b·x. Обратное к lif: превращает частоту спайков в плавный сигнал
+ * для мышц, хвоста, хамелеона. Формулу ставят прямо исполнителю — отдельный нейрон не нужен.
+ *
+ * При спайках с частотой r (доля тиков со спайком) выход в среднем b·r/a, а при b = a —
+ * сама частота: спайк каждый тик — 1, каждый пятый — 0.2.
+ *  - a — какая доля выхода теряется за тик, в [0, 1]: больше — быстрее реакция (~1/a тиков
+ *    на смену частоты), но выход дрожит между спайками; меньше — ровнее, но медленнее;
+ *  - b — на сколько поднимает выход один спайк; 0 — как a. С a = 1, b = 0 нового нейрона
+ *    формула просто передаёт вход: y = x.
+ *
+ * |y| < [CUTOFF] — ноль. Без этого затухающий хвост сотни тиков держал бы выход чуть выше
+ * нуля (Excreta выделяет при любом положительном выходе), а потом стал бы денормализованным
+ * числом — на некоторых процессорах арифметика с ними в десятки раз медленнее.
+ *
+ * Состояние: remember — сам y.
+ */
+private object Trace : Formula("trace", "y = y(1 - a) + bx") {
+    override val dependsOnTime get() = true
+    override val group get() = FormulaGroup.SPIKES
+
+    private const val CUTOFF = 0.001f
+
+    override fun compute(cells: CellEntity, cellIndex: Int, x: Float): Float = with(cells) {
+        val a = getA(cellIndex)
+        val leak = if (a >= 1f) 1f else if (a > 0f) a else 0f
+        val b = getB(cellIndex)
+        val gain = if (b == 0f || b.isNaN()) leak else b
+
+        var y = getRemember(cellIndex) * (1f - leak) + gain * x
+        if (y < CUTOFF && y > -CUTOFF) y = 0f
+        setRemember(cellIndex, y)
+        y
+    }
 }

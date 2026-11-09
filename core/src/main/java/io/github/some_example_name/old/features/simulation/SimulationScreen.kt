@@ -42,10 +42,11 @@ import io.github.some_example_name.old.core.ui.ConfirmDialog
 import io.github.some_example_name.old.core.ui.KeyboardFocus
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.DISimulationContainer
+import io.github.some_example_name.old.core.utils.pickParticle
 import io.github.some_example_name.old.core.ui.CameraControl
 import io.github.some_example_name.old.core.ui.STYLE_BEIGE
 import io.github.some_example_name.old.core.ui.h
-import io.github.some_example_name.old.core.ui.debugFilterSelectBox
+import io.github.some_example_name.old.core.ui.showDebugFilterDialog
 import io.github.some_example_name.old.core.ui.hint
 import io.github.some_example_name.old.core.ui.keepWindowsOnScreen
 import io.github.some_example_name.old.core.ui.makeStyledButton
@@ -56,6 +57,7 @@ import io.github.some_example_name.old.core.ui.w
 import io.github.some_example_name.old.features.editor.GenomeEditorCaller
 import io.github.some_example_name.old.features.settings.GlobalSettings
 import io.github.some_example_name.old.features.worldeditor.WorldSpec
+import io.github.some_example_name.old.game.applyCustomFont
 import io.github.some_example_name.old.game.applyCustomFontMedium
 import io.github.some_example_name.old.systems.genomics.library.GenomeCatalog
 import io.github.some_example_name.old.systems.simulation.ControllerKeys
@@ -94,6 +96,7 @@ class SimulationScreen(
             userCommandManager.push(PlayerCommand.TouchDown(x, y, isLeftButton = isLeft))
         },
         onTap = ::onWorldTap,
+        onMiddleClick = ::markCellAt,
         onFling = {
             userCommandManager.push(PlayerCommand.StopDrag)
         },
@@ -274,6 +277,25 @@ class SimulationScreen(
     }
 
     /** Касание мира: что делать, решает инструмент. */
+    /**
+     * Средняя кнопка: отметка клетки под курсором для отчёта о баге (PlayerMarks). Клетка ищется
+     * между тиками — сетку и позиции в это время никто не пишет; на паузе — сразу.
+     */
+    private fun markCellAt(x: Float, y: Float) {
+        val c = DISimulationContainer
+        val found = simulationSystem.betweenTicks {
+            val p = c.gridManager.pickParticle(x, y, c.particleEntity, c.cellEntity)
+            if (p < 0 || !c.particleEntity.isCell[p]) null else {
+                val cell = c.particleEntity.holderEntityIndex[p]
+                intArrayOf(cell, c.cellEntity.getGeneration(cell), c.cellEntity.organIndex[cell], c.cellEntity.cellGenomeId[cell])
+            }
+        }
+        viewModel.handle(
+            if (found == null) SimulationIntent.MarkCell(x, y, -1, 0, -1, -1)
+            else SimulationIntent.MarkCell(x, y, found[0], found[1], found[2], found[3])
+        )
+    }
+
     private fun onWorldTap(x: Float, y: Float, isLeft: Boolean) {
         // Решается здесь, при создании команды: в запись сессии уходит уже итоговое действие.
         when (val tool = viewModel.tool) {
@@ -464,13 +486,7 @@ class SimulationScreen(
         UserPreferences.flushOptical(force=true)
         viewModel.stopWorld()
         renderSystem.dispose()
-        simulationSystem.simulationData.isFinish = true
-        simulationSystem.stopUpdateThread()
-        // isFinish обрабатывает тик, но цикл мог остановиться раньше, чем до него дошёл
-        // (на паузе — наверняка). Тогда флаг пережил бы экран, и первый тик следующего
-        // захода снёс бы только что построенный мир, а запись сессии осталась бы
-        // незакрытой. Поток уже остановлен, так что дочищаем отсюда.
-        if (simulationSystem.simulationData.isFinish) simulationSystem.dispose()
+        simulationSystem.closeWorld()
         // Пул воркеров живёт в синглтоне контейнера и раньше не останавливался никогда.
         // На десктопе это сходило с рук: потоки daemon, и они умирали вместе с JVM. На
         // Android процесс переживает Activity, поэтому после выхода в меню пул продолжал
@@ -497,7 +513,7 @@ class SimulationScreen(
 
         val bundle = DIGameGlobalContainer.bundle
         val density = Gdx.graphics.density
-        val size = hudButtonSize()
+        val size = HUD_BUTTON_DP * density
         val pad = 8f * density
 
         // --- Сверху: слева меню и геном, справа инструмент и пауза ---
@@ -514,14 +530,18 @@ class SimulationScreen(
         }
         // Сверху по центру — фильтр отладочного режима: только в нём он что-то значит.
         if (renderSystem.mode == RenderMode.DEBUG) {
-            val filter = debugFilterSelectBox(renderSystem.debugFilter) {
-                viewModel.handle(SimulationIntent.SetDebugFilter(it))
-            }
-            filter.hint(bundle.get("debugFilter.hint"))
-            topBar.add(filter).expandX().center()
-        } else {
-            topBar.add().expandX()
+            topBar.add(iconButton(icons.optics).apply { name = "debug-filter-button" }
+                .hint(bundle.get("debugFilter.hint")).onClick {
+                    stage.showDebugFilterDialog(renderSystem.debugFilter) {
+                        viewModel.handle(SimulationIntent.SetDebugFilter(it))
+                    }
+                }).size(size).padLeft(pad)
+            val options = iconButton(icons.options)
+            options.hint(bundle.get("debugOptions.hint"))
+            options.onClick { showDebugOptions(options) }
+            topBar.add(options).size(size).padLeft(pad)
         }
+        topBar.add().expandX()
 
         val toolButton = iconButton(icons.of(viewModel.tool))
         toolButton.hint(bundle.get("tool.title") + ": " + bundle.get(viewModel.tool.labelKey))
@@ -551,15 +571,6 @@ class SimulationScreen(
         root.add(keysToggle).size(size * KEYS_BUTTON_WIDTH, size).left().pad(pad)
 
         bottomAnchor = bottomKeyboard ?: keysToggle
-    }
-
-    /**
-     * Сторона кнопок-значков: не меньше текстовой кнопки (шрифт кнопок свой у каждого
-     * экрана и плотности), иначе значки рядом с текстом выглядели бы мелкими.
-     */
-    private fun hudButtonSize(): Float {
-        val textButton = makeStyledButton("Ag", DIGameGlobalContainer.game, extraTextures).prefHeight
-        return maxOf(HUD_BUTTON_DP * Gdx.graphics.density, textButton)
     }
 
     private fun iconButton(icon: TextureRegion, checkedIcon: TextureRegion? = null): Button =
@@ -639,6 +650,19 @@ class SimulationScreen(
             onSaveAndExit = if (viewModel.isSandbox) ({ showSaveDialog(exitAfter = true) }) else null,
             onExit = ::exit,
         ).show(stage)
+    }
+
+    private fun showDebugOptions(anchor: Actor) {
+        val sim = simulationSystem.simulationData
+        DebugOptionsDialog(
+            game = DIGameGlobalContainer.game,
+            bundle = DIGameGlobalContainer.bundle,
+            state = DebugOptions(renderSystem.showBoundary, renderSystem.showLinks, sim.debugNoTailThrust, sim.debugNoDeepKill),
+            onBoundary = { viewModel.handle(SimulationIntent.SetShowBoundary(it)) },
+            onLinks = { viewModel.handle(SimulationIntent.SetShowLinks(it)) },
+            // Эти две меняют мир — командой мира.
+            onPhysics = { noTail, noDeepKill -> userCommandManager.push(PlayerCommand.SetPhysicsDebug(noTail, noDeepKill)) }
+        ).showUnder(stage, anchor)
     }
 
     private fun showMicroscopeSettings() {
@@ -776,7 +800,7 @@ class SimulationScreen(
 
     private companion object {
         /** Сторона кнопок-значков по углам экрана. */
-        const val HUD_BUTTON_DP = 52f
+        const val HUD_BUTTON_DP = 48f
 
         /** Отступ значка от рамки кнопки. */
         const val HUD_ICON_INSET_DP = 8f

@@ -37,8 +37,8 @@ class ToEditorDataMapper(
         } else null
 
         val angleToParent = if (index != 0) {
-            val dx = particleEntity.x[index] - particleEntity.x[parentIndex]
-            val dy = particleEntity.y[index] - particleEntity.y[parentIndex]
+            val dx = particleEntity.x(index) - particleEntity.x(parentIndex)
+            val dy = particleEntity.y(index) - particleEntity.y(parentIndex)
 
             val len = 1f / invSqrt(dx * dx + dy * dy)
             val toChildCos = dx / len
@@ -84,8 +84,8 @@ class ToEditorDataMapper(
             index = index,
             parentIndex = parentIndex,
             parentId = parentId,
-            x = particleEntity.x[index],
-            y = particleEntity.y[index],
+            x = particleEntity.x(index),
+            y = particleEntity.y(index),
             radius = particleEntity.radius[index],
             isPhantom = isPhantom,
             angleToParent = angleToParent,

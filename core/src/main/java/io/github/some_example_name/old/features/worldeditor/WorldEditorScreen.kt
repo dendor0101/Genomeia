@@ -93,7 +93,7 @@ class WorldEditorScreen(
     // ==================== Верхняя панель ====================
 
     private fun VisTable.topBar() {
-        visTable({ growX() }) {
+        visTable({ growX().padRight(50.dp()) }) {
             visTextButton(
                 text = bundle.get("button.back"),
                 onClick = { navigation.performCommand(GoBack) }

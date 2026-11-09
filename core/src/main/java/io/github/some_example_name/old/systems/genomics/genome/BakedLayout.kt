@@ -9,15 +9,6 @@ import kotlinx.serialization.Transient
 import kotlinx.serialization.protobuf.ProtoNumber
 
 /**
- * Версия признака границы тела (BakedLayout.interiorVersion), которым печёт InteriorCells.
- *  - 0 — «рядом нет места для новой клетки» (19.10), с фиксированными расстояниями редактора;
- *  - 1 — внешний контур объединения дисков клеток с их радиусами (20.10): граница без швов.
- * Поменял признак — увеличь: свои геномы игроков перепекутся при запуске, встроенные —
- * :lwjgl3:bakeBundledGenomes.
- */
-const val INTERIOR_VERSION = 1
-
-/**
  * Запечённая раскладка организма: в каком порядке его клетки, связи и нейросвязи должны
  * лечь в арены.
  *
@@ -89,51 +80,90 @@ data class BakedLayout(
      */
     @ProtoNumber(5) val triangleRestArea2: List<Float> = emptyList(),
 
-    /**
-     * Граница тела, в порядке слотов: сколько физических связей у клетки во взрослом теле,
-     * если она ВНУТРЕННЯЯ, и 0, если граничная. См. InteriorCells и CellEntity.refreshOnEdge.
-     *
-     * Внутренняя — та, что не выходит на внешний контур взрослого тела (InteriorCells). В мире
-     * клетка внутренняя, пока у неё ВСЕ её взрослые связи: пока тело растёт, части связей
-     * ещё нет; умер сосед или порвалась связь — их меньше. В обоих случаях клетка у края,
-     * и это верно на любой стадии и для любой сетки, без запекания каждой стадии.
-     *
-     * Пусто у геномов, запечённых раньше: тогда работает прежний порог по числу связей.
-     */
-    @ProtoNumber(6) val interiorLinks: List<Int> = emptyList(),
+    // ProtoNumber 6 и 7 — бывшая граница тела (interiorLinks, interiorVersion; удалена 03.11:
+    // край тела в мире берётся из физики, PhysicsWorld.isSurfaceCell). Номера не переиспользовать.
 
     /**
-     * Каким признаком запечена граница [interiorLinks] — см. [INTERIOR_VERSION]. Ноль — у
-     * раскладок, запечённых до этого поля, то есть прежним признаком «нет места для новой
-     * клетки»: такую границу GenomeImport.withBaking перепекает, как и отсутствующую.
-     * Симуляция поле не читает — оно только для допекания.
+     * ПОЗА ПОКОЯ ВЗРОСЛОГО ТЕЛА по слотам: координаты клетки в мире редактора (единицы мира
+     * игры) и её радиус. Физика-библиотека (`:physics`, мост — physics/bridge) заводит тело
+     * сразу всей раскладкой: длины покоя связей, площади треугольников, позы костей и место
+     * рождения клетки берутся отсюда (рождение — поворот и масштаб позы по рождённым соседям).
+     * Начало координат — любое: мост ставит тело зиготой в точку подсадки.
+     *
+     * Пусто у раскладок, запечённых раньше: GenomeImport.withBaking допекает позу, не трогая
+     * порядок слотов (как границу, [withRestPoseFrom]).
      */
-    @ProtoNumber(7) val interiorVersion: Int = 0
+    @ProtoNumber(8) val restX: List<Float> = emptyList(),
+    @ProtoNumber(9) val restY: List<Float> = emptyList(),
+    @ProtoNumber(10) val restRadius: List<Float> = emptyList(),
+
+    /**
+     * Кость во взрослом теле, по слотам (клетка типа «bone», cells/Bone.kt): связные куски
+     * костных клеток становятся кластерами shape matching. Тип клетки по ходу роста меняется
+     * (мутация), а тело в библиотеке заводится раз — поэтому берётся взрослый.
+     */
+    @ProtoNumber(11) val restBone: List<Boolean> = emptyList(),
+
+    /**
+     * Каким перебором найдены треугольники [triangleSlots] — см. [TRIANGLES_VERSION]. Ноль — у
+     * раскладок до 27.10, где терялась треть треугольников: GenomeImport.withBaking находит их
+     * заново по связям и позе покоя ([withTrianglesFromLinks]), не трогая порядок слотов.
+     */
+    @ProtoNumber(12) val trianglesVersion: Int = 0,
+
+    /**
+     * Связи поперёк граней — номера связей [linkPairsInSlotOrder] по возрастанию: они не стороны
+     * граней, а лежат поверх ткани, и для физики голая такая связь — край тела посреди него (см.
+     * trianglesOfLinks / TriangleFaces.crossingLinks). Находятся вместе с треугольниками,
+     * [trianglesVersion] 3 и новее. Физика их не получает (LayoutBodies), в игре это обычные связи.
+     * Первая попытка 27.10 взорвала Crayfish при росте: недоросший участок держался на них,
+     * растягивался, и дорастающие связи рождённых в нём клеток рвал падающий предел. После того
+     * как дорастающая связь вышла из-под предела (isGrowingLink, 02.11), Burdock leaf (1131 такая
+     * связь) растёт целым: погибших рёбер 41 → 18, голых рёбер контура 1113 → 1.
+     */
+    @ProtoNumber(13) val crossingLinks: List<Int> = emptyList()
 ) {
 
-    /** Есть ли запечённая граница — у старых раскладок её нет. */
-    val hasInteriorLinks: Boolean get() = interiorLinks.isNotEmpty() && interiorLinks.size == cellsInLayout
-
-    /** Граница есть и запечена нынешним признаком — перепекать её незачем. */
-    val hasCurrentInterior: Boolean get() = hasInteriorLinks && interiorVersion >= INTERIOR_VERSION
-
-    /** [interiorLinks] массивом: читается при каждом изменении связей клетки. */
-    @Transient
-    val interiorLinksArray: IntArray = IntArray(interiorLinks.size) { interiorLinks[it] }
+    /** Треугольники найдены нынешним перебором — пересчитывать незачем. */
+    val hasCurrentTriangles: Boolean get() = trianglesVersion >= TRIANGLES_VERSION
 
     /**
-     * Эта же раскладка с границей из [other] — для допекания старых геномов. Порядок слотов
-     * остаётся СВОИМ: от него зависит, как уже живущие организмы лежат в аренах, поэтому
-     * граница переносится по cellGenomeId. Клетка, которой в [other] нет, — граничная.
+     * Эта же раскладка с треугольниками заново по её связям и позе покоя ([trianglesOfLinks]) —
+     * запекание (RCMSort) и допекание старых раскладок. Порядок слотов и связей свой. Без позы
+     * покоя — без изменений: площадь снимать не с чего.
      */
-    fun withInteriorFrom(other: BakedLayout?): BakedLayout {
-        if (other == null || !other.hasInteriorLinks) return this
+    fun withTrianglesFromLinks(): BakedLayout {
+        if (!hasRestPose) return this
+        val links = linksInLayout
+        val linkA = IntArray(links) { slotByCellGenomeId.get(linkPairsInSlotOrder[2 * it]) }
+        val linkB = IntArray(links) { slotByCellGenomeId.get(linkPairsInSlotOrder[2 * it + 1]) }
+        val mesh = trianglesOfLinks(cellsInLayout, linkA, linkB, restX.toFloatArray(), restY.toFloatArray())
         return copy(
-            interiorLinks = cellGenomeIdsInSlotOrder.map { genomeId ->
-                val slot = other.slotByCellGenomeId.get(genomeId)
-                if (slot == -1) 0 else other.interiorLinks[slot]
-            },
-            interiorVersion = other.interiorVersion
+            triangleSlots = mesh.slots, triangleRestArea2 = mesh.areas, crossingLinks = mesh.crossing,
+            trianglesVersion = TRIANGLES_VERSION
+        )
+    }
+
+    /** Есть ли запечённая поза покоя — у старых раскладок её нет. */
+    val hasRestPose: Boolean
+        get() = cellsInLayout > 0 && restX.size == cellsInLayout && restY.size == cellsInLayout &&
+            restRadius.size == cellsInLayout && restBone.size == cellsInLayout
+
+    /**
+     * Эта же раскладка с позой покоя из [other] — для допекания старых геномов: порядок слотов
+     * свой, поза переносится по cellGenomeId. Клетка, которой в [other] нет, оставляет позу
+     * без изменений; если какой-то клетки не нашлось — поза не переносится вовсе (половинная
+     * поза хуже отсутствующей: тело собралось бы из клеток в нуле координат).
+     */
+    fun withRestPoseFrom(other: BakedLayout?): BakedLayout {
+        if (other == null || !other.hasRestPose) return this
+        val slots = IntArray(cellsInLayout) { other.slotByCellGenomeId.get(cellGenomeIdsInSlotOrder[it]) }
+        if (slots.any { it == -1 }) return this
+        return copy(
+            restX = slots.map { other.restX[it] },
+            restY = slots.map { other.restY[it] },
+            restRadius = slots.map { other.restRadius[it] },
+            restBone = slots.map { other.restBone[it] }
         )
     }
 
@@ -234,18 +264,6 @@ data class BakedLayout(
         for (i in triangleLinkSlots.indices) {
             val e = triangleLinkSlots[i]
             if (e != -1) list[fill[e]++] = i / 3
-        }
-    }
-
-    /**
-     * Сколько формируемых треугольников у клетки в каждом слоте во взрослом теле.
-     * Внутренняя клетка обязана иметь их все (CellEntity.refreshOnEdge): иначе рядом щель.
-     */
-    @Transient
-    val trianglesAroundSlot: IntArray = IntArray(cellsInLayout).also { around ->
-        for (t in 0 until trianglesInLayout) {
-            if (triangleLinkSlots[3 * t] == -1) continue
-            for (v in 0..2) around[triangleSlotsArray[3 * t + v]]++
         }
     }
 

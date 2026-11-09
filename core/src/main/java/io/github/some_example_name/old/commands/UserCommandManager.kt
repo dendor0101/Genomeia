@@ -129,8 +129,8 @@ class UserCommandManager(
             val grabDrag = 0.5f // To reduce oscillations
 
             with(particleEntity) {
-                vx[grabbedParticleIndex] = vx[grabbedParticleIndex] * grabDrag + (tapX - x[grabbedParticleIndex]) * 0.02f
-                vy[grabbedParticleIndex] = vy[grabbedParticleIndex] * grabDrag + (tapY - y[grabbedParticleIndex]) * 0.02f
+                val p = grabbedParticleIndex
+                setVelocity(p, vx(p) * grabDrag + (tapX - x(p)) * 0.02f, vy(p) * grabDrag + (tapY - y(p)) * 0.02f)
             }
         }
     }
@@ -157,6 +157,10 @@ class UserCommandManager(
                 simulationData.stressFlingEvery = cmd.flingEvery
                 simulationData.stressSpawnEvery = cmd.spawnEvery
             }
+            is PlayerCommand.SetPhysicsDebug -> {
+                simulationData.debugNoTailThrust = cmd.noTailThrust
+                simulationData.debugNoDeepKill = cmd.noDeepKill
+            }
             PlayerCommand.StopDrag -> {
                 grabbedParticleIndex = -1
                 simulationData.selectedCellIndex = -1
@@ -178,10 +182,8 @@ class UserCommandManager(
                     val grabDrag = 0.5f // To reduce oscillations
 
                     with(particleEntity) {
-                        vx[grabbedParticleIndex] =
-                            vx[grabbedParticleIndex] * grabDrag + (cmd.x - x[grabbedParticleIndex]) * 0.02f
-                        vy[grabbedParticleIndex] =
-                            vy[grabbedParticleIndex] * grabDrag + (cmd.y - y[grabbedParticleIndex]) * 0.02f
+                        val p = grabbedParticleIndex
+                        setVelocity(p, vx(p) * grabDrag + (cmd.x - x(p)) * 0.02f, vy(p) * grabDrag + (cmd.y - y(p)) * 0.02f)
                     }
                     isDragging = true
 
@@ -204,7 +206,10 @@ class UserCommandManager(
 
                 if (simulationData.selectedCellIndex == -1) {
                     if (cmd.isLeftButton) {
-                        if (cmd.x > 0 && cmd.x < gridManager.gridWidth && cmd.y > 0 && cmd.y < gridManager.gridHeight) {
+                        // На террейне и стенке не сажаем: в толще террейна касаний нет (TerrainBodies), и
+                        // организм вырос бы внутри. Под курсором частица террейна — значит, клик по нему.
+                        val onTerrain = grabbedParticleIndexTap != -1 && particleEntity.terrainCell[grabbedParticleIndexTap] != -1
+                        if (!onTerrain && cmd.x > 0 && cmd.x < gridManager.gridWidth && cmd.y > 0 && cmd.y < gridManager.gridHeight) {
                             val genomeIndex = resolveGenomeIndex(cmd)
                             val randomAngle = if (isEditor) 0f else 0f//MathUtils.random(0f, MathUtils.PI2)
                             organismSpawner.spawn(

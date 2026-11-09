@@ -38,6 +38,9 @@ class SaveGenomeDialog(
     val isGoToMenu: Boolean
 ) : VisDialog(bundle.get("button.saveGenome")) {
 
+    override fun getPrefWidth() = minOf(super.getPrefWidth(), Gdx.graphics.width - 8.dp())
+    override fun getPrefHeight() = minOf(super.getPrefHeight(), Gdx.graphics.height - 8.dp())
+
     private val textures = mutableListOf<Texture>()
 
     fun VisTable.compose() {
@@ -77,6 +80,7 @@ class SaveGenomeDialog(
                 onSave.invoke(name)
             }).hint(bundle.get("editor.hint.saveToFile"))
             if (isGoToMenu) {
+                row()
                 visTextButton(goMenuLabel, onClick = {
                     onGoMenu.invoke()
                 }) { center() }.hint(bundle.get("editor.hint.menuWithoutSaving"))
@@ -92,7 +96,8 @@ class SaveGenomeDialog(
                 }) { center() }.hint(bundle.get("editor.hint.saveAndExport"))
             }
 
-            visTextButton("Share with everyone", onClick = {
+            row()
+            visTextButton(bundle.get("button.shareGenome"), onClick = {
                 val name = genomeNameField?.text ?: throw Exception("genomeNameField is null")
                 // Пока выгрузки на сервер нет, кнопка только сохраняет.
                 onSave.invoke(name)
@@ -135,11 +140,14 @@ class SaveGenomeDialog(
 
         val rootTable = globalVisTable { compose() }
 
-        contentTable.add(rootTable)
+        val scroll = com.badlogic.gdx.scenes.scene2d.ui.ScrollPane(rootTable)
+        scroll.setScrollingDisabled(true, false)
+        contentTable.add(scroll).minSize(0f).grow()
 
         closeOnEscape()
 
         pack()
+        setSize(minOf(width, Gdx.graphics.width - 8.dp()), minOf(height, Gdx.graphics.height - 8.dp()))
         centerWindow()
     }
 

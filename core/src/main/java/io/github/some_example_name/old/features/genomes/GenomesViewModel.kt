@@ -162,7 +162,7 @@ class GenomesViewModel {
                 // В игре файл уже лежит в папке геномов (importGenomeFiles). При повторе его
                 // там нет — кладём из приложений сессии.
                 if (BugReplay.isActive) {
-                    SessionAttachments.restore(intent.attachment, GameFiles.genomesDir().child(intent.fileName))
+                    SessionAttachments.restoreGenome(intent.attachment, intent.fileName)
                 }
                 onGenomesChanged?.invoke()
             }
@@ -200,13 +200,14 @@ class GenomesViewModel {
     private fun rename(genomeName: String, newName: String) {
         if (newName == genomeName) return
         val from = genomeFile(genomeName)
+        val to = genomeFile(newName)
         val genome = decodeGenome(from.readBytes())
         val bytes = encodeGenome(genome.copy(name = newName))
         if (newName.equals(genomeName, ignoreCase = true)) {
             from.delete()
-            genomeFile(newName).writeBytes(bytes, false)
+            to.writeBytes(bytes, false)
         } else {
-            genomeFile(newName).writeBytes(bytes, false)
+            to.writeBytes(bytes, false)
             from.delete()
         }
     }
@@ -225,32 +226,38 @@ class GenomesViewModel {
         val imported = mutableListOf<String>()
         val failed = mutableListOf<String>()
         for (file in files) {
+            lateinit var attachment: String
             val genome = try {
-                GenomeImport.importFile(file, GameFiles.genomesDir(), DIGenomeEditorContainer.genomeBaker)
+                GenomeImport.importFile(file, GameFiles.genomesDir(), DIGenomeEditorContainer.genomeBaker) { target, bytes ->
+                    attachment = SessionAttachments.attachImported(target.name()) { it.writeBytes(bytes, false) }
+                }
             } catch (e: Exception) {
                 Gdx.app.error(TAG, "не удалось импортировать ${file.path()}", e)
                 failed += file.name().removePrefix("~")
                 continue
             }
-            imported += recordImported(genome)
+            imported += recordImported(genome, attachment)
         }
         onImportFinished?.invoke(GenomeImportResult(imported, failed))
     }
 
     fun importBaked(genome: Genome): String {
         check(!BugReplay.isActive)
-        val file = GenomeImport.storeBaked(genome, GameFiles.genomesDir())
+        lateinit var attachment: String
+        val file = GenomeImport.storeBaked(genome, GameFiles.genomesDir()) { target, bytes ->
+            attachment = SessionAttachments.attachImported(target.name()) { it.writeBytes(bytes, false) }
+        }
         if (currentTab != GenomesTab.MINE) handle(GenomesIntent.SelectTab(GenomesTab.MINE))
-        return recordImported(file)
+        return recordImported(file, attachment)
     }
 
-    private fun recordImported(file: FileHandle): String {
-        handle(GenomesIntent.GenomeImported(file.name(), SessionAttachments.attachImported(file)))
+    private fun recordImported(file: FileHandle, attachment: String): String {
+        handle(GenomesIntent.GenomeImported(file.name(), attachment))
         return file.nameWithoutExtension()
     }
 
     private fun genomeFile(name: String): FileHandle =
-        GameFiles.genomesDir().child(name + GenomeImport.EXTENSION)
+        GameFiles.genomeFile(name)
 
     private companion object {
         const val TAG = "GenomeImport"
