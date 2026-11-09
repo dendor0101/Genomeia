@@ -298,15 +298,19 @@ internal fun BodyState.noteSleepContacts(ct: BoundaryContacts): Boolean {
     if (s.asleepCount == 0 || tickJitterX.size != n) return false
     val wake = WAKE_DRIFT_CELLS * linkScale
     val wake2 = wake * wake
+    val ground = GROUND_WAKE_DRIFT_CELLS * linkScale
+    val ground2 = ground * ground
     var any = false
     for (k in 0 until ct.contactCount) {
         val i = ct.contactI(k); val j = ct.contactJ(k)
         val si = s.asleep[organismOf[i]]; val sj = s.asleep[organismOf[j]]
         if (si == sj) continue
         val mover = if (si) j else i
-        if (isFixed(if (si) i else j)) continue
+        val sleeper = if (si) i else j
+        if (isFixed(sleeper)) continue
         val dx = px[mover] - tickJitterX[mover]; val dy = py[mover] - tickJitterY[mover]
-        if (dx * dx + dy * dy > wake2) { s.requestWake(if (si) i else j); any = true }
+        val limit2 = if (cellHomeCompliance.size > sleeper && cellHomeCompliance[sleeper] > 0.0) ground2 else wake2
+        if (dx * dx + dy * dy > limit2) { s.requestWake(sleeper); any = true }
     }
     return any
 }
@@ -394,4 +398,16 @@ private fun BodyState.parkBoundaryLimits(o: Int, park: Boolean) {
 fun BodyState.setSleepOn(value: Boolean) {
     if (!value) for (o in 0 until organismCount) if (sleep.asleep.size > o && sleep.asleep[o]) wakeOrganism(o)
     sleep.on = value
+}
+
+/**
+ * Усыпить организм частицы [i] сейчас, не дожидаясь SLEEP_TICKS покоя (клиент: только что собранный
+ * террейн стоит в покое по построению; ждать 60 тиков значило бы 60 тиков считать его целиком). Между
+ * тиками; при выключенном сне — ничего.
+ */
+internal fun BodyState.sleepNow(i: Int) {
+    if (!sleep.on || cellDead[i]) return
+    val o = organismOf[i]
+    if (o < 0 || sleep.isAsleep(o)) return
+    sleepOrganism(o)
 }

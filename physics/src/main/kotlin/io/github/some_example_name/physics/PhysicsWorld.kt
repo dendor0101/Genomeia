@@ -543,6 +543,30 @@ class PhysicsWorld(
 
     fun grip(cell: Int): Float = state.cellGrip[cell]
 
+    /**
+     * Пружина частицы [cell] к точке ([x], [y]) с податливостью [compliance] (0 — снять): мягкое
+     * ограничение к неподвижному месту, решается вместе с хваткой (Grip.kt). Террейн: точка на
+     * карте, плитка проминается и возвращается в форму. Внешняя сила, как пол.
+     */
+    fun setHome(cell: Int, x: Double, y: Double, compliance: Double) {
+        require(compliance >= 0.0) { "податливость не меньше нуля" }
+        val st = state
+        st.cellHomeX[cell] = x; st.cellHomeY[cell] = y
+        if (st.cellHomeCompliance[cell] != compliance) { st.cellHomeCompliance[cell] = compliance; st.gripsDirty = true }
+    }
+
+    /**
+     * Группа касаний частицы [cell] ([group], 0 — без группы): частицы одной ненулевой группы не
+     * сталкиваются (BodyState.cellGroup; террейн — плитки одной группы, их держат швы). Цена смены —
+     * пересборка широкой фазы при ближайшем подшаге.
+     */
+    fun setContactGroup(cell: Int, group: Int) {
+        val st = state
+        if (st.cellGroup[cell] == group) return
+        st.cellGroup[cell] = group
+        st.contacts?.invalidateBroadphase()
+    }
+
     // --- временные связи между телами (липучка, Joints.kt) ---
 
     /**
@@ -550,14 +574,18 @@ class PhysicsWorld(
      * ограничением расстояния: длина покоя [rest], податливость [compliance] (как SOFT_COMPLIANCE
      * у связи тела; больше — мягче). Номер — слот, стабилен до [removeJoint]. Обе частицы живы и
      * рождены. Будит спящий конец. Связь с погибшей частицей снимается сама при шаге мира.
+     * [wakeStrain] — порог пробуждения соседа (доля длины покоя): 0 — спящий конец будится, как
+     * только другой не спит (липучка); больше нуля — только когда связь растянута или сжата сверх
+     * порога (шов террейна, Joints.prepareJoints). [wake] = false — концы не будить: связь заведена
+     * в покое (шов террейна при сборке мира, который тут же усыпляется — PhysicsWorld.sleepNow).
      */
-    fun addJoint(a: Int, b: Int, rest: Double, compliance: Double): Int {
+    fun addJoint(a: Int, b: Int, rest: Double, compliance: Double, wakeStrain: Double = 0.0, wake: Boolean = true): Int {
         val st = state
         require(a != b && !st.cellDead[a] && !st.cellDead[b]) { "связь — между двумя живыми частицами" }
         require(rest >= 0.0 && compliance >= 0.0) { "длина покоя и податливость не меньше нуля" }
-        if (!st.isFixed(a)) st.sleep.requestWake(a)
-        if (!st.isFixed(b)) st.sleep.requestWake(b)
-        return st.allocJoint(a, b, rest, compliance)
+        if (wake && !st.isFixed(a)) st.sleep.requestWake(a)
+        if (wake && !st.isFixed(b)) st.sleep.requestWake(b)
+        return st.allocJoint(a, b, rest, compliance, wakeStrain)
     }
 
     fun removeJoint(id: Int) = state.freeJoint(id)
@@ -713,6 +741,12 @@ class PhysicsWorld(
 
     /** Разбудить организм частицы [i] в начале следующего подшага. */
     fun wake(i: Int) = state.sleep.requestWake(i)
+
+    /**
+     * Усыпить организм частицы [i] сейчас (BodyState.sleepNow): клиент знает, что он в покое по
+     * построению (террейн при сборке мира). Между тиками; при выключенном сне — ничего.
+     */
+    fun sleepNow(i: Int) = state.sleepNow(i)
 
     /** Сон тел: спящие организмы заморожены и пропускаются решателем. */
     var sleepOn: Boolean

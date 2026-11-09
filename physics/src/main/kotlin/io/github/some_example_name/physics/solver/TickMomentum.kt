@@ -51,20 +51,30 @@ class TickMomentum(internal val n: Int) {
      */
     fun begin(x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
               invMass: DoubleArray, org: IntArray, sleep: BodySleep? = null, outside: BooleanArray? = null) {
+        beginGroups(org, sleep, outside)
+        spans(sleep) { from, to -> beginTargets(from, to, x, y, vx, vy, invMass) }
+    }
+
+    /** Группы по организмам: общие first и union, в одном потоке. */
+    internal fun beginGroups(org: IntArray, sleep: BodySleep?, outside: BooleanArray?) {
         first.fill(-1)
-        spans(sleep) { from, to ->
-            java.util.Arrays.fill(blocked, from, to, false)
-            for (i in from until to) parent[i] = i
-        }
+        spans(sleep) { from, to -> for (i in from until to) parent[i] = i }
         spans(sleep) { from, to ->
             for (i in from until to) {
                 val o = org[i]
                 if (o >= 0 && (outside == null || !outside[i])) { if (first[o] < 0) first[o] = i else union(first[o], i) }
-                val m = if (invMass[i] > 0.0) 1.0 / invMass[i] else 0.0
-                targetX[i] = m * vx[i]; targetY[i] = m * vy[i]
-                targetL[i] = m * (x[i] * vy[i] - y[i] * vx[i])
-                blocked[i] = invMass[i] <= 0.0
             }
+        }
+    }
+
+    /** Импульс частиц [from, to) в начале тика. Кусок параллельного прохода: у каждой частицы свои поля. */
+    internal fun beginTargets(from: Int, to: Int, x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
+                              invMass: DoubleArray) {
+        for (i in from until to) {
+            val m = if (invMass[i] > 0.0) 1.0 / invMass[i] else 0.0
+            targetX[i] = m * vx[i]; targetY[i] = m * vy[i]
+            targetL[i] = m * (x[i] * vy[i] - y[i] * vx[i])
+            blocked[i] = invMass[i] <= 0.0
         }
     }
 
@@ -140,16 +150,35 @@ class TickMomentum(internal val n: Int) {
     }
     fun cancel(x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
                invMass: DoubleArray, sleep: BodySleep? = null) {
-        // Корень группы — её наименьший индекс (union), то есть тоже внутри диапазонов.
-        spans(sleep) { from, to ->
-            java.util.Arrays.fill(mass, from, to, 0.0); java.util.Arrays.fill(cx, from, to, 0.0)
-            java.util.Arrays.fill(cy, from, to, 0.0); java.util.Arrays.fill(dx, from, to, 0.0)
-            java.util.Arrays.fill(dy, from, to, 0.0); java.util.Arrays.fill(dl, from, to, 0.0)
-            java.util.Arrays.fill(inertia, from, to, 0.0)
-        }
+        spans(sleep) { from, to -> clearRange(from, to) }
+        flattenGroups(sleep)
+        addMomentum(x, y, vx, vy, invMass, sleep)
+        spans(sleep) { from, to -> centreRange(from, to) }
+        addInertia(x, y, invMass, sleep)
+        spans(sleep) { from, to -> spinRange(from, to) }
+        spans(sleep) { from, to -> applyRange(from, to, x, y, vx, vy, invMass) }
+    }
+
+    // Разбито на шаги для ParallelPhysics.momentumCancel. Куски *Range пишут только по своим
+    // индексам: их можно на воркеров. Суммы по группам (addMomentum, addInertia) идут в общие
+    // ячейки и порядок сложения входит в результат, поэтому остаются в одном потоке.
+    // Корень группы — её наименьший индекс (union), то есть тоже внутри диапазонов.
+    internal fun clearRange(from: Int, to: Int) {
+        java.util.Arrays.fill(mass, from, to, 0.0); java.util.Arrays.fill(cx, from, to, 0.0)
+        java.util.Arrays.fill(cy, from, to, 0.0); java.util.Arrays.fill(dx, from, to, 0.0)
+        java.util.Arrays.fill(dy, from, to, 0.0); java.util.Arrays.fill(dl, from, to, 0.0)
+        java.util.Arrays.fill(inertia, from, to, 0.0)
+    }
+
+    /** После этого parent[i] — корень группы: кускам нечего сжимать и нечего писать в общее. */
+    internal fun flattenGroups(sleep: BodySleep?) {
+        spans(sleep) { from, to -> for (i in from until to) parent[i] = find(i) }
+    }
+
+    internal fun addMomentum(x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray, invMass: DoubleArray, sleep: BodySleep?) {
         spans(sleep) { from, to ->
             for (i in from until to) {
-                val g = find(i)
+                val g = parent[i]
                 if (blocked[i] || invMass[i] <= 0.0) { blocked[g] = true; continue }
                 val m = 1.0 / invMass[i]
                 mass[g] += m; cx[g] += m * x[i]; cy[g] += m * y[i]
@@ -157,30 +186,36 @@ class TickMomentum(internal val n: Int) {
                 dl[g] += m * (x[i] * vy[i] - y[i] * vx[i]) - targetL[i]
             }
         }
-        spans(sleep) { from, to ->
-            for (g in from until to) if (mass[g] > 0.0) {
-                cx[g] /= mass[g]; cy[g] /= mass[g]
-                dl[g] -= cx[g] * dy[g] - cy[g] * dx[g]
-                dx[g] /= mass[g]; dy[g] /= mass[g]
-            }
+    }
+
+    internal fun centreRange(from: Int, to: Int) {
+        for (g in from until to) if (mass[g] > 0.0) {
+            cx[g] /= mass[g]; cy[g] /= mass[g]
+            dl[g] -= cx[g] * dy[g] - cy[g] * dx[g]
+            dx[g] /= mass[g]; dy[g] /= mass[g]
         }
+    }
+
+    internal fun addInertia(x: DoubleArray, y: DoubleArray, invMass: DoubleArray, sleep: BodySleep?) {
         spans(sleep) { from, to ->
             for (i in from until to) {
                 if (invMass[i] <= 0.0) continue
-                val g = find(i); val rx = x[i] - cx[g]; val ry = y[i] - cy[g]
+                val g = parent[i]; val rx = x[i] - cx[g]; val ry = y[i] - cy[g]
                 inertia[g] += (rx * rx + ry * ry) / invMass[i]
             }
         }
-        spans(sleep) { from, to ->
-            for (g in from until to) dl[g] = if (inertia[g] > 1e-18) dl[g] / inertia[g] else 0.0
-        }
-        spans(sleep) { from, to ->
-            for (i in from until to) {
-                val g = find(i)
-                if (blocked[g] || invMass[i] <= 0.0) continue
-                vx[i] -= dx[g] - dl[g] * (y[i] - cy[g])
-                vy[i] -= dy[g] + dl[g] * (x[i] - cx[g])
-            }
+    }
+
+    internal fun spinRange(from: Int, to: Int) {
+        for (g in from until to) dl[g] = if (inertia[g] > 1e-18) dl[g] / inertia[g] else 0.0
+    }
+
+    internal fun applyRange(from: Int, to: Int, x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray, invMass: DoubleArray) {
+        for (i in from until to) {
+            val g = parent[i]
+            if (blocked[g] || invMass[i] <= 0.0) continue
+            vx[i] -= dx[g] - dl[g] * (y[i] - cy[g])
+            vy[i] -= dy[g] + dl[g] * (x[i] - cx[g])
         }
     }
 }

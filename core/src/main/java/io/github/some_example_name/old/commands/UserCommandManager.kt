@@ -206,7 +206,10 @@ class UserCommandManager(
 
                 if (simulationData.selectedCellIndex == -1) {
                     if (cmd.isLeftButton) {
-                        if (cmd.x > 0 && cmd.x < gridManager.gridWidth && cmd.y > 0 && cmd.y < gridManager.gridHeight) {
+                        // На террейне и стенке не сажаем: в толще террейна касаний нет (TerrainBodies), и
+                        // организм вырос бы внутри. Под курсором частица террейна — значит, клик по нему.
+                        val onTerrain = grabbedParticleIndexTap != -1 && particleEntity.terrainCell[grabbedParticleIndexTap] != -1
+                        if (!onTerrain && cmd.x > 0 && cmd.x < gridManager.gridWidth && cmd.y > 0 && cmd.y < gridManager.gridHeight) {
                             val genomeIndex = resolveGenomeIndex(cmd)
                             val randomAngle = if (isEditor) 0f else 0f//MathUtils.random(0f, MathUtils.PI2)
                             organismSpawner.spawn(

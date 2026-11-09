@@ -628,9 +628,23 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      */
     var cellNoContact = BooleanArray(0)
 
+    /**
+     * ГРУППА КАСАНИЙ по частице: две частицы одной ненулевой группы не сталкиваются (BoundaryContacts.bonded,
+     * в широкой фазе — при перекладке вершины, не в каждом подшаге). Клиент-игра: плитки террейна —
+     * одна группа; соседние плитки перекрываются по шву и держатся связями (Joints.kt), касание
+     * расталкивало бы шов, и плитки не засыпали бы никогда. 0 — без группы. Входит в снимок.
+     */
+    var cellGroup = IntArray(0)
+
     /** Хватка по частице 0..1 (присоска-чашка) — см. Grip.kt. Входит в снимок. */
     var cellGrip = FloatArray(0)
-    var gripIds = IntArray(0); var gripN = 0
+    /**
+     * Пружина к своему месту (террейн: точка на карте) — податливость по частице, 0 — нет пружины;
+     * место — cellHomeX/Y. Решается вместе с хваткой (Grip.kt). Входит в снимок.
+     */
+    var cellHomeCompliance = DoubleArray(0)
+    var cellHomeX = DoubleArray(0); var cellHomeY = DoubleArray(0)
+    var gripN = 0
     /** Список [gripIds] устарел: смена хватки, уплотнение, снимок. */
     var gripsDirty = false
 
@@ -638,6 +652,10 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     var jointA = IntArray(0); var jointB = IntArray(0)
     var jointRest = DoubleArray(0); var jointCompliance = DoubleArray(0)
     var jointLive = BooleanArray(0)
+    /** Порог пробуждения соседа по связи, доля длины покоя; 0 — будит всегда (липучка), см. prepareJoints. */
+    var jointWakeStrain = DoubleArray(0)
+    /** Связи, у которых хоть один конец движется, — на этот тик (prepareJoints); в снимок не входят. */
+    var jointActive = IntArray(0); var jointActiveN = 0
     var jointSlots = 0; var jointLiveCount = 0
     var jointFree = IntArray(0); var jointFreeN = 0
 

@@ -253,6 +253,7 @@ object DISimulationContainer : DIContext, Disposable {
     ).apply {
         // Порядок команд мира не зависит от того, какой воркер что посчитал (WorkOrder).
         workOrder = worldCommandsManager.workOrder
+        renderBufferManager.threads = this
     }
 
     val divideManager = DivideManager(

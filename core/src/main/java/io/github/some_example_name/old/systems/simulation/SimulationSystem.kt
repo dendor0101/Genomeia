@@ -100,7 +100,8 @@ class SimulationSystem(
     // Замер идёт всегда (два nanoTime на фазу — ~0.6 мкс на тик), вывод в CSV включается
     // флагом PROFILE_LOG. Накопители — обычные LongArray по номеру фазы: ни строк,
     // ни хэш-мапы, ни боксинга Double в цикле симуляции.
-    private val profiler = PhaseProfiler()
+    /** Открыт для замеров без экрана (PerfCheck): только чтение windowMicros. */
+    val profiler = PhaseProfiler()
     private val worldStats = WorldStats()
 
     /**
@@ -448,6 +449,13 @@ class SimulationSystem(
     }
 
     /**
+     * Для замера на снимке (PerfCheck): хэш мира без ввода игрока на заданном тике, кратном STATE_HASH_PERIOD. Тик
+     * задаётся на паузе, значение читается после него: разное число воркеров сверяется по нему.
+     */
+    @Volatile var hashWatchTick = -1
+    @Volatile var hashWatchReport = ""
+
+    /**
      * Хэш состояния мира — в журнал, а при повторе сверка с записанным. Первое
      * несовпадение — первый тик, где повтор разошёлся с игрой.
      */
@@ -477,6 +485,8 @@ class SimulationSystem(
             grid = gridManager::hashOrder,
             physics = worldPhysics::hash
         )
+        // Генератор команд игрока (часть PlayerInput) в каждом запуске с новым сидом: на мир без команд он не влияет.
+        if (tick == hashWatchTick) hashWatchReport = "%016x".format(stateHashNames.indices.filter { stateHashNames[it] != "PlayerInput" }.fold(0L) { h, k -> Fnv.long(h, state.parts[k]) })
         if (BugReplay.isActive) {
             BugReplay.checkStateHash(SessionJournal.epoch, tick, state, stateHashNames)
         } else {

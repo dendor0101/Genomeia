@@ -130,8 +130,8 @@ fun BodyState.applyPlasticity(dt: Double) {
     }
     val links = layout.links
     val areas = layout.areas
-    for (block in 0..layout.seam) {
-        if (block != layout.seam && layout.awake[block] == 0) continue
+    for (block in 0 until layout.buckets) {
+        if (block < layout.seam && layout.awake[block] == 0) continue
         for (slot in links.start[block] until links.start[block] + links.count[block]) {
             val c = links.items[slot]
             if (c >= 0) plasticLink(c, k)

@@ -101,6 +101,12 @@ class ParticleEntity(
     var isCell = BooleanArray(maxAmount) { false }
     var isSub = BooleanArray(maxAmount) { false }
     var holderEntityIndex = IntArray(maxAmount) { -1 }
+    /**
+     * Клетка карты частицы террейна (WorldTerrainManager): y · 65536 + x; −1 — не террейн; −2 − k — частица
+     * стенки у рамки номер k (TerrainBodies.wallMark). По ней мост
+     * физики режет террейн на плитки и сшивает соседей (TerrainBodies). Задаётся раз при постройке мира.
+     */
+    var terrainCell = IntArray(maxAmount) { -1 }
     var isPheromoneEmitter = BooleanArray(maxAmount) { false }
 
     /**
@@ -248,6 +254,7 @@ class ParticleEntity(
         this.isCell[particleIndex] = isCell
         this.isSub[particleIndex] = isSub
         this.holderEntityIndex[particleIndex] = holderEntityIndex
+        this.terrainCell[particleIndex] = -1
         this.isPheromoneEmitter[particleIndex] = isPheromoneEmitter
         // Слот мог достаться от внутренней клетки — сбрасываем, иначе новая частица
         // молча не попала бы в сетку.
@@ -299,6 +306,7 @@ class ParticleEntity(
         isCell[particleIndex] = false
         isSub[particleIndex] = false
         holderEntityIndex[particleIndex] = -1
+        terrainCell[particleIndex] = -1
         isPheromoneEmitter[particleIndex] = false
         isInGrid[particleIndex] = true
     }
@@ -319,6 +327,7 @@ class ParticleEntity(
         state.booleans(::isCell)
         state.booleans(::isSub)
         state.ints(::holderEntityIndex)
+        state.ints(::terrainCell)
         state.booleans(::isPheromoneEmitter)
         state.booleans(::isInGrid)
         state.intList(::nonCellList)
@@ -372,6 +381,7 @@ class ParticleEntity(
         isCell.clear(false)
         isSub.clear(false)
         holderEntityIndex.clear(-1)
+        terrainCell.clear(-1)
         isPheromoneEmitter.clear(false)
         isInGrid.clear(true)
         nonCellList.clear()
@@ -397,6 +407,7 @@ class ParticleEntity(
         isCell = isCell.resize(false)
         isSub = isSub.resize(false)
         holderEntityIndex = holderEntityIndex.resize(-1)
+        terrainCell = terrainCell.resize(-1)
         isPheromoneEmitter = isPheromoneEmitter.resize(false)
         isInGrid = isInGrid.resize(true)
         positionInNonCellList = positionInNonCellList.resize(-1)

@@ -80,8 +80,8 @@ fun BodyState.applyViscosity(h: Double) {
         return
     }
     val links = layout.links
-    for (block in 0..layout.seam) {
-        if (block != layout.seam && layout.awake[block] == 0) continue
+    for (block in 0 until layout.buckets) {
+        if (block < layout.seam && layout.awake[block] == 0) continue
         for (slot in links.start[block] until links.start[block] + links.count[block]) {
             val c = links.items[slot]
             if (c >= 0) viscousLink(c, k)
@@ -176,52 +176,65 @@ fun BodyState.applyNormalDrag(h: Double) {
         // Разгон среды телу СТОИТ: импульс FLOW_MASS * dFlow на каждую частицу.
         // Именно эта строка делает обмен честным — тело не может получить от среды
         // больше, чем вложило.
-        for (q in 0 until s.spanCount) for (i in s.spanStart[q] until s.spanEnd[q]) {
-            val o = organismOf[i]
-            vx[i] -= FLOW_MASS * comAccX[o]
-            vy[i] -= FLOW_MASS * comAccY[o]
-        }
+        val pw = activeWorkers
+        if (pw != null && pw.count > 1) parallelPhysics(pw).flowPayment()
+        else for (q in 0 until s.spanCount) flowPaymentRange(s.spanStart[q], s.spanEnd[q])
     }
 
-    for (e in 0 until boundCount) {
-        val i = boundA[e]; val j = boundB[e]
-        val ex = px[j] - px[i]
-        val ey = py[j] - py[i]
-        val len = sqrt(ex * ex + ey * ey)
-        if (len < 1e-12) continue
+    // Рёбра контура — по организмам, порядок внутри организма прежний: см. ParallelPhysics.normalDrag.
+    val w = activeWorkers
+    if (w != null && w.count > 1) { parallelPhysics(w).normalDrag(h); return }
+    for (e in 0 until boundCount) normalDragEdge(e, h)
+}
 
-        val nx = -ey / len
-        val ny = ex / len
-
-        // Скорость середины ребра ОТНОСИТЕЛЬНО увлечённой среды: гребёт ребро целиком,
-        // а не каждый конец отдельно. Вычитание общего вектора и даёт длинный накат —
-        // когда среда догнала корпус, сопротивление его движению обнуляется, а
-        // локальные взмахи плавника по-прежнему гребут в полную силу.
-        // Запас берётся СВОЕГО организма: у каждого тела он свой, см. flowVX.
+/** Плата частиц [from, to) за разгон запаса среды. Кусок параллельного прохода. */
+internal fun BodyState.flowPaymentRange(from: Int, to: Int) {
+    for (i in from until to) {
         val o = organismOf[i]
-        val vmx = (vx[i] + vx[j]) * 0.5 - flowVX[o]
-        val vmy = (vy[i] + vy[j]) * 0.5 - flowVY[o]
-        val vn = vmx * nx + vmy * ny
+        vx[i] -= FLOW_MASS * comAccX[o]
+        vy[i] -= FLOW_MASS * comAccY[o]
+    }
+}
 
-        // Линейная плюс квадратичная. Квадратичная сила равна NORMAL_DRAG_Q * vn*|vn|,
-        // поэтому в коэффициенте (он делится на vn) остаётся |vn|.
-        var k = (NORMAL_DRAG + NORMAL_DRAG_QUADRATIC * abs(vn)) * len * h
-        if (k > 0.5) k = 0.5      // выше — переброс скорости через ноль, то есть раскачка
+/** Сопротивление среды одному ребру контура. */
+internal fun BodyState.normalDragEdge(e: Int, h: Double) {
+    val i = boundA[e]; val j = boundB[e]
+    val ex = px[j] - px[i]
+    val ey = py[j] - py[i]
+    val len = sqrt(ex * ex + ey * ey)
+    if (len < 1e-12) return
 
-        val dv = -vn * k
-        vx[i] += dv * nx; vy[i] += dv * ny
-        vx[j] += dv * nx; vy[j] += dv * ny
+    val nx = -ey / len
+    val ny = ex / len
 
-        // Трение ВДОЛЬ ребра. См. TANGENT_DRAG.
-        if (tangentDrag > 0.0) {
-            val tx = ex / len; val ty = ey / len
-            val vt = vmx * tx + vmy * ty
-            var kt = tangentDrag * NORMAL_DRAG * len * h
-            if (kt > 0.5) kt = 0.5
-            val dvt = -vt * kt
-            vx[i] += dvt * tx; vy[i] += dvt * ty
-            vx[j] += dvt * tx; vy[j] += dvt * ty
-        }
+    // Скорость середины ребра ОТНОСИТЕЛЬНО увлечённой среды: гребёт ребро целиком,
+    // а не каждый конец отдельно. Вычитание общего вектора и даёт длинный накат —
+    // когда среда догнала корпус, сопротивление его движению обнуляется, а
+    // локальные взмахи плавника по-прежнему гребут в полную силу.
+    // Запас берётся СВОЕГО организма: у каждого тела он свой, см. flowVX.
+    val o = organismOf[i]
+    val vmx = (vx[i] + vx[j]) * 0.5 - flowVX[o]
+    val vmy = (vy[i] + vy[j]) * 0.5 - flowVY[o]
+    val vn = vmx * nx + vmy * ny
+
+    // Линейная плюс квадратичная. Квадратичная сила равна NORMAL_DRAG_Q * vn*|vn|,
+    // поэтому в коэффициенте (он делится на vn) остаётся |vn|.
+    var k = (NORMAL_DRAG + NORMAL_DRAG_QUADRATIC * abs(vn)) * len * h
+    if (k > 0.5) k = 0.5      // выше — переброс скорости через ноль, то есть раскачка
+
+    val dv = -vn * k
+    vx[i] += dv * nx; vy[i] += dv * ny
+    vx[j] += dv * nx; vy[j] += dv * ny
+
+    // Трение ВДОЛЬ ребра. См. TANGENT_DRAG.
+    if (tangentDrag > 0.0) {
+        val tx = ex / len; val ty = ey / len
+        val vt = vmx * tx + vmy * ty
+        var kt = tangentDrag * NORMAL_DRAG * len * h
+        if (kt > 0.5) kt = 0.5
+        val dvt = -vt * kt
+        vx[i] += dvt * tx; vy[i] += dvt * ty
+        vx[j] += dvt * tx; vy[j] += dvt * ty
     }
 }
 

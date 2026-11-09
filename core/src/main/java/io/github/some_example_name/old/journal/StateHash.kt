@@ -67,8 +67,9 @@ object StateHash {
      * 15 — у клетки нет счётчика сформированных треугольников (formedTriangles): край тела
      *     клетки берётся из мира физики (PhysicsWorld.isSurfaceCell).
      * 16 — в часть PhysicsWorld вошли липучки: их временные связи мира физики (StickyJoints).
+     * 17 — у частицы клетка карты террейна (ParticleEntity.terrainCell); террейн — тело мира физики.
      */
-    const val VERSION = 16
+    const val VERSION = 17
 
     class Result(val hash: Long, val parts: LongArray)
 

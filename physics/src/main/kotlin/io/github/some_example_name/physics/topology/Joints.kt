@@ -29,27 +29,47 @@ import kotlin.math.sqrt
 
 /** Связи с погибшим концом — снять; спящий конец связи с бодрствующим — будить. До шага решателя. */
 internal fun BodyState.prepareJoints() {
+    jointActiveN = 0
+    if (jointLiveCount == 0) return
+    if (jointActive.size < jointSlots) jointActive = IntArray(jointA.size)
     for (k in 0 until jointSlots) {
         if (!jointLive[k]) continue
         val a = jointA[k]; val b = jointB[k]
         if (cellDead[a] || cellDead[b]) { freeJoint(k); continue }
+        // АКТИВНЫЕ — у которых хоть один конец движется: подшаги и учёт импульса обходят только их.
+        // Швов террейна тысячи, и почти все — между спящими плитками.
+        if (invMass[a] > 0.0 || invMass[b] > 0.0) jointActive[jointActiveN++] = k
         // Спящая частица заморожена (обратная масса 0): связь тянула бы бодрствующий конец как к
         // стенке. Неподвижная (isFixed) не спит по смыслу и не будится.
         val sa = sleep.isAsleep(organismOf[a]) && !isFixed(a)
         val sb = sleep.isAsleep(organismOf[b]) && !isFixed(b)
-        if (sa != sb) sleep.requestWake(if (sa) a else b)
+        if (sa == sb) continue
+        // Шов террейна (порог больше нуля) будит соседа, только когда передаёт силу — растянут или
+        // сжат сверх порога; до того спящий сосед — неподвижная опора. Иначе одно касание будило бы
+        // по швам весь террейн цепочкой. Липучка (порог 0) будит всегда.
+        val ws = jointWakeStrain[k]
+        if (ws > 0.0) {
+            val dx = px[a] - px[b]; val dy = py[a] - py[b]
+            if (kotlin.math.abs(sqrt(dx * dx + dy * dy) / jointRest[k] - 1.0) <= ws) continue
+        }
+        sleep.requestWake(if (sa) a else b)
     }
 }
 
-/** Подшаг [h]: мягкое ограничение расстояния по каждой связи, по порядку слотов. */
+/**
+ * Подшаг [h]: мягкое ограничение расстояния по активным связям (prepareJoints), по порядку слотов.
+ * Связь, конец которой проснулся посреди тика, ждёт следующего тика: до него плитку держат её
+ * пружины к месту и свои связи.
+ */
 internal fun BodyState.solveJoints(h: Double) {
-    if (jointLiveCount == 0) return
+    if (jointActiveN == 0) return
     val px = px; val py = py; val invMass = invMass
     val inv = 1.0 / (h * h)
     // Рвётся, как связь тела: растянутая сверх предела длины и запаса до разрыва. Мягче
     // (податливость больше) — то же растяжение набирается меньшей силой.
     val tear = LINK_MAX_STRETCH + linkTearStrain
-    for (k in 0 until jointSlots) {
+    for (q in 0 until jointActiveN) {
+        val k = jointActive[q]
         if (!jointLive[k]) continue
         val i = jointA[k]; val j = jointB[k]
         val wi = invMass[i]; val wj = invMass[j]
@@ -68,21 +88,24 @@ internal fun BodyState.solveJoints(h: Double) {
 
 /** Связи объединяют группы своих концов в учёте импульса за тик — как контакт (noteContacts). */
 internal fun BodyState.noteJointsMomentum() {
-    if (jointLiveCount == 0) return
-    for (k in 0 until jointSlots) if (jointLive[k]) tickMomentum.noteJoint(jointA[k], jointB[k], invMass)
+    for (q in 0 until jointActiveN) {
+        val k = jointActive[q]
+        if (jointLive[k]) tickMomentum.noteJoint(jointA[k], jointB[k], invMass)
+    }
 }
 
-internal fun BodyState.allocJoint(a: Int, b: Int, rest: Double, compliance: Double): Int {
+internal fun BodyState.allocJoint(a: Int, b: Int, rest: Double, compliance: Double, wakeStrain: Double = 0.0): Int {
     val k = if (jointFreeN > 0) jointFree[--jointFreeN] else {
         if (jointSlots == jointA.size) {
             val cap = maxOf(8, jointSlots * 2)
             jointA = jointA.copyOf(cap); jointB = jointB.copyOf(cap)
             jointRest = jointRest.copyOf(cap); jointCompliance = jointCompliance.copyOf(cap)
             jointLive = jointLive.copyOf(cap); jointFree = jointFree.copyOf(cap)
+            jointWakeStrain = jointWakeStrain.copyOf(cap)
         }
         jointSlots++
     }
-    jointA[k] = a; jointB[k] = b; jointRest[k] = rest; jointCompliance[k] = compliance
+    jointA[k] = a; jointB[k] = b; jointRest[k] = rest; jointCompliance[k] = compliance; jointWakeStrain[k] = wakeStrain
     jointLive[k] = true; jointLiveCount++
     return k
 }
@@ -114,6 +137,7 @@ internal fun BodyState.writeJoints(out: DataOutput) {
     out.writeInts(jointA, jointSlots); out.writeInts(jointB, jointSlots)
     out.writeDoubles(jointRest, jointSlots); out.writeDoubles(jointCompliance, jointSlots)
     out.writeBooleans(jointLive, jointSlots); out.writeInts(jointFree, jointFreeN)
+    out.writeDoubles(jointWakeStrain, jointSlots)
 }
 
 internal fun BodyState.readJoints(input: DataInput) {
@@ -122,4 +146,5 @@ internal fun BodyState.readJoints(input: DataInput) {
     jointRest = input.readDoubles(0); jointCompliance = input.readDoubles(0)
     jointLive = input.readBooleans(0)
     jointFree = input.readInts(0).let { jointFreeN = it.size; it.copyOf(maxOf(jointA.size, it.size)) }
+    jointWakeStrain = input.readDoubles(0)
 }

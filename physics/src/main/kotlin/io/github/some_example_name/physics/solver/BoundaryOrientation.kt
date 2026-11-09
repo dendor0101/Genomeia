@@ -57,8 +57,8 @@ internal fun BodyState.solveBoundaryOrientationAwake() {
         boundOpp, localBoundary.orientation, px, py, invMass)
     val index = layout.edges
     val orientation = localBoundary.orientation
-    for (block in 0..layout.seam) {
-        if (block != layout.seam && layout.awake[block] == 0) continue
+    for (block in 0 until layout.buckets) {
+        if (block < layout.seam && layout.awake[block] == 0) continue
         var k = index.head[block]
         while (k >= 0) {
             orientEdge(k, boundA, boundB, boundOpp, orientation, px, py, invMass)

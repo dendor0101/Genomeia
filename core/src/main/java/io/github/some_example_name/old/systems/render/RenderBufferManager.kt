@@ -11,7 +11,11 @@ import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.entities.PheromoneEntity
 import io.github.some_example_name.old.entities.SpecialEntity
 import io.github.some_example_name.old.features.settings.GlobalSettings
+import io.github.some_example_name.old.journal.Fnv
+import io.github.some_example_name.old.systems.simulation.ParallelExecutor
+import io.github.some_example_name.old.systems.simulation.Phase
 import io.github.some_example_name.old.systems.simulation.SimulationData
+import io.github.some_example_name.old.systems.simulation.ThreadManager
 import io.github.some_example_name.render.DebugFilter
 import io.github.some_example_name.render.RenderMode
 import io.github.some_example_name.render.pack.CellInstanceBuffer
@@ -147,9 +151,9 @@ class RenderBufferManager(
     private var history = IntArray(0)
 
     /**
-     * Поза не-клеток (субстанций) — [NON_CELL_STRIDE] int: [номер снимка, ключ, x, y], по
+     * Поза не-клеток (субстанций) — [NON_CELL_STRIDE] int: [номер снимка, ключ, x, y, прошлые x, y], по
      * позиции в particleEntity.nonCellList, а не по индексу частицы. Угла у не-клетки нет,
-     * и 16 байт вместо 32 — четверть линии. Список обходится по порядку
+     * и 24 байта вместо 32. Список обходится по порядку
      * позиций, и история читается потоком; по индексу частицы это был бы случайный адрес
      * на каждую субстанцию.
      *
@@ -177,9 +181,8 @@ class RenderBufferManager(
     private var lastTick = Int.MIN_VALUE
 
     /**
-     * Прошлая поза, найденная последним [remember] или [rememberPosition]: её пишет
-     * инстанс, а у клетки — ещё и оверлей. Полями, а не возвратом: три значения разом
-     * без объекта на частицу.
+     * Прошлая поза клетки для оверлея отладочного кадра: он пишется в одном потоке. Инстансы
+     * берут прошлую позу из строки истории, общих полей у кусков на воркерах нет.
      */
     private var lastPrevX = 0f
     private var lastPrevY = 0f
@@ -239,36 +242,76 @@ class RenderBufferManager(
      * Ветки isCell внутри цикла тоже больше нет: здесь заведомо только клетки.
      */
     private fun writeOrganismCells(startIndex: Int): Int {
+        val organs = cellEntity.organEntity.aliveList
+        val executor = threads?.executor
+        // Отладочный кадр пишет оверлей подряд: порядок записи — порядок отрисовки.
+        if (executor != null && executor.workerCount > 1 && !debugFrame && !PROFILE_INTERPOLATION && organs.size > 1) {
+            if (organStart.size < organs.size + 1) organStart = IntArray(maxOf(organs.size + 1, organStart.size * 2))
+            executor.runChunks(organs.size, Phase.RENDER, countOrganJob)
+            organStart[0] = startIndex
+            for (k in 0 until organs.size) organStart[k + 1] += organStart[k]
+            executor.runChunks(organs.size, Phase.RENDER, writeOrganJob)
+            return organStart[organs.size]
+        }
         var writeIndex = startIndex
+        for (organSlot in 0 until organs.size) writeIndex = writeOrganCells(organs.getInt(organSlot), writeIndex)
+        return writeIndex
+    }
 
+    /**
+     * Воркеры игры; null — всё в вызывающем потоке (однопоточный контейнер). Ставит контейнер.
+     * Запись буфера только читает мир и пишет свои инстансы и историю: кусок — организм, у
+     * него свой непрерывный участок буфера, начало считается по числу живых клеток. Замер 09.11,
+     * 96k клеток, реалистичный режим: 2.1 → 1.1 мс на тик; буфер при 1, 4, 8, 12 воркерах совпал побитово.
+     */
+    var threads: ThreadManager? = null
+
+    /** Для замера (PerfCheck): хэш инстансов снимка на заданном тике — сверка записи на воркерах с записью в одном потоке. */
+    @Volatile var instanceHashTick = -1
+    @Volatile var instanceHashValue = 0L
+
+    private fun hashInstances(count: Int): Long {
+        var h = 0L
+        for (k in 0 until count * CellInstanceBuffer.STRUCT_INTS) h = Fnv.word(h, instances[k])
+        return h
+    }
+    private var organStart = IntArray(64)
+    private val countOrganJob = ParallelExecutor.ChunkJob { k, _ -> organStart[k + 1] = aliveCellsOf(cellEntity.organEntity.aliveList.getInt(k)) }
+    private val writeOrganJob = ParallelExecutor.ChunkJob { k, _ -> writeOrganCells(cellEntity.organEntity.aliveList.getInt(k), organStart[k]) }
+
+    private fun aliveCellsOf(organIndex: Int): Int {
         val organEntity = cellEntity.organEntity
-        val organs = organEntity.aliveList
+        if (!organEntity.hasArena(organIndex)) return 0
+        val cellAlive = cellEntity.isAlive
+        var count = 0
+        for (cellIndex in organEntity.cellArenaBase[organIndex] until organEntity.cellArenaEnd(organIndex)) if (cellAlive[cellIndex]) count++
+        return count
+    }
 
+    /** Живые клетки организма в буфер начиная с [startIndex]; возвращает индекс за последней. */
+    private fun writeOrganCells(organIndex: Int, startIndex: Int): Int {
+        val organEntity = cellEntity.organEntity
+        if (!organEntity.hasArena(organIndex)) return startIndex
+        var writeIndex = startIndex
         val pColor = particleEntity.color
         val pRadius = particleEntity.radius
         val cellAlive = cellEntity.isAlive
+        val cellFrom = organEntity.cellArenaBase[organIndex]
+        val cellTo = organEntity.cellArenaEnd(organIndex)
+        val particleBase = organEntity.particleArenaBase[organIndex]
 
-        for (organSlot in 0 until organs.size) {
-            val organIndex = organs.getInt(organSlot)
-            if (!organEntity.hasArena(organIndex)) continue
+        for (cellIndex in cellFrom until cellTo) {
+            if (!cellAlive[cellIndex]) continue
+            val particleIndex = particleBase + (cellIndex - cellFrom)
 
-            val cellFrom = organEntity.cellArenaBase[organIndex]
-            val cellTo = organEntity.cellArenaEnd(organIndex)
-            val particleBase = organEntity.particleArenaBase[organIndex]
+            // Частица берётся АРИФМЕТИКОЙ из слота, а не через particleIndexes.
+            // Если параллельность арен где-то нарушится, углы и радиусы поедут от
+            // ЧУЖОЙ клетки — картинка при этом останется правдоподобной, поэтому
+            // расхождение надо ловить явно, а не глазами.
+            if (DEBUG_CHECKS) checkArenaParallel(cellIndex, organIndex, particleIndex, cellFrom, particleBase)
 
-            for (cellIndex in cellFrom until cellTo) {
-                if (!cellAlive[cellIndex]) continue
-                val particleIndex = particleBase + (cellIndex - cellFrom)
-
-                // Частица берётся АРИФМЕТИКОЙ из слота, а не через particleIndexes.
-                // Если параллельность арен где-то нарушится, углы и радиусы поедут от
-                // ЧУЖОЙ клетки — картинка при этом останется правдоподобной, поэтому
-                // расхождение надо ловить явно, а не глазами.
-                if (DEBUG_CHECKS) checkArenaParallel(cellIndex, organIndex, particleIndex, cellFrom, particleBase)
-
-                writeCell(writeIndex, cellIndex, particleIndex, pColor, pRadius)
-                writeIndex++
-            }
+            writeCell(writeIndex, cellIndex, particleIndex, pColor, pRadius)
+            writeIndex++
         }
         return writeIndex
     }
@@ -319,6 +362,22 @@ class RenderBufferManager(
 
     /** Субстанции и прочие не-клетки — своим списком, без единого обращения в CellEntity. */
     private fun writeNonCellParticles(startIndex: Int): Int {
+        val nonCells = particleEntity.nonCellList
+        val executor = threads?.executor
+        if (executor != null && executor.workerCount > 1 && !debugFrame && !PROFILE_INTERPOLATION && nonCells.size >= NON_CELL_CHUNK) {
+            nonCellStart = startIndex
+            executor.runChunks((nonCells.size + NON_CELL_CHUNK - 1) / NON_CELL_CHUNK, Phase.RENDER, writeNonCellJob)
+        } else writeNonCellRange(0, nonCells.size, startIndex)
+        return startIndex + nonCells.size
+    }
+
+    private var nonCellStart = 0
+    private val writeNonCellJob = ParallelExecutor.ChunkJob { k, _ ->
+        writeNonCellRange(k * NON_CELL_CHUNK, minOf(particleEntity.nonCellList.size, (k + 1) * NON_CELL_CHUNK), nonCellStart)
+    }
+
+    /** Места [from, to) списка не-клеток в буфер; у каждого места своя строка истории и свой инстанс. */
+    private fun writeNonCellRange(from: Int, to: Int, startIndex: Int) {
         val target = instances
         val nonCells = particleEntity.nonCellList
         val pColor = particleEntity.color
@@ -332,12 +391,14 @@ class RenderBufferManager(
         val sleepFilter = frameFilter == DebugFilter.SLEEP
         val physics = particleEntity.physics
 
-        for (i in 0 until nonCells.size) {
+        val hist = nonCellHistory
+        for (i in from until to) {
             val particleIndex = nonCells.getInt(i)
             val x = particleEntity.x(particleIndex)
             val y = particleEntity.y(particleIndex)
             // Направления у не-клетки нет: ни поворота, ни угла в истории.
             rememberPosition(i, particleIndex, x, y)
+            val h = i * NON_CELL_STRIDE
 
             CellInstanceBuffer.write(
                 target,
@@ -363,12 +424,11 @@ class RenderBufferManager(
                     else -> 0
                 },
                 dir = CellInstanceBuffer.DIR_NONE,
-                prevX = lastPrevX,
-                prevY = lastPrevY,
+                prevX = Float.fromBits(hist[h + 4]),
+                prevY = Float.fromBits(hist[h + 5]),
                 prevDir = CellInstanceBuffer.DIR_NONE
             )
         }
-        return startIndex + nonCells.size
     }
 
     private fun writeCell(
@@ -385,6 +445,11 @@ class RenderBufferManager(
 
         val dir = CellInstanceBuffer.dir(angleCos, angleSin)
         remember(particleIndex, cellEntity.getGeneration(cellIndex), x, y, dir)
+        val hist = history
+        val h = particleIndex * HISTORY_STRIDE
+        val prevX = Float.fromBits(hist[h + 5])
+        val prevY = Float.fromBits(hist[h + 6])
+        val prevDir = hist[h + 7]
 
         CellInstanceBuffer.write(
             instances,
@@ -413,12 +478,15 @@ class RenderBufferManager(
             type = CellInstanceBuffer.type(cellEntity.cellType[cellIndex].toInt(), particleIndex, true),
             look = 0,
             dir = dir,
-            prevX = lastPrevX,
-            prevY = lastPrevY,
-            prevDir = lastPrevDir
+            prevX = prevX,
+            prevY = prevY,
+            prevDir = prevDir
         )
 
-        if (debugFrame) decorateDebugCell(writeIndex, cellIndex, particleIndex, x, y, angleCos, angleSin, pRadius[particleIndex])
+        if (debugFrame) {
+            lastPrevX = prevX; lastPrevY = prevY; lastPrevDir = prevDir
+            decorateDebugCell(writeIndex, cellIndex, particleIndex, x, y, angleCos, angleSin, pRadius[particleIndex])
+        }
     }
 
     /**
@@ -429,8 +497,7 @@ class RenderBufferManager(
      * каждый тик и обязан оставаться маленьким, чтобы JIT встроил его целиком (см. CLAUDE.md,
      * «JIT»).
      */
-    private fun decorateDebugCell(
-        writeIndex: Int,
+    private fun decorateDebugCell(        writeIndex: Int,
         cellIndex: Int,
         particleIndex: Int,
         x: Float,
@@ -456,8 +523,7 @@ class RenderBufferManager(
     }
 
     /**
-     * Прошлая поза клетки с частицей [p] — в [lastPrevX], [lastPrevY], [lastPrevDir], — и
-     * запись нынешней в [history]. Только копирование чисел: ни одного округления (см.
+     * Прошлая поза клетки с частицей [p] и запись нынешней — в её строку [history]. Только копирование чисел: ни одного округления (см.
      * CellInstanceBuffer: «Почему прошлая поза, а не смещение»).
      *
      * [key] — жилец слота, см. [history]. Клетка без годной прошлой позы (новая) или
@@ -489,10 +555,7 @@ class RenderBufferManager(
         hist[h + 4] = dir
         hist[h + 5] = prevX.toRawBits()
         hist[h + 6] = prevY.toRawBits()
-
-        lastPrevX = prevX
-        lastPrevY = prevY
-        lastPrevDir = prevDir
+        hist[h + 7] = prevDir
     }
 
     /**
@@ -517,8 +580,8 @@ class RenderBufferManager(
         hist[h + 1] = key
         hist[h + 2] = x.toRawBits()
         hist[h + 3] = y.toRawBits()
-        lastPrevX = prevX
-        lastPrevY = prevY
+        hist[h + 4] = prevX.toRawBits()
+        hist[h + 5] = prevY.toRawBits()
     }
 
     /**
@@ -722,6 +785,7 @@ class RenderBufferManager(
             )
         }
         snapshot.instanceCount = written
+        if (simulationData.tickCounter == instanceHashTick) instanceHashValue = hashInstances(written)
         snapshot.filter = frameFilter
 
         // Граница — над клетками, под нейросвязями.
@@ -823,8 +887,11 @@ class RenderBufferManager(
         /** Поля [history] на частицу: номер снимка, ключ, x, y, dir, prevX, prevY, — — 32 байта. */
         const val HISTORY_STRIDE = 8
 
-        /** Поля [nonCellHistory] на частицу: номер снимка, ключ, x, y — 16 байт. */
-        const val NON_CELL_STRIDE = 4
+        /** Поля [nonCellHistory] на частицу: номер снимка, ключ, x, y, prevX, prevY — 24 байта (прошлая поза строкой истории: кускам на воркерах нужно без общих полей). */
+        const val NON_CELL_STRIDE = 6
+
+        /** Кусок записи не-клеток по воркерам: 2048 инстансов — десятки микросекунд работы. */
+        const val NON_CELL_CHUNK = 2048
 
         const val NANOS_PER_SECOND = 1_000_000_000L
 

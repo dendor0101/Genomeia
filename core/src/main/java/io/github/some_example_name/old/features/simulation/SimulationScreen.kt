@@ -27,8 +27,6 @@ import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.viewport.ScreenViewport
 import com.kotcrab.vis.ui.VisUI
-import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
-import com.kotcrab.vis.ui.widget.VisCheckBox
 import com.kotcrab.vis.ui.widget.VisDialog
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisTextButton
@@ -589,46 +587,12 @@ class SimulationScreen(
                 viewModel.handle(SimulationIntent.SetDebugFilter(it))
             }
             filter.hint(bundle.get("debugFilter.hint"))
-            val boundary = VisCheckBox(bundle.get("debugBoundary"))
-            DIGameGlobalContainer.game.applyCustomFont(boundary)
-            boundary.isChecked = renderSystem.showBoundary
-            boundary.hint(bundle.get("debugBoundary.hint"))
-            boundary.addListener(object : ChangeListener() {
-                override fun changed(event: ChangeListener.ChangeEvent?, actor: Actor?) {
-                    viewModel.handle(SimulationIntent.SetShowBoundary(boundary.isChecked))
-                }
-            })
-            val links = VisCheckBox(bundle.get("debugLinks"))
-            DIGameGlobalContainer.game.applyCustomFont(links)
-            links.isChecked = renderSystem.showLinks
-            links.hint(bundle.get("debugLinks.hint"))
-            links.addListener(object : ChangeListener() {
-                override fun changed(event: ChangeListener.ChangeEvent?, actor: Actor?) {
-                    viewModel.handle(SimulationIntent.SetShowLinks(links.isChecked))
-                }
-            })
-            val sim = simulationSystem.simulationData
-            val noTail = VisCheckBox(bundle.get("debugNoTail"))
-            val noDeepKill = VisCheckBox(bundle.get("debugNoDeepKill"))
-            for (box in listOf(noTail, noDeepKill)) DIGameGlobalContainer.game.applyCustomFont(box)
-            noTail.isChecked = sim.debugNoTailThrust
-            noDeepKill.isChecked = sim.debugNoDeepKill
-            noTail.hint(bundle.get("debugNoTail.hint"))
-            noDeepKill.hint(bundle.get("debugNoDeepKill.hint"))
-            // Обе галочки меняют мир — командой мира, сразу с обоими значениями.
-            val physicsDebug = object : ChangeListener() {
-                override fun changed(event: ChangeListener.ChangeEvent?, actor: Actor?) {
-                    userCommandManager.push(PlayerCommand.SetPhysicsDebug(noTail.isChecked, noDeepKill.isChecked))
-                }
-            }
-            noTail.addListener(physicsDebug)
-            noDeepKill.addListener(physicsDebug)
+            val options = makeStyledButton(bundle.get("debugOptions"), DIGameGlobalContainer.game, extraTextures)
+            options.hint(bundle.get("debugOptions.hint"))
+            options.onClick { showDebugOptions(options) }
             val center = Table()
             center.add(filter)
-            center.add(boundary).padLeft(pad)
-            center.add(links).padLeft(pad)
-            center.add(noTail).padLeft(pad)
-            center.add(noDeepKill).padLeft(pad)
+            center.add(options).padLeft(pad)
             topBar.add(center).expandX().center()
         } else {
             topBar.add().expandX()
@@ -750,6 +714,19 @@ class SimulationScreen(
             onSaveAndExit = if (viewModel.isSandbox) ({ showSaveDialog(exitAfter = true) }) else null,
             onExit = ::exit
         ).show(stage)
+    }
+
+    private fun showDebugOptions(anchor: Actor) {
+        val sim = simulationSystem.simulationData
+        DebugOptionsDialog(
+            game = DIGameGlobalContainer.game,
+            bundle = DIGameGlobalContainer.bundle,
+            state = DebugOptions(renderSystem.showBoundary, renderSystem.showLinks, sim.debugNoTailThrust, sim.debugNoDeepKill),
+            onBoundary = { viewModel.handle(SimulationIntent.SetShowBoundary(it)) },
+            onLinks = { viewModel.handle(SimulationIntent.SetShowLinks(it)) },
+            // Эти две меняют мир — командой мира.
+            onPhysics = { noTail, noDeepKill -> userCommandManager.push(PlayerCommand.SetPhysicsDebug(noTail, noDeepKill)) }
+        ).showUnder(stage, anchor)
     }
 
     private fun showToolMenu(anchor: Actor) {

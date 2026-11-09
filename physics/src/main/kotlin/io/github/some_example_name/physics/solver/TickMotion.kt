@@ -56,16 +56,15 @@ internal fun BodyState.removeTickJitter() {
     java.util.Arrays.fill(orgSleepDrift2, 0, organismCount, 0.0)
     prepareAwakeSpans()
     val s = sleep
+    val w = activeWorkers
+    if (w != null && w.count > 1) parallelPhysics(w).removeJitter()
+    else for (k in 0 until s.spanCount) removeJitterRange(s.spanStart[k], s.spanEnd[k])
+    // Удаление от места покоя — максимум на организм, общие ячейки: отдельным проходом в одном потоке.
     val calm = s.calmTicks
-    val inv = 1.0 / DT
+    if (calm.isEmpty()) return
     for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
-        if (invMass[i] == 0.0) { tickJitterX[i] = 0.0; tickJitterY[i] = 0.0; continue }
+        if (invMass[i] == 0.0) continue
         val x = px[i]; val y = py[i]
-        val mx = (x - tickJitterX[i]) * inv
-        val my = (y - tickJitterY[i]) * inv
-        tickJitterX[i] = vx[i] - mx; tickJitterY[i] = vy[i] - my
-        vx[i] = mx; vy[i] = my
-        if (calm.isEmpty()) continue
         val o = organismOf[i]
         if (calm[o] == 0) { sleepAnchorX[i] = x; sleepAnchorY[i] = y; continue }
         val dx = x - sleepAnchorX[i]; val dy = y - sleepAnchorY[i]
@@ -74,10 +73,40 @@ internal fun BodyState.removeTickJitter() {
     }
 }
 
+/** Частицы [from, to): скорость — средняя за тик, дрожь — в tickJitter. Кусок параллельного прохода. */
+internal fun BodyState.removeJitterRange(from: Int, to: Int) {
+    val inv = 1.0 / DT
+    for (i in from until to) {
+        if (invMass[i] == 0.0) { tickJitterX[i] = 0.0; tickJitterY[i] = 0.0; continue }
+        val mx = (px[i] - tickJitterX[i]) * inv
+        val my = (py[i] - tickJitterY[i]) * inv
+        tickJitterX[i] = vx[i] - mx; tickJitterY[i] = vy[i] - my
+        vx[i] = mx; vy[i] = my
+    }
+}
+
 /** После сопротивления: дрожь возвращается в скорость. */
 internal fun BodyState.restoreTickJitter() {
     val s = sleep
-    for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
-        vx[i] += tickJitterX[i]; vy[i] += tickJitterY[i]
-    }
+    val w = activeWorkers
+    if (w != null && w.count > 1) { parallelPhysics(w).restoreJitter(); return }
+    for (k in 0 until s.spanCount) restoreJitterRange(s.spanStart[k], s.spanEnd[k])
+}
+
+internal fun BodyState.restoreJitterRange(from: Int, to: Int) {
+    for (i in from until to) { vx[i] += tickJitterX[i]; vy[i] += tickJitterY[i] }
+}
+
+/** Начало учёта импульса за тик: группы в одном потоке, импульс частиц — на воркерах. */
+internal fun BodyState.momentumBegin() {
+    val w = activeWorkers
+    if (w != null && w.count > 1) parallelPhysics(w).momentumBegin()
+    else tickMomentum.begin(px, py, vx, vy, invMass, organismOf, sleep, cellDead)
+}
+
+internal fun BodyState.momentumCancel() {
+    prepareAwakeSpans()
+    val w = activeWorkers
+    if (w != null && w.count > 1) parallelPhysics(w).momentumCancel()
+    else tickMomentum.cancel(px, py, vx, vy, invMass, sleep)
 }

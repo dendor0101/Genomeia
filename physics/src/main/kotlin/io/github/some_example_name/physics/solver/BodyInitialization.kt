@@ -65,7 +65,9 @@ internal fun BodyState.initialize(definition: BodyDefinition) {
     conCellScale = FloatArray(conA.size) { 1f }; triCellScale = FloatArray(triA.size) { 1f }
     cellSoftness = FloatArray(n) { 1f }
     cellNoContact = BooleanArray(n)
+    cellGroup = IntArray(n)
     cellGrip = FloatArray(n); gripsDirty = true
+    cellHomeCompliance = DoubleArray(n); cellHomeX = DoubleArray(n); cellHomeY = DoubleArray(n)
     conSoftness = FloatArray(conA.size) { 1f }; triSoftness = FloatArray(triA.size) { 1f }
 
     buildBoundary()

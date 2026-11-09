@@ -217,6 +217,7 @@ fun BodyState.buildContacts() {
         it.pressure = contactPressure
         it.organismOf = organismOf
         it.noContact = cellNoContact
+        it.group = cellGroup
         if (contactPressureN.size != n) contactPressureN = IntArray(n)
         it.pressureN = contactPressureN
         if (crushedCell.size != n) crushedCell = BooleanArray(n)

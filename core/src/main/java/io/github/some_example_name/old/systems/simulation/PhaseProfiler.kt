@@ -130,6 +130,15 @@ class PhaseProfiler(private val windowTicks: Int = PROFILE_WINDOW_TICKS) {
     private val maxNanos = LongArray(Phase.COUNT)
     private var ticks = 0
 
+    /**
+     * Средние фаз за последнее закрытое окно, мкс на тик (по номеру Phase), и сколько окон закрыто —
+     * для замеров без экрана (lwjgl3 PerfCheck). Пишет поток симуляции в flush; читатель из другого
+     * потока может увидеть окно наполовину — для замера по многим окнам это неважно.
+     */
+    val windowMicros = DoubleArray(Phase.COUNT)
+    @Volatile var windowsClosed = 0
+        private set
+
     /** Текст для оверлея. Читается и пишется только потоком симуляции. */
     var text: String = ""
         private set
@@ -178,6 +187,8 @@ class PhaseProfiler(private val windowTicks: Int = PROFILE_WINDOW_TICKS) {
 
         buildScreenText(stats, closedTicks)
         if (PROFILE_LOG) writeCsv(stats, closedTicks)
+        for (p in 0 until Phase.COUNT) windowMicros[p] = sumNanos[p] / 1000.0 / closedTicks
+        windowsClosed++
 
         sumNanos.fill(0)
         maxNanos.fill(0)

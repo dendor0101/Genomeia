@@ -25,7 +25,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     wakeByInput()
     // Положения в начале тика: средняя скорость за тик нужна сопротивлению среды. См. TickMotion.
     beginTickMotion()
-    if (cancelSpinOn) { tick0(); prepareAwakeSpans(); tickMomentum.begin(px, py, vx, vy, invMass, organismOf, sleep, cellDead); tick1(16) }
+    if (cancelSpinOn) { tick0(); prepareAwakeSpans(); momentumBegin(); tick1(16) }
     if (cancelSpinOn) noteJointsMomentum()
     for (step in 0 until SUBSTEPS) {
         // Длина покоя мышцы доезжает до своего значения за тик, а не прыгает в первом
@@ -148,7 +148,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         dbgMeasureV(11); tick1(9)
         if (cancelSpinOn && step == SUBSTEPS - 1) {
             tick0()
-            tickMomentum.cancel(px, py, vx, vy, invMass, sleep)
+            momentumCancel()
             // Коррекция тоже меняет скорости: потолок должен оставаться последним.
             clampSpeed()
             tick1(16)

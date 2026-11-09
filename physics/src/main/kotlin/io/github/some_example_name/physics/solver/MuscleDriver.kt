@@ -129,20 +129,20 @@ internal fun BodyState.recomputeCellScales() {
  * действующие множители её самой и соседей по треугольнику, у изменившихся — связи и
  * треугольники. Порядок клеток на результат не влияет: значения выбираются, а не считаются.
  */
-internal fun BodyState.refreshCellScaleRing(v: Int) {
+internal fun BodyState.refreshCellScaleRing(v: Int, out: CellScaleLerpBuffer? = null) {
     // Мягкость ведётся тем же кольцом (см. BodyState.cellSoftness).
     if (!cellScalesOn && !softnessOn) return
     if (cellScaleEff.size != n || constraintBlocks == null) { cellScalesDirty = true; return }
     val b = baked
-    refreshEffective(v, always = true)
-    for (q in b.vertStart[v] until b.vertStart[v + 1]) refreshEffective(b.vertOther[q], always = false)
+    refreshEffective(v, always = true, out)
+    for (q in b.vertStart[v] until b.vertStart[v + 1]) refreshEffective(b.vertOther[q], always = false, out)
 }
 
-private fun BodyState.refreshEffective(u: Int, always: Boolean) {
+private fun BodyState.refreshEffective(u: Int, always: Boolean, out: CellScaleLerpBuffer?) {
     val e = effectiveScale(u)
     if (e == cellScaleEff[u] && !always) return
     cellScaleEff[u] = e
-    refreshCellScaleAround(u)
+    refreshCellScaleAround(u, out)
 }
 
 /**
@@ -157,6 +157,9 @@ internal fun BodyState.advanceCellScales(dt: Double) {
     val s = cellScale; val target = cellScaleTarget
     val byEdges = constraintBlocks != null && !cellScalesDirty && cellScaleEff.size == n
     if (byEdges) beginCellScaleLerp()
+    // На воркерах кольца считаются после шага всех клеток (см. ParallelMuscles): результат тот же.
+    val w = if (byEdges) activeWorkers else null
+    val muscles = if (w != null && w.count > 1) parallelPhysics(w).muscles.also { it.begin() } else null
     var moving = false
     for (v in 0 until n) {
         val t = target[v]; val cur = s[v]
@@ -167,10 +170,14 @@ internal fun BodyState.advanceCellScales(dt: Double) {
         if (kotlin.math.abs(t - next) < CELL_SCALE_SNAP) next = t else moving = true
         s[v] = next
         sleep.requestWake(v)
-        if (byEdges) refreshCellScaleRing(v)
+        if (muscles != null) muscles.note(v) else if (byEdges) refreshCellScaleRing(v)
     }
     cellScalesMoving = moving
-    if (byEdges) { endCellScaleLerp(); return }
+    if (byEdges) {
+        if (muscles != null) muscles.refreshRings(w!!)
+        endCellScaleLerp()
+        return
+    }
     // Полный пересчёт (после перестройки структуры, первый шаг тела) — тоже плавно: иначе в этот
     // тик мышца прыгала бы, и мир, прошедший сюда, расходился бы с прошедшим по кольцам. Путь
     // редкий, поэтому захват всех связей и треугольников здесь допустим.
@@ -194,12 +201,12 @@ private fun BodyState.captureAllForLerp(): Boolean {
 }
 
 /** Множители связей и треугольников у клетки [v] — по её рёбрам. */
-private fun BodyState.refreshCellScaleAround(v: Int) {
+private fun BodyState.refreshCellScaleAround(v: Int, out: CellScaleLerpBuffer?) {
     val b = baked
     val slot = constraintBlocks!!.triangleSlot
     for (q in b.vertStart[v] until b.vertStart[v + 1]) {
         val e = b.vertEdge[q]
-        if (lerpCapturing) captureEdgeLerp(e)
+        if (lerpCapturing) captureEdgeLerp(e, out)
         var c = conOfEdge[e]
         while (c >= 0) {
             conCellScale[c] = linkCellScale(c)
@@ -210,7 +217,7 @@ private fun BodyState.refreshCellScaleAround(v: Int) {
             val id = b.edgeTris[r]
             val w = slot[id]
             if (w in 0 until triCount) {
-                if (lerpCapturing) captureTriLerp(id, w)
+                if (lerpCapturing) captureTriLerp(id, w, out)
                 triCellScale[w] = triangleCellScale(w)
                 if (softnessOn) triSoftness[w] = triangleSoftness(w)
             }
@@ -237,11 +244,12 @@ private fun BodyState.beginCellScaleLerp() {
     if (lerpTriStamp.size < body.triCount) lerpTriStamp = IntArray(body.triCount)
 }
 
-private fun BodyState.captureEdgeLerp(e: Int) {
+private fun BodyState.captureEdgeLerp(e: Int, out: CellScaleLerpBuffer? = null) {
     if (lerpEdgeStamp[e] == lerpStampNow) return
     val c = conOfEdge[e]
     if (c < 0) return
     lerpEdgeStamp[e] = lerpStampNow
+    if (out != null) { out.addEdge(e, conCellScale[c]); return }
     if (lerpEdgeN == lerpEdgeIds.size) {
         lerpEdgeIds = lerpEdgeIds.copyOf(lerpEdgeN * 2)
         lerpEdgeFrom = lerpEdgeFrom.copyOf(lerpEdgeN * 2); lerpEdgeTo = lerpEdgeTo.copyOf(lerpEdgeN * 2)
@@ -249,9 +257,10 @@ private fun BodyState.captureEdgeLerp(e: Int) {
     lerpEdgeIds[lerpEdgeN] = e; lerpEdgeFrom[lerpEdgeN] = conCellScale[c]; lerpEdgeN++
 }
 
-private fun BodyState.captureTriLerp(id: Int, w: Int) {
+private fun BodyState.captureTriLerp(id: Int, w: Int, out: CellScaleLerpBuffer? = null) {
     if (lerpTriStamp[id] == lerpStampNow) return
     lerpTriStamp[id] = lerpStampNow
+    if (out != null) { out.addTri(id, triCellScale[w]); return }
     if (lerpTriN == lerpTriIds.size) {
         lerpTriIds = lerpTriIds.copyOf(lerpTriN * 2)
         lerpTriFrom = lerpTriFrom.copyOf(lerpTriN * 2); lerpTriTo = lerpTriTo.copyOf(lerpTriN * 2)
@@ -289,18 +298,54 @@ internal fun BodyState.applyCellScaleLerp(step: Int, count: Int) {
     if (lerpEdgeN == 0 && lerpTriN == 0) return
     val last = step == count - 1
     val f = (step + 1).toFloat() / count
-    for (k in 0 until lerpEdgeN) {
+    val w = activeWorkers
+    if (w != null && w.count > 1 && lerpEdgeN + lerpTriN >= LERP_PARALLEL_MIN) {
+        parallelPhysics(w).muscles.lerp(w, f, last)
+    } else {
+        lerpEdgeRange(0, lerpEdgeN, f, last)
+        lerpTriRange(0, lerpTriN, f, last)
+    }
+    if (last) { lerpEdgeN = 0; lerpTriN = 0 }
+}
+
+/** Меньше записей плавности — в одном потоке: 16–32 барьера за тик дороже такой работы. */
+private const val LERP_PARALLEL_MIN = 4096
+
+internal fun BodyState.lerpEdgeRange(fromK: Int, toK: Int, f: Float, last: Boolean) {
+    for (k in fromK until toK) {
         val from = lerpEdgeFrom[k]; val to = lerpEdgeTo[k]
         setEdgeCellScale(lerpEdgeIds[k], if (last) to else from + (to - from) * f)
     }
-    val slot = constraintBlocks?.triangleSlot
-    if (slot != null) for (k in 0 until lerpTriN) {
+}
+
+internal fun BodyState.lerpTriRange(fromK: Int, toK: Int, f: Float, last: Boolean) {
+    val slot = constraintBlocks?.triangleSlot ?: return
+    for (k in fromK until toK) {
         val w = slot[lerpTriIds[k]]
         if (w !in 0 until triCount) continue
         val from = lerpTriFrom[k]; val to = lerpTriTo[k]
         triCellScale[w] = if (last) to else from + (to - from) * f
     }
-    if (last) { lerpEdgeN = 0; lerpTriN = 0 }
+}
+
+/** Захват «было» одного куска — в общие списки плавности (см. ParallelMuscles). */
+internal fun BodyState.appendCellScaleLerp(part: CellScaleLerpBuffer) {
+    val edges = lerpEdgeN + part.edgeN
+    if (edges > lerpEdgeIds.size) {
+        val cap = maxOf(edges, lerpEdgeIds.size * 2)
+        lerpEdgeIds = lerpEdgeIds.copyOf(cap); lerpEdgeFrom = lerpEdgeFrom.copyOf(cap); lerpEdgeTo = lerpEdgeTo.copyOf(cap)
+    }
+    System.arraycopy(part.edgeIds, 0, lerpEdgeIds, lerpEdgeN, part.edgeN)
+    System.arraycopy(part.edgeFrom, 0, lerpEdgeFrom, lerpEdgeN, part.edgeN)
+    lerpEdgeN = edges
+    val tris = lerpTriN + part.triN
+    if (tris > lerpTriIds.size) {
+        val cap = maxOf(tris, lerpTriIds.size * 2)
+        lerpTriIds = lerpTriIds.copyOf(cap); lerpTriFrom = lerpTriFrom.copyOf(cap); lerpTriTo = lerpTriTo.copyOf(cap)
+    }
+    System.arraycopy(part.triIds, 0, lerpTriIds, lerpTriN, part.triN)
+    System.arraycopy(part.triFrom, 0, lerpTriFrom, lerpTriN, part.triN)
+    lerpTriN = tris
 }
 
 /** Ближе этого к цели множитель клетки встаёт точно на неё: путь кончается за конечное число тиков. */

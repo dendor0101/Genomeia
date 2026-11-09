@@ -72,8 +72,9 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
     fun p(a: BooleanArray) = if (a.size < nOld) a else pick(a, pNew, nOld, nNew)
     fun p(a: IntArray, values: IntArray? = null) = if (a.size < nOld) a else pick(a, pNew, nOld, nNew, values)
     cellDead = p(cellDead); cellUnborn = p(cellUnborn); cellScale = p(cellScale); cellScaleTarget = p(cellScaleTarget); dragScale = p(dragScale)
-    cellSoftness = p(cellSoftness); cellNoContact = p(cellNoContact)
+    cellSoftness = p(cellSoftness); cellNoContact = p(cellNoContact); cellGroup = p(cellGroup)
     cellGrip = p(cellGrip); gripsDirty = true
+    cellHomeCompliance = p(cellHomeCompliance); cellHomeX = p(cellHomeX); cellHomeY = p(cellHomeY)
     px = p(px); py = p(py); prevX = p(prevX); prevY = p(prevY); vx = p(vx); vy = p(vy)
     invMass = p(invMass); restInvMass = p(restInvMass); matchWeight = p(matchWeight)
     inContact = p(inContact); radius = p(radius); isFree = p(isFree)
@@ -206,6 +207,7 @@ internal fun BodyState.rebuildDerived(oldSurface: LocalSurface?, pNew: IntArray?
         ct.attachSurface(localSurface)
         ct.organismOf = organismOf
         ct.noContact = cellNoContact
+        ct.group = cellGroup
         ct.pressure = contactPressure; ct.pressureN = contactPressureN
         dbgSealMinR = ct.minContactRadius
     }

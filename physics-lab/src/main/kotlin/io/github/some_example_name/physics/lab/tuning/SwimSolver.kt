@@ -161,7 +161,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         for (b in topo.rigidBones.indices) {
             val ids = topo.rigidBones[b]
             var block = layout.particleBlock[ids[0]]
-            for (i in ids) if (layout.particleBlock[i] != block) { block = layout.seam; break }
+            for (i in ids) if (layout.particleBlock[i] != block) { block = layout.seamBucket[layout.particleBlock[ids[0]]]; break }
             layout.bones.add(b, block)
         }
     }
@@ -171,7 +171,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             var block = parity
             while (block < blocks.blockCount) { solveConstraintBlock(h, block); block += 2 }
         }
-        solveConstraintBlock(h, blocks.seam)
+        for (bucket in blocks.seam until blocks.buckets) solveConstraintBlock(h, bucket)
         if (blocks.hasSeams()) solveLinkMaxLength()
     }
 

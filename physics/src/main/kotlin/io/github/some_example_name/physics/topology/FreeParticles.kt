@@ -64,7 +64,9 @@ internal fun BodyState.deactivateFree(i: Int, refresh: Boolean = true) {
     vx[i] = 0.0; vy[i] = 0.0; prevX[i] = px[i]; prevY[i] = py[i]
     inContact[i] = false; dragScale[i] = 1.0
     if (cellGrip.size > i && cellGrip[i] != 0f) { cellGrip[i] = 0f; gripsDirty = true }
+    if (cellHomeCompliance.size > i && cellHomeCompliance[i] != 0.0) { cellHomeCompliance[i] = 0.0; gripsDirty = true }
     cellNoContact[i] = false
+    if (cellGroup.size > i) cellGroup[i] = 0
     if (crushedCell.size > i) crushedCell[i] = false
     if (trapTicks.size > i) trapTicks[i] = 0
     if (trapOrg.size > i) trapOrg[i] = -1

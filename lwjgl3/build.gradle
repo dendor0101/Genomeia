@@ -60,6 +60,11 @@ dependencies {
 
 def os = System.properties['os.name'].toLowerCase(Locale.ROOT)
 
+// Число подшагов физики на глаз: gradlew :lwjgl3:run -Psubsteps=16 (см. SolverParameters.SUBSTEPS).
+tasks.withType(JavaExec).configureEach {
+  if (project.hasProperty('substeps')) systemProperty 'genomeia.substeps', project.property('substeps')
+}
+
 run {
   workingDir = rootProject.file('assets').path
 // You can uncomment the next line if your IDE claims a build failure even when the app closed properly.
@@ -273,6 +278,20 @@ tasks.register('growthCheck', JavaExec) {
   jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
   args = [project.findProperty('genome') ?: 'assets/genomes/Burdock leaf.genome',
           project.findProperty('ticks') ?: '1,5,20']
+}
+
+// Замер производительности настоящей игры: мир 256×256, сетка организмов одного генома. См. PerfCheck.kt.
+//   gradlew :lwjgl3:perfCheck -Pgenome="Burdock leaf" -Pcount=4 -Pterrain=1
+tasks.register('perfCheck', JavaExec) {
+  group = 'verification'
+  description = 'UPS, загрузка процессора и фазы тика на сетке организмов, с террейном и без'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.verification.PerfCheckKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+  ['genome', 'count', 'terrain', 'grow', 'measure', 'workers', 'clear', 'stages', 'sleep', 'jfr', 'snapshot', 'warm', 'render'].each { p ->
+    if (project.hasProperty(p)) systemProperty "perf.$p", project.property(p)
+  }
 }
 
 // Регрессия сохранения мира: gradlew :lwjgl3:saveRoundTrip
