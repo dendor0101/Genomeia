@@ -164,6 +164,10 @@ object GenomeImport {
         return name.ifEmpty { DEFAULT_NAME }
     }
 
+    /** Уже проверенный результат роста: коллизии имён обрабатываем как при импорте JSON. */
+    fun storeBaked(genome: Genome, targetDir: FileHandle): FileHandle =
+        place(targetDir, fileBaseName(genome.name + EXTENSION)) { name -> encodeGenome(genome.copy(name = name)) }
+
     /**
      * Свободное место под геном: «X», «X (2)», «X (3)»… [content] строит байты под каждое
      * пробуемое имя (у JSON имя лежит и внутри генома). Занятое теми же байтами — это уже

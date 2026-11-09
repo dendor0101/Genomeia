@@ -54,6 +54,9 @@ dependencies {
   implementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
   implementation "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-desktop"
   implementation project(':core')
+  implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0"
+  implementation "org.jetbrains.kotlinx:kotlinx-serialization-protobuf:1.11.0"
+
   // Сущности симуляции держат списки fastutil, а у core он implementation — без этой строки
   // проверки из verification (saveRoundTrip) не видят типов aliveList. В сборку не добавляет ничего:
   // в рантайме он и так приходит через core.
@@ -72,6 +75,15 @@ dependencies {
     implementation("org.lwjgl:lwjgl-opengl:$lwjgl3Version")
     implementation("org.lwjgl:lwjgl-stb:$lwjgl3Version")
   }
+}
+
+// Автономный настольный комплект для игрока; пути конфигурации вычисляются на его ПК.
+tasks.register("genomeMcpDist", Copy) {
+  dependsOn tasks.named("jar")
+  from(tasks.named("jar").flatMap { it.archiveFile }) { rename { "Genomeia.jar" } }
+  from(rootProject.file("docs/genome-mcp.md"))
+  from(project.file("src/mcp-dist"))
+  into(layout.buildDirectory.dir("genome-mcp"))
 }
 
 def os = System.properties['os.name'].toLowerCase(Locale.ROOT)

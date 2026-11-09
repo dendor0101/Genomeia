@@ -1,5 +1,7 @@
 package io.github.some_example_name.old.features.genomes
 
+import io.github.some_example_name.old.systems.genomics.genome.Genome
+
 import com.badlogic.gdx.Application
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.files.FileHandle
@@ -57,6 +59,9 @@ class GenomesScreen : VisDslScreen(
 ), ReplayTarget, FileDropTarget {
 
     private val viewModel = GenomesViewModel()
+
+    fun importBaked(genome: Genome): String =
+        viewModel.importBaked(genome)
 
     /** Картинки карточек списка и крупная — для окна генома. */
     private val listPreviews = GenomePreviewCache(previewPixels(CARD_PREVIEW_DP))
