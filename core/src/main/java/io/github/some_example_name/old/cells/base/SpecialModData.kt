@@ -7,6 +7,7 @@ import io.github.some_example_name.old.cells.DelayState
 import io.github.some_example_name.old.cells.EyeData
 import io.github.some_example_name.old.cells.PheromoneEmitterState
 import io.github.some_example_name.old.cells.ProducerState
+import io.github.some_example_name.old.cells.SynapseData
 import io.github.some_example_name.old.cells.SynapseState
 import io.github.some_example_name.old.cells.TailState
 import io.github.some_example_name.old.systems.genomics.genome.Action
@@ -98,6 +99,7 @@ object SpecialModDataTypes {
         Registration(ProducerState::class, ProducerState.serializer()),
         Registration(PheromoneEmitterState::class, PheromoneEmitterState.serializer()),
         Registration(SynapseState::class, SynapseState.serializer()),
+        Registration(SynapseData::class, SynapseData.serializer()),
         Registration(DelayData::class, DelayData.serializer()),
         Registration(DelayState::class, DelayState.serializer()),
     )

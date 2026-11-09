@@ -4,6 +4,9 @@ import com.badlogic.gdx.graphics.Color
 import com.kotcrab.vis.ui.util.FloatDigitsOnlyFilter
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisTable
+import io.github.some_example_name.old.cells.base.Formulas
+import io.github.some_example_name.old.cells.base.SpecialModData
+import io.github.some_example_name.old.cells.base.specialDataFor
 import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
@@ -12,9 +15,9 @@ import io.github.some_example_name.old.core.ui.hint
 import io.github.some_example_name.old.core.ui.visLabel
 import io.github.some_example_name.old.core.ui.visTable
 import io.github.some_example_name.old.core.ui.visTextField
+import io.github.some_example_name.old.core.ui.visToggleButton
 import io.github.some_example_name.old.core.utils.skyBlueColors
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.cellPalette
-import io.github.some_example_name.old.cells.base.SpecialModData
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.SpecialEntity
 import io.github.some_example_name.old.features.editor.dialog.CellDialog
@@ -25,46 +28,71 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.protobuf.ProtoNumber
-import kotlin.math.abs
-import kotlin.math.exp
-import kotlin.math.ln
-import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
 /**
  * Обучаемый синапс: передаёт входной сигнал дальше с весом и подстраивает вес по STDP
- * (spike-timing-dependent plasticity).
+ * (spike-timing-dependent plasticity) — «кто сработал раньше».
  *
  * ПОДКЛЮЧЕНИЕ
  * -----------
  * Ровно две нейросвязи: одна входит в синапс, вторая выходит в Neuron. Любое другое
  * подключение — синапс молчит и подсвечивается красным, пока его не починят.
+ * Лучше всего за синапсом стоит Neuron с формулой lif: он складывает вклады синапсов и
+ * срабатывает по порогу, а его спайк и есть то, по чему синапс учится.
  *
  * ОБУЧЕНИЕ
  * --------
- * Сигналы считаются бинарными, спайк — это рост сигнала за тик на ~1 (0 -> 1):
+ * Спайк — рост сигнала за тик на ~1 (0 -> 1):
  *  - входной спайк: вырос сам вход синапса;
- *  - учительский спайк: вырос выход постсинаптического нейрона за вычетом вклада самого
- *    синапса, то есть нейрон сработал по другой причине (боль, другой вход).
- * Вход раньше учителя или одновременно — вес растёт на learningRate * trace, учитель
- * раньше входа — падает на depression * trace, где trace = exp(-|dt| * decayRate).
- * Вес живёт в [0, 1], выход синапса равен weight * input. Вес дошёл до 0 — синапс отмирает.
+ *  - спайк нейрона: вырос выход постсинаптического нейрона. У нейрона с lif это его спайк
+ *    как есть. У остальных — за вычетом вклада самого синапса, то есть нейрон сработал по
+ *    другой причине (учитель: боль, другой вход): иначе синапс учил бы сам себя.
+ * У синапса два следа — «сколько недавно было спайков и насколько недавно». Каждый тик
+ * они затухают в (1 − a) раз, спайк прибавляет к своему следу 1:
+ *  - входной спайк: вес падает на depression · w · след нейрона (нейрон сработал раньше
+ *    входа — вход ни при чём);
+ *  - спайк нейрона: вес растёт на learningRate · (1 − w) · след входа (вход сработал раньше
+ *    и, похоже, был причиной).
+ * Если оба в один тик — усиление: ослабление считается по следу нейрона ДО его спайка,
+ * усиление — по следу входа УЖЕ с его спайком.
+ *
+ * ЧЕМ ЭТО ЛУЧШЕ ПРЕЖНЕГО
+ * ----------------------
+ * До 05.11 синапс помнил только тики последнего входного и последнего учительского спайка,
+ * менял вес по паре на rate · exp(−|dt| · a) и стирал оба тика. Теперь:
+ *  - в счёт идут все недавние спайки, а не последняя пара: вход, который стабильно
+ *    срабатывает перед нейроном, усиливается быстрее случайного;
+ *  - после пары ничего не теряется: «вход → нейрон → вход» второй раз немного ослабляет;
+ *  - мягкие границы: множители (1 − w) и w не дают весам слипнуться в 0 и 1;
+ *  - нет exp и ln — они могут разойтись на 1 ulp между ПК и Android; нет «окна обучения»:
+ *    след затухает сам.
+ * Вес живёт в [0, 1]. Ослабленный ниже [DEATH_WEIGHT] синапс отмирает: с мягкой границей
+ * вес до нуля не доходит никогда.
+ *
+ * ТОРМОЗЯЩИЙ СИНАПС
+ * -----------------
+ * [SynapseData.inhibitory]: выход −w · вход. Учится так же, но вес означает силу
+ * торможения: вход, который стабильно предшествует спайку нейрона, тормозит его сильнее.
  *
  * ПАРАМЕТРЫ ГЕНОМА
  * ----------------
- * Своих полей в геноме у синапса нет, он занимает общие поля нейрона:
- * a = decayRate, b = learningRate, c = depression. Функция активации и способ сложения
- * входов ему не нужны: вход один, а активацию синапс не вызывает.
+ * Обучение — в общих полях нейрона: a = затухание следов, b = learningRate,
+ * c = depression (так они записаны во всех уже сохранённых геномах). Галочка торможения —
+ * [SynapseData] в Action.special. Функция активации и способ сложения входов синапсу не
+ * нужны: вход один, а активацию он не вызывает.
  *
  * СОСТОЯНИЕ
  * ---------
- * Своё — в [SynapseState] (SpecialModData, объект у каждого синапса свой): вес, тики
- * последних входного и учительского спайков, метка неправильного подключения. Раньше вес
- * и тики лежали в NeuralEntity и занимали 12 байт у КАЖДОЙ нейронной клетки (нейрон,
- * мышца, глаз…), хотя нужны только синапсам.
- * Из общих полей нейрона: dTime — вход прошлого тика, remember — учительский сигнал
- * прошлого тика.
+ * [SynapseState] (SpecialModData, объект у каждого синапса свой): вес, два следа, режим,
+ * метка неправильного подключения. Из общих полей нейрона: dTime — вход прошлого тика,
+ * remember — сигнал нейрона прошлого тика.
+ *
+ * ЦЕНА
+ * ----
+ * На синапс за тик: два умножения на затухание, несколько сравнений, одно разыменование
+ * состояния. Синапсов в теле единицы–десятки, на время тика это не влияет.
  *
  * РЕДАКТОР
  * --------
@@ -81,10 +109,24 @@ class Synapse(cellTypeId: Int): Cell(
 
     private val defaultColorBits = defaultColor.toIntBits()
 
+    override val defaultGenomeData: SpecialModData get() = SynapseData.DEFAULT
+
     override fun editorSections(): List<CellEditorSection> = listOf(SynapseSection)
 
     /** Объект на синапс: состояние меняется каждый тик, общим оно быть не может. */
-    override fun createSpecialData(action: Action): SpecialModData = SynapseState()
+    override fun createSpecialData(action: Action): SpecialModData =
+        SynapseState(inhibitory = (specialDataFor(action, SynapseData.DEFAULT) as SynapseData).inhibitory)
+
+    /** Мутация меняет только режим, выученный вес остаётся. */
+    override fun mutateSpecialData(current: SpecialModData, action: Action): SpecialModData? {
+        val data = action.special as? SynapseData ?: return null
+        val state = current as? SynapseState ?: return SynapseState(inhibitory = data.inhibitory)
+        if (state.inhibitory == data.inhibitory) return null
+        return state.copy(inhibitory = data.inhibitory)
+    }
+
+    override fun genomeDataOf(data: SpecialModData?): SpecialModData? =
+        (data as? SynapseState)?.let { SynapseData(it.inhibitory) }
 
     override fun onStart(cellIndex: Int, threadId: Int, genomeIndex: Int): Unit = with(cellEntity) {
         // Клетка могла мутировать из другого нейрона, у которого эти поля значат другое.
@@ -116,43 +158,55 @@ class Synapse(cellTypeId: Int): Cell(
         }
         unmarkMiswired(cellIndex, state)
 
-        val learningRate = learningRate(getB(cellIndex))
-        val depression = depression(getC(cellIndex))
-        val decayRate = decayRate(getA(cellIndex))
-        val window = learningWindowTicks(decayRate, learningRate, depression)
-        val now = simulationData.tickCounter
-
         val rawInput = neuronImpulseInput[cellIndex]
         val input = if (rawInput.isNaN()) 0f else rawInput
+        val sign = if (state.inhibitory) -1f else 1f
         var weight = state.weight
 
-        val inputSpiked = detectInputSpike(cellIndex, state, input, now, window)
-        val teacherSpiked = detectTeacherSpike(
-            cellIndex,
-            state,
-            teacher = neuronImpulseOutput[postCell] - input * weight,
-            now = now,
-            window = window
-        )
+        val inputSpiked = input - getDTime(cellIndex) >= SPIKE_RISE
+        setDTime(cellIndex, input)
 
-        val inputTick = state.inputTick
-        val teacherTick = state.teacherTick
-        if ((inputSpiked || teacherSpiked) && inputTick != NO_SPIKE && teacherTick != NO_SPIKE) {
-            weight = plasticity(weight, teacherTick - inputTick, learningRate, depression, decayRate)
-            state.weight = weight
-            state.inputTick = NO_SPIKE
-            state.teacherTick = NO_SPIKE
+        val postOutput = neuronImpulseOutput[postCell]
+        val teacher = if (getActivationFuncType(postCell) == Formulas.lifIndex) postOutput
+        else postOutput - sign * weight * input
+        val postSpiked = teacher - getRemember(cellIndex) >= SPIKE_RISE
+        setRemember(cellIndex, teacher)
 
-            if (weight <= 0f) {
-                worldCommandsManager.worldCommandBuffer[threadId].push(
-                    WorldCommandType.DELETE_CELL,
-                    cellIndex,
-                    getGeneration(cellIndex)
-                )
+        val keep = 1f - traceDecay(getA(cellIndex))
+        var pre = state.preTrace * keep
+        var post = state.postTrace * keep
+        var depressed = false
+        if (inputSpiked) {
+            if (post > 0f) {
+                weight -= depression(getC(cellIndex)) * weight * post
+                depressed = true
             }
+            pre += 1f
         }
+        if (postSpiked) {
+            post += 1f
+            weight += learningRate(getB(cellIndex)) * (1f - weight) * pre
+        }
+        // Шаг больше 1 (быстрое обучение на длинном следе) перепрыгнул бы границу.
+        weight = if (weight > 1f) 1f else if (weight < 0f) 0f else weight
+        // Без обнуления след сотни тиков живёт денормализованным числом, а на некоторых
+        // процессорах арифметика с такими числами в десятки раз медленнее.
+        state.preTrace = if (pre < TRACE_CUTOFF) 0f else pre
+        state.postTrace = if (post < TRACE_CUTOFF) 0f else post
+        state.weight = weight
 
-        neuronImpulseOutput[cellIndex] = weight * input
+        if (depressed && weight < DEATH_WEIGHT) dieOfWeakness(cellIndex, threadId)
+
+        neuronImpulseOutput[cellIndex] = sign * weight * input
+    }
+
+    /** Отдельным методом: ветка раз за жизнь синапса, ей не место в теле горячего doOnTick. */
+    private fun CellEntity.dieOfWeakness(cellIndex: Int, threadId: Int) {
+        worldCommandsManager.worldCommandBuffer[threadId].push(
+            WorldCommandType.DELETE_CELL,
+            cellIndex,
+            getGeneration(cellIndex)
+        )
     }
 
     /**
@@ -168,7 +222,7 @@ class Synapse(cellTypeId: Int): Cell(
      * Постсинаптическая клетка или -1, если синапс подключён неправильно: нужна ровно одна
      * входящая связь и ровно одна исходящая, причём исходящая — в Neuron.
      *
-     * Учительский сигнал берётся с выхода этой клетки, а у не-нейронов выход значит другое
+     * Сигнал нейрона берётся с выхода этой клетки, а у не-нейронов выход значит другое
      * (у мышцы, например, это сила сокращения), поэтому годится только Neuron.
      */
     private fun CellEntity.postsynapticCell(cellIndex: Int): Int {
@@ -189,36 +243,10 @@ class Synapse(cellTypeId: Int): Cell(
         return if (cellList[cellType[postCell].toInt()] is Neuron) postCell else -1
     }
 
-    /** Входной спайк: вход вырос за тик на ~1. Заодно забывает слишком старый спайк. */
-    private fun CellEntity.detectInputSpike(cellIndex: Int, state: SynapseState, input: Float, now: Int, window: Int): Boolean {
-        val rise = input - getDTime(cellIndex)
-        setDTime(cellIndex, input)
-
-        if (rise >= SPIKE_RISE) {
-            state.inputTick = now
-            return true
-        }
-        if (isForgotten(state.inputTick, now, window)) state.inputTick = NO_SPIKE
-        return false
-    }
-
-    /** Учительский спайк: то же самое для выхода постсинаптического нейрона. */
-    private fun CellEntity.detectTeacherSpike(cellIndex: Int, state: SynapseState, teacher: Float, now: Int, window: Int): Boolean {
-        val rise = teacher - getRemember(cellIndex)
-        setRemember(cellIndex, teacher)
-
-        if (rise >= SPIKE_RISE) {
-            state.teacherTick = now
-            return true
-        }
-        if (isForgotten(state.teacherTick, now, window)) state.teacherTick = NO_SPIKE
-        return false
-    }
-
     /**
      * Красная подсветка неправильно подключённого синапса. Цвет из генома запоминается в
      * [SynapseState.savedColor] и после починки возвращается он, а не цвет типа по умолчанию.
-     * Недоученная пара спайков забывается: учиться неподключённому синапсу нечем.
+     * Следы забываются: учиться неподключённому синапсу нечем.
      */
     private fun CellEntity.markMiswired(cellIndex: Int, state: SynapseState) {
         if (state.miswired) return
@@ -227,8 +255,8 @@ class Synapse(cellTypeId: Int): Cell(
         // Красный без метки остаётся от сохранений старой версии — его возвращать незачем.
         state.savedColor = if (color == MISWIRED_COLOR) defaultColorBits else color
         state.miswired = true
-        state.inputTick = NO_SPIKE
-        state.teacherTick = NO_SPIKE
+        state.preTrace = 0f
+        state.postTrace = 0f
         setColor(cellIndex, MISWIRED_COLOR)
     }
 
@@ -237,8 +265,8 @@ class Synapse(cellTypeId: Int): Cell(
 
         setColor(cellIndex, state.savedColor)
         state.miswired = false
-        state.inputTick = NO_SPIKE
-        state.teacherTick = NO_SPIKE
+        state.preTrace = 0f
+        state.postTrace = 0f
     }
 
     companion object {
@@ -246,13 +274,18 @@ class Synapse(cellTypeId: Int): Cell(
         const val DEFAULT_LEARNING_RATE = 0.01f
         const val DEFAULT_DEPRESSION = 0.008f
 
-        /** Без затухания (decayRate около нуля) спайк помнится столько тиков. */
-        const val NO_DECAY_WINDOW_TICKS = 500
+        /**
+         * Самое медленное затухание следа: с ним след держится ~500 тиков, как спайк без
+         * затухания у прежнего синапса. Совсем без затухания след рос бы от каждого спайка
+         * без предела.
+         */
+        const val MIN_DECAY_RATE = 0.006f
 
         /** Начальный вес — случайный в [0, INITIAL_WEIGHT_MAX). */
         const val INITIAL_WEIGHT_MAX = 0.2f
 
-        const val NO_SPIKE = -1
+        /** Ослабленный ниже этого синапс отмирает. */
+        const val DEATH_WEIGHT = 0.01f
 
         /** Вес ещё не выставлен (см. startWeight). Настоящий вес живёт в [0, 1]. */
         const val NOT_STARTED = -1f
@@ -261,11 +294,14 @@ class Synapse(cellTypeId: Int): Cell(
         /** Рост сигнала за тик, который считается спайком. Чуть меньше 1 — запас на float. */
         private const val SPIKE_RISE = 0.999f
 
-        /** Изменение веса меньше этого уже не в счёт — по нему считается окно обучения. */
-        private const val NEGLIGIBLE_WEIGHT_STEP = 0.001f
+        /**
+         * След меньше этого — ноль. Вклад такого следа в вес меньше 1e-4 даже при
+         * learningRate = 1: обучение он не меняет.
+         */
+        private const val TRACE_CUTOFF = 1e-4f
 
-        private const val MIN_DECAY_RATE = 0.0001f
-        private const val MAX_DECAY_RATE = 10f
+        /** Доля следа, которая остаётся, когда он «почти забыт», — для подписи в редакторе. */
+        private const val FORGOTTEN = 0.05f
 
         /**
          * Скорость усиления из поля b. Ноль и меньше — значение по умолчанию: так ведут себя
@@ -277,34 +313,41 @@ class Synapse(cellTypeId: Int): Cell(
         fun depression(c: Float) = if (c > 0f) c.coerceAtMost(1f) else DEFAULT_DEPRESSION
 
         /**
-         * Затухание следа из поля a. Ноль — без затухания: спайк помнится
-         * NO_DECAY_WINDOW_TICKS тиков в полную силу. Отрицательное значение раздувало бы
-         * след вместо затухания, бесконечность давала бы NaN в весе — поэтому зажато.
+         * Какая доля следа теряется за тик, из поля a, в [MIN_DECAY_RATE, 1]. Ноль — самое
+         * медленное затухание. Сравнения, а не coerceIn: NaN проходит coerceIn насквозь.
+         *
+         * До 05.11 a было скоростью в exp(−dt · a); при малых a это почти то же самое
+         * (1 − 0.025 = 0.975, exp(−0.025) ≈ 0.9753), поэтому старые геномы читаются как есть.
          */
-        fun decayRate(a: Float) = if (a.isNaN()) DEFAULT_DECAY_RATE else a.coerceIn(0f, MAX_DECAY_RATE)
+        fun traceDecay(a: Float): Float = when {
+            a >= 1f -> 1f
+            a > MIN_DECAY_RATE -> a
+            a.isNaN() -> DEFAULT_DECAY_RATE
+            else -> MIN_DECAY_RATE
+        }
 
         /**
-         * Сколько тиков спайк ждёт пару. Дальше изменение веса rate * exp(-dt * decayRate)
-         * меньше NEGLIGIBLE_WEIGHT_STEP, то есть ждать его уже бессмысленно:
-         * dt = ln(rate / NEGLIGIBLE_WEIGHT_STEP) / decayRate. Берётся большая из двух
-         * скоростей, чтобы окно не обрезало ни усиление, ни ослабление.
+         * Сколько тиков след спайка держится, пока не ослабнет до 5%: (1 − d)^n = 0.05,
+         * n ≈ 3 / d. Только для подписи в редакторе — симуляция этим не пользуется.
          */
-        fun learningWindowTicks(decayRate: Float, learningRate: Float, depression: Float): Int {
-            if (decayRate <= MIN_DECAY_RATE) return NO_DECAY_WINDOW_TICKS
-            val strongest = max(learningRate, depression)
-            return (ln(strongest / NEGLIGIBLE_WEIGHT_STEP) / decayRate).roundToInt().coerceAtLeast(1)
-        }
+        fun memoryTicks(a: Float): Int = (3f / traceDecay(a)).roundToInt().coerceAtLeast(1)
+    }
+}
 
-        /** Вес после пары спайков, dt = тик учителя - тик входа. */
-        fun plasticity(weight: Float, dt: Int, learningRate: Float, depression: Float, decayRate: Float): Float {
-            val trace = exp(-abs(dt) * decayRate)
-            val changed = if (dt >= 0) weight + learningRate * trace else weight - depression * trace
-            return changed.coerceIn(0f, 1f)
-        }
-
-        /** Спайк старше окна обучения или из будущего (счётчик тиков отмотан) забывается. */
-        private fun isForgotten(tick: Int, now: Int, window: Int) =
-            tick != NO_SPIKE && (now - tick > window || tick > now)
+/**
+ * Параметры синапса в геноме, кроме a, b, c: [inhibitory] — тормозящий (выход −w · вход).
+ * Неизменяемые — общие для генома и всех его клеток.
+ *
+ * @SerialName не равен ключу клетки: "synapse" уже занят [SynapseState] в сохранённых мирах.
+ */
+@OptIn(ExperimentalSerializationApi::class)
+@Serializable
+@SerialName("synapse_data")
+data class SynapseData(
+    @ProtoNumber(1) val inhibitory: Boolean = false
+) : SpecialModData {
+    companion object {
+        val DEFAULT = SynapseData()
     }
 }
 
@@ -312,10 +355,13 @@ class Synapse(cellTypeId: Int): Cell(
  * Состояние синапса. Изменяемое — поэтому объект свой у каждого синапса
  * (Synapse.createSpecialData), и пишет в него только воркер этой клетки.
  *
- * [weight] — вес в [0, 1] (NOT_STARTED — первый тик ещё не прошёл); [inputTick] /
- * [teacherTick] — тики последних входного и учительского спайков (NO_SPIKE — нет);
+ * [weight] — вес в [0, 1] (NOT_STARTED — первый тик ещё не прошёл); [preTrace] /
+ * [postTrace] — следы входа и нейрона; [inhibitory] — тормозящий, копия из [SynapseData];
  * [miswired] — синапс подключён неправильно и покрашен в красный, [savedColor] — цвет,
  * который вернётся после починки.
+ *
+ * Номера 2 и 3 заняты тиками последних спайков прежнего синапса (до 05.11): в старых
+ * сохранениях они есть, protobuf их пропускает. Не переиспользовать.
  *
  * Цена: объект ~40 байт на синапс и одно разыменование за тик против 12 байт у каждой
  * нейронной клетки раньше. Синапсов в теле единицы–десятки, нейронных клеток — сотни.
@@ -325,10 +371,11 @@ class Synapse(cellTypeId: Int): Cell(
 @SerialName("synapse")
 data class SynapseState(
     @ProtoNumber(1) var weight: Float = Synapse.NOT_STARTED,
-    @ProtoNumber(2) var inputTick: Int = Synapse.NO_SPIKE,
-    @ProtoNumber(3) var teacherTick: Int = Synapse.NO_SPIKE,
     @ProtoNumber(4) var miswired: Boolean = false,
     @ProtoNumber(5) var savedColor: Int = 0,
+    @ProtoNumber(6) var preTrace: Float = 0f,
+    @ProtoNumber(7) var postTrace: Float = 0f,
+    @ProtoNumber(8) var inhibitory: Boolean = false,
 ) : SpecialModData
 
 /** Состояние синапса [cellIndex] или null: клетка не синапс или её состояние ещё не заведено. */
@@ -336,7 +383,8 @@ fun SpecialEntity.synapseState(cellIndex: Int): SynapseState? = getSpecialData(c
 
 /**
  * Параметры синапса в диалоге редактора вместо a, b, c обычного нейрона. Хранятся они в тех
- * же полях (a = decayRate, b = learningRate, c = depression), см. Synapse.
+ * же полях (a = затухание следов, b = learningRate, c = depression), галочка торможения —
+ * в [SynapseData], см. Synapse.
  *
  * Пустое поле — значение по умолчанию. У learningRate и depression ноль тоже означает
  * «по умолчанию» (так их видит симуляция), поэтому ноль показывается пустым полем.
@@ -366,19 +414,12 @@ object SynapseSection : CellEditorSection {
         var decayRate = actionSystem.action.a ?: actual?.a ?: Synapse.DEFAULT_DECAY_RATE
         var learningRate = actionSystem.action.b ?: actual?.b ?: Synapse.DEFAULT_LEARNING_RATE
         var depression = actionSystem.action.c ?: actual?.c ?: Synapse.DEFAULT_DEPRESSION
+        fun data() = (actionSystem.action.special ?: actual?.special) as? SynapseData ?: SynapseData.DEFAULT
 
-        fun windowText() = bundle.format(
-            "synapse.window",
-            Synapse.learningWindowTicks(
-                Synapse.decayRate(decayRate),
-                Synapse.learningRate(learningRate),
-                Synapse.depression(depression)
-            )
-        )
+        fun memoryText() = bundle.format("synapse.memory", Synapse.memoryTicks(decayRate))
 
-        // Метка окна стоит под полями, а обновляется из них — поэтому ссылка заводится заранее.
-        var windowLabel: VisLabel? = null
-        fun updateWindow() = windowLabel?.setText(windowText())
+        // Метка памяти стоит под полями, а обновляется из них — поэтому ссылка заводится заранее.
+        var memoryLabel: VisLabel? = null
 
         visTable({ left() }) {
             synapseParam(
@@ -390,7 +431,6 @@ object SynapseSection : CellEditorSection {
             ) {
                 learningRate = it
                 actionSystem.action = actionSystem.action.copy(b = it)
-                updateWindow()
             }
 
             synapseParam(
@@ -402,7 +442,6 @@ object SynapseSection : CellEditorSection {
             ) {
                 depression = it
                 actionSystem.action = actionSystem.action.copy(c = it)
-                updateWindow()
             }
 
             synapseParam(
@@ -414,12 +453,21 @@ object SynapseSection : CellEditorSection {
             ) {
                 decayRate = it
                 actionSystem.action = actionSystem.action.copy(a = it)
-                updateWindow()
+                memoryLabel?.setText(memoryText())
             }
         }
         row()
 
-        windowLabel = visLabel(windowText()) { left().padBottom(32.dp()) }
+        memoryLabel = visLabel(memoryText()) { left() }
+        row()
+
+        visToggleButton(
+            text = bundle.get("synapse.inhibitory"),
+            checked = data().inhibitory,
+            onCheckedChange = { on ->
+                actionSystem.action = actionSystem.action.copy(special = data().copy(inhibitory = on))
+            }
+        ) { left().padTop(8.dp()).padBottom(32.dp()) }.hint(bundle.get("synapse.inhibitory.hint"))
         row()
     }
 
@@ -427,6 +475,11 @@ object SynapseSection : CellEditorSection {
         if (a != null && a != actual.a) out.append("${bundle.get("synapse.decayRate")}: ${actual.a} -> $a\n")
         if (b != null && b != actual.b) out.append("${bundle.get("synapse.learningRate")}: ${actual.b} -> $b\n")
         if (c != null && c != actual.c) out.append("${bundle.get("synapse.depression")}: ${actual.c} -> $c\n")
+        val to = special as? SynapseData
+        val from = actual.special as? SynapseData
+        if (to != null && to != from) {
+            out.append("${bundle.get("synapse.inhibitory")}: ${from?.inhibitory} -> ${to.inhibitory}\n")
+        }
     }
 
     /** Строка «название + поле» с всплывающим пояснением. Отрицательные значения синапсу не нужны. */

@@ -61,8 +61,10 @@ object StateHash {
      *     треугольников, у клетки — их счётчик.
      * 13 — вес и тики спайков синапса ушли из NeuralEntity в его SynapseState
      *     (SpecialModDataEntity).
+     * 14 — синапс учится по следам спайков (SynapseState.preTrace/postTrace) вместо тиков
+     *     последней пары; новые формулы lif и trace.
      */
-    const val VERSION = 13
+    const val VERSION = 14
 
     class Result(val hash: Long, val parts: LongArray)
 

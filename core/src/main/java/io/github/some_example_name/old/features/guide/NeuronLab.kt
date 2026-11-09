@@ -26,10 +26,22 @@ class NeuronLabSettings {
     val inputs = FloatArray(MAX_INPUTS).also { it[0] = 1f }
     var inputCount = 2
 
+    /** Импульсы на входе 1: раз в столько тиков, 0 — ровный вход (GuideIntent.SetPulse). */
+    var pulsePeriod = 0
+
     /** Вход нейрона x — так же, как его собирает симуляция: сумма или произведение входов. */
-    fun x(): Float {
+    fun x(): Float = x(tick = 0)
+
+    /**
+     * Вход в тик [tick]: при импульсах вход 1 подаёт своё значение только в тики, кратные
+     * [pulsePeriod], а в остальные молчит (0).
+     */
+    fun x(tick: Int): Float {
         var x = if (isSum) 0f else 1f
-        for (i in 0 until inputCount) x = if (isSum) x + inputs[i] else x * inputs[i]
+        for (i in 0 until inputCount) {
+            val v = if (i == 0 && pulsePeriod > 0 && tick % pulsePeriod != 0) 0f else inputs[i]
+            x = if (isSum) x + v else x * v
+        }
         return x
     }
 
@@ -37,6 +49,7 @@ class NeuronLabSettings {
         const val MAX_INPUTS = 4
         const val MIN_VALUE = -10f
         const val MAX_VALUE = 10f
+        const val MAX_PULSE_PERIOD = 60
     }
 }
 
@@ -77,9 +90,12 @@ class NeuronLab(
         organEntity = organEntity
     )
 
-    /** История сигнала во времени — для формул с [Formula.dependsOnTime]. */
+    /** История сигнала во времени — для формул с [Formula.dependsOnTime] и для импульсов на входе. */
     val historyX = FloatArray(HISTORY)
     val historyY = FloatArray(HISTORY)
+
+    /** Память нейрона (NeuralEntity.remember) по тикам — для формул с [Formula.showsMemory]. */
+    val historyMemory = FloatArray(HISTORY)
 
     /** Сколько точек истории уже есть (до [HISTORY]); последняя — свежая. */
     var historySize = 0
@@ -129,15 +145,15 @@ class NeuronLab(
     fun output(x: Float): Float = cells.activation(NEURON, x)
 
     /**
-     * Прожить [delta] секунд тиками мира (60 в секунду) с входом [x]: для формул с памятью
-     * и временем. Не больше [MAX_TICKS_PER_FRAME] за кадр — после паузы окна стенд не
-     * догоняет время рывком.
+     * Прожить [delta] секунд тиками мира (60 в секунду) со входом из [settings]: для формул
+     * с памятью и временем и для импульсов на входе. Не больше [MAX_TICKS_PER_FRAME] за
+     * кадр — после паузы окна стенд не догоняет время рывком.
      */
-    fun advance(delta: Float, x: Float) {
+    fun advance(delta: Float, settings: NeuronLabSettings) {
         tickAccumulator = (tickAccumulator + delta).coerceAtMost(MAX_TICKS_PER_FRAME * TICK)
         while (tickAccumulator >= TICK) {
             tickAccumulator -= TICK
-            tick(x)
+            tick(settings.x(simulationData.tickCounter + 1))
         }
     }
 
@@ -150,9 +166,11 @@ class NeuronLab(
         } else {
             System.arraycopy(historyX, 1, historyX, 0, HISTORY - 1)
             System.arraycopy(historyY, 1, historyY, 0, HISTORY - 1)
+            System.arraycopy(historyMemory, 1, historyMemory, 0, HISTORY - 1)
         }
         historyX[historySize - 1] = x
         historyY[historySize - 1] = lastY
+        historyMemory[historySize - 1] = cells.getRemember(NEURON)
     }
 
     /** Время, память и история — с нуля. */
