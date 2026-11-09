@@ -132,7 +132,10 @@ class GenomeEditorScreen(
         compose()
     }
 
+    private var displayedMode = renderSystem.mode
+
     private fun compose() {
+        displayedMode = renderSystem.mode
         composeGenomeEditor.composeGenomeEditor(
             stage,
             editorSimulationSystem,
@@ -175,6 +178,7 @@ class GenomeEditorScreen(
     override fun render(delta: Float) {
         Gdx.gl.glClearColor(0.10f, 0.12f, 0.14f, 1f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
+        if (displayedMode != renderSystem.mode) compose()
         if (state.currentTick != currentTick) {
             state.currentTick = currentTick
 
@@ -278,6 +282,7 @@ class GenomeEditorScreen(
     override fun resize(width: Int, height: Int) {
         if (width == currentScreenWidth && height == currentScreenHeight) return
         stage.viewport.update(width, height, true)
+        tutorialPanel?.resize()
         compose()
         stage.keepWindowsOnScreen()
         renderSystem.isUpdateBuffer = true
@@ -298,6 +303,7 @@ class GenomeEditorScreen(
 
     override fun dispose() {
         if (tutorial != null && editorLogicSystem.tutorial === tutorial) editorLogicSystem.tutorial = null
+        composeGenomeEditor.dispose()
         stage.dispose()
         shape.dispose()
     }

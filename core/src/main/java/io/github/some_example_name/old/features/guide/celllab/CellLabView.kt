@@ -25,7 +25,8 @@ internal class CellLabView(private val session: CellLabSession) {
         defaults().left().width(inner)
         visTable {
             visTextButton(bundle.get("guide.lab.back"), onClick = onClose) { padRight(16.dp()) }
-            visLabel(model.world.cellList[model.world.cellList.indexOfKey(model.key)].name, font = game.extraLargeFont)
+            if (inner < 460.dp()) row()
+            visLabel(model.world.cellList[model.world.cellList.indexOfKey(model.key)].name, font = game.extraLargeFont) { growX().minWidth(0f) }.setWrap(true)
         }
         row()
         visLabel(bundle.get("guide.lab.${model.key}"), textColor = Color(0.5f, 0.85f, 1f, 1f), font = game.largeFont) { padTop(12.dp()) }.setWrap(true)
@@ -102,7 +103,7 @@ internal class CellLabView(private val session: CellLabSession) {
                 visSlider(control.min, control.max, control.step, value = model.value(control.key), onValueChange = {
                     session.input(CellLabInput("set", control.key, it))
                     label.setText("$name: ${format(it)}")
-                }) { fillX().height(32.dp()) }
+                }) { fillX().height(48.dp()) }
             }
             row()
         }

@@ -31,7 +31,7 @@ import io.github.some_example_name.render.RenderMode
 
 class MenuScreen : VisDslScreen(
     background = Color(0f, 0f, 0f, 1f),
-    isScrollable = false
+    isScrollable = true
 ), ReplayTarget, FileDropTarget {
 
     private var backgroundOptics: io.github.some_example_name.render.microscope.MenuMicroscopeBackground? = null

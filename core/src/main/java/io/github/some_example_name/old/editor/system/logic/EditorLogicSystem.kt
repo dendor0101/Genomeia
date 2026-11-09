@@ -210,6 +210,7 @@ class EditorLogicSystem(
 
             is SetShowPhysicalLinks -> showPhysicalLink = command.visible
 
+            is SetEditorDebugFilter -> DIGenomeEditorContainer.editorRenderSystem.debugFilter = command.filter
             is SetRenderMode -> DIGenomeEditorContainer.editorRenderSystem.mode = command.mode
 
             is SaveGenome -> saveCurrentGenome(command.genomeName)

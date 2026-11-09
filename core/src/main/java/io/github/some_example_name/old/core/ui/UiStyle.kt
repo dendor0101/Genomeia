@@ -85,7 +85,9 @@ fun makeStyledButton(text: String, game: MyGame, textures: MutableList<Texture>,
         style.checkedFontColor = Color.WHITE
     }
     val d = Gdx.graphics.density
-    return VisTextButton(text, style).also { it.pad(10f * d, 24f * d, 10f * d, 24f * d) }
+    return object : VisTextButton(text, style) {
+        override fun getPrefHeight() = maxOf(super.getPrefHeight(), 48.dp())
+    }.also { it.pad(4f * d, 8f * d, 4f * d, 8f * d) }
 }
 
 /**
@@ -271,7 +273,9 @@ fun makeStyledSlider(
     style.knobOver   = knobD
     style.knobDown   = knobD
 
-    val slider = VisSlider(min, max, step, vertical, style)
+    val slider = object : VisSlider(min, max, step, vertical, style) {
+        override fun getPrefHeight() = maxOf(super.getPrefHeight(), 48.dp())
+    }
 
     // === ВОТ ЭТА СТРОКА РЕШАЕТ ВСЁ АВТОМАТИЧЕСКИ ===
     slider.disableScrollWhileDragging()
@@ -467,12 +471,14 @@ private fun createLeftArrowTextureRegion(): TextureRegion {
 }
 
 class StyledLeftArrowButton : VisTextButton("", makeCleanButtonStyle()) {
+    override fun getPrefWidth() = 48.dp()
+    override fun getPrefHeight() = 48.dp()
 
     companion object {
         private val arrowRegion: TextureRegion by lazy {
             createLeftArrowTextureRegion()
         }
-        private const val ARROW_SIZE = 60f
+        private const val ARROW_SIZE = 32f
     }
 
     override fun draw(batch: Batch, parentAlpha: Float) {

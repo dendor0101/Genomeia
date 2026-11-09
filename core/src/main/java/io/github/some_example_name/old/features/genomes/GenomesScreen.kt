@@ -236,8 +236,8 @@ class GenomesScreen : VisDslScreen(
         if (Gdx.app.type == Application.ApplicationType.Desktop) {
             row()
             visLabel(bundle.get("label.dropGenomes"), font = game.mediumFont, align = Align.center) {
-                center().padTop(6f.dp())
-            }
+                width(w - 40.dp()).center().padTop(6f.dp())
+            }.setWrap(true)
         }
     }
 

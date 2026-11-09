@@ -416,3 +416,22 @@ tasks.register('realBodyDemo', JavaExec) {
     dependsOn(":physics-lab:${tool}")
   }
 }
+
+tasks.register('uiAuditClasspath') {
+  dependsOn 'verificationClasses', configurations.verificationRuntimeClasspath
+  doLast { file("$buildDir/ui-audit-classpath.txt").text = sourceSets.verification.runtimeClasspath.asPath }
+}
+
+
+tasks.register('uiAudit', JavaExec) {
+  group = 'verification'
+  description = 'Снимки и геометрия UI: размеры, плотность, язык и Android-ветка'
+  classpath = sourceSets.verification.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.verification.UiAuditKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8'
+  systemProperty 'audit.out', file("$buildDir/ui-audit").absolutePath
+  System.properties.each { key, value ->
+    if (key.toString().startsWith('audit.')) systemProperty key.toString(), value
+  }
+}

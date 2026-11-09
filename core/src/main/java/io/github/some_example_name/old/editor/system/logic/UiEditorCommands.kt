@@ -214,6 +214,11 @@ class SetShowPhysicalLinks(val visible: Boolean): UiEditorCommands {
 }
 
 @Serializable
+class SetEditorDebugFilter(val filter: io.github.some_example_name.render.DebugFilter) : UiEditorCommands {
+    override val name get() = "SetEditorDebugFilter"
+}
+
+@Serializable
 class SetRenderMode(@Serializable(with=io.github.some_example_name.old.journal.SavedRenderMode::class) val mode: RenderMode): UiEditorCommands {
     override val name get() = "SetRenderMode"
     override val detail get() = mode.name

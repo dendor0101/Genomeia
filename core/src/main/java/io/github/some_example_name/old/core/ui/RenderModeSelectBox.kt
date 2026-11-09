@@ -1,6 +1,9 @@
 package io.github.some_example_name.old.core.ui
 
 import io.github.some_example_name.old.core.DIGameGlobalContainer
+import com.badlogic.gdx.scenes.scene2d.Stage
+import com.kotcrab.vis.ui.widget.VisDialog
+import com.kotcrab.vis.ui.widget.VisTable
 import io.github.some_example_name.render.DebugFilter
 import io.github.some_example_name.render.RenderMode
 
@@ -25,21 +28,19 @@ fun renderModeSelectBox(
     )
 }
 
-/**
- * Выпадающий список фильтра отладочного режима (оригинал, энергия, нейросигнал) — сверху
- * по центру экрана симуляции, пока выбран отладочный режим. Подписи — debugFilter.* из
- * бандла, пункты — в порядке [DebugFilter].
- */
-fun debugFilterSelectBox(
-    selected: DebugFilter,
-    onSelect: (DebugFilter) -> Unit
-): StyledSelectBox<String> {
-    val filters = DebugFilter.entries
-    return styledSelectBox(
-        items = filters
-            .map { DIGameGlobalContainer.bundle.get("debugFilter." + it.name.lowercase()) }
-            .toTypedArray(),
-        selectedIndex = filters.indexOf(selected),
-        onChange = { _, index -> onSelect(filters[index]) }
-    )
+fun Stage.showDebugFilterDialog(selected: DebugFilter, onSelect: (DebugFilter) -> Unit) {
+    val bundle = DIGameGlobalContainer.bundle
+    val dialog = VisDialog(bundle.get("debugFilter.title"))
+    dialog.setupTitleSize(DIGameGlobalContainer.game)
+    val choices = VisTable()
+    for (filter in DebugFilter.entries) {
+        choices.visToggleButton(bundle.get("debugFilter." + filter.name.lowercase()), filter == selected, {
+            onSelect(filter)
+            dialog.fadeOut()
+        }) { growX() }
+        choices.row()
+    }
+    dialog.contentTable.add(choices).grow()
+    dialog.closeOnEscape()
+    dialog.show(this)
 }

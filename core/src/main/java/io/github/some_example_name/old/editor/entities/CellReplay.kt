@@ -20,6 +20,8 @@ class CellReplay(
     var angleSin = FloatArray(startCapacity)
     var specialTypeIndexes = IntArray(startCapacity)
     var neuralIndexes = IntArray(startCapacity)
+    var energyFill = ByteArray(startCapacity)
+    var collides = BooleanArray(startCapacity)
     var color = IntArray(startCapacity)
     var pheromoneType = IntArray(startCapacity)
 
@@ -36,6 +38,8 @@ class CellReplay(
             angleSin = angleSin.copyOf(newCapacity)
             specialTypeIndexes = specialTypeIndexes.copyOf(newCapacity)
             neuralIndexes = neuralIndexes.copyOf(newCapacity)
+            energyFill = energyFill.copyOf(newCapacity)
+            collides = collides.copyOf(newCapacity)
             color = color.copyOf(newCapacity)
             pheromoneType = pheromoneType.copyOf(newCapacity)
             capacity = newCapacity
@@ -68,6 +72,12 @@ class CellReplay(
         System.arraycopy(cellEntity.pheromoneType, 0, pheromoneType, size, cellsAmount)
 
 
+        for (cell in 0 until cellsAmount) {
+            energyFill[size + cell] = io.github.some_example_name.render.pack.CellLook.energyFilterByte(
+                cellEntity.energy[cell], cellEntity.maxEnergy[cell]
+            ).toByte()
+            collides[size + cell] = particleEntity.isInGrid[cellEntity.particleIndexes[cell]]
+        }
         size += cellsAmount
     }
 

@@ -15,6 +15,7 @@ import io.github.some_example_name.old.editor.system.simulation.EditorSimulation
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.systems.render.DebugCellPalette
+import io.github.some_example_name.render.DebugFilter
 import io.github.some_example_name.render.RenderFrame
 import io.github.some_example_name.render.RenderMode
 import io.github.some_example_name.render.WorldRenderer
@@ -60,6 +61,12 @@ class EditorRenderSystem(
     private val overlaySink = DebugCellPalette.OverlaySink { x0, y0, x1, y1, color, params ->
         overlayBuffer.put(x0, y0, x1, y1, color, params)
     }
+
+    var debugFilter = DebugFilter.ORIGINAL
+        set(value) {
+            field = value
+            isUpdateBuffer = true
+        }
 
     var isUpdateBuffer = true
 
@@ -117,6 +124,7 @@ class EditorRenderSystem(
             // клеток живут и без сигнала: хлоропласты текут, реснички бьют.
             time = animationTime
             mode = this@EditorRenderSystem.mode
+            debugFilter = this@EditorRenderSystem.debugFilter
         }
         worldRenderer.render(frame)
 
@@ -131,6 +139,14 @@ class EditorRenderSystem(
         )
     }
 
+    // В записи роста доступны позиции частиц. Нейронный сигнал в ней отсутствует.
+    private fun editorFilterByte(index: Int): Int = when (debugFilter) {
+        DebugFilter.ORIGINAL -> 0
+        DebugFilter.SIGNAL -> CellLook.signalFilterByte(0f)
+        DebugFilter.COLLISION -> CellLook.collisionFilterByte(cellReplay.collides[index])
+        DebugFilter.ENERGY -> cellReplay.energyFill[index].toInt() and 255
+    }
+
     private fun fillBuffer() {
         cellBuffer.begin()
 
@@ -141,6 +157,7 @@ class EditorRenderSystem(
         val energy = if (mode == RenderMode.NOSTALGIC) NOSTALGIC_ENERGY else 0f
         val debug = mode == RenderMode.DEBUG
 
+        var replayIndex = if (currentTick in 0 until cellReplay.tickStartIndices.size) cellReplay.tickStartIndices.getInt(currentTick) else 0
         cellReplay.forEachInTick(currentTick) { cellType, index, _, angleCos, angleSin, color ->
             val type = cellType.toInt()
             cellBuffer.putCell(
@@ -156,7 +173,7 @@ class EditorRenderSystem(
                 // и не зависит от порядка сборки буфера.
                 noiseSeed = index,
                 // Сигналов в записи роста нет: мышцы не сжаты, хвосты не тянут.
-                look = if (debug) palette.look(type, action = 0f) else 0
+                look = if (debug) palette.look(type, action = 0f, filter = editorFilterByte(replayIndex++)) else 0
             )
         }
 

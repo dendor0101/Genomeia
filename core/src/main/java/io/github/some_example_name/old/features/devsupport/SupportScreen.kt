@@ -30,11 +30,11 @@ class SupportScreen : VisDslScreen(), ReplayTarget {
         copyTimers.forEach { it.cancel() }
         copyTimers.clear()
         top()
-        visTable(cellInit = { pad(16.dp()).growX() }) {
+        visTable(cellInit = { pad(8.dp(), 12.dp(), 8.dp(), 56.dp()).growX() }) {
             visLeftArrowButton(onClick = { navigation.performCommand(GoBack) })
             visLabel(bundle.get("about.title"), font = game.extraLargeFont) {
-                expandX().left().padLeft(20.dp())
-            }
+                minWidth(0f).growX().left().padLeft(12.dp())
+            }.setWrap(true)
         }
         row()
         val scroll = visScrollPane(

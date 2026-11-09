@@ -163,7 +163,7 @@ class FormulaLabView(
                     viewModel.handle(GuideIntent.SelectFormula(formulas[i].key))
                     onFormulaChanged()
                 }
-            ) { colspan(3).padBottom(8.dp()) }.hint(bundle.get("editor.hint.formula"))
+            ) { colspan(3).minWidth(0f).growX().padBottom(8.dp()) }.hint(bundle.get("editor.hint.formula"))
             row()
 
             coefficient(0, "a", settings.a, "editor.hint.coefA")
@@ -218,8 +218,8 @@ class FormulaLabView(
             viewModel.handle(GuideIntent.SetCoefficient(index, v))
             valueLabel.setText(format(v))
             curveChanged = true
-        }) { growX().minWidth(200.dp()) }.apply { disableParentFlickScrollWhileDragging() }.hint(bundle.get(hintKey))
-        valueLabel = visLabel(format(value)) { width(90.dp()).padLeft(8.dp()) }
+        }) { growX().minWidth(48.dp()) }.apply { disableParentFlickScrollWhileDragging() }.hint(bundle.get(hintKey))
+        valueLabel = visLabel(format(value)) { width(54.dp()).padLeft(8.dp()) }
         row()
     }
 
@@ -235,8 +235,8 @@ class FormulaLabView(
                 viewModel.handle(GuideIntent.SetInput(i, v))
                 valueLabel.setText(format(v))
                 refreshInputs()
-            }) { growX().minWidth(200.dp()) }.disableParentFlickScrollWhileDragging()
-            valueLabel = inputs.visLabel(format(settings.inputs[i])) { width(90.dp()).padLeft(8.dp()) }
+            }) { growX().minWidth(48.dp()) }.disableParentFlickScrollWhileDragging()
+            valueLabel = inputs.visLabel(format(settings.inputs[i])) { width(54.dp()).padLeft(8.dp()) }
             inputs.row()
         }
         inputs.invalidateHierarchy()

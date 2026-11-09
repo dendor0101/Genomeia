@@ -45,7 +45,7 @@ import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.ui.CameraControl
 import io.github.some_example_name.old.core.ui.STYLE_BEIGE
 import io.github.some_example_name.old.core.ui.h
-import io.github.some_example_name.old.core.ui.debugFilterSelectBox
+import io.github.some_example_name.old.core.ui.showDebugFilterDialog
 import io.github.some_example_name.old.core.ui.hint
 import io.github.some_example_name.old.core.ui.keepWindowsOnScreen
 import io.github.some_example_name.old.core.ui.makeStyledButton
@@ -497,7 +497,7 @@ class SimulationScreen(
 
         val bundle = DIGameGlobalContainer.bundle
         val density = Gdx.graphics.density
-        val size = hudButtonSize()
+        val size = HUD_BUTTON_DP * density
         val pad = 8f * density
 
         // --- Сверху: слева меню и геном, справа инструмент и пауза ---
@@ -514,14 +514,14 @@ class SimulationScreen(
         }
         // Сверху по центру — фильтр отладочного режима: только в нём он что-то значит.
         if (renderSystem.mode == RenderMode.DEBUG) {
-            val filter = debugFilterSelectBox(renderSystem.debugFilter) {
-                viewModel.handle(SimulationIntent.SetDebugFilter(it))
-            }
-            filter.hint(bundle.get("debugFilter.hint"))
-            topBar.add(filter).expandX().center()
-        } else {
-            topBar.add().expandX()
+            topBar.add(iconButton(icons.optics).apply { name = "debug-filter-button" }
+                .hint(bundle.get("debugFilter.hint")).onClick {
+                    stage.showDebugFilterDialog(renderSystem.debugFilter) {
+                        viewModel.handle(SimulationIntent.SetDebugFilter(it))
+                    }
+                }).size(size).padLeft(pad)
         }
+        topBar.add().expandX()
 
         val toolButton = iconButton(icons.of(viewModel.tool))
         toolButton.hint(bundle.get("tool.title") + ": " + bundle.get(viewModel.tool.labelKey))
@@ -551,15 +551,6 @@ class SimulationScreen(
         root.add(keysToggle).size(size * KEYS_BUTTON_WIDTH, size).left().pad(pad)
 
         bottomAnchor = bottomKeyboard ?: keysToggle
-    }
-
-    /**
-     * Сторона кнопок-значков: не меньше текстовой кнопки (шрифт кнопок свой у каждого
-     * экрана и плотности), иначе значки рядом с текстом выглядели бы мелкими.
-     */
-    private fun hudButtonSize(): Float {
-        val textButton = makeStyledButton("Ag", DIGameGlobalContainer.game, extraTextures).prefHeight
-        return maxOf(HUD_BUTTON_DP * Gdx.graphics.density, textButton)
     }
 
     private fun iconButton(icon: TextureRegion, checkedIcon: TextureRegion? = null): Button =
@@ -776,7 +767,7 @@ class SimulationScreen(
 
     private companion object {
         /** Сторона кнопок-значков по углам экрана. */
-        const val HUD_BUTTON_DP = 52f
+        const val HUD_BUTTON_DP = 48f
 
         /** Отступ значка от рамки кнопки. */
         const val HUD_ICON_INSET_DP = 8f

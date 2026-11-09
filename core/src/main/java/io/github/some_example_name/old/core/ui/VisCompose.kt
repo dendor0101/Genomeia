@@ -562,7 +562,7 @@ private fun layoutFlowRow(
     var currentWidth = 0f
 
     for (actor in actors) {
-        val baseW = if (actor is Widget) actor.prefWidth else actor.width
+        val baseW = if (actor is com.badlogic.gdx.scenes.scene2d.utils.Layout) actor.prefWidth else actor.width
         val prefW = baseW + hSpacing * 2f
 
         if (currentWidth + prefW > maxW && currentWidth > 0f) {

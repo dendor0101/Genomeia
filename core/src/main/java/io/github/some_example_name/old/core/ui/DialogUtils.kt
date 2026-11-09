@@ -28,7 +28,7 @@ fun VisWindow.setupTitleSize(game: MyGame) {
     titleTable.padTop(5f * d).padBottom(5f * d)
 
     val closeButton = titleTable.children.last() as? VisImageButton ?: return
-    val closeBtnSize = if (Gdx.app.type == Application.ApplicationType.Android) 20f else 32f
+    val closeBtnSize = if (Gdx.app.type == Application.ApplicationType.Android) 48f else 32f
     closeButton.image.setScaling(Scaling.fit)
     closeButton.imageCell.size(closeBtnSize * d * 0.75f)
     titleTable.getCell(closeButton).size(closeBtnSize * d, closeBtnSize * d)

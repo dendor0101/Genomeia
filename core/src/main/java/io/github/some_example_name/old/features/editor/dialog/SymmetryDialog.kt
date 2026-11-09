@@ -54,16 +54,15 @@ class SymmetryDialog(
         squareGridButton.hint(bundle.get("editor.hint.symmetrySquare"))
         triangleGridButton.hint(bundle.get("editor.hint.symmetryTriangle"))
 
-        // 2-column grid of radio buttons
         val radioGrid = VisTable()
-        radioGrid.add(noSymmetryButton).padRight(16f * density)
-        radioGrid.add(axialButton).row()
-        radioGrid.add(squareGridButton).padRight(16f * density)
-        radioGrid.add(triangleGridButton)
-        contentTable.add(radioGrid).colspan(2).padBottom(12f * density).row()
-
-        // Horizontal OK / Cancel
-        val btnH = Gdx.graphics.height * 0.055f
+        radioGrid.defaults().left().minHeight(48f * density)
+        for (option in listOf(noSymmetryButton, axialButton, squareGridButton, triangleGridButton)) {
+            radioGrid.add(option).row()
+        }
+        val scroll = com.badlogic.gdx.scenes.scene2d.ui.ScrollPane(radioGrid)
+        scroll.setScrollingDisabled(true, false)
+        contentTable.add(scroll).minHeight(0f).grow().row()
+        val btnH = 48f * density
         val okBtn = makeStyledButton(bundle.get("button.ok") ?: "OK", game, textures)
         val cancelBtn = makeStyledButton(bundle.get("button.cancel") ?: "Cancel", game, textures)
 
@@ -95,6 +94,8 @@ class SymmetryDialog(
         pack()
         centerWindow()
     }
+
+    override fun getPrefHeight() = minOf(super.getPrefHeight(), Gdx.graphics.height * .96f)
 
     private fun applySelectedSymmetry() {
         val selected = when {
