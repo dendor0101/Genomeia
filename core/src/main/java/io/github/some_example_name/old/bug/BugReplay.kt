@@ -2,12 +2,16 @@ package io.github.some_example_name.old.bug
 
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.files.FileHandle
+import io.github.some_example_name.old.commands.GoBack
+import io.github.some_example_name.old.commands.GoReplace
 import io.github.some_example_name.old.commands.GameCommand
 import io.github.some_example_name.old.commands.NavigationCommands
 import io.github.some_example_name.old.commands.PlayerCommand
 import io.github.some_example_name.old.commands.logName
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.DISimulationContainer
+import io.github.some_example_name.old.core.GameFilePaths
+import io.github.some_example_name.old.core.ReplayFileException
 import io.github.some_example_name.old.core.GameFiles
 import io.github.some_example_name.old.core.GameVersion
 import io.github.some_example_name.old.features.simulation.SimulationIntent
@@ -23,6 +27,8 @@ import io.github.some_example_name.old.journal.SessionStarted
 import io.github.some_example_name.old.journal.SimRestarted
 import io.github.some_example_name.old.journal.StateHash
 import io.github.some_example_name.old.journal.StateHashed
+import io.github.some_example_name.old.features.simulation.SimulationScreen
+import io.github.some_example_name.old.journal.WorldStopped
 import io.github.some_example_name.old.journal.WorldSaveCommitted
 import java.io.File
 import java.util.Locale
@@ -78,6 +84,20 @@ object BugReplay {
 
     /** Следующая UI-команда. Пишет поток рендера, читает и поток симуляции ([mustHold]). */
     @Volatile private var cursor = 0
+    private val closingCommands = HashMap<JournalEntry, Int>()
+    private class WorldEnd(val epoch: Int, val tick: Int)
+    @Volatile private var closingWorld: WorldEnd? = null
+    private var worldSaves = ReplayWorldSaves(emptyList())
+    internal var injectedSave: ReplayWorldSaves.Attempt? = null
+        private set
+    internal val replayingCrash get() = manifest["kind"] == BugKind.CRASH.label
+    private var completeJournal = true
+    private var fileError: String? = null
+    internal fun fileFailure(message: String) {
+        fileError = message
+        note(message)
+    }
+
     private val epochs = HashMap<Int, SimEpoch>()
     private var finalEpoch = 0
     private var finalTick = -1
@@ -107,6 +127,7 @@ object BugReplay {
 
     /** Краш, до которого дошёл повтор: где и что. */
     @Volatile private var crash: String? = null
+    @Volatile private var crashMatched = false
 
     private val notes = ArrayList<String>()
     private var lastProgressNanos = 0L
@@ -156,8 +177,10 @@ object BugReplay {
      */
     fun prepare(bug: FileHandle): Boolean = try {
         val file = bug.file()
-        val sandbox = File(file.parentFile, SANDBOX_DIR + File.separator + file.nameWithoutExtension)
-        sandbox.deleteRecursively()
+        val parent = GameFilePaths.child(file.absoluteFile.parentFile, SANDBOX_DIR)
+        val sandbox = GameFilePaths.child(parent, file.nameWithoutExtension)
+        // Предыдущий повтор мог оставить файлы. Проверяем каждый путь до спуска в каталог.
+        if (sandbox.exists()) clearSandbox(sandbox)
         val unpacked = File(sandbox, "bug")
         BugFile.unpack(file, unpacked)
 
@@ -181,9 +204,19 @@ object BugReplay {
         true
     } catch (e: Exception) {
         Gdx.app.error(TAG, "не удалось подготовить повтор ${bug.path()}", e)
+        result = false
+        SessionAttachments.stop()
         GameFiles.dataRoot = null
         isActive = false
         false
+    }
+
+    private fun clearSandbox(file: File) {
+        if (file.isDirectory) {
+            val children = checkNotNull(file.list()) { "Не удалось прочитать ${file.path}" }
+            for (name in children) clearSandbox(GameFilePaths.child(file, name))
+        }
+        check(file.delete()) { "Не удалось очистить ${file.path}" }
     }
 
     /** После контейнеров и до первого экрана: окружение игрока, которое влияет на вёрстку. */
@@ -211,12 +244,18 @@ object BugReplay {
         var uiCheck = Fnv.OFFSET
         var simCheck = Fnv.OFFSET
         var simCount = 0
+        var lastUi: JournalEntry? = null
+        worldSaves = ReplayWorldSaves(result.entries)
         for (entry in result.entries) {
             if (entry.channel == Channel.UI) {
                 if (entry.nested) continue
                 ui += entry
+                lastUi = entry
                 uiCheck = JournalFormat.hashUi(uiCheck, entry.typeId, entry.payload)
             } else {
+                if (entry.command == WorldStopped && lastUi != null && lastUi.epoch == entry.epoch) {
+                    closingCommands[lastUi] = entry.tick
+                }
                 simCount++
                 simCheck = JournalFormat.hashSim(simCheck, entry.epoch, entry.tick, entry.typeId, entry.payload)
                 // Стенд гайда живёт в потоке экрана: его SIM-события идут в том же
@@ -247,8 +286,12 @@ object BugReplay {
         simTotal = simCount
 
         // Журнал против манифеста: файл дошёл целым и это ровно та запись.
-        manifest["journal.uiHash"]?.let { if (it != Fnv.hex(uiCheck)) note("контрольная сумма UI-команд не совпала с манифестом — журнал повреждён") }
-        manifest["journal.simHash"]?.let { if (it != Fnv.hex(simCheck)) note("контрольная сумма SIM-событий не совпала с манифестом — журнал повреждён") }
+        fun matches(key: String, actual: String) = manifest[key]?.let { it == actual } ?: true
+        completeJournal = !result.truncated && result.unknownTypes == 0 &&
+            matches("journal.complete", "true") && matches("journal.unregistered", "0") &&
+            matches("journal.ui", uiTotal.toString()) && matches("journal.sim", simCount.toString()) &&
+            matches("journal.uiHash", Fnv.hex(uiCheck)) && matches("journal.simHash", Fnv.hex(simCheck))
+        if (!completeJournal) note("Журнал неполон или расходится с манифестом. Полноту повтора подтвердить нельзя.")
     }
 
     // ==================== Поток рендера: UI-команды ====================
@@ -256,6 +299,7 @@ object BugReplay {
     /** Каждый кадр, до отрисовки экрана. */
     fun update() {
         if (!isActive || !started || finished) return
+        if (fileError != null) return finish()
         if (fast) DISimulationContainer.simulationData.maxSpeed = true
 
         val deadline = System.nanoTime() + FRAME_BUDGET_NS
@@ -266,7 +310,7 @@ object BugReplay {
             inject(entry)
             lastProgressNanos = System.nanoTime()
             // После перехода экрану нужен кадр: show/resize и первая отрисовка.
-            if (entry.command is NavigationCommands || System.nanoTime() > deadline) break
+            if (fileError != null || entry.command is NavigationCommands || entry.command is SimulationIntent.SaveWorld || System.nanoTime() > deadline) break
         }
 
         val tick = SessionJournal.simTick?.invoke()
@@ -296,8 +340,22 @@ object BugReplay {
         val epoch = SessionJournal.epoch
         if (epoch != entry.epoch) return epoch > entry.epoch
         val tick = clock()
+        val session = epochs[epoch]
+        // Старые журналы не писали WorldStopped. При закрытии экрана симуляции
+        // они всё ещё содержат события мира, случившиеся за время перехода.
+        val closesOldWorld = session?.stop == null && (entry.command is GoReplace || entry.command == GoBack) &&
+            DIGameGlobalContainer.game.screen is SimulationScreen
+        val lastTick = closingCommands[entry] ?: if (closesOldWorld) session?.lastTick else null
+        if (lastTick != null) {
+            val end = maxOf(entry.tick, lastTick)
+            if (closingWorld == null) closingWorld = WorldEnd(epoch, end)
+            if (tick < end) return false
+            // tickCounter уже увеличен в начале тика. Дождаться его хэша до остановки потока.
+            DISimulationContainer.simulationSystem.betweenTicks { }
+            return true
+        }
         if (entry.command is SimulationIntent.SaveWorld) {
-            val barrier = epochs[entry.epoch]?.nextSaveTick()
+            val barrier = worldSaves[entry]?.tick
             if (barrier != null) return tick == barrier
         }
         return tick >= entry.tick
@@ -311,6 +369,7 @@ object BugReplay {
             return
         }
         isInjecting = true
+        injectedSave = worldSaves[entry]
         try {
             val handled = when (command) {
                 is NavigationCommands -> {
@@ -330,7 +389,11 @@ object BugReplay {
                 val screen = DIGameGlobalContainer.game.screen?.let { it::class.simpleName } ?: "нет экрана"
                 note("команду ${command.logName} некому выполнить (экран $screen) — повтор разошёлся с записью")
             }
+        } catch (e: ReplayFileException) {
+            fileFailure(e.message ?: "ошибка файлов повтора")
         } finally {
+            closingWorld = null
+            injectedSave = null
             isInjecting = false
         }
     }
@@ -364,7 +427,10 @@ object BugReplay {
             )
             if (skipped > 0) appendLine("Пропущено команд: $skipped")
             notes.forEach { appendLine("  ! $it") }
-            crash?.let { appendLine("КРАШ ВОСПРОИЗВЕДЁН: $it") }
+            crash?.let {
+                if (crashMatched) appendLine("Совпала подпись краша: $it")
+                else appendLine("Краш при повторе не подтверждён подписью исходного отчёта: $it")
+            }
             if (crash == null && manifest["kind"] == BugKind.CRASH.label) {
                 appendLine("Краш НЕ воспроизвёлся: ${manifest["crash.exception"] ?: "?"}: ${manifest["crash.message"] ?: ""} — исправлен, или повтор разошёлся с записью")
             }
@@ -374,18 +440,19 @@ object BugReplay {
         status = report.trim()
 
         val (simDone, simSum) = synchronized(simLock) { simApplied to simHash }
-        val commandsMatch = skipped == 0 && firstMismatch == null &&
+        val commandsMatch = completeJournal && !oldHashNoted && fileError == null && skipped == 0 && firstMismatch == null &&
             uiApplied == uiTotal && uiHash == expectedUiHash
         // Повтор краша удался, если краш случился снова; повтор отчёта — если мир дошёл
         // до конца записи, применив всё. События тика, в котором упало, применены не все.
         result = commandsMatch && if (manifest["kind"] == BugKind.CRASH.label) {
-            crash != null
+            crashMatched
         } else {
             crash == null && simDone == simTotal && simSum == expectedSimHash
         }
 
         // Дальше — обычная игра поверх состояния игрока, но уже без записи.
         isActive = false
+        SessionAttachments.stop()
         (DIGameGlobalContainer.game.screen as? ReplayTarget)?.onReplayFinished()
     }
 
@@ -509,25 +576,39 @@ object BugReplay {
      */
     private fun uiCommandPending(epoch: Int, tick: Int): Boolean {
         if (finished) return false
+        // Держим и во время самого перехода: курсор UI уже сдвинут, а старый поток
+        // мира ещё работает, пока новый экран создаётся в потоке рендера.
+        closingWorld?.let { if (it.epoch == epoch) return tick >= it.tick }
         val entry = uiEntries.getOrNull(cursor) ?: return false
         // Сохранение мира подаётся не «с тика», а ровно на тике, где оно случилось
         // (gateOpen), и мир до него довозит свой барьер. Держать мир здесь — значит не
         // дать ему дойти до этого тика: повтор встал бы навсегда.
-        if (entry.command is SimulationIntent.SaveWorld) return false
+        if (entry.command is SimulationIntent.SaveWorld && worldSaves[entry]?.tick != null) return false
         return entry.tick >= 0 && entry.epoch == epoch && entry.tick <= tick
     }
 
     /** Сохранение мира случилось (или упало) — отпустить мир. Зовётся между тиками. */
-    fun onWorldSaveFinished() {
-        val entry = epochs[SessionJournal.epoch]?.takeSave() ?: return
+    fun onWorldSaveFinished(slot: String, tick: Int) {
+        val entry = epochs[SessionJournal.epoch]?.takeSave()
+        if (entry == null || entry.tick != tick || (entry.command as WorldSaveCommitted).slot != slot) {
+            fileFailure("не совпал снимок сохранения $slot на тике $tick")
+            return
+        }
+        consume(entry)
+    }
+
+    fun onWorldStopped(epoch: Int, tick: Int) {
+        val entry = epochs[epoch]?.stop ?: return
+        if (entry.tick != tick) fileFailure("мир закрыт на тике $tick, в журнале ${entry.tick}")
         consume(entry)
     }
 
     /** Повтор дошёл до краша. */
     fun onCrash(thread: Thread, error: Throwable) {
         val where = SessionJournal.simTick?.let { " (эпоха ${SessionJournal.epoch}, тик ${it()})" } ?: ""
+        crashMatched = manifest["crash.signature"]?.let { it == BugReports.crashSignature(error) } == true
         crash = "поток ${thread.name}$where: $error"
-        println("[$TAG] КРАШ ВОСПРОИЗВЕДЁН в потоке ${thread.name}$where: $error")
+        println("[$TAG] Краш при повторе в потоке ${thread.name}$where: $error")
         // Мир дальше не пойдёт — подводим итог сразу, а не по таймауту «застрял».
         Gdx.app?.postRunnable { if (isActive && !finished) finish() }
     }
@@ -561,15 +642,19 @@ object BugReplay {
     private class SimEpoch {
         var seed: JournalEntry? = null
         var restart: JournalEntry? = null
+        var stop: JournalEntry? = null
+        var lastTick = -1
         val keys = HashMap<Int, JournalEntry>()
         val commands = HashMap<Int, MutableList<JournalEntry>>()
         val hashes = HashMap<Int, JournalEntry>()
         private val saves = ArrayDeque<JournalEntry>()
 
         fun add(entry: JournalEntry) {
+            lastTick = maxOf(lastTick, entry.tick)
             when (entry.command) {
                 is SessionStarted -> seed = entry
                 is SimRestarted -> restart = entry
+                WorldStopped -> stop = entry
                 is ControllerKeys -> keys[entry.tick] = entry
                 is StateHashed -> hashes[entry.tick] = entry
                 is WorldSaveCommitted -> synchronized(saves) { saves.addLast(entry) }

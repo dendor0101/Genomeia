@@ -166,6 +166,7 @@ object CommandRegistry {
         t<SimulationIntent.SetDebugFilter>(617),
         t<SimulationIntent.SetMicroscopeParameter>(618),
         t<SimulationIntent.ResetMicroscopeSettings>(619),
+        t<SimulationIntent.SaveWorldFailed>(620),
 
         // --- Касания мира ---
         t<PlayerCommand.TouchDown>(700),
@@ -213,6 +214,7 @@ object CommandRegistry {
         t<WorldSaveCommitted>(904),
         t<CellLabAdvanced>(905),
         t<CellLabChecked>(906),
+        t<WorldStopped>(907),
 
         // --- Экран «Геномы» ---
         t<GenomesIntent.SelectTab>(1000),

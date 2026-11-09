@@ -6,6 +6,7 @@ import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration
 import com.badlogic.gdx.graphics.Color
 import io.github.some_example_name.lwjgl3.DesktopFileProvider
+import io.github.some_example_name.old.bug.BugFile
 import io.github.some_example_name.old.bug.BugImage
 import io.github.some_example_name.old.bug.BugKind
 import io.github.some_example_name.old.bug.BugReplay
@@ -35,6 +36,7 @@ import io.github.some_example_name.old.features.worldeditor.WorldEdit
 import io.github.some_example_name.old.features.worldeditor.WorldEditorIntent
 import io.github.some_example_name.old.features.worldeditor.WorldSpec
 import io.github.some_example_name.old.cells.ControllerData
+import io.github.some_example_name.old.journal.JournalFormat
 import io.github.some_example_name.old.game.MyGame
 import io.github.some_example_name.old.systems.genomics.genome.Action
 import io.github.some_example_name.old.systems.genomics.genome.CellAction
@@ -86,7 +88,7 @@ fun main(args: Array<String>) {
             val bug = pathFile.readText().trim()
             println("Повтор: $bug")
             System.setProperty("genomeia.replay", bug)
-            listener = { game -> Replayer(game) }
+            listener = { game -> Replayer(game, File(bug)) }
         }
         else -> error("фаза $phase: record или replay")
     }
@@ -201,6 +203,9 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
     private var waitUntilTick = -1
     private var importedMapSlot: String? = null
     private var savedSlot: String? = null
+    private lateinit var previousSlot: String
+    private lateinit var previousMap: ByteArray
+    private lateinit var blockedTemp: File
     private var startedAt = System.nanoTime()
 
     override fun render() {
@@ -400,10 +405,35 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 untilTick(data.tickCounter + GROW_TICKS)
             }
 
+            // Слот со старым миром, который игра ещё не открывала и не записывала.
+            // Каталог на месте временного файла вызывает настоящую ошибку записи только
+            // при записи сеанса. В чистой песочнице та же операция могла бы пройти.
+            14 -> {
+                previousSlot = MapSave.uniqueSlot("bugReplayCheck-previous")
+                previousMap = MapSave.mapFile(savedSlot!!).readBytes()
+                MapSave.mapFile(previousSlot).writeBytes(previousMap, false)
+                blockedTemp = File(GameFiles.mapsDir().file(), "$previousSlot.map.tmp")
+                check(blockedTemp.mkdir())
+                screen(SimulationIntent.SaveWorld(previousSlot))
+                pause(8)
+            }
+            15 -> {
+                check(blockedTemp.delete())
+                check(MapSave.mapFile(previousSlot).readBytes().contentEquals(previousMap))
+                navigation.performCommand(GoReplace(GoMenu))
+                pause(3)
+            }
+            16 -> {
+                screen(MenuIntent.OpenSavedWorld(previousSlot))
+                screen(SimulationIntent.SetPaused(false))
+                screen(SimulationIntent.SetMaxSpeed(true))
+                untilTick(data.tickCounter + 240)
+            }
+
             // Внешняя .map: мир под именем файла (оно занято — «имя (2)») и снимок во
             // вложении, затем продолжение мира. Проверяет именно путь лаунчера и команду
             // MapImported, а не только ZIP-кодек.
-            14 -> {
+            17 -> {
                 importedMapSlot = MapSave.uniqueSlot(savedSlot!!)
                 game.openFiles(listOf(MapSave.mapFile(savedSlot!!).file().absolutePath))
                 check(MapSave.mapFile(importedMapSlot!!).exists()) { "карта не импортирована" }
@@ -413,11 +443,18 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
             }
 
             // Отчёт кнопкой-жуком (без окна) — и конец.
-            15 -> {
+            18 -> {
                 val bug = BugReports.create(BugKind.REPORT, "bugReplayCheck: сквозная проверка")
                 // Как в окне отчёта: игрок дописал пояснение и приложил картинку после
                 // первой кнопки — перепаковка не должна задеть журнал (повтор это проверит).
                 BugReports.rewrite(bug, "bugReplayCheck: перепаковано", listOf(BugImage("1-test.png", TEST_PNG)))
+                val snapshot = BugFile.readEntry(bug.file(), "${BugFile.ATTACHMENTS}maps/$previousSlot.map")
+                check(snapshot != null && snapshot.contentEquals(previousMap)) { "В отчёте потерян исходный мир" }
+                val journal = checkNotNull(BugFile.readEntry(bug.file(), BugFile.JOURNAL))
+                check(JournalFormat.read(journal.inputStream()).entries.any {
+                    it.command == SimulationIntent.SaveWorldFailed(previousSlot)
+                }) { "Не записан отказ перезаписи" }
+                MapSave.mapFile(previousSlot).delete()
                 pathFile.parentFile.mkdirs()
                 pathFile.writeText(bug.file().absolutePath)
                 println("Записан ${bug.file().absolutePath} (${bug.length() / 1024} КБ) на тике ${data.tickCounter}")
@@ -492,7 +529,17 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
 }
 
 /** Повтор: ждём итог BugReplay и выходим с его кодом. */
-private class Replayer(private val game: MyGame) : ApplicationListener by game {
+private class Replayer(private val game: MyGame, private val bug: File) : ApplicationListener by game {
+    private fun checkPreviousMap() {
+        val journal = checkNotNull(BugFile.readEntry(bug, BugFile.JOURNAL))
+        val failures = JournalFormat.read(journal.inputStream()).entries.mapNotNull { it.command as? SimulationIntent.SaveWorldFailed }
+        for (failure in failures.filter { it.slot.startsWith("bugReplayCheck-previous") }) {
+            val original = checkNotNull(BugFile.readEntry(bug, "${BugFile.ATTACHMENTS}maps/${failure.slot}.map"))
+            check(MapSave.mapFile(failure.slot).readBytes().contentEquals(original)) { "Повтор изменил прежнюю карту" }
+            println("Прежняя карта в песочнице побайтно совпала с вложением (${original.size} байт)")
+        }
+    }
+
 
     private val startedAt = System.nanoTime()
 
@@ -501,6 +548,7 @@ private class Replayer(private val game: MyGame) : ApplicationListener by game {
         val result = BugReplay.result
         when {
             result != null -> {
+                if (result) checkPreviousMap()
                 println(if (result) "PASS: повтор совпал с записью" else "FAIL: повтор не дал ожидаемого — см. итог выше")
                 exitCode = if (result) 0 else 1
                 Gdx.app.exit()

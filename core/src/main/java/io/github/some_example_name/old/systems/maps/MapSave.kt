@@ -8,6 +8,8 @@ import com.badlogic.gdx.files.FileHandle
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.PixmapIO
 import io.github.some_example_name.old.core.DIContext
+import io.github.some_example_name.old.core.GameFilePaths
+import io.github.some_example_name.old.journal.SessionAttachments
 import io.github.some_example_name.old.core.GameFiles
 import io.github.some_example_name.old.cells.base.Formulas
 import io.github.some_example_name.old.entities.CellEntity
@@ -88,6 +90,7 @@ class MapSave(
         }
 
         writeArchive(target, entries)
+        SessionAttachments.markMapWritten(target)
         return target
     }
 
@@ -99,7 +102,7 @@ class MapSave(
      * а не полузагруженным, и исключение уходит вызывающему.
      */
     fun load(slot: String): WorldSpec? {
-        val entries = readArchive(mapFile(slot))
+        val entries = readArchive(SessionAttachments.attachMapBeforeLoad(slot))
         val meta = decodeMeta(entries[META] ?: throw IllegalStateException("в мире $slot нет $META"))
 
         // Размер мира задаёт редактор карты, поэтому сетка подстраивается под сохранение,
@@ -369,8 +372,8 @@ class MapSave(
      * закрыли игру) не должна портить уже существующее сохранение.
      */
     private fun writeArchive(slot: String, entries: Map<String, ByteArray>) {
-        val target = mapsDir().child("$slot$EXTENSION")
-        val temporary = mapsDir().child("$slot$EXTENSION.tmp")
+        val target = mapFile(slot)
+        val temporary = GameFilePaths.child(mapsDir(), "$slot$EXTENSION.tmp")
         MapFile.write(temporary.write(false, IO_BUFFER)).use { zip ->
             // Массивы сущностей — это в основном нули и повторы, они жмутся и на самом
             // быстром уровне, а лишние секунды на максимальном заметны при каждом сохранении.
@@ -381,7 +384,7 @@ class MapSave(
                 zip.closeEntry()
             }
         }
-        temporary.moveTo(target)
+        GameFilePaths.replaceFile(temporary.file(), target.file())
     }
 
     companion object {
@@ -434,7 +437,7 @@ class MapSave(
         /** Где лежат миры — см. GameFiles.mapsDir (при повторе бага это песочница). */
         private fun mapsDir(): FileHandle = GameFiles.mapsDir()
 
-        fun mapFile(slot: String): FileHandle = mapsDir().child("$slot$EXTENSION")
+        fun mapFile(slot: String): FileHandle = GameFilePaths.child(mapsDir(), "$slot$EXTENSION")
 
         fun exists(slot: String): Boolean = mapFile(slot).exists()
 

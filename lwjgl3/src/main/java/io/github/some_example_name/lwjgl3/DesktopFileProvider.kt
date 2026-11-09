@@ -13,9 +13,24 @@ import java.awt.datatransfer.DataFlavor
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.StandardCopyOption
+import io.github.some_example_name.old.core.GameFilePaths
 import javax.imageio.ImageIO
 
 class DesktopFileProvider : FileProvider {
+    init {
+        GameFilePaths.replaceFile = { source, target ->
+            Files.move(source.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        }
+        GameFilePaths.redirected = { file ->
+            val path = file.toPath().toAbsolutePath()
+            Files.isSymbolicLink(path) || (Files.exists(path, LinkOption.NOFOLLOW_LINKS) &&
+                path.toRealPath() != path.parent.toRealPath().resolve(path.fileName))
+        }
+    }
+
     override fun getGenomeFile(fileName: String): File {
         val baseDir = getJarDir()
         return File(baseDir, fileName)

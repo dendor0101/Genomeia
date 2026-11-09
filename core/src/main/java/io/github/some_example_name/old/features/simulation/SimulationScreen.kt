@@ -464,13 +464,7 @@ class SimulationScreen(
         UserPreferences.flushOptical(force=true)
         viewModel.stopWorld()
         renderSystem.dispose()
-        simulationSystem.simulationData.isFinish = true
-        simulationSystem.stopUpdateThread()
-        // isFinish обрабатывает тик, но цикл мог остановиться раньше, чем до него дошёл
-        // (на паузе — наверняка). Тогда флаг пережил бы экран, и первый тик следующего
-        // захода снёс бы только что построенный мир, а запись сессии осталась бы
-        // незакрытой. Поток уже остановлен, так что дочищаем отсюда.
-        if (simulationSystem.simulationData.isFinish) simulationSystem.dispose()
+        simulationSystem.closeWorld()
         // Пул воркеров живёт в синглтоне контейнера и раньше не останавливался никогда.
         // На десктопе это сходило с рук: потоки daemon, и они умирали вместе с JVM. На
         // Android процесс переживает Activity, поэтому после выхода в меню пул продолжал
