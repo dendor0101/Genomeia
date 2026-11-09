@@ -15,7 +15,6 @@ import io.github.some_example_name.render.RenderFrame
 import io.github.some_example_name.render.DebugFilter
 import io.github.some_example_name.render.RenderMode
 import io.github.some_example_name.render.WorldRenderer
-import io.github.some_example_name.render.debug.RenderSceneDump
 import io.github.some_example_name.render.pack.CellInstanceBuffer
 
 /**
@@ -78,13 +77,10 @@ class RenderSystem(
     private lateinit var shapeRenderer: ShapeRenderer
     private lateinit var camera: OrthographicCamera
 
-    private var zoom = 0f
-    private var cameraX = 0f
-    private var cameraY = 0f
-    private var blurLevel = 0f
 
     /** Переиспользуется между кадрами: аллокаций на кадр быть не должно. */
     private val frame = RenderFrame()
+    val opticalSettings by lazy(LazyThreadSafetyMode.NONE){io.github.some_example_name.render.microscope.MicroscopeSettings.gameDefaults()}
 
     /**
      * Клетки взятого снимка — в direct-буфере, который уходит на GPU. Снимок уже в
@@ -141,7 +137,9 @@ class RenderSystem(
         worldRenderer.resize(width, height)
     }
 
-    fun render() {
+    fun refreshPausedSnapshot()=renderBufferManager.updateBuffer()
+
+    fun render(menu: io.github.some_example_name.render.microscope.MenuMicroscopeBackground? = null) {
         // Снимок берётся ОДИН раз за кадр и целиком: клетки, оверлей, феромоны и строка
         // состояния из одного тика (см. TripleBuffer). fresh — снимок новый, буфер клеток
         // надо перезалить; иначе на GPU уже ровно эти байты, и кадр отличается от прошлого
@@ -155,15 +153,6 @@ class RenderSystem(
         val lag = interpolationLag(snapshot)
         if (PROFILE_INTERPOLATION) logInterpolation(snapshot, fresh, lag)
 
-        if (zoom != camera.zoom || cameraX != camera.position.x || cameraY != camera.position.y) {
-            if (!spec.isCellSelected) {
-                blurLevel = 4.0f
-                cameraX = camera.position.x
-                cameraY = camera.position.y
-                zoom = camera.zoom
-            }
-        }
-
         if (renderBufferManager.simulationData.isPlay) {
             animationTime = RenderFrame.advanceTime(animationTime, Gdx.graphics.deltaTime)
         }
@@ -171,23 +160,22 @@ class RenderSystem(
         frame.apply {
             cameraProjection = camera.combined
             cells = cellsOf(snapshot, fresh)
+            val useOptics = mode == RenderMode.TISSUE_MAP && snapshot.hasOptics
+            opticalLinks = if(useOptics) snapshot.opticalLinks else null
+            opticalGroups = if(useOptics) snapshot.opticalGroups else null
+            opticalColors = if(useOptics) snapshot.opticalColors else null
+            opticalBirthTicks = if(useOptics) snapshot.opticalBirthTicks else null
+            opticalCullRanges = if(useOptics) snapshot.opticalCullRanges else null
+            opticalSettings = menu?.settings ?: (if(useOptics) this@RenderSystem.opticalSettings else null)
             uploadCells = fresh || packedNow
             interpolationLag = lag
-            // Феромоны рисует только постпроцесс, оверлей — только отладка, и только если
-            // снимок собран под неё (режим переключили, а нового тика ещё не было).
-            pheromones = if (mode.usesPostProcess) snapshot.pheromones.end() else null
-            pheromoneK = PheromonesManager.K
-            pheromoneP = PheromonesManager.P
             overlay = if (mode.drawsDebugOverlay && snapshot.hasOverlay) snapshot.overlay.end() else null
             time = animationTime
-            blurAmount = blurLevel
-            zoom = camera.zoom
-            vignetteEnabled = 1f
-            this.mode = mode
+            this.mode = if(mode==RenderMode.TISSUE_MAP && !useOptics) RenderMode.DEBUG else mode
             // Из снимка, а не из выбора игрока: байты фильтра в клетках упакованы под него.
             debugFilter = snapshot.filter
         }
-        worldRenderer.render(frame)
+        if (menu == null) worldRenderer.render(frame) else menu.render(frame)
 
         // Сразу после конвейера: в кадре пока только мир, без подсветки и текста.
         previewRequest?.let { onReady ->
@@ -211,9 +199,7 @@ class RenderSystem(
             drawTextSimInfo(spec)
         }
 
-        if (blurLevel > 0) {
-            blurLevel -= 0.09f
-        }
+
     }
 
     // Диагностика PROFILE_INTERPOLATION: накопители за секунду.
@@ -376,28 +362,6 @@ class RenderSystem(
         font.draw(spriteBatch, text, SIM_INFO_MARGIN, textBottom + SIM_INFO_MARGIN + lines * font.lineHeight)
         font.data.setScale(1f)
         spriteBatch.end()
-    }
-
-    /**
-     * Выгрузить последний отрисованный кадр в файл — вход рендера, а не картинку.
-     *
-     * Звать только ПОСЛЕ [render] в том же кадре: пишется тот самый [frame], который
-     * только что ушёл в GPU, поэтому дамп и живой кадр совпадают побайтово.
-     *
-     * Дальше этот файл открывается стендом RenderLab, и шейдеры можно крутить, пересобирая
-     * один только :render — без симуляции, потоков и загрузки геномов.
-     */
-    fun dumpScene(file: com.badlogic.gdx.files.FileHandle) {
-        RenderSceneDump.write(
-            file = file,
-            frame = frame,
-            viewportWidth = camera.viewportWidth.toInt(),
-            viewportHeight = camera.viewportHeight.toInt(),
-            cameraX = camera.position.x,
-            cameraY = camera.position.y,
-            zoom = camera.zoom,
-            texturePaths = worldRenderer.texturePaths
-        )
     }
 
     /**

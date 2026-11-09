@@ -125,9 +125,11 @@ object CommandRegistry {
         t<SettingsIntent.SetShowHints>(306),
         t<SettingsIntent.SetFullscreen>(307),
         t<SettingsIntent.SetShowDebugInfo>(308),
+        t<SettingsIntent.OpenGpuSettings>(309),
 
         // --- Поддержка ---
         t<SupportIntent.CopyAddress>(400),
+        t<SupportIntent.OpenLink>(401),
 
         // --- Редактор мира ---
         t<WorldEditorIntent.NewSeed>(500),
@@ -162,9 +164,11 @@ object CommandRegistry {
         t<SimulationIntent.SetTool>(615),
         t<SimulationIntent.UseSavedGenome>(616),
         t<SimulationIntent.SetDebugFilter>(617),
-        t<SimulationIntent.MarkCell>(618),
-        t<SimulationIntent.SetShowBoundary>(619),
-        t<SimulationIntent.SetShowLinks>(620),
+        t<SimulationIntent.SetMicroscopeParameter>(618),
+        t<SimulationIntent.ResetMicroscopeSettings>(619),
+        t<SimulationIntent.MarkCell>(620),
+        t<SimulationIntent.SetShowBoundary>(621),
+        t<SimulationIntent.SetShowLinks>(622),
 
         // --- Касания мира ---
         t<PlayerCommand.TouchDown>(700),
@@ -211,6 +215,8 @@ object CommandRegistry {
         t<SimRestarted>(902),
         t<StateHashed>(903),
         t<WorldSaveCommitted>(904),
+        t<CellLabAdvanced>(905),
+        t<CellLabChecked>(906),
 
         // --- Экран «Геномы» ---
         t<GenomesIntent.SelectTab>(1000),
@@ -229,6 +235,9 @@ object CommandRegistry {
         t<GuideIntent.SetInput>(1104),
         t<GuideIntent.SetInputCount>(1105),
         t<GuideIntent.SetCombine>(1106),
+        t<GuideIntent.OpenCellLab>(1107),
+        t<GuideIntent.CloseCellLab>(1108),
+        t<CellLabInput>(1109),
     )
 
     private val byClass: Map<KClass<*>, Type<*>> = types.associateBy { it.kClass }

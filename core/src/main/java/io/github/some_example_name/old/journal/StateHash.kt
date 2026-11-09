@@ -68,8 +68,10 @@ object StateHash {
      *     клетки берётся из мира физики (PhysicsWorld.isSurfaceCell).
      * 16 — в часть PhysicsWorld вошли липучки: их временные связи мира физики (StickyJoints).
      * 17 — у частицы клетка карты террейна (ParticleEntity.terrainCell); террейн — тело мира физики.
+     * 18 — слияние с веткой, где вес и тики спайков синапса ушли из NeuralEntity в SynapseState
+     *     (SpecialModDataEntity), а тик рождения клетки стал сохраняемым полем для возрастного рельефа.
      */
-    const val VERSION = 17
+    const val VERSION = 18
 
     class Result(val hash: Long, val parts: LongArray)
 

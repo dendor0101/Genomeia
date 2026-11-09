@@ -26,6 +26,16 @@ class RenderFrame {
 
     /** Упакованный буфер из CellInstanceBuffer.end(). */
     var cells: ByteBuffer? = null
+    /** Группы оптических тел в порядке cells; null — одно тело (редактор/превью). */
+    var opticalLinks: io.github.some_example_name.render.pack.OpticalLinks? = null
+    var opticalGroups: IntArray? = null
+    /** Исходный RGBA генома до отладочной палитры. */
+    var opticalColors: IntArray? = null
+    /** Тики рождения в порядке cells; -1/null — история неизвестна. */
+    var opticalBirthTicks: IntArray? = null
+    /** Полные диапазоны тел и их границы из того же снимка; null — обычный обход. */
+    var opticalCullRanges: io.github.some_example_name.render.pack.OpticalCullRanges? = null
+    var opticalSettings: io.github.some_example_name.render.microscope.MicroscopeSettings? = null
 
     /**
      * Перезалить буфер клеток на GPU.
@@ -49,22 +59,6 @@ class RenderFrame {
      */
     var interpolationLag: Float = 0f
 
-    // ==================== Феромоны ====================
-
-    /** null — феромоны в этом кадре не рисуются (так делает редактор генома). */
-    var pheromones: ByteBuffer? = null
-
-    /**
-     * Коэффициенты спада концентрации: радиус пятна считается как (a/P - 1)/K.
-     *
-     * Приходят снаружи намеренно. Это константы диффузии феромона, то есть предмет
-     * симуляции, а не рендера, и знать их здесь неоткуда. Важно только, чтобы вызывающий
-     * передал ТЕ ЖЕ числа, по которым симуляция считает радиус действия: иначе пятно на
-     * экране разъедется с областью, в которой феромон реально чувствуется.
-     */
-    var pheromoneK: Float = 0f
-    var pheromoneP: Float = 0f
-
     // ==================== Оверлей отладки ====================
 
     /**
@@ -81,19 +75,13 @@ class RenderFrame {
      */
     var time: Float = 0f
 
-    // ==================== Постпроцесс ====================
-
-    var blurAmount: Float = 0f
-    var zoom: Float = 1f
-    var vignetteEnabled: Float = 0f
-
     /**
      * Как рисовать кадр — см. [RenderMode].
      *
      * Режим приходит с кадром, а не из глобальной настройки: он у каждого экрана свой (у
      * симуляции, у редактора, у меню), а WorldRenderer один на всю игру.
      */
-    var mode: RenderMode = RenderMode.REALISTIC
+    var mode: RenderMode = RenderMode.DEBUG
 
     /**
      * Чем закрашивать клетки в отладочном режиме — см. [DebugFilter]. Байт значения у

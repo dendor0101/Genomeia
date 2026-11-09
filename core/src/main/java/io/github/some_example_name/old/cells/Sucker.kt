@@ -2,7 +2,6 @@ package io.github.some_example_name.old.cells
 
 import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.core.CellSettings
-import io.github.some_example_name.old.core.DIGameGlobalContainer.substrateSettings
 import io.github.some_example_name.old.core.utils.orangeColors
 
 class Sucker(cellTypeId: Int) : Cell(
@@ -31,7 +30,7 @@ class Sucker(cellTypeId: Int) : Cell(
                     ints = intArrayOf(collidedSubIndex, substancesEntity.getGeneration(collidedSubIndex))
                 )
 
-                cellEntity.energy[cellIndex] += subRadius * subRadius * substrateSettings.data.amountOfFoodEnergy * 4
+                cellEntity.energy[cellIndex] += subRadius * subRadius * cellEntity.substrateSettings.data.amountOfFoodEnergy * 4
             } else {
                 val cellX = cellEntity.getX(cellIndex)
                 val cellY = cellEntity.getY(cellIndex)

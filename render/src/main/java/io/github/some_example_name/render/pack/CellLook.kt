@@ -100,8 +100,11 @@ object CellLook {
     /** Контроллер: микрочип с антенной в центре и волокна от него. */
     const val CHIP = 23
 
+    /** Задержка: спираль от ядра к мембране, по ней бегут импульсы — длинный путь сигнала. */
+    const val DELAY_COIL = 24
+
     /** Рисунков всего; номера 0 until COUNT. */
-    const val COUNT = 24
+    const val COUNT = 25
 
     /** Сигнал −1..1 знаковым байтом; NaN — ноль. */
     fun actionByte(signal: Float): Int {

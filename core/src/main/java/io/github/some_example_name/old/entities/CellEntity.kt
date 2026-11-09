@@ -8,7 +8,6 @@ import io.github.some_example_name.old.cells.base.Formulas
 import io.github.some_example_name.old.cells.base.SpecialModData
 import io.github.some_example_name.old.cells.base.UnknownCellTypeException
 import io.github.some_example_name.old.core.DEBUG_CHECKS
-import io.github.some_example_name.old.core.DISimulationContainer.cellsSettings
 import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.core.utils.OrderedIntPairMap
 import io.github.some_example_name.old.systems.genomics.genome.CellAction
@@ -79,6 +78,9 @@ class CellEntity(
     var orphanCellCount = 0
         private set
 
+    // Только при рождении и в снимке рендера: 4 B/слот, ~39 КиБ на 10k клеток.
+    // -1 — старое сохранение без истории; индекс арены НЕ является возрастом.
+    var birthTick = IntArray(maxAmount) { -1 }
     var cellGenomeId = IntArray(maxAmount) { -1 }
     var cellActions: Array<CellAction?> = arrayOfNulls(maxAmount)
     var organIndex = IntArray(maxAmount) { -1 }
@@ -305,12 +307,6 @@ class CellEntity(
     fun setRemember(index: Int, value: Float) { neuralEntity.remember[neuralIndexes[index]] = value }
     fun getIsSum(index: Int) = neuralEntity.isSum[neuralIndexes[index]]
     fun setIsSum(index: Int, value: Boolean) {neuralEntity.isSum.set(neuralIndexes[index], value)}
-    fun getTickRed(index: Int) = neuralEntity.tickRed[neuralIndexes[index]]
-    fun setTickRed(index: Int, value: Int) { neuralEntity.tickRed[neuralIndexes[index]] = value }
-    fun getTickPain(index: Int) = neuralEntity.tickPain[neuralIndexes[index]]
-    fun setTickPain(index: Int, value: Int) { neuralEntity.tickPain[neuralIndexes[index]] = value }
-    fun getWeight(index: Int) = neuralEntity.weight[neuralIndexes[index]]
-    fun setWeight(index: Int, value: Float) { neuralEntity.weight[neuralIndexes[index]] = value}
 
     fun deleteNeural(cellIndex: Int, neuralGeneration: Int? = null) {
         val neuralIndex = neuralIndexes[cellIndex]
@@ -399,7 +395,7 @@ class CellEntity(
             dragCoefficient = substrateSettings.data.viscosityOfTheEnvironment,
             effectOnContact = cellList[cellType].effectOnContact,
             isCollidable = cellList[cellType].isCollidable,
-            cellStiffness = cellsSettings[cellType].cellStiffness,
+            cellStiffness = substrateSettings.cellsSettings[cellType].cellStiffness,
             isCell = true,
             isSub = false,
             holderEntityIndex = cellIndex,
@@ -450,6 +446,7 @@ class CellEntity(
         } else {
         }
 
+        birthTick[cellIndex] = simulationData.tickCounter
         this.cellGenomeId[cellIndex] = cellGenomeId
         cellActions[cellIndex] = null
         this.organIndex[cellIndex] = organIndex
@@ -466,7 +463,7 @@ class CellEntity(
         isMutateInThisStage[cellIndex] = false
         this.cellType[cellIndex] = cellType.toByte()
         energy[cellIndex] = 0.1f
-        maxEnergy[cellIndex] = cellsSettings[cellType].maxEnergy
+        maxEnergy[cellIndex] = substrateSettings.cellsSettings[cellType].maxEnergy
         isOnEdge[cellIndex] = true
         this.degreeOfShortening[cellIndex] = 1f
         this.pheromoneType[cellIndex] = pheromoneType
@@ -712,6 +709,7 @@ class CellEntity(
     override fun persistFields(state: EntityState) {
         state.ints(::particleIndexes)
         state.ints(::cellGenomeId)
+        state.ints(::birthTick)
         state.ints(::organIndex)
         state.ints(::parentIndex)
         state.floats(::angleCos)
@@ -849,6 +847,7 @@ class CellEntity(
         orphanCellCount = 0
         particleIndexes.clear(-1)
         cellGenomeId.clear(-1)
+        birthTick.clear(-1)
         cellActions.fill(null, 0, bound)
         organIndex.clear(-1)
         parentIndex.clear(-1)
@@ -883,6 +882,7 @@ class CellEntity(
     override fun onResize(oldMax: Int) {
         particleIndexes = particleIndexes.resize(-1)
         cellGenomeId = cellGenomeId.resize(-1)
+        birthTick = birthTick.resize(-1)
         run {
             val old = cellActions
             cellActions = arrayOfNulls(maxAmount)
@@ -954,4 +954,3 @@ class CellEntity(
     }
 
 }
-

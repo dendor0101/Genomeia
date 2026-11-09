@@ -112,12 +112,14 @@ fun makeStyledIconButton(icon: String, textures: MutableList<Texture>): VisImage
 fun makeStyledIconButton(
     icon: TextureRegion,
     textures: MutableList<Texture>,
-    checkedIcon: TextureRegion? = null
+    checkedIcon: TextureRegion? = null,
+    smoothBorder: Boolean = false
 ): VisImageButton {
     val style = VisImageButton.VisImageButtonStyle()
-    style.up   = makeStyledNP(BTN_UP,  Color(STYLE_BEIGE).also { it.a = 0.75f }, textures)
-    style.over = makeStyledNP(BTN_OVR, Color(STYLE_BEIGE), textures)
-    style.down = makeStyledNP(BTN_DWN, Color.WHITE, textures)
+    val background = if (smoothBorder) ::makeSmoothStyledNP else ::makeStyledNP
+    style.up   = background(BTN_UP,  Color(STYLE_BEIGE).also { it.a = 0.75f }, textures)
+    style.over = background(BTN_OVR, Color(STYLE_BEIGE), textures)
+    style.down = background(BTN_DWN, Color.WHITE, textures)
     val drawable = TextureRegionDrawable(icon)
     style.imageUp   = drawable.tint(STYLE_BEIGE)
     style.imageOver = drawable.tint(Color.WHITE)

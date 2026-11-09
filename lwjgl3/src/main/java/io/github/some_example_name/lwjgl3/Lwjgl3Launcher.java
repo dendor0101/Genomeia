@@ -23,6 +23,7 @@ public class Lwjgl3Launcher {
         if (StartupHelper.startNewJvmIfRequired(true, args))
             return; // This handles macOS support and helps on Windows.
         WindowsFileAssociations.register();
+        DesktopGraphics.install();
         createApplication(args);
     }
 
@@ -83,4 +84,5 @@ public class Lwjgl3Launcher {
         configuration.setWindowIcon("libgdx128.png", "libgdx64.png", "libgdx32.png", "libgdx16.png");
         return configuration;
     }
+
 }

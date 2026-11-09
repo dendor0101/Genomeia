@@ -151,6 +151,19 @@ class CommandRegistryTest {
     @Test
     fun `перечисления и строки`() {
         assertEquals(SimulationIntent.SetRenderMode(RenderMode.NOSTALGIC), roundTrip(SimulationIntent.SetRenderMode(RenderMode.NOSTALGIC)))
+        assertEquals(SimulationIntent.SetRenderMode(RenderMode.TISSUE_MAP), roundTrip(SimulationIntent.SetRenderMode(RenderMode.TISSUE_MAP)))
+        assertEquals(SimulationIntent.SetMicroscopeParameter("reliefHeight", 1.75f), roundTrip(SimulationIntent.SetMicroscopeParameter("reliefHeight", 1.75f)))
+        assertEquals(SimulationIntent.ResetMicroscopeSettings, roundTrip(SimulationIntent.ResetMicroscopeSettings))
+        val current=SimulationIntent.SetRenderMode(RenderMode.TISSUE_MAP)
+        val (id,payload)=CommandRegistry.encode(current)!!
+        kotlin.test.assertContentEquals(byteArrayOf(8,4),payload)
+        assertEquals(SimulationIntent.SetRenderMode(RenderMode.DEBUG),CommandRegistry.decode(id,byteArrayOf(8,0)))
+        for(old in listOf(3,4))assertEquals(current,CommandRegistry.decode(id,byteArrayOf(8,old.toByte())))
+        assertEquals(SettingsIntent.OpenGpuSettings, roundTrip(SettingsIntent.OpenGpuSettings))
+        for(key in arrayOf("packedPsf","textureResolution","noEnvironment","fusedPigment","fusedPsf","cachedFeatures","compactRelief","boundedOptics","instancedDebris","ribbonAppendages","batchedLayers","cachedGlState","fusedRelief","detailLod","focusResolution","birthRelief","coarseDome","splitTissue","tightGranules","separateGranules","groupedGranules"))for(value in floatArrayOf(0f,1f)){
+            val command=SimulationIntent.SetMicroscopeParameter(key,value)
+            assertEquals(command,roundTrip(command))
+        }
         assertEquals(SettingsIntent.SelectTab(SettingsTab.LANGUAGE), roundTrip(SettingsIntent.SelectTab(SettingsTab.LANGUAGE)))
         assertEquals(SettingsIntent.SetLanguage("ru"), roundTrip(SettingsIntent.SetLanguage("ru")))
         assertEquals(MenuIntent.GenomeImported("Жук.genome", "imported/0-Жук.genome"), roundTrip(MenuIntent.GenomeImported("Жук.genome", "imported/0-Жук.genome")))

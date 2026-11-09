@@ -33,10 +33,7 @@ import io.github.some_example_name.render.pack.CellInstanceBuffer
  * Время здесь меряется только для бюджета кадра интерфейса: на мир и повтор бага превью не
  * влияет никак — это чистое отображение файлов.
  *
- * ПОЧЕМУ РЕАЛИСТИЧНЫЙ РЕЖИМ
- * -------------------------
- * Превью всегда реалистичное, как и мир за главным меню: это «лицо» организма. Отладочный
- * режим в буфер превью не рисуется (WorldRenderer.renderOffscreen).
+ * Рисунок типа и палитра такие же, как в Debug Original симуляции.
  *
  * ПАМЯТЬ: на геном один FBO [sizePx]², RGBA8 — на 192² это 144 КБ видеопамяти, сотня
  * геномов — 14 МБ. Всё освобождает [dispose]; кэш живёт, пока открыт список.
@@ -60,6 +57,7 @@ class GenomePreviewCache(
     private val entries = HashMap<String, Entry>()
     private val queue = ArrayDeque<String>()
 
+    private val palette = io.github.some_example_name.old.systems.render.DebugCellPalette(cellTypes)
     private val cells = CellInstanceBuffer(INITIAL_CELLS)
     private val frame = RenderFrame()
     private val projection = Matrix4()
@@ -131,23 +129,17 @@ class GenomePreviewCache(
         if (preview == null || preview.cellCount == 0) return null
 
         pack(preview)
-        // Поле с запасом по краям: обводка собеля и блюр иначе обрезались бы о край.
+        // Запас вокруг тела для контура крайних клеток.
         val extent = preview.halfExtent() * MARGIN
         projection.setToOrtho2D(-extent, -extent, 2f * extent, 2f * extent)
         frame.apply {
             cameraProjection = projection
             cells = this@GenomePreviewCache.cells.end()
             uploadCells = true
-            pheromones = null
             overlay = null
             time = 0f
-            // Как в редакторе генома: без размытия и без виньетки.
-            blurAmount = -0.04f
-            // Единиц мира на пиксель — так же, как зум камеры в игре: от него толщина
-            // обводки собеля (PostProcessRenderer).
-            zoom = 2f * extent / sizePx
-            vignetteEnabled = 0f
-            mode = RenderMode.REALISTIC
+            mode = RenderMode.DEBUG
+            debugFilter = io.github.some_example_name.render.DebugFilter.ORIGINAL
         }
 
         val fbo = FrameBuffer(Pixmap.Format.RGBA8888, sizePx, sizePx, false)
@@ -160,23 +152,23 @@ class GenomePreviewCache(
     private fun pack(preview: GenomePreview) {
         val count = preview.cellCount
         cells.begin(count)
-        // Ключ → слой текстуры по реестру этого запуска. Тип, которого в нём нет (мод
-        // убрали), рисуется пустой текстурой, а не чужой.
+        // Неизвестный тип (например, из удалённого мода) получает цвет генома и нейтральный рисунок.
         val layerOfKey = IntArray(preview.cellTypeKeys.size) { k ->
             cellTypes.indexOfKey(preview.cellTypeKeys[k]).let { if (it < 0) cellTypes.emptyTextureLayer else it }
         }
         for (k in 0 until count) {
+            val type = layerOfKey[preview.cellType[k]]
             cells.putCell(
                 x = preview.x[k],
                 y = preview.y[k],
-                color = preview.color(k),
+                color = if (type in cellTypes.indices) palette.color(type, preview.color(k)) else preview.color(k),
                 angleCos = preview.angleCos[k],
                 angleSin = preview.angleSin[k],
                 radius = preview.radius[k],
-                // Реалистичный режим энергию не рисует.
                 energy = 0f,
-                cellType = layerOfKey[preview.cellType[k]],
-                // Ключ шума закреплён за клеткой снимка — текстуры не «крутятся» от раза к разу.
+                cellType = type,
+                look = if (type in cellTypes.indices) palette.look(type, 0f) else 0,
+                // Стабильный ключ рисунка.
                 noiseSeed = k
             )
         }

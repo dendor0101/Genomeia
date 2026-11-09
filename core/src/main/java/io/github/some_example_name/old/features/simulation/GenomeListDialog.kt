@@ -4,6 +4,7 @@ import com.badlogic.gdx.Application
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.Texture
+import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.InputListener
@@ -22,6 +23,8 @@ import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisTable
 import io.github.some_example_name.old.core.ui.STYLE_BEIGE
 import io.github.some_example_name.old.core.ui.hoverPopup
+import io.github.some_example_name.old.core.ui.hint
+import io.github.some_example_name.old.core.ui.makeStyledIconButton
 import io.github.some_example_name.old.core.ui.makeStyledButton
 import io.github.some_example_name.old.core.ui.setupTitleSize
 import io.github.some_example_name.old.features.genomes.GenomePreviewCache
@@ -35,8 +38,8 @@ import kotlin.math.min
  * окно. Под списком, вне прокрутки, — «Создать новый геном»: она видна всегда, сколько бы
  * геномов ни было. Наведение (на телефоне — зажатие) на картинку показывает её крупно.
  *
- * Геномами здесь не управляют — переименование, удаление и прочее живут на экране
- * «Геномы» (GenomesScreen).
+ * Кнопка рядом с геномом открывает редактор. Переименование и удаление живут на
+ * экране «Геномы» (GenomesScreen).
  */
 class GenomeListDialog(
     private val genomesList: List<String>,
@@ -44,7 +47,11 @@ class GenomeListDialog(
     private val selectedGenome: String?,
     title: String,
     createLabel: String,
+    private val editLabel: String,
+    private val editIcon: TextureRegion,
+    private val canEdit: (String) -> Boolean,
     private val onCreate: () -> Unit,
+    private val onEdit: (String) -> Unit,
     private val onSelect: (String) -> Unit,
     private val game: MyGame,
     /** Что показать вместо имени из списка: у встроенных геномов — без приставки. */
@@ -123,7 +130,7 @@ class GenomeListDialog(
         })
     }
 
-    /** Строка: картинка и имя. Касание строки — выбрать; зажатие картинки — крупное превью. */
+    /** Картинка и имя выбирают геном; отдельная кнопка открывает его в редакторе. */
     private fun genomeRow(name: String, density: Float): VisTable {
         val row = VisTable()
         row.touchable = Touchable.enabled
@@ -141,10 +148,12 @@ class GenomeListDialog(
         game.applyCustomFont(label)
 
         // Картинка не мельче строки: шрифт списка зависит от экрана, а dp — нет.
-        row.add(image).size(maxOf(PREVIEW_DP * density, label.prefHeight * 1.2f)).padRight(12f * density)
-        row.add(label).left().growX()
+        val selection = VisTable().apply { touchable = Touchable.enabled }
+        selection.add(image).size(maxOf(PREVIEW_DP * density, label.prefHeight * 1.2f)).padRight(12f * density)
+        selection.add(label).left().growX()
+        row.add(selection).growX()
 
-        row.addListener(object : ClickListener() {
+        selection.addListener(object : ClickListener() {
             private var downAt = 0L
 
             override fun touchDown(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int): Boolean {
@@ -160,6 +169,19 @@ class GenomeListDialog(
                 onSelect(name)
             }
         })
+        if (canEdit(name)) {
+            val edit = makeStyledIconButton(editIcon, textures, smoothBorder = true).apply {
+                pad(12f * density)
+                imageCell.grow()
+            }.hint(editLabel)
+            edit.addListener(object : ClickListener() {
+                override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                    fadeOut()
+                    onEdit(name)
+                }
+            })
+            row.add(edit).size(BUTTON_DP * 1.5f * density).padLeft(8f * density)
+        }
         return row
     }
 

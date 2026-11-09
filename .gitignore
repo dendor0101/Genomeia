@@ -169,6 +169,9 @@ ios-moe/xcode/native/
 # Рабочие копии веток Claude Code (git worktree) — не часть проекта
 /.claude/worktrees/
 
+# Рабочие копии веток Codex — не часть проекта
+/.Codex/worktrees/
+
 # Отчёты о багах: текущая сессия (журнал, лог), собранные .bug и папка повтора
 /session/
 /bugs/

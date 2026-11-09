@@ -84,7 +84,7 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         fillShader = compile("cell.vert", "cell_fill.frag")
         edgeShader = compile("cell.vert", "cell_edge.frag")
         compositeShader = ShaderProgram(
-            Gdx.files.internal("shaders/post_process/post_process.vert").readString(),
+            Gdx.files.internal("shaders/common/fullscreen.vert").readString(),
             source("composite.frag")
         ).also(::check)
         overlayShader = compile("overlay.vert", "overlay.frag")
@@ -120,14 +120,14 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
     }
 
     /**
-     * FBO в размер ЭКРАННОГО буфера в пикселях, а не логического окна: проходы 2 и 3
+     * FBO в размер выходной текстуры или ЭКРАННОГО буфера в пикселях: проходы 2 и 3
      * читают его по gl_FragCoord, и на экране с масштабом (HiDPI) логический размер
      * разъехался бы с пиксельным. Сверка каждый кадр — два сравнения, зато размер не
      * зависит от того, кто и когда позвал resize.
      */
-    private fun ensureFbo(): FrameBuffer {
-        val width = Gdx.graphics.backBufferWidth.coerceAtLeast(1)
-        val height = Gdx.graphics.backBufferHeight.coerceAtLeast(1)
+    private fun ensureFbo(context: RenderContext): FrameBuffer {
+        val width = (context.outputFbo?.width ?: Gdx.graphics.backBufferWidth).coerceAtLeast(1)
+        val height = (context.outputFbo?.height ?: Gdx.graphics.backBufferHeight).coerceAtLeast(1)
         fbo?.let { existing ->
             if (fboWidth == width && fboHeight == height) return existing
             existing.dispose()
@@ -156,10 +156,11 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
     override fun render(context: RenderContext) {
         if (context.mode != RenderMode.DEBUG) return
 
-        val target = ensureFbo()
+        val target = ensureFbo(context)
         val gl = Gdx.gl
 
         fill(context, target)
+        context.beginOutput()
         composite(context, target.textureAttachments[COLOR_ATTACHMENT])
         edges(
             context,
@@ -167,6 +168,8 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
             owner = target.textureAttachments[OWNER_ATTACHMENT]
         )
         drawOverlay(context, owner = target.textureAttachments[OWNER_ATTACHMENT])
+
+        context.endOutput()
 
         // Состояние — как его ждут остальные проходы и интерфейс.
         gl.glDisable(GL20.GL_BLEND)
@@ -190,7 +193,7 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
 
         fillShader.bind()
         bindCellUniforms(fillShader, context, fringe = false)
-        cells.draw(context.numInstances, CellGeometry.Detail.HULL)
+        cells.draw(context.numInstances)
 
         target.end()
 
@@ -232,7 +235,7 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         // Texture.bind(unit) оставляет активным свой блок; остальные ждут нулевой.
         gl.glActiveTexture(GL20.GL_TEXTURE0)
 
-        cells.draw(context.numInstances, CellGeometry.Detail.HULL)
+        cells.draw(context.numInstances)
     }
 
     /**

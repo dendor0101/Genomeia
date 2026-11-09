@@ -11,7 +11,7 @@ import java.nio.IntBuffer
  * ЗАЧЕМ ОТДЕЛЬНЫЙ КЛАСС
  * ---------------------
  * Раскладка этих 40 байт должна совпадать с тем, как CellGeometry объявляет инстансные
- * атрибуты, и с тем, что ждут вершинные шейдеры клеток (shaders/debug/circle_pc.vert,
+ * атрибуты, и с тем, что ждут вершинные шейдеры клеток (
  * shaders/debug_view/cell.vert, shaders/nostalgic/nostalgic.vert).
  * Раньше знание о ней жило в трёх местах сразу: побитовые формулы — в
  * RenderBufferManager.writeCell и в EditorRenderSystem.putBuffer, порядок полей — в
@@ -308,7 +308,7 @@ class CellInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
         /**
          * 40 байт на инстанс: 4 float, 4 упакованных четвёрки байт и две пары short.
          * Менять только вместе с раскладкой атрибутов в CellGeometry, с шейдерами клеток
-         * (circle_pc.vert, debug_view/cell.vert, nostalgic.vert) и с версией RenderSceneDump.
+         * (debug_view/cell.vert, nostalgic.vert).
          */
         const val STRUCT_SIZE = 40
 

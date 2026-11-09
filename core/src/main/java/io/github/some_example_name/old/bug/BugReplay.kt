@@ -11,6 +11,7 @@ import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.GameFiles
 import io.github.some_example_name.old.core.GameVersion
 import io.github.some_example_name.old.features.simulation.SimulationIntent
+import io.github.some_example_name.old.journal.CellLabRecord
 import io.github.some_example_name.old.journal.Channel
 import io.github.some_example_name.old.journal.ControllerKeys
 import io.github.some_example_name.old.journal.Fnv
@@ -81,6 +82,7 @@ object BugReplay {
     private var finalEpoch = 0
     private var finalTick = -1
 
+    private var uiTotal = 0
     private var uiApplied = 0
     private var uiHash = Fnv.OFFSET
     private var expectedUiHash = Fnv.OFFSET
@@ -217,9 +219,12 @@ object BugReplay {
             } else {
                 simCount++
                 simCheck = JournalFormat.hashSim(simCheck, entry.epoch, entry.tick, entry.typeId, entry.payload)
-                epochs.getOrPut(entry.epoch) { SimEpoch() }.add(entry)
+                // Стенд гайда живёт в потоке экрана: его SIM-события идут в том же
+                // порядке, что навигация, и не двигают эпоху основного мира.
+                if (entry.command is CellLabRecord) ui += entry
+                else epochs.getOrPut(entry.epoch) { SimEpoch() }.add(entry)
             }
-            if (entry.tick >= 0 && (entry.epoch > finalEpoch || (entry.epoch == finalEpoch && entry.tick > finalTick))) {
+            if (entry.command !is CellLabRecord && entry.tick >= 0 && (entry.epoch > finalEpoch || (entry.epoch == finalEpoch && entry.tick > finalTick))) {
                 finalEpoch = entry.epoch
                 finalTick = entry.tick
             }
@@ -236,6 +241,7 @@ object BugReplay {
         }
 
         uiEntries = ui
+        uiTotal = ui.count { it.channel == Channel.UI }
         expectedUiHash = uiCheck
         expectedSimHash = simCheck
         simTotal = simCount
@@ -285,7 +291,7 @@ object BugReplay {
      * игрока: мир там держится (см. [mustHold]).
      */
     private fun gateOpen(entry: JournalEntry): Boolean {
-        if (entry.tick < 0) return true
+        if (entry.command is CellLabRecord || entry.tick < 0) return true
         val clock = SessionJournal.simTick ?: return true
         val epoch = SessionJournal.epoch
         if (epoch != entry.epoch) return epoch > entry.epoch
@@ -314,8 +320,11 @@ object BugReplay {
                 else -> (DIGameGlobalContainer.game.screen as? ReplayTarget)?.replay(command) ?: false
             }
             if (handled) {
-                uiApplied++
-                uiHash = JournalFormat.hashUi(uiHash, entry.typeId, entry.payload)
+                if (entry.command is CellLabRecord) consume(entry)
+                else {
+                    uiApplied++
+                    uiHash = JournalFormat.hashUi(uiHash, entry.typeId, entry.payload)
+                }
             } else {
                 skipped++
                 val screen = DIGameGlobalContainer.game.screen?.let { it::class.simpleName } ?: "нет экрана"
@@ -340,8 +349,8 @@ object BugReplay {
 
         val report = buildString {
             appendLine("=== Повтор бага закончен: ${source?.name} ===")
-            appendLine("UI-команды: применено $uiApplied из ${uiEntries.size}, " +
-                if (uiApplied == uiEntries.size && uiHash == expectedUiHash) "контрольная сумма совпала" else "контрольная сумма НЕ совпала")
+            appendLine("UI-команды: применено $uiApplied из $uiTotal, " +
+                if (uiApplied == uiTotal && uiHash == expectedUiHash) "контрольная сумма совпала" else "контрольная сумма НЕ совпала")
             val (simDone, simSum) = synchronized(simLock) { simApplied to simHash }
             appendLine("SIM-события: применено $simDone из $simTotal, " +
                 if (simDone == simTotal && simSum == expectedSimHash) "контрольная сумма совпала" else "контрольная сумма НЕ совпала")
@@ -366,7 +375,7 @@ object BugReplay {
 
         val (simDone, simSum) = synchronized(simLock) { simApplied to simHash }
         val commandsMatch = skipped == 0 && firstMismatch == null &&
-            uiApplied == uiEntries.size && uiHash == expectedUiHash
+            uiApplied == uiTotal && uiHash == expectedUiHash
         // Повтор краша удался, если краш случился снова; повтор отчёта — если мир дошёл
         // до конца записи, применив всё. События тика, в котором упало, применены не все.
         result = commandsMatch && if (manifest["kind"] == BugKind.CRASH.label) {
@@ -456,6 +465,20 @@ object BugReplay {
         }
     }
 
+    /** Контрольная сумма изолированного мира гайда; запись уже учтена inject. */
+    fun checkCellLabHash(key: String, tick: Int, expected: Long, actual: Long, version: Int) {
+        if (version != StateHash.VERSION) {
+            oldHashNoted = true
+            note("версия хэша стенда $key: $version, ожидается ${StateHash.VERSION}")
+            return
+        }
+        if (expected == actual) hashesOk++
+        else if (firstMismatch == null) {
+            firstMismatch = "стенд $key, тик $tick"
+            println("[$TAG] СОСТОЯНИЕ СТЕНДА РАЗОШЛОСЬ: $firstMismatch")
+        }
+    }
+
     @Volatile private var oldHashNoted = false
 
     /**
@@ -522,7 +545,7 @@ object BugReplay {
             appendLine("=== Повтор бага: ${source?.name} ===")
             appendLine("Игра ${recorded ?: "?"}, устройство ${manifest["deviceId"] ?: "?"}, ${manifest["platform"] ?: "?"}, " +
                 "экран ${manifest["screen"] ?: "?"}, язык ${manifest["locale"] ?: "?"}")
-            appendLine("UI-команд ${uiEntries.size}, SIM-событий $simTotal, сессий мира ${epochs.size}, " +
+            appendLine("UI-команд $uiTotal, SIM-событий $simTotal, сессий мира ${epochs.size}, " +
                 "конец: эпоха $finalEpoch тик $finalTick")
             manifest["description"]?.takeIf { it.isNotBlank() }?.let { appendLine("Описание: $it") }
         })

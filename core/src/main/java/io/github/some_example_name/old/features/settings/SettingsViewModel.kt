@@ -1,9 +1,12 @@
 package io.github.some_example_name.old.features.settings
 
+import io.github.some_example_name.render.RenderMode
+
 import io.github.some_example_name.old.commands.GameCommand
 import com.badlogic.gdx.Gdx
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.PlatformWindow
+import io.github.some_example_name.old.core.PlatformGraphics
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
 import io.github.some_example_name.old.bug.BugReplay
 import io.github.some_example_name.old.journal.CommandSource
@@ -75,9 +78,17 @@ sealed interface SettingsIntent : GameCommand {
     data object OpenGithub : SettingsIntent {
         override val name get() = "OpenGithub"
     }
+
+    @Serializable
+    data object OpenGpuSettings : SettingsIntent {
+        override val name get() = "OpenGpuSettings"
+    }
 }
 
 class SettingsViewModel {
+
+    var gpuSettingsFailed = false
+        private set
 
     /**
      * Выбранная вкладка живёт здесь, а не в экране: рекомпозиция пересобирает вёрстку
@@ -117,7 +128,7 @@ class SettingsViewModel {
             }
 
             is SettingsIntent.SetRenderMode -> {
-                GlobalSettings.RENDER_MODE = intent.renderMode
+                GlobalSettings.RENDER_MODE = RenderMode.fromPreference(intent.renderMode).preferenceId
                 UserPreferences.save()
             }
 
@@ -132,6 +143,9 @@ class SettingsViewModel {
             }
 
             is SettingsIntent.SetFullscreen -> if (!BugReplay.isActive) PlatformWindow.setFullscreen(intent.enabled)
+            is SettingsIntent.OpenGpuSettings -> if (!BugReplay.isActive) {
+                gpuSettingsFailed = PlatformGraphics.gpuSettings?.open() != true
+            }
 
             // При повторе бага браузер разработчику ни к чему.
             is SettingsIntent.OpenGithub -> if (!BugReplay.isActive) Gdx.net.openURI(GITHUB_URL)
@@ -197,7 +211,7 @@ class SettingsViewModel {
 object GlobalSettings {
     var MUSIC_VOLUME = 0
     var SOUND_VOLUME = 50
-    var RENDER_MODE = 0
+    var RENDER_MODE = RenderMode.DEBUG.preferenceId
 
     /**
      * Общий флаг всплывающих подсказок интерфейса (core/ui/hint). Только вид: на игру и

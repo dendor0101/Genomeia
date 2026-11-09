@@ -21,9 +21,11 @@ class HudIcons : Disposable {
     private val textures = ArrayList<Texture>()
 
     val menu = icon(::drawMenu)
+    val edit = icon(::drawEdit)
     val pause = icon(::drawPause)
     val play = icon(::drawPlay)
     val organism = icon(::drawOrganism)
+    val optics by lazy { icon { p -> ring(p,54,54,32,7); white(p); thickLine(p,75,75,107,107,6) } }
     val spawnCell = icon(::drawSpawnCell)
     val spawnFood = icon(::drawFood)
     val killCell = icon(::drawKill)
@@ -80,6 +82,31 @@ class HudIcons : Disposable {
         fun drawMenu(p: Pixmap) {
             white(p)
             for (y in intArrayOf(34, 64, 94)) thickLine(p, 26, y, 102, y, 7)
+        }
+
+        /** Карандаш с отдельным наконечником — редактирование генома. */
+        fun drawEdit(p: Pixmap) {
+            // Покрытие 4×4 сглаживает диагонали. Считается один раз при создании экрана.
+            val scale = 4
+            val hi = Pixmap(SIZE * scale, SIZE * scale, Pixmap.Format.RGBA8888)
+            hi.blending = Pixmap.Blending.None
+            white(hi)
+            fun triangle(x1: Int, y1: Int, x2: Int, y2: Int, x3: Int, y3: Int) =
+                hi.fillTriangle(x1 * scale, y1 * scale, x2 * scale, y2 * scale, x3 * scale, y3 * scale)
+            triangle(36, 78, 82, 32, 100, 50)
+            triangle(36, 78, 100, 50, 54, 96)
+            triangle(31, 84, 48, 101, 23, 109)
+            triangle(88, 26, 96, 18, 114, 36)
+            triangle(88, 26, 114, 36, 106, 44)
+            for (y in 0 until SIZE) for (x in 0 until SIZE) {
+                var alpha = 0
+                for (dy in 0 until scale) for (dx in 0 until scale) {
+                    alpha += hi.getPixel(x * scale + dx, y * scale + dy) and 255
+                }
+                // Белый RGB даже у прозрачных пикселей исключает тёмный ореол при фильтрации.
+                p.drawPixel(x, y, -256 or (alpha / (scale * scale)))
+            }
+            hi.dispose()
         }
 
         fun drawPause(p: Pixmap) {

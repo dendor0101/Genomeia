@@ -17,11 +17,8 @@ import kotlin.math.sin
  *
  * ЗАЧЕМ ОТДЕЛЬНО ОТ ПРОХОДОВ
  * --------------------------
- * Клетки рисует не один проход: ParticleRenderer (реалистичный режим), DebugRenderer и
- * NostalgicRenderer. Пока VAO и VBO жили внутри ParticleRenderer, второму проходу
- * пришлось бы либо заводить свою копию и заливать те же байты на GPU второй раз, либо
- * лезть в чужие поля. Здесь геометрия одна, ею владеет WorldRenderer, и он же заливает
- * кадр ровно один раз — до всех проходов, в каком бы режиме ни рисовали.
+ * DebugRenderer и NostalgicRenderer используют один корпус и один поток инстансов.
+
  *
  * Атрибуты привязаны к номерам (layout(location = ...) в шейдерах), а не к именам, поэтому
  * один VAO годится любой программе с той же раскладкой входов.
@@ -53,19 +50,7 @@ import kotlin.math.sin
  */
 class CellGeometry {
 
-    /**
-     * Какую геометрию клетки рисовать.
-     *
-     * [CONE] — веер на 32 сегмента, глубина в нём — интерполированный конус d/R. Для
-     * шейдеров, которые глубину не трогают и получают её от растеризатора (circle_pc.vert):
-     * у них точность конуса и есть точность диаграммы Вороного.
-     *
-     * [HULL] — восьмиугольник, описанный вокруг круга. Для шейдеров, которые сами считают
-     * точное d/R во фрагменте и пишут gl_FragDepth, отсекая лишнее за окружностью discard'ом
-     * (ностальгический режим). Им от геометрии нужно только накрыть круг целиком, а
-     * вершин у корпуса 10 вместо 34. Компонента z у его вершин смысла не имеет.
-     */
-    enum class Detail { CONE, HULL }
+
 
     /** VAO со всей раскладкой атрибутов: настраивается один раз, дальше только биндится. */
     private var vao = 0
@@ -78,7 +63,6 @@ class CellGeometry {
      * а не вершины, — поэтому оба веера читают одни и те же данные клеток.
      */
     private var baseVbo = 0
-    private var coneVertexCount = 0
     private var hullVertexCount = 0
 
     /** Инстансные данные, перезаливаются каждый кадр. */
@@ -106,11 +90,8 @@ class CellGeometry {
         gl30.glGenVertexArrays(1, vaoIds)
         vao = vaoIds.get(0)
 
-        val cone = buildFan(FAN_SEGMENTS)
-        val hull = buildFan(HULL_SEGMENTS)
-        coneVertexCount = cone.size / FAN_VERTEX_FLOATS
-        hullVertexCount = hull.size / FAN_VERTEX_FLOATS
-        val corners = cone + hull
+        val corners = buildFan(HULL_SEGMENTS)
+        hullVertexCount = corners.size / FAN_VERTEX_FLOATS
         val cornerBuffer = BufferUtils.newFloatBuffer(corners.size).apply {
             put(corners)
             flip()
@@ -196,7 +177,7 @@ class CellGeometry {
      *
      * Третья компонента и есть тот самый конус, ради которого веер и нужен: растеризатор
      * интерполирует её линейно, и она приезжает во фрагментный шейдер как расстояние до
-     * центра в долях радиуса. Подробности — в шапке circle_pc.vert.
+     * центра в долях радиуса.
      *
      * Обод отодвинут на 1/cos(π/N): при вписанном многоугольнике середины граней лежали бы
      * ВНУТРИ круга, и клетка выглядела бы меньше положенного. С этим множителем середины
@@ -205,7 +186,7 @@ class CellGeometry {
      * Метрика при этом остаётся одинаковой для всех инстансов (в вершинах d/R = 1 у всех),
      * поэтому argmin по клеткам не ломается и диаграмма Вороного не съезжает.
      *
-     * Тот же множитель делает корпус [Detail.HULL] описанным: середины граней восьмиугольника
+     * Тот же множитель делает восьмиугольный корпус описанным: середины граней восьмиугольника
      * касаются окружности, и круг лежит внутри целиком.
      */
     private fun buildFan(segments: Int): FloatArray {
@@ -260,18 +241,11 @@ class CellGeometry {
     }
 
     /** Нарисовать [instances] клеток текущей привязанной программой. */
-    fun draw(instances: Int, detail: Detail) {
+    fun draw(instances: Int) {
         if (instances <= 0) return
         val gl30 = Gdx.gl30 ?: return
         gl30.glBindVertexArray(vao)
-        when (detail) {
-            Detail.CONE ->
-                gl30.glDrawArraysInstanced(GL20.GL_TRIANGLE_FAN, 0, coneVertexCount, instances)
-            Detail.HULL ->
-                gl30.glDrawArraysInstanced(
-                    GL20.GL_TRIANGLE_FAN, coneVertexCount, hullVertexCount, instances
-                )
-        }
+        gl30.glDrawArraysInstanced(GL20.GL_TRIANGLE_FAN, 0, hullVertexCount, instances)
         gl30.glBindVertexArray(0)
     }
 
@@ -303,14 +277,7 @@ class CellGeometry {
 
     companion object {
         /**
-         * Число сегментов веера. Компромисс: 32 даёт ошибку границы 0.48 %% и 34 вершины
-         * на клетку. Меньше — заметнее огранка силуэта на сильном приближении, больше —
-         * лишняя вершинная работа там, где клетка занимает несколько пикселей.
-         */
-        private const val FAN_SEGMENTS = 32
-
-        /**
-         * Сегментов у корпуса [Detail.HULL]. Восемь — компромисс между вершинами и
+         * Сегментов у корпуса клетки. Восемь — компромисс между вершинами и
          * фрагментами: площадь описанного восьмиугольника на 5.5 %% больше круга, и эти
          * фрагменты отсекаются discard'ом впустую; у квадрата было бы 27 %%, зато 4 вершины.
          */
@@ -320,7 +287,7 @@ class CellGeometry {
         private const val FAN_VERTEX_FLOATS = 3
 
         /**
-         * Номера атрибутов. Дублируются в шейдерах клеток (circle_pc.vert, debug_view/cell.vert,
+         * Номера атрибутов. Дублируются в шейдерах клеток (debug_view/cell.vert,
          * nostalgic.vert) через layout(location = ...), поэтому имена атрибутов в шейдере
          * роли не играют и glGetAttribLocation не нужен.
          */

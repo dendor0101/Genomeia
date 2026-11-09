@@ -46,6 +46,7 @@ class CellLookTest {
             "P_SPIKES" to CellLook.SPIKES,
             "P_SHORT_CILIA" to CellLook.SHORT_CILIA,
             "P_CHIP" to CellLook.CHIP,
+            "P_DELAY_COIL" to CellLook.DELAY_COIL,
             "P_COUNT" to CellLook.COUNT
         )
         val declared = Regex("""const int (P_\w+) = (\d+);""").findAll(glsl)

@@ -26,7 +26,8 @@ class CellSystem(
     val gridManager: GridManager,
     val divideManager: DivideManager,
     val mutateManager: MutateManager,
-    val threadManager: ThreadManager?
+    val threadManager: ThreadManager?,
+    private val linkEnergyTransfer: Float = energyTransportRate
 ): Disposable {
 
     /**
@@ -140,6 +141,11 @@ class CellSystem(
         val dy = getY(cellIndex) - getY(parentCellIndex)
 
         val len = sqrt(dx * dx + dy * dy)
+        // В углу мира границы могут зажать обе клетки ровно в (radius, radius).
+        // У нулевого вектора нет направления: сохраняем прежнее до расхождения.
+        // Иначе 0/0 портит угол Tail, а его тяга в этом же тике — скорость и позицию.
+        // Воспроизведено .bug 20261102-220750: тик 16956, частицы 4057 и 4065.
+        if (len == 0f) return@with
         val toChildCos = dx / len
         val toChildSin = dy / len
 
@@ -222,7 +228,7 @@ class CellSystem(
         val energy1 = energy[linkCell1]
         val energy2 = energy[linkCell2]
         val amount = energyTransferAmount(
-            energy1, energy2, maxEnergy[linkCell1], maxEnergy[linkCell2], energyTransportRate
+            energy1, energy2, maxEnergy[linkCell1], maxEnergy[linkCell2], linkEnergyTransfer
         )
         if (amount != 0f) {
             energy[linkCell1] = energy1 + amount

@@ -1,0 +1,59 @@
+{
+  "tag": "100k",
+  "mode": "scale",
+  "size": 108,
+  "affinity": 4,
+  "warm": 128,
+  "first": "old",
+  "java": "C:\\Users\\dendo\\.jdks\\jbr-21.0.11\\bin\\java.exe",
+  "input": "C:\\Users\\dendo\\StudioProjects\\Genomeia\\.Codex\\worktrees\\physics-stage-frequency\\docs\\physics\\repros\\detached-fragments-2026-10-21\\body.txt",
+  "gait": "rest",
+  "jvm_args": [
+    "-Dcandidate.allowChangedTrajectory=true"
+  ],
+  "new_jvm_args": [],
+  "self_checked": 256,
+  "first_reference_mismatch_block": 0,
+  "blocks": [
+    {
+      "old": 830.4982375,
+      "new": 268.04954375,
+      "repeat": 264.44368125,
+      "old_cpu": 823.73046875,
+      "new_cpu": 267.08984375,
+      "repeat_cpu": 263.18359375
+    },
+    {
+      "repeat": 264.457921875,
+      "new": 262.794228125,
+      "old": 746.0352125,
+      "old_cpu": 744.62890625,
+      "new_cpu": 258.7890625,
+      "repeat_cpu": 263.18359375
+    },
+    {
+      "old": 731.711796875,
+      "new": 273.67595,
+      "repeat": 270.986584375,
+      "old_cpu": 727.05078125,
+      "new_cpu": 271.97265625,
+      "repeat_cpu": 270.01953125
+    },
+    {
+      "repeat": 258.792525,
+      "new": 264.605309375,
+      "old": 740.92498125,
+      "old_cpu": 739.2578125,
+      "new_cpu": 264.16015625,
+      "repeat_cpu": 257.32421875
+    }
+  ],
+  "baseline": "C:\\Users\\dendo\\StudioProjects\\Genomeia\\.Codex\\worktrees\\physics-stage-frequency\\build\\final-speed\\old.txt",
+  "current": "C:\\Users\\dendo\\StudioProjects\\Genomeia\\.Codex\\worktrees\\physics-stage-frequency\\build\\final-speed\\new.txt",
+  "old_ms": 762.29255703125,
+  "new_ms": 267.28125781250003,
+  "speedup": 2.852023981292412,
+  "repeat_ms": 264.670178125,
+  "speedup_repeat": 2.880160365748611,
+  "new_process_spread_percent": 0.9865409491910615
+}

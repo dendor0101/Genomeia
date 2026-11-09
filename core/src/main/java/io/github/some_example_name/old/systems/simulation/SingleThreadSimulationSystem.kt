@@ -31,8 +31,8 @@ class SingleThreadSimulationSystem(
     val linkPhysicsSystem: LinkPhysicsSystem,
     val simulationData: SimulationData,
     val cellSystem: CellSystem,
-    val userCommandManager: UserCommandManager,
-    val renderBufferManager: RenderBufferManager,
+    val userCommandManager: UserCommandManager?,
+    val renderBufferManager: RenderBufferManager?,
     val pheromonesManager: PheromonesManager,
     val worldPhysics: WorldPhysics,
     val particlePhysicsSystem: ParticlePhysicsSystem,
@@ -67,14 +67,14 @@ class SingleThreadSimulationSystem(
 
         worldCommandsManager.executingCommandsFromTheWorld()
         organManager.performOrgansNextStage()
-        userCommandManager.processingCommandsFromUser()
+        userCommandManager?.processingCommandsFromUser()
         worldCommandsManager.executingLastCommandsFromTheWorld()
         organEntity.deleteEmptiedOrgans()
 
         // Пересборка сетки: после движения и всех команд, один раз за тик.
         gridManager.rebuild(particleEntity.isAlive, particleEntity.gridId, particleEntity.isInGrid)
 
-        renderBufferManager.updateBuffer()
+        renderBufferManager?.updateBuffer()
 
     }
 

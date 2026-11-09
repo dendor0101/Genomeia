@@ -6,13 +6,8 @@ precision highp float;
 // Общий вершинный шейдер для обоих проходов NostalgicRenderer по геометрии — заливки и
 // подсчёта контура. Глубину здесь НЕ задаём: её точно считает фрагментный шейдер (см.
 // nostalgic.frag), а геометрия — лишь грубый корпус вокруг круга, восьмиугольник из
-// CellGeometry. Отсюда и разница с circle_pc.vert, где глубина интерполируется по
-// многоугольному конусу.
-//
-// Свой шейдер, а не circle_pc.vert, ещё и потому, что тому нужны поворот текстуры и
-// рефракция: три hash() на sin() и пара cos/sin на каждую вершину. Здесь из этого не
-// нужно ничего, а раскладка входов та же — VAO у обоих общий (CellGeometry).
-layout(location = 0) in vec3 a_corner;  // xy — точка корпуса в долях радиуса; z не нужен
+// CellGeometry.
+layout(location = 0) in vec3 a_corner;
 
 // Инстансные атрибуты, раскладка — в CellInstanceBuffer.
 layout(location = 1) in vec2 a_center;
@@ -53,13 +48,13 @@ flat out float ex_Nucleus;
 const float FLAG_NOT_CELL = 1.0;
 
 void main() {
-    // Распаковка радиуса — та же, что в circle_pc.vert: RADIUS_MIN + байт * RADIUS_SPAN.
+    // Распаковка радиуса: RADIUS_MIN + байт * RADIUS_SPAN.
     float radius = 0.05 + a_shape.z * 0.7;
 
     ex_Local = a_corner.xy;
     ex_Color = a_color.rgb;
 
-    // Байт флагов обратно в целое — с округлением, как byteValue() в circle_pc.vert.
+    // Байт флагов обратно в целое — с округлением.
     float flags = floor(a_type.w * 255.0 + 0.5);
     bool isCell = mod(flags, 2.0) < FLAG_NOT_CELL;
 

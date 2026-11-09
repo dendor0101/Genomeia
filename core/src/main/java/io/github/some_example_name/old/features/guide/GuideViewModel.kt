@@ -28,6 +28,15 @@ sealed interface GuideIntent : GameCommand {
         override val name get() = "StartTutorial"
     }
 
+    @Serializable
+    data class OpenCellLab(val key: String) : GuideIntent {
+        override val name get() = "OpenCellLab"
+        override val detail get() = key
+    }
+
+    @Serializable
+    data object CloseCellLab : GuideIntent { override val name get() = "CloseCellLab" }
+
     // --- Стенд формул: один нейрон, который игрок настраивает ползунками ---
 
     /** Формула нейрона — ключом (Formula.key), как в геноме. */
@@ -66,6 +75,7 @@ sealed interface GuideIntent : GameCommand {
 }
 
 class GuideViewModel {
+    internal val cellLab = io.github.some_example_name.old.features.guide.celllab.CellLabSession()
 
     /** Вкладка живёт здесь, а не в экране: рекомпозиция пересобирает вёрстку целиком. */
     var currentTab: GuideTab = GuideTab.TUTORIAL
@@ -80,7 +90,12 @@ class GuideViewModel {
 
     private fun apply(intent: GuideIntent) {
         when (intent) {
-            is GuideIntent.SelectTab -> currentTab = intent.tab
+            is GuideIntent.SelectTab -> {
+                cellLab.close()
+                currentTab = intent.tab
+            }
+            is GuideIntent.OpenCellLab -> cellLab.open(intent.key)
+            GuideIntent.CloseCellLab -> cellLab.close()
             GuideIntent.StartTutorial -> navigation.performCommand(GoTutorial)
             is GuideIntent.SelectFormula -> lab.formulaKey = intent.formulaKey
             is GuideIntent.SetCoefficient -> when (intent.index) {

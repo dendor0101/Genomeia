@@ -144,6 +144,7 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
     )
 
     val renderBufferManager = RenderBufferManager(
+        genomes = genomeManager.genomes,
         simulationData = simulationData,
         cellEntity = cellEntity,
         particleEntity = particleEntity,
