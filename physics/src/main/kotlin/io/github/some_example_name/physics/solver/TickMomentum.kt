@@ -46,8 +46,16 @@ class TickMomentum(internal val n: Int) {
     private fun unionOrg(a: Int, b: Int) {
         val ra = findOrg(a); val rb = findOrg(b)
         if (ra == rb) return
-        if (first[ra] <= first[rb]) orgParent[rb] = ra else orgParent[ra] = rb
+        val child = if (first[ra] <= first[rb]) rb else ra
+        orgParent[child] = if (child == rb) ra else rb
+        // Корнем организм перестаёт быть один раз: присоединяются только корни. См. mergeOrgGroups.
+        if (orgLinkedN == orgLinked.size) orgLinked = orgLinked.copyOf(orgLinkedN * 2)
+        orgLinked[orgLinkedN++] = child
     }
+
+    /** Организмы, присоединённые за тик к чужой группе (не корни orgParent), в порядке слияний. */
+    private var orgLinked = IntArray(64)
+    private var orgLinkedN = 0
     private fun unionParticles(i: Int, j: Int) {
         val oi = orgOf[i]; val oj = orgOf[j]
         if (oi >= 0 && oj >= 0 && first[oi] >= 0 && first[oj] >= 0) { if (oi != oj) unionOrg(oi, oj) }
@@ -84,6 +92,7 @@ class TickMomentum(internal val n: Int) {
         first.fill(-1)
         orgOf = org
         for (o in orgParent.indices) orgParent[o] = o
+        orgLinkedN = 0
         spans(sleep) { from, to -> for (i in from until to) parent[i] = i }
         spans(sleep) { from, to ->
             for (i in from until to) {
@@ -347,12 +356,14 @@ class TickMomentum(internal val n: Int) {
      * переписанную частицу приводила к другому корню, чем через старую: группа зависела от того, какой
      * воркер успел первым, а в одном потоке — от порядка частиц. bugReplayCheck 10.11: запись на
      * 8 воркерах и повтор на одном разошлись в снятии импульса (эпоха 1, тик 2619, последний подшаг).
+     *
+     * Только присоединённые организмы (orgLinked): проход по всем номерам с поиском корня каждого стоил
+     * 0.9% главного потока (профиль 10.11, 34 червя, ~9 тыс. организмов).
      */
     internal fun mergeOrgGroups() {
-        for (o in orgParent.indices) {
-            if (first[o] < 0) continue
-            val ro = findOrg(o)
-            if (ro != o) union(first[o], first[ro])
+        for (x in 0 until orgLinkedN) {
+            val o = orgLinked[x]
+            union(first[o], first[findOrg(o)])
         }
     }
 

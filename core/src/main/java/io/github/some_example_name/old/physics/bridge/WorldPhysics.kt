@@ -758,20 +758,64 @@ class WorldPhysics(
         publish()
     }
 
+    /**
+     * Клетки сетки организмов по воркерам: каждая частица пишет только свой gridId. Источник феромона
+     * (и NaN при отладке) — слот в список организма [k], его доделает updateCell в одном потоке по
+     * организмам и слотам: команды феромонов идут в общий буфер в прежнем порядке. Замер 10.11, 34 червя:
+     * в одном потоке 1.8% главного потока.
+     */
+    private var gridEvents = Array(64) { IntArray(8) }
+    private var gridEventN = IntArray(64)
+    private val gridJob = PhysicsJob { k, _ -> updateGridFast(k, organsWithBody.getInt(k)) }
+
     private fun updateGrid() {
         val alive = particleEntity.isAlive
         val index = particleEntity.physicsIndex
-        for (k in 0 until organsWithBody.size) {
-            val organ = organsWithBody.getInt(k)
-            val particleBase = organEntity.particleArenaBase[organ]
-            for (slot in 0 until organEntity.cellArenaCapacity[organ]) {
-                val p = particleBase + slot
-                if (alive[p] && index[p] >= 0) updateCell(p)
+        val count = organsWithBody.size
+        val w = workers
+        if (w == null || w.count <= 1 || count < 2) {
+            for (k in 0 until count) {
+                val organ = organsWithBody.getInt(k)
+                val particleBase = organEntity.particleArenaBase[organ]
+                for (slot in 0 until organEntity.cellArenaCapacity[organ]) {
+                    val p = particleBase + slot
+                    if (alive[p] && index[p] >= 0) updateCell(p)
+                }
+            }
+        } else {
+            if (gridEvents.size < count) { gridEvents = Array(count * 2) { IntArray(8) }; gridEventN = IntArray(count * 2) }
+            w.run(count, gridJob)
+            for (k in 0 until count) {
+                val particleBase = organEntity.particleArenaBase[organsWithBody.getInt(k)]
+                val events = gridEvents[k]
+                for (e in 0 until gridEventN[k]) updateCell(particleBase + events[e])
             }
         }
         for (k in 0 until trackedSubstances.size) updateCell(substancesEntity.particleIndex[trackedSubstances.getInt(k)])
         // Мягкий террейн тоже ходит: проминается и возвращается. Почти весь спит — клетка не меняется.
         for (k in 0 until terrain.count) { val p = terrain.particle(k); if (alive[p] && index[p] >= 0) updateCell(p) }
+    }
+
+    /** Клетки сетки организма [organ] без источников феромонов: см. [updateGrid]. Пишет только свои gridId. */
+    private fun updateGridFast(k: Int, organ: Int) {
+        var events = gridEvents[k]
+        var en = 0
+        val pe = particleEntity
+        val alive = pe.isAlive; val index = pe.physicsIndex; val emitter = pe.isPheromoneEmitter; val gridId = pe.gridId
+        val particleBase = organEntity.particleArenaBase[organ]
+        for (slot in 0 until organEntity.cellArenaCapacity[organ]) {
+            val p = particleBase + slot
+            if (!alive[p] || index[p] < 0) continue
+            val x = pe.x(p); val y = pe.y(p)
+            if (emitter[p] || (DEBUG_CHECKS && (x.isNaN() || y.isNaN()))) {
+                if (en == events.size) { events = events.copyOf(en * 2); gridEvents[k] = events }
+                events[en++] = slot
+                continue
+            }
+            val cell = gridManager.cellIndexOfClamped(x.toInt(), y.toInt())
+            if (cell != gridId[p]) gridId[p] = cell
+        }
+        gridEventN[k] = en
     }
 
     private fun updateCell(p: Int) {
