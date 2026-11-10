@@ -163,6 +163,10 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
 
     lateinit var conMuscle: IntArray
     /** Пороги предела длины на подшаг, см. refreshLimit. Читаются только параллельным проходом. */
+    /** Версия структуры при последней подготовке контактов: см. skipCandidatesNow. */
+    var contactsVersion = -1
+    /** Идут ли площади и изгиб на этом подшаге: см. SLOW_CONSTRAINT_PERIOD. */
+    var slowConstraintsNow = true
     var limitHi2 = DoubleArray(0)
     var limitLo2 = DoubleArray(0)
     /** Частицы, чью скорость меняет отскок этого подшага: см. FusedPasses, velocityFastAllowed. */

@@ -1751,6 +1751,9 @@ class BoundaryContacts(
         pairN = out
     }
 
+    /** Этот подшаг не обновляет список пар (ставит хозяин тела). */
+    var skipCandidatesNow = false
+
     /** Текущее направление обхода контактов. См. optionCtSweepFlip. */
     internal var ctBackwards = false
 
@@ -2005,7 +2008,9 @@ class BoundaryContacts(
         if (!optionAblegacy) lam.clear()
         if (optionXpbdWarmStart && !optionAblegacy) for (c in 0 until cN) if (cLamTot[c] > 0.0) lam[pairKey(cI[c], cJ[c])] = cLamTot[c]
         bpCalls++
-        updateCandidates(px, py, qx, qy, invMass)
+        // Список пар обновляется раз в два подшага: за подшаг вершины сдвигаются намного меньше запаса
+        // широкой фазы. Проверки касания, CCD и пробой идут каждый подшаг по готовому списку.
+        if (!skipCandidatesNow || !bpValid || !staticValid) updateCandidates(px, py, qx, qy, invMass)
         // ПРОВЕРКА ПОЛНОТЫ СПИСКА: CT_BPCHECK=1. Полный перебор — ищем пары, которые
         // ПЕРЕКРЫЛИСЬ, но в списке кандидатов их нет. Таких быть не должно ни одной.
         if (optionBpCheck) {

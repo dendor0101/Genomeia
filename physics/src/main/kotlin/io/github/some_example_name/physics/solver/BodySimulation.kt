@@ -99,6 +99,9 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
             tick0()
             finalContacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = false)
             // УДАР БУДИТ СПЯЩЕГО ДО РЕШЕНИЯ КОНТАКТА. Спящий заморожен (обратная масса 0): решённый
+            // Пары обновляются на чётных подшагах и сразу после любого изменения контура.
+            finalContacts.skipCandidatesNow = (step and 1) == 1 && structureVersion == contactsVersion
+            contactsVersion = structureVersion
             // так контакт — удар о стену, налетевшая частица отскакивает, импульс не передан, а
             // проснувшийся в следующем подшаге стоит (ClientInputsCheck: импульс цели 0 против
             // удара без сна). Проснувшемуся — свои массы, контакты готовятся заново; редко — только
