@@ -86,7 +86,8 @@ internal fun BodyState.initializeConstraintBlocks() {
 internal fun BodyState.solveBlockedIteration(h: Double, integrate: Boolean = false) {
     val layout = constraintBlocks!!
     val w = activeWorkers
-    if (w != null && w.count > 1) {
+    // Пороги нужны общему проходу пределов и при одном воркере: он идёт тем же путём, что параллельный.
+    if (w != null) {
         if (limitHi2.size < conA.size) { limitHi2 = DoubleArray(conA.size); limitLo2 = DoubleArray(conA.size) }
         parallelPhysics(w).refreshLimits()
     }

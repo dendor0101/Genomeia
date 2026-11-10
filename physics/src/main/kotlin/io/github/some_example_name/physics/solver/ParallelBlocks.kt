@@ -620,7 +620,7 @@ internal fun BodyState.limitItemParallel(c: Int, s: WorkerScratch): Boolean {
     val dy = py[i] - py[j]
     val len2 = dx * dx + dy * dy
     // Готовые пороги этого подшага (refreshLimit): обычная связь дальше не читает ничего.
-    if (len2 <= limitHi2[c] && len2 >= limitLo2[c]) return false
+    if (c < limitHi2.size && len2 <= limitHi2[c] && len2 >= limitLo2[c]) return false
     val mus = conMuscle[c]
     val base = if (mus < 0) 1.0 else muscleScaleOf[mus]
     val scale = if (cellScalesOn) base * conCellScale[c] else base
