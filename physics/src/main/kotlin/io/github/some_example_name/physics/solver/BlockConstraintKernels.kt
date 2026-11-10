@@ -118,6 +118,9 @@ internal fun BodyState.solveBlockLimits(block: Int, layout: ConstraintBlocks, fr
     // по-прежнему участвуют в solveConstraints, но здесь их координаты не читаем.
     val limits = layout
     limits.beginLimits(block)
+    // Список у порога собирается заново; доработка после остановки воркера его продолжает.
+    // Критерий записан так же, как у воркера (solveBlockLimitsParallel). См. ConstraintBlocks.nearItems.
+    if (from == 0) layout.nearCount[block] = 0
     var cursor = from
     while (cursor < limits.limitCount()) {
         val c = limits.limitAt(cursor++)
@@ -141,8 +144,11 @@ internal fun BodyState.solveBlockLimits(block: Int, layout: ConstraintBlocks, fr
         val restScale = rest * scale
         val crushLim = LINK_CRUSH_RATIO * restScale
         val max = linkMaxLength(rest, scale)
-        val crushed = tearingOn && len2 < crushLim * crushLim
-        val over = len2 > max * max
+        val hi2 = max * max; val lo2 = crushLim * crushLim
+        val isNear = len2 > hi2 * LIMIT_NEAR_HI2 || (tearingOn && len2 < lo2 * LIMIT_NEAR_LO2)
+        if (isNear) layout.addNear(block, c)
+        val crushed = tearingOn && len2 < lo2
+        val over = len2 > hi2
         // Запас до разрыва за прогон — только когда он кому-то интересен: у худших
         // значений корень всё равно придётся взять, но это единицы связей за тик.
         // Запас до порогов копится В КВАДРАТАХ, корень берётся один раз при чтении:
@@ -161,4 +167,13 @@ internal fun BodyState.solveBlockLimits(block: Int, layout: ConstraintBlocks, fr
         solveLinkLimitViolation(c, len2, crushed, scale)
     }
     limits.endLimits()
+}
+
+/**
+ * Поздний предел блока — только по связям у порога, собранным ранним проходом (ConstraintBlocks.nearItems).
+ * Событие может дописать в список новый край контура (addLimit), поэтому счётчик читается на каждом шаге.
+ */
+internal fun BodyState.solveBlockNearLimits(block: Int, layout: ConstraintBlocks, from: Int) {
+    var x = from
+    while (x < layout.nearCount[block]) solveLimitItemSerial(layout.nearItems[block][x++])
 }

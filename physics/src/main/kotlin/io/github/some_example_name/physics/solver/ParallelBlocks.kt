@@ -334,20 +334,6 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         }
     }
 
-    private var refreshParts = 1
-    private val refreshJob = PhysicsJob { k, _ ->
-        val limits = state.boundaryLinkLimits
-        val ids = limits.ids; val n = limits.count
-        val from = (n.toLong() * k / refreshParts).toInt(); val to = (n.toLong() * (k + 1) / refreshParts).toInt()
-        for (g in from until to) { val c = ids[g]; if (c >= 0) state.refreshLimit(c) }
-    }
-
-    /** Пороги пределов на этот подшаг: множители мышц уже обновлены, до конца подшага они не меняются. */
-    fun refreshLimits() {
-        refreshParts = 4 * scratch.size
-        state.activeWorkers!!.run(refreshParts, refreshJob)
-    }
-
     // --- рёбра контура и общий проход пределов по блокам ---
     // Ребро и связь контура лежат в одном блоке или в его наборе швов (blockOfSlot, blockOf): блоки
     // считаются вместе, швы — после. Раскладка готова и разрывами не пересобирается: раньше раскладка по
@@ -697,7 +683,7 @@ internal fun BodyState.parallelBlocksAllowed(w: PhysicsWorkers, layout: Constrai
 /**
  * Блок целиком воркером: те же стадии и та же арифметика, что solveConstraintBlockFrom,
  * без таймеров стадий и снимков. Возвращает -1 или точку остановки перед событием
- * топологии: (стадия << 32) | запись очереди пределов.
+ * топологии: (стадия << 32) | запись очереди пределов (в позднем проходе — номер в списке у порога).
  */
 internal fun BodyState.solveBlockParallel(h: Double, block: Int, layout: ConstraintBlocks,
                                           s: WorkerScratch, integrate: Boolean): Long {
@@ -719,22 +705,58 @@ internal fun BodyState.solveBlockParallel(h: Double, block: Int, layout: Constra
             b = layout.bones.next[b]
         }
     }
-    val stop = solveBlockLimitsParallel(block, layout, s)
+    val stop = if (MAXLEN_EARLY) solveBlockNearLimitsParallel(block, layout, s) else solveBlockLimitsParallel(block, layout, s)
     if (stop >= 0) return (BLOCK_STAGE_LIMITS_LATE.toLong() shl 32) or stop.toLong()
     return -1
 }
 
 /**
- * Предел длины блока воркером. Та же проверка, что solveBlockLimits; нарушение без
- * события снимается той же поправкой (applyLinkLimitCorrection), на событии — выход
- * с номером записи, ничего не записав. Очередь — своя копия списка блока: список
- * между началом прохода и доработкой не меняется, событий в параллельном проходе нет.
+ * Предел длины блока воркером по всему контуру блока. Та же проверка, что solveBlockLimits, и тот
+ * же список у порога (ConstraintBlocks.nearItems): критерий в обоих записан одинаково, поэтому
+ * состав и порядок списка от числа воркеров не зависят. Нарушение без события снимается той же
+ * поправкой; на событии — выход с номером записи, ничего не записав и не внеся связь события в
+ * список: её и остаток внесёт доработка (solveBlockLimits с той же записи). Очередь — плотная копия
+ * списка блока: до доработки он не меняется, событий в параллельном проходе нет.
  */
 private fun BodyState.solveBlockLimitsParallel(block: Int, layout: ConstraintBlocks, s: WorkerScratch): Int {
     val list = layout.limits
     val q = list.dense(block)
     val size = list.denseCount[block]
-    for (cursor in 0 until size) if (limitItemParallel(q[cursor], s)) return cursor
+    val px = px; val py = py; val conA = conA; val conB = conB; val conRest = conRest; val conMuscle = conMuscle
+    val conDead = conDead; val ms = muscleScaleOf; val cs = if (cellScalesOn) conCellScale else null
+    var near = layout.nearItems[block]
+    var n = 0
+    var stop = -1
+    for (cursor in 0 until size) {
+        val c = q[cursor]
+        if (c < 0 || conDead[c]) continue
+        val i = conA[c]; val j = conB[c]
+        val dx = px[i] - px[j]
+        val dy = py[i] - py[j]
+        val len2 = dx * dx + dy * dy
+        val mus = conMuscle[c]
+        val base = if (mus < 0) 1.0 else ms[mus]
+        val scale = if (cs == null) base else base * cs[c]
+        val rest = conRest[c]
+        val crushLim = LINK_CRUSH_RATIO * (rest * scale)
+        val max = linkMaxLength(rest, scale)
+        val hi2 = max * max; val lo2 = crushLim * crushLim
+        val isNear = len2 > hi2 * LIMIT_NEAR_HI2 || (tearingOn && len2 < lo2 * LIMIT_NEAR_LO2)
+        if (!isNear) continue
+        val crushed = tearingOn && len2 < lo2
+        if ((crushed || len2 > hi2) && limitViolationParallel(c, len2, crushed, scale, max, s)) { stop = cursor; break }
+        if (n == near.size) near = layout.growNear(block, n)
+        near[n++] = c
+    }
+    layout.nearCount[block] = n
+    return stop
+}
+
+/** Поздний предел блока воркером — по списку у порога из раннего прохода. Номер в списке перед событием или -1. */
+private fun BodyState.solveBlockNearLimitsParallel(block: Int, layout: ConstraintBlocks, s: WorkerScratch): Int {
+    val items = layout.nearItems[block]
+    val n = layout.nearCount[block]
+    for (x in 0 until n) if (limitItemParallel(items[x], s)) return x
     return -1
 }
 
@@ -749,8 +771,6 @@ internal fun BodyState.limitItemParallel(c: Int, s: WorkerScratch): Boolean {
     val dx = px[i] - px[j]
     val dy = py[i] - py[j]
     val len2 = dx * dx + dy * dy
-    // Готовые пороги этого подшага (refreshLimit): обычная связь дальше не читает ничего.
-    if (c < limitHi2.size && len2 <= limitHi2[c] && len2 >= limitLo2[c]) return false
     val mus = conMuscle[c]
     val base = if (mus < 0) 1.0 else muscleScaleOf[mus]
     val scale = if (cellScalesOn) base * conCellScale[c] else base
@@ -761,12 +781,19 @@ internal fun BodyState.limitItemParallel(c: Int, s: WorkerScratch): Boolean {
     val crushed = tearingOn && len2 < crushLim * crushLim
     val over = len2 > max * max
     if (!crushed && !over) return false
+    return limitViolationParallel(c, len2, crushed, scale, max, s)
+}
+
+/** Нарушение предела у воркера — редкий путь отдельно от цикла. true — будет событие, ничего не записано. */
+private fun BodyState.limitViolationParallel(c: Int, len2: Double, crushed: Boolean, scale: Double, max: Double,
+                                             s: WorkerScratch): Boolean {
+    val i = conA[c]; val j = conB[c]
     if (invMass[i] + invMass[j] == 0.0) return false
     if (isGrowingLink(c)) return false      // см. isGrowingLink
     if (limitViolationIsEvent(c, len2, crushed, scale)) return true
     val len = sqrt(len2)
     if (len < 1e-12) return false
-    val overStrain = (len - max) / rest
+    val overStrain = (len - max) / conRest[c]
     if (overStrain > s.maxOverStrain) s.maxOverStrain = overStrain
     applyLinkLimitCorrection(i, j, len, max)
     s.linkCapHits++

@@ -49,6 +49,8 @@ internal fun BodyState.initializeConstraintBlocks() {
         layout.areas.add(t, layout.blockOf(triA[t], triB[t], triC[t]))
         layout.triangleSlot[triId[t]] = t
     }
+    // Список у порога наполнит первый же ранний проход пределов: сюда addLimit сложил весь контур.
+    layout.nearCount.fill(0)
     layout.links.finishBuild(distanceSweepOrder?.forward); layout.areas.finishBuild(); layout.buildDispatchOrder()
     for (b in rigidBones.indices) {
         val ids = rigidBones[b]
@@ -86,11 +88,6 @@ internal fun BodyState.initializeConstraintBlocks() {
 internal fun BodyState.solveBlockedIteration(h: Double, integrate: Boolean = false) {
     val layout = constraintBlocks!!
     val w = activeWorkers
-    // Пороги нужны общему проходу пределов и при одном воркере: он идёт тем же путём, что параллельный.
-    if (w != null) {
-        if (limitHi2.size < conA.size) { limitHi2 = DoubleArray(conA.size); limitLo2 = DoubleArray(conA.size) }
-        parallelPhysics(w).refreshLimits()
-    }
     if (w != null && parallelBlocksAllowed(w, layout)) {
         // Блоки одной чётности — по воркерам; швы и доработка событий — здесь. См. ParallelBlocks.
         tick0(); parallelPhysics(w).solveBlocks(h, integrate, layout); tick1(0)
@@ -155,7 +152,12 @@ internal fun BodyState.solveConstraintBlockFrom(h: Double, block: Int, layout: C
         dbgMeasure(3, h); tick1(5)
     }
     val from = if (stage == BLOCK_STAGE_LIMITS_LATE) cursor else 0
-    tick0(); dbgMark(); solveBlockLimits(block, layout, from); dbgMeasure(4, h); tick1(2); refreshSurface()
+    // После раннего прохода — только по связям у порога, которые он собрал. См. ConstraintBlocks.nearItems.
+    // Разбору крайних значений нужен весь контур; воркеров при нём нет (parallelBlocksAllowed).
+    tick0(); dbgMark()
+    if (MAXLEN_EARLY && !(DEBUG_CHECKS && dbgLinkExtremaOn)) solveBlockNearLimits(block, layout, from)
+    else solveBlockLimits(block, layout, from)
+    dbgMeasure(4, h); tick1(2); refreshSurface()
 }
 
 internal fun BodyState.solveBlockLinks(h: Double, block: Int, layout: ConstraintBlocks) {
