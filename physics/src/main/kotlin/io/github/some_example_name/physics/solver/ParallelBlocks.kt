@@ -114,6 +114,59 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         state.activeWorkers!!.run(spanChunks(), beforeJob)
     }
 
+    private var touchParts = 1
+    private val touchJob = PhysicsJob { k, worker ->
+        val n = state.velTouchN
+        state.finishVelocityTouchedRange((n.toLong() * k / touchParts).toInt(), (n.toLong() * (k + 1) / touchParts).toInt(), scratch[worker])
+    }
+
+    fun finishTouched() {
+        touchParts = 4 * scratch.size
+        state.activeWorkers!!.run(touchParts, touchJob)
+        for (s in scratch) {
+            if (s.peakSpeed2 > state.peakSpeed2) state.peakSpeed2 = s.peakSpeed2
+            s.peakSpeed2 = 0.0
+            state.speedCapHits += s.speedCapHits; s.speedCapHits = 0
+        }
+    }
+
+    // Слияние групп импульса по контактам: ключи пар организмов по кускам без повторов, само слияние — здесь.
+    private val noteKeys = Array(4 * workers) { LongArray(256) }
+    private val noteKeyN = IntArray(4 * workers)
+    private val noteRare = Array(4 * workers) { IntArray(16) }
+    private val noteRareN = IntArray(4 * workers)
+    private var noteCt: BoundaryContacts? = null
+    private val noteJob = PhysicsJob { k, _ ->
+        val ct = noteCt!!
+        val tm = state.tickMomentum; val inv = state.invMass
+        val n = ct.contactCount; val parts = noteKeys.size
+        var keys = noteKeys[k]; var kn = 0
+        var rare = noteRare[k]; var rn = 0
+        for (c in (n.toLong() * k / parts).toInt() until (n.toLong() * (k + 1) / parts).toInt()) {
+            val key = tm.contactKey(ct.contactI(c), ct.contactJ(c), inv)
+            if (key == -1L) continue
+            if (key == -2L) { if (rn == rare.size) { rare = rare.copyOf(rn * 2); noteRare[k] = rare }; rare[rn++] = c; continue }
+            if (kn == keys.size) { keys = keys.copyOf(kn * 2); noteKeys[k] = keys }
+            keys[kn++] = key
+        }
+        java.util.Arrays.sort(keys, 0, kn)
+        var u = 0
+        for (x in 0 until kn) if (u == 0 || keys[u - 1] != keys[x]) keys[u++] = keys[x]
+        noteKeyN[k] = u; noteRareN[k] = rn
+    }
+
+    fun noteContacts(ct: BoundaryContacts) {
+        noteCt = ct
+        state.activeWorkers!!.run(noteKeys.size, noteJob)
+        val tm = state.tickMomentum
+        for (k in noteKeys.indices) {
+            val keys = noteKeys[k]
+            for (x in 0 until noteKeyN[k]) tm.unionKey(keys[x])
+            val rare = noteRare[k]
+            for (x in 0 until noteRareN[k]) { val c = rare[x]; tm.unionContact(ct.contactI(c), ct.contactJ(c)) }
+        }
+    }
+
     private val fastJob = PhysicsJob { k, worker -> state.velocityFastRange(spanFrom[k], spanTo[k], passH, scratch[worker]) }
 
     fun velocityFast(h: Double) {

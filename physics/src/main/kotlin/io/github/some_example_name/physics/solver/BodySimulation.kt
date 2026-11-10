@@ -113,7 +113,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
                 finalContacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = false)
             }
             tick1(6); tick0()
-            if (cancelSpinOn) tickMomentum.noteContacts(finalContacts, invMass)
+            if (cancelSpinOn) noteContactsMomentum(finalContacts)
             finalContacts.updateBones(px, py, invMass, if (bonesRigid) boneOf else null, rigidBones)
             tick1(13); tick0()
             finalContacts.solveContacts(px, py, vx, vy, invMass, h)

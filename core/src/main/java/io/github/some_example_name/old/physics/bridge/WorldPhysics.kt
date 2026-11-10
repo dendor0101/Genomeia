@@ -346,9 +346,10 @@ class WorldPhysics(
         }
     }
 
-    /** Какие организмы сверка по воркерам вернула на полный путь (см. [syncOrganismFast]). */
-    private var syncSerial = BooleanArray(64)
-    private val syncJob = PhysicsJob { k, _ -> if (!syncOrganismFast(organsWithBody.getInt(k))) syncSerial[k] = true }
+    /** Клетки, которым сверка по воркерам нужна полным путём (см. [syncOrganismFast]): слоты по организмам. */
+    private var syncEvents = Array(64) { IntArray(8) }
+    private var syncEventN = IntArray(64)
+    private val syncJob = PhysicsJob { k, _ -> syncOrganismFast(k, organsWithBody.getInt(k)) }
 
     /** Замер 10.11, 34 червя: сверка в одном потоке была около 3 мс на тик, пока воркеры стояли. */
     private fun syncOrganisms() {
@@ -358,17 +359,24 @@ class WorldPhysics(
             for (k in 0 until count) syncOrganism(organsWithBody.getInt(k))
             return
         }
-        if (syncSerial.size < count) syncSerial = BooleanArray(count * 2) else java.util.Arrays.fill(syncSerial, 0, count, false)
+        if (syncEvents.size < count) { syncEvents = Array(count * 2) { IntArray(8) }; syncEventN = IntArray(count * 2) }
         w.run(count, syncJob)
-        for (k in 0 until count) if (syncSerial[k]) syncOrganism(organsWithBody.getInt(k))
+        // Редкие клетки — в одном потоке, по организмам и слотам по порядку, как шёл прежний цикл.
+        for (k in 0 until count) {
+            val organ = organsWithBody.getInt(k)
+            val events = syncEvents[k]
+            for (e in 0 until syncEventN[k]) syncSlot(organ, events[e])
+        }
     }
 
     /**
-     * Обычный тик организма: только цели мышц. Всё редкое (рождение, смерть, кость, толчок, смена
-     * мягкости и хватки, просыпание от мышцы) — false, и организм идёт полным путём в одном потоке.
+     * Обычная клетка: только цель мышцы. Редкое (рождение, смерть, кость, толчок, смена мягкости и
+     * хватки, просыпание от мышцы) — слот в список организма [k], его доделает syncSlot в одном потоке.
      * Пишет только свои клетки; общие признаки могут только включиться, порядок записи им не важен.
      */
-    private fun syncOrganismFast(organ: Int): Boolean {
+    private fun syncOrganismFast(k: Int, organ: Int) {
+        var events = syncEvents[k]
+        var en = 0
         val world = bridge.world
         val st = world.state
         val dead = st.cellDead; val unborn = st.cellUnborn; val boneOf = st.boneOf
@@ -384,28 +392,32 @@ class WorldPhysics(
         for (slot in 0 until organEntity.cellArenaCapacity[organ]) {
             val i = first + slot
             val cell = cellBase + slot
-            if (unborn[i]) { if (alive[cell]) return false; continue }
-            if (dead[i]) continue
-            if (!alive[cell]) return false
-            val type = cellType[cell].toInt()
+            if (unborn[i] && !alive[cell]) continue
+            if (!unborn[i] && dead[i]) continue
             val p = particleBase + slot
-            if (type == boneType && boneOf[i] < 0) return false
-            if (softness[i] != (if (type == fatType) FAT_SOFTNESS else 1f)) return false
-            if (noContact[i] == collidable[p]) return false
-            if (grip[i] != (if (type == suctionCupType) drag[p].coerceIn(0f, 1f) else 0f)) return false
-            if (pushX[p] != 0f || pushY[p] != 0f) return false
+            val type = cellType[cell].toInt()
+            var rare = unborn[i] || !alive[cell] || (type == boneType && boneOf[i] < 0) ||
+                softness[i] != (if (type == fatType) FAT_SOFTNESS else 1f) || noContact[i] == collidable[p] ||
+                grip[i] != (if (type == suctionCupType) drag[p].coerceIn(0f, 1f) else 0f) || pushX[p] != 0f || pushY[p] != 0f
             val s = shortening[cell]
-            if (target[i] != s) {
-                if (sleepOn) return false
-                target[i] = s
-                st.cellScalesOn = true
+            if (!rare && target[i] != s && sleepOn) rare = true
+            if (rare) {
+                if (en == events.size) { events = events.copyOf(en * 2); syncEvents[k] = events }
+                events[en++] = slot
+                continue
             }
+            if (target[i] != s) { target[i] = s; st.cellScalesOn = true }
             if (scale[i] != s) st.cellScalesMoving = true
         }
-        return true
+        syncEventN[k] = en
     }
 
     private fun syncOrganism(organ: Int) {
+        for (slot in 0 until organEntity.cellArenaCapacity[organ]) syncSlot(organ, slot)
+    }
+
+    /** Одна клетка организма [organ]: всё, что сверка делает с клеткой, в том числе редкое. */
+    private fun syncSlot(organ: Int, slot: Int) {
         val world = bridge.world
         val dead = world.state.cellDead
         val first = bridge.particleOf(organ, 0)
@@ -413,11 +425,11 @@ class WorldPhysics(
         val particleBase = organEntity.particleArenaBase[organ]
         val alive = cellEntity.isAlive
         val shortening = cellEntity.degreeOfShortening
-        for (slot in 0 until organEntity.cellArenaCapacity[organ]) {
+        run {
             val i = first + slot
             val cell = cellBase + slot
             if (world.isUnborn(i)) {
-                if (!alive[cell]) continue
+                if (!alive[cell]) return
                 // Мягкость — до рождения: связи новорождённой клетки возьмут её сразу.
                 world.setSoftness(i, softnessOf(cell))
                 world.setContactless(i, !particleEntity.isCollidable[particleBase + slot])
@@ -430,12 +442,12 @@ class WorldPhysics(
                     !world.isUnborn(first + ps) && !dead[first + ps]) world.activateFromParent(i, first + ps)
                 else world.activate(i)
                 onBorn(particleBase + slot, i)
-                continue
+                return
             }
             // Умершая в мире физики клетка заново не рождается (TODO к B2): у живой клетки игры
             // в таком слоте номера в мире физики нет, она стоит там, куда её поставила игра.
-            if (dead[i]) continue
-            if (!alive[cell]) { world.kill(i); refreshDragAround(i); continue }
+            if (dead[i]) return
+            if (!alive[cell]) { world.kill(i); refreshDragAround(i); return }
             // Клетка стала костью (мутация, деление с типом «кость»): кость включается с формой
             // на этот момент. У клетки не из кости раскладки и у уже включённой — ничего.
             if (cellEntity.cellType[cell].toInt() == boneType && !world.isBone(i)) world.setBone(i)
@@ -737,6 +749,8 @@ class WorldPhysics(
         }
         for (k in 0 until trackedSubstances.size) {
             val sub = trackedSubstances.getInt(k)
+            // Субстанция могла исчезнуть в этом же тике: из списка её уберёт removeGone на следующем.
+            if (!substancesEntity.isAlive[sub]) continue
             pe.physicsIndex[substancesEntity.particleIndex[sub]] = bridge.substanceParticle(freeOfSubstance[sub])
         }
         terrain.remap(world)

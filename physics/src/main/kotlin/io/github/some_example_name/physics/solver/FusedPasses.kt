@@ -145,16 +145,30 @@ internal fun BodyState.velocityFastRange(from: Int, to: Int, h: Double, acc: Wor
 
 /** Частицы контактов после отскока: то же, что velocityAfterRange на подшаге без среды. */
 internal fun BodyState.finishVelocityTouched() {
+    // Кости, которых касаются контакты, помечаются целиком: список бывает в тысячи частиц (замер 10.11: 8% тика).
+    val w = activeWorkers
+    if (w != null && w.count > 1 && velTouchN >= 1024) { parallelPhysics(w).finishTouched(); return }
+    finishVelocityTouchedRange(0, velTouchN, null)
+}
+
+internal fun BodyState.finishVelocityTouchedRange(from: Int, to: Int, acc: WorkerScratch?) {
     val clamp = !dbgNoClamp
     val maxV = MAX_SPEED_CELLS_PER_TICK * linkScale / DT
     val maxV2 = maxV * maxV
     val tm = if (cancelSpinOn) tickMomentum else null
-    for (k in 0 until velTouchN) {
+    for (k in from until to) {
         val i = velTouchList[k]
         if (inContact[i] && vy[i] > 0.0) vy[i] *= GROUND_RESTITUTION
         tm?.externalAt(i, px, py, vx, vy, invMass, inContact)
-        if (clamp) clampOne(i, maxV, maxV2)
+        if (clamp) { if (acc == null) clampOne(i, maxV, maxV2) else clampOneInto(i, maxV, maxV2, acc) }
     }
+}
+
+/** Слияние групп импульса по контактам подшага: по воркерам, если контактов много. */
+internal fun BodyState.noteContactsMomentum(ct: BoundaryContacts) {
+    val w = activeWorkers
+    if (w != null && w.count > 1 && ct.contactCount >= 1024) parallelPhysics(w).noteContacts(ct)
+    else tickMomentum.noteContacts(ct, invMass)
 }
 
 /** Доля скорости, что остаётся за тик у частицы со своим множителем сопротивления [d]. */

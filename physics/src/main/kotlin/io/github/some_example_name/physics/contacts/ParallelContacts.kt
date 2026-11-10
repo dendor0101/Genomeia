@@ -233,15 +233,15 @@ internal class ParallelBuild(private val ct: BoundaryContacts, workers: Int) : O
         w.run(parts, countJob)
         val total = prefix()
         ct.ensureContactCapacity(total)
-        // Контактов обычно в десятки раз меньше пар: запись идёт по найденным, а мелкий список
-        // дешевле записать здесь, чем будить воркеров ради него.
+        // Запись идёт по найденным парам. Последовательно — только совсем мелкий список: запись контакта
+        // читает пары покоя вразброс, и 3.4 тысячи контактов в одном потоке стоили 7% тика (замер 10.11).
         if (total < WRITE_PARALLEL_MIN) { for (k in 0 until parts) { val list = lists[k]; for (x in 0 until count[k]) ct.writeContact(list[x], at[k] + x, px, py, vx, vy) } }
         else w.run(parts, writeJob)
         return total
     }
 
     private companion object {
-        const val WRITE_PARALLEL_MIN = 4096
+        const val WRITE_PARALLEL_MIN = 256
     }
 }
 

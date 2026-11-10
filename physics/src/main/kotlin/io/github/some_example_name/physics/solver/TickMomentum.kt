@@ -126,6 +126,22 @@ class TickMomentum(internal val n: Int) {
         else unionParticles(i, j)
     }
 
+    /**
+     * Ключ пары организмов контакта (i, j) для слияния групп по воркерам: -1 — сливать нечего
+     * (неподвижная частица помечает группу, свой организм уже в группе), -2 — поштучный путь.
+     * Итог слияния от порядка не зависит: корень группы — наименьший номер частицы.
+     */
+    internal fun contactKey(i: Int, j: Int, invMass: DoubleArray): Long {
+        if (invMass[i] <= 0.0 || invMass[j] <= 0.0) { blocked[i] = true; blocked[j] = true; return -1L }
+        val oi = orgOf[i]; val oj = orgOf[j]
+        if (oi < 0 || oj < 0 || first[oi] < 0 || first[oj] < 0) return -2L
+        if (oi == oj) return -1L
+        return if (oi < oj) (oi.toLong() shl 32) or oj.toLong() else (oj.toLong() shl 32) or oi.toLong()
+    }
+
+    internal fun unionKey(key: Long) = unionOrg((key ushr 32).toInt(), key.toInt())
+    internal fun unionContact(i: Int, j: Int) = unionParticles(i, j)
+
     fun noteContacts(c: BoundaryContacts, invMass: DoubleArray) {
         for (k in 0 until c.contactCount) {
             val i = c.contactI(k); val j = c.contactJ(k)
