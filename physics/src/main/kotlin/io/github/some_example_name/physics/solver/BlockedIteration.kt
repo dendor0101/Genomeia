@@ -51,7 +51,12 @@ internal fun BodyState.initializeConstraintBlocks() {
     }
     // Список у порога наполнит первый же ранний проход пределов: сюда addLimit сложил весь контур.
     layout.nearCount.fill(0)
-    layout.links.finishBuild(distanceSweepOrder?.forward); layout.areas.finishBuild(); layout.buildDispatchOrder()
+    // Связи блока — в порядке номеров, а не по плану DistanceSweepOrder: план переставляет только операции над
+    // непересекающимися частицами, итог побитово тот же (PERFHASH совпал), а данные связей (conRest, conA, conB,
+    // conCellScale, conSoftness) читаются подряд. По плану номера в обходе скакали с шагом ~43: 65% обращений в
+    // новую кэш-линию против ~12% подряд. Замер 10.11, 34 червя, 3 пары по 600 тиков: проход блоков
+    // 16.66/16.20/16.41 → 15.54/15.46/15.44 мс. Независимые цепочки арифметики плана стоили меньше, чем промахи.
+    layout.links.finishBuild(); layout.areas.finishBuild(); layout.buildDispatchOrder()
     for (b in rigidBones.indices) {
         val ids = rigidBones[b]
         var block = layout.particleBlock[ids[0]]
