@@ -430,7 +430,7 @@ internal class ParallelPierce(private val ct: BoundaryContacts, workers: Int) {
     }
     private val boundChunks = 4 * workers
     private val boundsJob = PhysicsJob { k, _ ->
-        val verts = ct.contourVertexCount
+        val verts = ct.moverVertexCount
         ct.pierceBoundsRange((verts.toLong() * k / boundChunks).toInt(), (verts.toLong() * (k + 1) / boundChunks).toInt(), px, py, qx, qy)
     }
 

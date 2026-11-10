@@ -412,14 +412,28 @@ class BoundaryContacts(
     private var pierceReach = DoubleArray(0)
     private var pierceMove = DoubleArray(0)
 
-    internal val contourVertexCount: Int get() = vertCount
+    internal val moverVertexCount: Int get() = moverCount
     internal val boundsStale: Boolean get() = skipCandidatesNow
 
-    /** Границы отсева для вершин контура verts[from, to). Каждая вершина пишет только свои ячейки. */
+    /** Граница неподвижной вершины: половина самого длинного её ребра, её соседи не движутся. */
+    private fun staticReach(v: Int, px: DoubleArray, py: DoubleArray): Double {
+        var maxLen2 = 0.0
+        for (s in bndStart[v] until bndEnd[v]) {
+            val o = bndOther[s]
+            val ex = px[o] - px[v]; val ey = py[o] - py[v]
+            val len2 = ex * ex + ey * ey
+            if (len2 > maxLen2) maxLen2 = len2
+        }
+        return 0.5 * sqrt(maxLen2)
+    }
+
+    /** Границы отсева для подвижных вершин movers[from, to). Каждая вершина пишет только свои ячейки. */
     internal fun pierceBoundsRange(from: Int, to: Int, px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray) {
         val reach = pierceReach; val move = pierceMove
         for (a in from until to) {
-            val v = verts[a]
+            // Только подвижные вершины: у неподвижной (террейн, спящее тело) граница считается по месту (staticReach).
+            // Замер 10.11, мир с террейном 73k частиц: проход по всему контуру — 7.9 мс подготовки вместо 0.6.
+            val v = movers[a]
             val mx = px[v] - qx[v]; val my = py[v] - qy[v]
             val own2 = mx * mx + my * my
             var maxMove2 = own2
@@ -486,7 +500,7 @@ class BoundaryContacts(
         if (w != null && w.count > 1 && pairN >= PARALLEL_PAIRS_MIN && pierceWatch < 0) {
             (parallelPierce ?: ParallelPierce(this, w.count).also { parallelPierce = it }).run(w, px, py, qx, qy, org)
         } else {
-            if (!skipCandidatesNow) pierceBoundsRange(0, vertCount, px, py, qx, qy)
+            if (!skipCandidatesNow) pierceBoundsRange(0, moverCount, px, py, qx, qy)
             serialPierce.n = 0
             findPierceRange(0, pairN, px, py, qx, qy, org, serialPierce)
             addPierces(serialPierce)
@@ -549,9 +563,10 @@ class BoundaryContacts(
             // Сдвиг за этот подшаг — на месте: граница reach считается раз в два подшага.
             val mi = sqrt((px[i] - qx[i]) * (px[i] - qx[i]) + (py[i] - qy[i]) * (py[i] - qy[i]))
             val mj = sqrt((px[j] - qx[j]) * (px[j] - qx[j]) + (py[j] - qy[j]) * (py[j] - qy[j]))
-            val ri = reach[j] + mi
+            val inv = lastInvMass!!
+            val ri = (if (inv[j] > 0.0) reach[j] else staticReach(j, px, py)) + mi
             if (mi > minMove && d2 <= ri * ri) pierceAround(qx, qy, px, py, i, j, org, out)
-            val rj = reach[i] + mj
+            val rj = (if (inv[i] > 0.0) reach[i] else staticReach(i, px, py)) + mj
             if (mj > minMove && d2 <= rj * rj) pierceAround(qx, qy, px, py, j, i, org, out)
             if (i == pierceWatch || j == pierceWatch) pwPairs++
         }
