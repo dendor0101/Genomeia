@@ -161,6 +161,8 @@ internal fun BodyState.solveConstraintBlockFrom(h: Double, block: Int, layout: C
 }
 
 internal fun BodyState.solveBlockLinks(h: Double, block: Int, layout: ConstraintBlocks) {
+    // Мышц-кластеров нет (игра: мышца — множитель клетки): без чтения conMuscle. См. solveBlockLinksCells.
+    if (cellScalesOn && muscleScaleOf.isEmpty()) { solveBlockLinksCells(h, block, layout); return }
     val alpha = SOFT_COMPLIANCE / (h * h)
     val px = px; val py = py; val mass = invMass
     val a = conA; val b = conB; val rest = conRest; val muscles = conMuscle
@@ -182,6 +184,35 @@ internal fun BodyState.solveBlockLinks(h: Double, block: Int, layout: Constraint
             if (soft != null) solveDistanceConstraintSoft(c, c, px, py, mass, a, b, rest, muscles, dead, scales, cellScaleAll, soft, alpha)
             else if (cellScales == null) solveDistanceConstraint(c, c, px, py, mass, a, b, rest, muscles, dead, scales, alpha)
             else solveDistanceConstraintScaled(c, c, px, py, mass, a, b, rest, muscles, dead, scales, cellScales, alpha)
+        }
+    }
+}
+
+/**
+ * Связи блока без мышц-кластеров: muscleScaleOf пуст, значит у каждой связи conMuscle < 0, и ядро его
+ * не читает. Те же биты: множитель мышцы при m < 0 равен 1.0, а 1.0 · cs — ровно cs. На связь потоком
+ * читается на 4 байта меньше (было 29: conDead, conA, conB, conMuscle, conRest, conCellScale, conSoftness).
+ */
+private fun BodyState.solveBlockLinksCells(h: Double, block: Int, layout: ConstraintBlocks) {
+    val alpha = SOFT_COMPLIANCE / (h * h)
+    val px = px; val py = py; val mass = invMass
+    val a = conA; val b = conB; val rest = conRest; val dead = conDead; val cs = conCellScale
+    val soft = if (softnessOn) conSoftness else null
+    val list = layout.links
+    val from = list.start[block]; val to = from + list.count[block]
+    if (sweepBackwards) {
+        for (slot in to - 1 downTo from) {
+            val c = list.items[slot]
+            if (c < 0) continue
+            if (soft != null) solveDistanceConstraintSoftCells(c, px, py, mass, a, b, rest, dead, cs, soft, alpha)
+            else solveDistanceConstraintCells(c, px, py, mass, a, b, rest, dead, cs, alpha)
+        }
+    } else {
+        for (slot in from until to) {
+            val c = list.items[slot]
+            if (c < 0) continue
+            if (soft != null) solveDistanceConstraintSoftCells(c, px, py, mass, a, b, rest, dead, cs, soft, alpha)
+            else solveDistanceConstraintCells(c, px, py, mass, a, b, rest, dead, cs, alpha)
         }
     }
 }

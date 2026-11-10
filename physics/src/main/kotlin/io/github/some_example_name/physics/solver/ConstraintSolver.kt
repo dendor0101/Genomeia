@@ -138,6 +138,50 @@ internal fun solveDistanceConstraintSoft(
     px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
 }
 
+/** solveDistanceConstraintScaled без мышц-кластеров (conMuscle < 0): см. solveBlockLinksCells. */
+@Suppress("NOTHING_TO_INLINE")
+internal inline fun solveDistanceConstraintCells(
+    c: Int, px: DoubleArray, py: DoubleArray, invMass: DoubleArray, conA: IntArray, conB: IntArray,
+    conRest: DoubleArray, conDead: BooleanArray, cs: FloatArray, alpha: Double,
+) {
+    if (conDead[c]) return
+    val i = conA[c]; val j = conB[c]
+    val wi = invMass[i]; val wj = invMass[j]
+    val w = wi + wj
+    if (w == 0.0) return
+    var dx = px[i] - px[j]
+    var dy = py[i] - py[j]
+    val len = sqrt(dx * dx + dy * dy)
+    if (len < 1e-12) return
+    dx /= len; dy /= len
+    val rest = conRest[c] * cs[c]
+    val dL = -(len - rest) / (w + alpha)
+    px[i] += dx * dL * wi; py[i] += dy * dL * wi
+    px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
+}
+
+/** solveDistanceConstraintSoft без мышц-кластеров (conMuscle < 0): см. solveBlockLinksCells. */
+@Suppress("NOTHING_TO_INLINE")
+internal inline fun solveDistanceConstraintSoftCells(
+    c: Int, px: DoubleArray, py: DoubleArray, invMass: DoubleArray, conA: IntArray, conB: IntArray,
+    conRest: DoubleArray, conDead: BooleanArray, cs: FloatArray, soft: FloatArray, alpha: Double,
+) {
+    if (conDead[c]) return
+    val i = conA[c]; val j = conB[c]
+    val wi = invMass[i]; val wj = invMass[j]
+    val w = wi + wj
+    if (w == 0.0) return
+    var dx = px[i] - px[j]
+    var dy = py[i] - py[j]
+    val len = sqrt(dx * dx + dy * dy)
+    if (len < 1e-12) return
+    dx /= len; dy /= len
+    val rest = conRest[c] * cs[c]
+    val dL = -(len - rest) / (w + alpha * soft[c])
+    px[i] += dx * dL * wi; py[i] += dy * dL * wi
+    px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
+}
+
 fun BodyState.solveLinkMaxLength() {
     if (tearingOn) SealStats.tearingOnTicks++ else SealStats.tearingOffTicks++
     val w = activeWorkers
