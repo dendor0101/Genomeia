@@ -394,21 +394,51 @@ class BoundaryContacts(
         // пробоя по ним занимал треть тика (профиль 04.11).
         val g = group
         if (g != null && g[j] != 0) return
+        // Только рёбра самой вершины j: пересечённое ребро находится через пару с его ближним концом,
+        // она проходит отсев findPierceRange. Второй шаг по контуру здесь больше не нужен.
         for (s2 in bndStart[j] until bndEnd[j]) {
             val o = bndOther[s2]
             if (nc != null && nc[o]) continue
             if (o != i && org[o] == org[j] && inward(qx, qy, px, py, i, j, o, bndOpp[s2])) {
                 out.add(j, o); if (i == pierceWatch) pwHits++
             }
-            // Второй шаг: рёбра соседа по контуру.
-            if (org[o] != org[j]) continue
-            for (s3 in bndStart[o] until bndEnd[o]) {
-                val o2 = bndOther[s3]
-                if (o2 == i || o2 == j || org[o2] != org[o] || (nc != null && nc[o2])) continue
-                if (inward(qx, qy, px, py, i, o, o2, bndOpp[s3])) {
-                    out.add(o, o2); if (i == pierceWatch) pwHits++
-                }
+        }
+    }
+
+    /**
+     * ОТСЕВ ПОИСКА ПРОБОЯ ПО РАССТОЯНИЮ. Чтобы пересечь ребро, центр клетки в конце подшага должен
+     * оказаться у самого ребра: от его ближнего конца не дальше половины длины плюс сдвиг за подшаг.
+     * [pierceReach] — эта граница для рёбер вокруг вершины контура, [pierceMove] — сдвиг самой вершины.
+     * Замер 10.11, 34 червя, 16 подшагов: на настоящих пробоях центр клетки ближе 1.5 контактного
+     * радиуса к концу ребра (725 из 728 случаев), а таких пар 1–2.5%, поэтому поиск стоил 27% всей
+     * работы впустую. Длина ребра — настоящая, чтобы не терять редкие случаи на длинных рёбрах.
+     * Цена: проход по вершинам контура за подшаг и 16 байт на частицу мира.
+     */
+    private var pierceReach = DoubleArray(0)
+    private var pierceMove = DoubleArray(0)
+
+    internal val contourVertexCount: Int get() = vertCount
+
+    /** Границы отсева для вершин контура verts[from, to). Каждая вершина пишет только свои ячейки. */
+    internal fun pierceBoundsRange(from: Int, to: Int, px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray) {
+        val reach = pierceReach; val move = pierceMove
+        for (a in from until to) {
+            val v = verts[a]
+            val mx = px[v] - qx[v]; val my = py[v] - qy[v]
+            val own2 = mx * mx + my * my
+            var maxMove2 = own2
+            var maxLen2 = 0.0
+            for (s in bndStart[v] until bndEnd[v]) {
+                val o = bndOther[s]
+                val ex = px[o] - px[v]; val ey = py[o] - py[v]
+                val len2 = ex * ex + ey * ey
+                if (len2 > maxLen2) maxLen2 = len2
+                val ox = px[o] - qx[o]; val oy = py[o] - qy[o]
+                val move2 = ox * ox + oy * oy
+                if (move2 > maxMove2) maxMove2 = move2
             }
+            move[v] = sqrt(own2)
+            reach[v] = 0.5 * sqrt(maxLen2) + 1.5 * sqrt(maxMove2)
         }
     }
 
@@ -454,10 +484,12 @@ class BoundaryContacts(
         // Второй: клетка должна ЗАМЕТНО сдвинуться. Пересечение на нулевом отрезке —
         // всегда про округление, а не про движение.
         val w = workers
+        if (pierceReach.size < n) { pierceReach = DoubleArray(n); pierceMove = DoubleArray(n) }
         // Разбор по одной клетке (CT_WATCH) пишет общие счётчики — только в одном потоке.
         if (w != null && w.count > 1 && pairN >= PARALLEL_PAIRS_MIN && pierceWatch < 0) {
             (parallelPierce ?: ParallelPierce(this, w.count).also { parallelPierce = it }).run(w, px, py, qx, qy, org)
         } else {
+            pierceBoundsRange(0, vertCount, px, py, qx, qy)
             serialPierce.n = 0
             findPierceRange(0, pairN, px, py, qx, qy, org, serialPierce)
             addPierces(serialPierce)
@@ -508,25 +540,20 @@ class BoundaryContacts(
     internal fun findPierceRange(from: Int, to: Int, px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray,
                                  org: IntArray, out: PierceBuffer) {
         val minMove = 1e-3 * meanLink
-        val minMove2 = minMove * minMove
         val grp = group
+        val reach = pierceReach; val move = pierceMove
         for (p in from until to) {
             val i = pairA[p]; val j = pairB[p]
             if (org[i] == org[j]) continue
             // Пара с террейном (группа касаний) пробоем не проверяется ни в какую сторону: см. pierceAround.
             if (grp != null && (grp[i] != 0 || grp[j] != 0)) continue
-            val mi = (px[i] - qx[i]) * (px[i] - qx[i]) + (py[i] - qy[i]) * (py[i] - qy[i])
-            val mj = (px[j] - qx[j]) * (px[j] - qx[j]) + (py[j] - qy[j]) * (py[j] - qy[j])
-            // ДВА ШАГА ПО КОНТУРУ, А НЕ ОДИН.
-            //
-            // Раньше клетка проверялась только против рёбер СВОЕГО партнёра по паре, и
-            // покрытие выходило 6%: 78 пробоев на 1004 входа в ткань. Пересечь она может
-            // ребро, оба конца которого ей не партнёры — достаточно оказаться ближе к
-            // третьей клетке. Второй шаг по соседям контура это закрывает, а стоит он
-            // по-прежнему ничего: у клетки контура не больше двух граничных рёбер, то
-            // есть добавляется до четырёх проверок на пару.
-            if (mi > minMove2) pierceAround(qx, qy, px, py, i, j, org, out)
-            if (mj > minMove2) pierceAround(qx, qy, px, py, j, i, org, out)
+            val dx = px[i] - px[j]; val dy = py[i] - py[j]
+            val d2 = dx * dx + dy * dy
+            val mi = move[i]; val mj = move[j]
+            val ri = reach[j] + mi
+            if (mi > minMove && d2 <= ri * ri) pierceAround(qx, qy, px, py, i, j, org, out)
+            val rj = reach[i] + mj
+            if (mj > minMove && d2 <= rj * rj) pierceAround(qx, qy, px, py, j, i, org, out)
             if (i == pierceWatch || j == pierceWatch) pwPairs++
         }
     }

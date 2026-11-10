@@ -425,9 +425,15 @@ internal class ParallelPierce(private val ct: BoundaryContacts, workers: Int) {
         out.n = 0
         ct.findPierceRange(from[k], from[k + 1], px, py, qx, qy, org, out)
     }
+    private val boundChunks = 4 * workers
+    private val boundsJob = PhysicsJob { k, _ ->
+        val verts = ct.contourVertexCount
+        ct.pierceBoundsRange((verts.toLong() * k / boundChunks).toInt(), (verts.toLong() * (k + 1) / boundChunks).toInt(), px, py, qx, qy)
+    }
 
     fun run(w: PhysicsWorkers, px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray, org: IntArray) {
         this.px = px; this.py = py; this.qx = qx; this.qy = qy; this.org = org
+        w.run(boundChunks, boundsJob)
         val pairs = ct.candidatePairCount
         val k = minOf(buffers.size, maxOf(1, pairs / 64))
         for (c in 0..k) from[c] = (pairs.toLong() * c / k).toInt()
