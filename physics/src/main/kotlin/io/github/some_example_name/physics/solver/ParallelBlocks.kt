@@ -225,6 +225,30 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         st.tickMomentum.inertiaRange(spanFrom[k], spanTo[k], st.px, st.py, st.invMass, groupSums[k])
     }
 
+    private val comJob = PhysicsJob { k, _ ->
+        val st = state; val sums = groupSums[k]
+        sums.clear()
+        val inv = st.invMass; val org = st.organismOf; val vx = st.vx; val vy = st.vy
+        for (i in spanFrom[k] until spanTo[k]) {
+            if (inv[i] <= 0.0) continue
+            val m = 1.0 / inv[i]
+            val at = sums.at(org[i]); val v = sums.data
+            v[at] += m * vx[i]; v[at + 1] += m * vy[i]
+        }
+    }
+
+    /** Импульс организмов для запаса среды (applyNormalDrag): кусками, сложение — в порядке кусков. */
+    fun comSums() {
+        val st = state
+        val chunks = spanChunks()
+        if (groupSums.size < chunks) groupSums = Array(chunks) { TickMomentum.GroupSums() }
+        st.activeWorkers!!.run(chunks, comJob)
+        for (k in 0 until chunks) {
+            val sums = groupSums[k]; val v = sums.data
+            for (x in 0 until sums.count) { val o = sums.keyAt(x); val at = sums.offsetAt(x); st.comAccX[o] += v[at]; st.comAccY[o] += v[at + 1] }
+        }
+    }
+
     fun momentumCancel() {
         val st = state
         val tm = st.tickMomentum
@@ -257,6 +281,8 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
     fun normalDrag(h: Double) {
         val st = state
         dragH = h
+        val layout = st.constraintBlocks
+        if (layout != null) { edgeH = h; runEdges(layout, 1); return }
         val db = dragBuckets
         if (!db.valid(st, 0L)) {
             db.begin()
@@ -321,7 +347,73 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         state.activeWorkers!!.run(refreshParts, refreshJob)
     }
 
+    // --- рёбра контура и общий проход пределов по блокам ---
+    // Ребро и связь контура лежат в одном блоке или в его наборе швов (blockOfSlot, blockOf): блоки
+    // считаются вместе, швы — после. Раскладка готова и разрывами не пересобирается: раньше раскладка по
+    // организмам пересобиралась в одном потоке после каждого разрыва (замер 10.11, 34 червя).
+    private var edgeLayout: ConstraintBlocks? = null
+    private var edgeFrom = 0
+    private var edgeMode = 0
+    private var edgeH = 0.0
+    private val edgeJob = PhysicsJob { k, _ ->
+        val layout = edgeLayout!!
+        val bucket = edgeFrom + k
+        if (bucket >= layout.seam || layout.awake[bucket] != 0) {
+            val list = layout.edges
+            val items = list.dense(bucket); val n = list.denseCount[bucket]
+            val st = state
+            if (edgeMode == 0) {
+                val a = st.boundA; val b = st.boundB; val opp = st.boundOpp; val ori = st.localBoundary.orientation
+                for (x in 0 until n) orientEdge(items[x], a, b, opp, ori, st.px, st.py, st.invMass)
+            } else for (x in 0 until n) st.normalDragEdge(items[x], edgeH)
+        }
+    }
+
+    private fun runEdges(layout: ConstraintBlocks, mode: Int) {
+        val w = state.activeWorkers!!
+        edgeLayout = layout; edgeMode = mode
+        edgeFrom = 0; w.run(layout.seam, edgeJob)
+        edgeFrom = layout.seam; w.run(layout.buckets - layout.seam, edgeJob)
+    }
+
+    private var limitStopItem = IntArray(16)
+    private var limitFrom = 0
+    private var limitLayout: ConstraintBlocks? = null
+    private val blockLimitsJob = PhysicsJob { k, worker ->
+        val layout = limitLayout!!
+        val bucket = limitFrom + k
+        if (bucket >= layout.seam || layout.awake[bucket] != 0) {
+            val items = layout.limits.dense(bucket); val n = layout.limits.denseCount[bucket]
+            val s = scratch[worker]
+            for (x in 0 until n) if (state.limitItemParallel(items[x], s)) { limitStopItem[bucket] = items[x]; break }
+        }
+    }
+
+    /** Общий проход пределов по блокам, затем по швам; остановленные перед событием — дорабатываются здесь. */
+    private fun globalLimitsByBlocks(layout: ConstraintBlocks) {
+        val w = state.activeWorkers!!
+        if (limitStopItem.size < layout.buckets) limitStopItem = IntArray(layout.buckets)
+        java.util.Arrays.fill(limitStopItem, 0, layout.buckets, -1)
+        limitLayout = layout
+        limitFrom = 0; w.run(layout.seam, blockLimitsJob); mergeCounters(); reworkLimits(layout, 0, layout.seam)
+        limitFrom = layout.seam; w.run(layout.buckets - layout.seam, blockLimitsJob); mergeCounters(); reworkLimits(layout, layout.seam, layout.buckets)
+    }
+
+    private fun reworkLimits(layout: ConstraintBlocks, from: Int, to: Int) {
+        for (bucket in from until to) {
+            val stop = limitStopItem[bucket]
+            if (stop < 0) continue
+            // Список блока мог поменяться от событий раньше по порядку: продолжаем с той же связи.
+            val items = layout.limits.dense(bucket).copyOf(layout.limits.denseCount[bucket])
+            var x = items.indexOf(stop)
+            if (x < 0) x = 0
+            while (x < items.size) { state.solveLimitItemSerial(items[x]); x++ }
+        }
+    }
+
     fun solveGlobalLimits() {
+        val blocksLayout = state.constraintBlocks
+        if (blocksLayout != null) { globalLimitsByBlocks(blocksLayout); return }
         val limits = state.boundaryLinkLimits
         limits.beginPass()
         val count = limits.count
@@ -374,6 +466,8 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
 
     fun orientation() {
         val st = state
+        val layout = st.constraintBlocks
+        if (layout != null) { runEdges(layout, 0); return }
         val ob = orientBuckets
         if (!ob.valid(st, 0L)) {
             ob.begin()
@@ -552,6 +646,41 @@ internal class WorkerScratch(state: BodyState) {
  * Мельче — больше кусков на воркер и ровнее нагрузка, но дороже раздача.
  */
 internal const val PASS_CHUNK = 4096
+
+/** Рёбра контура по блокам, затем швы, в одном потоке — тот же порядок, что у ParallelPhysics.runEdges. */
+internal fun BodyState.edgesByBlocksSerial(layout: ConstraintBlocks, mode: Int, h: Double) {
+    for (bucket in 0 until layout.buckets) {
+        if (bucket < layout.seam && layout.awake[bucket] == 0) continue
+        val items = layout.edges.dense(bucket); val n = layout.edges.denseCount[bucket]
+        if (mode == 0) {
+            val ori = localBoundary.orientation
+            for (x in 0 until n) orientEdge(items[x], boundA, boundB, boundOpp, ori, px, py, invMass)
+        } else for (x in 0 until n) normalDragEdge(items[x], h)
+    }
+}
+
+/** Импульс организмов для запаса среды кусками в одном потоке — те же куски, что у ParallelPhysics.comSums. */
+internal fun BodyState.comSumsSerial() {
+    val sums = TickMomentum.GroupSums()
+    val sl = sleep
+    for (q in 0 until sl.spanCount) {
+        var from = sl.spanStart[q]
+        val end = sl.spanEnd[q]
+        while (from < end) {
+            val to = minOf(end, from + PASS_CHUNK)
+            sums.clear()
+            for (i in from until to) {
+                if (invMass[i] <= 0.0) continue
+                val m = 1.0 / invMass[i]
+                val at = sums.at(organismOf[i]); val v = sums.data
+                v[at] += m * vx[i]; v[at + 1] += m * vy[i]
+            }
+            val v = sums.data
+            for (x in 0 until sums.count) { val o = sums.keyAt(x); val at = sums.offsetAt(x); comAccX[o] += v[at]; comAccY[o] += v[at + 1] }
+            from = to
+        }
+    }
+}
 
 internal fun BodyState.parallelPhysics(w: PhysicsWorkers): ParallelPhysics {
     val p = parallelPhysicsState

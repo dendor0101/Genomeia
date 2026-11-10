@@ -146,6 +146,16 @@ fun BodyState.solveLinkMaxLength() {
         parallelPhysics(w).solveGlobalLimits()
         return
     }
+    // Без воркеров — тот же порядок, что у них: по блокам, затем швы (ParallelPhysics.globalLimitsByBlocks).
+    val blocksLayout = constraintBlocks
+    if (blocksLayout != null && organismCount > 1 && !dbgSealOn && !(DEBUG_CHECKS && dbgLinkExtremaOn)) {
+        for (bucket in 0 until blocksLayout.buckets) {
+            if (bucket < blocksLayout.seam && blocksLayout.awake[bucket] == 0) continue
+            val items = blocksLayout.limits.dense(bucket).copyOf(blocksLayout.limits.denseCount[bucket])
+            for (c in items) solveLimitItemSerial(c)
+        }
+        return
+    }
     // Всё в локальные: при MAXLEN_EARLY стадия идёт 144 раза за тик.
     val px = px; val py = py; val invMass = invMass
     val conA = conA; val conB = conB; val conRest = conRest; val conMuscle = conMuscle

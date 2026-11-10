@@ -29,6 +29,9 @@ fun solveBoundaryOrientation(
 internal fun BodyState.solveBoundaryOrientationStage() {
     val w = activeWorkers
     if (w != null && organismCount > 1) { parallelPhysics(w).orientation(); return }
+    // Без воркеров — тот же порядок, что у них: по блокам, затем швы.
+    val layout = constraintBlocks
+    if (layout != null && organismCount > 1) { edgesByBlocksSerial(layout, 0, 0.0); return }
     if (sleep.asleepCount == 0) solveBoundaryOrientation(boundCount, boundA, boundB, boundOpp,
         localBoundary.orientation, px, py, invMass)
     else solveBoundaryOrientationAwake()

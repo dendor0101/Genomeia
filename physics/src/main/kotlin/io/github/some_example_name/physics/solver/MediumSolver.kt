@@ -141,7 +141,11 @@ fun BodyState.applyNormalDrag(h: Double) {
         // Спящие: скорость ноль, масса ноль, запас среды ноль — проходы по ним пусты.
         prepareAwakeSpans()
         val s = sleep
-        for (q in 0 until s.spanCount) for (i in s.spanStart[q] until s.spanEnd[q]) {
+        // С воркерами (и с одним) — суммы кусками, как у учёта импульса: порядок сложения от их числа не зависит.
+        val cw = activeWorkers
+        if (cw != null) parallelPhysics(cw).comSums()
+        else if (constraintBlocks != null) comSumsSerial()
+        else for (q in 0 until s.spanCount) for (i in s.spanStart[q] until s.spanEnd[q]) {
             if (invMass[i] <= 0.0) continue
             val o = organismOf[i]
             val m = 1.0 / invMass[i]
@@ -184,7 +188,9 @@ fun BodyState.applyNormalDrag(h: Double) {
 
     // Рёбра контура — по организмам, порядок внутри организма прежний: см. ParallelPhysics.normalDrag.
     val w = activeWorkers
-    if (w != null && w.count > 1) { parallelPhysics(w).normalDrag(h); return }
+    if (w != null) { parallelPhysics(w).normalDrag(h); return }
+    val layout = constraintBlocks
+    if (layout != null) { edgesByBlocksSerial(layout, 1, h); return }
     for (e in 0 until boundCount) normalDragEdge(e, h)
 }
 
