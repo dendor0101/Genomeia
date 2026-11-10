@@ -444,3 +444,94 @@ internal class ParallelPierce(private val ct: BoundaryContacts, workers: Int) {
         for (c in 0 until k) ct.addPierces(buffers[c])
     }
 }
+
+/**
+ * ПОДГОТОВКА КОНТАКТОВ ОДНОЙ ЗАДАЧЕЙ ПО КУСКАМ ПАР — отсев CCD, поиск пробоя и счёт касаний вместе
+ * (BoundaryContacts.prepareFused). Список пар у трёх проходов один (nearA — это pairA): кусок читает свои
+ * пары и их частицы один раз и копит три итога у себя — пары для CCD, пробитые рёбра и перекрытые пары, все
+ * в порядке пар. Склейка кусков по порядку даёт те же списки, что ParallelCcd, ParallelPierce и
+ * ParallelBuild по отдельности, при любом числе кусков. Было три барьера на подшаг, стал один, и ещё один
+ * на запись контактов.
+ */
+internal class ParallelPrepare(private val ct: BoundaryContacts, workers: Int) {
+    private val maxChunks = 16 * workers
+    private val from = IntArray(maxChunks + 1)
+    var chunks = 0; private set
+    private val ccdLists = Array(maxChunks) { IntArray(64) }
+    private val ccdN = IntArray(maxChunks)
+    private val pierceBufs = Array(maxChunks) { PierceBuffer() }
+    private val touchLists = Array(maxChunks) { IntArray(64) }
+    private val touchN = IntArray(maxChunks)
+    private val at = IntArray(maxChunks + 1)
+    private var px = DoubleArray(0); private var py = DoubleArray(0)
+    private var qx = DoubleArray(0); private var qy = DoubleArray(0)
+    private var vx = DoubleArray(0); private var vy = DoubleArray(0)
+    private var invMass = DoubleArray(0)
+    private var org = IntArray(0)
+    private val boundChunks = 4 * workers
+    private val boundsJob = PhysicsJob { k, _ ->
+        val verts = ct.moverVertexCount
+        ct.pierceBoundsRange((verts.toLong() * k / boundChunks).toInt(), (verts.toLong() * (k + 1) / boundChunks).toInt(), px, py, qx, qy)
+    }
+    private val scanJob = PhysicsJob { k, _ -> scanChunk(k) }
+    private val writeJob = PhysicsJob { k, _ ->
+        val list = touchLists[k]
+        for (x in 0 until touchN[k]) ct.writeContact(list[x], at[k] + x, px, py, vx, vy)
+    }
+
+    private fun scanChunk(k: Int) {
+        val a = from[k]; val b = from[k + 1]
+        var list = ccdLists[k]
+        var c = 0
+        for (p in a until b) {
+            if (ct.ccdSkips(p, px, py, qx, qy, invMass)) continue
+            if (c == list.size) { list = list.copyOf(c * 2); ccdLists[k] = list }
+            list[c++] = p
+        }
+        ccdN[k] = c
+        val out = pierceBufs[k]
+        out.n = 0
+        ct.findPierceRange(a, b, px, py, qx, qy, org, out)
+        var touch = touchLists[k]
+        var t = 0
+        for (p in a until b) if (ct.contactTouches(p, px, py)) {
+            if (t == touch.size) { touch = touch.copyOf(t * 2); touchLists[k] = touch }
+            touch[t++] = p
+        }
+        touchN[k] = t
+    }
+
+    /** Границы отсева пробоя (раз в два подшага, как у ParallelPierce), затем три прохода одной задачей. */
+    fun scan(w: PhysicsWorkers, px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray,
+             vx: DoubleArray, vy: DoubleArray, invMass: DoubleArray, org: IntArray) {
+        this.px = px; this.py = py; this.qx = qx; this.qy = qy; this.vx = vx; this.vy = vy
+        this.invMass = invMass; this.org = org
+        if (!ct.boundsStale) w.run(boundChunks, boundsJob)
+        val pairs = ct.candidatePairCount
+        val k = minOf(maxChunks, maxOf(1, pairs / 64))
+        for (c in 0..k) from[c] = (pairs.toLong() * c / k).toInt()
+        chunks = k
+        w.run(k, scanJob)
+    }
+
+    fun ccdFound(k: Int): IntArray = ccdLists[k]
+    fun ccdCount(k: Int): Int = ccdN[k]
+    fun pierces(k: Int): PierceBuffer = pierceBufs[k]
+
+    /** Контакты из перекрытых пар со смещения своего куска — те же номера, что подряд. Возвращает их число. */
+    fun writeContacts(w: PhysicsWorkers): Int {
+        at[0] = 0
+        for (k in 0 until chunks) at[k + 1] = at[k] + touchN[k]
+        val total = at[chunks]
+        ct.ensureContactCapacity(total)
+        if (total < WRITE_PARALLEL_MIN) {
+            for (k in 0 until chunks) { val list = touchLists[k]; for (x in 0 until touchN[k]) ct.writeContact(list[x], at[k] + x, px, py, vx, vy) }
+        } else w.run(chunks, writeJob)
+        return total
+    }
+
+    private companion object {
+        /** Как у ParallelBuild: мельче — запись в одном потоке дешевле барьера. */
+        const val WRITE_PARALLEL_MIN = 256
+    }
+}

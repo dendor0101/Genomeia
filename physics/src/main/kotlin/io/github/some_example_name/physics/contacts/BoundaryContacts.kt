@@ -2058,11 +2058,53 @@ class BoundaryContacts(
                 }
             }
         }
+        if (fusedPrepareAllowed(continuing)) { prepareFused(px, py, qx, qy, vx, vy, invMass); return }
         ccdClamp(px, py, qx, qy, invMass)
         // Обновление контактов не должно повторять разрушение контура. Для
         // дополнительных проверок пробоя у стенда есть отдельный RB_PIERCE_ITER.
         if (optionPierceTear && !continuing) findPierce(px, py, qx, qy)
         buildContacts(px, py, vx, vy, continuing)
+    }
+
+    private var parallelPrepare: ParallelPrepare? = null
+
+    /** Условия всех трёх параллельных проходов сразу (ccdClamp, findPierce, buildContacts), и список пар у них один. */
+    private fun fusedPrepareAllowed(continuing: Boolean): Boolean {
+        val w = workers
+        return !continuing && optionPierceTear && w != null && w.count > 1 && nearA === pairA && nearN == pairN &&
+            pairN >= PARALLEL_PAIRS_MIN && pierceWatch < 0 && bndStart.size == n + 1 && organismOf != null
+    }
+
+    /**
+     * CCD, ПРОБОЙ И СБОРКА КОНТАКТОВ ОДНОЙ ЗАДАЧЕЙ ПО КУСКАМ ПАР (ParallelPrepare) — побитово то же, что ccdClamp,
+     * findPierce и buildContacts подряд. Пока CCD не нашёл удара, позиции не меняются, и пробой с касаниями,
+     * посчитанные до тела CCD, — ровно те, что после него; тело CCD (ccdPair) идёт здесь по найденным парам в
+     * порядке пар, как в ccdClamp. Удар — 3 подшага из 3200 (замер 10.11, 34 червя): тогда CCD доделывается, а
+     * пробой и сборка считаются заново прежним путём.
+     */
+    private fun prepareFused(px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray,
+                             vx: DoubleArray, vy: DoubleArray, invMass: DoubleArray) {
+        lastToiClamps = 0
+        startDeep.clear()
+        if (pierceReach.size < n) { pierceReach = DoubleArray(n); pierceMove = DoubleArray(n) }
+        val w = workers!!
+        val pp = parallelPrepare ?: ParallelPrepare(this, w.count).also { parallelPrepare = it }
+        pp.scan(w, px, py, qx, qy, vx, vy, invMass, organismOf!!)
+        var hit = false
+        for (k in 0 until pp.chunks) {
+            val list = pp.ccdFound(k)
+            for (x in 0 until pp.ccdCount(k)) hit = ccdPair(list[x], hit, px, py, qx, qy, invMass)
+        }
+        if (hit) {
+            finishCcd(px, py, qx, qy, invMass)
+            findPierce(px, py, qx, qy)
+            buildContacts(px, py, vx, vy, false)
+            return
+        }
+        for (k in 0 until pp.chunks) addPierces(pp.pierces(k))
+        pwPairs = 0; pwEdges = 0; pwEndedIn = 0; pwWasIn = 0; pwOffEnd = 0; pwHits = 0
+        cN = pp.writeContacts(w)
+        lastContacts = cN
     }
 
     /**
