@@ -31,9 +31,9 @@ internal class PairKeyBuffer {
 }
 
 /**
- * ОТБОР УЦЕЛЕВШИХ ПАР, СЛИЯНИЕ И БЛИЖНИЙ СПИСОК ПО ВОРКЕРАМ — побитово тот же список.
+ * ОТБОР УЦЕЛЕВШИХ ПАР И СЛИЯНИЕ ПО ВОРКЕРАМ — побитово тот же список.
  *
- * Отбор и ближний список — фильтр с сохранением порядка: каждый кусок сначала
+ * Отбор — фильтр с сохранением порядка: каждый кусок сначала
  * считает, сколько оставит, потом пишет со своего смещения (префиксная сумма).
  *
  * Слияние: три упорядоченных источника (уцелевшие, новые, нижние) дают один
@@ -69,13 +69,10 @@ internal class ParallelPairs(private val ct: BoundaryContacts, private val worke
     private var runs = 0
     private val splitters = LongArray(parts + 1)
     private val outFrom = IntArray(parts + 1)
-    private val nearCount = IntArray(parts)
-    private val nearAt = IntArray(parts + 1)
     private val lowBuf = Array(parts) { LongArray(256) }
     private var kept = 0
     private var fresh = 0
     private val mergeJob = PhysicsJob { p, _ -> mergePart(p) }
-    private val nearJob = PhysicsJob { p, _ -> ct.writeNear(outFrom[p], outFrom[p + 1], nearAt[p]) }
 
     /**
      * [lowRunEnd] — концы отсортированных прогонов нижних ключей ([lowRuns] штук);
@@ -105,12 +102,8 @@ internal class ParallelPairs(private val ct: BoundaryContacts, private val worke
         ct.ensurePairCapacity(total)
         w.run(parts, mergeJob)
         outFrom[parts] = total
-        ct.finishParallelPairs(total, 0)
+        ct.finishParallelPairs(total)
         ct.ensureNearCapacity()
-        nearAt[0] = 0
-        for (p in 0 until parts) nearAt[p + 1] = nearAt[p] + nearCount[p]
-        w.run(parts, nearJob)
-        ct.finishParallelPairs(total, nearAt[parts])
         return true
     }
 
@@ -140,7 +133,6 @@ internal class ParallelPairs(private val ct: BoundaryContacts, private val worke
         if (runs > 1) java.util.Arrays.sort(buf, 0, lowN)
         outFrom[p] = out
         var l = 0
-        var near = 0
         val end = out + (iEnd - i) + (jEnd - j) + lowN
         while (out < end) {
             // Наименьший из трёх голов; ключи различны.
@@ -150,9 +142,7 @@ internal class ParallelPairs(private val ct: BoundaryContacts, private val worke
             if (l < lowN && buf[l] < best) { best = buf[l]; from = 3 }
             when (from) { 1 -> i++; 2 -> j++; else -> l++ }
             ct.setPair(out++, best)
-            if ((best and 1L) != 0L) near++
         }
-        nearCount[p] = near
     }
 
     private fun lowerBound(a: LongArray, from: Int, to: Int, key: Long): Int {

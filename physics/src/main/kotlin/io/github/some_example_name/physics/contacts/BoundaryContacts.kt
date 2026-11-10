@@ -126,18 +126,13 @@ class BoundaryContacts(
     // --- пары-кандидаты ---
     private var pairA = IntArray(4096)
     private var pairB = IntArray(4096)
-    /** Пара может коснуться, пока вершины у привязок (reach). Ставится при поиске пары. */
-    private var pairNear = BooleanArray(4096)
     private var pairN = 0
 
     /**
-     * БЛИЖНИЕ КАНДИДАТЫ — подмножество pairA/pairB в том же каноническом порядке: пары,
-     * которые могут коснуться (reach). По ним идут CCD и сборка контактов: дальняя пара
-     * ни отката, ни контакта, ни гибели от перекрытия дать не может, а на 100k при гребке
-     * таких большинство. Поиск пробоя идёт по ПОЛНОМУ списку: он проверяет рёбра вокруг
-     * партнёра на два шага по контуру, и на порванном контуре с длинными рёбрами
-     * пересечение находится через дальнего партнёра (запись 23.10, тик 342) — урезать
-     * его значило бы ослабить защиту от проникновения.
+     * БЛИЖНИЕ КАНДИДАТЫ — это и есть весь список пар: nearA/nearB указывают на pairA/pairB. В список
+     * попадают только пары, которые могут коснуться (reach): дальние не дают ни отката, ни контакта,
+     * ни гибели от перекрытия, а поиску пробоя после отсева по расстоянию тоже не нужны. Замер 10.11,
+     * 34 червя: 119 тысяч пар на 3.4 тысячи контактов, и каждый подшаг все они проходили слияние и отбор.
      */
     private var nearA = IntArray(4096)
     private var nearB = IntArray(4096)
@@ -1558,7 +1553,6 @@ class BoundaryContacts(
         if (pp != null && total >= PARALLEL_PAIRS_MIN && pp.merge(w!!, kept, keys.newN, keys.lowN, runEnds, lowRuns)) return
         mergePairs(kept, keys.newN, keys.lowN)
         ensureNearCapacity()
-        nearN = writeNear(0, pairN, 0)
     }
 
     // --- куски подготовки для ParallelPairs: те же операции на отрезке ---
@@ -1569,7 +1563,7 @@ class BoundaryContacts(
         for (p in from until to) {
             val i = pairA[p]; val j = pairB[p]
             if (movedMark[i] == movedStamp || movedMark[j] == movedStamp) continue
-            keptKeys[o++] = packKey(i, j, pairNear[p])
+            keptKeys[o++] = packKey(i, j, true)
         }
         return o
     }
@@ -1580,25 +1574,14 @@ class BoundaryContacts(
         return c
     }
 
-    internal fun ensureNearCapacity() {
-        if (nearA.size < pairN) { nearA = IntArray(pairN * 2); nearB = IntArray(pairN * 2); nearRestSlot = IntArray(pairN * 2) }
-    }
-
     /**
-     * Ближние пары из pairA/B[from, to) в nearA/B начиная с [at]; возвращает конец.
-     * Слот пары покоя ищется только для реально сблизившихся пар (-2 — ещё не искали):
-     * предварительный поиск для всех кандидатов тратил больше, чем экономил.
+     * Список ближних — сам список пар. Слот пары покоя ищется только для реально сблизившихся
+     * пар (-2 — ещё не искали): предварительный поиск для всех кандидатов тратил больше, чем экономил.
      */
-    internal fun writeNear(from: Int, to: Int, at: Int): Int {
-        var o = at
-        for (p in from until to) if (pairNear[p]) { nearA[o] = pairA[p]; nearB[o] = pairB[p]; nearRestSlot[o] = -2; o++ }
-        return o
-    }
-
-    internal fun countNear(from: Int, to: Int): Int {
-        var c = 0
-        for (p in from until to) if (pairNear[p]) c++
-        return c
+    internal fun ensureNearCapacity() {
+        nearA = pairA; nearB = pairB; nearN = pairN
+        if (nearRestSlot.size < pairN) nearRestSlot = IntArray(pairN * 2)
+        java.util.Arrays.fill(nearRestSlot, 0, pairN, -2)
     }
 
     internal val keptKeyArray: LongArray get() = keptKeys
@@ -1609,7 +1592,7 @@ class BoundaryContacts(
         if (pairA.size < total) {
             var cap = pairA.size * 2
             while (cap < total) cap *= 2
-            pairA = pairA.copyOf(cap); pairB = pairB.copyOf(cap); pairNear = pairNear.copyOf(cap)
+            pairA = pairA.copyOf(cap); pairB = pairB.copyOf(cap)
         }
     }
 
@@ -1617,10 +1600,9 @@ class BoundaryContacts(
         val pair = k ushr 1
         pairA[out] = (pair ushr 32).toInt()
         pairB[out] = (pair and 0xFFFFFFFFL).toInt()
-        pairNear[out] = (k and 1L) != 0L
     }
 
-    internal fun finishParallelPairs(total: Int, near: Int) { pairN = total; nearN = near }
+    internal fun finishParallelPairs(total: Int) { pairN = total }
 
     /**
      * МОЖЕТ ЛИ ПАРА КОСНУТЬСЯ, ПОКА ОБЕ ВЕРШИНЫ У СВОИХ ПРИВЯЗОК. Перебор 3x3 ячеек
@@ -1658,8 +1640,8 @@ class BoundaryContacts(
                     // Пара двух перекладываемых берётся один раз — со стороны меньшего.
                     if (movedMark[j] == movedStamp && j < v) continue
                     if (bonded(v, j)) continue    // соседи по ткани не сталкиваются
-                    val near = reach(v, j, bpX[j], bpY[j], bpSweep[j])
-                    if (j > v) out.addNew(packKey(v, j, near)) else out.addLow(packKey(j, v, near))
+                    if (!reach(v, j, bpX[j], bpY[j], bpSweep[j])) continue
+                    if (j > v) out.addNew(packKey(v, j, true)) else out.addLow(packKey(j, v, true))
                 }
                 e = if (staticCount > 0) staticGrid.first(cell) else -1
                 while (e >= 0) {
@@ -1669,8 +1651,8 @@ class BoundaryContacts(
                     mark[j] = stamp
                     if (bonded(v, j)) continue
                     // Неподвижная вершина не сдвигается: её место и есть привязка.
-                    val near = reach(v, j, px[j], py[j], 0.0)
-                    if (j > v) out.addNew(packKey(v, j, near)) else out.addLow(packKey(j, v, near))
+                    if (!reach(v, j, px[j], py[j], 0.0)) continue
+                    if (j > v) out.addNew(packKey(v, j, true)) else out.addLow(packKey(j, v, true))
                 }
             }
         }
@@ -1751,7 +1733,7 @@ class BoundaryContacts(
         if (pairA.size < total) {
             var cap = pairA.size * 2
             while (cap < total) cap *= 2
-            pairA = pairA.copyOf(cap); pairB = pairB.copyOf(cap); pairNear = pairNear.copyOf(cap)
+            pairA = pairA.copyOf(cap); pairB = pairB.copyOf(cap)
         }
         var i = 0; var j = 0; var l = 0; var out = 0
         while (out < total) {
@@ -1764,7 +1746,6 @@ class BoundaryContacts(
             val pair = k ushr 1
             pairA[out] = (pair ushr 32).toInt()
             pairB[out] = (pair and 0xFFFFFFFFL).toInt()
-            pairNear[out] = (k and 1L) != 0L
             out++
         }
         pairN = out
