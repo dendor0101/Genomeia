@@ -743,8 +743,12 @@ class CellEntity(
         state.packed(
             "neuralConnections",
             write = {
-                val packed = IntArrayList()
-                for (cellIndex in neuralConnections.keys.toIntArray().sorted()) {
+                // Сортировка на месте, без упаковки: sorted() у IntArray возвращает List<Int>, и на 100k клеток
+                // эта упаковка была почти всем временем хэша мира (~75–110 мс раз в 60 тиков, замер 10.11).
+                val keys = neuralConnections.keys.toIntArray()
+                java.util.Arrays.sort(keys)
+                val packed = IntArrayList(keys.size * 3)
+                for (cellIndex in keys) {
                     val links = neuralConnections.get(cellIndex)
                     packed.add(cellIndex)
                     packed.add(links.size)
