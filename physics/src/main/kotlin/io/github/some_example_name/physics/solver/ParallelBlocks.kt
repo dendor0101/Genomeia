@@ -161,16 +161,30 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         st.activeWorkers!!.run(spanChunks(), targetsJob)
     }
 
+    private var groupSums = emptyArray<TickMomentum.GroupSums>()
+    private val flattenJob = PhysicsJob { k, _ -> state.tickMomentum.flattenRange(spanFrom[k], spanTo[k]) }
+    private val momentumJob = PhysicsJob { k, _ ->
+        val st = state
+        st.tickMomentum.momentumRange(spanFrom[k], spanTo[k], st.px, st.py, st.vx, st.vy, st.invMass, groupSums[k])
+    }
+    private val inertiaJob = PhysicsJob { k, _ ->
+        val st = state
+        st.tickMomentum.inertiaRange(spanFrom[k], spanTo[k], st.px, st.py, st.invMass, groupSums[k])
+    }
+
     fun momentumCancel() {
         val st = state
         val tm = st.tickMomentum
         val w = st.activeWorkers!!
         val chunks = spanChunks()
+        if (groupSums.size < chunks) groupSums = Array(chunks) { TickMomentum.GroupSums() }
         w.run(chunks, clearJob)
-        tm.flattenGroups(st.sleep)
-        tm.addMomentum(st.px, st.py, st.vx, st.vy, st.invMass, st.sleep)
+        w.run(chunks, flattenJob)
+        w.run(chunks, momentumJob)
+        for (k in 0 until chunks) tm.mergeMomentum(groupSums[k])
         w.run(chunks, centreJob)
-        tm.addInertia(st.px, st.py, st.invMass, st.sleep)
+        w.run(chunks, inertiaJob)
+        for (k in 0 until chunks) tm.mergeInertia(groupSums[k])
         w.run(chunks, spinJob)
         w.run(chunks, applyJob)
     }

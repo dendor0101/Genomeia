@@ -196,6 +196,117 @@ class TickMomentum(internal val n: Int) {
         java.util.Arrays.fill(inertia, from, to, 0.0)
     }
 
+    /**
+     * Суммы по группам куском: у каждого куска своя таблица, сложение в общие ячейки — в порядке
+     * кусков, а куски нарезаны по номерам частиц и от числа воркеров не зависят. Групп в куске
+     * единицы, поэтому таблица маленькая. Замер 10.11: суммы были 2.5 мс на тик в одном потоке.
+     */
+    internal class GroupSums {
+        private var keys = IntArray(256) { -1 }
+        private var mask = 255
+        private var used = IntArray(256)
+        private var n = 0
+        private var values = DoubleArray(256 * 6)
+        private var lastKey = -1
+        private var lastSlot = 0
+
+        fun clear() {
+            for (k in 0 until n) keys[used[k]] = -1
+            n = 0; lastKey = -1
+        }
+
+        /** Смещение шести сумм группы [g] в [values]. */
+        fun at(g: Int): Int {
+            if (g == lastKey) return lastSlot
+            var h = (g * -1640531527) and mask
+            while (true) {
+                val k = keys[h]
+                if (k == g) break
+                if (k == -1) {
+                    if (n * 2 >= keys.size) { grow(); return at(g) }
+                    keys[h] = g; used[n++] = h
+                    java.util.Arrays.fill(values, h * 6, h * 6 + 6, 0.0)
+                    break
+                }
+                h = (h + 1) and mask
+            }
+            lastKey = g; lastSlot = h * 6
+            return lastSlot
+        }
+
+        private fun grow() {
+            val oldKeys = keys; val oldValues = values; val oldUsed = used; val oldN = n
+            val size = keys.size * 2
+            keys = IntArray(size) { -1 }; mask = size - 1; used = IntArray(size); values = DoubleArray(size * 6); n = 0; lastKey = -1
+            for (k in 0 until oldN) {
+                val slot = oldUsed[k]
+                val to = at(oldKeys[slot])
+                System.arraycopy(oldValues, slot * 6, values, to, 6)
+            }
+            lastKey = -1
+        }
+
+        val data: DoubleArray get() = values
+        val count: Int get() = n
+        fun keyAt(k: Int): Int = keys[used[k]]
+        fun offsetAt(k: Int): Int = used[k] * 6
+    }
+
+    /** То же, что addMomentum, на куске частиц: в таблицу куска, общие суммы не трогает. */
+    internal fun momentumRange(from: Int, to: Int, x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
+                               invMass: DoubleArray, sums: GroupSums) {
+        sums.clear()
+        for (i in from until to) {
+            val g = parent[i]
+            if (blocked[i] || invMass[i] <= 0.0) { blocked[g] = true; continue }
+            val m = 1.0 / invMass[i]
+            val o = sums.at(g)
+            val v = sums.data
+            v[o] += m; v[o + 1] += m * x[i]; v[o + 2] += m * y[i]
+            v[o + 3] += m * vx[i] - targetX[i]; v[o + 4] += m * vy[i] - targetY[i]
+            v[o + 5] += m * (x[i] * vy[i] - y[i] * vx[i]) - targetL[i]
+        }
+    }
+
+    internal fun mergeMomentum(sums: GroupSums) {
+        val v = sums.data
+        for (k in 0 until sums.count) {
+            val g = sums.keyAt(k); val o = sums.offsetAt(k)
+            mass[g] += v[o]; cx[g] += v[o + 1]; cy[g] += v[o + 2]
+            dx[g] += v[o + 3]; dy[g] += v[o + 4]; dl[g] += v[o + 5]
+        }
+    }
+
+    /** То же, что addInertia, на куске. */
+    internal fun inertiaRange(from: Int, to: Int, x: DoubleArray, y: DoubleArray, invMass: DoubleArray, sums: GroupSums) {
+        sums.clear()
+        for (i in from until to) {
+            if (invMass[i] <= 0.0) continue
+            val g = parent[i]; val rx = x[i] - cx[g]; val ry = y[i] - cy[g]
+            val o = sums.at(g)
+            sums.data[o] += (rx * rx + ry * ry) / invMass[i]
+        }
+    }
+
+    internal fun mergeInertia(sums: GroupSums) {
+        val v = sums.data
+        for (k in 0 until sums.count) inertia[sums.keyAt(k)] += v[sums.offsetAt(k)]
+    }
+
+    /** Кусок flattenGroups без сжатия путей: воркеры только читают родителей. */
+    internal fun flattenRange(from: Int, to: Int) {
+        for (i in from until to) {
+            var r = i
+            while (parent[r] != r) r = parent[r]
+            val o = orgOf[r]
+            parent[i] = if (o >= 0 && first[o] == r) {
+                var ro = o
+                while (orgParent[ro] != ro) ro = orgParent[ro]
+                first[ro]
+            } else r
+        }
+    }
+
     /** После этого parent[i] — корень группы: кускам нечего сжимать и нечего писать в общее. */
     internal fun flattenGroups(sleep: BodySleep?) {
         spans(sleep) { from, to ->
