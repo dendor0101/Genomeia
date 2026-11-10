@@ -65,7 +65,7 @@ const val DT = 1.0 / 30.0
  * физика в 1.9 раза дешевле, отклонение ткани то же (+1%), но тиков с клеткой в чужой ткани
  * 2580 против 326, а при гребке тело 947 клеток рвётся (123 связи против 0).
  */
-@JvmField val SUBSTEPS: Int = System.getProperty("genomeia.substeps")?.toIntOrNull() ?: 32
+@JvmField val SUBSTEPS: Int = System.getProperty("genomeia.substeps")?.toIntOrNull() ?: 16
 
 /**
  * Гасить паразитный дрейф от внутренних решателей.
