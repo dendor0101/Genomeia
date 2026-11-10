@@ -498,7 +498,7 @@ internal class WorkerScratch(state: BodyState) {
  * Кусок поштучного прохода: 4096 частиц — ~200 КБ шести массивов double, порядка L2.
  * Мельче — больше кусков на воркер и ровнее нагрузка, но дороже раздача.
  */
-private const val PASS_CHUNK = 4096
+internal const val PASS_CHUNK = 4096
 
 internal fun BodyState.parallelPhysics(w: PhysicsWorkers): ParallelPhysics {
     val p = parallelPhysicsState

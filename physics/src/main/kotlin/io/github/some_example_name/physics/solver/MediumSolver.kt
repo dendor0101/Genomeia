@@ -75,7 +75,8 @@ fun BodyState.applyViscosity(h: Double) {
     val layout = constraintBlocks
     val w = activeWorkers
     if (w != null && organismCount > 1) { parallelPhysics(w).viscosity(k, layout); return }
-    if (sleep.asleepCount == 0 || layout == null) {
+    // Без воркеров — тот же порядок, что у них: по блокам, затем швы.
+    if (layout == null) {
         for (c in 0 until conCount) viscousLink(c, k)
         return
     }

@@ -133,6 +133,18 @@ class TickMomentum(internal val n: Int) {
             else unionParticles(i, j)
         }
     }
+    /** Куски по PASS_CHUNK внутри диапазонов — та же нарезка, что у параллельного прохода (ParallelPhysics.spanChunks). */
+    private inline fun chunks(sleep: BodySleep?, body: (Int, Int) -> Unit) {
+        spans(sleep) { from0, to0 ->
+            var from = from0
+            while (from < to0) {
+                val to = minOf(to0, from + PASS_CHUNK)
+                body(from, to)
+                from = to
+            }
+        }
+    }
+
     /**
      * Только диапазоны бодрствующих частиц: у спящих скорость ноль и не меняется.
      * Без [sleep] (зеркало SwimSolver) — все частицы. См. BodySleep.
@@ -178,9 +190,11 @@ class TickMomentum(internal val n: Int) {
                invMass: DoubleArray, sleep: BodySleep? = null) {
         spans(sleep) { from, to -> clearRange(from, to) }
         flattenGroups(sleep)
-        addMomentum(x, y, vx, vy, invMass, sleep)
+        // Те же куски, что у воркеров: порядок сложения не зависит от их числа.
+        val sums = GroupSums()
+        chunks(sleep) { from, to -> momentumRange(from, to, x, y, vx, vy, invMass, sums); mergeMomentum(sums) }
         spans(sleep) { from, to -> centreRange(from, to) }
-        addInertia(x, y, invMass, sleep)
+        chunks(sleep) { from, to -> inertiaRange(from, to, x, y, invMass, sums); mergeInertia(sums) }
         spans(sleep) { from, to -> spinRange(from, to) }
         spans(sleep) { from, to -> applyRange(from, to, x, y, vx, vy, invMass) }
     }
