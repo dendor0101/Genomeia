@@ -114,6 +114,18 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         state.activeWorkers!!.run(spanChunks(), beforeJob)
     }
 
+    private val fastJob = PhysicsJob { k, worker -> state.velocityFastRange(spanFrom[k], spanTo[k], passH, scratch[worker]) }
+
+    fun velocityFast(h: Double) {
+        passH = h
+        state.activeWorkers!!.run(spanChunks(), fastJob)
+        for (s in scratch) {
+            if (s.peakSpeed2 > state.peakSpeed2) state.peakSpeed2 = s.peakSpeed2
+            s.peakSpeed2 = 0.0
+            state.speedCapHits += s.speedCapHits; s.speedCapHits = 0
+        }
+    }
+
     fun velocityAfter(lastStep: Boolean, hTick: Double) {
         passLast = lastStep; passHTick = hTick
         state.activeWorkers!!.run(spanChunks(), afterJob)

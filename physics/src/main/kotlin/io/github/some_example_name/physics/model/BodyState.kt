@@ -165,6 +165,12 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     /** Пороги предела длины на подшаг, см. refreshLimit. Читаются только параллельным проходом. */
     var limitHi2 = DoubleArray(0)
     var limitLo2 = DoubleArray(0)
+    /** Частицы, чью скорость меняет отскок этого подшага: см. FusedPasses, velocityFastAllowed. */
+    var velTouchStamp = IntArray(0)
+    var velTouchList = IntArray(0)
+    var velBoneStamp = IntArray(0)
+    var velTouchPass = 0
+    var velTouchN = 0
 
     // --- граничные рёбра (омываемая поверхность) ---
     // --- изгиб граничного контура ---

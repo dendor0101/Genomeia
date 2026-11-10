@@ -212,14 +212,19 @@ internal class ParallelMoved(private val ct: BoundaryContacts, workers: Int) : O
 internal class ParallelBuild(private val ct: BoundaryContacts, workers: Int) : OrderedChunks(workers) {
     private var px = DoubleArray(0); private var py = DoubleArray(0)
     private var vx = DoubleArray(0); private var vy = DoubleArray(0)
+    private val lists = Array(parts) { IntArray(64) }
     private val countJob = PhysicsJob { k, _ ->
+        var list = lists[k]
         var c = 0
-        for (p in from[k] until from[k + 1]) if (ct.contactTouches(p, px, py)) c++
+        for (p in from[k] until from[k + 1]) if (ct.contactTouches(p, px, py)) {
+            if (c == list.size) { list = list.copyOf(c * 2); lists[k] = list }
+            list[c++] = p
+        }
         count[k] = c
     }
     private val writeJob = PhysicsJob { k, _ ->
-        var c = at[k]
-        for (p in from[k] until from[k + 1]) if (ct.contactTouches(p, px, py)) ct.writeContact(p, c++, px, py, vx, vy)
+        val list = lists[k]
+        for (x in 0 until count[k]) ct.writeContact(list[x], at[k] + x, px, py, vx, vy)
     }
 
     fun build(w: PhysicsWorkers, near: Int, px: DoubleArray, py: DoubleArray, vx: DoubleArray, vy: DoubleArray): Int {
@@ -228,8 +233,15 @@ internal class ParallelBuild(private val ct: BoundaryContacts, workers: Int) : O
         w.run(parts, countJob)
         val total = prefix()
         ct.ensureContactCapacity(total)
-        w.run(parts, writeJob)
+        // Контактов обычно в десятки раз меньше пар: запись идёт по найденным, а мелкий список
+        // дешевле записать здесь, чем будить воркеров ради него.
+        if (total < WRITE_PARALLEL_MIN) { for (k in 0 until parts) { val list = lists[k]; for (x in 0 until count[k]) ct.writeContact(list[x], at[k] + x, px, py, vx, vy) } }
+        else w.run(parts, writeJob)
         return total
+    }
+
+    private companion object {
+        const val WRITE_PARALLEL_MIN = 4096
     }
 }
 

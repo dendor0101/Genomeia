@@ -125,7 +125,9 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         // Восстановление скоростей вместе со снимком для учёта импульса — один проход.
         // См. FusedPasses.
         tick0()
-        velocityPassBefore(h)
+        // На всех подшагах, кроме последнего, частицам без контакта хватает одного прохода. См. FusedPasses.
+        val fastVelocity = step != SUBSTEPS - 1 && velocityFastAllowed()
+        if (fastVelocity) { markVelocityTouched(); velocityPassFast(h) } else velocityPassBefore(h)
         // Хватка (присоска-чашка) — после снимка скоростей: учёт импульса видит её внешней силой, как пол.
         applyGrip(h)
         tick1(17); tick0()
@@ -144,7 +146,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         // Отскок от пола, изотропная среда (раз в тик), потолок скорости и учёт внешнего
         // импульса — один проход. Учёт внешнего импульса теперь в таймере «скорости и
         // среда», а не «учёт импульса». См. FusedPasses.
-        velocityPassAfter(step == SUBSTEPS - 1, h * SUBSTEPS)
+        if (fastVelocity) finishVelocityTouched() else velocityPassAfter(step == SUBSTEPS - 1, h * SUBSTEPS)
         dbgMeasureV(11); tick1(9)
         if (cancelSpinOn && step == SUBSTEPS - 1) {
             tick0()
