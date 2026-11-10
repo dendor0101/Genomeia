@@ -525,8 +525,10 @@ internal fun BodyState.solveBlockParallel(h: Double, block: Int, layout: Constra
         val stop = solveBlockLimitsParallel(block, layout, s)
         if (stop >= 0) return (BLOCK_STAGE_LIMITS_EARLY.toLong() shl 32) or stop.toLong()
     }
-    if (areasOn) solveBlockAreas(h, block, layout)
-    solveBlockBend(h, block, layout)
+    if (slowConstraintsNow) {
+        if (areasOn) solveBlockAreas(h * SLOW_CONSTRAINT_PERIOD, block, layout)
+        solveBlockBend(h * SLOW_CONSTRAINT_PERIOD, block, layout)
+    }
     if (bonesRigid) {
         var b = layout.bones.head[block]
         while (b >= 0) {

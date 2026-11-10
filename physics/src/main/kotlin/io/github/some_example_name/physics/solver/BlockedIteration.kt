@@ -138,8 +138,10 @@ internal fun BodyState.solveConstraintBlockFrom(h: Double, block: Int, layout: C
     if (stage <= BLOCK_STAGE_LIMITS_EARLY) {
         val from = if (stage == BLOCK_STAGE_LIMITS_EARLY) cursor else 0
         if (MAXLEN_EARLY) { tick0(); dbgMark(); solveBlockLimits(block, layout, from); dbgMeasure(4, h); tick1(2); refreshSurface() }
-        if (areasOn) { tick0(); dbgMark(); solveBlockAreas(h, block, layout); dbgMeasure(1, h); tick1(3) }
-        tick0(); dbgMark(); solveBlockBend(h, block, layout); dbgMeasure(2, h); tick1(4)
+        if (slowConstraintsNow) {
+            if (areasOn) { tick0(); dbgMark(); solveBlockAreas(h * SLOW_CONSTRAINT_PERIOD, block, layout); dbgMeasure(1, h); tick1(3) }
+            tick0(); dbgMark(); solveBlockBend(h * SLOW_CONSTRAINT_PERIOD, block, layout); dbgMeasure(2, h); tick1(4)
+        }
         tick0(); dbgMark()
         if (bonesRigid) {
             var b = layout.bones.head[block]

@@ -28,6 +28,8 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     if (cancelSpinOn) { tick0(); prepareAwakeSpans(); momentumBegin(); tick1(16) }
     if (cancelSpinOn) noteJointsMomentum()
     for (step in 0 until SUBSTEPS) {
+        // Площади и изгиб — на чётных подшагах, с шагом в два подшага: см. MaterialParameters.
+        slowConstraintsNow = (step and 1) == 0
         // Длина покоя мышцы доезжает до своего значения за тик, а не прыгает в первом
         // же подшаге — см. muscleScaleOf.
         updateMuscleScale((step + 1).toDouble() / SUBSTEPS)
@@ -97,11 +99,11 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         val finalContacts = contacts
         if (finalContacts != null && contactsOn) {
             tick0()
-            finalContacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = false)
-            // УДАР БУДИТ СПЯЩЕГО ДО РЕШЕНИЯ КОНТАКТА. Спящий заморожен (обратная масса 0): решённый
             // Пары обновляются на чётных подшагах и сразу после любого изменения контура.
             finalContacts.skipCandidatesNow = (step and 1) == 1 && structureVersion == contactsVersion
             contactsVersion = structureVersion
+            finalContacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = false)
+            // УДАР БУДИТ СПЯЩЕГО ДО РЕШЕНИЯ КОНТАКТА. Спящий заморожен (обратная масса 0): решённый
             // так контакт — удар о стену, налетевшая частица отскакивает, импульс не передан, а
             // проснувшийся в следующем подшаге стоит (ClientInputsCheck: импульс цели 0 против
             // удара без сна). Проснувшемуся — свои массы, контакты готовятся заново; редко — только
