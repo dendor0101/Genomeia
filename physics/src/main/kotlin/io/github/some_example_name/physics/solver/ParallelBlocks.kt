@@ -327,9 +327,32 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         st.activeWorkers!!.run(ob.tasks, orientJob)
     }
 
+    // Вязкость по блокам: связь блока пишет только свои частицы, раскладка готова и не зависит от разрывов.
+    // Замер 10.11: пересборка раскладки по организмам каждый тик с разрывом была 1.7% главного потока.
+    private var viscLayout: ConstraintBlocks? = null
+    private var viscFrom = 0
+    private val viscBlockJob = PhysicsJob { k, _ ->
+        val layout = viscLayout!!
+        val b = viscFrom + k
+        if (b >= layout.seam || layout.awake[b] != 0) {
+            val links = layout.links
+            for (slot in links.start[b] until links.start[b] + links.count[b]) {
+                val c = links.items[slot]
+                if (c >= 0) state.viscousLink(c, viscK)
+            }
+        }
+    }
+
     fun viscosity(k: Double, layout: ConstraintBlocks?) {
         val st = state
         viscK = k
+        if (layout != null) {
+            val w = st.activeWorkers!!
+            viscLayout = layout
+            viscFrom = 0; w.run(layout.seam, viscBlockJob)
+            viscFrom = layout.seam; w.run(layout.buckets - layout.seam, viscBlockJob)
+            return
+        }
         val vb = viscBuckets
         if (!vb.valid(st, 0L)) {
             vb.begin()
@@ -392,6 +415,42 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         var count = 0
         for (block in 0 until layout.buckets) if (block >= layout.seam || layout.awake[block] > 0) plasticBlocks[count++] = block
         w.run(count, plasticJob)
+    }
+
+    // --- вывернутые треугольники раз в тик ---
+    // Счётчик инверсии у каждого треугольника свой; гибель — событие топологии, в конце по возрастанию номеров.
+    private val invKills = Array(workers) { IntArray(16) }
+    private val invCount = IntArray(workers * 16)
+    private var invLayout: ConstraintBlocks? = null
+    private val invJob = PhysicsJob { b, worker ->
+        val layout = invLayout!!
+        if (b >= layout.seam || layout.awake[b] != 0) {
+            val areas = layout.areas
+            for (slot in areas.start[b] until areas.start[b] + areas.count[b]) {
+                val t = areas.items[slot]
+                if (t >= 0 && state.inversionExpired(t)) {
+                    val n = invCount[worker * 16]
+                    if (n == invKills[worker].size) invKills[worker] = invKills[worker].copyOf(n * 2)
+                    invKills[worker][n] = state.triId[t]
+                    invCount[worker * 16] = n + 1
+                }
+            }
+        }
+    }
+
+    fun scanInversions(layout: ConstraintBlocks) {
+        val w = state.activeWorkers!!
+        invLayout = layout
+        java.util.Arrays.fill(invCount, 0)
+        w.run(layout.buckets, invJob)
+        var total = 0
+        for (k in invKills.indices) total += invCount[k * 16]
+        if (total == 0) return
+        val all = IntArray(total)
+        var at = 0
+        for (k in invKills.indices) { System.arraycopy(invKills[k], 0, all, at, invCount[k * 16]); at += invCount[k * 16] }
+        all.sort()
+        for (id in all) state.killTriangleNow(id)
     }
 
     private fun mergeCounters() {

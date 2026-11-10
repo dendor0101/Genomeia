@@ -165,7 +165,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     tick0(); burstByPressure(); removePersistentInversions(); tick1(19)
     // Один проход упаковки за тик. Контактная топология уже актуальна;
     // упаковка нужна плотным рабочим массивам и чтению состояния стенда.
-    if (tearsPending) { tick0(); rebuildTimed(); tick1(11) }
+    if (tearsPending && compactionDue()) { tick0(); rebuildTimed(); tick1(11) }
     // Засыпание — в самом конце тика, когда все скорости и вся топология этого тика готовы.
     tick0(); updateSleep(); tick1(20)
     if (watchCell >= 0) watchReport()

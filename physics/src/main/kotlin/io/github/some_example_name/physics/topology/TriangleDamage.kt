@@ -23,6 +23,8 @@ internal fun BodyState.removePersistentInversions() {
     // 60 тиков покоя усыпят). Порядок гибели треугольников тогда другой, но он
     // детерминирован. См. BodySleep.
     val layout = constraintBlocks
+    val w = activeWorkers
+    if (w != null && w.count > 1 && layout != null) { parallelPhysics(w).scanInversions(layout); return }
     if (sleep.asleepCount == 0 || layout == null) {
         for (t in 0 until triCount) checkInversion(t)
         return
@@ -35,6 +37,24 @@ internal fun BodyState.removePersistentInversions() {
             if (t >= 0) checkInversion(t)
         }
     }
+}
+
+/** Счётчик инверсии треугольника [t] воркером; true — пора убить (делает один поток, killTriangleNow). */
+internal fun BodyState.inversionExpired(t: Int): Boolean {
+    val ages = baked.invertedTicks
+    val id = triId[t]
+    if (!baked.triAlive[id]) return false
+    val a = triA[t]; val b = triB[t]; val c = triC[t]
+    val area2 = (px[b] - px[a]) * (py[c] - py[a]) -
+        (py[b] - py[a]) * (px[c] - px[a])
+    if (area2 < 0.0) {
+        val age = ages[id].toInt() + 1
+        if (age > INVERTED_TRIANGLE_HOLD_TICKS) return true
+        ages[id] = age.toByte()
+    } else {
+        ages[id] = 0
+    }
+    return false
 }
 
 private fun BodyState.checkInversion(t: Int) {

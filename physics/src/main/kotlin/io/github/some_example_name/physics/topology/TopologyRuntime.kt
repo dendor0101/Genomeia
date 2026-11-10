@@ -499,6 +499,14 @@ fun BodyState.fillConstraints(): Int {
     return m
 }
 
+/**
+ * Уплотнять рабочие списки только когда мёртвых накопилось заметно: 1/64 связей или треугольников.
+ * Мёртвые записи решатель пропускает по conDead, а проход по всему миру на каждый тик с разрывом
+ * стоил 2.4 мс в одном потоке (замер 10.11, 34 червя).
+ */
+internal fun BodyState.compactionDue(): Boolean =
+    tearQueueN * 64 >= conCount || (triCount - baked.liveTriangleCount) * 64 >= triCount
+
 fun BodyState.rebuildTimed() {
     val t0 = System.nanoTime()
     rebuilding = true

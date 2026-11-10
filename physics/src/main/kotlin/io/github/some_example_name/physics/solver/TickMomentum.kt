@@ -9,6 +9,13 @@ package io.github.some_example_name.physics
 class TickMomentum(internal val n: Int) {
     private val parent = IntArray(n)
     private val first = IntArray(n)
+    /**
+     * Контакт объединяет целые организмы, поэтому слияние идёт по номерам организмов: маленький
+     * массив в кэше вместо поиска корня через частицы (noteContacts был 2.5% главного потока, 10.11).
+     * Корень группы тот же — наименьший номер частицы.
+     */
+    private val orgParent = IntArray(n)
+    private var orgOf = IntArray(0)
     private val targetX = DoubleArray(n)
     private val targetY = DoubleArray(n)
     private val targetL = DoubleArray(n)
@@ -28,6 +35,23 @@ class TickMomentum(internal val n: Int) {
         var v = i
         while (parent[v] != r) { val next = parent[v]; parent[v] = r; v = next }
         return r
+    }
+    private fun findOrg(o: Int): Int {
+        var r = o
+        while (orgParent[r] != r) r = orgParent[r]
+        var v = o
+        while (orgParent[v] != r) { val next = orgParent[v]; orgParent[v] = r; v = next }
+        return r
+    }
+    private fun unionOrg(a: Int, b: Int) {
+        val ra = findOrg(a); val rb = findOrg(b)
+        if (ra == rb) return
+        if (first[ra] <= first[rb]) orgParent[rb] = ra else orgParent[ra] = rb
+    }
+    private fun unionParticles(i: Int, j: Int) {
+        val oi = orgOf[i]; val oj = orgOf[j]
+        if (oi >= 0 && oj >= 0 && first[oi] >= 0 && first[oj] >= 0) { if (oi != oj) unionOrg(oi, oj) }
+        else union(i, j)
     }
     private fun union(i: Int, j: Int) {
         val a = find(i); val b = find(j)
@@ -58,6 +82,8 @@ class TickMomentum(internal val n: Int) {
     /** Группы по организмам: общие first и union, в одном потоке. */
     internal fun beginGroups(org: IntArray, sleep: BodySleep?, outside: BooleanArray?) {
         first.fill(-1)
+        orgOf = org
+        for (o in orgParent.indices) orgParent[o] = o
         spans(sleep) { from, to -> for (i in from until to) parent[i] = i }
         spans(sleep) { from, to ->
             for (i in from until to) {
@@ -97,14 +123,14 @@ class TickMomentum(internal val n: Int) {
     /** Временная связь (BodyState.solveJoints) объединяет группы концов, как контакт ([noteContacts]). */
     fun noteJoint(i: Int, j: Int, invMass: DoubleArray) {
         if (invMass[i] <= 0.0 || invMass[j] <= 0.0) { blocked[i] = true; blocked[j] = true }
-        else union(i, j)
+        else unionParticles(i, j)
     }
 
     fun noteContacts(c: BoundaryContacts, invMass: DoubleArray) {
         for (k in 0 until c.contactCount) {
             val i = c.contactI(k); val j = c.contactJ(k)
             if (invMass[i] <= 0.0 || invMass[j] <= 0.0) { blocked[i] = true; blocked[j] = true }
-            else union(i, j)
+            else unionParticles(i, j)
         }
     }
     /**
@@ -172,7 +198,13 @@ class TickMomentum(internal val n: Int) {
 
     /** После этого parent[i] — корень группы: кускам нечего сжимать и нечего писать в общее. */
     internal fun flattenGroups(sleep: BodySleep?) {
-        spans(sleep) { from, to -> for (i in from until to) parent[i] = find(i) }
+        spans(sleep) { from, to ->
+            for (i in from until to) {
+                val r = find(i)
+                val o = orgOf[r]
+                parent[i] = if (o >= 0 && first[o] == r) first[findOrg(o)] else r
+            }
+        }
     }
 
     internal fun addMomentum(x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray, invMass: DoubleArray, sleep: BodySleep?) {
