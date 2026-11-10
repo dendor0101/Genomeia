@@ -323,29 +323,43 @@ class TickMomentum(internal val n: Int) {
         for (k in 0 until sums.count) inertia[sums.keyAt(k)] += v[sums.offsetAt(k)]
     }
 
-    /** Кусок flattenGroups без сжатия путей: воркеры только читают родителей. */
+    /**
+     * Кусок flattenGroups без сжатия путей. Воркер пишет parent только своих частиц и только настоящий
+     * корень дерева частиц, поэтому соседний кусок, идущий по цепочке через уже переписанную частицу,
+     * приходит к тому же корню. Слияния организмов к этому времени уже в дереве частиц (mergeOrgGroups).
+     */
     internal fun flattenRange(from: Int, to: Int) {
         for (i in from until to) {
             var r = i
             while (parent[r] != r) r = parent[r]
-            val o = orgOf[r]
-            parent[i] = if (o >= 0 && first[o] == r) {
-                var ro = o
-                while (orgParent[ro] != ro) ro = orgParent[ro]
-                first[ro]
-            } else r
+            parent[i] = r
+        }
+    }
+
+    /**
+     * Слияния организмов (orgParent) — в дерево частиц, в одном потоке до сплющивания. Корень группы —
+     * наименьший номер частицы всей связной группы: union вешает больший корень под меньший, и от
+     * порядка слияний корень не зависит.
+     *
+     * ЗАЧЕМ. Раньше сплющивание само переводило корень организма в первую частицу корня его группы
+     * организмов, и в parent[i] попадал не предок i, а частица чужого дерева. Если та первая частица
+     * сама висела под частицей без организма (еда, которой коснулся организм), цепочка через уже
+     * переписанную частицу приводила к другому корню, чем через старую: группа зависела от того, какой
+     * воркер успел первым, а в одном потоке — от порядка частиц. bugReplayCheck 10.11: запись на
+     * 8 воркерах и повтор на одном разошлись в снятии импульса (эпоха 1, тик 2619, последний подшаг).
+     */
+    internal fun mergeOrgGroups() {
+        for (o in orgParent.indices) {
+            if (first[o] < 0) continue
+            val ro = findOrg(o)
+            if (ro != o) union(first[o], first[ro])
         }
     }
 
     /** После этого parent[i] — корень группы: кускам нечего сжимать и нечего писать в общее. */
     internal fun flattenGroups(sleep: BodySleep?) {
-        spans(sleep) { from, to ->
-            for (i in from until to) {
-                val r = find(i)
-                val o = orgOf[r]
-                parent[i] = if (o >= 0 && first[o] == r) first[findOrg(o)] else r
-            }
-        }
+        mergeOrgGroups()
+        spans(sleep) { from, to -> for (i in from until to) parent[i] = find(i) }
     }
 
     internal fun addMomentum(x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray, invMass: DoubleArray, sleep: BodySleep?) {

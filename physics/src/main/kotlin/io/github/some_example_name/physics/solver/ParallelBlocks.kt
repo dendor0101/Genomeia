@@ -256,6 +256,7 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         val chunks = spanChunks()
         if (groupSums.size < chunks) groupSums = Array(chunks) { TickMomentum.GroupSums() }
         w.run(chunks, clearJob)
+        tm.mergeOrgGroups()
         w.run(chunks, flattenJob)
         w.run(chunks, momentumJob)
         for (k in 0 until chunks) tm.mergeMomentum(groupSums[k])
