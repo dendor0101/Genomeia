@@ -140,8 +140,9 @@ internal class ParallelPairs(private val ct: BoundaryContacts, private val worke
             if (i < iEnd) { best = kk[i]; from = 1 }
             if (j < jEnd && nk[j] < best) { best = nk[j]; from = 2 }
             if (l < lowN && buf[l] < best) { best = buf[l]; from = 3 }
+            val slot = if (from == 1) ct.keptSlotAt(i) else -2
             when (from) { 1 -> i++; 2 -> j++; else -> l++ }
-            ct.setPair(out++, best)
+            ct.setPair(out++, best, slot)
         }
     }
 
@@ -435,7 +436,7 @@ internal class ParallelPierce(private val ct: BoundaryContacts, workers: Int) {
 
     fun run(w: PhysicsWorkers, px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray, org: IntArray) {
         this.px = px; this.py = py; this.qx = qx; this.qy = qy; this.org = org
-        w.run(boundChunks, boundsJob)
+        if (!ct.boundsStale) w.run(boundChunks, boundsJob)
         val pairs = ct.candidatePairCount
         val k = minOf(buffers.size, maxOf(1, pairs / 64))
         for (c in 0..k) from[c] = (pairs.toLong() * c / k).toInt()

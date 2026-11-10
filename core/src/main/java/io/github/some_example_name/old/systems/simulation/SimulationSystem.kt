@@ -490,7 +490,10 @@ class SimulationSystem(
             },
             input = userCommandManager::hashInput,
             grid = gridManager::hashOrder,
-            physics = worldPhysics::hash
+            physics = worldPhysics::hash,
+            // Части хэша независимы — по воркерам. Замер 10.11, 97k клеток: хэш раз в 60 тиков шёл
+            // ~140 мс в одном потоке (рывок каждые две секунды, 2.8% главного потока в среднем).
+            parallel = { n, job -> threadManager.executor.runChunks(n, Phase.WORLD_CMD, ParallelExecutor.ChunkJob { k, _ -> job(k) }) }
         )
         // Генератор команд игрока (часть PlayerInput) в каждом запуске с новым сидом: на мир без команд он не влияет.
         if (tick == hashWatchTick) hashWatchReport = "%016x".format(stateHashNames.indices.filter { stateHashNames[it] != "PlayerInput" }.fold(0L) { h, k -> Fnv.long(h, state.parts[k]) })

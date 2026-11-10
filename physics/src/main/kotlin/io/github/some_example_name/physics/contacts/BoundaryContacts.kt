@@ -413,6 +413,7 @@ class BoundaryContacts(
     private var pierceMove = DoubleArray(0)
 
     internal val contourVertexCount: Int get() = vertCount
+    internal val boundsStale: Boolean get() = skipCandidatesNow
 
     /** Границы отсева для вершин контура verts[from, to). Каждая вершина пишет только свои ячейки. */
     internal fun pierceBoundsRange(from: Int, to: Int, px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray) {
@@ -433,7 +434,8 @@ class BoundaryContacts(
                 if (move2 > maxMove2) maxMove2 = move2
             }
             move[v] = sqrt(own2)
-            reach[v] = 0.5 * sqrt(maxLen2) + 1.5 * sqrt(maxMove2)
+            // Граница служит два подшага (считается вместе с обновлением списка пар): ход — с запасом вдвое.
+            reach[v] = 0.5 * sqrt(maxLen2) + 3.0 * sqrt(maxMove2)
         }
     }
 
@@ -484,7 +486,7 @@ class BoundaryContacts(
         if (w != null && w.count > 1 && pairN >= PARALLEL_PAIRS_MIN && pierceWatch < 0) {
             (parallelPierce ?: ParallelPierce(this, w.count).also { parallelPierce = it }).run(w, px, py, qx, qy, org)
         } else {
-            pierceBoundsRange(0, vertCount, px, py, qx, qy)
+            if (!skipCandidatesNow) pierceBoundsRange(0, vertCount, px, py, qx, qy)
             serialPierce.n = 0
             findPierceRange(0, pairN, px, py, qx, qy, org, serialPierce)
             addPierces(serialPierce)
@@ -536,7 +538,7 @@ class BoundaryContacts(
                                  org: IntArray, out: PierceBuffer) {
         val minMove = 1e-3 * meanLink
         val grp = group
-        val reach = pierceReach; val move = pierceMove
+        val reach = pierceReach
         for (p in from until to) {
             val i = pairA[p]; val j = pairB[p]
             if (org[i] == org[j]) continue
@@ -544,7 +546,9 @@ class BoundaryContacts(
             if (grp != null && (grp[i] != 0 || grp[j] != 0)) continue
             val dx = px[i] - px[j]; val dy = py[i] - py[j]
             val d2 = dx * dx + dy * dy
-            val mi = move[i]; val mj = move[j]
+            // Сдвиг за этот подшаг — на месте: граница reach считается раз в два подшага.
+            val mi = sqrt((px[i] - qx[i]) * (px[i] - qx[i]) + (py[i] - qy[i]) * (py[i] - qy[i]))
+            val mj = sqrt((px[j] - qx[j]) * (px[j] - qx[j]) + (py[j] - qy[j]) * (py[j] - qy[j]))
             val ri = reach[j] + mi
             if (mi > minMove && d2 <= ri * ri) pierceAround(qx, qy, px, py, i, j, org, out)
             val rj = reach[i] + mj
@@ -860,6 +864,8 @@ class BoundaryContacts(
     private fun applyRestPairs(rp: RestPairs) {
         val sameRp = rest === rp && restState.size == rp.other.size
         rest = rp
+        // Другая таблица пар покоя — сохранённые слоты пар недействительны: список пар заново.
+        if (!sameRp) bpValid = false
         if (restState.size != rp.other.size) { restState = ByteArray(rp.other.size); restValid = false }
         var maxR = 0.0
         for (vi in 0 until vertCount) { val v = verts[vi]; if (contactRadius[v] > maxR) maxR = contactRadius[v] }
@@ -1401,6 +1407,8 @@ class BoundaryContacts(
     private var newKeys = keys.newKeys
     private var lowKeys = keys.lowKeys
     private var keptKeys = LongArray(256)
+    /** Слот пары покоя уцелевшей пары (nearRestSlot): переезжает вместе с парой, искать заново не нужно. */
+    private var keptSlot = IntArray(256)
 
     /** Воркеры параллельных частей подготовки; null — всё в вызывающем потоке. */
     var workers: PhysicsWorkers? = null
@@ -1529,7 +1537,7 @@ class BoundaryContacts(
         val w = workers
         val pp = if (w != null && w.count > 1) parallelPairs ?: ParallelPairs(this, w.count).also { parallelPairs = it } else null
         if (!full) {
-            if (keptKeys.size < pairN) keptKeys = LongArray(pairN * 2)
+            if (keptKeys.size < pairN) { keptKeys = LongArray(pairN * 2); keptSlot = IntArray(pairN * 2) }
             kept = if (pp != null && pairN >= PARALLEL_PAIRS_MIN) pp.keep(w!!, pairN) else writeKept(0, pairN, 0)
         }
         keys.newN = 0; keys.lowN = 0
@@ -1549,6 +1557,7 @@ class BoundaryContacts(
         }
         newKeys = keys.newKeys; lowKeys = keys.lowKeys
         val total = kept + keys.newN + keys.lowN
+        if (nearRestSlot.size < total) nearRestSlot = nearRestSlot.copyOf(total * 2)
         val runEnds = if (lowRuns > 0) parallelCandidates!!.lowRunEnd else null
         if (pp != null && total >= PARALLEL_PAIRS_MIN && pp.merge(w!!, kept, keys.newN, keys.lowN, runEnds, lowRuns)) return
         mergePairs(kept, keys.newN, keys.lowN)
@@ -1563,7 +1572,7 @@ class BoundaryContacts(
         for (p in from until to) {
             val i = pairA[p]; val j = pairB[p]
             if (movedMark[i] == movedStamp || movedMark[j] == movedStamp) continue
-            keptKeys[o++] = packKey(i, j, true)
+            keptKeys[o] = packKey(i, j, true); keptSlot[o] = nearRestSlot[p]; o++
         }
         return o
     }
@@ -1580,11 +1589,11 @@ class BoundaryContacts(
      */
     internal fun ensureNearCapacity() {
         nearA = pairA; nearB = pairB; nearN = pairN
-        if (nearRestSlot.size < pairN) nearRestSlot = IntArray(pairN * 2)
-        java.util.Arrays.fill(nearRestSlot, 0, pairN, -2)
+        if (nearRestSlot.size < pairN) nearRestSlot = nearRestSlot.copyOf(pairN * 2)
     }
 
     internal val keptKeyArray: LongArray get() = keptKeys
+    internal fun keptSlotAt(k: Int): Int = keptSlot[k]
     internal val pairKeyBuffer: PairKeyBuffer get() = keys
 
     /** Под слияние ParallelPairs: ёмкость списка пар до раздачи кусков. */
@@ -1596,7 +1605,8 @@ class BoundaryContacts(
         }
     }
 
-    internal fun setPair(out: Int, k: Long) {
+    internal fun setPair(out: Int, k: Long, slot: Int) {
+        nearRestSlot[out] = slot
         val pair = k ushr 1
         pairA[out] = (pair ushr 32).toInt()
         pairB[out] = (pair and 0xFFFFFFFFL).toInt()
@@ -1742,6 +1752,7 @@ class BoundaryContacts(
             if (i < kept) { k = keptKeys[i]; from = 1 }
             if (j < fresh && newKeys[j] < k) { k = newKeys[j]; from = 2 }
             if (l < low && lowKeys[l] < k) { k = lowKeys[l]; from = 3 }
+            nearRestSlot[out] = if (from == 1) keptSlot[i] else -2
             when (from) { 1 -> i++; 2 -> j++; else -> l++ }
             val pair = k ushr 1
             pairA[out] = (pair ushr 32).toInt()
