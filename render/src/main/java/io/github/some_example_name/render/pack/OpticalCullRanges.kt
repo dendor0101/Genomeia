@@ -38,6 +38,16 @@ class OpticalCullRanges {
         bounds[o] = minX; bounds[o + 1] = minY; bounds[o + 2] = maxX; bounds[o + 3] = maxY
         count++
     }
+    /** Готовая рамка участка [firstIndex, endIndex): так участки собираются после записи по воркерам. */
+    fun add(firstIndex: Int, endIndex: Int, minX: Float, minY: Float, maxX: Float, maxY: Float) {
+        if (count == first.size) {
+            first = first.copyOf(count * 2); end = end.copyOf(count * 2); bounds = bounds.copyOf(count * 8)
+        }
+        first[count] = firstIndex; end[count] = endIndex
+        val o = count * 4
+        bounds[o] = minX; bounds[o + 1] = minY; bounds[o + 2] = maxX; bounds[o + 3] = maxY
+        count++
+    }
     fun first(range: Int) = first[range]
     fun end(range: Int) = end[range]
     /** Координаты камеры уже расширены на максимальный радиус и отростки. */

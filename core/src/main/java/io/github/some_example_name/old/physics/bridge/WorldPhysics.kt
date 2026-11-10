@@ -12,6 +12,7 @@ import io.github.some_example_name.old.features.worldeditor.WorldTerrainManager
 import io.github.some_example_name.old.journal.Fnv
 import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.old.systems.physics.GridManager
+import io.github.some_example_name.physics.PhysicsJob
 import io.github.some_example_name.physics.PhysicsWorkers
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
 import it.unimi.dsi.fastutil.ints.IntArrayList
@@ -136,7 +137,7 @@ class WorldPhysics(
         if (!terrain.built) terrain.build(bridge.world)
         removeGone()
         spawnNewOrganisms()
-        for (k in 0 until organsWithBody.size) syncOrganism(organsWithBody.getInt(k))
+        syncOrganisms()
         syncSubstances()
         sticks.sync(bridge.world)
         bridge.step()
@@ -343,6 +344,65 @@ class WorldPhysics(
             organsWithBody.add(organ)
             onBorn(p, bridge.particleOf(organ, zygote))
         }
+    }
+
+    /** Какие организмы сверка по воркерам вернула на полный путь (см. [syncOrganismFast]). */
+    private var syncSerial = BooleanArray(64)
+    private val syncJob = PhysicsJob { k, _ -> if (!syncOrganismFast(organsWithBody.getInt(k))) syncSerial[k] = true }
+
+    /** Замер 10.11, 34 червя: сверка в одном потоке была около 3 мс на тик, пока воркеры стояли. */
+    private fun syncOrganisms() {
+        val count = organsWithBody.size
+        val w = workers
+        if (w == null || w.count <= 1 || count < 2) {
+            for (k in 0 until count) syncOrganism(organsWithBody.getInt(k))
+            return
+        }
+        if (syncSerial.size < count) syncSerial = BooleanArray(count * 2) else java.util.Arrays.fill(syncSerial, 0, count, false)
+        w.run(count, syncJob)
+        for (k in 0 until count) if (syncSerial[k]) syncOrganism(organsWithBody.getInt(k))
+    }
+
+    /**
+     * Обычный тик организма: только цели мышц. Всё редкое (рождение, смерть, кость, толчок, смена
+     * мягкости и хватки, просыпание от мышцы) — false, и организм идёт полным путём в одном потоке.
+     * Пишет только свои клетки; общие признаки могут только включиться, порядок записи им не важен.
+     */
+    private fun syncOrganismFast(organ: Int): Boolean {
+        val world = bridge.world
+        val st = world.state
+        val dead = st.cellDead; val unborn = st.cellUnborn; val boneOf = st.boneOf
+        val target = st.cellScaleTarget; val scale = st.cellScale
+        val softness = st.cellSoftness; val noContact = st.cellNoContact; val grip = st.cellGrip
+        val first = bridge.particleOf(organ, 0)
+        val cellBase = organEntity.cellArenaBase[organ]
+        val particleBase = organEntity.particleArenaBase[organ]
+        val alive = cellEntity.isAlive; val shortening = cellEntity.degreeOfShortening; val cellType = cellEntity.cellType
+        val pe = particleEntity
+        val collidable = pe.isCollidable; val pushX = pe.pushVx; val pushY = pe.pushVy; val drag = pe.dragCoefficient
+        val sleepOn = world.sleepOn
+        for (slot in 0 until organEntity.cellArenaCapacity[organ]) {
+            val i = first + slot
+            val cell = cellBase + slot
+            if (unborn[i]) { if (alive[cell]) return false; continue }
+            if (dead[i]) continue
+            if (!alive[cell]) return false
+            val type = cellType[cell].toInt()
+            val p = particleBase + slot
+            if (type == boneType && boneOf[i] < 0) return false
+            if (softness[i] != (if (type == fatType) FAT_SOFTNESS else 1f)) return false
+            if (noContact[i] == collidable[p]) return false
+            if (grip[i] != (if (type == suctionCupType) drag[p].coerceIn(0f, 1f) else 0f)) return false
+            if (pushX[p] != 0f || pushY[p] != 0f) return false
+            val s = shortening[cell]
+            if (target[i] != s) {
+                if (sleepOn) return false
+                target[i] = s
+                st.cellScalesOn = true
+            }
+            if (scale[i] != s) st.cellScalesMoving = true
+        }
+        return true
     }
 
     private fun syncOrganism(organ: Int) {

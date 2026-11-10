@@ -26,4 +26,7 @@ class OpticalLinks {
     fun vertex(i:Int,id:Long=i.toLong()+1){offsets[i]=size;vertexIds[i]=id;materialRest[i*3]=0f;materialRest[i*3+1]=0f;materialRest[i*3+2]=0f}
     fun add(j:Int){neighbors[size++]=j}
     fun end(){offsets[count]=size}
+    /** Запись по воркерам: место вершины уже в offsets, соседи пишутся прямо в neighbors. */
+    fun vertexParallel(i:Int,id:Long=i.toLong()+1){vertexIds[i]=id;materialRest[i*3]=0f;materialRest[i*3+1]=0f;materialRest[i*3+2]=0f}
+    fun endParallel(total:Int){size=total;offsets[count]=total}
 }

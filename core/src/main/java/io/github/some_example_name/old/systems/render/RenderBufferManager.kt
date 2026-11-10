@@ -255,13 +255,17 @@ class RenderBufferManager(
         val organs = cellEntity.organEntity.aliveList
         val executor = threads?.executor
         // Отладочный кадр пишет оверлей подряд: порядок записи — порядок отрисовки. Микроскоп
-        // (opticalCullRanges) собирает рамки участков тем же проходом.
-        if (executor != null && executor.workerCount > 1 && !debugFrame && !PROFILE_INTERPOLATION && opticalCullRanges == null && organs.size > 1) {
+        if (executor != null && executor.workerCount > 1 && !debugFrame && !PROFILE_INTERPOLATION && organs.size > 1) {
             if (organStart.size < organs.size + 1) organStart = IntArray(maxOf(organs.size + 1, organStart.size * 2))
+            if (organBounds.size < 4 * organs.size) organBounds = FloatArray(8 * organs.size)
             executor.runChunks(organs.size, Phase.RENDER, countOrganJob)
             organStart[0] = startIndex
             for (k in 0 until organs.size) organStart[k + 1] += organStart[k]
             executor.runChunks(organs.size, Phase.RENDER, writeOrganJob)
+            opticalCullRanges?.let { cull ->
+                for (k in 0 until organs.size) if (organStart[k + 1] > organStart[k])
+                    cull.add(organStart[k], organStart[k + 1], organBounds[4 * k], organBounds[4 * k + 1], organBounds[4 * k + 2], organBounds[4 * k + 3])
+            }
             return organStart[organs.size]
         }
         var writeIndex = startIndex
@@ -287,8 +291,10 @@ class RenderBufferManager(
         return h
     }
     private var organStart = IntArray(64)
+    /** Рамки оптических участков по организмам: minX, minY, maxX, maxY; сливаются в порядке организмов. */
+    private var organBounds = FloatArray(256)
     private val countOrganJob = ParallelExecutor.ChunkJob { k, _ -> organStart[k + 1] = aliveCellsOf(cellEntity.organEntity.aliveList.getInt(k)) }
-    private val writeOrganJob = ParallelExecutor.ChunkJob { k, _ -> writeOrganCells(cellEntity.organEntity.aliveList.getInt(k), organStart[k]) }
+    private val writeOrganJob = ParallelExecutor.ChunkJob { k, _ -> writeOrganCells(cellEntity.organEntity.aliveList.getInt(k), organStart[k], k) }
 
     private fun aliveCellsOf(organIndex: Int): Int {
         val organEntity = cellEntity.organEntity
@@ -300,7 +306,7 @@ class RenderBufferManager(
     }
 
     /** Живые клетки организма в буфер начиная с [startIndex]; возвращает индекс за последней. */
-    private fun writeOrganCells(organIndex: Int, startIndex: Int): Int {
+    private fun writeOrganCells(organIndex: Int, startIndex: Int, boundsSlot: Int = -1): Int {
         val organEntity = cellEntity.organEntity
         if (!organEntity.hasArena(organIndex)) return startIndex
         var writeIndex = startIndex
@@ -312,7 +318,8 @@ class RenderBufferManager(
         val particleBase = organEntity.particleArenaBase[organIndex]
 
         val cull = opticalCullRanges
-        cull?.begin(writeIndex)
+        var minX = Float.POSITIVE_INFINITY; var minY = Float.POSITIVE_INFINITY
+        var maxX = Float.NEGATIVE_INFINITY; var maxY = Float.NEGATIVE_INFINITY
         for (cellIndex in cellFrom until cellTo) {
             if (!cellAlive[cellIndex]) continue
             val particleIndex = particleBase + (cellIndex - cellFrom)
@@ -326,11 +333,19 @@ class RenderBufferManager(
             writeCell(writeIndex, cellIndex, particleIndex, pColor, pRadius)
             if (cull != null) {
                 val h = particleIndex * HISTORY_STRIDE
-                cull.include(particleEntity.x(particleIndex), particleEntity.y(particleIndex), Float.fromBits(history[h + 5]), Float.fromBits(history[h + 6]))
+                val cx = particleEntity.x(particleIndex); val cy = particleEntity.y(particleIndex)
+                val hx = Float.fromBits(history[h + 5]); val hy = Float.fromBits(history[h + 6])
+                minX = minOf(minX, minOf(cx, hx)); minY = minOf(minY, minOf(cy, hy))
+                maxX = maxOf(maxX, maxOf(cx, hx)); maxY = maxOf(maxY, maxOf(cy, hy))
             }
             writeIndex++
         }
-        cull?.finish(writeIndex)
+        if (cull != null) {
+            if (boundsSlot >= 0) {
+                organBounds[4 * boundsSlot] = minX; organBounds[4 * boundsSlot + 1] = minY
+                organBounds[4 * boundsSlot + 2] = maxX; organBounds[4 * boundsSlot + 3] = maxY
+            } else if (writeIndex > startIndex) cull.add(startIndex, writeIndex, minX, minY, maxX, maxY)
+        }
         return writeIndex
     }
 
@@ -835,10 +850,62 @@ class RenderBufferManager(
         publish(snapshot)
     }
 
+    private var opticalCount=IntArray(0)
+    private var opticalGraph:io.github.some_example_name.render.pack.OpticalLinks?=null
+    private var opticalTotal=0
+    private var opticalCells=0
+    private var opticalChunks=1
+    private val opticalCountJob=ParallelExecutor.ChunkJob{k,_->
+        val from=(opticalTotal.toLong()*k/opticalChunks).toInt();val to=(opticalTotal.toLong()*(k+1)/opticalChunks).toInt()
+        for(i in from until to){
+            if(i>=opticalCells){opticalCount[i]=0;continue}
+            val base=cellOfRender[i]*CellEntity.MAX_LINKS_PER_CELL
+            var c=0
+            for(l in 0 until CellEntity.MAX_LINKS_PER_CELL){
+                val other=cellEntity.cellLinks[base+l]
+                if(other<0)break
+                if(renderCellStamp[other]==serial)c++
+            }
+            opticalCount[i]=c
+        }
+    }
+    private val opticalFillJob=ParallelExecutor.ChunkJob{k,_->
+        val graph=opticalGraph!!
+        val from=(opticalTotal.toLong()*k/opticalChunks).toInt();val to=(opticalTotal.toLong()*(k+1)/opticalChunks).toInt()
+        for(i in from until to){
+            if(i>=opticalCells){graph.vertexParallel(i);continue}
+            val cell=cellOfRender[i];val base=cell*CellEntity.MAX_LINKS_PER_CELL
+            graph.vertexParallel(i,(cell.toLong() shl 32) or (cellEntity.getGeneration(cell).toLong() and 0xffffffffL))
+            val organ=cellEntity.organIndex[cell]
+            if(organ>=0)materialCoordinates.write(graph,i,cellEntity.organEntity.genomeIndex[organ],cellEntity.cellGenomeId[cell])
+            var at=graph.offsets[i]
+            for(l in 0 until CellEntity.MAX_LINKS_PER_CELL){
+                val other=cellEntity.cellLinks[base+l]
+                if(other<0)break
+                if(renderCellStamp[other]==serial)graph.neighbors[at++]=renderOfCell[other]
+            }
+        }
+    }
+
     private fun writeOpticalLinks(snapshot:RenderSnapshot,total:Int,cells:Int){
         val graph=snapshot.opticalLinks
         graph.epoch=polygonEpoch
         graph.begin(total,linkEntity.aliveList.size*2)
+        val executor=threads?.executor
+        if(executor!=null&&executor.workerCount>1&&total>=4096){
+            // Граф изображения по воркерам: счёт соседей, префиксная сумма, запись со своего места.
+            val organs=cellEntity.organEntity.aliveList
+            for(k in 0 until organs.size)materialCoordinates.prepare(cellEntity.organEntity.genomeIndex[organs.getInt(k)])
+            opticalGraph=graph;opticalTotal=total;opticalCells=cells
+            opticalChunks=total/2048+1
+            if(opticalCount.size<total)opticalCount=IntArray(total*2)
+            executor.runChunks(opticalChunks,Phase.RENDER,opticalCountJob)
+            var sum=0
+            for(i in 0 until total){graph.offsets[i]=sum;sum+=opticalCount[i]}
+            executor.runChunks(opticalChunks,Phase.RENDER,opticalFillJob)
+            graph.endParallel(sum)
+            return
+        }
         for(i in 0 until total){
             if(i>=cells){graph.vertex(i);continue}
             val cell=cellOfRender[i];val base=cell*CellEntity.MAX_LINKS_PER_CELL
