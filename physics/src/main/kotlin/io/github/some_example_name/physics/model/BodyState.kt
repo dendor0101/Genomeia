@@ -162,6 +162,9 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     lateinit var conRest: DoubleArray
 
     lateinit var conMuscle: IntArray
+    /** Пороги предела длины на подшаг, см. refreshLimit. Читаются только параллельным проходом. */
+    var limitHi2 = DoubleArray(0)
+    var limitLo2 = DoubleArray(0)
 
     // --- граничные рёбра (омываемая поверхность) ---
     // --- изгиб граничного контура ---

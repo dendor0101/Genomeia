@@ -12,12 +12,37 @@ class BlockIndex(capacity: Int, blocks: Int) {
     var prev = IntArray(capacity) { -1 }; private set
     var owner = IntArray(capacity) { -1 }; private set
 
-    fun clear() { head.fill(-1); tail.fill(-1); owner.fill(-1) }
+    /**
+     * Плотная копия списка блока для счётного обхода (пределы длины, четыре прохода за подшаг):
+     * пересобирается только после правок блока. Блок обходит один воркер, поэтому гонки нет.
+     */
+    private val denseItems = Array(blocks) { IntArray(0) }
+    private val denseDirty = BooleanArray(blocks) { true }
+    val denseCount = IntArray(blocks)
+
+    fun dense(block: Int): IntArray {
+        if (denseDirty[block]) {
+            var size = 0
+            var c = head[block]
+            while (c >= 0) { size++; c = next[c] }
+            if (denseItems[block].size < size) denseItems[block] = IntArray(size * 2)
+            val items = denseItems[block]
+            var k = 0
+            c = head[block]
+            while (c >= 0) { items[k++] = c; c = next[c] }
+            denseCount[block] = size
+            denseDirty[block] = false
+        }
+        return denseItems[block]
+    }
+
+    fun clear() { head.fill(-1); tail.fill(-1); owner.fill(-1); denseDirty.fill(true) }
 
     fun add(id: Int, block: Int) {
         if (id >= owner.size) grow(id + 1)
         if (owner[id] >= 0) return
         owner[id] = block; next[id] = -1; prev[id] = tail[block]
+        denseDirty[block] = true
         if (tail[block] < 0) head[block] = id else next[tail[block]] = id
         tail[block] = id
     }
@@ -28,6 +53,7 @@ class BlockIndex(capacity: Int, blocks: Int) {
         if (id >= owner.size) return
         val block = owner[id]
         if (block < 0) return
+        denseDirty[block] = true
         val p = prev[id]; val q = next[id]
         if (p < 0) head[block] = q else next[p] = q
         if (q < 0) tail[block] = p else prev[q] = p
@@ -40,6 +66,7 @@ class BlockIndex(capacity: Int, blocks: Int) {
         remove(to)
         val block = owner[from]
         if (block < 0) return
+        denseDirty[block] = true
         owner[to] = block; prev[to] = prev[from]; next[to] = next[from]
         if (prev[to] < 0) head[block] = to else next[prev[to]] = to
         if (next[to] < 0) tail[block] = to else prev[next[to]] = to

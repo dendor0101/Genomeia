@@ -225,6 +225,23 @@ internal fun BodyState.solveLimitItemSerial(c: Int) {
 }
 
 /**
+ * ПОРОГИ ПРЕДЕЛА ДЛИНЫ связи [c] на подшаг в квадратах: limitLo2 — раздавливание, limitHi2 — растяжение.
+ * Предел проверяется четыре раза за подшаг, и большинство проверок ничего не находит: готовые пороги
+ * избавляют обычную связь от чтения мышцы, множителя и длины покоя. У новой связи пороги нулевые:
+ * она идёт по полному пути.
+ */
+internal fun BodyState.refreshLimit(c: Int) {
+    val mus = conMuscle[c]
+    val base = if (mus < 0) 1.0 else muscleScaleOf[mus]
+    val scale = if (cellScalesOn) base * conCellScale[c] else base
+    val rest = conRest[c]
+    val crush = LINK_CRUSH_RATIO * rest * scale
+    val max = linkMaxLength(rest, scale)
+    limitHi2[c] = max * max
+    limitLo2[c] = if (tearingOn) crush * crush else -1.0
+}
+
+/**
  * ПРЕДЕЛ ДЛИНЫ СВЯЗИ — LINK_MAX_STRETCH длины покоя. У растянутой мышцы клетки ([scale] > 1,
  * игра растягивает миоцит до 1.5) — от растянутой длины: иначе предел резал бы растяжение и
  * рвал мышцу. Сжатие предела не трогает — прежняя арифметика, те же биты.

@@ -228,6 +228,20 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         }
     }
 
+    private var refreshParts = 1
+    private val refreshJob = PhysicsJob { k, _ ->
+        val limits = state.boundaryLinkLimits
+        val ids = limits.ids; val n = limits.count
+        val from = (n.toLong() * k / refreshParts).toInt(); val to = (n.toLong() * (k + 1) / refreshParts).toInt()
+        for (g in from until to) { val c = ids[g]; if (c >= 0) state.refreshLimit(c) }
+    }
+
+    /** Пороги пределов на этот подшаг: множители мышц уже обновлены, до конца подшага они не меняются. */
+    fun refreshLimits() {
+        refreshParts = 4 * scratch.size
+        state.activeWorkers!!.run(refreshParts, refreshJob)
+    }
+
     fun solveGlobalLimits() {
         val limits = state.boundaryLinkLimits
         limits.beginPass()
@@ -379,13 +393,12 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
 }
 
 /**
- * Личное воркера: очередь пределов блока, черновики проекции кости и счётчики.
+ * Личное воркера: черновики проекции кости и счётчики.
  * Счётчики пишутся обычной записью; соседние объекты разных воркеров разделены
  * массивами-заглушками, чтобы не делить кэш-линию.
  */
 internal class WorkerScratch(state: BodyState) {
     @Suppress("unused") private val padBefore = LongArray(16)
-    var queue = IntArray(maxOf(16, state.conA.size))
     val boneDx = DoubleArray(state.boneDx.size)
     val boneDy = DoubleArray(state.boneDx.size)
     var linkCapHits = 0
@@ -449,13 +462,8 @@ internal fun BodyState.solveBlockParallel(h: Double, block: Int, layout: Constra
  */
 private fun BodyState.solveBlockLimitsParallel(block: Int, layout: ConstraintBlocks, s: WorkerScratch): Int {
     val list = layout.limits
-    var size = 0
-    var q = s.queue
-    var c0 = list.head[block]
-    while (c0 >= 0) {
-        if (size == q.size) { q = q.copyOf(size * 2); s.queue = q }
-        q[size++] = c0; c0 = list.next[c0]
-    }
+    val q = list.dense(block)
+    val size = list.denseCount[block]
     for (cursor in 0 until size) if (limitItemParallel(q[cursor], s)) return cursor
     return -1
 }
@@ -471,6 +479,8 @@ internal fun BodyState.limitItemParallel(c: Int, s: WorkerScratch): Boolean {
     val dx = px[i] - px[j]
     val dy = py[i] - py[j]
     val len2 = dx * dx + dy * dy
+    // Готовые пороги этого подшага (refreshLimit): обычная связь дальше не читает ничего.
+    if (len2 <= limitHi2[c] && len2 >= limitLo2[c]) return false
     val mus = conMuscle[c]
     val base = if (mus < 0) 1.0 else muscleScaleOf[mus]
     val scale = if (cellScalesOn) base * conCellScale[c] else base
