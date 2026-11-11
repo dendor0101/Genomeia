@@ -125,7 +125,7 @@ class UserCommandManager(
             }
         }
 
-        if (grabbedParticleIndex != -1 && !isAlreadyDragged && isDragging) {
+        if (grabbedParticleIndex != -1 && !isAlreadyDragged && isDragging && canMoveOrganism()) {
             val grabDrag = 0.5f // To reduce oscillations
 
             with(particleEntity) {
@@ -137,6 +137,27 @@ class UserCommandManager(
 
     private fun resolveGenomeIndex(cmd: PlayerCommand): Int =
         (cmd as? PlayerCommand.Tap)?.genomeIndex ?: simulationData.currentGenomeIndex
+
+    /**
+     * Можно ли двигать тело мышью. В обычном мире — всегда, в уровне — только если скрипт
+     * разрешил явно (`setMovable(true)`): иначе стартовую зону и цель обходят за секунду,
+     * просто перетащив организм к финишу.
+     */
+    private fun canMoveOrganism(): Boolean = !simulationData.isLevel || simulationData.isMovable
+
+    /**
+     * Можно ли поставить организм в точку. Вне уровня — где угодно. В уровне с заданной
+     * зоной старта — только внутри круга: клик на финише иначе сразу проходил бы уровень.
+     * Радиус 0 — уровням до появления зоны, для них поведение прежнее.
+     */
+    private fun canSpawnAt(x: Float, y: Float): Boolean {
+        if (!simulationData.isLevel) return true
+        val radius = simulationData.level.spawnRadius
+        if (radius <= 0f) return true
+        val dx = x - simulationData.level.spawnX
+        val dy = y - simulationData.level.spawnY
+        return dx * dx + dy * dy <= radius * radius
+    }
 
     /**
      * Команда со всем, что решено в момент применения: у касания «поставить организм» —
@@ -159,7 +180,11 @@ class UserCommandManager(
             }
 
             is PlayerCommand.TouchDown -> {
-                grabbedParticleIndex = gridManager.pickParticle(cmd.x, cmd.y, particleEntity, cellEntity)
+                grabbedParticleIndex = if (canMoveOrganism()) {
+                    gridManager.pickParticle(cmd.x, cmd.y, particleEntity, cellEntity)
+                } else {
+                    -1
+                }
                 if (grabbedParticleIndex != -1) isDragging = false
 
                 tapX = cmd.x
@@ -168,7 +193,7 @@ class UserCommandManager(
             }
 
             is PlayerCommand.Drag -> {
-                if (grabbedParticleIndex != -1) {
+                if (grabbedParticleIndex != -1 && canMoveOrganism()) {
                     isAlreadyDragged = true
                     val grabDrag = 0.5f // To reduce oscillations
 
@@ -199,10 +224,11 @@ class UserCommandManager(
 
                 if (simulationData.selectedCellIndex == -1) {
                     if (cmd.isLeftButton) {
-                        if (cmd.x > 0 && cmd.x < gridManager.gridWidth && cmd.y > 0 && cmd.y < gridManager.gridHeight) {
+                        if (cmd.x > 0 && cmd.x < gridManager.gridWidth && cmd.y > 0 && cmd.y < gridManager.gridHeight &&
+                            canSpawnAt(cmd.x, cmd.y)) {
                             val genomeIndex = resolveGenomeIndex(cmd)
                             val randomAngle = if (isEditor) 0f else 0f//MathUtils.random(0f, MathUtils.PI2)
-                            organismSpawner.spawn(
+                            val cellIndex = organismSpawner.spawn(
                                 genomeIndex = genomeIndex,
                                 x = cmd.x,
                                 y = cmd.y,
@@ -211,6 +237,7 @@ class UserCommandManager(
                                 angleCos = cos(randomAngle),
                                 angleSin = sin(randomAngle)
                             )
+                            simulationData.lastPlacedOrganIndex = cellEntity.organIndex[cellIndex]
                         }
                     } else {
                         val radius = 7.0f

@@ -26,6 +26,7 @@ import io.github.some_example_name.old.editor.system.logic.TryToRemove
 import io.github.some_example_name.old.features.editor.dialog.ActionDialog
 import io.github.some_example_name.old.features.editor.dialog.ActionDialogType
 import io.github.some_example_name.old.features.editor.dialog.MutateOrDivideDialog
+import io.github.some_example_name.old.features.levels.editor.LevelInfo
 
 fun Stage.changeRemoveActionDialog(
     command: ShowChangeRemoveDialog,
@@ -153,7 +154,8 @@ fun Stage.colorPickerDialog(
 fun Stage.saveDialog(
     isGoToMenu: Boolean,
     genomeName: String,
-    editorLogicSystem: EditorLogicSystem
+    editorLogicSystem: EditorLogicSystem,
+    level: LevelInfo? = null
 ) {
     SaveGenomeDialog(
         genomeName = genomeName,
@@ -163,7 +165,7 @@ fun Stage.saveDialog(
         onSaveAndTest = { name ->
             editorLogicSystem.putUiCommand(SaveGenome(name))
             navigationCommandsManager.performCommand(
-                GoReplace(GoSimulation(world = null, genomeName = name))
+                GoReplace(GoSimulation(world = null, genomeName = name, level = level))
             )
         },
         onSaveAndExport = { name ->
@@ -171,8 +173,11 @@ fun Stage.saveDialog(
             editorLogicSystem.putUiCommand(ExportGenome(name))
         },
         onGoMenu = {
-            navigationCommandsManager.performCommand(GoReplace(GoMenu))
+            navigationCommandsManager.performCommand(
+                GoReplace(level?.let { GoSimulation(world = null, genomeName = null, level = it) } ?: GoMenu)
+            )
         },
-        isGoToMenu = isGoToMenu
+        isGoToMenu = isGoToMenu,
+        menuText = bundle.get(if (level != null) "button.back" else "button.menu")
     ).show(this)
 }

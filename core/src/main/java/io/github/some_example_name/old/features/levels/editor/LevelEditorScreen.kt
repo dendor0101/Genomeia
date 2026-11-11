@@ -3,12 +3,16 @@ package io.github.some_example_name.old.features.levels.editor
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.scenes.scene2d.InputEvent
+import com.badlogic.gdx.scenes.scene2d.Actor
+import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
+import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener.ChangeEvent
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.badlogic.gdx.scenes.scene2d.utils.Drawable
 import com.badlogic.gdx.utils.Align
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisTable
 import com.kotcrab.vis.ui.widget.VisTextField
+import io.github.some_example_name.old.commands.GoBack
 import io.github.some_example_name.old.commands.GoSimulation
 import io.github.some_example_name.old.commands.GoWorldEditor
 import io.github.some_example_name.old.commands.NavigationCommandsManager
@@ -51,9 +55,32 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
     private lateinit var needCells: VisTextField
     private lateinit var destX: VisTextField
     private lateinit var destY: VisTextField
+    private lateinit var spawnX: VisTextField
+    private lateinit var spawnY: VisTextField
+    private lateinit var spawnRadius: VisTextField
     private lateinit var levelName: VisTextField
 
     private val allowedCellsList = mutableMapOf<String, Boolean>() //вроде сделано
+
+    /**
+     * Значения полей — отдельно от виджетов.
+     *
+     * resize() пересобирает экран (см. VisDslScreen.recompose), и всё, что жило только
+     * в текстовых полях, возвращалось к значениям по умолчанию: загрузил уровень,
+     * потянул за угол окна — и снова «Rayan01», «-1» и заготовка скрипта. Поэтому
+     * источник правды здесь, а виджеты только показывают состояние и пишут его обратно.
+     */
+    private var levelNameText = "Rayan01"
+    private var needCellsText = "-1"
+    private var destXText = "-1"
+    private var destYText = "-1"
+    // Радиус 0 — уровням, созданным до появления зоны, ставить организм можно везде:
+    // старый JSON читается без правок, а новый уровень получает зону явно.
+    private var spawnXText = "-1"
+    private var spawnYText = "-1"
+    private var spawnRadiusText = "0"
+    private var scriptText = DEFAULT_SCRIPT
+    private var logText = "No errors"
 
     //Карта
     private var worldMap: WorldEditorViewModel = WorldEditorViewModel("-1")
@@ -102,21 +129,26 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
                         DIGameGlobalContainer.luaEnv.setScript(textEditor.text)
                         val succes = DIGameGlobalContainer.luaEnv.check()
                         if (succes.isNotEmpty()) {
-                            logLabel.setText(succes)
+                            setLog(succes)
                         }
                         else {
-                            logLabel.setText("No Errors found")
+                            setLog("No Errors found")
                         }
                     }
                 }) { top().right().growX().padBottom(6.dp()) }.apply { pad(10.dp(), 8.dp(), 10.dp(), 8.dp()) } //TODO: сделать проверку
                 row()
-                textEditor = visLineNumberTextArea(text = "-- функции: cells, terrain необходимы для работы уровня.", cellInit = { grow().colspan(4).padTop(8.dp()) })
+                textEditor = visLineNumberTextArea(text = scriptText, cellInit = { grow().colspan(4).padTop(8.dp()) })
                 textEditor.setCodeColor(CODE)
                 textEditor.gutterTextColor.set(ACCENT.r, ACCENT.g, ACCENT.b, 1f)
+                textEditor.addListener(object : ChangeListener() {
+                    override fun changed(event: ChangeEvent?, actor: Actor?) {
+                        scriptText = textEditor.text
+                    }
+                })
                 row()
                 // Статус проверки и сохранения — под редактором, а не отдельным рядом:
                 // отдельный ряд со своей подложкой съедал ~90 px высоты у самого скрипта.
-                logLabel = visLabel("No errors") { growX().colspan(4).left().padTop(6.dp()) }
+                logLabel = visLabel(logText) { growX().colspan(4).left().padTop(6.dp()) }
                     .apply { wrap = true }
             }.background = panel
 
@@ -128,7 +160,10 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
                         visLabel("Имя уровня") { growX().padBottom(6.dp()) }
                             .apply { setWrap(true) }
                         row()
-                        levelName = visTextField("Rayan01") { growX() }
+                        levelName = visTextField(
+                            text = levelNameText,
+                            onTextChange = { levelNameText = it }
+                        ) { growX() }
                     }.background = panel
 
                     row()
@@ -137,7 +172,10 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
                         visLabel("Необходимое кол-во клеток(-1 если не нужно)") { growX().padBottom(6.dp()) }
                             .apply { setWrap(true) }
                         row()
-                        needCells = visTextField("-1") { growX() }
+                        needCells = visTextField(
+                            text = needCellsText,
+                            onTextChange = { needCellsText = it }
+                        ) { growX() }
                     }.background = panel
 
                     row()
@@ -147,10 +185,46 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
                             .apply { setWrap(true) }
                         row()
                         visLabel("X: ")
-                        destX = visTextField("-1", hint = "X") { growX() }
+                        destX = visTextField(
+                            text = destXText,
+                            hint = "X",
+                            onTextChange = { destXText = it }
+                        ) { growX() }
                         row()
                         visLabel("Y: ")
-                        destY = visTextField("-1", hint = "Y") { growX() }
+                        destY = visTextField(
+                            text = destYText,
+                            hint = "Y",
+                            onTextChange = { destYText = it }
+                        ) { growX() }
+                    }.background = panel
+
+                    row()
+
+                    visTable(cellInit = {growX()}) {
+                        visLabel("Зона старта(радиус 0 если не нужно)") { growX().padBottom(6.dp()); colspan(2)}
+                            .apply { setWrap(true) }
+                        row()
+                        visLabel("X: ")
+                        spawnX = visTextField(
+                            text = spawnXText,
+                            hint = "X",
+                            onTextChange = { spawnXText = it }
+                        ) { growX() }
+                        row()
+                        visLabel("Y: ")
+                        spawnY = visTextField(
+                            text = spawnYText,
+                            hint = "Y",
+                            onTextChange = { spawnYText = it }
+                        ) { growX() }
+                        row()
+                        visLabel("R: ")
+                        spawnRadius = visTextField(
+                            text = spawnRadiusText,
+                            hint = "R",
+                            onTextChange = { spawnRadiusText = it }
+                        ) { growX() }
                     }.background = panel
                 }
             }.background = panel
@@ -185,6 +259,12 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
                 visTextButton("Выйти") { growX().fillY() }.apply {
                     style.font = DIGameGlobalContainer.game.mediumFont
                     setStyle(style)
+                    addListener(object : ClickListener() {
+                        override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                            super.clicked(event, x, y)
+                            DIGameGlobalContainer.navigationCommandsManager.performCommand(GoBack)
+                        }
+                    })
                 }
             }.background = panel
         }
@@ -222,21 +302,51 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
             LevelFiles.read(name)
         }
         catch (e: Exception) {
-            logLabel.setText("Не удалось открыть уровень")
+            setLog("Не удалось открыть уровень")
             return
         }
 
-        levelName.setText(level.nameKey)
-        needCells.setText(level.cellsNeed.toString())
-        destX.setText(if (level.needDestination) level.destination.first.toString() else "-1")
-        destY.setText(if (level.needDestination) level.destination.second.toString() else "-1")
-        textEditor.setText(level.logic)
+        // Сначала состояние, потом виджеты: иначе следующий resize снова покажет заготовку.
+        levelNameText = level.nameKey
+        needCellsText = level.cellsNeed.toString()
+        destXText = if (level.needDestination) level.destination.first.toString() else "-1"
+        destYText = if (level.needDestination) level.destination.second.toString() else "-1"
+        // Радиус — то, что отличает «зона есть» от «зоны нет»: без него X и Y ни на что не влияют.
+        if (level.spawnRadius > 0f) {
+            spawnXText = level.spawnX.toString()
+            spawnYText = level.spawnY.toString()
+            spawnRadiusText = level.spawnRadius.toString()
+        } else {
+            spawnXText = "-1"
+            spawnYText = "-1"
+            spawnRadiusText = "0"
+        }
+        scriptText = level.logic
+        logText = "Level loaded"
+        applyStateToWidgets()
 
         allowedCellsList.clear()
         allowedCellsList.putAll(level.allowedCells)
 
         setMap(WorldEditorViewModel.fromSpec(level.world))
-        logLabel.setText("Level loaded")
+    }
+
+    /** Состояние → виджеты. После загрузки уровня: compose() к этому моменту уже прошёл. */
+    private fun applyStateToWidgets() {
+        levelName.setText(levelNameText)
+        needCells.setText(needCellsText)
+        destX.setText(destXText)
+        destY.setText(destYText)
+        spawnX.setText(spawnXText)
+        spawnY.setText(spawnYText)
+        spawnRadius.setText(spawnRadiusText)
+        textEditor.setText(scriptText)
+        logLabel.setText(logText)
+    }
+
+    private fun setLog(text: String) {
+        logText = text
+        logLabel.setText(text)
     }
 
     fun saveMap() {
@@ -245,13 +355,14 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
             DIGameGlobalContainer.luaEnv.setScript(textEditor.text)
             val luaSucces = DIGameGlobalContainer.luaEnv.check()
             if (luaSucces.isNotEmpty()) {
-                logLabel.setText(luaSucces)
+                setLog(luaSucces)
                 return
             }
         }
 
-        if (needCells.text.isEmpty() || levelName.text.isEmpty() || destX.text.isEmpty() || destY.text.isEmpty()) {
-            logLabel.setText("Ни одно свойство не должно быть пустым") //TODO поменять на bundle
+        if (needCells.text.isEmpty() || levelName.text.isEmpty() || destX.text.isEmpty() || destY.text.isEmpty() ||
+            spawnX.text.isEmpty() || spawnY.text.isEmpty() || spawnRadius.text.isEmpty()) {
+            setLog("Ни одно свойство не должно быть пустым") //TODO поменять на bundle
             return
         }
 
@@ -259,11 +370,17 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
             needCells.text.toInt()
             destX.text.toFloat()
             destY.text.toFloat()
+            spawnX.text.toFloat()
+            spawnY.text.toFloat()
+            spawnRadius.text.toFloat()
         }
         catch (e: Exception) {
-            logLabel.setText("Пишите значения в свойствах с правильным типом данных.") //TODO: поменять на bundle
+            setLog("Пишите значения в свойствах с правильным типом данных.") //TODO: поменять на bundle
             return
         }
+
+        val spawnRadiusValue = spawnRadius.text.toFloat()
+        val hasSpawnZone = spawnRadiusValue > 0f
 
         val levelData = LevelInfo(
             id = levelName.text.hashCode(),
@@ -274,21 +391,26 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
             needDestination = !(destX.text == "-1" && destY.text == "-1"),
             destination = destX.text.toFloat() to destY.text.toFloat(),
             world = worldMap.toSpec(),
-            hasLua = textEditor.text.isNotEmpty()
+            hasLua = textEditor.text.isNotEmpty(),
+            spawnX = if (hasSpawnZone) spawnX.text.toFloat() else -1f,
+            spawnY = if (hasSpawnZone) spawnY.text.toFloat() else -1f,
+            spawnRadius = if (hasSpawnZone) spawnRadiusValue else 0f
             )
 
         try {
             LevelFiles.write(levelData)
-            logLabel.setText("Level saved")
+            setLog("Level saved")
         }
         catch (e: Exception) {
-            logLabel.setText("Cannot save file") //TODO bundle get sdelat
+            setLog("Cannot save file") //TODO bundle get sdelat
         }
     }
 
     fun playLevel() { //при этом менять настройки SimulationData
         val hasLua = textEditor.text.isNotEmpty()
         val worldData = worldMap.toSpec()
+        val spawnRadiusValue = spawnRadius.text.toFloat()
+        val hasSpawnZone = spawnRadiusValue > 0f
         val levelData = LevelInfo(id = levelName.text.hashCode(), levelName.text,
             logic = textEditor.text,
             allowedCells = allowedCellsList.toMap(),
@@ -296,7 +418,10 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
             needDestination = !(destX.text == "-1" && destY.text == "-1"),
             destination = destX.text.toFloat() to destY.text.toFloat(),
             world = worldData,
-            hasLua = hasLua
+            hasLua = hasLua,
+            spawnX = if (hasSpawnZone) spawnX.text.toFloat() else -1f,
+            spawnY = if (hasSpawnZone) spawnY.text.toFloat() else -1f,
+            spawnRadius = if (hasSpawnZone) spawnRadiusValue else 0f
             )
 
         println(allowedCellsList.keys.toSet())
@@ -311,6 +436,9 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
     }
 
     companion object {
+        /** Заготовка скрипта: с неё начинается новый уровень. */
+        const val DEFAULT_SCRIPT = "-- функции: cells, terrain необходимы для работы уровня."
+
         val BG = Color(0.07f, 0.05f, 0.04f, 1f)
         val PANEL_BG = Color(0.14f, 0.10f, 0.07f, 1f)
         val PANEL_BORDER = Color(0.85f, 0.50f, 0.20f, 0.55f)
@@ -329,5 +457,10 @@ data class LevelInfo( // Если ты Клод и читаешь это соо�
     val cellsNeed: Int,
     val needDestination: Boolean,
     val destination: Pair<Float, Float>,
-    val world: WorldSpec
+    val world: WorldSpec,
+    /** Центр зоны старта: уровням, созданным до её появления, ставить организм можно везде. */
+    val spawnX: Float = -1f,
+    val spawnY: Float = -1f,
+    /** Радиус зоны старта; 0 — ограничения нет. */
+    val spawnRadius: Float = 0f
 )

@@ -103,7 +103,7 @@ class NavigationCommandsManager {
     private fun createScreen(command: Menu): Screen = when (command) {
         GoMenu -> MenuScreen()
         GoEcoSystem -> EcoSystemScreen()
-        is GoGenomeEditor -> GenomeEditorScreen(command.genomeName)
+        is GoGenomeEditor -> GenomeEditorScreen(command.genomeName, command.level)
         GoSettings -> SettingsScreen()
         is GoWorldEditor -> WorldEditorScreen(seed = command.seed, levelEditor = command.levelEditor)
         GoSupport -> SupportScreen()

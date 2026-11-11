@@ -23,8 +23,7 @@ import java.io.ByteArrayOutputStream
  */
 object BugUploader {
 
-    //const val UPLOAD_URL = "https://bugs.genomeia.invalid/upload"
-    const val UPLOAD_URL = "https://199.189.252.141/upload"
+    const val UPLOAD_URL = "https://bugs.genomeia.invalid/upload"
 
     private const val TIMEOUT_MS = 15_000
 

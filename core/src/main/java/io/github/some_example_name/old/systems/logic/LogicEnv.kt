@@ -12,6 +12,7 @@ import com.badlogic.gdx.utils.Json
 import com.badlogic.gdx.utils.ObjectMap
 import io.github.some_example_name.old.commands.GoBack
 import io.github.some_example_name.old.commands.WorldCommandType
+import io.github.some_example_name.old.bug.BugReplay
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.DISimulationContainer.simulationData
@@ -22,6 +23,16 @@ import io.github.some_example_name.old.features.simulation.SimulationScreen
 class LogicEnv {
     val popups = com.badlogic.gdx.utils.Queue<PopUp>()
     var popupActive = false
+
+    /**
+     * Ожидание окна: popup() держит поток симуляции, пока игрок не закроет окно, а
+     * onPopupClosed() его будит. Очередь трогает только поток рендера, поэтому счётчик
+     * и очередь — разные вещи: счётчик под локом, очередь без (у неё один хозяин).
+     */
+    private val popupLock = Object()
+
+    /** Сколько окон поставлено в очередь и ещё не закрыто. Под [popupLock]. */
+    private var pendingPopups = 0
 
     //Состояние уровня для экрана: цель, прогресс, метка, зона, провал.
     val rules = LevelRules()
@@ -71,7 +82,9 @@ class LogicEnv {
         }
 
         rules.resumeAfterReading()
-        Gdx.app.postRunnable {
+        // Экран уже закрыли (кнопка «назад» или dispose во время ожидания окна): поздний
+        // GoBack увёл бы игрока ещё на шаг назад, например из редактора в меню.
+        if (!simulationData.isFinish) Gdx.app.postRunnable {
             DIGameGlobalContainer.navigationCommandsManager.performCommand(GoBack)
         }
 
@@ -95,8 +108,18 @@ class LogicEnv {
         val title = string(args, 1).ifEmpty { "title" }
         val pause = bool(args, 2)
         if (pause) rules.requestReadingPause()
+        // Очередь трогает только поток рендера (postRunnable и pumpPopups): сцену нельзя
+        // дёргать из симуляции. Счётчик — под локом, его читает ждущий поток симуляции.
+        synchronized(popupLock) { pendingPopups++ }
         Gdx.app.postRunnable {
             popups.addLast(PopUp(title, text))
+        }
+        // Пока окно не закрыто, следующая строка скрипта не выполняется: поток симуляции
+        // стоит, тики не идут. При повторе .bug ждать некого — окно там никто не закроет;
+        // в редакторе (LogicUI) run() зовётся с потока рендера, и ожидание заморозило бы
+        // игру целиком.
+        if (!BugReplay.isActive && DISimulationContainer.simulationSystem.isSimulationThread()) {
+            awaitPopupsClosed()
         }
         listOf()
     }
@@ -130,9 +153,21 @@ class LogicEnv {
         listOf()
     }
 
+    /**
+     * Разрешить или запретить перетаскивание организма. По умолчанию в уровне запрещено:
+     * иначе тело перетаскивают к финишу и уровень проходится без игры.
+     */
+    val setMovable = LuaNativeFunction { args ->
+        simulationData.isMovable = bool(args, 0)
+        listOf()
+    }
+
     val hint = LuaNativeFunction { args ->
         val text = string(args, 0)
         if (rules.hintOnce(text)) {
+            // Подсказка тоже считается: если следом скрипт ждёт окно, оно не должно
+            // «отпустить» ожидание, пока открыта ещё и подсказка.
+            synchronized(popupLock) { pendingPopups++ }
             Gdx.app.postRunnable {
                 popups.addLast(PopUp("Подсказка", text))
             }
@@ -211,6 +246,48 @@ class LogicEnv {
     fun onPopupClosed() {
         popupActive = false
         rules.resumeAfterReading()
+        synchronized(popupLock) {
+            if (pendingPopups > 0) pendingPopups--
+            popupLock.notifyAll()
+        }
+    }
+
+    /**
+     * Ждать, пока закроют все окна, поставленные до этого места скрипта.
+     *
+     * Слайс ожидания, а не вечное wait(): экран могут закрыть кнопкой «назад», и тогда
+     * dispose() ставит isFinish и прерывает поток. Без проверки флага ожидание пережило
+     * бы экран, а без выхода по InterruptedException join() в stopUpdateThread ждал бы
+     * целую секунду.
+     */
+    private fun awaitPopupsClosed() {
+        synchronized(popupLock) {
+            while (pendingPopups > 0) {
+                if (DISimulationContainer.simulationData.isFinish) return
+                try {
+                    popupLock.wait(POPUP_WAIT_SLICE_MS)
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return
+                }
+            }
+        }
+    }
+
+    /**
+     * Новый экран симуляции — очередь окон с чистого листа.
+     *
+     * Иначе окно, поставленное в прошлом мире прямо перед победой (например, окно
+     * «Победа» перед win), всплывало первым уже в следующем запуске уровня. Зовётся
+     * только с потока рендера, до старта потока симуляции.
+     */
+    fun resetPopups() {
+        popups.clear()
+        popupActive = false
+        synchronized(popupLock) {
+            pendingPopups = 0
+            popupLock.notifyAll()
+        }
     }
 
     fun pumpPopups() {
@@ -238,12 +315,19 @@ class LogicEnv {
         val cell = DISimulationContainer.cellEntity
         val particle = DISimulationContainer.particleEntity
         val alive = cell.aliveList
+        // Считаем по организму, который игрок поставил последним: если он один - это тело
+        // целиком, а если игрок успел поставить несколько - двигаться к финишу должно
+        // именно последнее. -1 — мышью ещё не ставили (скриптовый спавн), тогда как раньше
+        // берём все клетки, чтобы старые уровни не сломались.
+        val organ = simulationData.lastPlacedOrganIndex
 
         var sx = 0f
         var sy = 0f
         var count = 0
         for (i in 0 until alive.size) {
-            val particleIndex = cell.particleIndexes[alive.getInt(i)]
+            val cellIndex = alive.getInt(i)
+            if (organ >= 0 && cell.organIndex[cellIndex] != organ) continue
+            val particleIndex = cell.particleIndexes[cellIndex]
             if (particleIndex < 0) continue
             sx += particle.x[particleIndex]
             sy += particle.y[particleIndex]
@@ -267,8 +351,11 @@ class LogicEnv {
         args.getOrNull(index) as? LuaFunction
 
     private companion object {
-        const val DESTINATION_RADIUS = 10f
+        const val DESTINATION_RADIUS = 7f
 
         const val DEFAULT_FOOD_RADIUS = 0.3f
+
+        /** Раз в столько миллисекунд ждущее окно проверяет, не закрыли ли экран. */
+        const val POPUP_WAIT_SLICE_MS = 100L
     }
 }

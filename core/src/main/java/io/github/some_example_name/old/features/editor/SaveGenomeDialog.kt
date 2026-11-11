@@ -32,7 +32,8 @@ class SaveGenomeDialog(
     /** Android: сохранить и отдать файл системе. */
     val onSaveAndExport: (name: String) -> Unit,
     val onGoMenu: () -> Unit,
-    val isGoToMenu: Boolean
+    val isGoToMenu: Boolean,
+    val menuText: String = bundle.get("button.menu")
 ) : VisDialog(bundle.get("button.saveGenome")) {
 
     private val textures = mutableListOf<Texture>()
@@ -74,7 +75,7 @@ class SaveGenomeDialog(
                 onSave.invoke(name)
             })
             if (isGoToMenu) {
-                visTextButton(bundle.get("button.menu"), onClick = {
+                visTextButton(menuText, onClick = {
                     onGoMenu.invoke()
                 }) { center() }
             }

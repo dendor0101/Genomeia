@@ -117,6 +117,8 @@ class SimulationScreen(
     private val levelHudTextures = mutableListOf<Texture>()
     private var levelHudSnapshot = LevelHud()
     private var levelDestination: Pair<Float, Float>? = null
+    /** Зона старта из LevelInfo: x, y, радиус. Сравнивается, чтобы не пересобирать HUD зря. */
+    private var levelSpawn: Triple<Float, Float, Float>? = null
     /** Что рисует LevelOverlay: свои метки уровня плюс точка назначения из LevelInfo. */
     private var overlayHud = LevelHud()
     /** Окно провала показано: второй раз за заход его не открываем. */
@@ -180,6 +182,9 @@ class SimulationScreen(
         )
 
         // Построение мира и запуск потока симуляции — в ViewModel, см. startWorld.
+        // Очередь окон прошлой сессии не должна переезжать в этот мир (окно, поставленное
+        // перед победой, иначе всплывало первым в следующем запуске).
+        DIGameGlobalContainer.luaEnv.env.resetPopups()
         val started = viewModel.startWorld()
         // Размер сетки известен только теперь: его задаёт рецепт или сохранение мира.
         camera.position.set(DISimulationContainer.gridWidth / 2f, DISimulationContainer.gridHeight / 2f, 0f)
@@ -405,11 +410,16 @@ class SimulationScreen(
         val data = DISimulationContainer.simulationData
         val hud = if (data.isLevel) DIGameGlobalContainer.luaEnv.env.rules.hud else LevelHud()
         val destination = if (data.isLevel && data.level.needDestination) data.level.destination else null
+        // Радиус — признак «зона есть»: у старых уровней он 0, и клик работает как раньше.
+        val spawn = if (data.isLevel && data.level.spawnRadius > 0f) {
+            Triple(data.level.spawnX, data.level.spawnY, data.level.spawnRadius)
+        } else null
 
-        if (hud == levelHudSnapshot && destination == levelDestination) return
+        if (hud == levelHudSnapshot && destination == levelDestination && spawn == levelSpawn) return
 
         levelHudSnapshot = hud
         levelDestination = destination
+        levelSpawn = spawn
         levelHud.clear()
 
         if (!data.isLevel) {
@@ -438,6 +448,14 @@ class SimulationScreen(
             hud.copy(markerX = destination.first, markerY = destination.second, hasMarker = true)
         } else {
             hud
+        }
+        if (spawn != null) {
+            overlayHud = overlayHud.copy(
+                spawnX = spawn.first,
+                spawnY = spawn.second,
+                spawnRadius = spawn.third,
+                hasSpawnZone = true
+            )
         }
     }
 
@@ -712,7 +730,7 @@ class SimulationScreen(
             import = bundle.get("button.import"),
             onNew = {
                 DIGameGlobalContainer.navigationCommandsManager.performCommand(
-                    GoReplace(GoGenomeEditor(null))
+                    GoReplace(GoGenomeEditor(null, if (simulationData.isLevel) simulationData.level else null))
                 )
             },
             onNext = { selectedFileName ->

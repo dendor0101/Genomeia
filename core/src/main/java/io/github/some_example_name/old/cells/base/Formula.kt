@@ -148,11 +148,11 @@ private object Pow : Formula("pow", "y = x^(a)") {
     override fun compute(cells: CellEntity, cellIndex: Int, x: Float) = x.pow(cells.getA(cellIndex))
 }
 
-private object Remember : Formula("remember", "y = remember(x), x > 0") {
+private object Remember : Formula("remember", "y = remember(x), x >= 0") {
     override fun compute(cells: CellEntity, cellIndex: Int, x: Float): Float = with(cells) {
         if (x > 0) {
             setRemember(cellIndex, x)
-        } else if (x <= 0) {
+        } else if (x < 0) {
             setRemember(cellIndex, 0.0f)
         }
         getRemember(cellIndex)

@@ -37,6 +37,7 @@ import io.github.some_example_name.old.editor.system.logic.ShowMutateOrDivideDia
 import io.github.some_example_name.old.editor.system.logic.UiScreenCommands
 import io.github.some_example_name.old.core.ui.CameraControl
 import io.github.some_example_name.old.core.ui.KeyboardFocus
+import io.github.some_example_name.old.features.levels.editor.LevelInfo
 
 data class GenomeEditorData(
     var currentTick: Int,
@@ -44,7 +45,8 @@ data class GenomeEditorData(
 )
 
 class GenomeEditorScreen(
-    val genomeName: String?
+    val genomeName: String?,
+    val returnLevel: LevelInfo? = null
 ) : Screen, ReplayTarget {
 
     private val renderSystem = DIGenomeEditorContainer.editorRenderSystem
@@ -56,7 +58,7 @@ class GenomeEditorScreen(
     }
     private val stage = Stage(ScreenViewport())
     private val shape = ShapeRenderer()
-    private val composeGenomeEditor = ComposeGenomeEditor()
+    private val composeGenomeEditor = ComposeGenomeEditor(returnLevel)
 
     private var state = GenomeEditorData(
         currentTick = 0,

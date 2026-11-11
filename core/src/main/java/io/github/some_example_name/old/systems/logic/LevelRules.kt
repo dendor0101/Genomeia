@@ -246,5 +246,10 @@ data class LevelHud(
     val zoneX: Float = 0f,
     val zoneY: Float = 0f,
     val zoneRadius: Float = 0f,
-    val hasZone: Boolean = false
+    val hasZone: Boolean = false,
+    /** Зона старта из LevelInfo: её ставит экран, а не Lua, — чтобы игрок видел, куда ставить. */
+    val spawnX: Float = 0f,
+    val spawnY: Float = 0f,
+    val spawnRadius: Float = 0f,
+    val hasSpawnZone: Boolean = false
 )

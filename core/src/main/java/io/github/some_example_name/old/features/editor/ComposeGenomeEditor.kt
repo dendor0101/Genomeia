@@ -33,6 +33,7 @@ import io.github.some_example_name.old.editor.system.logic.TimeSlider
 import io.github.some_example_name.old.editor.system.render.EditorRenderSystem
 import io.github.some_example_name.old.editor.system.simulation.EditorSimulationSystem
 import io.github.some_example_name.old.features.editor.dialog.SymmetryDialog
+import io.github.some_example_name.old.features.levels.editor.LevelInfo
 import io.github.some_example_name.old.core.ui.FlowAlignment
 import io.github.some_example_name.old.core.ui.STYLE_BLACK
 import io.github.some_example_name.old.core.ui.dp
@@ -51,7 +52,7 @@ import io.github.some_example_name.old.core.ui.visToggleButton
  * Вёрстка редактора генома. Состояние редактора здесь не меняется: каждая кнопка
  * отдаёт команду в EditorLogicSystem.putUiCommand.
  */
-class ComposeGenomeEditor {
+class ComposeGenomeEditor(private val returnLevel: LevelInfo? = null) {
 
     var isProgrammaticChange = false
 
@@ -79,11 +80,11 @@ class ComposeGenomeEditor {
                 verticalSpacing = 8.dp()
             ) {
                 visLeftArrowButton(onClick = {
-                    stage.saveDialog(isGoToMenu = true, genomeName = editorSimulationSystem.getGenome().name, editorLogicSystem)
+                    stage.saveDialog(isGoToMenu = true, genomeName = editorSimulationSystem.getGenome().name, editorLogicSystem, returnLevel)
                 })
 
                 visTextButton(bundle.get("button.saveGenome"), onClick = {
-                    stage.saveDialog(isGoToMenu = false, genomeName = editorSimulationSystem.getGenome().name, editorLogicSystem)
+                    stage.saveDialog(isGoToMenu = false, genomeName = editorSimulationSystem.getGenome().name, editorLogicSystem, returnLevel)
                 })
 
                 visToggleButton(

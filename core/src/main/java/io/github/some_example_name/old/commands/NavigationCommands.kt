@@ -56,7 +56,7 @@ class GoWorldEditor(val seed: String, val levelEditor: Boolean = false) : Menu()
 }
 
 @Serializable
-class GoGenomeEditor(val genomeName: String?) : Menu() {
+class GoGenomeEditor(val genomeName: String?, val level: LevelInfo? = null) : Menu() {
     override val name get() = "GoGenomeEditor"
     override val detail get() = genomeName ?: "new"
 }

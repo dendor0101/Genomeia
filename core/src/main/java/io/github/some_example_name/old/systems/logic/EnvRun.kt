@@ -32,6 +32,7 @@ class EnvRun {
         globals.globals.set("zone", env.zone)
         globals.globals.set("hint", env.hint)
         globals.globals.set("timeLimit", env.timeLimit)
+        globals.globals.set("setMovable", env.setMovable)
 
         // События вместо опроса мира каждый тик
         globals.globals.set("onCells", env.onCells)

@@ -159,6 +159,12 @@ class SimulationSystem(
             restartSim()
             return
         }
+        // До Lua: уровень спрашивает world("cells") в начале тика, и по этому числу решает
+        // победу. Снимок раз в окно профайлера опаздывал на секунды, а между мирами в нём
+        // оставалось число клеток прошлого — второй запуск уровня видел cells=2 на тике 0,
+        // звал cells() → win() и выбрасывал игрока в редактор.
+        updateLiveCounts()
+
         if (simulationData.isLevel && simulationData.level.hasLua) {
             DIGameGlobalContainer.luaEnv.tick()
 
@@ -287,8 +293,8 @@ class SimulationSystem(
      * Считается раз в PROFILE_WINDOW_TICKS тиков, поэтому дороговизна не важна — но всё
      * равно это только вычитания и сумма по 16 спискам.
      *
-     * Количества живых сущностей берутся так же, как их считает оверлей: lastId минус
-     * размер стека переиспользуемых индексов.
+     * Количества живых сущностей — из [updateLiveCounts]: они обновляются каждый тик,
+     * потому что по ним уровень решает победу.
      */
     private fun fillWorldStats() {
         val stats = worldStats
@@ -296,17 +302,7 @@ class SimulationSystem(
         stats.tick = simulationData.tickCounter.toLong()
         stats.ups = simulationData.ups
 
-        // По aliveList, а не по lastId.
-        //
-        // Раньше считалось как lastId - deadStack.size + 1, и это работало, пока индексы
-        // выдавались подряд. С аренами lastId сдвигается за конец КАЖДОЙ брони сразу при
-        // рождении организма (Entity.reserveRange), задолго до того, как тело её заполнит,
-        // поэтому формула начала возвращать зарезервированную ёмкость вместо числа живых.
-        // На замере это выглядело как 11655 клеток и 31194 связи при реальных 8523 и 23553,
-        // то есть все производные метрики "на клетку" врали в полтора раза.
-        stats.cells = cellEntity.aliveList.size
-        stats.particles = particleEntity.aliveList.size
-        stats.links = linkEntity.aliveList.size
+        updateLiveCounts()
 
         stats.gridSize = gridManager.gridSize
         stats.occupiedCells = gridManager.occupiedCells
@@ -333,6 +329,31 @@ class SimulationSystem(
         // теперь одно и то же число. Поле оставлено, чтобы не ломать формат CSV.
         stats.linksProcessed = linkEntity.aliveList.size
     }
+
+    /**
+     * Живые количества — каждый тик, а не только на закрытии окна профайлера.
+     *
+     * Стоят три чтения size, на фоне тика это ничто, зато уровень видит актуальное число:
+     * раньше между мирами здесь оставался объём прошлого мира, и второй запуск уровня
+     * срабатывал на тике 0.
+     *
+     * По aliveList, а не по lastId.
+     *
+     * Раньше считалось как lastId - deadStack.size + 1, и это работало, пока индексы
+     * выдавались подряд. С аренами lastId сдвигается за конец КАЖДОЙ брони сразу при
+     * рождении организма (Entity.reserveRange), задолго до того, как тело её заполнит,
+     * поэтому формула начала возвращать зарезервированную ёмкость вместо числа живых.
+     * На замере это выглядело как 11655 клеток и 31194 связи при реальных 8523 и 23553,
+     * то есть все производные метрики "на клетку" врали в полтора раза.
+     */
+    private fun updateLiveCounts() {
+        worldStats.cells = cellEntity.aliveList.size
+        worldStats.particles = particleEntity.aliveList.size
+        worldStats.links = linkEntity.aliveList.size
+    }
+
+    /** Текущий поток — поток симуляции: только в нём исполняется Lua уровня. */
+    fun isSimulationThread(): Boolean = Thread.currentThread() === simulationThread
 
     fun processParticleCollision() {
         threadManager.runChunkStage(isOdd = true, stageId = Phase.COLLIDE) { start, end, threadId ->
@@ -403,6 +424,9 @@ class SimulationSystem(
     fun dispose() {
         gridManager.clearAll()
         entityList.forEach { it.clear() }
+        // Пустой мир не должен отдавать уровню объём прошлого: следующий уровень
+        // спрашивает world("cells") ещё до первого тика, в startSession.
+        updateLiveCounts()
         simulationData.clear()
         worldCommandsManager.dispose()
     }
@@ -425,6 +449,10 @@ class SimulationSystem(
         // Правила уровня — с чистого листа: HUD предыдущего уровня не должен переехать
         // в этот, даже если у этого уровня нет lua (тогда run() не зовётся).
         DIGameGlobalContainer.luaEnv.env.rules.reset()
+        // Уровень по умолчанию тело не двигает; скрипт снимает запрет setMovable(true).
+        // Именно здесь, а не в applyLevel: рестарт пересобирает мир и снова зовёт скрипт,
+        // и разрешение от прошлого захода не должно переехать в новый.
+        simulationData.isMovable = !simulationData.isLevel
         if (simulationData.isLevel && simulationData.level.hasLua) {
             DIGameGlobalContainer.luaEnv.run()
         }
@@ -457,6 +485,7 @@ class SimulationSystem(
                 var x = Fnv.word(h, simulationData.tickCounter)
                 x = Fnv.word(x, java.lang.Float.floatToRawIntBits(simulationData.timeSimulation))
                 x = Fnv.word(x, simulationData.currentGenomeIndex)
+                x = Fnv.word(x, simulationData.lastPlacedOrganIndex)
                 Fnv.word(x, simulationData.selectedCellIndex)
             },
             input = userCommandManager::hashInput,
