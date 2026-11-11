@@ -594,6 +594,8 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      */
     var lerpCapturing = false
     var lerpEdgeIds = IntArray(64); var lerpEdgeFrom = FloatArray(64); var lerpEdgeTo = FloatArray(64); var lerpEdgeN = 0
+    /** Клетки, сдвинувшие множитель в этом шаге мышц, — кольца им пересчитываются после шага всех (advanceCellScales). */
+    internal var cellScaleMoved = IntArray(64)
     var lerpTriIds = IntArray(64); var lerpTriFrom = FloatArray(64); var lerpTriTo = FloatArray(64); var lerpTriN = 0
     var lerpEdgeStamp = IntArray(0); var lerpTriStamp = IntArray(0); var lerpStampNow = 0
 

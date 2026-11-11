@@ -157,9 +157,14 @@ internal fun BodyState.advanceCellScales(dt: Double) {
     val s = cellScale; val target = cellScaleTarget
     val byEdges = constraintBlocks != null && !cellScalesDirty && cellScaleEff.size == n
     if (byEdges) beginCellScaleLerp()
-    // На воркерах кольца считаются после шага всех клеток (см. ParallelMuscles): результат тот же.
+    // КОЛЬЦА — ПОСЛЕ ШАГА ВСЕХ КЛЕТОК, и на воркерах (ParallelMuscles), и в одном потоке. Кольцо, пересчитанное
+    // сразу за шагом клетки, видит промежуточные множители соседей, и решение «действующий множитель не
+    // изменился — связи не трогать» выходило другим, чем по окончательным: bugReplayCheck 11.11 (мягкая ткань,
+    // 6 подшагов) — запись на 8 воркерах и повтор на одном разошлись на тике 643 в одной связи (1.461 против
+    // 1.384 — её множитель уже устарел, и один путь его пересчитал, а другой нет).
     val w = if (byEdges) activeWorkers else null
     val muscles = if (w != null && w.count > 1) parallelPhysics(w).muscles.also { it.begin() } else null
+    var movedN = 0
     var moving = false
     for (v in 0 until n) {
         val t = target[v]; val cur = s[v]
@@ -170,11 +175,15 @@ internal fun BodyState.advanceCellScales(dt: Double) {
         if (kotlin.math.abs(t - next) < CELL_SCALE_SNAP) next = t else moving = true
         s[v] = next
         sleep.requestWake(v)
-        if (muscles != null) muscles.note(v) else if (byEdges) refreshCellScaleRing(v)
+        if (muscles != null) muscles.note(v)
+        else if (byEdges) {
+            if (movedN == cellScaleMoved.size) cellScaleMoved = cellScaleMoved.copyOf(movedN * 2)
+            cellScaleMoved[movedN++] = v
+        }
     }
     cellScalesMoving = moving
     if (byEdges) {
-        if (muscles != null) muscles.refreshRings(w!!)
+        if (muscles != null) muscles.refreshRings(w!!) else for (q in 0 until movedN) refreshCellScaleRing(cellScaleMoved[q])
         endCellScaleLerp()
         return
     }
