@@ -272,8 +272,7 @@ class MenuViewModel(
 
     fun updateFrame(background: io.github.some_example_name.render.microscope.MenuMicroscopeBackground) {
         // Сменить режим до сборки снимка: Debug не требует подготовки оптических связей.
-        renderSystem.mode = if (background.budget.useDebug) io.github.some_example_name.render.RenderMode.DEBUG
-            else io.github.some_example_name.render.RenderMode.TISSUE_MAP
+        renderSystem.mode = background.budget.mode
         simulationSystem.updateTick()
         renderSystem.render(background)
     }

@@ -66,7 +66,8 @@ class CellGeometry {
     private var hullVertexCount = 0
 
     /** Инстансные данные, перезаливаются каждый кадр. */
-    private var instanceVbo = 0
+    internal var instanceVbo = 0
+        private set
     private var instanceCapacityBytes = 0
 
     /**

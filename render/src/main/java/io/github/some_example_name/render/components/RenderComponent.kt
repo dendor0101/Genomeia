@@ -6,6 +6,7 @@ import com.badlogic.gdx.graphics.glutils.FrameBuffer
 import com.badlogic.gdx.math.Matrix4
 import io.github.some_example_name.render.DebugFilter
 import io.github.some_example_name.render.RenderMode
+import io.github.some_example_name.render.pack.DebugAreaIndices
 import java.nio.ByteBuffer
 
 /**
@@ -37,6 +38,9 @@ class RenderContext {
 
     /** Фильтр отладочного режима, см. RenderFrame.debugFilter. */
     var debugFilter: DebugFilter = DebugFilter.ORIGINAL
+
+    /** Индексы вершин заливки в буфере клеток этого снимка. */
+    var areaIndices: DebugAreaIndices? = null
 
     /**
      * Сколько единиц мира приходится на пиксель экранного буфера. По ней проходы, которые

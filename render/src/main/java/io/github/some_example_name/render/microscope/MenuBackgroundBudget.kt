@@ -1,12 +1,15 @@
 package io.github.some_example_name.render.microscope
 
+import io.github.some_example_name.render.RenderMode
+
 /** Только выбор оформления меню; не участвует в тиках мира или настройках игрока. */
-class MenuBackgroundBudget {
-    var useDebug = false
+class MenuBackgroundBudget(forceDebug: Boolean = false) {
+    val mode get() = if (useDebug) RenderMode.DEBUG else RenderMode.TISSUE_MAP
+    var useDebug = forceDebug
         private set
     var medianMillis = 0.0
         private set
-    var decided = false
+    var decided = forceDebug
         private set
     private val samples = DoubleArray(7)
     private var count = 0

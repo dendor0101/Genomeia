@@ -31,6 +31,12 @@ import io.github.some_example_name.render.microscope.OpticalParameter
 @Serializable
 sealed interface SimulationIntent : GameCommand {
 
+    @Serializable
+    data class SetFillAreas(val enabled: Boolean) : SimulationIntent {
+        override val name get() = "SetFillAreas"
+        override val detail get() = enabled.toString()
+    }
+
     /** Галочка «Связи» отладочного режима: рисовать ли тонко все связи тел мира физики. */
     @Serializable
     data class SetShowLinks(val show: Boolean) : SimulationIntent {
@@ -406,6 +412,11 @@ class SimulationViewModel(
             }
 
             is SimulationIntent.SetShowBoundary -> renderSystem.showBoundary = intent.show
+
+            is SimulationIntent.SetFillAreas -> {
+                renderSystem.fillAreas = intent.enabled
+                if (!simulationData.isPlay) simulationSystem.betweenTicks { renderSystem.refreshPausedSnapshot() }
+            }
 
             is SimulationIntent.SetShowLinks -> renderSystem.showLinks = intent.show
 

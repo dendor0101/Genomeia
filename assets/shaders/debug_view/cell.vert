@@ -40,10 +40,7 @@ uniform float u_fringe;
 /** Фильтр отладки — DebugFilter.ordinal: 0 оригинал, 1 энергия, 2 нейросигнал, 3 коллизии, 4 сон. */
 uniform int u_filter;
 
-const int FILTER_ENERGY = 1;
-const int FILTER_SIGNAL = 2;
-const int FILTER_COLLISION = 3;
-const int FILTER_SLEEP = 4;
+#include "debug_color.glsl"
 
 /** На сколько пикселей корпус выходит за окружность: полоса сглаживания края. */
 const float AA_MARGIN_PX = 1.5;
@@ -95,25 +92,6 @@ vec2 lagDir() {
     return len > 1e-4 ? mixed * (length(a_dir) / len) : a_dir;
 }
 
-/**
- * Цвет клетки под фильтром. Значение — четвёртый байт look (CellLook.filter):
- *  - энергия: заполненность 0..1 — от синего (0, 0, 1) к пурпурному (1, 0, 1);
- *  - нейросигнал: знаковый байт уже нормализованного сигнала (CellLook.signalFilterByte) —
- *    ноль синий, плюс к пурпурному, минус к голубому (0, 1, 1): тормозящий сигнал
- *    отличается от возбуждающего, а молчащая клетка — от обеих;
- *  - коллизии: частица в сетке столкновений (CellLook.collisionFilterByte) — оранжевая,
- *    вне её — тёмно-синяя. Двух цветов хватает: признак да/нет, а оранжевый на тёмном
- *    синем виден и на мелких клетках дальнего плана.
- */
-vec3 filterColor(int kind, float value) {
-    if (kind == FILTER_COLLISION) return value > 0.0 ? vec3(1.0, 0.55, 0.0) : vec3(0.08, 0.12, 0.45);
-    if (kind == FILTER_ENERGY) return vec3(value / 255.0, 0.0, 1.0);
-    int steps = int(value);
-    if (steps > 127) steps -= 256;
-    float signal = float(steps) / 127.0;
-    return signal >= 0.0 ? vec3(signal, 0.0, 1.0) : vec3(0.0, -signal, 1.0);
-}
-
 void main() {
     // Распаковка: RADIUS_MIN + байт * RADIUS_SPAN.
     float radius = 0.05 + a_shape.z * 0.7;
@@ -140,27 +118,8 @@ void main() {
     float grow = 1.0 + AA_MARGIN_PX * v_tPerPixel + fringe;
     v_local = a_corner.xy * grow;
 
-    v_color = a_color.rgb;
-    v_filtered = 0.0;
-    if (u_filter == FILTER_SLEEP) {
-        // Сон: спящая частица (клетка или нет) — ледяная, бодрствующая остаётся как есть —
-        // так спящие участки видны поверх обычного отладочного вида.
-        if (byteValue(a_look.w) > 0.0) {
-            v_color = vec3(0.55, 0.9, 1.0);
-            v_filtered = 1.0;
-        }
-    } else if (u_filter != 0) {
-        // Не-клетка (еда, субстанции) ни энергии, ни сигнала не несёт — гасим её до
-        // серого, чтобы не путалась со шкалой фильтра. В коллизиях же она участвует, как
-        // и клетки, — её фильтр закрашивает тоже.
-        bool isCell = mod(byteValue(a_type.w), 2.0) < 1.0;
-        if (isCell || u_filter == FILTER_COLLISION) {
-            v_color = filterColor(u_filter, byteValue(a_look.w));
-            v_filtered = 1.0;
-        } else {
-            v_color = vec3(dot(a_color.rgb, vec3(0.299, 0.587, 0.114)) * 0.35);
-        }
-    }
+    bool isCell = mod(byteValue(a_type.w), 2.0) < 1.0;
+    v_color = debugColor(a_color.rgb, byteValue(a_look.w), isCell, u_filter, v_filtered);
     // Направление на долю u_lag назад — рисунок поворачивается плавно вместе с телом.
     v_dir = lagDir();
 

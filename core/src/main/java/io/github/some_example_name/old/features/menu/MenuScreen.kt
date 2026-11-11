@@ -27,7 +27,7 @@ import io.github.some_example_name.old.core.ui.visTable
 import io.github.some_example_name.old.core.ui.visTextButton
 import io.github.some_example_name.old.core.ui.w
 import io.github.some_example_name.old.game.applyCustomFontMedium
-import io.github.some_example_name.render.RenderMode
+import io.github.some_example_name.old.core.PlatformTuning
 
 class MenuScreen : VisDslScreen(
     background = Color(0f, 0f, 0f, 1f),
@@ -35,7 +35,7 @@ class MenuScreen : VisDslScreen(
 ), ReplayTarget, FileDropTarget {
 
     private var backgroundOptics: io.github.some_example_name.render.microscope.MenuMicroscopeBackground? = null
-    private val backgroundBudget = io.github.some_example_name.render.microscope.MenuBackgroundBudget()
+    private val backgroundBudget = io.github.some_example_name.render.microscope.MenuBackgroundBudget(forceDebug = PlatformTuning.isMobile)
     private val camera = OrthographicCamera()
     var onResize: (() -> Unit)? = null
     private val spriteBatch = SpriteBatch()
@@ -47,7 +47,7 @@ class MenuScreen : VisDslScreen(
 
     init {
         menuViewModel.onMapImportFailed = ::showImportFailed
-        menuViewModel.renderSystem.mode = RenderMode.TISSUE_MAP
+        menuViewModel.renderSystem.mode = backgroundBudget.mode
         menuViewModel.startMenuSimulation()
         menuViewModel.renderSystem.isRenderUi = false
         // Меню отдельно выбирает качество фона; настройка игрока в симуляции не меняется.

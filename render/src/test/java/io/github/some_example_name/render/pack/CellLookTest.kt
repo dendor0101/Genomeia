@@ -104,10 +104,10 @@ class CellLookTest {
 
     @Test
     fun `номера фильтров совпадают с шейдером`() {
-        val vert = shaderSource("cell.vert")
+        val vert = shaderSource("debug_color.glsl")
         fun constInt(name: String): Int =
             Regex("""const int $name = (\d+);""").find(vert)?.groupValues?.get(1)?.toInt()
-                ?: error("в cell.vert нет $name")
+                ?: error("в debug_color.glsl нет $name")
         assertEquals(DebugFilter.ENERGY.ordinal, constInt("FILTER_ENERGY"))
         assertEquals(DebugFilter.SIGNAL.ordinal, constInt("FILTER_SIGNAL"))
         assertEquals(DebugFilter.COLLISION.ordinal, constInt("FILTER_COLLISION"))
