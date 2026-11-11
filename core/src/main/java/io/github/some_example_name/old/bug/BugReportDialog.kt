@@ -24,6 +24,8 @@ import io.github.some_example_name.old.core.ui.dp
 import io.github.some_example_name.old.core.ui.globalVisTable
 import io.github.some_example_name.old.core.ui.h
 import io.github.some_example_name.old.core.ui.makeStyledButton
+import io.github.some_example_name.old.core.ui.makeStyledNP
+import io.github.some_example_name.old.features.settings.GlobalSettings
 import io.github.some_example_name.old.core.ui.makeStyledTextField
 import io.github.some_example_name.old.core.ui.setupTitleSize
 import io.github.some_example_name.old.core.ui.visLabel
@@ -59,6 +61,7 @@ class BugReportDialog(
     private val initialDescription: String = "",
     /** Краш случился при прошлом запуске, а не только что: окно предупреждает, что игра уже жива. */
     private val previousLaunch: Boolean = false,
+    attachScreenshot: Boolean = false,
     private val onClosed: () -> Unit
 ) : VisDialog(bundle.get(titleKey(kind, previousLaunch))) {
 
@@ -71,15 +74,15 @@ class BugReportDialog(
     private lateinit var imagesRow: VisTable
     private lateinit var imagesCell: Cell<Actor>
     private var closed = false
-    private var sending = false
+    private var resultDialog: BugMessageDialog? = null
 
-    private var includeScreenshot = false
+    private var includeScreenshot = attachScreenshot
+    private val gameImage = screenshot?.let { BugImage(BugReports.SCREENSHOT_NAME, it) }
     private val attached = ArrayList<BugImage>()
 
     /** Что уже записано в .bug: перепаковывать, только если что-то поменялось. */
-    private var writtenDescription = ""
-    private var changes = 0
-    private var writtenChanges = 0
+    private var written = ReportDraft()
+    private val delivery = ReportDelivery(::upload, { bug?.let(::markHandled) }, ::uploadResult)
 
     private val bodyCell: Cell<VisTable>
     private val scrollCell: Cell<ScrollPane>
@@ -129,6 +132,7 @@ class BugReportDialog(
         pack()
         setSize(minOf(width, w), minOf(height, h))
         centerWindow()
+        resultDialog?.fitToViewport()
     }
 
     private fun VisTable.composeContent() {
@@ -168,7 +172,6 @@ class BugReportDialog(
                 checked = includeScreenshot,
                 onCheckedChange = {
                     includeScreenshot = it
-                    changes++
                 }
             ) { growX() }
             row()
@@ -226,7 +229,6 @@ class BugReportDialog(
             addListener(object : ChangeListener() {
                 override fun changed(event: ChangeEvent?, actor: Actor?) {
                     attached.clear()
-                    changes++
                     refreshImages()
                 }
             })
@@ -248,7 +250,18 @@ class BugReportDialog(
             visTextButton(bundle.get(if (isPhone) "bug.share" else "bug.openFolder"), onClick = { share() })
             row()
 
-            visTextButton(bundle.get("bug.send"), onClick = { send() })
+            val sendStyle = VisTextButton.VisTextButtonStyle().apply {
+                font = game.buttonFont
+                fontColor = Color.WHITE
+                up = makeStyledNP(Color.valueOf("124741"), Color.valueOf("5ef5cd"), textures)
+                over = makeStyledNP(Color.valueOf("196256"), Color.valueOf("baffeb"), textures)
+                down = makeStyledNP(Color.valueOf("237769"), Color.WHITE, textures)
+            }
+            val send = VisTextButton(bundle.get("bug.send"), sendStyle)
+            send.addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: Actor?) = submit()
+            })
+            add(send).minHeight(48.dp())
             visTextButton(bundle.get("bug.close"), onClick = { close() })
         }
     }
@@ -282,7 +295,6 @@ class BugReportDialog(
             bytes.size > MAX_IMAGE_BYTES -> showStatus(bundle.get("bug.imageTooBig"))
             else -> {
                 attached += BugImage("${attached.size + 1}-${safeName(originalName)}", bytes)
-                changes++
                 refreshImages()
                 showStatus("")
             }
@@ -298,26 +310,29 @@ class BugReportDialog(
 
     /** Снимок (если отмечен) и приложенное игроком — то, что уйдёт в images/ внутри .bug. */
     private fun images(): List<BugImage> {
-        val shot = screenshot?.takeIf { includeScreenshot }?.let { BugImage(BugReports.SCREENSHOT_NAME, it) }
-        return listOfNotNull(shot) + attached
+        return listOfNotNull(gameImage?.takeIf { includeScreenshot }) + attached
     }
 
     // ==================== .bug ====================
 
     /** .bug с текущими пояснением и картинками: собрать, если ещё нет, или переписать. */
+    private fun draft() = ReportDraft(typedDescription(), images())
+
+    private fun prepare(draft: ReportDraft): FileHandle {
+        val current = bug
+        val file = when {
+            current == null -> BugReports.create(kind, draft.description, images = draft.images)
+            draft != written -> current.also { BugReports.rewrite(it, draft.description, draft.images) }
+            else -> current
+        }
+        bug = file
+        written = draft
+        return file
+    }
+
     private fun ensureBug(): FileHandle? {
-        val text = description.text.trim()
         return try {
-            val current = bug
-            when {
-                current == null -> BugReports.create(kind, text, images = images()).also { bug = it }
-                text != writtenDescription || changes != writtenChanges ->
-                    current.also { BugReports.rewrite(it, text, images()) }
-                else -> current
-            }.also {
-                writtenDescription = text
-                writtenChanges = changes
-            }
+            prepare(draft())
         } catch (e: Exception) {
             Gdx.app.error("BugReport", "не удалось собрать отчёт", e)
             showStatus(bundle.get("bug.failed") + (e.message ?: e::class.java.simpleName))
@@ -348,31 +363,61 @@ class BugReportDialog(
         }
     }
 
-    private fun send() {
-        if (sending) return
-        val file = ensureBug() ?: return
-        sending = true
+    fun autoSendCrash() {
+        if (kind != BugKind.CRASH || !GlobalSettings.AUTO_SEND_CRASH || BugReplay.isActive) return
+        showStatus(bundle.get("bug.autoSending"))
+        delivery.send(ReportDraft(), manual = false)
+    }
+
+    private fun submit() {
         showStatus(bundle.get("bug.sending"))
-        BugUploader.upload(file) { success, message ->
-            sending = false
-            if (success) markHandled(file)
-            showStatus(if (success) bundle.get("bug.sent") else bundle.get("bug.sendFailed") + message)
+        delivery.send(draft())
+    }
+
+    private fun upload(draft: ReportDraft, done: (Boolean, String) -> Unit) {
+        try {
+            BugUploader.upload(prepare(draft), done)
+        } catch (e: Exception) {
+            done(false, e.message ?: e::class.java.simpleName)
         }
+    }
+
+    private fun uploadResult(success: Boolean, manual: Boolean, message: String) {
+        if (success && manual) BugOverlay.reportSentByPlayer()
+        if (closed) return
+        val stage = stage ?: return
+        val title = if (success) "bug.sent" else "bug.deliveryFailed"
+        showStatus(if (success) bundle.get(title) else bundle.get("bug.sendFailed") + message)
+        val body = when {
+            !success -> "bug.shareInstead"
+            manual -> "bug.thankYou"
+            else -> "bug.autoReceived"
+        }
+        resultDialog?.close()
+        val notice = BugMessageDialog(title, bundle.get(body)) { resultDialog = null }
+        if (!success) {
+            val fallback = if (Gdx.app.type == Application.ApplicationType.Desktop) "bug.openFolder" else "bug.share"
+            notice.choice(fallback, ::share)
+        }
+        notice.choice("button.ok")
+        resultDialog = notice
+        notice.show(stage)
     }
 
     private fun showStatus(text: String) {
         status.setText(text)
-        pack()
+        fitToViewport()
     }
 
     public override fun close() {
         if (!closed) {
             closed = true
+            resultDialog?.close()
             crashLogDialog?.remove()
             crashLogDialog = null
             // Пояснение и картинки, изменённые после последней кнопки, не должны потеряться.
-            if (bug != null && (description.text.trim() != writtenDescription || changes != writtenChanges)) ensureBug()
-            if (kind == BugKind.CRASH) bug?.let { BugReports.clearPendingCrash(it) }
+            if (bug != null && draft() != written) ensureBug()
+            if (!delivery.sending) bug?.let(::markHandled)
             onClosed()
         }
         super.close()

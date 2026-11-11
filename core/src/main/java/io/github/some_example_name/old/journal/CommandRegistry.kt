@@ -126,6 +126,7 @@ object CommandRegistry {
         t<SettingsIntent.SetFullscreen>(307),
         t<SettingsIntent.SetShowDebugInfo>(308),
         t<SettingsIntent.OpenGpuSettings>(309),
+        t<SettingsIntent.SetAutoSendCrash>(310),
 
         // --- Поддержка ---
         t<SupportIntent.CopyAddress>(400),

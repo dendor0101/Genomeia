@@ -1,6 +1,9 @@
 package io.github.some_example_name.old.bug
 
 import com.badlogic.gdx.Gdx
+import com.badlogic.gdx.Application
+import com.badlogic.gdx.Input
+import com.badlogic.gdx.InputAdapter
 import com.badlogic.gdx.InputMultiplexer
 import com.badlogic.gdx.files.FileHandle
 import com.badlogic.gdx.graphics.Color
@@ -8,6 +11,8 @@ import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.PixmapIO
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.scenes.scene2d.Actor
+import com.badlogic.gdx.scenes.scene2d.Action
+import com.badlogic.gdx.scenes.scene2d.actions.Actions
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.scenes.scene2d.ui.ImageButton
 import com.badlogic.gdx.scenes.scene2d.ui.Label
@@ -17,6 +22,9 @@ import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
 import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.viewport.ScreenViewport
 import io.github.some_example_name.old.core.DIGameGlobalContainer
+import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
+import io.github.some_example_name.old.core.ui.VisDslScreen
+import io.github.some_example_name.old.features.menu.MenuScreen
 import io.github.some_example_name.old.features.settings.UserPreferences
 import java.io.ByteArrayOutputStream
 
@@ -41,11 +49,26 @@ object BugOverlay {
 
     /** Кнопку нажали: в следующем кадре снять экран (уже без окон слоя) и открыть отчёт. */
     private var screenshotRequested = false
+    private var screenshotDetected = false
+    private var delayedPrompt: Action? = null
+    private var screenshotPrompt: BugMessageDialog? = null
+    private val screenshotKeys = object : InputAdapter() {
+        override fun keyDown(keycode: Int): Boolean {
+            if (keycode != Input.Keys.PRINT_SCREEN && keycode != Input.Keys.S) return false
+            val input = Gdx.input
+            if (keycode == Input.Keys.S) {
+                val shift = input.isKeyPressed(Input.Keys.SHIFT_LEFT) || input.isKeyPressed(Input.Keys.SHIFT_RIGHT)
+                if (!shift || !input.isKeyPressed(Input.Keys.SYM)) return false
+                if ((DIGameGlobalContainer.game.screen as? VisDslScreen)?.isTyping == true) return false
+            }
+            return onScreenshotDetected()
+        }
+    }
     /** Открытое окно отчёта или краша. */
     private var dialog: BugReportDialog? = null
 
     /** Открыто окно отчёта: клавиатура — его полю ввода, а не игре (см. KeyboardFocus). */
-    val isDialogOpen: Boolean get() = dialog != null
+    val isDialogOpen: Boolean get() = dialog != null || screenshotPrompt != null
 
     fun create() {
         hintChecked = false
@@ -90,10 +113,18 @@ object BugOverlay {
 
     /** Открыть окно отчёта, как кнопкой-жуком (снимок экрана — в следующем кадре). */
     fun requestReport() {
-        if (dialog == null) {
+        if (!isDialogOpen && !BugReplay.isActive) {
+            cancelDelayedPrompt()
             dismissFeedbackHint()
             screenshotRequested = true
         }
+    }
+
+    /** Системное событие Android или клавиша активного окна ПК. Только в потоке игры. */
+    fun onScreenshotDetected(): Boolean {
+        if (stage == null || isDialogOpen || screenshotRequested || !UserPreferences.shouldAskAfterScreenshot()) return false
+        screenshotDetected = true
+        return true
     }
 
     /** После отрисовки экрана. */
@@ -108,6 +139,19 @@ object BugOverlay {
             openReport(BugKind.REPORT, existing = null, screenshot = png, onClosed = {})
         }
 
+        if (screenshotDetected) {
+            screenshotDetected = false
+            if (!isDialogOpen && !BugReplay.isActive) {
+                cancelDelayedPrompt()
+                val shot = runCatching { captureScreen() }.getOrNull()
+                // Даём системе закончить захват, прежде чем рисовать окно поверх игры.
+                delayedPrompt = Actions.sequence(Actions.delay(0.8f), Actions.run {
+                    delayedPrompt = null
+                    if (!isDialogOpen && !BugReplay.isActive) showScreenshotPrompt(stage, shot)
+                }).also { stage.root.addAction(it) }
+            }
+        }
+
         val replaying = BugReplay.isActive
         bugButton?.isVisible = !replaying
         statusLabel?.let { label ->
@@ -116,23 +160,44 @@ object BugOverlay {
             label.isVisible = text.isNotEmpty()
         }
 
-        if (!hintChecked && !replaying && dialog == null) {
+        val inMenu = DIGameGlobalContainer.game.screen is MenuScreen
+        if (!inMenu && feedbackHint != null) dismissFeedbackHint()
+        if (!hintChecked && inMenu && !replaying && !isDialogOpen) {
             hintChecked = true
             if (UserPreferences.shouldShowFeedbackHint()) {
                 feedbackHint = FeedbackHint(::dismissFeedbackHint).also { stage.addActor(it) }
-                UserPreferences.markFeedbackHintSeen()
             }
         }
-        feedbackHint?.isVisible = !replaying && dialog == null
+        feedbackHint?.isVisible = !replaying && !isDialogOpen
         stage.act(Gdx.graphics.deltaTime)
         stage.viewport.apply()
         stage.draw()
+    }
+
+    private fun cancelDelayedPrompt() {
+        delayedPrompt?.let { stage?.root?.removeAction(it) }
+        delayedPrompt = null
+    }
+
+    private fun showScreenshotPrompt(stage: Stage, shot: ByteArray?) {
+        dismissFeedbackHint()
+        val prompt = BugMessageDialog("bug.screenshotTitle", bundle.get("bug.screenshotQuestion")) {
+            screenshotPrompt = null
+        }
+        prompt.choice("bug.reportScreenshot") {
+            openReport(BugKind.REPORT, existing = null, screenshot = shot, attachScreenshot = true, onClosed = {})
+        }
+        prompt.choice("bug.screenshotNo")
+        prompt.choice("bug.neverAsk", UserPreferences::disableScreenshotPrompt)
+        screenshotPrompt = prompt
+        prompt.show(stage)
     }
 
     fun resize(width: Int, height: Int) {
         BugReports.rememberEnvironment()
         stage?.viewport?.update(width, height, true)
         dialog?.fitToViewport()
+        screenshotPrompt?.fitToViewport()
         statusCell?.width(width * STATUS_WIDTH)
         statusCell?.table?.invalidate()
     }
@@ -142,8 +207,18 @@ object BugOverlay {
         feedbackHint = null
     }
 
-    fun dispose() {
+    internal fun reportSentByPlayer() {
+        UserPreferences.markReportSent()
         dismissFeedbackHint()
+    }
+
+    fun dispose() {
+        cancelDelayedPrompt()
+        dismissFeedbackHint()
+        screenshotPrompt?.close()
+        screenshotDetected = false
+        screenshotRequested = false
+        dialog = null
         stage?.dispose()
         icon?.dispose()
         stage = null
@@ -155,6 +230,11 @@ object BugOverlay {
      * в фоновом потоке это сигнал завершить игру, см. CrashHandler.
      */
     fun showCrash(bug: FileHandle, previousLaunch: Boolean = false, onClosed: () -> Unit) {
+        cancelDelayedPrompt()
+        dismissFeedbackHint()
+        screenshotPrompt?.close()
+        screenshotDetected = false
+        screenshotRequested = false
         // Игра упала, пока игрок писал отчёт: окно краша важнее, но набранный текст не
         // должен пропасть — он переезжает в окно краша и уйдёт в его .bug. Раньше окно
         // краша в такой момент просто не открывалось.
@@ -172,17 +252,19 @@ object BugOverlay {
         screenshot: ByteArray?,
         description: String = "",
         previousLaunch: Boolean = false,
+        attachScreenshot: Boolean = false,
         onClosed: () -> Unit
     ) {
         val stage = stage ?: return
         if (dialog != null) return
         lateinit var opened: BugReportDialog
-        opened = BugReportDialog(kind, existing, screenshot, description, previousLaunch) {
+        opened = BugReportDialog(kind, existing, screenshot, description, previousLaunch, attachScreenshot) {
             if (dialog === opened) dialog = null
             onClosed()
         }
         dialog = opened
         opened.show(stage)
+        opened.autoSendCrash()
     }
 
     /** Слой впереди обработчика, который поставил себе текущий экран. */
@@ -190,6 +272,7 @@ object BugOverlay {
         val current = Gdx.input.inputProcessor
         if (current === input) return
         input.clear()
+        if (Gdx.app.type == Application.ApplicationType.Desktop) input.addProcessor(screenshotKeys)
         input.addProcessor(stage)
         if (current != null) input.addProcessor(current)
         Gdx.input.inputProcessor = input

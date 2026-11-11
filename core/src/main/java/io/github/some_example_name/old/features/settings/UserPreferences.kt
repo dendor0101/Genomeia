@@ -19,7 +19,9 @@ import java.util.Locale
 object UserPreferences {
 
     private const val NAME = "genomeia"
-    private const val FEEDBACK_HINT_SEEN = "feedback_hint_seen"
+    private const val REPORT_SENT = "bug_report_sent"
+    private const val SCREENSHOT_PROMPT = "bug_screenshot_prompt"
+    private const val AUTO_SEND_CRASH = "auto_send_crash"
     private const val MUSIC_VOLUME = "musicVolume"
     private const val SOUND_VOLUME = "soundVolume"
     private const val LANGUAGE = "language"
@@ -30,11 +32,19 @@ object UserPreferences {
     private val prefs by lazy { Gdx.app.getPreferences(NAME) }
 
     fun shouldShowFeedbackHint(): Boolean =
-        !BugReplay.isActive && !prefs.getBoolean(FEEDBACK_HINT_SEEN, false)
+        !BugReplay.isActive && !prefs.getBoolean(REPORT_SENT, false)
 
-    fun markFeedbackHintSeen() {
+    fun markReportSent() {
         if (BugReplay.isActive) return
-        prefs.putBoolean(FEEDBACK_HINT_SEEN, true)
+        prefs.putBoolean(REPORT_SENT, true)
+        prefs.flush()
+    }
+
+    fun shouldAskAfterScreenshot() = !BugReplay.isActive && prefs.getBoolean(SCREENSHOT_PROMPT, true)
+
+    fun disableScreenshotPrompt() {
+        if (BugReplay.isActive) return
+        prefs.putBoolean(SCREENSHOT_PROMPT, false)
         prefs.flush()
     }
     private val optical by lazy {
@@ -54,6 +64,7 @@ object UserPreferences {
 
         GlobalSettings.RENDER_MODE = RenderMode.fromPreference(prefs.getInteger(RENDER_MODE, GlobalSettings.RENDER_MODE)).preferenceId
         GlobalSettings.SHOW_HINTS = prefs.getBoolean(SHOW_HINTS, GlobalSettings.SHOW_HINTS)
+        GlobalSettings.AUTO_SEND_CRASH = prefs.getBoolean(AUTO_SEND_CRASH, true)
         GlobalSettings.SHOW_DEBUG_INFO = prefs.getBoolean(SHOW_DEBUG_INFO, GlobalSettings.SHOW_DEBUG_INFO)
 
         val tag = prefs.getString(LANGUAGE, "")
@@ -72,6 +83,7 @@ object UserPreferences {
         prefs.putString(LANGUAGE, GlobalSettings.currentLanguageTag)
         prefs.putInteger(RENDER_MODE, GlobalSettings.RENDER_MODE)
         prefs.putBoolean(SHOW_HINTS, GlobalSettings.SHOW_HINTS)
+        prefs.putBoolean(AUTO_SEND_CRASH, GlobalSettings.AUTO_SEND_CRASH)
         prefs.putBoolean(SHOW_DEBUG_INFO, GlobalSettings.SHOW_DEBUG_INFO)
         prefs.flush()
     }
