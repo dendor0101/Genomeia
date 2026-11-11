@@ -71,6 +71,10 @@ class RenderSystem(
             renderBufferManager.showLinks = value
         }
 
+    var fillAreas: Boolean
+        get() = renderBufferManager.fillAreas
+        set(value) { renderBufferManager.fillAreas = value }
+
     private lateinit var fontMatrix: Matrix4
     private lateinit var spriteBatch: SpriteBatch
     private lateinit var font: BitmapFont
@@ -167,6 +171,7 @@ class RenderSystem(
             opticalBirthTicks = if(useOptics) snapshot.opticalBirthTicks else null
             opticalCullRanges = if(useOptics) snapshot.opticalCullRanges else null
             opticalSettings = menu?.settings ?: (if(useOptics) this@RenderSystem.opticalSettings else null)
+            areaIndices = if (mode == RenderMode.DEBUG && fillAreas) snapshot.areaIndices else null
             uploadCells = fresh || packedNow
             interpolationLag = lag
             overlay = if (mode.drawsDebugOverlay && snapshot.hasOverlay) snapshot.overlay.end() else null

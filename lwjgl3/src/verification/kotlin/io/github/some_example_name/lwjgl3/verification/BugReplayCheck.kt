@@ -312,6 +312,7 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 screen(SimulationIntent.SetRenderMode(RenderMode.DEBUG))
                 // Фильтр отладки — тоже команда игрока: повтор обязан её подать.
                 screen(SimulationIntent.SetDebugFilter(DebugFilter.ENERGY))
+                screen(SimulationIntent.SetFillAreas(true))
                 screen(SimulationIntent.SetMicroscopeParameter("density",1.7f))
                 screen(SimulationIntent.SetMicroscopeParameter("packedPsf",1f))
                 screen(SimulationIntent.SetMicroscopeParameter("halfGeometry",1f))
@@ -363,24 +364,21 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 untilTick(data.tickCounter + 200)
             }
 
-            // Отладочный стресс-тест (только при DEBUG_CHECKS): D разгоняет клетки, A убивает.
-            // Тела рвутся, внутренние клетки становятся краевыми — то, на чём падала сетка.
-            // -PstressTicks=N, по умолчанию выключен.
+            // Стресс запускается явными командами проверки.
             8 -> {
                 if (STRESS_TICKS > 0) {
-                    screen(SimulationIntent.SetControllerKey(KEY_D, pressed = true))
+                    DISimulationContainer.userCommandManager.push(PlayerCommand.SetStress(KILL_EVERY, 1, SPAWN_EVERY))
                     untilTick(data.tickCounter + STRESS_TICKS)
                 }
             }
             9 -> {
                 if (STRESS_TICKS > 0) {
-                    screen(SimulationIntent.SetControllerKey(KEY_D, pressed = false))
-                    screen(SimulationIntent.SetControllerKey(KEY_A, pressed = true))
+                    DISimulationContainer.userCommandManager.push(PlayerCommand.SetStress(1, FLING_EVERY, SPAWN_EVERY))
                     untilTick(data.tickCounter + STRESS_TICKS)
                 }
             }
             10 -> {
-                if (STRESS_TICKS > 0) screen(SimulationIntent.SetControllerKey(KEY_A, pressed = false))
+                if (STRESS_TICKS > 0) DISimulationContainer.userCommandManager.push(PlayerCommand.SetStress(KILL_EVERY, FLING_EVERY, SPAWN_EVERY))
                 pause(2)
             }
 
@@ -500,10 +498,8 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
             List(n * n) { i -> (25f + step * (i % n) + step / 2) to (25f + step * (i / n) + step / 2) }
         }
 
-        /** Сколько тиков держать каждую клавишу стресс-теста (D, потом A): -PstressTicks=300. */
+        /** Сколько тиков разбрасывать клетки, затем убивать: -PstressTicks=300. */
         val STRESS_TICKS = System.getProperty("bugReplayCheck.stressTicks")?.toIntOrNull() ?: 0
-        const val KEY_A = 11
-        const val KEY_D = 13
 
         /** Сколько тиков мир растёт после посадки: -PgrowTicks=3000 — длинный прогон. */
         val GROW_TICKS = System.getProperty("bugReplayCheck.growTicks")?.toIntOrNull() ?: 300

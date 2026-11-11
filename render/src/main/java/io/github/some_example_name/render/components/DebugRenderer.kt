@@ -70,6 +70,8 @@ import io.github.some_example_name.render.RenderMode
 class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
 
     private val overlay = OverlayGeometry()
+    private var areas: DebugAreaGeometry? = null
+    private var areaShader: ShaderProgram? = null
 
     private lateinit var fillShader: ShaderProgram
     private lateinit var edgeShader: ShaderProgram
@@ -194,12 +196,33 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         fillShader.bind()
         bindCellUniforms(fillShader, context, fringe = false)
         cells.draw(context.numInstances)
+        drawAreas(context)
 
         target.end()
 
         // Значение очистки — общее состояние контекста; остальные его не ставят и ждут 1.
         gl.glClearDepthf(1f)
         gl.glDisable(GL20.GL_DEPTH_TEST)
+    }
+
+    private fun drawAreas(context: RenderContext) {
+        val indices = context.areaIndices ?: return
+        val shader = areaShader ?: compile("area.vert", "area.frag").also { areaShader = it }
+        val geometry = areas ?: DebugAreaGeometry(cells.instanceVbo).also { areas = it }
+        shader.bind()
+        shader.setUniformMatrix("u_projTrans", context.cameraProjection)
+        shader.setUniformf("u_lag", context.interpolationLag)
+        shader.setUniformi("u_filter", context.debugFilter.ordinal)
+
+        // Цвет добавляется только в непокрытую долю пикселя. Во второй буфер
+        // шейдер прибавляет ноль: глубина и владелец остаются данными клеток.
+        val gl = Gdx.gl
+        gl.glDisable(GL20.GL_DEPTH_TEST)
+        gl.glDepthMask(false)
+        gl.glDisable(GL20.GL_CULL_FACE)
+        gl.glEnable(GL20.GL_BLEND)
+        gl.glBlendFunc(GL20.GL_ONE_MINUS_DST_ALPHA, GL20.GL_ONE)
+        geometry.draw(indices)
     }
 
     /** Проход 2: фон и заливка на экран. */
@@ -296,6 +319,8 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         if (::edgeShader.isInitialized) edgeShader.dispose()
         if (::compositeShader.isInitialized) compositeShader.dispose()
         if (::overlayShader.isInitialized) overlayShader.dispose()
+        areaShader?.dispose()
+        areas?.dispose()
         overlay.dispose()
         fbo?.dispose()
         fbo = null

@@ -3,6 +3,15 @@ package io.github.some_example_name.render.microscope
 import kotlin.test.*
 
 class MenuBackgroundBudgetTest {
+    @Test fun mobileStartsInDebugAndNeverSamples() {
+        val budget = MenuBackgroundBudget(forceDebug = true)
+        repeat(2) { visit ->
+            budget.beginVisit()
+            repeat(180) { assertFalse(budget.shouldMeasure(1080, 1920 - visit, true)) }
+            assertEquals(io.github.some_example_name.render.RenderMode.DEBUG, budget.mode)
+        }
+    }
+
     @Test fun fastGpuIgnoresIsolatedStalls() {
         val budget = MenuBackgroundBudget()
         repeat(89) { assertFalse(budget.shouldMeasure(1920, 1080, true)) }
