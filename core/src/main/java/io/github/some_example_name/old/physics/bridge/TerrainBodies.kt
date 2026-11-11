@@ -178,7 +178,7 @@ internal class TerrainBodies(private val particleEntity: ParticleEntity) {
         /** Мягкость ткани террейна — как у жира в первом варианте. */
         const val SOFTNESS = 2.5f
         /** Пружина к месту: мягче связи — плитка проминается, но держит форму. */
-        const val HOME_COMPLIANCE = 4 * SOFT_COMPLIANCE
+        const val HOME_COMPLIANCE = 4.0e-5   // прежние 4 × SOFT_COMPLIANCE: пружину к месту ткань ×8 (11.11) не смягчает
         /** Порог пробуждения соседа через шов, доля длины покоя. */
         const val WAKE_STRAIN = 0.02
 
