@@ -415,9 +415,6 @@ class SimulationScreen(
             }
         }
 
-        // Отладочный стресс-тест (A убивает клетки, D разгоняет их) берёт клавиши из снимка
-        // контроллера в потоке симуляции — см. SimulationSystem.latchControllerKeys.
-
         // Фон здесь не важен ни в одном режиме: реалистичный закрывает экран постпроцессом,
         // а отладочный и ностальгический рисуют свой фон сами — он часть их рисунка.
         // Раньше под отладкой здесь заливался бежевый: тогда отладка рисовала клетки прямо
@@ -657,8 +654,9 @@ class SimulationScreen(
         DebugOptionsDialog(
             game = DIGameGlobalContainer.game,
             bundle = DIGameGlobalContainer.bundle,
-            state = DebugOptions(renderSystem.showBoundary, renderSystem.showLinks, sim.debugNoTailThrust, sim.debugNoDeepKill),
+            state = DebugOptions(renderSystem.showBoundary, renderSystem.showLinks, renderSystem.fillAreas, sim.debugNoTailThrust, sim.debugNoDeepKill),
             onBoundary = { viewModel.handle(SimulationIntent.SetShowBoundary(it)) },
+            onFillAreas = { viewModel.handle(SimulationIntent.SetFillAreas(it)) },
             onLinks = { viewModel.handle(SimulationIntent.SetShowLinks(it)) },
             // Эти две меняют мир — командой мира.
             onPhysics = { noTail, noDeepKill -> userCommandManager.push(PlayerCommand.SetPhysicsDebug(noTail, noDeepKill)) }

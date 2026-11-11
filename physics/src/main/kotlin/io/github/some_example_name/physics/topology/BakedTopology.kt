@@ -50,6 +50,9 @@ class BakedTopology(private var body: BodyDefinition, build: Boolean = true) {
     var triAlive = BooleanArray(0); private set
     /** Счётчик по постоянному номеру треугольника: упаковка рабочих списков его не меняет. */
     internal var invertedTicks = ByteArray(body.triCount); private set
+    /** Для кэша отрисовки. Замена массива triAlive при загрузке или уплотнении тоже меняет топологию. */
+    var triangleRevision = 0L
+        private set
     var liveTriangleCount = body.triCount
         private set
     /** Сколько живых треугольников опирается на ребро: 0 — голая связь, 1 — граница, 2 — внутри ткани. */
@@ -59,8 +62,9 @@ class BakedTopology(private var body: BodyDefinition, build: Boolean = true) {
     private var dirty = BooleanArray(body.count)
     var dirtyCount = 0
         private set
-    internal var vertexTriangles = IntArray(0); private set
-    internal var vertexTriStart = IntArray(1); private set
+    /** Углы граней у вершины: номер угла равен 3 * треугольник + локальная вершина. */
+    var vertexTriangles = IntArray(0); private set
+    var vertexTriStart = IntArray(1); private set
     private var restAngles = DoubleArray(0)
 
     internal fun touch(v: Int) {
@@ -407,6 +411,7 @@ class BakedTopology(private var body: BodyDefinition, build: Boolean = true) {
         for (k in 0..2) { val e = triEdge[3 * t + k]; if (e >= 0 && edgeDead[e]) return false }
         triUnborn[t] = false
         triAlive[t] = true
+        triangleRevision++
         liveTriangleCount++
         touch(body.triA[t]); touch(body.triB[t]); touch(body.triC[t])
         for (k in 0..2) {
@@ -422,6 +427,7 @@ class BakedTopology(private var body: BodyDefinition, build: Boolean = true) {
         edgeDead.fill(false)
         edgeUnborn.fill(false); triUnborn.fill(false)
         triAlive.fill(true)
+        triangleRevision++
         invertedTicks.fill(0)
         liveTriangleCount = body.triCount
         useInit.copyInto(triUse)
@@ -448,6 +454,7 @@ class BakedTopology(private var body: BodyDefinition, build: Boolean = true) {
     internal fun killTriangle(t: Int): Boolean {
         if (!triAlive[t]) return false
         triAlive[t] = false
+        triangleRevision++
         invertedTicks[t] = 0
         liveTriangleCount--
         touch(body.triA[t]); touch(body.triB[t]); touch(body.triC[t])

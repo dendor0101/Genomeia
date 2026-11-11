@@ -106,7 +106,7 @@ class SimulationSystem(
     private val worldStats = WorldStats()
 
     /**
-     * Только для отладочного стресс-теста, см. applyDebugStress. Сид — от сида сессии
+     * Только для отладочного стресс-теста, см. applyPeriodicStress. Сид — от сида сессии
      * (resetSessionInput): иначе повтор бага не смог бы повторить, какие клетки стресс
      * убил или разогнал.
      */
@@ -165,7 +165,6 @@ class SimulationSystem(
 
         latchControllerKeys()
 
-        if (DEBUG_CHECKS) applyDebugStress()
         applyPeriodicStress()
 
         // --- Измерения ---
@@ -232,32 +231,8 @@ class SimulationSystem(
     }
 
     /**
-     * Отладочный стресс-тест жизненного цикла клеток.
-     *
-     * Пока зажата A — несколько случайных клеток за тик умирают; пока зажата D — несколько
-     * получают предельную скорость в случайном направлении и улетают, разрывая свои связи.
-     *
-     * Смысл в том, чтобы гонки и битые ссылки в связях воспроизводились сами: они всплывают
-     * именно при активной смерти клеток и разрыве связей, а руками такой сценарий держать
-     * долго и ненадёжно.
-     *
-     * Стоит в самом начале тика, до всех фаз: команда DELETE_CELL попадёт в буфер и будет
-     * применена этим же тиком в фазе 7, а запись скорости идёт в однопоточном участке,
-     * пока ни один воркер не запущен.
-     */
-    private fun applyDebugStress() {
-        if (simulationData.debugKillCells) {
-            repeat(DEBUG_STRESS_CELLS_PER_TICK) { killRandomCell() }
-        }
-        if (simulationData.debugFlingCells) {
-            repeat(DEBUG_STRESS_CELLS_PER_TICK) { flingRandomCell() }
-        }
-    }
-
-    /**
      * Стресс жизненного цикла по команде PlayerCommand.SetStress — для проверок
-     * (bugReplayCheck -PkillEvery/-PflingEvery/-PspawnEvery). В отличие от [applyDebugStress]
-     * работает и без DEBUG_CHECKS: проверка должна гонять смерти и рождения на той же
+     * (bugReplayCheck -PkillEvery/-PflingEvery/-PspawnEvery). Работает и без DEBUG_CHECKS: проверка должна гонять смерти и рождения на той же
      * сборке, что у игрока. Выключенный стоит три сравнения с нулём за тик.
      *
      * Там же, в начале тика, в однопоточной части: смерть — обычной командой DELETE_CELL,
@@ -549,13 +524,6 @@ class SimulationSystem(
         val keys = simulationData.controllerKeys
         for (i in keys.indices) keys[i] = mask and (1 shl i) != 0
 
-        // Отладочный стресс-тест — от тех же клавиш A и D, что и управление организмом.
-        // Из снимка, а не прямо с клавиатуры: снимок пишется в журнал, и повтор бага
-        // запускает стресс в тех же тиках.
-        if (DEBUG_CHECKS) {
-            simulationData.debugKillCells = keys[KEY_A]
-            simulationData.debugFlingCells = keys[KEY_D]
-        }
     }
 
     fun initMap() {
@@ -567,10 +535,6 @@ class SimulationSystem(
 
     companion object {
         const val DELTA_SIM_TICK_TIME = 0.016666666f
-
-        /** Индексы клавиш A и D в controllerKeys (0–9 цифры, 10–13 WASD, 14 пробел, 15–18 стрелки). */
-        private const val KEY_A = 11
-        private const val KEY_D = 13
 
         /** Чтобы сид стресс-теста не совпадал с сидом команд игрока. */
         private const val DEBUG_RANDOM_SALT = 0x5DEECE66DL
@@ -588,7 +552,5 @@ class SimulationSystem(
         /** Скорость броска отладочного стресса: HALF_CHUNK_HEIGHT клеток мира за тик (x += vx · 7.5). */
         private const val FLING_SPEED = DISimulationContainer.HALF_CHUNK_HEIGHT / 7.5f
 
-        /** Сколько клеток за тик убивает / разгоняет отладочный стресс-тест. */
-        private const val DEBUG_STRESS_CELLS_PER_TICK = 55
     }
 }

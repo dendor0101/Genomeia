@@ -19,6 +19,7 @@ import io.github.some_example_name.old.systems.simulation.ThreadManager
 import io.github.some_example_name.render.DebugFilter
 import io.github.some_example_name.render.RenderMode
 import io.github.some_example_name.render.pack.CellInstanceBuffer
+import io.github.some_example_name.render.pack.DebugAreaIndices
 import io.github.some_example_name.render.pack.CellLook
 import io.github.some_example_name.render.pack.OverlayInstanceBuffer
 import kotlin.math.round
@@ -95,6 +96,11 @@ class RenderBufferManager(
     /** Все связи тел мира физики тонкими линиями (галочка «Связи»); как [showBoundary]. */
     @Volatile
     var showLinks = false
+
+    @Volatile
+    var fillAreas = false
+    private val areaCache = DebugAreaCache()
+    private var areaFrame = false
 
     /** Отметки игрока (средняя кнопка): позиции отмеченных клеток — в конце тика. null — фон меню. */
     var playerMarks: io.github.some_example_name.old.features.simulation.PlayerMarks? = null
@@ -468,6 +474,7 @@ class RenderBufferManager(
         val prevX = Float.fromBits(hist[h + 5])
         val prevY = Float.fromBits(hist[h + 6])
         val prevDir = hist[h + 7]
+        if (areaFrame) areaCache.cell(writeIndex, particleEntity.physicsIndex[particleIndex])
         if(polygonFrame){
             renderOfCell[cellIndex]=writeIndex;renderCellStamp[cellIndex]=serial;cellOfRender[writeIndex]=cellIndex
             opticalGroups[writeIndex] = if (cellEntity.organIndex[cellIndex] >= 0) cellEntity.organIndex[cellIndex] + 1 else -particleIndex - 1
@@ -789,6 +796,8 @@ class RenderBufferManager(
         }
 
         debugFrame = snapshotMode.drawsDebugOverlay
+        areaFrame = debugFrame && fillAreas
+        if (areaFrame) areaCache.reserveCells(cellEntity.aliveList.size)
         frameFilter = if (debugFrame) debugFilter else DebugFilter.ORIGINAL
 
         val overlay = snapshot.overlay
@@ -802,6 +811,9 @@ class RenderBufferManager(
         // ==================== CELL ====================
         var written = writeOrganismCells(0)
         written = writeOrphanCells(written)
+        snapshot.areaIndices = if (areaFrame) {
+            areaCache.publish(particleEntity.physics?.bridge?.world, written, snapshot.areaStorage)
+        } else null
         val writtenCells=written
         written = writeNonCellParticles(written)
         if(polygonFrame)writeOpticalLinks(snapshot,written,writtenCells)
@@ -971,6 +983,8 @@ class RenderSnapshot(cellCapacity: Int, overlayCapacity: Int) {
     var instances = IntArray(cellCapacity * CellInstanceBuffer.STRUCT_INTS)
         private set
     var instanceCount = 0
+    val areaStorage = DebugAreaIndices()
+    var areaIndices: DebugAreaIndices? = null
     // Три массива (12 байт/инстанс) растут только в режиме микроскопа.
     var hasOptics = false
     var opticalGroups = IntArray(0)
