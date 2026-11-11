@@ -5,6 +5,9 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.Rect
 import android.os.Bundle
+import android.os.Build
+import android.app.Activity
+import android.annotation.TargetApi
 import android.text.InputType
 import android.util.Log
 import android.view.Gravity
@@ -19,6 +22,7 @@ import com.badlogic.gdx.backends.android.AndroidApplication
 import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration
 import games.spooky.gdx.nativefilechooser.android.AndroidFileChooser
 import io.github.some_example_name.old.core.PlatformTuning
+import io.github.some_example_name.old.bug.BugOverlay
 import io.github.some_example_name.old.game.KeyBoardListener
 import io.github.some_example_name.old.game.MyGame
 import java.io.File
@@ -40,6 +44,25 @@ import java.io.File
 class AndroidLauncher : AndroidApplication(), KeyBoardListener {
 
     private lateinit var game: MyGame
+    private var stopScreenshotDetection: (() -> Unit)? = null
+
+    override fun onStart() {
+        super.onStart()
+        if (Build.VERSION.SDK_INT >= 34) stopScreenshotDetection = listenForScreenshots()
+    }
+
+    @TargetApi(34)
+    private fun listenForScreenshots(): () -> Unit {
+        val callback = Activity.ScreenCaptureCallback { postRunnable { BugOverlay.onScreenshotDetected() } }
+        registerScreenCaptureCallback(mainExecutor, callback)
+        return { unregisterScreenCaptureCallback(callback) }
+    }
+
+    override fun onStop() {
+        stopScreenshotDetection?.invoke()
+        stopScreenshotDetection = null
+        super.onStop()
+    }
 
     companion object {
         var inputCallback: ((Float) -> Unit)? = null
