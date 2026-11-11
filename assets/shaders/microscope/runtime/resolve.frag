@@ -14,12 +14,17 @@ uniform vec4 uFieldBounds;
 uniform vec2 uFieldTexel;
 uniform float uReliefHeight;
 uniform float uCohesion;
+// Подъём ткани над плоскостью фокуса (террейн), 0..1: вес окраски поля, в живой игре окраска нейтральна.
+uniform sampler2D uTissueLift;
+// На сколько террейн выше фокуса: при uAperture = 176 (масштаб 1) размытие около 6 пикселей.
+const float TERRAIN_DEFOCUS=.03;
 vec3 tissueField(vec2 p){
-  vec4 v=texture(uTissueField,(p-uFieldBounds.xy)/uFieldBounds.zw);
+  vec2 at=(p-uFieldBounds.xy)/uFieldBounds.zw;
+  vec4 v=texture(uTissueField,at);
   float distance=(dot(v.rg,vec2(65280.,255.))/65535.-.5)*1.5;
   float height=dot(v.ba,vec2(65280.,255.))/65535.*.08;
   height*=smoothstep(0.,max(uFieldTexel.x,uFieldTexel.y)*1.2,-distance);
-  return vec3(distance,height,0.);
+  return vec3(distance,height,texture(uTissueLift,at).a);
 }
 float reliefDepth(float height,float layer){return height*uReliefHeight*(.84-.5*layer);}
 vec2 reliefGradient(vec2 p,float stepWorld){
@@ -43,6 +48,7 @@ void main(){
   float dome=clamp(height/.045,0.,1.35),inside=smoothstep(0.,.045,-field);
   float micro=c.r>1e-6?clamp(c.a/c.r,-.004,.004):0.;
   float depth=plane+reliefDepth(height,uLayer);
+  depth=mix(depth,uFocus+TERRAIN_DEFOCUS,specimen.z);
   if(uLayer<.5||uLayer>3.5){
     // Наружная оболочка, а не кольца отдельных клеток. Толщина линии растёт только
     // там, где крутая поверхность попала в диапазон фокуса.

@@ -27,11 +27,12 @@ internal class TissueMaterialAtlas(commands:List<OpticalPass>,sources:(Int,Boole
 uniform float uPhase;
 void main(){
  vec2 uv=gl_FragCoord.xy/uRes,p=uCam+(uv-.5)*uSpan;
- float field=mix(texture(uA,uv).r,tissueField(p).x,uCohesion);
+ vec3 specimen=tissueField(p);float field=mix(texture(uA,uv).r,specimen.x,uCohesion);
  // Only the thin boundary evaluates focus; no shell height or interior optics.
  float maxWidth=max(.0002,max(.0025,uScale*2.9)*uContourWidth*1.5);
  if(abs(field)>4.*sqrt(maxWidth*maxWidth+98.*uScale*uScale)||uContourWidth<=0.)discard;
  float depth=.5+.0018*(p.x-uCam.x)+.0012*(p.y-uCam.y)-uFocus;
+ depth=mix(depth,TERRAIN_DEFOCUS,specimen.z);
  float focused=exp(-pow(depth*uAperture/2.6,2.));
  float width=max(.0002,max(.0025,uScale*(.65+2.25*focused))*uContourWidth*1.5);
  // Analytic broadening confined to the contour; no two full-screen blur passes.

@@ -19,6 +19,7 @@ import io.github.some_example_name.old.systems.simulation.ThreadManager
 import io.github.some_example_name.render.DebugFilter
 import io.github.some_example_name.render.RenderMode
 import io.github.some_example_name.render.pack.CellInstanceBuffer
+import io.github.some_example_name.render.pack.OpticalLinks
 import io.github.some_example_name.render.pack.DebugAreaIndices
 import io.github.some_example_name.render.pack.CellLook
 import io.github.some_example_name.render.pack.OverlayInstanceBuffer
@@ -186,6 +187,8 @@ class RenderBufferManager(
     private var opticalColors = IntArray(0)
     private var opticalBirthTicks = IntArray(0)
     private var opticalCullRanges: io.github.some_example_name.render.pack.OpticalCullRanges? = null
+    /** Террейн в микроскопе — один кусок ткани: его связи в граф изображения (TerrainOpticalLinks). */
+    private val terrainLinks = TerrainOpticalLinks(particleEntity)
 
     /**
      * Номер текущего снимка. С единицы: метка свежевыделенного слота — ноль, и она не
@@ -431,6 +434,8 @@ class RenderBufferManager(
         val physics = particleEntity.physics
 
         val hist = nonCellHistory
+        val optics = polygonFrame
+        val terrainCell = particleEntity.terrainCell
         for (i in from until to) {
             val particleIndex = nonCells.getInt(i)
             val x = particleEntity.x(particleIndex)
@@ -438,6 +443,14 @@ class RenderBufferManager(
             // Направления у не-клетки нет: ни поворота, ни угла в истории.
             rememberPosition(i, particleIndex, x, y)
             val h = i * NON_CELL_STRIDE
+            if (optics) {
+                // Слоты снимка переиспользуются: цвет и тик рождения пишутся явно, иначе от прошлого
+                // жильца слота менялась бы подпись тела террейна, и микроскоп перестраивал бы его сетку.
+                val w = startIndex + i
+                opticalGroups[w] = if (terrainCell[particleIndex] >= 0) OpticalLinks.TERRAIN_GROUP else 0
+                opticalColors[w] = pColor[particleIndex]
+                opticalBirthTicks[w] = -1
+            }
 
             CellInstanceBuffer.write(
                 target,
@@ -870,7 +883,7 @@ class RenderBufferManager(
     private val opticalCountJob=ParallelExecutor.ChunkJob{k,_->
         val from=(opticalTotal.toLong()*k/opticalChunks).toInt();val to=(opticalTotal.toLong()*(k+1)/opticalChunks).toInt()
         for(i in from until to){
-            if(i>=opticalCells){opticalCount[i]=0;continue}
+            if(i>=opticalCells){opticalCount[i]=terrainLinks.count(particleEntity.nonCellList.getInt(i-opticalCells));continue}
             val base=cellOfRender[i]*CellEntity.MAX_LINKS_PER_CELL
             var c=0
             for(l in 0 until CellEntity.MAX_LINKS_PER_CELL){
@@ -885,7 +898,12 @@ class RenderBufferManager(
         val graph=opticalGraph!!
         val from=(opticalTotal.toLong()*k/opticalChunks).toInt();val to=(opticalTotal.toLong()*(k+1)/opticalChunks).toInt()
         for(i in from until to){
-            if(i>=opticalCells){graph.vertexParallel(i);continue}
+            if(i>=opticalCells){
+                val p=particleEntity.nonCellList.getInt(i-opticalCells)
+                graph.vertexParallel(i,terrainKey(p,i))
+                terrainLinks.write(p,opticalCells,graph.neighbors,graph.offsets[i])
+                continue
+            }
             val cell=cellOfRender[i];val base=cell*CellEntity.MAX_LINKS_PER_CELL
             graph.vertexParallel(i,(cell.toLong() shl 32) or (cellEntity.getGeneration(cell).toLong() and 0xffffffffL))
             val organ=cellEntity.organIndex[cell]
@@ -899,10 +917,17 @@ class RenderBufferManager(
         }
     }
 
+    /** Ключ вершины не-клетки: у террейна — клетка карты (не сдвигается, когда меняется число клеток перед ним). */
+    private fun terrainKey(p:Int,i:Int):Long{
+        val c=particleEntity.terrainCell[p]
+        return if(c>=0)TERRAIN_KEY or c.toLong() else i.toLong()+1
+    }
+
     private fun writeOpticalLinks(snapshot:RenderSnapshot,total:Int,cells:Int){
         val graph=snapshot.opticalLinks
         graph.epoch=polygonEpoch
-        graph.begin(total,linkEntity.aliveList.size*2)
+        terrainLinks.prepare()
+        graph.begin(total,linkEntity.aliveList.size*2+terrainLinks.capacity())
         val executor=threads?.executor
         if(executor!=null&&executor.workerCount>1&&total>=4096){
             // Граф изображения по воркерам: счёт соседей, префиксная сумма, запись со своего места.
@@ -919,7 +944,12 @@ class RenderBufferManager(
             return
         }
         for(i in 0 until total){
-            if(i>=cells){graph.vertex(i);continue}
+            if(i>=cells){
+                val p=particleEntity.nonCellList.getInt(i-cells)
+                graph.vertex(i,terrainKey(p,i))
+                graph.advance(terrainLinks.write(p,cells,graph.neighbors,graph.size)-graph.size)
+                continue
+            }
             val cell=cellOfRender[i];val base=cell*CellEntity.MAX_LINKS_PER_CELL
             // Слот снимка сдвигается при рождении соседей. Ключ клетки сохраняется,
             // а поколение отличает новую клетку, занявшую освобождённый слот.
@@ -1025,6 +1055,9 @@ class RenderBufferManager(
 
         /** Кусок записи не-клеток по воркерам: 2048 инстансов — десятки микросекунд работы. */
         const val NON_CELL_CHUNK = 2048
+
+        /** Ключ вершины террейна в графе изображения: старший бит над ключами клеток (номер клетки << 32). */
+        private const val TERRAIN_KEY = 1L shl 62
 
         const val NANOS_PER_SECOND = 1_000_000_000L
 

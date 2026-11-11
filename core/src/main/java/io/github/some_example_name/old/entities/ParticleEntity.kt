@@ -103,8 +103,9 @@ class ParticleEntity(
     var holderEntityIndex = IntArray(maxAmount) { -1 }
     /**
      * Клетка карты частицы террейна (WorldTerrainManager): y · 65536 + x; −1 — не террейн; −2 − k — частица
-     * стенки у рамки номер k (TerrainBodies.wallMark). По ней мост
-     * физики режет террейн на плитки и сшивает соседей (TerrainBodies). Задаётся раз при постройке мира.
+     * стенки у рамки номер k (StaticTerrain.wallMark). По ней мост физики отделяет кромку террейна
+     * от толщи (StaticTerrain), а микроскоп сшивает террейн в один кусок ткани (RenderBufferManager).
+     * Задаётся раз при постройке мира.
      */
     var terrainCell = IntArray(maxAmount) { -1 }
     var isPheromoneEmitter = BooleanArray(maxAmount) { false }

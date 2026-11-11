@@ -72,8 +72,10 @@ object StateHash {
      *     (SpecialModDataEntity), а тик рождения клетки стал сохраняемым полем для возрастного рельефа.
      * 19 — синапс учится по следам спайков (SynapseState.preTrace/postTrace) вместо тиков
      *     последней пары; новые формулы lif и trace.
+     * 20 — террейн — неподвижные частицы мира физики, только кромка (StaticTerrain): формула хэша
+     *     та же, но мир другой, и старые хэши сверять нельзя.
      */
-    const val VERSION = 19
+    const val VERSION = 20
 
     class Result(val hash: Long, val parts: LongArray)
 

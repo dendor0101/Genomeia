@@ -4,6 +4,7 @@ import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.GL30.*
 import com.badlogic.gdx.utils.IntMap
 import io.github.some_example_name.render.RenderFrame
+import io.github.some_example_name.render.pack.OpticalLinks
 import io.github.some_example_name.render.pack.CellInstanceBuffer as Cells
 import kotlin.math.*
 
@@ -65,8 +66,10 @@ internal class LiveOpticalScene(materials:IntArray):com.badlogic.gdx.utils.Dispo
             val o=cells.position()+i*Cells.STRUCT_SIZE;val type=cells.getInt(o+16);val isCell=(type ushr 24 and Cells.FLAG_NOT_CELL)==0
             val x=(cells.getFloat(o)+(cells.getFloat(o+28)-cells.getFloat(o))*lag)*UNITS
             val y=(cells.getFloat(o+4)+(cells.getFloat(o+32)-cells.getFloat(o+4))*lag)*UNITS
-            if(!isCell&&(abs(x-cx)>sx*.5f+pad||abs(y-cy)>sy*.5f+pad))continue
-            val group=frame.opticalGroups?.get(i)?:1;val id=if(!isCell)Int.MIN_VALUE else if(group!=0)group else -1-i
+            val group=frame.opticalGroups?.get(i)?:1;val terrain=!isCell&&group==OpticalLinks.TERRAIN_GROUP
+            // Террейн поштучно не отсекается: состав его тела не меняется с камерой, и сетка строится раз на мир.
+            if(!isCell&&!terrain&&(abs(x-cx)>sx*.5f+pad||abs(y-cy)>sy*.5f+pad))continue
+            val id=if(terrain)group else if(!isCell)Int.MIN_VALUE else if(group!=0)group else -1-i
             var b=cached
             if(b==null||b.id!=id){b=bodies[id];if(b==null){b=Body(id);bodies.put(id,b)};cached=b}
             val r=radius(cells.getInt(o+12))

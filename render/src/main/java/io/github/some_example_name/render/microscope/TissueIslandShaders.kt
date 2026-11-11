@@ -44,6 +44,8 @@ internal object TissueIslandShaders {
     private const val surface="""
         in vec2 vRestPoint,vWorldPoint,vRelief;in vec3 vBary;
         flat in vec3 vEdgeLift;flat in float vCenterLift;
+        // 1 — тело над плоскостью фокуса (террейн): глубина uFocus + TERRAIN_DEFOCUS при любом фокусе.
+        uniform float uLift;
         float edgeDistance(){
             // Непрерывное поле: значения и поправка на общем ребре совпадают.
             // Прежний min расстояния до собственного внешнего ребра давал разрыв.
@@ -55,7 +57,9 @@ internal object TissueIslandShaders {
     val fieldFragment=header+surface+"""
         layout(location=0) out vec4 outField;layout(location=1) out vec4 outTint;
         vec2 pack16(float x){float v=floor(clamp(x,0.,1.)*65535.+.5);return vec2(floor(v/256.),mod(v,256.))/255.;}
-        void main(){outField=vec4(pack16(.5-edgeDistance()/1.5),pack16(height()/.08));outTint=vec4(1.);}
+        // Окраска генома в живой игре нейтральна (rgb = 1), и её вес a свободен: в нём подъём тела над
+        // фокусом. Его читают полноэкранные проходы (tissueField(p).z в resolve и compose).
+        void main(){outField=vec4(pack16(.5-edgeDistance()/1.5),pack16(height()/.08));outTint=vec4(1.,1.,1.,uLift);}
     """
     val geometryFragment=header+surface+"""
         layout(location=0) out vec4 outColor;
@@ -138,6 +142,7 @@ internal object TissueIslandShaders {
                 vec2 rest=vRestPoint/5.6,dx=dFdx(rest),dy=dFdy(rest);
                 float tileSize=float(textureSize(uTemplates,0).x);
                 float depth=.5+.0018*(vWorldPoint.x-uCam.x)+.0012*(vWorldPoint.y-uCam.y)+reliefDepth(height(),uLayer);
+                depth=mix(depth,uFocus+TERRAIN_DEFOCUS,uLift);
                 float sigma=max(.35,clamp(.55+abs(depth-uFocus)*uAperture,.55,7.)*uPixelRatio);
                 sigma=sqrt(sigma*sigma+pow(uTissueBlur*uPixelRatio,2.))*uScale/max(uMaterialRadius,.001);
                 float footprint=max(length(dx),length(dy))*tileSize;

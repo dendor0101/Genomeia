@@ -82,8 +82,8 @@ class WorldPhysics(
     /** Липучки и их временные связи в мире физики ([requestStick], StickyJoints). */
     private val sticks = StickyJoints(cellEntity, particleEntity, substancesEntity, cellEntity.cellList.requireIndex("sticky"))
 
-    /** Мягкий террейн из плиток со швами (TerrainBodies): одно тело мира физики на мир. */
-    private val terrain = TerrainBodies(particleEntity)
+    /** Неподвижный террейн (StaticTerrain): кромка — неподвижные частицы мира физики, как стенка. */
+    private val terrain = StaticTerrain(particleEntity)
 
     private var boundsWidth = -1
     private var boundsHeight = -1
@@ -134,7 +134,7 @@ class WorldPhysics(
             bridge.setBounds(boundsWidth.toFloat(), boundsHeight.toFloat())
         }
         if (wallWidth != gridManager.gridWidth || wallHeight != gridManager.gridHeight) buildWall()
-        if (!terrain.built) terrain.build(bridge.world)
+        if (!terrain.built) buildTerrain()
         removeGone()
         spawnNewOrganisms()
         syncOrganisms()
@@ -163,9 +163,20 @@ class WorldPhysics(
             val id = bridge.addWall(x, y, WorldTerrainManager.WALL_RADIUS)
             wallIds.add(id)
             // Стенка и террейн — одна группа касаний: террейн у рамки перекрывает стенку и не расталкивается.
-            bridge.world.setContactGroup(bridge.substanceParticle(id), TerrainBodies.TERRAIN_GROUP)
+            bridge.world.setContactGroup(bridge.substanceParticle(id), StaticTerrain.TERRAIN_GROUP)
         }
         mapWallParticles()
+    }
+
+    /**
+     * Террейн в мир физики (StaticTerrain) и клетки сетки игры у его частиц — один раз: террейн не
+     * движется, и в [updateGrid] ему места нет. Пересчёт нужен, потому что место кромки теперь читается
+     * из мира физики, а перевод единиц туда и обратно может сдвинуть его через границу клетки.
+     */
+    private fun buildTerrain() {
+        terrain.build(bridge)
+        publish()   // место кромки читается из мира физики: его массивы могли вырасти или появиться только что
+        for (k in 0 until terrain.count) updateCell(terrain.particle(k))
     }
 
     // --- сохранение мира (MapSave, этап B3) --------------------------------------------
@@ -237,7 +248,7 @@ class WorldPhysics(
         repeat(input.readInt()) { wallIds.add(input.readInt()) }
         sticks.read(input)
         terrain.read(input)
-        terrain.remap(bridge.world)
+        terrain.remap(bridge)
         mapWallParticles()
         compactions = bridge.world.compactions
         publish()
@@ -267,7 +278,7 @@ class WorldPhysics(
     fun requestStick(c: Int, gen: Int, p: Int) = sticks.request(bridge.world, c, gen, p, particleEntity.physicsIndex[p])
 
     /**
-     * Частицы стенки игры (ParticleEntity.terrainCell — метка TerrainBodies.wallMark) — к частицам стенки мира
+     * Частицы стенки игры (ParticleEntity.terrainCell — метка StaticTerrain.wallMark) — к частицам стенки мира
      * физики по номеру в раскладке ([wallIds] — в её же порядке): рисуются и спят по миру физики, липучка
      * липнет к ним по номеру. После постройки стенки, уплотнения мира и загрузки. Проход по частицам не-клеткам.
      */
@@ -278,7 +289,7 @@ class WorldPhysics(
             val p = list.getInt(k)
             val mark = pe.terrainCell[p]
             if (mark > -2) continue
-            val w = TerrainBodies.wallIndexOf(mark)
+            val w = StaticTerrain.wallIndexOf(mark)
             if (w < wallIds.size) pe.physicsIndex[p] = bridge.substanceParticle(wallIds.getInt(w))
         }
     }
@@ -753,7 +764,7 @@ class WorldPhysics(
             if (!substancesEntity.isAlive[sub]) continue
             pe.physicsIndex[substancesEntity.particleIndex[sub]] = bridge.substanceParticle(freeOfSubstance[sub])
         }
-        terrain.remap(world)
+        terrain.remap(bridge)
         mapWallParticles()
         publish()
     }
@@ -792,8 +803,6 @@ class WorldPhysics(
             }
         }
         for (k in 0 until trackedSubstances.size) updateCell(substancesEntity.particleIndex[trackedSubstances.getInt(k)])
-        // Мягкий террейн тоже ходит: проминается и возвращается. Почти весь спит — клетка не меняется.
-        for (k in 0 until terrain.count) { val p = terrain.particle(k); if (alive[p] && index[p] >= 0) updateCell(p) }
     }
 
     /** Клетки сетки организма [organ] без источников феромонов: см. [updateGrid]. Пишет только свои gridId. */

@@ -206,7 +206,7 @@ class UserCommandManager(
 
                 if (simulationData.selectedCellIndex == -1) {
                     if (cmd.isLeftButton) {
-                        // На террейне и стенке не сажаем: в толще террейна касаний нет (TerrainBodies), и
+                        // На террейне и стенке не сажаем: толщи террейна в мире физики нет (StaticTerrain), и
                         // организм вырос бы внутри. Под курсором частица террейна — значит, клик по нему.
                         val onTerrain = grabbedParticleIndexTap != -1 && particleEntity.terrainCell[grabbedParticleIndexTap] != -1
                         if (!onTerrain && cmd.x > 0 && cmd.x < gridManager.gridWidth && cmd.y > 0 && cmd.y < gridManager.gridHeight) {

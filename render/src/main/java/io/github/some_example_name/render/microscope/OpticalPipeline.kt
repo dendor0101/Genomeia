@@ -51,6 +51,7 @@ internal class OpticalPipeline:Disposable {
         }
     }
     private var first=true
+    private val tintIndex=document.get("resources").getInt("tint")
     private var lastLayerScale=document.get("state").getFloat("layerScale")
     init {
         val gl=Gdx.gl30;gl.glGenVertexArrays(1,vao,0)
@@ -247,6 +248,8 @@ internal class OpticalPipeline:Disposable {
                 program.v2("uSpan",(live.width*live.scale).toFloat(),(live.height*live.scale).toFloat())
             }
             if(maskProgram!=null)workMask!!.bind(program)
+            // Подъём над фокусом (террейн) — вес окраски поля; читают проходы с tissueField.
+            program.texture("uTissueLift",scene.texture(tintIndex),12)
             program.texture("uLiveData",scene.gpuData,6)
             gl.glBindVertexArray(vao[0])
             for(i in 0..3){gl.glDisableVertexAttribArray(i);gl.glVertexAttribDivisor(i,0)}
