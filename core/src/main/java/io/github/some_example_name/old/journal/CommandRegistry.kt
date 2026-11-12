@@ -126,6 +126,7 @@ object CommandRegistry {
         t<SettingsIntent.SetFullscreen>(307),
         t<SettingsIntent.SetShowDebugInfo>(308),
         t<SettingsIntent.OpenGpuSettings>(309),
+        t<SettingsIntent.SetAutoSendCrash>(310),
 
         // --- Поддержка ---
         t<SupportIntent.CopyAddress>(400),
@@ -170,6 +171,8 @@ object CommandRegistry {
         t<SimulationIntent.SetShowBoundary>(621),
         t<SimulationIntent.SetShowLinks>(622),
         t<SimulationIntent.SaveWorldFailed>(623),
+        t<SimulationIntent.SetFillAreas>(624),
+        t<SimulationIntent.TapWorld>(625),
 
         // --- Касания мира ---
         t<PlayerCommand.TouchDown>(700),

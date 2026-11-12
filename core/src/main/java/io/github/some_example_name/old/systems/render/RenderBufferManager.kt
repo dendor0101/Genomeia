@@ -2,6 +2,8 @@ package io.github.some_example_name.old.systems.render
 
 import io.github.some_example_name.old.cells.eyeData
 import io.github.some_example_name.old.cells.Cell
+import io.github.some_example_name.old.commands.aliveIn
+import io.github.some_example_name.old.journal.SessionJournal
 import io.github.some_example_name.old.core.DEBUG_CHECKS
 import io.github.some_example_name.old.core.PROFILE_INTERPOLATION
 import io.github.some_example_name.old.entities.CellEntity
@@ -19,6 +21,7 @@ import io.github.some_example_name.old.systems.simulation.ThreadManager
 import io.github.some_example_name.render.DebugFilter
 import io.github.some_example_name.render.RenderMode
 import io.github.some_example_name.render.pack.CellInstanceBuffer
+import io.github.some_example_name.render.pack.DebugAreaIndices
 import io.github.some_example_name.render.pack.CellLook
 import io.github.some_example_name.render.pack.OverlayInstanceBuffer
 import kotlin.math.round
@@ -39,8 +42,8 @@ import kotlin.math.sqrt
  * рисуют движение плавно (CellInstanceBuffer: «Интерполяция между тиками»). Прошлые позы
  * живут в [history] и [nonCellHistory].
  *
- * TODO(XPBD): когда в игру придёт новая физика (цель — 30 UPS, тик из нескольких
- * подшагов), на очень сильном замедлении линейной интерполяции между тиками станет мало:
+ * TODO(XPBD): снимок содержит конечную позу, которую вернул мир физики. На сильном
+ * замедлении линейная интерполяция между тиками теряет детали движения внутри шага:
  * клетка поедет по хорде, а не по дуге, и столкновение «проскочит» между двумя снимками.
  * Тогда снимок надо снимать и с подшагов решателя — прошлой позой каждого снимка будет
  * поза прошлого подшага, а рендер пройдёт их по очереди. См. TODO.md, раздел 11.
@@ -95,6 +98,11 @@ class RenderBufferManager(
     /** Все связи тел мира физики тонкими линиями (галочка «Связи»); как [showBoundary]. */
     @Volatile
     var showLinks = false
+
+    @Volatile
+    var fillAreas = false
+    private val areaCache = DebugAreaCache()
+    private var areaFrame = false
 
     /** Отметки игрока (средняя кнопка): позиции отмеченных клеток — в конце тика. null — фон меню. */
     var playerMarks: io.github.some_example_name.old.features.simulation.PlayerMarks? = null
@@ -173,7 +181,7 @@ class RenderBufferManager(
     // Только полигональный эксперимент; не состояние мира. 12 B/клетку, без аллокаций за тик.
     private var renderOfCell=IntArray(0)
     private var renderCellStamp=IntArray(0)
-    private var cellOfRender=IntArray(0)
+    private var cellKeys = LongArray(0)
     private var polygonFrame=false
     private val polygonEpoch=Any()
     private var opticalGroups = IntArray(0)
@@ -207,10 +215,11 @@ class RenderBufferManager(
      * времени, а потом кадры стояли бы до следующего. Каждое измерение зажато в
      * [половину, удвоение] текущего значения: пауза или подвисание дают один огромный
      * промежуток, и без зажима после каждой паузы движение на несколько тиков замедлялось
-     * бы в разы. Смена UPS руками (60 → 10) догоняется за ~10 снимков.
+     * бы в разы. При смене заданного темпа первый снимок сразу получает новый период.
      */
     private var tickNanos = 0L
     private var lastPublishNanos = 0L
+    private var lastTarget = 0
 
     // ==================== Отладочный режим ====================
 
@@ -462,14 +471,17 @@ class RenderBufferManager(
         val angleSin = cellEntity.angleSin[cellIndex]
 
         val dir = CellInstanceBuffer.dir(angleCos, angleSin)
-        remember(particleIndex, cellEntity.getGeneration(cellIndex), x, y, dir)
+        val generation = cellEntity.getGeneration(cellIndex)
+        remember(particleIndex, generation, x, y, dir)
+        cellKeys[writeIndex] = (cellIndex.toLong() shl 32) or (generation.toLong() and 0xffffffffL)
         val hist = history
         val h = particleIndex * HISTORY_STRIDE
         val prevX = Float.fromBits(hist[h + 5])
         val prevY = Float.fromBits(hist[h + 6])
         val prevDir = hist[h + 7]
+        if (areaFrame) areaCache.cell(writeIndex, particleEntity.physicsIndex[particleIndex])
         if(polygonFrame){
-            renderOfCell[cellIndex]=writeIndex;renderCellStamp[cellIndex]=serial;cellOfRender[writeIndex]=cellIndex
+            renderOfCell[cellIndex]=writeIndex;renderCellStamp[cellIndex]=serial
             opticalGroups[writeIndex] = if (cellEntity.organIndex[cellIndex] >= 0) cellEntity.organIndex[cellIndex] + 1 else -particleIndex - 1
             opticalColors[writeIndex] = pColor[particleIndex]
             opticalBirthTicks[writeIndex] = cellEntity.birthTick[cellIndex]
@@ -767,6 +779,9 @@ class RenderBufferManager(
         playerMarks?.follow(cellEntity)
         startSnapshot()
         val snapshot = snapshots.back()
+        snapshot.tick = simulationData.tickCounter
+        snapshot.epoch = SessionJournal.epoch
+        cellKeys = snapshot.reserveCellKeys(cellEntity.aliveList.size)
         // Сколько инстансов вообще может быть записано: клетки (в аренах и вне их) и
         // не-клетки. Не aliveList частиц: если их сумма с ним разойдётся (это ловит
         // DEBUG_CHECKS), снимок не должен выйти за массив.
@@ -777,7 +792,6 @@ class RenderBufferManager(
         if(polygonFrame){
             snapshot.reserveOptics()
             if(renderOfCell.size<cellEntity.isAlive.size){renderOfCell=IntArray(cellEntity.isAlive.size);renderCellStamp=IntArray(renderOfCell.size)}
-            if(cellOfRender.size<cellEntity.aliveList.size)cellOfRender=IntArray(cellEntity.aliveList.size*2)
         }
         opticalCullRanges=null
         if(polygonFrame){
@@ -789,6 +803,8 @@ class RenderBufferManager(
         }
 
         debugFrame = snapshotMode.drawsDebugOverlay
+        areaFrame = debugFrame && fillAreas
+        if (areaFrame) areaCache.reserveCells(cellEntity.aliveList.size)
         frameFilter = if (debugFrame) debugFilter else DebugFilter.ORIGINAL
 
         val overlay = snapshot.overlay
@@ -802,7 +818,11 @@ class RenderBufferManager(
         // ==================== CELL ====================
         var written = writeOrganismCells(0)
         written = writeOrphanCells(written)
+        snapshot.areaIndices = if (areaFrame) {
+            areaCache.publish(particleEntity.physics?.bridge?.world, written, snapshot.areaStorage)
+        } else null
         val writtenCells=written
+        snapshot.cellCount = writtenCells
         written = writeNonCellParticles(written)
         if(polygonFrame)writeOpticalLinks(snapshot,written,writtenCells)
 
@@ -841,10 +861,10 @@ class RenderBufferManager(
         graph.begin(total,linkEntity.aliveList.size*2)
         for(i in 0 until total){
             if(i>=cells){graph.vertex(i);continue}
-            val cell=cellOfRender[i];val base=cell*CellEntity.MAX_LINKS_PER_CELL
+            val cell=(cellKeys[i] ushr 32).toInt();val base=cell*CellEntity.MAX_LINKS_PER_CELL
             // Слот снимка сдвигается при рождении соседей. Ключ клетки сохраняется,
             // а поколение отличает новую клетку, занявшую освобождённый слот.
-            graph.vertex(i,(cell.toLong() shl 32) or (cellEntity.getGeneration(cell).toLong() and 0xffffffffL))
+            graph.vertex(i,cellKeys[i])
             val organ=cellEntity.organIndex[cell]
             if(organ>=0)materialCoordinates.write(graph,i,cellEntity.organEntity.genomeIndex[organ],cellEntity.cellGenomeId[cell])
             for(k in 0 until CellEntity.MAX_LINKS_PER_CELL){
@@ -866,22 +886,14 @@ class RenderBufferManager(
         detailedPerformance = performanceInfo
 
         val cellIndex = simulationData.selectedCellIndex
-        if (cellIndex != -1 && cellEntity.isAlive[cellIndex]) {
-            selectedCellIndex = cellEntity.cellGenomeId[cellIndex]
-            neuronImpulseInput = cellEntity.neuronImpulseInput[cellIndex]
-            neuronImpulseOutput = cellEntity.neuronImpulseOutput[cellIndex]
+        if (cellIndex != -1 && cellEntity.isAlive[cellIndex] && simulationData.selectedFrameCell?.aliveIn(cellEntity) != false) {
+            writeCellInfo(spec, cellIndex)
             isCellSelected = true
             grabbedCellX = cellEntity.getX(cellIndex)
             grabbedCellY = cellEntity.getY(cellIndex)
             val particleIndex = cellEntity.getParticleIndex(cellIndex)
             grabbedPrevX = prevXOf(particleIndex, grabbedCellX!!)
             grabbedPrevY = prevYOf(particleIndex, grabbedCellY!!)
-            val cellType = cellEntity.cellType[cellIndex].toInt()
-            cellName = cellList[cellType].name +
-                if (cellEntity.isNeural[cellIndex])
-                    " ${cellEntity.formulas[cellEntity.getActivationFuncType(cellIndex)].label} " +
-                        "${cellEntity.getA(cellIndex)} ${cellEntity.getB(cellIndex)} ${cellEntity.getC(cellIndex)}"
-                else ""
         } else {
             neuronImpulseInput = null
             neuronImpulseOutput = null
@@ -903,6 +915,19 @@ class RenderBufferManager(
     private var stepMax = 0f
     private var stepTeleports = 0
 
+    /** Поток симуляции или чтение одной клетки под замком между тиками при клике. */
+    internal fun writeCellInfo(spec: RenderSpecificBufferData, cellIndex: Int) = with(spec) {
+        selectedCellIndex = cellEntity.cellGenomeId[cellIndex]
+        neuronImpulseInput = cellEntity.neuronImpulseInput[cellIndex]
+        neuronImpulseOutput = cellEntity.neuronImpulseOutput[cellIndex]
+        val cellType = cellEntity.cellType[cellIndex].toInt()
+        cellName = cellList[cellType].name +
+            if (cellEntity.isNeural[cellIndex])
+                " ${cellEntity.formulas[cellEntity.getActivationFuncType(cellIndex)].label} " +
+                    "${cellEntity.getA(cellIndex)} ${cellEntity.getB(cellIndex)} ${cellEntity.getC(cellIndex)}"
+            else ""
+    }
+
     private fun countStep(dx: Float, dy: Float) {
         val step = maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy))
         if (step > stepMax) stepMax = step
@@ -918,13 +943,15 @@ class RenderBufferManager(
             stepTeleports = 0
         }
         val now = System.nanoTime()
-        if (tickNanos == 0L || lastPublishNanos == 0L) {
+        val target = if (simulationData.maxSpeed) 0 else simulationData.targetUPS
+        if (lastPublishNanos == 0L || (target != 0 && lastTarget != target)) {
             tickNanos = NANOS_PER_SECOND / simulationData.targetUPS
         } else {
             val gap = (now - lastPublishNanos).coerceIn(tickNanos / 2, tickNanos * 2)
             tickNanos += (gap - tickNanos) / TICK_SMOOTHING
         }
         lastPublishNanos = now
+        lastTarget = target
 
         snapshot.publishedAtNanos = now
         snapshot.tickNanos = tickNanos
@@ -971,6 +998,18 @@ class RenderSnapshot(cellCapacity: Int, overlayCapacity: Int) {
     var instances = IntArray(cellCapacity * CellInstanceBuffer.STRUCT_INTS)
         private set
     var instanceCount = 0
+    var tick = -1
+    var epoch = -1
+    var cellCount = 0
+    var cellKeys = LongArray(0)
+        private set
+
+    fun reserveCellKeys(count: Int): LongArray {
+        if (cellKeys.size < count) cellKeys = LongArray(maxOf(count, cellKeys.size * 3 / 2))
+        return cellKeys
+    }
+    val areaStorage = DebugAreaIndices()
+    var areaIndices: DebugAreaIndices? = null
     // Три массива (12 байт/инстанс) растут только в режиме микроскопа.
     var hasOptics = false
     var opticalGroups = IntArray(0)

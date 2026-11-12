@@ -22,6 +22,7 @@ abstract class VisDslScreen(
     protected val extraTextures = mutableListOf<Texture>()//TODO понять нужно ли dispode обрабатывать
 
     protected val stage = Stage(ScreenViewport())
+    val isTyping: Boolean get() = KeyboardFocus.isTyping(stage)
     protected val rootTable: VisTable = globalVisTable {
         setFillParent(true)
     }

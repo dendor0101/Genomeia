@@ -42,7 +42,7 @@ import io.github.some_example_name.old.core.ui.ConfirmDialog
 import io.github.some_example_name.old.core.ui.KeyboardFocus
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.DISimulationContainer
-import io.github.some_example_name.old.core.utils.pickParticle
+import io.github.some_example_name.old.commands.aliveIn
 import io.github.some_example_name.old.core.ui.CameraControl
 import io.github.some_example_name.old.core.ui.STYLE_BEIGE
 import io.github.some_example_name.old.core.ui.h
@@ -76,6 +76,8 @@ class SimulationScreen(
     private val userCommandManager = DISimulationContainer.userCommandManager
 
     private val camera = OrthographicCamera().apply { setToOrtho(false, w, h) }
+    // Слежение за выбранной клеткой меняет камеру уже после отрисовки мира.
+    private val displayedCamera = OrthographicCamera()
 
     /**
      * Все кнопки экрана — через неё. Сам экран состояние не меняет: он собирает команду
@@ -90,10 +92,11 @@ class SimulationScreen(
 
     val cameraControl = CameraControl(
         camera = camera,
+        inputCamera = displayedCamera,
         zoom = 0.08f,
         // Центр мира ставится в show(), когда размер сетки уже взят из мира.
         onTouchDown = { x, y, isLeft ->
-            userCommandManager.push(PlayerCommand.TouchDown(x, y, isLeftButton = isLeft))
+            userCommandManager.push(PlayerCommand.TouchDown(x, y, isLeft, renderSystem.displayedCellAt(x, y)))
         },
         onTap = ::onWorldTap,
         onMiddleClick = ::markCellAt,
@@ -276,18 +279,14 @@ class SimulationScreen(
         if (success) Gdx.app.postRunnable { exit() }
     }
 
-    /** Касание мира: что делать, решает инструмент. */
-    /**
-     * Средняя кнопка: отметка клетки под курсором для отчёта о баге (PlayerMarks). Клетка ищется
-     * между тиками — сетку и позиции в это время никто не пишет; на паузе — сразу.
-     */
+    /** Средняя кнопка отмечает клетку показанного кадра. Метаданные читаются между тиками. */
     private fun markCellAt(x: Float, y: Float) {
         val c = DISimulationContainer
+        val target = renderSystem.displayedCellAt(x, y)
         val found = simulationSystem.betweenTicks {
-            val p = c.gridManager.pickParticle(x, y, c.particleEntity, c.cellEntity)
-            if (p < 0 || !c.particleEntity.isCell[p]) null else {
-                val cell = c.particleEntity.holderEntityIndex[p]
-                intArrayOf(cell, c.cellEntity.getGeneration(cell), c.cellEntity.organIndex[cell], c.cellEntity.cellGenomeId[cell])
+            if (!target.aliveIn(c.cellEntity)) null else {
+                val cell = target.index
+                intArrayOf(cell, target.generation, c.cellEntity.organIndex[cell], c.cellEntity.cellGenomeId[cell])
             }
         }
         viewModel.handle(
@@ -297,13 +296,15 @@ class SimulationScreen(
     }
 
     private fun onWorldTap(x: Float, y: Float, isLeft: Boolean) {
+        val target = renderSystem.displayedCellAt(x, y)
         // Решается здесь, при создании команды: в запись сессии уходит уже итоговое действие.
         when (val tool = viewModel.tool) {
-            SimulationTool.KILL_CELL -> userCommandManager.push(PlayerCommand.KillCell(x, y))
+            SimulationTool.KILL_CELL -> userCommandManager.push(PlayerCommand.KillCell(x, y, target))
             SimulationTool.SPAWN_CELL, SimulationTool.SPAWN_FOOD -> {
                 // «Еда» меняет кнопки местами: левая сыплет еду, правая ставит организм.
                 val putOrganism = tool == SimulationTool.SPAWN_CELL
-                userCommandManager.push(PlayerCommand.Tap(x, y, isLeftButton = if (isLeft) putOrganism else !putOrganism))
+                val tap = PlayerCommand.Tap(x, y, isLeftButton = if (isLeft) putOrganism else !putOrganism, target = target)
+                viewModel.handle(SimulationIntent.TapWorld(tap))
             }
         }
     }
@@ -415,9 +416,6 @@ class SimulationScreen(
             }
         }
 
-        // Отладочный стресс-тест (A убивает клетки, D разгоняет их) берёт клавиши из снимка
-        // контроллера в потоке симуляции — см. SimulationSystem.latchControllerKeys.
-
         // Фон здесь не важен ни в одном режиме: реалистичный закрывает экран постпроцессом,
         // а отладочный и ностальгический рисуют свой фон сами — он часть их рисунка.
         // Раньше под отладкой здесь заливался бежевый: тогда отладка рисовала клетки прямо
@@ -426,6 +424,7 @@ class SimulationScreen(
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
 
         shapeRenderer.projectionMatrix = camera.combined
+        displayedCamera.invProjectionView.set(camera.invProjectionView)
 
         // Вёрстка с прошлого кадра: сцена в пикселях экрана (ScreenViewport), поэтому верх
         // кнопки в координатах сцены — это и есть высота над нижним краем в пикселях.
@@ -657,8 +656,9 @@ class SimulationScreen(
         DebugOptionsDialog(
             game = DIGameGlobalContainer.game,
             bundle = DIGameGlobalContainer.bundle,
-            state = DebugOptions(renderSystem.showBoundary, renderSystem.showLinks, sim.debugNoTailThrust, sim.debugNoDeepKill),
+            state = DebugOptions(renderSystem.showBoundary, renderSystem.showLinks, renderSystem.fillAreas, sim.debugNoTailThrust, sim.debugNoDeepKill),
             onBoundary = { viewModel.handle(SimulationIntent.SetShowBoundary(it)) },
+            onFillAreas = { viewModel.handle(SimulationIntent.SetFillAreas(it)) },
             onLinks = { viewModel.handle(SimulationIntent.SetShowLinks(it)) },
             // Эти две меняют мир — командой мира.
             onPhysics = { noTail, noDeepKill -> userCommandManager.push(PlayerCommand.SetPhysicsDebug(noTail, noDeepKill)) }

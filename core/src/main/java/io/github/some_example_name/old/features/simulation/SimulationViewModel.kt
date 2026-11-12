@@ -3,6 +3,7 @@ package io.github.some_example_name.old.features.simulation
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.OrthographicCamera
 import io.github.some_example_name.old.commands.GameCommand
+import io.github.some_example_name.old.commands.PlayerCommand
 import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.bug.BugReplay
 import io.github.some_example_name.old.journal.CommandSource
@@ -30,6 +31,19 @@ import io.github.some_example_name.render.microscope.OpticalParameter
  */
 @Serializable
 sealed interface SimulationIntent : GameCommand {
+
+    /** Видимый выбор попадает в журнал даже если игрок сохранил отчёт, не снимая паузу. */
+    @Serializable
+    data class TapWorld(val tap: PlayerCommand.Tap) : SimulationIntent {
+        override val name get() = "TapWorld"
+        override val detail get() = tap.detail
+    }
+
+    @Serializable
+    data class SetFillAreas(val enabled: Boolean) : SimulationIntent {
+        override val name get() = "SetFillAreas"
+        override val detail get() = enabled.toString()
+    }
 
     /** Галочка «Связи» отладочного режима: рисовать ли тонко все связи тел мира физики. */
     @Serializable
@@ -338,6 +352,10 @@ class SimulationViewModel(
 
     private fun apply(intent: SimulationIntent) {
         when (intent) {
+            is SimulationIntent.TapWorld -> simulationSystem.betweenTicks {
+                intent.tap.target?.let(renderSystem::previewSelection)
+                DISimulationContainer.userCommandManager.push(intent.tap)
+            }
             // При повторе бага ход времени ведёт сам повтор: пауза из записи остановила
             // бы мир раньше, чем он дойдёт до тиков следующих команд.
             is SimulationIntent.SetPaused -> if (!BugReplay.isActive) simulationData.isPlay = !intent.paused
@@ -406,6 +424,11 @@ class SimulationViewModel(
             }
 
             is SimulationIntent.SetShowBoundary -> renderSystem.showBoundary = intent.show
+
+            is SimulationIntent.SetFillAreas -> {
+                renderSystem.fillAreas = intent.enabled
+                if (!simulationData.isPlay) simulationSystem.betweenTicks { renderSystem.refreshPausedSnapshot() }
+            }
 
             is SimulationIntent.SetShowLinks -> renderSystem.showLinks = intent.show
 

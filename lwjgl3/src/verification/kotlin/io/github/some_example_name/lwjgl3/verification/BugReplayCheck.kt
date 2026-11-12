@@ -18,6 +18,7 @@ import io.github.some_example_name.old.commands.GoMenu
 import io.github.some_example_name.old.commands.GoReplace
 import io.github.some_example_name.old.commands.GoSimulation
 import io.github.some_example_name.old.commands.PlayerCommand
+import io.github.some_example_name.old.commands.ScreenCell
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.GameFiles
@@ -37,6 +38,7 @@ import io.github.some_example_name.old.features.worldeditor.WorldEditorIntent
 import io.github.some_example_name.old.features.worldeditor.WorldSpec
 import io.github.some_example_name.old.cells.ControllerData
 import io.github.some_example_name.old.journal.JournalFormat
+import io.github.some_example_name.old.journal.SessionJournal
 import io.github.some_example_name.old.game.MyGame
 import io.github.some_example_name.old.systems.genomics.genome.Action
 import io.github.some_example_name.old.systems.genomics.genome.CellAction
@@ -312,6 +314,7 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 screen(SimulationIntent.SetRenderMode(RenderMode.DEBUG))
                 // Фильтр отладки — тоже команда игрока: повтор обязан её подать.
                 screen(SimulationIntent.SetDebugFilter(DebugFilter.ENERGY))
+                screen(SimulationIntent.SetFillAreas(true))
                 screen(SimulationIntent.SetMicroscopeParameter("density",1.7f))
                 screen(SimulationIntent.SetMicroscopeParameter("packedPsf",1f))
                 screen(SimulationIntent.SetMicroscopeParameter("halfGeometry",1f))
@@ -348,6 +351,18 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 untilTick(data.tickCounter + GROW_TICKS)
             }
             6 -> {
+                // Выбор на паузе записывается сразу, команда мира — в первом тике после паузы.
+                screen(SimulationIntent.SetPaused(true))
+                val c = DISimulationContainer
+                c.simulationSystem.betweenTicks {
+                    val cells = c.cellEntity
+                    if (cells.aliveList.size > 0) {
+                        val index = cells.aliveList.getInt(0)
+                        val target = ScreenCell(index, cells.getGeneration(index), SessionJournal.epoch)
+                        screen(SimulationIntent.TapWorld(PlayerCommand.Tap(cells.getX(index), cells.getY(index), target = target)))
+                    }
+                }
+                screen(SimulationIntent.SetPaused(false))
                 screen(SimulationIntent.SetControllerKey(10, pressed = true))
                 screen(SimulationIntent.SetControllerKey(14, pressed = true))
                 untilTick(data.tickCounter + 120)
@@ -363,24 +378,21 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 untilTick(data.tickCounter + 200)
             }
 
-            // Отладочный стресс-тест (только при DEBUG_CHECKS): D разгоняет клетки, A убивает.
-            // Тела рвутся, внутренние клетки становятся краевыми — то, на чём падала сетка.
-            // -PstressTicks=N, по умолчанию выключен.
+            // Стресс запускается явными командами проверки.
             8 -> {
                 if (STRESS_TICKS > 0) {
-                    screen(SimulationIntent.SetControllerKey(KEY_D, pressed = true))
+                    DISimulationContainer.userCommandManager.push(PlayerCommand.SetStress(KILL_EVERY, 1, SPAWN_EVERY))
                     untilTick(data.tickCounter + STRESS_TICKS)
                 }
             }
             9 -> {
                 if (STRESS_TICKS > 0) {
-                    screen(SimulationIntent.SetControllerKey(KEY_D, pressed = false))
-                    screen(SimulationIntent.SetControllerKey(KEY_A, pressed = true))
+                    DISimulationContainer.userCommandManager.push(PlayerCommand.SetStress(1, FLING_EVERY, SPAWN_EVERY))
                     untilTick(data.tickCounter + STRESS_TICKS)
                 }
             }
             10 -> {
-                if (STRESS_TICKS > 0) screen(SimulationIntent.SetControllerKey(KEY_A, pressed = false))
+                if (STRESS_TICKS > 0) DISimulationContainer.userCommandManager.push(PlayerCommand.SetStress(KILL_EVERY, FLING_EVERY, SPAWN_EVERY))
                 pause(2)
             }
 
@@ -500,10 +512,8 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
             List(n * n) { i -> (25f + step * (i % n) + step / 2) to (25f + step * (i / n) + step / 2) }
         }
 
-        /** Сколько тиков держать каждую клавишу стресс-теста (D, потом A): -PstressTicks=300. */
+        /** Сколько тиков разбрасывать клетки, затем убивать: -PstressTicks=300. */
         val STRESS_TICKS = System.getProperty("bugReplayCheck.stressTicks")?.toIntOrNull() ?: 0
-        const val KEY_A = 11
-        const val KEY_D = 13
 
         /** Сколько тиков мир растёт после посадки: -PgrowTicks=3000 — длинный прогон. */
         val GROW_TICKS = System.getProperty("bugReplayCheck.growTicks")?.toIntOrNull() ?: 300

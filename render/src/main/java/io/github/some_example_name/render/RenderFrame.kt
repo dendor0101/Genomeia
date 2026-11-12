@@ -1,6 +1,7 @@
 package io.github.some_example_name.render
 
 import com.badlogic.gdx.math.Matrix4
+import io.github.some_example_name.render.pack.DebugAreaIndices
 import java.nio.ByteBuffer
 
 /**
@@ -90,6 +91,9 @@ class RenderFrame {
      * Редактор генома его не выставляет — фильтр только у симуляции.
      */
     var debugFilter: DebugFilter = DebugFilter.ORIGINAL
+
+    /** Индексы вершин заливки в буфере клеток этого снимка. */
+    var areaIndices: DebugAreaIndices? = null
 
     companion object {
         /**

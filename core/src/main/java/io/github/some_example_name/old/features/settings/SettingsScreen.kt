@@ -1,6 +1,9 @@
 package io.github.some_example_name.old.features.settings
 
 import com.badlogic.gdx.Gdx
+import com.badlogic.gdx.scenes.scene2d.Actor
+import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
+import com.kotcrab.vis.ui.widget.VisCheckBox
 
 import io.github.some_example_name.old.commands.GameCommand
 import io.github.some_example_name.old.bug.ReplayTarget
@@ -113,6 +116,21 @@ class SettingsScreen : VisDslScreen(
             // Сохраняем ссылку, чтобы switchTo мог её обновлять
             this@SettingsScreen.dynamicContent = dynamicContent
 
+            row()
+
+            val autoSend = VisCheckBox(bundle.get("settings.autoSendCrash")).apply {
+                style = VisCheckBox.VisCheckBoxStyle(style).apply { font = DIGameGlobalContainer.game.buttonFont }
+                isChecked = GlobalSettings.AUTO_SEND_CRASH
+                label.setWrap(true)
+                getCell(label).minWidth(0f).growX().padLeft(10.dp())
+                imageStackCell.size(24.dp())
+                addListener(object : ChangeListener() {
+                    override fun changed(event: ChangeEvent?, actor: Actor?) {
+                        viewModel.handle(SettingsIntent.SetAutoSendCrash(isChecked))
+                    }
+                })
+            }
+            add(autoSend).growX().minHeight(48.dp()).padTop(16.dp())
             row()
 
             visTextButton(

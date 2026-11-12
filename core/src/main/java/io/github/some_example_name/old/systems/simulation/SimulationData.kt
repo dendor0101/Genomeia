@@ -1,5 +1,7 @@
 package io.github.some_example_name.old.systems.simulation
 
+import io.github.some_example_name.old.commands.ScreenCell
+
 class SimulationData {
     var isRestart = false
     var tickCounter = 0
@@ -21,6 +23,8 @@ class SimulationData {
         }
     var ups = 60
     var selectedCellIndex = -1
+    /** Только для подсветки: освободившийся слот не должен подсветить нового жильца. */
+    var selectedFrameCell: ScreenCell? = null
 
     var showControllerKeys = false
     /** Что нажато сейчас. Пишет поток рендера в любой момент, читать в симуляции нельзя. */
@@ -32,23 +36,6 @@ class SimulationData {
      * их пишет в журнал сессии и подставляет повтор бага (SessionJournal / BugReplay).
      */
     val controllerKeys = BooleanArray(ControllerKeys.COUNT)
-
-    /**
-     * Отладочный стресс-тест жизненного цикла клеток: пока клавиша зажата, каждый тик
-     * несколько случайных клеток умирают (A) или получают предельную скорость и улетают,
-     * рвя свои связи (D).
-     *
-     * Нужен, чтобы не воспроизводить руками сценарии, на которых всплывают гонки и битые
-     * ссылки в связях: они возникают именно при активной смерти клеток и разрыве связей,
-     * а руками такое повторять долго и ненадёжно.
-     *
-     * Выставляет поток симуляции из снимка клавиш контроллера (A и D), в начале тика —
-     * поэтому стресс попадает в журнал сессии и повторяется при повторе бага.
-     *
-     * Работает только при DEBUG_CHECKS: в обычной сборке флаги никем не выставляются.
-     */
-    var debugKillCells = false
-    var debugFlingCells = false
 
     /**
      * Стресс жизненного цикла для проверок, см. PlayerCommand.SetStress: раз во сколько тиков
@@ -72,6 +59,7 @@ class SimulationData {
         tickCounter = 0
         timeSimulation = 0f
         selectedCellIndex = -1
+        selectedFrameCell = null
     }
 
 }

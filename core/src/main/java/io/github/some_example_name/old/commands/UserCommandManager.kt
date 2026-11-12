@@ -26,6 +26,9 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+internal fun ScreenCell.aliveIn(cells: CellEntity): Boolean =
+    epoch == SessionJournal.epoch && index in cells.isAlive.indices && cells.isAliveAndSameGen(index, generation)
+
 class UserCommandManager(
     val organEntity: OrganEntity,
     val cellEntity: CellEntity,
@@ -145,10 +148,18 @@ class UserCommandManager(
      */
     private fun resolve(cmd: PlayerCommand): PlayerCommand =
         if (cmd is PlayerCommand.Tap && cmd.genomeIndex == null) {
-            PlayerCommand.Tap(cmd.x, cmd.y, cmd.isLeftButton, simulationData.currentGenomeIndex)
+            cmd.copy(genomeIndex = simulationData.currentGenomeIndex)
         } else {
             cmd
         }
+
+    private fun pickedParticle(x: Float, y: Float, target: ScreenCell?): Int {
+        if (target != null && target.index >= 0) {
+            return if (target.aliveIn(cellEntity)) cellEntity.particleIndexes[target.index] else -1
+        }
+        if (target != null && target.epoch != SessionJournal.epoch) return -1
+        return gridManager.pickParticle(x, y, particleEntity, cellEntity, includeCells = target == null)
+    }
 
     private fun applyCommand(cmd: PlayerCommand) {
         when (cmd) {
@@ -168,7 +179,7 @@ class UserCommandManager(
             }
 
             is PlayerCommand.TouchDown -> {
-                grabbedParticleIndex = gridManager.pickParticle(cmd.x, cmd.y, particleEntity, cellEntity)
+                grabbedParticleIndex = pickedParticle(cmd.x, cmd.y, cmd.target)
                 if (grabbedParticleIndex != -1) isDragging = false
 
                 tapX = cmd.x
@@ -194,8 +205,8 @@ class UserCommandManager(
             }
 
             is PlayerCommand.Tap -> {
-                val grabbedParticleIndexTap =
-                    gridManager.pickParticle(cmd.x, cmd.y, particleEntity, cellEntity)
+                val grabbedParticleIndexTap = pickedParticle(cmd.x, cmd.y, cmd.target)
+                simulationData.selectedFrameCell = cmd.target
 
                 simulationData.selectedCellIndex = if (grabbedParticleIndexTap != -1) {
                     if (particleEntity.isCell[grabbedParticleIndexTap]) {
@@ -205,6 +216,8 @@ class UserCommandManager(
                 } else -1
 
                 if (simulationData.selectedCellIndex == -1) {
+                    // Исчезновение нажатой клетки не превращает выбор в посадку или распыление.
+                    if (cmd.target != null && (cmd.target.index >= 0 || cmd.target.epoch != SessionJournal.epoch)) return
                     if (cmd.isLeftButton) {
                         // На террейне и стенке не сажаем: в толще террейна касаний нет (TerrainBodies), и
                         // организм вырос бы внутри. Под курсором частица террейна — значит, клик по нему.
@@ -257,7 +270,7 @@ class UserCommandManager(
 //                    println("Tap (${cmd.x}, ${cmd.y} ${cmd.isLeftButton} ${grabbedParticleIndex})")
             }
 
-            is PlayerCommand.KillCell -> killCell(cmd.x, cmd.y)
+            is PlayerCommand.KillCell -> killCell(cmd.x, cmd.y, cmd.target)
         }
     }
 
@@ -267,8 +280,8 @@ class UserCommandManager(
      * частица и орган, и всё это должно пройти штатным путём. Поколение в команде отсекает
      * случай, когда до исполнения на этом месте уже родилась другая клетка.
      */
-    private fun killCell(x: Float, y: Float) {
-        val particle = gridManager.pickParticle(x, y, particleEntity, cellEntity)
+    private fun killCell(x: Float, y: Float, target: ScreenCell?) {
+        val particle = pickedParticle(x, y, target)
         if (particle == -1 || !particleEntity.isCell[particle]) return
         val cellIndex = particleEntity.holderEntityIndex[particle]
         worldCommandsManager.worldCommandBuffer[0].push(

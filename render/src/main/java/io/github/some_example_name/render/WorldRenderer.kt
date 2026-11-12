@@ -184,6 +184,7 @@ class WorldRenderer(
 
             mode = frame.mode
             debugFilter = frame.debugFilter
+            areaIndices = frame.areaIndices
 
             sceneFbo = scene
             outputFbo = output

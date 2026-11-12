@@ -41,8 +41,8 @@ class MenuMicroscopeBackground(
                 target = it
             }
         }
-        val measure = budget.shouldMeasure(width, height,
-            frame.mode == RenderMode.TISSUE_MAP && frame.opticalLinks != null)
+        val measure = frame.mode == RenderMode.TISSUE_MAP &&
+            budget.shouldMeasure(width, height, frame.opticalLinks != null)
         // Всего семь раз после прогрева: измеряем завершённый рендер, а не очередь CPU.
         // GL ES 3.0 не гарантирует timer queries. В обычных кадрах синхронизации нет.
         if (measure) gl.glFinish()

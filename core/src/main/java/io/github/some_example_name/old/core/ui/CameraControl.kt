@@ -32,7 +32,8 @@ class CameraControl(
      * Средняя кнопка мыши — отметка клетки (SimulationIntent.MarkCell). Только отметка: ни
      * касания, ни захвата, ни посадки. null — средняя кнопка как правая, как раньше.
      */
-    val onMiddleClick: ((x: Float, y: Float) -> Unit)? = null
+    val onMiddleClick: ((x: Float, y: Float) -> Unit)? = null,
+    private val inputCamera: OrthographicCamera = camera
 ): GestureListener {
 
     private var initialZoom = 0f
@@ -47,7 +48,7 @@ class CameraControl(
 
     private fun screenToWorld(screenX: Float, screenY: Float): Pair<Float, Float> {
         val screenPos = Vector3(screenX, screenY, 0f)
-        val worldPos = camera.unproject(screenPos)
+        val worldPos = inputCamera.unproject(screenPos)
         return Pair(worldPos.x, worldPos.y)
     }
 
