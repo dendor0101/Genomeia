@@ -18,6 +18,7 @@ import io.github.some_example_name.old.commands.GoMenu
 import io.github.some_example_name.old.commands.GoReplace
 import io.github.some_example_name.old.commands.GoSimulation
 import io.github.some_example_name.old.commands.PlayerCommand
+import io.github.some_example_name.old.commands.ScreenCell
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.GameFiles
@@ -37,6 +38,7 @@ import io.github.some_example_name.old.features.worldeditor.WorldEditorIntent
 import io.github.some_example_name.old.features.worldeditor.WorldSpec
 import io.github.some_example_name.old.cells.ControllerData
 import io.github.some_example_name.old.journal.JournalFormat
+import io.github.some_example_name.old.journal.SessionJournal
 import io.github.some_example_name.old.game.MyGame
 import io.github.some_example_name.old.systems.genomics.genome.Action
 import io.github.some_example_name.old.systems.genomics.genome.CellAction
@@ -349,6 +351,18 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 untilTick(data.tickCounter + GROW_TICKS)
             }
             6 -> {
+                // Выбор на паузе записывается сразу, команда мира — в первом тике после паузы.
+                screen(SimulationIntent.SetPaused(true))
+                val c = DISimulationContainer
+                c.simulationSystem.betweenTicks {
+                    val cells = c.cellEntity
+                    if (cells.aliveList.size > 0) {
+                        val index = cells.aliveList.getInt(0)
+                        val target = ScreenCell(index, cells.getGeneration(index), SessionJournal.epoch)
+                        screen(SimulationIntent.TapWorld(PlayerCommand.Tap(cells.getX(index), cells.getY(index), target = target)))
+                    }
+                }
+                screen(SimulationIntent.SetPaused(false))
                 screen(SimulationIntent.SetControllerKey(10, pressed = true))
                 screen(SimulationIntent.SetControllerKey(14, pressed = true))
                 untilTick(data.tickCounter + 120)

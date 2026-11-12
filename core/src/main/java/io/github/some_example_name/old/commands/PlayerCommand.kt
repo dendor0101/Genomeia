@@ -2,6 +2,10 @@ package io.github.some_example_name.old.commands
 
 import kotlinx.serialization.Serializable
 
+/** Клетка на показанном кадре. Поколение и эпоха защищают от повторной выдачи слота. */
+@Serializable
+data class ScreenCell(val index: Int, val generation: Int, val epoch: Int)
+
 /**
  * Касание мира в симуляции. Применяется потоком симуляции в фазе команд игрока, поэтому
  * и в журнал сессии попадает с номером тика, в котором применилась (канал SIM). В [detail]
@@ -11,7 +15,7 @@ import kotlinx.serialization.Serializable
 sealed interface PlayerCommand : GameCommand {
 
     @Serializable
-    data class TouchDown(val x: Float, val y: Float, val isLeftButton: Boolean) : PlayerCommand {
+    data class TouchDown(val x: Float, val y: Float, val isLeftButton: Boolean, val target: ScreenCell? = null) : PlayerCommand {
         override val name get() = "TouchDown"
         override val detail get() = "${x.toInt()},${y.toInt()} ${if (isLeftButton) "L" else "R"}"
     }
@@ -23,11 +27,13 @@ sealed interface PlayerCommand : GameCommand {
     }
 
     @Serializable
-    class Tap(
+    data class Tap(
         val x: Float,
         val y: Float,
         val isLeftButton: Boolean = true,
-        val genomeIndex: Int? = null
+        val genomeIndex: Int? = null,
+        // null у старых записей и программных посадок. index == -1 — промах по кадру.
+        val target: ScreenCell? = null
     ) : PlayerCommand {
         override val name get() = "Tap"
         override val detail
@@ -36,7 +42,7 @@ sealed interface PlayerCommand : GameCommand {
 
     /** Инструмент «Убить клетку»: клетка под касанием умирает, пустое место — ничего. */
     @Serializable
-    data class KillCell(val x: Float, val y: Float) : PlayerCommand {
+    data class KillCell(val x: Float, val y: Float, val target: ScreenCell? = null) : PlayerCommand {
         override val name get() = "KillCell"
         override val detail get() = "${x.toInt()},${y.toInt()}"
     }

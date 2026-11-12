@@ -9,6 +9,8 @@ import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Matrix4
+import io.github.some_example_name.old.commands.ScreenCell
+import io.github.some_example_name.old.commands.aliveIn
 import io.github.some_example_name.old.core.PROFILE_INTERPOLATION
 import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.render.RenderFrame
@@ -84,6 +86,19 @@ class RenderSystem(
 
     /** Переиспользуется между кадрами: аллокаций на кадр быть не должно. */
     private val frame = RenderFrame()
+    private val selection = FrameCellSelection()
+
+    fun displayedCellAt(x: Float, y: Float): ScreenCell =
+        renderBufferManager.currentSnapshot().cellAt(x, y, frame.interpolationLag)
+
+    /** Между тиками, одновременно с постановкой Tap в очередь. Мир не меняется. */
+    fun previewSelection(cell: ScreenCell) {
+        val cells = renderBufferManager.cellEntity
+        val live = cell.aliveIn(cells)
+        val target = if (live) cell else cell.copy(index = -1)
+        val info = selection.preview(target, renderBufferManager.simulationData.tickCounter, renderBufferManager.currentSnapshot())
+        if (live) renderBufferManager.writeCellInfo(info, cell.index)
+    }
     val opticalSettings by lazy(LazyThreadSafetyMode.NONE){io.github.some_example_name.render.microscope.MicroscopeSettings.gameDefaults()}
 
     /**
@@ -193,7 +208,8 @@ class RenderSystem(
             }
         }
 
-        moveCameraAndDrawSelected(spec, lag)
+        val selected = selection.forFrame(snapshot, fresh)
+        moveCameraAndDrawSelected(selected, lag)
         drawPlayerMarks()
 
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST)
@@ -201,7 +217,7 @@ class RenderSystem(
         Gdx.gl.glEnable(GL20.GL_BLEND)
 
         if (isRenderUi) {
-            drawTextSimInfo(spec)
+            drawTextSimInfo(spec, selected)
         }
 
 
@@ -337,7 +353,7 @@ class RenderSystem(
         camera.update()
     }
 
-    private fun drawTextSimInfo(spec: RenderSpecificBufferData) {
+    private fun drawTextSimInfo(spec: RenderSpecificBufferData, selected: RenderSpecificBufferData) {
         val text = simInfoText
         text.setLength(0)
         text.append("FPS: ").append(Gdx.graphics.framesPerSecond)
@@ -348,11 +364,11 @@ class RenderSystem(
             text.append("\nParticles: ").append(spec.particleAmount)
             text.append("\nLinks ").append(spec.linksAmount)
         }
-        if (spec.isCellSelected) {
-            text.append("\n\nCell type ").append(spec.cellName)
-            text.append("\nNeuronImpulseInput ").append(spec.neuronImpulseInput)
-            text.append("\nNeuronImpulseOutput ").append(spec.neuronImpulseOutput)
-            text.append("\nSelected cell index ").append(spec.selectedCellIndex)
+        if (selected.isCellSelected) {
+            text.append("\n\nCell type ").append(selected.cellName)
+            text.append("\nNeuronImpulseInput ").append(selected.neuronImpulseInput)
+            text.append("\nNeuronImpulseOutput ").append(selected.neuronImpulseOutput)
+            text.append("\nSelected cell index ").append(selected.selectedCellIndex)
         }
         if (showDebugInfo && spec.detailedPerformance.isNotEmpty()) {
             text.append('\n').append(spec.detailedPerformance)
