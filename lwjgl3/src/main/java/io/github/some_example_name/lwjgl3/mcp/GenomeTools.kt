@@ -21,21 +21,48 @@ import java.util.UUID
 
 /** Состояние черновиков принадлежит окну игры; обращения сериализованы в потоке libGDX. */
 internal object GenomeTools {
-    private data class Draft(val source: Genome, var grown: Genome? = null)
+    private data class Draft(val source: Genome, val layout: BodyLayout, var grown: Genome? = null)
     private var lastGrowth: Draft? = null
     private var lastReplayGenome: Genome? = null
     private val drafts = linkedMapOf<String, Draft>()
+    // Bundled assets are immutable for the life of the installation. Player files are always reloaded.
+    private val references = linkedMapOf<String, Genome>()
     private val codec by lazy { Json { serializersModule = GenomeProto.serializersModule } }
     private val screen get() = Game.game.screen
     private val canBake get() = screen is MenuScreen || screen is GenomesScreen
 
     fun call(name: String, a: JsonObject): JsonObject {
         check(!BugReplay.isActive) { "MCP is unavailable during report replay" }
+        if (name == "preview_organism") return image(StateReader.bodySnapshot(a))
         if (name == "preview_genome") return image(snapshot(a.string("id")))
+        if (name == "preview_body_layout") {
+            val layout = BodyLayouts.get(a.string("id"))
+            val pose = when (a["view"]?.jsonPrimitive?.content ?: "placed") {
+                "placed" -> layout.preview()
+                "settled" -> checkNotNull(layout.settled) { "Run a successful layout trial first." }
+                else -> error("Expected placed or settled")
+            }
+            val size = a["size"]?.jsonPrimitive?.int ?: 384
+            require(size in 128..1024) { "Preview size must be 128..1024 pixels" }
+            return image(pose, size).also { if (layout.tested != null) layout.reviewed = true }
+        }
         val data = when (name) {
-            "get_status" -> obj("gameVersion" to io.github.some_example_name.old.core.GameVersion.NAME, "apiVersion" to 1, "screen" to screen.javaClass.simpleName,
+            "get_status" -> obj("gameVersion" to io.github.some_example_name.old.core.GameVersion.NAME, "apiVersion" to 2, "screen" to screen.javaClass.simpleName,
                 "route" to Game.navigationCommandsManager.currentPath(), "canValidateAndSave" to canBake,
-                "drafts" to drafts.keys, "currentEditorTick" to if (screen is GenomeEditorScreen) Editor.currentTick else null)
+                "bodyLayouts" to BodyLayouts.ids, "drafts" to drafts.keys, "currentEditorTick" to if (screen is GenomeEditorScreen) Editor.currentTick else null)
+            "read_body_layout" -> BodyLayouts.read(a)
+            "create_body_layout" -> BodyLayouts.create(a)
+            "test_body_layout" -> {
+                val layout = BodyLayouts.get(a.string("id"))
+                layout.reviewed = false
+                layout.approved = false
+                layout.tested = null
+                layout.settled = null
+                testBodyLayout(layout, a.number("ticks", 600, 60..1200)).also { layout.tested = it }
+            }
+            "approve_body_layout" -> BodyLayouts.approve(a.string("id"), a["positionTolerance"]?.jsonPrimitive?.double ?: 0.1)
+            "start_motion_trial" -> MotionTrial.start(a)
+            "read_motion_trial" -> MotionTrial.read(a)
             "get_catalog" -> catalog()
             "list_genomes" -> obj("player" to GenomeCatalog.playerNames(), "bundled" to GenomeCatalog.bundledNames())
             "read_state" -> StateReader.read(a)
@@ -51,11 +78,14 @@ internal object GenomeTools {
             "validate_genome" -> {
                 val d = draft(a.string("id"))
                 val g = grow(d)
-                obj("valid" to true, "stages" to g.stageInstruction.size, "cells" to g.cellsAmount,
+                val fit = d.layout.compare(g)
+                obj("layoutComparison" to fit, "valid" to fit.getValue("matchesApprovedLayout"), "growthSucceeded" to true, "stages" to g.stageInstruction.size, "cells" to g.cellsAmount,
                     "physicalLinks" to g.linksAmount, "neuralLinks" to g.neuralLinksAmount, "neuralLinksPeak" to g.neuralLinksPeak)
             }
             "save_genome" -> {
-                val g = grow(draft(a.string("id")))
+                val d = draft(a.string("id"))
+                val g = grow(d)
+                check(d.layout.approved && d.layout.compare(g).getValue("matchesApprovedLayout").jsonPrimitive.boolean) { "Adult differs from the approved layout. Inspect validate_genome.layoutComparison before saving." }
                 check(canBake) { "Open the main menu or Genomes before saving" }
                 if (screen is MenuScreen) Game.navigationCommandsManager.performCommand(GoGenomes)
                 val saved = (screen as GenomesScreen).importBaked(g)
@@ -68,14 +98,16 @@ internal object GenomeTools {
 
     private fun catalog(): JsonObject {
         val palette = if (screen is GenomeEditorScreen) Editor.cellPalette else CellPalette.FULL
-        val cells = palette.actionCellChoices(Game.cellTypes.toList(), null)
-        return obj("cells" to cells.map { obj("key" to it.key, "description" to it.description) },
+        val cells = palette.designCells()
+        return obj("designWorkflow" to BodyLayouts.RULES, "maximumCellRadius" to io.github.some_example_name.old.editor.geometry.CellPlacement.CHILD_RADIUS_MAX, "cells" to cells.map { obj("key" to it.key, "description" to it.description) },
             "formulas" to palette.formulaChoices(null).map { obj("key" to it.key, "label" to it.label) },
-            "rules" to "Root cell ID is 0. Source IDs must exist before their stage. Every division gives the new child a unique id. Angles are relative radians. Link lengths use game units. In a neural link directedNeuronLink identifies the receiver. Inspect an existing genome for examples.",
+            "rules" to "Root cell ID is 0. Source IDs must exist before their stage. Give each child a unique ID. Declare its physical links to already grown neighbours on division. Mutation can change neural wiring, but cannot add a physical edge between existing cells. Angles are relative radians. Link lengths use game units. In a neural link directedNeuronLink identifies the receiver. Inspect an existing genome for examples.",
             "exampleStages" to codec.encodeToJsonElement(getEmptyGenome().stageInstruction))
     }
 
     private fun create(a: JsonObject): JsonObject {
+        val layout = BodyLayouts.get(a.string("layoutId"))
+        require(layout.approved) { "Show the tested Debug preview and get user approval before creating growth stages." }
         val name = a.string("name")
         require(name.length in 1..80 && name == GenomeImport.fileBaseName("$name.genome") &&
             !Regex("(?i)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\\..*)?").matches(name)) { "Invalid library name" }
@@ -83,7 +115,7 @@ internal object GenomeTools {
         checkStages(stages, if (screen is GenomeEditorScreen) Editor.cellPalette else CellPalette.FULL)
         val id = "draft:" + UUID.randomUUID()
         if (drafts.size >= 8) drafts.remove(drafts.keys.first())
-        drafts[id] = Draft(Genome(24, name, stages))
+        drafts[id] = Draft(Genome(24, name, stages), layout)
         return obj("id" to id, "name" to name, "stages" to stages.size)
     }
 
@@ -111,7 +143,12 @@ internal object GenomeTools {
             return Editor.editorSimulationSystem.getGenome()
         }
         require(id in GenomeCatalog.all()) { "Unknown catalog ID. Use list_genomes." }
-        return GenomeCatalog.load(id)
+        if (!GenomeCatalog.isBundled(id)) return GenomeCatalog.load(id)
+        references[id]?.let { return it }
+        val loaded = GenomeCatalog.load(id)
+        if (references.size >= 4) references.remove(references.keys.first())
+        references[id] = loaded
+        return loaded
     }
 
     private fun snapshot(id: String): GenomePreview {
@@ -132,6 +169,10 @@ internal object GenomeTools {
                     codec.encodeToJsonElement(g.stageInstruction[i])
                 })
             }
+            "links" -> {
+                val pairs = (drafts[id]?.let { grow(it) } ?: source(id)).sortedGraph?.linkPairsInSlotOrder ?: error("No baked topology available")
+                obj("links" to page(a, pairs.size / 2) { i -> obj("a" to pairs[2*i], "b" to pairs[2*i+1]) })
+            }
             "cells" -> {
                 val p = snapshot(id)
                 obj("cells" to page(a, p.cellCount) { i ->
@@ -144,8 +185,8 @@ internal object GenomeTools {
         }
     }
 
-    private fun image(p: GenomePreview): JsonObject {
-        val cache = GenomePreviewCache(384)
+    private fun image(p: GenomePreview, size: Int = 384): JsonObject {
+        val cache = GenomePreviewCache(size)
         try {
             val fbo = cache.renderBody(p)
             try {

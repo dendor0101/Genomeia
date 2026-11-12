@@ -14,6 +14,11 @@ await copyFile(resolve(process.argv[2]), jar);
 await mkdir(join(dir, 'home'));
 const route = process.argv[3] || 'GoMenu';
 const jvm = ['-Duser.home=' + join(dir, 'home'), '--enable-native-access=ALL-UNNAMED'];
+// Use an existing, fast-growing library genome instead of relying on the first bundled name.
+if (route === 'GoSimulation') {
+    await mkdir(join(dir,'genomes'));
+    await copyFile(new URL('../../../../assets/genomes/Hydrofin.genome', import.meta.url),join(dir,'genomes','A.genome'));
+}
 const game = spawn('java', [...jvm, '-Dgenomeia.start=' + route, ...(route === 'GoSimulation' ? ['-Dgenomeia.clickAt=20:410,390;55:420,370'] : []), '-jar', jar, '--enable-mcp'],
     { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'] });
 const log = createWriteStream(join(dir, 'game.log'));
@@ -38,7 +43,7 @@ async function tool(name, args) {
 }
 const timeout = setTimeout(() => { server.kill(); game.kill(); }, 120000);
 try {
-    const init = await rpc('initialize', { protocolVersion:'2025-11-25', capabilities:{}, clientInfo:{name:'smoke',version:'1'} });
+    const init = await rpc('initialize', { protocolVersion:'2025-11-25', capabilities:route==='GoSimulation'?{elicitation:{form:{}}}:{}, clientInfo:{name:'smoke',version:'1'} });
     assert.equal(init.protocolVersion, '2025-11-25');
     server.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
     assert.ok((await rpc('tools/list', {})).tools.length >= 9);
@@ -55,11 +60,66 @@ try {
         const lib = await tool('list_genomes');
         assert.ok(lib.bundled.length > 0);
         assert.ok((await tool('read_genome', { id:lib.bundled[0], limit:1 })).stages.total > 0);
+        for (const name of ['Leech','Earthworm','Big walker']) {
+            const id='bundled/'+name;
+            const {cells}=await tool('read_genome',{id,view:'cells',limit:1});
+            const {links}=await tool('read_genome',{id,view:'links',limit:1});
+            assert.ok(cells.total>1 && links.total>0);
+            console.log(name,cells.total,'cells,',links.total,'physical links');
+        }
+        assert.ok(catalog.cells.some(c=>c.key==='speed_sensor'));
         assert.ok(catalog.formulas.some(f => f.key === 'lif'));
+        assert.equal((await tool('request_body_scale')).status, 'ask_user');
+        const cells = [
+            {type:'leaf',x:1,y:1},
+            {type:'leaf',x:1.6,y:1},
+            {type:'neuron',x:1.6+.6*Math.cos(1),y:1+.6*Math.sin(1)}
+        ];
+        const shape = {width:4,height:4,cells,links:[[0,1],[1,2]]};
+        for (const [angle, seesTarget] of [[Math.PI, true], [0, false]]) {
+            const sight = await tool('create_body_layout', {
+                width:4, height:4, links:[[0,1]], cells:[
+                    {type:'eye', x:1, y:2, angle}, {type:'leaf', x:1.8, y:2}
+                ]
+            });
+            const sightTrial = await tool('test_body_layout', {id:sight.id, ticks:60});
+            assert.deepEqual(sightTrial.eyeProbes.map(p => [p.eyeId,p.seesExternalTarget,p.blockingCellId]),
+                [[0,seesTarget,seesTarget ? null : 1]]);
+        }
+        for (const invalid of [
+            {...shape, width:1}, {...shape,links:[[0,2],[1,2]]},
+            {...shape,cells:Array(1025).fill(cells[0])},
+            {...shape,cells:cells.map(c=>({...c,type:'fat'}))},
+            {...shape,cells:[{...cells[0],radius:.4},...cells.slice(1)]}
+        ]) assert.equal((await raw('create_body_layout',invalid)).isError,true);
+        const fine=await tool('create_body_layout',{...shape,cells:[{...cells[0],radius:.4,fineDetailReason:'explicitly requested thin tip'},...cells.slice(1)]});
+        const stored=await tool('read_body_layout',{id:fine.id,limit:1});
+        assert.equal(stored.page.items[0].radius,.4);
+        const {id:layoutId}=await tool('create_body_layout',shape);
+        assert.equal((await raw('create_genome',{layoutId,name:'Test organism',stages:catalog.exampleStages})).isError,true);
+        assert.equal((await raw('approve_body_layout',{id:layoutId})).isError,true);
+        const viability=await tool('test_body_layout',{id:layoutId,ticks:240});
+        assert.ok(viability.maxInitialPositionError < 0.0001);
+        assert.equal(viability.survivedIntact,true,JSON.stringify(viability));
+        assert.equal((await raw('approve_body_layout',{id:layoutId})).isError,true);
+        const [debug]=await tool('preview_body_layout',{id:layoutId,view:'settled'});
+        assert.equal(debug.mimeType,'image/png');
+        const [large]=await tool('preview_body_layout',{id:layoutId,view:'settled',size:1024});
+        assert.equal(Buffer.from(large.data,'base64').readUInt32BE(16),1024);
+        assert.ok((await tool('approve_body_layout',{id:layoutId})).approved);
+        catalog.exampleStages[0].cellActions[0].mutate = {cellType:'leaf'};
         const stages = [...catalog.exampleStages, {cellActions:{1:{divide:{id:2,angle:1,cellType:'neuron',funActivation:'lif',physicalLink:{1:{length:0.6}}}}}}];
-        const draft = await tool('create_genome', {name:'Test organism', stages});
-        assert.equal((await raw('create_genome', {name:'bad', stages:[{cellActions:{404:{divide:{id:1,angle:0,cellType:'leaf'}}}}]})).isError, true);
+        const draft = await tool('create_genome', {name:'Test organism', layoutId, stages});
+        assert.equal((await raw('create_genome', {name:'bad', layoutId, stages:[{cellActions:{404:{divide:{id:1,angle:0,cellType:'leaf'}}}}]})).isError, true);
+        const bent=structuredClone(stages);
+        bent[1].cellActions[1].divide.angle=-1.5;
+        const mismatch=await tool('create_genome',{name:'Bent test fixture',layoutId,stages:bent});
+        const checked=await tool('validate_genome',{id:mismatch.id});
+        assert.equal(checked.valid,false);
+        assert.ok(checked.layoutComparison.maxPositionErrorWorldUnits>.1);
+        assert.equal((await raw('save_genome',{id:mismatch.id})).isError,true);
         const validation = await tool('validate_genome', {id:draft.id});
+        assert.equal(validation.layoutComparison.matchesApprovedLayout,true,JSON.stringify(validation.layoutComparison));
         const first = await tool('read_growth', {id:draft.id,tick:0});
         const last = await tool('read_growth', {id:draft.id,tick:first.lastTick});
         assert.ok(first.cells.total < last.cells.total);
@@ -91,6 +151,16 @@ try {
         console.log(JSON.stringify({validation, saved, pngBytes:bytes.length, dir}));
     } else {
         if (route === 'GoSimulation') {
+            const requestId=++seq;
+            const send = message => server.stdin.write(JSON.stringify({jsonrpc:'2.0',...message})+'\n');
+            send({id:requestId,method:'tools/call',params:{name:'request_body_scale',arguments:{}}});
+            const form=JSON.parse((await messages.next()).value);
+            assert.equal(form.method,'elicitation/create');
+            await rpc('ping',{});
+            send({id:form.id,result:{action:'accept',content:{width:4,height:5}}});
+            const answer=JSON.parse((await messages.next()).value);
+            assert.equal(answer.id,requestId);
+            assert.deepEqual(answer.result.structuredContent,{status:'accepted',width:4,height:5});
             let body;
             for (let i=0;i<40 && !body;i++) {
                 const {page} = await tool('read_state',{view:'organisms',limit:1});
@@ -100,7 +170,27 @@ try {
             assert.ok(body, 'test click did not spawn an organism');
             const sample = await tool('measure_organism',{organism:body.slot,generation:body.generation});
             assert.ok(sample.cells > 0 && Number.isFinite(sample.centerX));
-            console.log(JSON.stringify(sample));
+            for(let i=0;i<160 && !body.adult;i++) {
+                const {page}=await tool('read_state',{view:'organisms',limit:4});
+                body=page.items.find(o=>o.adult) ?? body;
+                if (!body.adult) await delay(100);
+            }
+            assert.ok(body.adult,'motion trial requires an adult fixture: '+JSON.stringify(await tool('read_state',{view:'organisms',limit:4})));
+            const [liveDebug]=await tool('preview_organism',{organism:body.slot,generation:body.generation});
+            assert.equal(liveDebug.mimeType,'image/png');
+            const trial=await tool('start_motion_trial',{organism:body.slot,generation:body.generation,forwardX:1,forwardY:0,distance:100,ticks:24,windowTicks:8,minForwardEfficiency:.85});
+            let report=trial;
+            for(let i=0;i<60 && report.status==='running';i++) {
+                await delay(100);
+                report=await tool('read_motion_trial',{id:trial.id});
+            }
+            assert.equal(report.status,'complete',JSON.stringify(report));
+            assert.equal(report.windowProgress.length,3);
+            assert.equal(report.minForwardEfficiency,.85);
+            assert.ok(Math.abs(report.forwardEfficiency-(report.pathLength ? report.netForward/report.pathLength : 0))<1e-8);
+            assert.ok(Math.abs(report.windowProgress.reduce((sum,v)=>sum+v,0)-report.netForward)<1e-8);
+            assert.equal(report.sustainedForward,false);
+            console.log(JSON.stringify(report));
         }
         for (const view of ['cells','organisms','links','neuralLinks']) {
             const state = await tool('read_state', {view,limit:1});

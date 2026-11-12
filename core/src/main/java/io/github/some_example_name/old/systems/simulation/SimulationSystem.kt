@@ -118,6 +118,8 @@ class SimulationSystem(
      * Честный: на максимальной скорости поток симуляции отпускает лок и тут же берёт снова,
      * и нечестный лок мог бы раз за разом доставаться ему, а не ждущему сохранению.
      */
+    /** Read-only desktop instrumentation, installed and removed under betweenTicks. */
+    var completedTickObserver: (() -> Unit)? = null
     private val tickLock = ReentrantLock(true)
 
     /**
@@ -215,6 +217,7 @@ class SimulationSystem(
         // однопоточно, и ни одна фаза уже ничего не допишет.
         if (simulationData.tickCounter % STATE_HASH_PERIOD == 0) hashState()
 
+        completedTickObserver?.invoke()
         profiler.measure(Phase.RENDER) { renderBufferManager.updateBuffer(profiler.text) }
 
         // Полный тик меряется отдельно, а не суммой фаз: разница между ним и суммой —
@@ -366,6 +369,7 @@ class SimulationSystem(
     fun closeWorld() {
         stopUpdateThread()
         betweenTicks {
+            completedTickObserver = null
             val tick = simulationData.tickCounter
             if (BugReplay.isActive) BugReplay.onWorldStopped(SessionJournal.epoch, tick)
             else SessionJournal.recordSim(CommandSource.SYSTEM, WorldStopped, SessionJournal.epoch, tick)

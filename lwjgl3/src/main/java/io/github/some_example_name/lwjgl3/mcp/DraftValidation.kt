@@ -5,10 +5,19 @@ import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.editor.geometry.CellPlacement
 import io.github.some_example_name.old.systems.genomics.genome.GenomeStage
 
+internal const val MAX_DESIGN_CELLS = 1024
+private const val MAX_GROWTH_STAGES = 512
+private const val MAX_GROWTH_ACTIONS = MAX_DESIGN_CELLS * 8
+
+/** Датчик продольной скорости доступен в свободной лаборатории MCP для обучения походки. */
+internal fun CellPalette.designCells() = actionCellChoices(
+    DIGameGlobalContainer.cellTypes.toList(), if (this == CellPalette.FULL) "speed_sensor" else null
+)
+
 /** Отсекаем недостижимые стадии до запуска редакторного моделирования. */
 internal fun checkStages(stages: List<GenomeStage>, palette: CellPalette) {
-    require(stages.size in 1..128) { "Use 1..128 growth stages" }
-    val cells = palette.actionCellChoices(DIGameGlobalContainer.cellTypes.toList(), null).map { it.key }.toSet()
+    require(stages.size in 1..MAX_GROWTH_STAGES) { "Use 1..$MAX_GROWTH_STAGES growth stages" }
+    val cells = palette.designCells().map { it.key }.toSet()
     val formulas = palette.formulaChoices(null).map { it.key }.toSet()
     val alive = mutableSetOf(0)
     var totalActions = 0
@@ -21,12 +30,12 @@ internal fun checkStages(stages: List<GenomeStage>, palette: CellPalette) {
             require(divide.id in 1..4096 && next.add(divide.id)) { "Stage $index: duplicate or invalid child ID ${divide.id}" }
             require(divide.angle != null && divide.cellType != null) { "Stage $index, cell $parent: division requires angle and cellType" }
         }
-        require(next.size <= 256) { "MCP v1 supports drafts of up to 256 cells" }
+        require(next.size <= MAX_DESIGN_CELLS) { "A draft supports up to $MAX_DESIGN_CELLS cells" }
         for ((parent, actions) in stage.cellActions) {
             val ops = listOfNotNull(actions.divide, actions.mutate)
             require(ops.isNotEmpty()) { "Stage $index, cell $parent: supply divide or mutate" }
             totalActions += ops.size
-            require(totalActions <= 2048) { "Too many actions" }
+            require(totalActions <= MAX_GROWTH_ACTIONS) { "Use at most $MAX_GROWTH_ACTIONS growth actions" }
             for (op in ops) {
                 val at = "Stage $index, cell $parent"
                 require(op.cellType == null || op.cellType in cells) { "$at: unavailable cell type ${op.cellType}" }

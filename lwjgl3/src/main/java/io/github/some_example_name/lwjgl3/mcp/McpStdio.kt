@@ -15,6 +15,12 @@ object McpStdio {
     @JvmStatic fun run() {
         val input = System.`in`.buffered()
         val output = System.out.bufferedWriter(Charsets.UTF_8)
+        val scale = ScaleQuestion()
+        fun emit(reply: JsonObject) {
+            output.write(reply.toString())
+            output.newLine()
+            output.flush()
+        }
         var initialized = false
         while (true) {
             val line = ByteArrayOutputStream()
@@ -29,7 +35,16 @@ object McpStdio {
             val response = try {
                 require(!oversized) { "Request exceeds 1 MiB" }
                 val message = Json.parseToJsonElement(line.toString(Charsets.UTF_8)).jsonObject
-                if (!message.containsKey("id")) continue
+                if ("method" !in message) {
+                    scale.answer(message)?.let(::emit)
+                    continue
+                }
+                if (!message.containsKey("id")) {
+                    if (message["method"]?.jsonPrimitive?.content == "notifications/cancelled") {
+                        scale.cancel((message["params"] as? JsonObject)?.get("requestId"))
+                    }
+                    continue
+                }
                 id = message.getValue("id")
                 require(message.string("jsonrpc") == "2.0")
                 val method = message.string("method")
@@ -37,11 +52,13 @@ object McpStdio {
                 val result = when (method) {
                     "initialize" -> {
                         val requested = params.string("protocolVersion")
+                        val negotiated = protocols.find { it == requested } ?: protocols.first()
+                        scale.configure(negotiated, params["capabilities"] as? JsonObject)
                         initialized = true
-                        obj("protocolVersion" to (protocols.find { it == requested } ?: protocols.first()),
+                        obj("protocolVersion" to negotiated,
                             "capabilities" to obj("tools" to obj()),
-                            "serverInfo" to obj("name" to "Genomeia", "version" to "0.1.0"),
-                            "instructions" to "Start with get_status and get_catalog. Inspect drafts, grow, preview, then save.")
+                            "serverInfo" to obj("name" to "Genomeia", "version" to "0.2.0"),
+                            "instructions" to BodyLayouts.RULES)
                     }
                     "ping" -> obj()
                     "tools/list" -> { require(initialized); obj("tools" to tools) }
@@ -54,6 +71,10 @@ object McpStdio {
                         val properties = schema.getValue("properties").jsonObject
                         val missing = schema.getValue("required").jsonArray.map { it.jsonPrimitive.content } - args.keys
                         require(missing.isEmpty() && args.keys.all { it in properties }) { "Check required and allowed arguments for $name" }
+                        if (name == "request_body_scale") {
+                            emit(scale.request(id))
+                            continue
+                        }
                         try { GameBridge.call(params) } catch (e: Exception) {
                             failure(e.message ?: "Game disconnected. Check --enable-mcp and get_status.")
                         }

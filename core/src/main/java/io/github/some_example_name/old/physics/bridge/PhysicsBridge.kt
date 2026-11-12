@@ -55,12 +55,22 @@ class PhysicsBridge(
         val definition = bodyDefinitionOf(layout, zygoteSlot, x, y)
         val born = BooleanArray(definition.count)
         born[zygoteSlot] = true
+        registerBody(organ, world.addBody(definition, born, boneOn = BooleanArray(definition.count)))
+    }
+
+    /** Готовое тело макета: все частицы и кости активны сразу в позе покоя. */
+    fun spawnPlacedBody(organ: Int, layout: BakedLayout, firstX: Float, firstY: Float) {
+        require(!hasBody(organ)) { "у организма $organ уже есть тело" }
+        registerBody(organ, world.addBody(bodyDefinitionOf(layout, 0, firstX, firstY)))
+    }
+
+    private fun registerBody(organ: Int, body: Int) {
         if (organ >= bodyOfOrgan.size) {
             val old = bodyOfOrgan.size
             bodyOfOrgan = bodyOfOrgan.copyOf(maxOf(organ + 1, old * 2))
             bodyOfOrgan.fill(-1, old, bodyOfOrgan.size)
         }
-        bodyOfOrgan[organ] = world.addBody(definition, born, boneOn = BooleanArray(definition.count))
+        bodyOfOrgan[organ] = body
     }
 
     /** Частица клетки слота [slot] организма [organ] — заново на каждый запрос (см. АДРЕСАЦИЯ). */

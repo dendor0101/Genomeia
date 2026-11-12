@@ -7,6 +7,8 @@ import io.github.some_example_name.old.features.editor.GenomeEditorScreen
 import io.github.some_example_name.old.features.simulation.SimulationScreen
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
 import io.github.some_example_name.old.cells.base.Formulas
+import io.github.some_example_name.old.editor.baking.GenomePreviewCapture
+import io.github.some_example_name.old.systems.genomics.genome.GenomePreview
 import it.unimi.dsi.fastutil.ints.IntArrayList
 import kotlinx.serialization.json.*
 
@@ -41,6 +43,16 @@ internal object StateReader {
                 "x" to Editor.particleEntity.x(p), "y" to Editor.particleEntity.y(p), "radius" to Editor.particleEntity.radius[p],
                 "angleCos" to replay.angleCos[i], "angleSin" to replay.angleSin[i])
         })
+    }
+
+    fun bodySnapshot(a: JsonObject): GenomePreview {
+        check(game.screen is SimulationScreen) { "Open the simulation first" }
+        return World.simulationSystem.betweenTicks {
+            val organs = World.organEntity
+            val slot = a.number("organism", -1, organs.isAlive.indices)
+            require(organs.isAlive[slot] && organs.getGeneration(slot) == a.getValue("generation").jsonPrimitive.int) { "Organism died or slot was reused" }
+            GenomePreviewCapture(World.cellEntity, World.particleEntity).capture(slot)
+        }
     }
 
     fun measure(a: JsonObject): JsonObject {
