@@ -134,6 +134,12 @@ class CommandRegistryTest {
 
         val current = roundTrip(PlayerCommand.Tap(1f, 2f)) as PlayerCommand.Tap
         assertEquals(null, current.genomeIndex)
+        assertEquals(null, current.target)
+        val target = io.github.some_example_name.old.commands.ScreenCell(17, 4, 2)
+        val tap = current.copy(target = target)
+        assertEquals(tap, roundTrip(tap))
+        val ui = SimulationIntent.TapWorld(tap)
+        assertEquals(ui, roundTrip(ui))
     }
 
     @Test
