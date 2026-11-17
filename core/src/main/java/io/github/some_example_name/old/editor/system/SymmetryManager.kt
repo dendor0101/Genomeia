@@ -7,6 +7,7 @@ import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.gridWid
 import io.github.some_example_name.old.core.utils.START_EDITOR_CELL_X
 import io.github.some_example_name.old.core.utils.START_EDITOR_CELL_Y
 import io.github.some_example_name.old.editor.geometry.CellPlacement
+import io.github.some_example_name.old.editor.geometry.GridNodes
 import io.github.some_example_name.old.editor.entities.EditorCell
 import io.github.some_example_name.old.entities.ParticleEntity
 import kotlin.math.abs
@@ -243,19 +244,19 @@ class SymmetryManager(
                 val cx = clickedCell.x
                 val cy = clickedCell.y
 
-                // 8 соседних позиций (включая диагонали) — все точно на сетке
-                val candidates = listOf(
-                    Pair(cx - step, cy - step),
-                    Pair(cx, cy - step),
-                    Pair(cx + step, cy - step),
-                    Pair(cx - step, cy),
-                    Pair(cx + step, cy),
-                    Pair(cx - step, cy + step),
-                    Pair(cx, cy + step),
-                    Pair(cx + step, cy + step)
+                // 8 соседних позиций (включая диагонали) — на сетке, если на ней родитель
+                val candidates = floatArrayOf(
+                    cx - step, cy - step,
+                    cx, cy - step,
+                    cx + step, cy - step,
+                    cx - step, cy,
+                    cx + step, cy,
+                    cx - step, cy + step,
+                    cx, cy + step,
+                    cx + step, cy + step
                 )
 
-                findBestFreePosition(candidates, neighbours, ox, oy)
+                GridNodes.closestFree(candidates, step, neighbours.x, neighbours.y, neighbours.count, ox, oy)
             }
 
             is TriangleGrid -> {
@@ -267,17 +268,17 @@ class SymmetryManager(
 
                 val rowHeight = step * (sqrt(3f) / 2f)
 
-                // 6 соседних вершин равностороннего треугольника — все точно на сетке
-                val candidates = listOf(
-                    Pair(cx + step, cy),               // 0°
-                    Pair(cx - step, cy),               // 180°
-                    Pair(cx + step / 2f, cy + rowHeight),   // 60°
-                    Pair(cx - step / 2f, cy + rowHeight),   // 120°
-                    Pair(cx + step / 2f, cy - rowHeight),   // -60°
-                    Pair(cx - step / 2f, cy - rowHeight)    // -120°
+                // 6 соседних вершин равностороннего треугольника — на сетке, если на ней родитель
+                val candidates = floatArrayOf(
+                    cx + step, cy,                      // 0°
+                    cx - step, cy,                      // 180°
+                    cx + step / 2f, cy + rowHeight,     // 60°
+                    cx - step / 2f, cy + rowHeight,     // 120°
+                    cx + step / 2f, cy - rowHeight,     // -60°
+                    cx - step / 2f, cy - rowHeight      // -120°
                 )
 
-                findBestFreePosition(candidates, neighbours, ox, oy)
+                GridNodes.closestFree(candidates, step, neighbours.x, neighbours.y, neighbours.count, ox, oy)
             }
         }
     }
@@ -285,10 +286,14 @@ class SymmetryManager(
     /**
      * Как далеко от родителя лежат узлы-кандидаты сетки (с запасом): соседей для проверки
      * занятости узла надо собирать хотя бы так далеко. Без сетки — 0.
+     *
+     * Узел занимает клетка в пределах полушага от него (GridNodes.OWN_FRACTION), поэтому
+     * дальний узел плюс полшага: у треугольной сетки 1 + 0.5 шага, у квадратной по диагонали
+     * √2 + 0.5 ≈ 1.92 шага. Прежние 1.1 и 1.5 были рассчитаны на клетки ровно в узлах.
      */
     fun candidateReach(): Float = when (val mode = symmetryMode) {
-        is SquareGrid -> mode.step * 1.5f
-        is TriangleGrid -> mode.step * 1.1f
+        is SquareGrid -> mode.step * 2f
+        is TriangleGrid -> mode.step * 1.6f
         else -> 0f
     }
 
@@ -308,40 +313,6 @@ class SymmetryManager(
         targetX = START_EDITOR_CELL_X,
         targetY = START_EDITOR_CELL_Y
     )
-
-    private fun findBestFreePosition(
-        candidates: List<Pair<Float, Float>>,
-        neighbours: PlacementNeighbours,
-        targetX: Float,
-        targetY: Float
-    ): Pair<Float, Float>? {
-        var best: Pair<Float, Float>? = null
-        var bestDistSq = Float.MAX_VALUE
-
-        for (cand in candidates) {
-            // === ПРОВЕРКА ЗАНЯТОСТИ ЧЕРЕЗ РАССТОЯНИЕ (а не ==) ===
-            var occupied = false
-            for (i in 0 until neighbours.count) {
-                if (abs(neighbours.x[i] - cand.first) < EPSILON && abs(neighbours.y[i] - cand.second) < EPSILON) {
-                    occupied = true
-                    break
-                }
-            }
-            if (occupied) continue
-
-            // расстояние до offset (64, 64)
-            val dx = cand.first - targetX
-            val dy = cand.second - targetY
-            val distSq = dx * dx + dy * dy
-
-            if (distSq < bestDistSq) {
-                bestDistSq = distSq
-                best = cand
-            }
-        }
-
-        return best
-    }
 
 
     private fun isFreePosition(
