@@ -45,6 +45,13 @@ sealed interface SimulationIntent : GameCommand {
         override val detail get() = enabled.toString()
     }
 
+    /** Галочка «Цвет из генома» отладочного режима: клетки цветом из генома, а не цветом типа. */
+    @Serializable
+    data class SetGenomeColors(val enabled: Boolean) : SimulationIntent {
+        override val name get() = "SetGenomeColors"
+        override val detail get() = enabled.toString()
+    }
+
     /** Галочка «Связи» отладочного режима: рисовать ли тонко все связи тел мира физики. */
     @Serializable
     data class SetShowLinks(val show: Boolean) : SimulationIntent {
@@ -468,6 +475,12 @@ class SimulationViewModel(
             is SimulationIntent.SetFillAreas -> {
                 val changed=renderSystem.fillAreas!=intent.enabled
                 renderSystem.fillAreas = intent.enabled
+                if(changed)refreshIfPaused()
+            }
+
+            is SimulationIntent.SetGenomeColors -> {
+                val changed=renderSystem.genomeColors!=intent.enabled
+                renderSystem.genomeColors = intent.enabled
                 if(changed)refreshIfPaused()
             }
 
