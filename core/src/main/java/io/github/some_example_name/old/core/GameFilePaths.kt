@@ -25,6 +25,16 @@ object GameFilePaths {
         check(source.renameTo(target)) { "Не удалось заменить ${target.name}" }
     }
 
+    /**
+     * Захватить файл-замок [File] на всё время процесса: замок держится, пока не закрыт
+     * результат, и снимается системой, если процесс умер. null — замок держит другая копия игры.
+     *
+     * По умолчанию замок всегда свободен: на Android, iOS и в вебе вторую копию приложения не
+     * запустить. На ПК лаунчер ставит настоящий (FileChannel.tryLock) — там игру можно
+     * запустить дважды, и копии делили одну папку сессии (BugSession).
+     */
+    var tryLock: (File) -> AutoCloseable? = { AutoCloseable {} }
+
     var redirected: (File) -> Boolean = { file ->
         file.canonicalFile != File(file.absoluteFile.parentFile.canonicalFile, file.name)
     }

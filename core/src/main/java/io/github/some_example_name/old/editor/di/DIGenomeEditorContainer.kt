@@ -246,18 +246,15 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
     )
 
     val cellReplay = CellReplay(
-        startCapacity = 1_000,
         particleEntity = particleEntity,
         cellEntity = cellEntity
     )
 
     val neuralLinkReplay = NeuralLinkReplay(
-        startCapacity = 300,
         neuralLinkEntity = neuralLinkEntity
     )
 
     val neuralReplay = NeuralReplay(
-        startCapacity = 300,
         neuralEntity = neuralEntity
     )
 

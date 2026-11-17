@@ -174,5 +174,7 @@ ios-moe/xcode/native/
 
 # Отчёты о багах: текущая сессия (журнал, лог), собранные .bug и папка повтора
 /session/
+/session-*/
+/session*.lock
 /bugs/
 /bug-replay/
