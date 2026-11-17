@@ -96,7 +96,7 @@ class SimulationScreen(
         zoom = 0.08f,
         // Центр мира ставится в show(), когда размер сетки уже взят из мира.
         onTouchDown = { x, y, isLeft ->
-            userCommandManager.push(PlayerCommand.TouchDown(x, y, isLeft, renderSystem.displayedCellAt(x, y)))
+            viewModel.pushWorldCommand(PlayerCommand.TouchDown(x, y, isLeft, renderSystem.displayedCellAt(x, y)))
         },
         onTap = ::onWorldTap,
         onMiddleClick = ::markCellAt,
@@ -299,7 +299,7 @@ class SimulationScreen(
         val target = renderSystem.displayedCellAt(x, y)
         // Решается здесь, при создании команды: в запись сессии уходит уже итоговое действие.
         when (val tool = viewModel.tool) {
-            SimulationTool.KILL_CELL -> userCommandManager.push(PlayerCommand.KillCell(x, y, target))
+            SimulationTool.KILL_CELL -> viewModel.pushWorldCommand(PlayerCommand.KillCell(x, y, target))
             SimulationTool.SPAWN_CELL, SimulationTool.SPAWN_FOOD -> {
                 // «Еда» меняет кнопки местами: левая сыплет еду, правая ставит организм.
                 val putOrganism = tool == SimulationTool.SPAWN_CELL
