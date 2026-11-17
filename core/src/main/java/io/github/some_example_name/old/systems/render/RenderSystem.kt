@@ -77,6 +77,10 @@ class RenderSystem(
         get() = renderBufferManager.fillAreas
         set(value) { renderBufferManager.fillAreas = value }
 
+    var genomeColors: Boolean
+        get() = renderBufferManager.genomeColors
+        set(value) { renderBufferManager.genomeColors = value }
+
     private lateinit var fontMatrix: Matrix4
     private lateinit var spriteBatch: SpriteBatch
     private lateinit var font: BitmapFont

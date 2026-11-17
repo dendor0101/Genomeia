@@ -173,6 +173,7 @@ object CommandRegistry {
         t<SimulationIntent.SaveWorldFailed>(623),
         t<SimulationIntent.SetFillAreas>(624),
         t<SimulationIntent.TapWorld>(625),
+        t<SimulationIntent.SetGenomeColors>(626),
 
         // --- Касания мира ---
         t<PlayerCommand.TouchDown>(700),
