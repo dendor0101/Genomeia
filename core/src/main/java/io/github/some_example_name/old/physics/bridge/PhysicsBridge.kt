@@ -55,18 +55,29 @@ class PhysicsBridge(
         val definition = bodyDefinitionOf(layout, zygoteSlot, x, y)
         val born = BooleanArray(definition.count)
         born[zygoteSlot] = true
+        registerBody(organ, layout, definition.count, world.addBody(definition, born, boneOn = BooleanArray(definition.count)))
+    }
+
+    /** Готовое тело макета: все частицы и кости активны сразу в позе покоя. */
+    fun spawnPlacedBody(organ: Int, layout: BakedLayout, firstX: Float, firstY: Float) {
+        require(!hasBody(organ)) { "у организма $organ уже есть тело" }
+        val definition = bodyDefinitionOf(layout, 0, firstX, firstY)
+        registerBody(organ, layout, definition.count, world.addBody(definition))
+    }
+
+    private fun registerBody(organ: Int, layout: BakedLayout, count: Int, body: Int) {
         if (organ >= bodyOfOrgan.size) {
             val old = bodyOfOrgan.size
             bodyOfOrgan = bodyOfOrgan.copyOf(maxOf(organ + 1, old * 2))
             bodyOfOrgan.fill(-1, old, bodyOfOrgan.size)
         }
-        bodyOfOrgan[organ] = world.addBody(definition, born, boneOn = BooleanArray(definition.count))
+        bodyOfOrgan[organ] = body
         // Волокна мышц кластеров мотонейронов (BakedLayout.fiberBySlot) — в позе покоя, как и
         // само описание тела: раз на подсадку, дальше их хранит мир (и снимок).
         val fiber = layout.fiberBySlot
         if (fiber.isNotEmpty()) {
-            val first = world.bodyFirst(bodyOfOrgan[organ])
-            for (s in 0 until definition.count) {
+            val first = world.bodyFirst(body)
+            for (s in 0 until count) {
                 val fx = fiber[2 * s]; val fy = fiber[2 * s + 1]
                 if (fx != 0f || fy != 0f) world.setCellFiber(first + s, fx, fy)
             }

@@ -48,6 +48,7 @@ class SpecialModDataEntityTest {
             PheromoneEmitterState(lastImpulse = 1f), ControllerData("UP"),
             SynapseState(weight = 0.3f, miswired = true, savedColor = 0x7f00ff00, preTrace = 0.7f, postTrace = 0.2f, inhibitory = true),
             SynapseData(inhibitory = true),
+            SynapseData(initialWeight = .74f),
             DelayData(ticks = 12, binary = true), DelayState.of(DelayData(ticks = 5)).apply { push(0.5f); push(2f) }
         )
         val slots = all.map(saved::addModData)

@@ -128,6 +128,12 @@ class GenomePreviewCache(
         }
         if (preview == null || preview.cellCount == 0) return null
 
+        return renderBody(preview)
+    }
+
+    /** Результат принадлежит вызывающему; снимок черновика можно показать до сохранения. */
+    fun renderBody(preview: GenomePreview): FrameBuffer {
+        require(preview.cellCount > 0)
         pack(preview)
         // Запас вокруг тела для контура крайних клеток.
         val extent = preview.halfExtent() * MARGIN

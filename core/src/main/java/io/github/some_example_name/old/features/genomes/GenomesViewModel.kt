@@ -1,5 +1,7 @@
 package io.github.some_example_name.old.features.genomes
 
+import io.github.some_example_name.old.systems.genomics.genome.Genome
+
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.files.FileHandle
 import io.github.some_example_name.old.bug.BugReplay
@@ -234,10 +236,24 @@ class GenomesViewModel {
                 failed += file.name().removePrefix("~")
                 continue
             }
-            handle(GenomesIntent.GenomeImported(genome.name(), attachment))
-            imported += genome.nameWithoutExtension()
+            imported += recordImported(genome, attachment)
         }
         onImportFinished?.invoke(GenomeImportResult(imported, failed))
+    }
+
+    fun importBaked(genome: Genome): String {
+        check(!BugReplay.isActive)
+        lateinit var attachment: String
+        val file = GenomeImport.storeBaked(genome, GameFiles.genomesDir()) { target, bytes ->
+            attachment = SessionAttachments.attachImported(target.name()) { it.writeBytes(bytes, false) }
+        }
+        if (currentTab != GenomesTab.MINE) handle(GenomesIntent.SelectTab(GenomesTab.MINE))
+        return recordImported(file, attachment)
+    }
+
+    private fun recordImported(file: FileHandle, attachment: String): String {
+        handle(GenomesIntent.GenomeImported(file.name(), attachment))
+        return file.nameWithoutExtension()
     }
 
     private fun genomeFile(name: String): FileHandle =

@@ -1,0 +1,639 @@
+[
+  {
+    "name": "get_status",
+    "description": "Read the connected window, available state views and current draft IDs.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_catalog",
+    "description": "Read selectable cell and formula keys, authoring rules and a working two-cell genome.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "list_genomes",
+    "description": "Read player and bundled library names.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "read_genome",
+    "description": "Read ordered growth instructions (stages) or the grown cell geometry (cells). Coordinates are in game units centered on the adult body. Read bundled examples with view=cells, links and stages. links lists baked physical endpoint IDs.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Exact library name (including bundled/ prefix), draft UUID prefixed draft:, or editor: for the open editor."
+        },
+        "view": {
+          "enum": [
+            "stages",
+            "cells",
+            "links"
+          ]
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "read_state",
+    "description": "Read an actual game state between ticks. World cells include energy, velocity, organism, cell ID and neural output. Links identify endpoints. In the genome editor this shows the computed adult body. Pages are sampled at the tick returned; pause to inspect across pages.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "view": {
+          "enum": [
+            "cells",
+            "links",
+            "neuralLinks",
+            "organisms"
+          ]
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "create_genome",
+    "description": "Fit genome growth stages to a previously tested, user-approved body layout. Use the layout array indices as genome cell IDs.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "New library name"
+        },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 512,
+          "items": {
+            "type": "object",
+            "properties": {
+              "cellActions": {
+                "type": "object",
+                "description": "Keys are source cell genome IDs alive at the start of this stage. Root = 0.",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "divide": {
+                      "$ref": "#/$defs/action"
+                    },
+                    "mutate": {
+                      "$ref": "#/$defs/action"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "cellActions"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "layoutId": {
+          "type": "string",
+          "description": "Exact layout or trial ID returned by its creation tool."
+        }
+      },
+      "required": [
+        "name",
+        "stages",
+        "layoutId"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "action": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer",
+              "minimum": -1,
+              "maximum": 4096
+            },
+            "angle": {
+              "type": "number",
+              "description": "Division angle in radians, relative to the parent."
+            },
+            "cellType": {
+              "type": "string",
+              "description": "Cell key from get_catalog"
+            },
+            "radius": {
+              "type": "number",
+              "maximum": 0.5,
+              "minimum": 0.2
+            },
+            "angleDirected": {
+              "type": "number"
+            },
+            "physicalLink": {
+              "type": "object",
+              "description": "Map from other genome cell id to link {length, isNeuronal, directedNeuronLink, weight}; null removes a link on mutation.",
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "length": {
+                        "type": "number",
+                        "minimum": 0.001,
+                        "maximum": 8
+                      },
+                      "isNeuronal": {
+                        "type": "boolean"
+                      },
+                      "directedNeuronLink": {
+                        "type": "integer"
+                      },
+                      "weight": {
+                        "type": "number"
+                      },
+                      "color": {
+                        "type": "integer"
+                      },
+                      "isExtra": {
+                        "type": "boolean"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "funActivation": {
+              "type": "string",
+              "description": "Formula key"
+            },
+            "a": {
+              "type": "number"
+            },
+            "b": {
+              "type": "number"
+            },
+            "c": {
+              "type": "number"
+            },
+            "isSum": {
+              "type": "boolean"
+            },
+            "color": {
+              "type": "integer",
+              "description": "Signed packed ABGR"
+            },
+            "pheromoneType": {
+              "type": "integer",
+              "minimum": -1,
+              "maximum": 31
+            },
+            "colorRecognition": {
+              "type": "integer"
+            },
+            "lengthDirected": {
+              "type": "number"
+            },
+            "special": {
+              "type": "object",
+              "description": "Optional typed game cell settings as returned by read_genome. Use the defaults when unspecified."
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    }
+  },
+  {
+    "name": "validate_genome",
+    "description": "Run the game's growth calculation and return adult cell/link counts. Open the main menu or Genomes before the first validation. Returns adult-to-layout fit, physical overlaps and position errors.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Exact library name (including bundled/ prefix), draft UUID prefixed draft:, or editor: for the open editor."
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "preview_genome",
+    "description": "Return the baked body's PNG using the game's Debug Original shader.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Exact library name (including bundled/ prefix), draft UUID prefixed draft:, or editor: for the open editor."
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "save_genome",
+    "description": "Save a validated draft in the player's library and return its exact catalog ID. From the menu opens Genomes. Existing files are retained.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Exact library name (including bundled/ prefix), draft UUID prefixed draft:, or editor: for the open editor."
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "read_growth",
+    "description": "Inspect cells at a specific recorded growth frame of a draft or the currently open editor (editor:). Reports lastTick. Positions use the editor's displayed layout; this is growth, not a locomotion trial.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "draft:<uuid> or editor:"
+        },
+        "tick": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "measure_organism",
+    "description": "Measure one live body's centroid, velocity, energy, type counts and growth stage between ticks. Find organism slot and generation via read_state with view=organisms. Repeat with the same generation to compare movement.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organism": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "generation": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "organism"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "request_body_scale",
+    "description": "Before designing a new creature, ask the user for maximum adult width and height in world cells. Relay the question and wait if the client lacks forms. Skip only when the user already supplied both dimensions.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "create_body_layout",
+    "description": "Place an adult directly using array index IDs, within the user-agreed width and height. Each physical link must overlap. Include leaf. Default radius is maximum; only explicitly requested fine details may use less.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 128
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 128
+        },
+        "cells": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "angle": {
+                "type": "number",
+                "description": "Radians from world +X"
+              },
+              "radius": {
+                "type": "number",
+                "minimum": 0.2,
+                "maximum": 0.5
+              },
+              "fineDetailReason": {
+                "type": "string",
+                "description": "Which explicitly requested thin detail requires this smaller cell?"
+              }
+            },
+            "required": [
+              "type",
+              "x",
+              "y"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "cells",
+        "links"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "test_body_layout",
+    "description": "Run the placed adult with native physics in a separate world. Reports cell/link survival, energy, and which settled eyes see an external test target along their actual line of sight.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Exact layout or trial ID returned by its creation tool."
+        },
+        "ticks": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 1200
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "preview_body_layout",
+    "description": "Return Debug Original PNG of the placed layout, or its settled pose after a successful viability trial. Show this image to the user before requesting approval.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "size": {
+          "type": "integer",
+          "minimum": 128,
+          "maximum": 1024,
+          "default": 384,
+          "description": "Width and height in pixels. Request 1024 to inspect individual cells in large bodies."
+        },
+        "id": {
+          "type": "string",
+          "description": "Exact layout or trial ID returned by its creation tool."
+        },
+        "view": {
+          "type": "string",
+          "enum": [
+            "placed",
+            "settled"
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "approve_body_layout",
+    "description": "Call only after the user explicitly approves the pictured layout. Store the acceptable maximum positional error in world units (default 0.1).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Exact layout or trial ID returned by its creation tool."
+        },
+        "positionTolerance": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "start_motion_trial",
+    "description": "Record an adult centroid every simulation tick on a FIXED forward world axis. Specify target distance and observation duration. Observation continues after first reaching the target to detect reversals. Unpause the world to advance.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organism": {
+          "type": "integer"
+        },
+        "generation": {
+          "type": "integer"
+        },
+        "forwardX": {
+          "type": "number"
+        },
+        "forwardY": {
+          "type": "number"
+        },
+        "distance": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "ticks": {
+          "type": "integer",
+          "minimum": 20,
+          "maximum": 36000
+        },
+        "windowTicks": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "minForwardEfficiency": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Minimum net forward distance divided by total 2D path length for sustainedForward. Use e.g. 0.85 to reject large sideways oscillations on a straight course. Default 0."
+        },
+        "maxBackwardFraction": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Maximum fraction of axial travel allowed backwards for sustainedForward (default 0.1). Set 0 for strictly one-way motion."
+        }
+      },
+      "required": [
+        "organism",
+        "generation",
+        "forwardX",
+        "forwardY",
+        "distance"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "read_motion_trial",
+    "description": "Read progress or cancel. Includes net and backward travel, lateral deviation, signed progress per window, and whether the target was sustained through the end.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Exact layout or trial ID returned by its creation tool."
+        },
+        "cancel": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "read_body_layout",
+    "description": "Recover the agreed scale, placed cells and fine-detail exceptions, physical links, previous viability result and approval state.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "view": {
+          "type": "string",
+          "enum": [
+            "cells",
+            "links"
+          ]
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "preview_organism",
+    "description": "Debug Original PNG of the selected living body at one observed world tick, even when the player uses another shader.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "organism": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "generation": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "organism",
+        "generation"
+      ],
+      "additionalProperties": false
+    }
+  }
+]
