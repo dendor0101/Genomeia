@@ -15,7 +15,7 @@ import io.github.some_example_name.old.game.applyCustomFont
 import io.github.some_example_name.old.game.MyGame
 
 /** Состояние галочек отладочного режима на момент открытия окна. */
-class DebugOptions(val showBoundary: Boolean, val showLinks: Boolean, val fillAreas: Boolean, val genomeColors: Boolean, val noTail: Boolean, val noDeepKill: Boolean)
+class DebugOptions(val showBoundary: Boolean, val showLinks: Boolean, val showNeuralLinks: Boolean, val fillAreas: Boolean, val genomeColors: Boolean, val noTail: Boolean, val noDeepKill: Boolean)
 
 /**
  * Галочки отладочного режима — окном под своей кнопкой рядом с фильтром, чтобы не занимали
@@ -28,6 +28,7 @@ class DebugOptionsDialog(
     state: DebugOptions,
     onBoundary: (Boolean) -> Unit,
     onLinks: (Boolean) -> Unit,
+    onNeuralLinks: (Boolean) -> Unit,
     onFillAreas: (Boolean) -> Unit,
     onGenomeColors: (Boolean) -> Unit,
     onPhysics: (noTail: Boolean, noDeepKill: Boolean) -> Unit
@@ -57,6 +58,7 @@ class DebugOptionsDialog(
 
         box("debugBoundary", state.showBoundary) { onBoundary(it.isChecked) }
         box("debugLinks", state.showLinks) { onLinks(it.isChecked) }
+        box("debugNeuralLinks", state.showNeuralLinks) { onNeuralLinks(it.isChecked) }
         box("debugFillAreas", state.fillAreas) { onFillAreas(it.isChecked) }
         box("debugGenomeColors", state.genomeColors) { onGenomeColors(it.isChecked) }
         // Обе галочки физики идут одной командой мира, сразу с обоими значениями.

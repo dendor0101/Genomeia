@@ -316,6 +316,8 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 screen(SimulationIntent.SetDebugFilter(DebugFilter.ENERGY))
                 screen(SimulationIntent.SetFillAreas(true))
                 screen(SimulationIntent.SetGenomeColors(true))
+                // По умолчанию нейросвязи видны: подаём выключение, чтобы команда что-то меняла.
+                screen(SimulationIntent.SetShowNeuralLinks(false))
                 screen(SimulationIntent.SetMicroscopeParameter("density",1.7f))
                 screen(SimulationIntent.SetMicroscopeParameter("packedPsf",1f))
                 screen(SimulationIntent.SetMicroscopeParameter("halfGeometry",1f))

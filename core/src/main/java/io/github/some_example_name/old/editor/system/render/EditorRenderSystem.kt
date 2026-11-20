@@ -34,7 +34,7 @@ import kotlin.math.sin
  * упаковка и вынесена в CellInstanceBuffer.
  *
  * В отладочном режиме клетки красятся и подписываются по тем же правилам, что в
- * симуляции (DebugCellPalette): цвет и рисунок типа, стрелки, лучи глаз, жгутики и
+ * симуляции (DebugCellPalette): цвет из генома, рисунок типа, стрелки, лучи глаз, жгутики и
  * нейросвязи — шейдером, а не линиями ShapeRenderer.
  */
 class EditorRenderSystem(
@@ -165,7 +165,9 @@ class EditorRenderSystem(
             cellBuffer.putCell(
                 x = particleEntity.x(index),
                 y = particleEntity.y(index),
-                color = if (debug) palette.color(type, color) else color,
+                // Цвет из генома и в отладке — как с галочкой «Цвет из генома» в симуляции
+                // (она там включена по умолчанию): игрок видит организм в своих цветах.
+                color = color,
                 angleCos = angleCos,
                 angleSin = angleSin,
                 radius = particleEntity.radius[index],
@@ -201,7 +203,7 @@ class EditorRenderSystem(
                     cellBuffer.putCell(
                         x = particleEntity.x(index),
                         y = particleEntity.y(index),
-                        color = if (debug && futureType >= 0) palette.color(futureType, ownColor) else ownColor,
+                        color = ownColor,
                         angleCos = cos(angle),
                         angleSin = sin(angle),
                         radius = particleEntity.radius[index],

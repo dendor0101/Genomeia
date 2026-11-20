@@ -52,6 +52,13 @@ sealed interface SimulationIntent : GameCommand {
         override val detail get() = enabled.toString()
     }
 
+    /** Галочка «Нейросвязи» отладочного режима: рисовать ли нейросвязи с импульсами. */
+    @Serializable
+    data class SetShowNeuralLinks(val show: Boolean) : SimulationIntent {
+        override val name get() = "SetShowNeuralLinks"
+        override val detail get() = show.toString()
+    }
+
     /** Галочка «Связи» отладочного режима: рисовать ли тонко все связи тел мира физики. */
     @Serializable
     data class SetShowLinks(val show: Boolean) : SimulationIntent {
@@ -487,6 +494,12 @@ class SimulationViewModel(
             is SimulationIntent.SetShowLinks -> {
                 val changed=renderSystem.showLinks!=intent.show
                 renderSystem.showLinks = intent.show
+                if(changed)refreshIfPaused()
+            }
+
+            is SimulationIntent.SetShowNeuralLinks -> {
+                val changed=renderSystem.showNeuralLinks!=intent.show
+                renderSystem.showNeuralLinks = intent.show
                 if(changed)refreshIfPaused()
             }
 
