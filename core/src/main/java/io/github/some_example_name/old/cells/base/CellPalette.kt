@@ -68,7 +68,9 @@ class CellPalette private constructor(
 
     companion object {
         /** Клетки, выведенные из игры. Старые геномы с ними растут как раньше. */
-        val RETIRED_CELLS: Set<String> = setOf("breakaway", "fin", "stem", "compass", "food_sensor", "speed_sensor")
+        // speed_sensor вернули игрокам 20.11: им пользуются геномы из MCP, а у ИИ не должно
+        // быть клеток, которых нет у игрока в редакторе.
+        val RETIRED_CELLS: Set<String> = setOf("breakaway", "fin", "stem", "compass", "food_sensor")
 
         /**
          * Клетки, которые есть в игре, но получить делением или мутацией нельзя.

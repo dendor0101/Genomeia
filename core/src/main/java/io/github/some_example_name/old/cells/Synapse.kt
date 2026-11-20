@@ -79,8 +79,9 @@ import kotlin.random.Random
  * ПАРАМЕТРЫ ГЕНОМА
  * ----------------
  * Обучение — в общих полях нейрона: a = затухание следов, b = learningRate,
- * c = depression (так они записаны во всех уже сохранённых геномах). Галочка торможения —
- * [SynapseData] в Action.special. Функция активации и способ сложения входов синапсу не
+ * c = depression (так они записаны во всех уже сохранённых геномах). Галочка торможения и
+ * начальный вес — [SynapseData] в Action.special (вес игрок задаёт в редакторе; без него вес
+ * выбирает первый тик, см. startWeight). Функция активации и способ сложения входов синапсу не
  * нужны: вход один, а активацию он не вызывает.
  *
  * СОСТОЯНИЕ
@@ -390,8 +391,8 @@ fun SpecialEntity.synapseState(cellIndex: Int): SynapseState? = getSpecialData(c
 
 /**
  * Параметры синапса в диалоге редактора вместо a, b, c обычного нейрона. Хранятся они в тех
- * же полях (a = затухание следов, b = learningRate, c = depression), галочка торможения —
- * в [SynapseData], см. Synapse.
+ * же полях (a = затухание следов, b = learningRate, c = depression), галочка торможения и
+ * начальный вес — в [SynapseData], см. Synapse.
  *
  * Пустое поле — значение по умолчанию. У learningRate и depression ноль тоже означает
  * «по умолчанию» (так их видит симуляция), поэтому ноль показывается пустым полем.
@@ -462,6 +463,24 @@ object SynapseSection : CellEditorSection {
                 actionSystem.action = actionSystem.action.copy(a = it)
                 memoryLabel?.setText(memoryText())
             }
+
+            // Начальный вес живёт в SynapseData, а не в a, b, c: пустое поле — null, и вес
+            // выбирает первый тик (startWeight), как у всех геномов до этого поля.
+            visLabel("${bundle.get("synapse.initialWeight")}:", font = game.extraLargeFont) { left().padRight(16.dp()) }
+                .hint(bundle.get("synapse.initialWeight.hint"))
+            visTextField(
+                text = data().initialWeight?.toString() ?: "",
+                hint = "0..1",
+                textFieldFilter = FloatDigitsOnlyFilter(false),
+                onTextChange = { text ->
+                    val weight = if (text.isBlank()) null else text.toFloatOrNull()?.takeIf { it in 0f..1f }
+                    if (text.isBlank() || weight != null) {
+                        actionSystem.action = actionSystem.action.copy(special = data().copy(initialWeight = weight))
+                    }
+                }
+            ) { left() }
+                .hint(bundle.get("synapse.initialWeight.hint"))
+            row()
         }
         row()
 
@@ -484,8 +503,11 @@ object SynapseSection : CellEditorSection {
         if (c != null && c != actual.c) out.append("${bundle.get("synapse.depression")}: ${actual.c} -> $c\n")
         val to = special as? SynapseData
         val from = actual.special as? SynapseData
-        if (to != null && to != from) {
+        if (to != null && to.inhibitory != from?.inhibitory) {
             out.append("${bundle.get("synapse.inhibitory")}: ${from?.inhibitory} -> ${to.inhibitory}\n")
+        }
+        if (to != null && to.initialWeight != from?.initialWeight) {
+            out.append("${bundle.get("synapse.initialWeight")}: ${from?.initialWeight} -> ${to.initialWeight}\n")
         }
     }
 
