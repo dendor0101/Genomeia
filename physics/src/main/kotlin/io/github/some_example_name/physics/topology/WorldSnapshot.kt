@@ -27,8 +27,13 @@ internal const val SNAPSHOT_MAGIC = 0x50485753  // "PHWS"
 /**
  * 2 — мышца клетки с темпом: цель множителя клетки и признак «в пути» (27.10).
  * 3 — возраст дорастания связи (conGrowAge, мягкость молодой связи при делении, 02.11).
+ * 4 — волокна мышц клеток (cellFiberX/Y, мотонейрон с направлением, 20.11). Снимок версии 3
+ *     читается: волокон в нём нет, мышцы сжимаются во все стороны, как и писались.
  */
-internal const val SNAPSHOT_VERSION = 3
+internal const val SNAPSHOT_VERSION = 4
+
+/** Самая старая версия снимка, которую мир ещё читает (см. [SNAPSHOT_VERSION]). */
+internal const val SNAPSHOT_OLDEST_READABLE = 3
 
 // --- массивы: длина, затем значения; числа — сырыми битами, без нормализации NaN ---
 
@@ -87,6 +92,7 @@ internal fun BodyState.writeCore(out: DataOutput) {
     out.writeFloats(cellScaleTarget, cellScaleTarget.size); out.writeBoolean(cellScalesMoving)
     out.writeDoubles(dragScale, dragScale.size)
     out.writeFloats(cellSoftness, cellSoftness.size); out.writeBoolean(softnessOn)
+    out.writeFloats(cellFiberX, cellFiberX.size); out.writeFloats(cellFiberY, cellFiberY.size); out.writeBoolean(fibersOn)
     out.writeBooleans(cellNoContact, cellNoContact.size)
     out.writeInts(cellGroup, cellGroup.size)
     out.writeFloats(cellGrip, cellGrip.size)
@@ -140,7 +146,7 @@ internal fun BodyState.writeCore(out: DataOutput) {
  * Ядро из снимка поверх мира, только что загруженного по тому же описанию (load), и
  * производное заново — тем же путём, что после уплотнения.
  */
-internal fun BodyState.readCore(input: DataInput) {
+internal fun BodyState.readCore(input: DataInput, version: Int = SNAPSHOT_VERSION) {
     check(input.readInt() == n) { "снимок не от этого описания" }
     organismCount = input.readInt()
     px = input.readDoubles(0); py = input.readDoubles(0); prevX = input.readDoubles(0); prevY = input.readDoubles(0)
@@ -154,6 +160,8 @@ internal fun BodyState.readCore(input: DataInput) {
     cellScaleTarget = input.readFloats(0); cellScalesMoving = input.readBoolean()
     dragScale = input.readDoubles(0)
     cellSoftness = input.readFloats(0); softnessOn = input.readBoolean()
+    // Версия 3 волокон не знала: остаются нули описания (load), мышцы — во все стороны.
+    if (version >= 4) { cellFiberX = input.readFloats(0); cellFiberY = input.readFloats(0); fibersOn = input.readBoolean() }
     cellNoContact = input.readBooleans(0)
     cellGroup = input.readInts(0)
     cellGrip = input.readFloats(0); gripsDirty = true

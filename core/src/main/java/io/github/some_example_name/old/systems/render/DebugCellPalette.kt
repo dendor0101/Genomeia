@@ -9,6 +9,7 @@ import io.github.some_example_name.old.cells.Excreta
 import io.github.some_example_name.old.cells.Eye
 import io.github.some_example_name.old.cells.Fat
 import io.github.some_example_name.old.cells.Leaf
+import io.github.some_example_name.old.cells.MotorNeuron
 import io.github.some_example_name.old.cells.Muscle
 import io.github.some_example_name.old.cells.Neuron
 import io.github.some_example_name.old.cells.PheromoneEmitter
@@ -71,6 +72,7 @@ class DebugCellPalette(private val cellList: List<Cell>) {
             is Zygote -> CellLook.ZYGOTE
             is Producer -> CellLook.DIVIDING
             is Neuron -> CellLook.NEURON
+            is MotorNeuron -> CellLook.MOTOR_NEURON
             is SuctionCup -> CellLook.SUCTION_RINGS
             is Sticky -> CellLook.STICKY_BUMPS
             is Chameleon -> CellLook.PIGMENTS

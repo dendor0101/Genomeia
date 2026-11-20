@@ -64,6 +64,7 @@ internal fun BodyState.initialize(definition: BodyDefinition) {
     dragScale = DoubleArray(n) { 1.0 }
     conCellScale = FloatArray(conA.size) { 1f }; triCellScale = FloatArray(triA.size) { 1f }
     cellSoftness = FloatArray(n) { 1f }
+    cellFiberX = FloatArray(n); cellFiberY = FloatArray(n)
     cellNoContact = BooleanArray(n)
     cellGroup = IntArray(n)
     cellGrip = FloatArray(n); gripsDirty = true

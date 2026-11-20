@@ -421,7 +421,9 @@ class PhysicsWorld(
         require(state.n == 0) { "снимок читается в новый мир" }
         require(input.readInt() == SNAPSHOT_MAGIC) { "это не снимок мира физики" }
         val version = input.readInt()
-        require(version == SNAPSHOT_VERSION) { "снимок версии $version, мир читает $SNAPSHOT_VERSION" }
+        require(version in SNAPSHOT_OLDEST_READABLE..SNAPSHOT_VERSION) {
+            "снимок версии $version, мир читает $SNAPSHOT_OLDEST_READABLE..$SNAPSHOT_VERSION"
+        }
         val material = input.readUTF()
         require(material == materialKey()) { "снимок записан с другим материалом мира" }
         state.worldScale = WorldScale(java.lang.Float.intBitsToFloat(input.readInt()),
@@ -437,7 +439,7 @@ class PhysicsWorld(
         freeSlots = input.readInt(); freeCount = input.readInt()
         freeStack = input.readInts(0).let { freeStackN = it.size; it.copyOf(freeSlots) }
         freeLive = input.readBooleans(freeSlots)
-        state.readCore(input)
+        state.readCore(input, version)
     }
 
     /** Отпечаток материала: снимок читается только миром с теми же параметрами решателя. */
@@ -512,6 +514,27 @@ class PhysicsWorld(
     }
 
     fun softness(cell: Int): Float = state.cellSoftness[cell]
+
+    /**
+     * Волокно мышцы клетки [cell] (BodyState.cellFiberX; игра — направление мотонейрона кластера):
+     * единичное направление сокращения ([x], [y]) в позе покоя тела, (0, 0) — мышца сжимается во
+     * все стороны. Вдоль волокна связь сжимается на множитель мышцы, поперёк — нет, площадь — в s
+     * раз. Длины покоя меняются только у сокращённой мышцы, поэтому тело не будится. Первое
+     * волокно включает его в счёт множителей — один полный пересчёт на мир; дальше — связи вокруг
+     * клетки и её соседей по кольцу. Игра задаёт волокна раз, при подсадке тела.
+     */
+    fun setCellFiber(cell: Int, x: Float, y: Float) {
+        val st = state
+        if (st.cellFiberX[cell] == x && st.cellFiberY[cell] == y) return
+        require((x == 0f && y == 0f) || kotlin.math.abs(x * x + y * y - 1f) < 1e-3f) { "волокно — единичный вектор или ноль" }
+        st.cellFiberX[cell] = x
+        st.cellFiberY[cell] = y
+        if (!st.fibersOn) { st.fibersOn = true; st.cellScalesDirty = true }
+        else st.refreshCellFiberRing(cell)
+    }
+
+    fun cellFiberX(cell: Int): Float = state.cellFiberX[cell]
+    fun cellFiberY(cell: Int): Float = state.cellFiberY[cell]
 
     /**
      * Клетка [cell] без касаний ([on]): ни с чем не сталкивается — ни с чужими телами, ни с едой,

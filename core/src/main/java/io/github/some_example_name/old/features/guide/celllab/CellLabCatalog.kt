@@ -4,7 +4,7 @@ package io.github.some_example_name.old.features.guide.celllab
 internal object CellLabCatalog {
     val keys = listOf("leaf", "fat", "bone", "tail", "controller", "muscle", "sucker", "excreta",
         "punisher", "pumper", "zygote", "producer", "neuron", "suction_cup", "sticky", "chameleon",
-        "eye", "touch_trigger", "synapse", "pheromone_emitter", "pheromone_sensor", "delay")
+        "eye", "touch_trigger", "synapse", "pheromone_emitter", "pheromone_sensor", "delay", "motor_neuron")
 
     data class Control(val key: String, val min: Float, val max: Float, val step: Float, val initial: Float)
     private fun signal(initial: Float = 0f) = Control("signal", -1f, 1f, 0.01f, initial)
@@ -17,7 +17,7 @@ internal object CellLabCatalog {
         "bone" -> emptyList()
         "tail" -> listOf(signal(), angle, light)
         "controller" -> listOf(Control("key", 0f, 3f, 1f, 0f), Control("pressed", 0f, 1f, 1f, 0f))
-        "muscle", "suction_cup", "sticky", "excreta" -> listOf(signal())
+        "muscle", "suction_cup", "sticky", "excreta", "motor_neuron" -> listOf(signal())
         "sucker" -> emptyList()
         "punisher" -> listOf(feed, Control("prey", 0f, 1f, 1f, 0f), light)
         "pumper" -> emptyList()

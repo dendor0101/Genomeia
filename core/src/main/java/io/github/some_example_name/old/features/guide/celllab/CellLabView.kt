@@ -177,6 +177,15 @@ internal class CellLabView(private val session: CellLabSession) {
                     if (model.source >= 0 && c.isAlive[model.source]) metric("storedEnergy", c.energy[model.source])
                 }
                 "chameleon" -> metric("output", c.neuronImpulseOutput[a])
+                "motor_neuron" -> {
+                    metric("output", c.neuronImpulseOutput[a])
+                    // Левое тело со стрелкой вдоль x меняет ширину, правое со стрелкой вдоль y — высоту.
+                    metric("widthLeft", model.rosetteSpan(model.leftRosette, across = false))
+                    metric("heightLeft", model.rosetteSpan(model.leftRosette, across = true))
+                    metric("widthRight", model.rosetteSpan(model.rightRosette, across = false))
+                    metric("heightRight", model.rosetteSpan(model.rightRosette, across = true))
+                    if (c.isAlive[model.source]) metric("lengthOutside", c.degreeOfShortening[model.source])
+                }
                 "delay" -> {
                     if (c.isAlive[model.source]) metric("input", c.neuronImpulseOutput[model.source])
                     metric("output", c.neuronImpulseOutput[a])
