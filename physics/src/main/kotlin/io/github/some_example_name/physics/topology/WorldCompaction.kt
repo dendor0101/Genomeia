@@ -73,6 +73,7 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
     fun p(a: IntArray, values: IntArray? = null) = if (a.size < nOld) a else pick(a, pNew, nOld, nNew, values)
     cellDead = p(cellDead); cellUnborn = p(cellUnborn); cellScale = p(cellScale); cellScaleTarget = p(cellScaleTarget); dragScale = p(dragScale)
     cellSoftness = p(cellSoftness); cellNoContact = p(cellNoContact); cellGroup = p(cellGroup)
+    cellFiberX = p(cellFiberX); cellFiberY = p(cellFiberY)
     cellGrip = p(cellGrip); gripsDirty = true
     cellHomeCompliance = p(cellHomeCompliance); cellHomeX = p(cellHomeX); cellHomeY = p(cellHomeY)
     px = p(px); py = p(py); prevX = p(prevX); prevY = p(prevY); vx = p(vx); vy = p(vy)

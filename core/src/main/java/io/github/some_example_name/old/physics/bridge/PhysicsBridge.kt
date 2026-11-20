@@ -61,7 +61,20 @@ class PhysicsBridge(
             bodyOfOrgan.fill(-1, old, bodyOfOrgan.size)
         }
         bodyOfOrgan[organ] = world.addBody(definition, born, boneOn = BooleanArray(definition.count))
+        // Волокна мышц кластеров мотонейронов (BakedLayout.fiberBySlot) — в позе покоя, как и
+        // само описание тела: раз на подсадку, дальше их хранит мир (и снимок).
+        val fiber = layout.fiberBySlot
+        if (fiber.isNotEmpty()) {
+            val first = world.bodyFirst(bodyOfOrgan[organ])
+            for (s in 0 until definition.count) {
+                val fx = fiber[2 * s]; val fy = fiber[2 * s + 1]
+                if (fx != 0f || fy != 0f) world.setCellFiber(first + s, fx, fy)
+            }
+        }
     }
+
+    /** Волокно клетки слота [slot] — стенды гайда меняют его на ходу; в мире оно из раскладки. */
+    fun setFiber(organ: Int, slot: Int, x: Float, y: Float) = world.setCellFiber(particleOf(organ, slot), x, y)
 
     /** Частица клетки слота [slot] организма [organ] — заново на каждый запрос (см. АДРЕСАЦИЯ). */
     fun particleOf(organ: Int, slot: Int): Int = world.bodyFirst(bodyOfOrgan[organ]) + slot

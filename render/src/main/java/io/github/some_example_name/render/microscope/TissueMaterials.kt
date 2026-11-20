@@ -7,9 +7,9 @@ object TissueMaterials {
         "compass", "synapse", "touchtrigger", "zygote", "producer", "breakaway", "fin",
         "pheromoneemitter", "pheromonesensor", "punisher", "speedsensor", "controller")
     fun forKey(key: String): Int {
-        // Delay — нейронная ткань: использует тот же материал без нового слоя атласа.
+        // Delay и мотонейрон — нейронная ткань: тот же материал без нового слоя атласа.
         val name = key.replace("_", "").lowercase()
-        val i = names.indexOf(if (name == "delay") "neuron" else name)
+        val i = names.indexOf(if (name == "delay" || name == "motorneuron") "neuron" else name)
         return if (i < 0 || i == 6 || i == 15 || i == 20 || i == 21) 27 else i
     }
 }
