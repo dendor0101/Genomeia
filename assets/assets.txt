@@ -16,6 +16,7 @@ genomes/Glist.genome
 genomes/Hydrofin.genome
 genomes/Hypha.genome
 genomes/Inchworm.genome
+genomes/Jellyfish.genome
 genomes/Leech.genome
 genomes/Maggot.genome
 genomes/Megalodon.genome
