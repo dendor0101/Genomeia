@@ -247,6 +247,93 @@ class LegacyGenomeJsonTest {
     }
 
     @Test
+    fun `кость из JSON становится листом своего цвета - в делении и в мутации`() {
+        // Старый номер 2 — кость. Цвет — всеми тремя способами, какие встречаются в файлах.
+        val genome = LegacyGenomeJson.parse(
+            """
+            { "genomeStageInstruction": [ { "cellActions": {
+                "0": { "divide": { "id": "1", "cellType": 2, "colorHsv": "ffc0caff" },
+                       "mutate": { "id": "-1", "cellType": 2, "color": { "r": 0.25, "g": 0.5, "b": 0.75, "a": 1 } } },
+                "1": { "divide": { "id": "2", "cellType": 2 },
+                       "mutate": { "id": "-1", "cellType": 5, "colorHsv": "11223344" } }
+            } } ] }
+            """,
+            "x"
+        )
+        val cells = genome.stageInstruction[0].cellActions
+        val first = cells.getValue(0)
+        assertEquals("leaf", first.divide!!.cellType)
+        assertEquals(Color.valueOf("ffc0caff"), first.divide.color)
+        assertEquals("leaf", first.mutate!!.cellType)
+        assertEquals(Color(0.25f, 0.5f, 0.75f, 1f), first.mutate.color)
+        // Без цвета остаётся без цвета: деление красит такую клетку в белый, как и кость.
+        val second = cells.getValue(1)
+        assertEquals("leaf", second.divide!!.cellType)
+        assertNull(second.divide.color)
+        // Остальные типы не трогаются.
+        assertEquals("muscle", second.mutate!!.cellType)
+        assertEquals(Color.valueOf("11223344"), second.mutate.color)
+    }
+
+    /**
+     * Те же настоящие файлы: костей после чтения нет, листьев ровно столько, сколько было
+     * листьев и костей вместе. Числа сняты независимо — ConvertFrom-Json в PowerShell.
+     */
+    @Test
+    fun `в настоящих старых геномах все кости стали листьями`() {
+        // имя -> кости в файле, листья в файле
+        val expected = mapOf(
+            "Hypha" to (0 to 3),
+            "Morphogenesis" to (0 to 0),
+            "Maggot" to (11 to 60),
+            "Leech" to (9 to 7),
+            "Tardigrade" to (10 to 104)
+        )
+        for ((name, counts) in expected) {
+            val text = javaClass.getResource("/legacy-genomes/$name.json")!!.readText()
+            val actions = LegacyGenomeJson.parse(text, "fallback").stageInstruction
+                .flatMap { it.cellActions.values }
+                .flatMap { listOfNotNull(it.divide, it.mutate) }
+            assertEquals(0, actions.count { it.cellType == "bone" }, name)
+            assertEquals(counts.first + counts.second, actions.count { it.cellType == "leaf" }, name)
+        }
+    }
+
+    /**
+     * Сжатый «gen4.json» игрока: в последней стадии корень делится на зиготу с номером 0.
+     * Раньше рост такого генома падал на ключе корня (CellEntity.addCell).
+     */
+    @Test
+    fun `деление с номером корня получает свободный номер, остальное как в файле`() {
+        val genome = LegacyGenomeJson.parse(
+            """
+            { "genomeStageInstruction": [
+                { "cellActions": { "0": { "divide": { "id": "1", "angle": 1.57, "cellType": 0, "physicalLink": { "0": { "length": 25 } } } } } },
+                { "cellActions": {
+                    "0": { "mutate": { "id": null, "colorHsv": "c71585ff" } },
+                    "1": { "divide": { "id": "2", "angle": 1.57, "cellType": 4, "physicalLink": { "1": { "length": 25 }, "7": { "length": 25 } } } } } },
+                { "cellActions": {
+                    "0": { "divide": { "id": "0", "angle": 4.57, "cellType": 18, "physicalLink": {}, "colorHsv": "ffffffff" } },
+                    "2": { "divide": { "id": "3", "angle": 3.14, "cellType": 4, "physicalLink": { "2": { "length": 25 } } } } } }
+            ] }
+            """,
+            "x"
+        )
+        val last = genome.stageInstruction[2].cellActions
+        // Самый большой номер в файле — 7 (ссылка связи), значит новый — 8.
+        val bud = last.getValue(0).divide!!
+        assertEquals(8, bud.id)
+        assertEquals("zygote", bud.cellType)
+        assertEquals(4.57f, bud.angle)
+        assertEquals(Color.WHITE, bud.color)
+        // Порядок клеток в стадии и соседние деления — как в файле.
+        assertEquals(listOf(0, 2), last.keys.toList())
+        assertEquals(3, last.getValue(2).divide!!.id)
+        assertEquals(listOf(1, 2), genome.stageInstruction.take(2).map { it.cellActions.values.firstNotNullOf { a -> a.divide }.id })
+        assertEquals(genome, decodeGenome(encodeGenome(genome)))
+    }
+
+    @Test
     fun `без имени в файле берётся запасное`() {
         val genome = LegacyGenomeJson.parse("""{ "genomeStageInstruction": [ { "cellActions": {} } ] }""", "из файла")
         assertEquals("из файла", genome.name)
