@@ -101,6 +101,18 @@ class RenderBufferManager(
 
     @Volatile
     var fillAreas = false
+
+    /**
+     * Галочка «Цвет из генома»: в отладке клетка своего цвета (particleEntity.color — его
+     * задаёт геном; хамелеон и ошибочный синапс перекрашивают его на ходу), а не
+     * defaultColor типа. Рисунок, стрелки и фильтры остаются. Пишет GL-поток, читает поток
+     * симуляции раз за [updateBuffer] — как [debugFilter].
+     */
+    @Volatile
+    var genomeColors = false
+
+    /** [genomeColors] текущего [updateBuffer]; читается один раз, как и [debugFrame]. */
+    private var frameGenomeColors = false
     private val areaCache = DebugAreaCache()
     private var areaFrame = false
 
@@ -547,7 +559,8 @@ class RenderBufferManager(
         // присасывается ровно по нему. От него анимация рисунка, см. DebugCellPalette.
         val signal = cellEntity.neuronImpulseOutput[cellIndex]
         val o = writeIndex * CellInstanceBuffer.STRUCT_INTS
-        instances[o + CellInstanceBuffer.OFFSET_COLOR / 4] = palette.color(cellType, particleEntity.color[particleIndex])
+        // С галочкой «Цвет из генома» остаётся цвет, уже записанный writeCell.
+        if (!frameGenomeColors) instances[o + CellInstanceBuffer.OFFSET_COLOR / 4] = palette.color(cellType, particleEntity.color[particleIndex])
         instances[o + CellInstanceBuffer.OFFSET_LOOK / 4] =
             palette.look(cellType, signal, filter = filterByte(cellIndex, particleIndex, signal))
 
@@ -806,6 +819,7 @@ class RenderBufferManager(
         areaFrame = debugFrame && fillAreas
         if (areaFrame) areaCache.reserveCells(cellEntity.aliveList.size)
         frameFilter = if (debugFrame) debugFilter else DebugFilter.ORIGINAL
+        frameGenomeColors = debugFrame && genomeColors
 
         val overlay = snapshot.overlay
         overlay.begin()

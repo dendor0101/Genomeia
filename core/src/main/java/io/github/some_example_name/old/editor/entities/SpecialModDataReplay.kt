@@ -24,6 +24,9 @@ class SpecialModDataReplay(
     private val tickStartIndices = IntArrayList(10)
     private val slotsInTick = IntArrayList(10)
 
+    // Только массив ссылок: сами объекты общие с миром редактора (см. выше).
+    override fun byteSize(): Long = data.size.toLong() * 4
+
     override fun reset() {
         data.fill(null, 0, size)
         size = 0

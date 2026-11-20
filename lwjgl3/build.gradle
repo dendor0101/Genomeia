@@ -340,6 +340,28 @@ tasks.register('saveRoundTrip', JavaExec) {
   if (project.hasProperty('loadSlot')) systemProperty 'saveRoundTrip.load', project.property('loadSlot')
 }
 
+// Несколько копий игры, запущенных разом, не роняют друг друга: gradlew :lwjgl3:parallelLaunchCheck
+// (отчёты 13.11: копии делили папку сессии и падали на старте с AccessDeniedException).
+tasks.register('parallelLaunchCheck', JavaExec) {
+  group = 'verification'
+  description = 'Четыре копии игры стартуют одновременно и закрываются без краша'
+  classpath = sourceSets.verification.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.verification.ParallelLaunchCheckKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+
+// Память записи роста в редакторе генома на всех встроенных геномах: gradlew :lwjgl3:editorMemoryCheck
+// (отчёт игрока 11.11: OutOfMemoryError при открытии Megalodon на телефоне с кучей 256 МБ).
+tasks.register('editorMemoryCheck', JavaExec) {
+  group = 'verification'
+  description = 'Запись роста в редакторе укладывается в предел памяти на всех встроенных геномах'
+  classpath = sourceSets.verification.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.verification.EditorMemoryCheckKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+
 // Перевод старых JSON-геномов в .genome с запеканием из редактора: gradlew :lwjgl3:genomeJsonCheck
 // Каждый файл переводится тем же путём, что импорт в игре, и сверяется с «открыть в редакторе и
 // сохранить» побайтно; ненулевой код — перевод не совпал. -Pfrom=каталог с JSON, -Pto=куда класть.

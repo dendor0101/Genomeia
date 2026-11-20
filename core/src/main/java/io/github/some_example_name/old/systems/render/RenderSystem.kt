@@ -77,6 +77,10 @@ class RenderSystem(
         get() = renderBufferManager.fillAreas
         set(value) { renderBufferManager.fillAreas = value }
 
+    var genomeColors: Boolean
+        get() = renderBufferManager.genomeColors
+        set(value) { renderBufferManager.genomeColors = value }
+
     private lateinit var fontMatrix: Matrix4
     private lateinit var spriteBatch: SpriteBatch
     private lateinit var font: BitmapFont
@@ -99,6 +103,22 @@ class RenderSystem(
         val info = selection.preview(target, renderBufferManager.simulationData.tickCounter, renderBufferManager.currentSnapshot())
         if (live) renderBufferManager.writeCellInfo(info, cell.index)
     }
+
+    /**
+     * На паузе: выбор, который оставит очередь команд (UserCommandManager.previewQueued),
+     * -1 — снять. Как и [previewSelection], держится до снимка следующего тика.
+     */
+    fun previewSelected(cellIndex: Int) {
+        val epoch = io.github.some_example_name.old.journal.SessionJournal.epoch
+        previewSelection(
+            if (cellIndex < 0) ScreenCell(-1, 0, epoch)
+            else ScreenCell(cellIndex, renderBufferManager.cellEntity.getGeneration(cellIndex), epoch)
+        )
+    }
+
+    /** Призраки команд, ждущих тика, — на паузе (см. [CommandGhosts]). */
+    val commandGhosts = CommandGhosts()
+
     val opticalSettings by lazy(LazyThreadSafetyMode.NONE){io.github.some_example_name.render.microscope.MicroscopeSettings.gameDefaults()}
 
     /**
@@ -208,6 +228,7 @@ class RenderSystem(
             }
         }
 
+        commandGhosts.draw(shapeRenderer, snapshot)
         val selected = selection.forFrame(snapshot, fresh)
         moveCameraAndDrawSelected(selected, lag)
         drawPlayerMarks()

@@ -35,14 +35,15 @@ internal object StateReader {
         val last = replay.getTickCount() - 1
         check(last >= 0) { "The editor has no growth frames" }
         val tick = a.number("tick", if (game.screen is GenomeEditorScreen) Editor.currentTick else last, 0..last)
-        val first = replay.tickStartIndices.getInt(tick)
-        return obj("tick" to tick, "lastTick" to last, "cells" to page(a, replay.replayCellsCounterInTick.getInt(tick)) { offset ->
-            val i = first + offset
-            val p = replay.index[i]
-            obj("id" to replay.cellGenomeId[i], "type" to Editor.cellList[replay.cellType[i].toInt()].key,
+        // CellReplay хранит тики журналом изменений (TickRecordLog), прямого доступа по индексу
+        // клетки в тике нет — собираем строки тика обходом. Это вызов инструмента, не горячий путь.
+        val rows = ArrayList<JsonObject>()
+        replay.forEachInTick(tick) { cellType, p, genomeId, cos, sin, _ ->
+            rows += obj("id" to genomeId, "type" to Editor.cellList[cellType.toInt()].key,
                 "x" to Editor.particleEntity.x(p), "y" to Editor.particleEntity.y(p), "radius" to Editor.particleEntity.radius[p],
-                "angleCos" to replay.angleCos[i], "angleSin" to replay.angleSin[i])
-        })
+                "angleCos" to cos, "angleSin" to sin)
+        }
+        return obj("tick" to tick, "lastTick" to last, "cells" to page(a, rows.size) { rows[it] })
     }
 
     fun bodySnapshot(a: JsonObject): GenomePreview {

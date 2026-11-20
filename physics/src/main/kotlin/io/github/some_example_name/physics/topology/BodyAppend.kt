@@ -231,6 +231,7 @@ private fun BodyState.growParticleArrays(n0: Int) {
     cellScale = cellScale.copyOf(n).also { java.util.Arrays.fill(it, n0, n, 1f) }
     cellScaleTarget = cellScaleTarget.copyOf(n).also { java.util.Arrays.fill(it, n0, n, 1f) }
     cellSoftness = cellSoftness.copyOf(n).also { java.util.Arrays.fill(it, n0, n, 1f) }
+    cellFiberX = cellFiberX.copyOf(n); cellFiberY = cellFiberY.copyOf(n)
     cellNoContact = cellNoContact.copyOf(n)
     cellGroup = cellGroup.copyOf(n)
     cellGrip = cellGrip.copyOf(n)

@@ -315,6 +315,7 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 // Фильтр отладки — тоже команда игрока: повтор обязан её подать.
                 screen(SimulationIntent.SetDebugFilter(DebugFilter.ENERGY))
                 screen(SimulationIntent.SetFillAreas(true))
+                screen(SimulationIntent.SetGenomeColors(true))
                 screen(SimulationIntent.SetMicroscopeParameter("density",1.7f))
                 screen(SimulationIntent.SetMicroscopeParameter("packedPsf",1f))
                 screen(SimulationIntent.SetMicroscopeParameter("halfGeometry",1f))

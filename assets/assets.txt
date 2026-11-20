@@ -20,6 +20,7 @@ genomes/Jellyfish.genome
 genomes/Leech.genome
 genomes/Maggot.genome
 genomes/Megalodon.genome
+genomes/Motor Worm.genome
 genomes/Octopod.genome
 genomes/Stem grow emitter.genome
 genomes/Sucker.genome

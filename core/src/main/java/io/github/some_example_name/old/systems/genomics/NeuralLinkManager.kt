@@ -3,6 +3,7 @@ package io.github.some_example_name.old.systems.genomics
 import io.github.some_example_name.old.core.DEBUG_CHECKS
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.NeuralLinkEntity
+import io.github.some_example_name.old.systems.genomics.genome.BakedLayout
 import io.github.some_example_name.old.systems.simulation.Phase
 import io.github.some_example_name.old.systems.simulation.ThreadManager
 
@@ -12,6 +13,10 @@ class NeuralLinkManager(
     /** Воркеры для [iterateInParallel]; null — только однопоточный [iterate] (меню). */
     private val threadManager: ThreadManager? = null
 ) {
+
+    /** Номера типов для кластеров мотонейронов ([driveMotorClusters]); -1 — типа нет в списке. */
+    private val muscleType = cellEntity.cellList.indexOfKey("muscle")
+    private val motorNeuronType = cellEntity.cellList.indexOfKey("motor_neuron")
 
     /**
      * Нейрофаза по аренам: организм — работа, его нейросвязи подряд по слотам арены.
@@ -45,6 +50,9 @@ class NeuralLinkManager(
                     transportNeuralSignal(linkIndex)
                 }
             }
+            // После нейросвязей организма: вклад мотонейрона в сумму входа мышцы идёт
+            // последним, в одном и том же порядке при любом числе воркеров.
+            driveMotorClusters(organIndex)
         }
 
         if (neuralLinkEntity.poolLinkCount == 0) return
@@ -76,6 +84,48 @@ class NeuralLinkManager(
                 )
             }
         }
+        val organs = cellEntity.organEntity.aliveList
+        for (i in 0 until organs.size) driveMotorClusters(organs.getInt(i))
+    }
+
+    /**
+     * Мотонейроны организма [organIndex] (cells/MotorNeuron.kt): выход каждого — во вход каждой
+     * мышцы его кластера, так же как его отдала бы нейросвязь ([deliverSignal]). Кластеры —
+     * из раскладки (BakedLayout.motorClusterMuscles), поэтому только у организма с ареной:
+     * там клетка слота s — это cellArenaBase + s.
+     *
+     * Пишет только во входы клеток своего организма — гонок между воркерами нет, как у
+     * нейросвязей арены. Мышца и мотонейрон проверяются по нынешнему типу: по ходу роста
+     * клетка слота может ещё не стать мышцей (мутация), ещё не родиться или уже умереть.
+     *
+     * Цена: организм без мотонейронов — чтение раскладки и длины пустого массива. С ними —
+     * чтение выхода на мотонейрон и чтение-запись входа на мышцу кластера; мышцы идут по
+     * возрастанию слота, то есть по арене вперёд. Нейросвязь на ту же мышцу стоила бы ещё
+     * чтения трёх своих массивов и выхода источника в случайном месте.
+     */
+    private fun driveMotorClusters(organIndex: Int) {
+        val organEntity = cellEntity.organEntity
+        val layout = organEntity.arenaLayout[organIndex] ?: return
+        if (layout.motorNeuronSlotsArray.isEmpty()) return
+        driveMotorClusters(organEntity.cellArenaBase[organIndex], layout)
+    }
+
+    private fun driveMotorClusters(base: Int, layout: BakedLayout) = with(cellEntity) {
+        val motors = layout.motorNeuronSlotsArray
+        val clusterOf = layout.motorNeuronClusterArray
+        val start = layout.motorClusterMuscleStart
+        val muscles = layout.motorClusterMuscles
+        for (k in motors.indices) {
+            val from = base + motors[k]
+            if (!isAlive[from] || cellType[from].toInt() != motorNeuronType) continue
+            val signal = neuronImpulseOutput[from]
+            val c = clusterOf[k]
+            for (j in start[c] until start[c + 1]) {
+                val to = base + muscles[j]
+                if (!isAlive[to] || cellType[to].toInt() != muscleType) continue
+                deliverSignal(to, signal)
+            }
+        }
     }
 
     fun transportNeuralSignal(linkIndex: Int) = with(cellEntity) {
@@ -97,16 +147,19 @@ class NeuralLinkManager(
         val signalToCellIndex = if (isLink1NeuralDirected) linkCellA else linkCellB
         val signalFromCellIndex = if (isLink1NeuralDirected) linkCellB else linkCellA
 
-        val neuronImpulseOutput = neuronImpulseOutput[signalFromCellIndex]
+        deliverSignal(signalToCellIndex, neuronImpulseOutput[signalFromCellIndex])
+    }
 
-        if (isNeural[signalToCellIndex]) {
-            if (getIsSum(signalToCellIndex)) {
-                neuronImpulseInput[signalToCellIndex] += neuronImpulseOutput
+    /** Сигнал во вход клетки [to]: сумма или произведение — у нейрона по его isSum. */
+    private fun deliverSignal(to: Int, signal: Float) = with(cellEntity) {
+        if (isNeural[to]) {
+            if (getIsSum(to)) {
+                neuronImpulseInput[to] += signal
             } else {
-                neuronImpulseInput[signalToCellIndex] *= neuronImpulseOutput
+                neuronImpulseInput[to] *= signal
             }
         } else {
-            neuronImpulseInput[signalToCellIndex] += neuronImpulseOutput
+            neuronImpulseInput[to] += signal
         }
     }
 }

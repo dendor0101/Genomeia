@@ -82,6 +82,41 @@ class CellLabModelTest {
         } finally { lab.dispose() }
     }
 
+    @Test fun `мотонейрон без нейросвязей управляет мышцами своего кластера и только ими`() {
+        fun lab(signal: Float, run: (CellLabModel) -> Unit) {
+            val lab = CellLabModel("motor_neuron")
+            try {
+                lab.apply(CellLabInput("set", "signal", signal))
+                repeat(180) { lab.step() }
+                run(lab)
+            } finally { lab.dispose() }
+        }
+        // Постановка без дыр: на стенде ни одной нейросвязи, сигнал мышцам может дать только кластер.
+        lab(0f) { assertEquals(0, it.world.neuralLinkEntity.aliveList.size) }
+        // Розетки: [0] — мотонейрон, [1..6] — Muscle кластера; у правой [8] — Muscle за Leaf (source).
+        for (signal in floatArrayOf(-1f, 1f)) lab(signal) { lab ->
+            for (body in listOf(lab.leftRosette, lab.rightRosette)) for (k in 1..6) {
+                assertEquals(1f + 0.5f * signal, lab.c.degreeOfShortening[body[k]], 1e-6f, "signal=$signal k=$k")
+            }
+            assertEquals(1f, lab.c.degreeOfShortening[lab.source], "Muscle вне кластера, signal=$signal")
+        }
+        // Направление доходит до физики: левое тело (стрелка вдоль x) меняет ширину и держит
+        // высоту, правое (стрелка вдоль y) — наоборот. Пороги — с запасом от замера 20.11 и от
+        // того, что до самого множителя ткань не дожимают касания (FiberTest).
+        lab(-1f) { lab ->
+            val wl = lab.rosetteSpan(lab.leftRosette, false); val hl = lab.rosetteSpan(lab.leftRosette, true)
+            val wr = lab.rosetteSpan(lab.rightRosette, false); val hr = lab.rosetteSpan(lab.rightRosette, true)
+            println("мотонейрон, сигнал -1: левое ширина %.3f высота %.3f, правое ширина %.3f высота %.3f".format(wl, hl, wr, hr))
+            assertTrue(wl < 0.7f && hl > 0.9f, "левое сжимается только в ширину: $wl × $hl")
+            assertTrue(hr < 0.75f && wr > 0.9f, "правое сжимается только в высоту: $wr × $hr")
+        }
+        lab(1f) { lab ->
+            val wl = lab.rosetteSpan(lab.leftRosette, false); val hl = lab.rosetteSpan(lab.leftRosette, true)
+            println("мотонейрон, сигнал +1: левое ширина %.3f высота %.3f".format(wl, hl))
+            assertTrue(wl > 1.3f && hl in 0.9f..1.1f, "левое растягивается только в ширину: $wl × $hl")
+        }
+    }
+
     @Test fun `мышца действительно меняет ширину тела а присоска сопротивляется тяге`() {
         fun span(signal: Float): Float {
             val lab = CellLabModel("muscle")

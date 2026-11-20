@@ -97,8 +97,14 @@ object GameFiles {
         return dir.apply { mkdirs() }
     }
 
-    /** Текущая сессия: журнал команд, лог консоли, снимки файлов. Очищается при каждом запуске. */
-    fun sessionDir(): FileHandle = gameDir.child(SESSION)
+    /**
+     * Сессия копии игры номер [slot]: журнал команд, лог консоли, снимки файлов. Очищается при
+     * каждом запуске. У каждой одновременно запущенной копии свой номер (BugSession), 0 — "session".
+     */
+    fun sessionDir(slot: Int): FileHandle = gameDir.child(if (slot == 0) SESSION else "$SESSION-$slot")
+
+    /** Файл-замок сессии [slot]: его держит запущенная копия игры, пока жива (BugSession). */
+    fun sessionLockFile(slot: Int): File = gameDir.child(if (slot == 0) "$SESSION.lock" else "$SESSION-$slot.lock").file()
 
     /** Готовые отчёты об ошибках (*.bug). */
     fun bugsDir(): FileHandle = gameDir.child(BUGS).apply { mkdirs() }

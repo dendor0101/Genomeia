@@ -79,13 +79,41 @@ internal fun strongerScale(a: Float, b: Float): Float {
 /** Слабейшая мышца из двух: множитель ближе к 1, при равном удалении — больший. */
 internal fun weakerScale(a: Float, b: Float): Float = if (strongerScale(a, b) == a && a != b) b else a
 
-private fun BodyState.linkCellScale(c: Int): Float = weakerScale(cellScaleEff[conA[c]], cellScaleEff[conB[c]])
+private fun BodyState.linkCellScale(c: Int): Float {
+    val a = conA[c]; val b = conB[c]
+    val ea = cellScaleEff[a]
+    val s = weakerScale(ea, cellScaleEff[b])
+    if (!fibersOn || s == 1f) return s
+    // Волокно — у источника выбранного множителя; при равных значениях — у конца a.
+    return fiberLinkScale(s, if (s == ea) cellScaleSrc[a] else cellScaleSrc[b], a, b)
+}
+
+/**
+ * Множитель связи a–b при множителе мышцы [s] с волокном клетки [src]: |F·e| одноосного
+ * растяжения вдоль волокна (BodyState.cellFiberX), e — направление связи в позе покоя.
+ * Вдоль волокна — s, поперёк — 1; при s = 1 — ровно 1 при любом волокне.
+ */
+private fun BodyState.fiberLinkScale(s: Float, src: Int, a: Int, b: Int): Float {
+    val fx = cellFiberX[src]; val fy = cellFiberY[src]
+    if (fx == 0f && fy == 0f) return s
+    val dx = body.x[b] - body.x[a]; val dy = body.y[b] - body.y[a]
+    val len2 = dx * dx + dy * dy
+    if (len2 <= 0f) return s
+    val d = dx * fx + dy * fy
+    return sqrt(1f + (s * s - 1f) * (d * d / len2))
+}
 
 private fun BodyState.triangleCellScale(t: Int): Float {
     val i0 = triA[t]; val i1 = triB[t]; val i2 = triC[t]
     if (boneOf[i0] >= 0 || boneOf[i1] >= 0 || boneOf[i2] >= 0) return 1f
     val e = cellScaleEff
-    return weakerScale(weakerScale(e[i0], e[i1]), e[i2])
+    val s = weakerScale(weakerScale(e[i0], e[i1]), e[i2])
+    if (!fibersOn || s == 1f) return s
+    val v = if (s == e[i0]) i0 else if (s == e[i1]) i1 else i2
+    val src = cellScaleSrc[v]
+    if (cellFiberX[src] == 0f && cellFiberY[src] == 0f) return s
+    // Одноосное растяжение меняет площадь в det F = s раз, а ядро берёт квадрат множителя.
+    return sqrt(s)
 }
 
 /** Мягкость связи — среднее концов (BodyState.cellSoftness): половинки пружины подряд. */
@@ -95,16 +123,23 @@ private fun BodyState.linkSoftness(c: Int): Float = (cellSoftness[conA[c]] + cel
 private fun BodyState.triangleSoftness(t: Int): Float =
     (cellSoftness[triA[t]] + cellSoftness[triB[t]] + cellSoftness[triC[t]]) * (1f / 3f)
 
-/** Действующий множитель клетки [v]: сильнейший из своего и соседей по живому треугольнику. */
-private fun BodyState.effectiveScale(v: Int): Float {
+/**
+ * Чей множитель действует на клетку [v] (cellScaleEff = cellScale[источника]): сильнейший из
+ * своего и соседей по живому треугольнику. При равных значениях остаётся прежний — сама клетка
+ * или первый по кольцу; кольцо постоянно, поэтому от порядка обхода клеток выбор не зависит.
+ */
+private fun BodyState.effectiveSource(v: Int): Int {
     val b = baked
+    var src = v
     var best = cellScale[v]
     for (q in b.vertStart[v] until b.vertStart[v + 1]) {
         val e = b.vertEdge[q]
         if (b.edgeDead[e] || b.triUse[e] == 0) continue
-        best = strongerScale(best, cellScale[b.vertOther[q]])
+        val o = b.vertOther[q]
+        val s = cellScale[o]
+        if (strongerScale(best, s) != best) { best = s; src = o }
     }
-    return best
+    return src
 }
 
 /**
@@ -114,7 +149,12 @@ private fun BodyState.effectiveScale(v: Int): Float {
  */
 internal fun BodyState.recomputeCellScales() {
     if (cellScaleEff.size != n) cellScaleEff = FloatArray(n)
-    for (v in 0 until n) cellScaleEff[v] = effectiveScale(v)
+    if (cellScaleSrc.size != n) cellScaleSrc = IntArray(n)
+    for (v in 0 until n) {
+        val src = effectiveSource(v)
+        cellScaleSrc[v] = src
+        cellScaleEff[v] = cellScale[src]
+    }
     for (c in 0 until conCount) conCellScale[c] = linkCellScale(c)
     for (t in 0 until triCount) triCellScale[t] = triangleCellScale(t)
     if (softnessOn) {
@@ -132,17 +172,33 @@ internal fun BodyState.recomputeCellScales() {
 internal fun BodyState.refreshCellScaleRing(v: Int, out: CellScaleLerpBuffer? = null) {
     // Мягкость ведётся тем же кольцом (см. BodyState.cellSoftness).
     if (!cellScalesOn && !softnessOn) return
-    if (cellScaleEff.size != n || constraintBlocks == null) { cellScalesDirty = true; return }
+    if (cellScaleEff.size != n || cellScaleSrc.size != n || constraintBlocks == null) { cellScalesDirty = true; return }
     val b = baked
     refreshEffective(v, always = true, out)
     for (q in b.vertStart[v] until b.vertStart[v + 1]) refreshEffective(b.vertOther[q], always = false, out)
 }
 
 private fun BodyState.refreshEffective(u: Int, always: Boolean, out: CellScaleLerpBuffer?) {
-    val e = effectiveScale(u)
-    if (e == cellScaleEff[u] && !always) return
+    val src = effectiveSource(u)
+    val e = cellScale[src]
+    // Источник важен только с волокнами: без них связь зависит лишь от значения.
+    if (e == cellScaleEff[u] && (!fibersOn || src == cellScaleSrc[u]) && !always) return
     cellScaleEff[u] = e
+    cellScaleSrc[u] = src
     refreshCellScaleAround(u, out)
+}
+
+/**
+ * Волокно клетки [v] сменилось (PhysicsWorld.setCellFiber): множители связей и треугольников,
+ * чьим источником может быть [v], — вокруг неё и вокруг соседей по кольцу. Действующие
+ * множители и источники от волокна не зависят и не меняются.
+ */
+internal fun BodyState.refreshCellFiberRing(v: Int) {
+    if (!cellScalesOn && !softnessOn) return
+    if (cellScaleEff.size != n || cellScaleSrc.size != n || constraintBlocks == null) { cellScalesDirty = true; return }
+    val b = baked
+    refreshCellScaleAround(v, null)
+    for (q in b.vertStart[v] until b.vertStart[v + 1]) refreshCellScaleAround(b.vertOther[q], null)
 }
 
 /**
