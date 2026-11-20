@@ -248,7 +248,7 @@
   },
   {
     "name": "validate_genome",
-    "description": "Run the game's growth calculation and return adult cell/link counts. Open the main menu or Genomes before the first validation. Returns adult-to-layout fit, physical overlaps and position errors.",
+    "description": "Run the game's growth calculation and return adult cell/link counts. Open the main menu or Genomes before the first validation. Returns adult-to-layout fit, physical overlaps and position errors. Also grows the genome from a zygote in a separate world with energy and sunlight (worldGrowth): the editor calculation ignores energy, so a genome whose first cells cannot feed growth stalls in a real world. valid requires both checks; save_genome refuses a genome that does not grow in the world.",
     "inputSchema": {
       "type": "object",
       "properties": {

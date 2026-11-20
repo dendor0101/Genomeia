@@ -9,10 +9,8 @@ internal const val MAX_DESIGN_CELLS = 1024
 private const val MAX_GROWTH_STAGES = 512
 private const val MAX_GROWTH_ACTIONS = MAX_DESIGN_CELLS * 8
 
-/** Датчик продольной скорости доступен в свободной лаборатории MCP для обучения походки. */
-internal fun CellPalette.designCells() = actionCellChoices(
-    DIGameGlobalContainer.cellTypes.toList(), if (this == CellPalette.FULL) "speed_sensor" else null
-)
+/** Те же клетки, что игрок видит в редакторе: у ИИ нет клеток сверх палитры игрока. */
+internal fun CellPalette.designCells() = actionCellChoices(DIGameGlobalContainer.cellTypes.toList(), null)
 
 /** Отсекаем недостижимые стадии до запуска редакторного моделирования. */
 internal fun checkStages(stages: List<GenomeStage>, palette: CellPalette) {

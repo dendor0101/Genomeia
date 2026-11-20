@@ -21,7 +21,10 @@ import java.util.UUID
 
 /** Состояние черновиков принадлежит окну игры; обращения сериализованы в потоке libGDX. */
 internal object GenomeTools {
-    private data class Draft(val source: Genome, val layout: BodyLayout, var grown: Genome? = null)
+    /** [world] — итог роста в мире с энергией ([growInWorld]); считается раз на черновик. */
+    private data class Draft(val source: Genome, val layout: BodyLayout, var grown: Genome? = null, var world: JsonObject? = null)
+
+    private fun worldGrowth(d: Draft, g: Genome): JsonObject = d.world ?: growInWorld(g).also { d.world = it }
     private var lastGrowth: Draft? = null
     private var lastReplayGenome: Genome? = null
     private val drafts = linkedMapOf<String, Draft>()
@@ -79,13 +82,18 @@ internal object GenomeTools {
                 val d = draft(a.string("id"))
                 val g = grow(d)
                 val fit = d.layout.compare(g)
-                obj("layoutComparison" to fit, "valid" to fit.getValue("matchesApprovedLayout"), "growthSucceeded" to true, "stages" to g.stageInstruction.size, "cells" to g.cellsAmount,
+                val world = worldGrowth(d, g)
+                val matches = fit.getValue("matchesApprovedLayout").jsonPrimitive.boolean
+                val grownInWorld = world.getValue("grown").jsonPrimitive.boolean
+                obj("layoutComparison" to fit, "valid" to (matches && grownInWorld), "growthSucceeded" to true, "worldGrowth" to world,
+                    "stages" to g.stageInstruction.size, "cells" to g.cellsAmount,
                     "physicalLinks" to g.linksAmount, "neuralLinks" to g.neuralLinksAmount, "neuralLinksPeak" to g.neuralLinksPeak)
             }
             "save_genome" -> {
                 val d = draft(a.string("id"))
                 val g = grow(d)
                 check(d.layout.approved && d.layout.compare(g).getValue("matchesApprovedLayout").jsonPrimitive.boolean) { "Adult differs from the approved layout. Inspect validate_genome.layoutComparison before saving." }
+                check(worldGrowth(d, g).getValue("grown").jsonPrimitive.boolean) { "The genome does not grow in a world with energy. Inspect validate_genome.worldGrowth before saving." }
                 check(canBake) { "Open the main menu or Genomes before saving" }
                 if (screen is MenuScreen) Game.navigationCommandsManager.performCommand(GoGenomes)
                 val saved = (screen as GenomesScreen).importBaked(g)
