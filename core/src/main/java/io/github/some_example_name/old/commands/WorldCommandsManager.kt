@@ -517,6 +517,25 @@ class WorldCommandsManager(
         }
     }
 
+    /**
+     * Выбросить команды, которые так и не применились.
+     *
+     * Буферы чистятся только в конце применения (consumeInOrder, consume). Исключение
+     * посреди него оставляет в буферах хвост тика, и он применяется в НАЧАЛЕ следующего
+     * расчёта — уже поверх другого мира. Так мир редактора, упав на одном геноме, ронял все
+     * следующие: перенос старых JSON 20.11 — из 90 геномов игрока 1 падал сам (gen4.json),
+     * а 35 за ним — на его недоприменённой зиготе («organToIdToIndex: genomeId=0 уже занят»).
+     * Мир игры после исключения не продолжается, поэтому зовёт это только редактор — перед
+     * каждым выращиванием (EditorSimulationSystem.simulate).
+     */
+    fun discardPending() {
+        worldCommandBuffer.forEach { it.clear() }
+        worldCommandSecondBuffer.forEach { it.clear() }
+        worldCommandLastBuffer.clear()
+        lastAddedCellIndexBuffer.fill(-1)
+        organIndexCellIdMapIndex.clear()
+    }
+
     override fun resize() {
         workOrder.resize(diContext.threadCount)
         worldCommandBuffer = newBuffers(1000)

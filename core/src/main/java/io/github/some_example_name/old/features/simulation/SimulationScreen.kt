@@ -656,11 +656,12 @@ class SimulationScreen(
         DebugOptionsDialog(
             game = DIGameGlobalContainer.game,
             bundle = DIGameGlobalContainer.bundle,
-            state = DebugOptions(renderSystem.showBoundary, renderSystem.showLinks, renderSystem.fillAreas, renderSystem.genomeColors, sim.debugNoTailThrust, sim.debugNoDeepKill),
+            state = DebugOptions(renderSystem.showBoundary, renderSystem.showLinks, renderSystem.showNeuralLinks, renderSystem.fillAreas, renderSystem.genomeColors, sim.debugNoTailThrust, sim.debugNoDeepKill),
             onBoundary = { viewModel.handle(SimulationIntent.SetShowBoundary(it)) },
             onFillAreas = { viewModel.handle(SimulationIntent.SetFillAreas(it)) },
             onGenomeColors = { viewModel.handle(SimulationIntent.SetGenomeColors(it)) },
             onLinks = { viewModel.handle(SimulationIntent.SetShowLinks(it)) },
+            onNeuralLinks = { viewModel.handle(SimulationIntent.SetShowNeuralLinks(it)) },
             // Эти две меняют мир — командой мира.
             onPhysics = { noTail, noDeepKill -> userCommandManager.push(PlayerCommand.SetPhysicsDebug(noTail, noDeepKill)) }
         ).showUnder(stage, anchor)

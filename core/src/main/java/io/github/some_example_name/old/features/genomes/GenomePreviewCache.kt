@@ -167,7 +167,8 @@ class GenomePreviewCache(
             cells.putCell(
                 x = preview.x[k],
                 y = preview.y[k],
-                color = if (type in cellTypes.indices) palette.color(type, preview.color(k)) else preview.color(k),
+                // Цвет из генома, как в редакторе и в симуляции по умолчанию.
+                color = preview.color(k),
                 angleCos = preview.angleCos[k],
                 angleSin = preview.angleSin[k],
                 radius = preview.radius[k],

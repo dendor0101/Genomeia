@@ -106,10 +106,20 @@ class RenderBufferManager(
      * Галочка «Цвет из генома»: в отладке клетка своего цвета (particleEntity.color — его
      * задаёт геном; хамелеон и ошибочный синапс перекрашивают его на ходу), а не
      * defaultColor типа. Рисунок, стрелки и фильтры остаются. Пишет GL-поток, читает поток
-     * симуляции раз за [updateBuffer] — как [debugFilter].
+     * симуляции раз за [updateBuffer] — как [debugFilter]. По умолчанию включена: в отладке
+     * игрок хочет видеть организм в цветах своего генома. На мир и хэши не влияет — только рисунок.
      */
     @Volatile
-    var genomeColors = false
+    var genomeColors = true
+
+    /**
+     * Галочка «Нейросвязи»: рисовать ли в отладке нейросвязи с бегущими импульсами. По
+     * умолчанию включена; снимают, когда связи закрывают сами клетки. Как и [showLinks],
+     * пишет GL-поток, читает поток симуляции раз за [updateBuffer]. Выключенная экономит
+     * проход по нейросвязям в оверлей. На мир и хэши не влияет.
+     */
+    @Volatile
+    var showNeuralLinks = true
 
     /** [genomeColors] текущего [updateBuffer]; читается один раз, как и [debugFrame]. */
     private var frameGenomeColors = false
@@ -861,7 +871,7 @@ class RenderBufferManager(
         if (debugFrame && showBoundary) writeBoundary()
 
         // ==================== NEURAL LINKS ====================
-        if (debugFrame) writeNeuralLinks()
+        if (debugFrame && showNeuralLinks) writeNeuralLinks()
         overlay.end()
         snapshot.hasOverlay = debugFrame
 

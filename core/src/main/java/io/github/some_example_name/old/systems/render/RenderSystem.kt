@@ -81,6 +81,11 @@ class RenderSystem(
         get() = renderBufferManager.genomeColors
         set(value) { renderBufferManager.genomeColors = value }
 
+    /** Нейросвязи в отладочном режиме; хранится у [renderBufferManager]. */
+    var showNeuralLinks: Boolean
+        get() = renderBufferManager.showNeuralLinks
+        set(value) { renderBufferManager.showNeuralLinks = value }
+
     private lateinit var fontMatrix: Matrix4
     private lateinit var spriteBatch: SpriteBatch
     private lateinit var font: BitmapFont
