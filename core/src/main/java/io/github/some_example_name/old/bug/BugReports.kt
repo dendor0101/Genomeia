@@ -6,6 +6,7 @@ import com.badlogic.gdx.graphics.GL20
 import io.github.some_example_name.old.bug.BugFile.Content
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.GameFiles
+import io.github.some_example_name.old.core.BuildInfo
 import io.github.some_example_name.old.core.GameVersion
 import io.github.some_example_name.old.core.log.CrashReport
 import io.github.some_example_name.old.journal.Channel
@@ -242,6 +243,12 @@ object BugReports {
         val values = LinkedHashMap<String, String>()
         values["format"] = BugFile.VERSION.toString()
         values["game"] = GameVersion.NAME
+        // Из какого коммита собрана игра: повтор, не сошедшийся на свежей ветке, можно
+        // запустить на ней (BugReplay предупредит о другом коммите). dirty — сборка с
+        // незакоммиченными правками, коммит описывает её не целиком.
+        values["build.commit"] = BuildInfo.COMMIT
+        values["build.branch"] = BuildInfo.BRANCH
+        values["build.dirty"] = BuildInfo.DIRTY.toString()
         values["kind"] = kind.label
         values["created"] = iso.format(time)
         values["session.started"] = iso.format(sessionStartedAt)

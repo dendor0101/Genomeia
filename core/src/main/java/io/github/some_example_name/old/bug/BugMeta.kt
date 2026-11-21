@@ -26,6 +26,14 @@ object BugMeta {
             fileSize?.let { num("size", it) }
             str("kind", manifest["kind"])
             str("game", manifest["game"])
+            // Отчёты до 21.11 коммита не знают — у них поля нет (str пропускает null).
+            if (manifest["build.commit"] != null) {
+                obj("build") {
+                    str("commit", manifest["build.commit"])
+                    str("branch", manifest["build.branch"])
+                    manifest["build.dirty"]?.let { bool("dirty", it == "true") }
+                }
+            }
             str("created", manifest["created"])
             str("deviceId", manifest["deviceId"])
 

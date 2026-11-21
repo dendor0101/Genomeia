@@ -99,6 +99,16 @@ class ReportsTest(unittest.TestCase):
             self.assertIn("page=2", html)
             self.assertEqual(self.client.get("/reports?page=2").get_data(as_text=True).count('class="download"'), 1)
 
+    def test_build_commit_column(self):
+        commit = "c203acb0123456789abcdef0123456789abcdef0"
+        self.upload(name="clean.bug", meta={"game": "alpha-0.2.4", "build": {"commit": commit, "dirty": False}})
+        self.upload(name="dirty.bug", meta={"game": "alpha-0.2.4", "build": {"commit": commit, "dirty": True}})
+        self.upload(name="old.bug", meta={"game": "alpha-0.2.4", "build": "<b>bad</b>"})
+        html = self.client.get("/reports").get_data(as_text=True)
+        self.assertIn('title="' + commit + '">c203acb</td>', html)
+        self.assertIn(">c203acb*</td>", html)
+        self.assertNotIn("<b>bad</b>", html)
+
     def test_unknown_download_and_status(self):
         self.assertEqual(self.client.get("/reports/" + "0" * 32 + "/download").status_code, 404)
         response = self.client.get("/api/status")
