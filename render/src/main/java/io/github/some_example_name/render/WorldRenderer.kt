@@ -17,6 +17,7 @@ import io.github.some_example_name.render.components.RenderComponent
 import io.github.some_example_name.render.components.RenderContext
 import io.github.some_example_name.render.pack.CellInstanceBuffer
 import io.github.some_example_name.render.pack.OverlayInstanceBuffer
+import io.github.some_example_name.render.pack.PheromoneInstanceBuffer
 import java.nio.ByteBuffer
 
 /** Общий рендерер симуляции, редактора и превью. Ресурсы микроскопа создаются по запросу. */
@@ -219,6 +220,11 @@ class WorldRenderer(
             overlayData = frame.overlay
             numOverlayInstances =
                 frame.overlay?.let { it.remaining() / OverlayInstanceBuffer.STRUCT_SIZE } ?: 0
+            pheromoneData = frame.pheromones
+            numPheromoneInstances =
+                frame.pheromones?.let { it.remaining() / PheromoneInstanceBuffer.STRUCT_SIZE } ?: 0
+            pheromoneK = frame.pheromoneK
+            pheromoneP = frame.pheromoneP
             time = frame.time
             pixelWorld = pixelWorld(frame.cameraProjection, pixelWidth)
 
