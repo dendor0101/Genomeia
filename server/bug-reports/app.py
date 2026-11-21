@@ -154,6 +154,16 @@ def create_app(data_dir=None):
             platform = meta.get("platform")
             item["platform"] = platform.get("type", "—") if isinstance(platform, dict) else "—"
             item["game"] = meta.get("game", "—")
+            # Коммит сборки (с 21.11): короткий, как git log --oneline; «*» — сборка с
+            # незакоммиченными правками. У старых отчётов поля нет.
+            build = meta.get("build")
+            commit = build.get("commit") if isinstance(build, dict) else None
+            if isinstance(commit, str) and commit:
+                item["commit"] = commit[:7] + ("*" if build.get("dirty") is True else "")
+                item["commit_full"] = commit
+            else:
+                item["commit"] = "—"
+                item["commit_full"] = ""
             item["kind"] = meta.get("kind", "—")
             items.append(item)
         return render_template("reports.html", reports=items, page=page, has_next=len(rows) > PAGE_SIZE)
