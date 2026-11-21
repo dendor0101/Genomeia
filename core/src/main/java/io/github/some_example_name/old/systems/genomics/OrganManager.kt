@@ -45,14 +45,23 @@ class OrganManager(
         }
     }
 
+    /**
+     * Погибшая клетка больше не разделится и не мутирует — стадия перестаёт её ждать. Ждёт стадия только клетки,
+     * которым на смене стадии выдано действие (CellSystem.genomicTransformations: счётчик +1 за каждое). Клетка,
+     * рождённая посреди стадии, действия не получает и в счёт не входит, хотя флаги «ещё не делилась» и «ещё не
+     * мутировала» у неё false (CellEntity.addCell). Раньше её гибель тоже вычиталась: счётчик уходил ниже числа
+     * ждущих клеток (мутаций — в −1), и стадия не кончалась никогда. Так встал Motor Worm на стадии 19, когда
+     * физика задавила его новорождённые клетки о террейн (повтор bugReplayCheck 21.11, reference.md, находка 34).
+     */
     fun cellDeleted(cellIndex: Int) {
         val organIndex = cellEntity.organIndex[cellIndex]
         if (organIndex != -1) {
-            if (!cellEntity.isDividedInThisStage[cellIndex]) {
+            val action = cellEntity.cellActions[cellIndex]
+            if (action?.divide != null && !cellEntity.isDividedInThisStage[cellIndex]) {
                 organEntity.divideCounterThisStage[organIndex]--
             }
 
-            if (!cellEntity.isMutateInThisStage[cellIndex]) {
+            if (action?.mutate != null && !cellEntity.isMutateInThisStage[cellIndex]) {
                 organEntity.mutateCounterThisStage[organIndex]--
             }
         }
