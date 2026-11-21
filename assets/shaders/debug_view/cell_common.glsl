@@ -687,6 +687,29 @@ vec4 delayCoil(vec2 p, float r) {
     return over(paint(v_color * 0.2, stroke(abs(d), 0.012)), ink);
 }
 
+/**
+ * Мотонейрон: тело нейрона с немногими толстыми отростками к мембране, на концах — утолщения,
+ * моторные бляшки (так нерв касается мышечного волокна). По отросткам наружу бегут импульсы:
+ * сигнал расходится сразу по всему кластеру мышц. Яркость импульсов — от сигнала клетки.
+ */
+vec4 motorNeuron(vec2 p, float r) {
+    vec4 h = v_rand;
+    float th = angleOf(p);
+    float activity = min(abs(v_action), 1.0);
+    float count = 3.0 + floor(h.x * 2.0);
+    float axons = branches(r, th, count, 0.95, 0.045, 0.06, 81.0);
+    vec3 nerve = mix(v_color, vec3(1.0), 0.3);
+    vec4 ink = paint(nerve, axons);
+
+    float pulse = smoothstep(0.75, 1.0, fract(r * 3.0 - cycle(0.25, h.y)));
+    vec3 spark = mix(v_color, vec3(1.0), 0.6 + 0.4 * activity);
+    ink = over(paint(spark, axons * pulse * (0.3 + 0.7 * activity)), ink);
+
+    float d = length(p) - 0.2;
+    ink = over(paint(v_color * 0.45, cov(d)), ink);
+    return over(paint(v_color * 0.2, stroke(abs(d), 0.014)), ink);
+}
+
 vec4 patternInk(vec2 p, float r) {
     switch (v_pattern) {
         case P_CHLOROPLASTS: return chloroplasts(p, r);
@@ -713,6 +736,7 @@ vec4 patternInk(vec2 p, float r) {
         case P_SHORT_CILIA: return shortCilia(p, r);
         case P_CHIP: return chip(p, r);
         case P_DELAY_COIL: return delayCoil(p, r);
+        case P_MOTOR_NEURON: return motorNeuron(p, r);
         default: return vec4(0.0);
     }
 }

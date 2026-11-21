@@ -1,5 +1,7 @@
 package io.github.some_example_name.old.cells
 
+import io.github.some_example_name.old.systems.genomics.genome.Action
+
 import org.junit.Test
 import kotlin.test.assertEquals
 
@@ -8,6 +10,16 @@ import kotlin.test.assertEquals
  * в CellLabModelTest (стенд синапса).
  */
 class SynapseTest {
+    @Test
+    fun `новый синапс наследует выученный вес с сохранением полярности`() {
+        val synapse = Synapse(0)
+        val learned = SynapseState(weight = .74f, preTrace = .5f, inhibitory = true)
+        val inherited = synapse.genomeDataOf(learned)
+        val child = synapse.createSpecialData(Action(special = inherited)) as SynapseState
+        assertEquals(SynapseState(weight = .74f, inhibitory = true), child)
+        assertEquals(Synapse.NOT_STARTED, (synapse.createSpecialData(Action()) as SynapseState).weight)
+    }
+
 
     @Test
     fun `learningRate и depression - ноль и меньше значат значение по умолчанию`() {

@@ -103,6 +103,9 @@ class EditorSimulationSystem(
         // находило по ней чужой индекс (видно на переводе старых JSON подряд: «Tardigrade»
         // после «Megalodon» падал на organIndex = -1).
         worldCommandsManager.mapCellGenomeIdToIndex.clear()
+        // И команды прошлого расчёта, если он упал посреди тика: иначе они применятся в
+        // первом тике этого (WorldCommandsManager.discardPending).
+        worldCommandsManager.discardPending()
         gridManager.clearAll()
         entityList.forEach { it.clear() }
         cellEntity.simulationData.tickCounter = 0

@@ -14,8 +14,11 @@ import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.file.Files
+import java.nio.channels.FileChannel
+import java.nio.channels.OverlappingFileLockException
 import java.nio.file.LinkOption
 import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption
 import io.github.some_example_name.old.core.GameFilePaths
 import javax.imageio.ImageIO
 
@@ -23,6 +26,19 @@ class DesktopFileProvider : FileProvider {
     init {
         GameFilePaths.replaceFile = { source, target ->
             Files.move(source.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        }
+        GameFilePaths.tryLock = { file ->
+            file.parentFile?.mkdirs()
+            val channel = FileChannel.open(file.toPath(), StandardOpenOption.CREATE, StandardOpenOption.WRITE)
+            // Замок этого же процесса (вторая игра в одной JVM, как в программах-проверках)
+            // FileChannel не возвращает null, а бросает OverlappingFileLockException.
+            val lock = try { channel.tryLock() } catch (e: OverlappingFileLockException) { null }
+            if (lock == null) {
+                channel.close()
+                null
+            } else {
+                AutoCloseable { lock.release(); channel.close() }
+            }
         }
         GameFilePaths.redirected = { file ->
             val path = file.toPath().toAbsolutePath()

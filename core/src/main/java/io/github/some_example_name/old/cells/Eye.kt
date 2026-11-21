@@ -54,27 +54,12 @@ class Eye(cellTypeId: Int): Cell(
         if (simulationData.tickCounter % 4 == 0) {
             if (energy[cellIndex] > 0) {
 
-                // Рассчитываем направление движения
-                val directionX = angleCos[cellIndex]
-                val directionY = angleSin[cellIndex]
-
                 val eye = specialEntity.getSpecialData(cellIndex) as? EyeData ?: return
-                val visonDist = eye.visibilityRange
-
-                val particle = drawThickLineGridTraversalCell(
-                    x1 = getX(cellIndex) + directionX * 0.51f,
-                    y1 = getY(cellIndex) + directionY * 0.51f,
-                    x2 = getX(cellIndex) + directionX * visonDist,
-                    y2 = getY(cellIndex) + directionY * visonDist,
-                    pixelSize = 1f,
-                    threadId = threadId
-                )
+                val index = firstVisibleParticle(cellIndex, eye.visibilityRange, threadId)
 
                 val visibleColor = eye.colorRecognition
 
-                val impulse = if (particle != null) {
-                    val index = particle.first
-
+                val impulse = if (index >= 0) {
                     val color = particleEntity.color[index]
                     val r: Float = (color and 0xFF) / 255f
                     val g: Float = ((color ushr 8) and 0xFF) / 255f
@@ -97,6 +82,17 @@ class Eye(cellTypeId: Int): Cell(
     }
 
 
+
+    /** Первая видимая частица. Диагностика макета пользуется тем же лучом, что и нейронный выход глаза. */
+    fun firstVisibleParticle(cellIndex: Int, range: Float, threadId: Int): Int = with(cellEntity) {
+        val x = getX(cellIndex)
+        val y = getY(cellIndex)
+        val dx = angleCos[cellIndex]
+        val dy = angleSin[cellIndex]
+        drawThickLineGridTraversalCell(
+            x + dx * 0.51f, y + dy * 0.51f, x + dx * range, y + dy * range, 1f, threadId
+        )?.first ?: -1
+    }
 
     private fun Int.averageVisibleColor(r: Float, g: Float, b: Float): Float {
         var sum = 0f

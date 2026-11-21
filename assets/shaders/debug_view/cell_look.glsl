@@ -28,7 +28,8 @@ const int P_SPIKES = 21;
 const int P_SHORT_CILIA = 22;
 const int P_CHIP = 23;
 const int P_DELAY_COIL = 24;
-const int P_COUNT = 25;
+const int P_MOTOR_NEURON = 25;
+const int P_COUNT = 26;
 
 /**
  * Насколько рисунок выходит за окружность клетки, в долях радиуса: реснички, иглы, шипы,

@@ -250,6 +250,20 @@ class CellGeometry {
         gl30.glBindVertexArray(0)
     }
 
+    /**
+     * Контекст GL потерян и создан заново (GlContextWatch): прежние имена буферов и VAO в
+     * новом контексте ничего не значат. Удалять их нельзя — те же номера уже могут
+     * принадлежать чужим объектам, — поэтому только забыть и создать заново. Данные клеток
+     * перезальёт следующий кадр: WorldRenderer сбрасывает свою пометку о залитом буфере.
+     */
+    fun recreateAfterContextLoss() {
+        vao = 0
+        baseVbo = 0
+        instanceVbo = 0
+        instanceCapacityBytes = 0
+        create()
+    }
+
     fun dispose() {
         val gl = Gdx.gl
         val gl30 = Gdx.gl30

@@ -1,5 +1,7 @@
 package io.github.some_example_name.old.systems.simulation
 
+import io.github.some_example_name.old.commands.ScreenCell
+
 class SimulationData {
     var isRestart = false
     var tickCounter = 0
@@ -21,6 +23,8 @@ class SimulationData {
         }
     var ups = 60
     var selectedCellIndex = -1
+    /** Только для подсветки: освободившийся слот не должен подсветить нового жильца. */
+    var selectedFrameCell: ScreenCell? = null
 
     var showControllerKeys = false
     /** Что нажато сейчас. Пишет поток рендера в любой момент, читать в симуляции нельзя. */
@@ -55,6 +59,7 @@ class SimulationData {
         tickCounter = 0
         timeSimulation = 0f
         selectedCellIndex = -1
+        selectedFrameCell = null
     }
 
 }

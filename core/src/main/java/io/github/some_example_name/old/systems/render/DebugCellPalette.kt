@@ -9,6 +9,7 @@ import io.github.some_example_name.old.cells.Excreta
 import io.github.some_example_name.old.cells.Eye
 import io.github.some_example_name.old.cells.Fat
 import io.github.some_example_name.old.cells.Leaf
+import io.github.some_example_name.old.cells.MotorNeuron
 import io.github.some_example_name.old.cells.Muscle
 import io.github.some_example_name.old.cells.Neuron
 import io.github.some_example_name.old.cells.PheromoneEmitter
@@ -33,9 +34,11 @@ import io.github.some_example_name.render.pack.OverlayInstanceBuffer
  * и редактор генома (EditorRenderSystem), чтобы один и тот же организм в обоих местах
  * выглядел одинаково.
  *
- *  - Цвет клетки — defaultColor её типа, а не цвет из генома: по картинке сразу видно,
- *    где какие клетки. Исключение — хамелеон: он остаётся своего текущего цвета (это и
- *    есть то, что он делает).
+ *  - Цвет клетки по умолчанию — из генома: так игрок видит организм в своих цветах.
+ *    Редактор и превью геномов рисуют только его; в симуляции галочка «Цвет из генома»
+ *    включена по умолчанию, а без неё [color] даёт defaultColor типа (сразу видно, где
+ *    какие клетки). Исключение — хамелеон: он всегда своего текущего цвета (это и есть
+ *    то, что он делает).
  *  - Рисунок — схема клетки (CellLook): хлоропласты у листа, волокна у мышцы, реснички у
  *    присоски. По нему тип узнаётся вблизи, по цвету — издалека.
  *  - Сигнал действия — выход клетки (neuronImpulseOutput): от него анимация рисунка.
@@ -71,6 +74,7 @@ class DebugCellPalette(private val cellList: List<Cell>) {
             is Zygote -> CellLook.ZYGOTE
             is Producer -> CellLook.DIVIDING
             is Neuron -> CellLook.NEURON
+            is MotorNeuron -> CellLook.MOTOR_NEURON
             is SuctionCup -> CellLook.SUCTION_RINGS
             is Sticky -> CellLook.STICKY_BUMPS
             is Chameleon -> CellLook.PIGMENTS
@@ -241,5 +245,14 @@ class DebugCellPalette(private val cellList: List<Cell>) {
 
         /** Прозрачность «призрака» в редакторе — клетки, которая появится на следующей стадии. */
         const val GHOST_TRANSPARENCY = 0.55f
+
+        /**
+         * Цвет границы тела (галочка «Граница») — зелёный контура стенда (physics-lab,
+         * BOUNDARY_COLOR), упаковка Color.toIntBits. Общий у симуляции и редактора генома.
+         */
+        val BOUNDARY_COLOR = com.badlogic.gdx.graphics.Color.valueOf("4BE08AFF").toIntBits()
+
+        /** Цвет связей (галочка «Связи») — светло-серый полупрозрачный: сетка видна, контур поверх читается. */
+        val LINK_COLOR = com.badlogic.gdx.graphics.Color.valueOf("D8DCE6A0").toIntBits()
     }
 }

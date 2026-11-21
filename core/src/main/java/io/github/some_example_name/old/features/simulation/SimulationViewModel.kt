@@ -3,6 +3,7 @@ package io.github.some_example_name.old.features.simulation
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.OrthographicCamera
 import io.github.some_example_name.old.commands.GameCommand
+import io.github.some_example_name.old.commands.PlayerCommand
 import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.bug.BugReplay
 import io.github.some_example_name.old.journal.CommandSource
@@ -31,10 +32,31 @@ import io.github.some_example_name.render.microscope.OpticalParameter
 @Serializable
 sealed interface SimulationIntent : GameCommand {
 
+    /** Видимый выбор попадает в журнал даже если игрок сохранил отчёт, не снимая паузу. */
+    @Serializable
+    data class TapWorld(val tap: PlayerCommand.Tap) : SimulationIntent {
+        override val name get() = "TapWorld"
+        override val detail get() = tap.detail
+    }
+
     @Serializable
     data class SetFillAreas(val enabled: Boolean) : SimulationIntent {
         override val name get() = "SetFillAreas"
         override val detail get() = enabled.toString()
+    }
+
+    /** Галочка «Цвет из генома» отладочного режима: клетки цветом из генома, а не цветом типа. */
+    @Serializable
+    data class SetGenomeColors(val enabled: Boolean) : SimulationIntent {
+        override val name get() = "SetGenomeColors"
+        override val detail get() = enabled.toString()
+    }
+
+    /** Галочка «Нейросвязи» отладочного режима: рисовать ли нейросвязи с импульсами. */
+    @Serializable
+    data class SetShowNeuralLinks(val show: Boolean) : SimulationIntent {
+        override val name get() = "SetShowNeuralLinks"
+        override val detail get() = show.toString()
     }
 
     /** Галочка «Связи» отладочного режима: рисовать ли тонко все связи тел мира физики. */
@@ -331,6 +353,34 @@ class SimulationViewModel(
     fun handle(intent: SimulationIntent) = SessionJournal.execute(CommandSource.SIMULATION, intent) { apply(it) }
 
     /**
+     * Команда мира прямо в очередь (касание, убийство клетки). Это не UI-команда: в журнал её
+     * пишет поток симуляции в тике, где применит, — как и раньше, когда экран клал её сам.
+     * На паузе вдобавок сразу показывается её итог: призраки и выбор клетки (снятие выбора
+     * касанием — как в ходе игры, где его снимает TouchDown в тике).
+     */
+    fun pushWorldCommand(command: PlayerCommand) {
+        if (simulationData.isPlay || BugReplay.isActive) {
+            DISimulationContainer.userCommandManager.push(command)
+            return
+        }
+        simulationSystem.betweenTicks {
+            DISimulationContainer.userCommandManager.push(command)
+            previewQueueIfPaused()
+        }
+    }
+
+    /**
+     * Под замком между тиками. На паузе тика, который применит очередь, нет, поэтому её
+     * итог рисуется призраками (CommandGhosts) до снимка следующего тика. Мир не меняется.
+     * isPlay пишет только этот поток (GL), гонки с проверкой нет.
+     */
+    private fun previewQueueIfPaused() {
+        if (simulationData.isPlay || BugReplay.isActive) return
+        val selected = DISimulationContainer.userCommandManager.previewQueued(renderSystem.commandGhosts)
+        renderSystem.previewSelected(selected)
+    }
+
+    /**
      * Имя в окне сохранения: под каким мир уже лежит, а новый — первое свободное «[base]»,
      * «[base] (2)»… Запрос, а не команда: в команду уйдёт то, что игрок оставит в поле.
      */
@@ -344,9 +394,18 @@ class SimulationViewModel(
 
     private fun apply(intent: SimulationIntent) {
         when (intent) {
+            is SimulationIntent.TapWorld -> simulationSystem.betweenTicks {
+                intent.tap.target?.let(renderSystem::previewSelection)
+                DISimulationContainer.userCommandManager.push(intent.tap)
+                previewQueueIfPaused()
+            }
             // При повторе бага ход времени ведёт сам повтор: пауза из записи остановила
             // бы мир раньше, чем он дойдёт до тиков следующих команд.
-            is SimulationIntent.SetPaused -> if (!BugReplay.isActive) simulationData.isPlay = !intent.paused
+            is SimulationIntent.SetPaused -> if (!BugReplay.isActive) {
+                simulationData.isPlay = !intent.paused
+                // Касания, сделанные прямо перед паузой, тик мог ещё не применить.
+                if (intent.paused) simulationSystem.betweenTicks { previewQueueIfPaused() }
+            }
 
             is SimulationIntent.SetPutOrganism ->
                 setTool(if (intent.enabled) SimulationTool.SPAWN_CELL else SimulationTool.SPAWN_FOOD)
@@ -390,13 +449,16 @@ class SimulationViewModel(
                 if(renderSystem.mode==RenderMode.TISSUE_MAP && intent.mode!=RenderMode.TISSUE_MAP)UserPreferences.flushOptical(force=true)
                 val changed=renderSystem.mode!=intent.mode
                 renderSystem.mode = intent.mode
-                // На паузе нового тика не будет. Снимок под новый режим публикуем один раз.
-                if(changed&&!simulationData.isPlay)simulationSystem.betweenTicks{renderSystem.refreshPausedSnapshot()}
+                if(changed)refreshIfPaused()
                 // Список фильтров сверху есть только в отладочном режиме.
                 onEffect?.invoke(SimulationEffect.RebuildMenu)
             }
 
-            is SimulationIntent.SetDebugFilter -> renderSystem.debugFilter = intent.filter
+            is SimulationIntent.SetDebugFilter -> {
+                val changed=renderSystem.debugFilter!=intent.filter
+                renderSystem.debugFilter = intent.filter
+                if(changed)refreshIfPaused()
+            }
             is SimulationIntent.SetMicroscopeParameter -> {
                 val parameter=OpticalParameter.entries.firstOrNull { it.key==intent.key }
                 if(parameter!=null&&intent.value.isFinite()){
@@ -411,14 +473,35 @@ class SimulationViewModel(
                 UserPreferences.saveOptical(renderSystem.opticalSettings)
             }
 
-            is SimulationIntent.SetShowBoundary -> renderSystem.showBoundary = intent.show
-
-            is SimulationIntent.SetFillAreas -> {
-                renderSystem.fillAreas = intent.enabled
-                if (!simulationData.isPlay) simulationSystem.betweenTicks { renderSystem.refreshPausedSnapshot() }
+            is SimulationIntent.SetShowBoundary -> {
+                val changed=renderSystem.showBoundary!=intent.show
+                renderSystem.showBoundary = intent.show
+                if(changed)refreshIfPaused()
             }
 
-            is SimulationIntent.SetShowLinks -> renderSystem.showLinks = intent.show
+            is SimulationIntent.SetFillAreas -> {
+                val changed=renderSystem.fillAreas!=intent.enabled
+                renderSystem.fillAreas = intent.enabled
+                if(changed)refreshIfPaused()
+            }
+
+            is SimulationIntent.SetGenomeColors -> {
+                val changed=renderSystem.genomeColors!=intent.enabled
+                renderSystem.genomeColors = intent.enabled
+                if(changed)refreshIfPaused()
+            }
+
+            is SimulationIntent.SetShowLinks -> {
+                val changed=renderSystem.showLinks!=intent.show
+                renderSystem.showLinks = intent.show
+                if(changed)refreshIfPaused()
+            }
+
+            is SimulationIntent.SetShowNeuralLinks -> {
+                val changed=renderSystem.showNeuralLinks!=intent.show
+                renderSystem.showNeuralLinks = intent.show
+                if(changed)refreshIfPaused()
+            }
 
             is SimulationIntent.MarkCell -> {
                 val marks = renderSystem.renderBufferManager.playerMarks ?: return
@@ -468,6 +551,18 @@ class SimulationViewModel(
                 camera.update()
             }
         }
+    }
+
+    /**
+     * Режим, фильтр и галочки отладки (граница, связи, заливка) зашиваются в снимок мира
+     * при его сборке (RenderBufferManager.updateBuffer), а на паузе новых снимков нет —
+     * игрок видел бы старую картинку до снятия паузы. Поэтому на паузе снимок того же тика
+     * один раз собираем заново. Мир не меняется: пишется только буфер рендера, между тиками.
+     * Цена — одна сборка снимка (как рендер-фаза обычного тика) на клик игрока.
+     * Настройки микроскопа сюда не нужны: их рендер читает сам в каждом кадре.
+     */
+    private fun refreshIfPaused() {
+        if (!simulationData.isPlay) simulationSystem.betweenTicks { renderSystem.refreshPausedSnapshot() }
     }
 
     private fun setTool(value: SimulationTool) {

@@ -103,8 +103,11 @@ object CellLook {
     /** Задержка: спираль от ядра к мембране, по ней бегут импульсы — длинный путь сигнала. */
     const val DELAY_COIL = 24
 
+    /** Мотонейрон: тело нейрона, толстые отростки с бляшками на концах, импульсы бегут наружу. */
+    const val MOTOR_NEURON = 25
+
     /** Рисунков всего; номера 0 until COUNT. */
-    const val COUNT = 25
+    const val COUNT = 26
 
     /** Сигнал −1..1 знаковым байтом; NaN — ноль. */
     fun actionByte(signal: Float): Int {

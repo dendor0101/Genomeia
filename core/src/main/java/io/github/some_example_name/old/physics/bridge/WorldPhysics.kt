@@ -337,6 +337,20 @@ class WorldPhysics(
         remapIfCompacted()
     }
 
+    /** Прямое размещение взрослого макета в отдельном мире до первого тика. */
+    fun placeAdultAtRest(organ: Int) {
+        val layout = checkNotNull(organEntity.arenaLayout[organ])
+        val firstCell = organEntity.cellArenaBase[organ]
+        val firstParticle = organEntity.particleArenaBase[organ]
+        require(organEntity.alreadyGrownUp[organ] && (0 until layout.cellsInLayout).all { cellEntity.isAlive[firstCell + it] })
+        ensureCapacity()
+        bridge.spawnPlacedBody(organ, layout, particleEntity.localX[firstParticle], particleEntity.localY[firstParticle])
+        bodyGeneration[organ] = organEntity.getGeneration(organ)
+        organsWithBody.add(organ)
+        for (slot in 0 until layout.cellsInLayout) onBorn(firstParticle + slot, bridge.particleOf(organ, slot))
+        publish()
+    }
+
     private fun spawnNewOrganisms() {
         val alive = organEntity.aliveList
         for (k in 0 until alive.size) {

@@ -126,6 +126,7 @@ object CommandRegistry {
         t<SettingsIntent.SetFullscreen>(307),
         t<SettingsIntent.SetShowDebugInfo>(308),
         t<SettingsIntent.OpenGpuSettings>(309),
+        t<SettingsIntent.SetAutoSendCrash>(310),
 
         // --- Поддержка ---
         t<SupportIntent.CopyAddress>(400),
@@ -171,6 +172,9 @@ object CommandRegistry {
         t<SimulationIntent.SetShowLinks>(622),
         t<SimulationIntent.SaveWorldFailed>(623),
         t<SimulationIntent.SetFillAreas>(624),
+        t<SimulationIntent.TapWorld>(625),
+        t<SimulationIntent.SetGenomeColors>(626),
+        t<SimulationIntent.SetShowNeuralLinks>(627),
 
         // --- Касания мира ---
         t<PlayerCommand.TouchDown>(700),
@@ -211,6 +215,9 @@ object CommandRegistry {
         t<EditorZoomCamera>(826),
         t<TutorialNextStep>(827),
         t<io.github.some_example_name.old.editor.system.logic.SetEditorDebugFilter>(828),
+        t<io.github.some_example_name.old.editor.system.logic.SetEditorShowBoundary>(829),
+        t<io.github.some_example_name.old.editor.system.logic.SetEditorShowNeuralLinks>(830),
+        t<io.github.some_example_name.old.editor.system.logic.SetEditorGenomeColors>(831),
 
         // --- События потока симуляции ---
         t<SessionStarted>(900),

@@ -61,7 +61,6 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
     override var lastGrabbedCellY = 0.0f
     override var isDruggingCamera = false
     override var isRightClick = false
-    var showPhysicalLink = true
     /** Режим нейросвязей: Ctrl на десктопе, кнопка на телефоне. Меняется командой SetNeuralLinking. */
     var isNeuralLinking = false
     var previousCtrlClicked = -1
@@ -246,18 +245,15 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
     )
 
     val cellReplay = CellReplay(
-        startCapacity = 1_000,
         particleEntity = particleEntity,
         cellEntity = cellEntity
     )
 
     val neuralLinkReplay = NeuralLinkReplay(
-        startCapacity = 300,
         neuralLinkEntity = neuralLinkEntity
     )
 
     val neuralReplay = NeuralReplay(
-        startCapacity = 300,
         neuralEntity = neuralEntity
     )
 
@@ -403,12 +399,9 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
 
     val drawingHelperElements = DrawingHelperElements(
         cellReplay = cellReplay,
-        neuralLinkReplay = neuralLinkReplay,
-        cellEntity = cellEntity,
         particleEntity = particleEntity,
         editorSimulationSystem = editorSimulationSystem,
         symmetryManager = symmetryManager,
-        cellList = cellList,
         cellSearchManager = cellSearchManager,
     )
 

@@ -29,6 +29,13 @@ internal class CellLabModel(val key: String) : Disposable {
         private set
     var spawned = 0
         private set
+    /** Клетки тел стенда мотонейрона: им не даём умереть от голода, изучают тут сигнал. */
+    private var clusterCells = IntArray(0)
+    /** Розетки стенда мотонейрона: [0] — MotorNeuron, [1..6] — Muscle по кругу от оси x (см. [rosette]). */
+    var leftRosette = IntArray(0)
+        private set
+    var rightRosette = IntArray(0)
+        private set
     var paused = false
         private set
     var grabbed = -1
@@ -48,7 +55,7 @@ internal class CellLabModel(val key: String) : Disposable {
     val p get() = world.particleEntity
     val primaryAlive get() = primary >= 0 && c.isAlive[primary]
     val powered = key in setOf("controller", "muscle", "excreta", "neuron", "suction_cup",
-        "sticky", "chameleon", "eye", "touch_trigger", "synapse", "pheromone_emitter", "pheromone_sensor", "delay")
+        "sticky", "chameleon", "eye", "touch_trigger", "synapse", "pheromone_emitter", "pheromone_sensor", "delay", "motor_neuron", "speed_sensor")
 
     init {
         require(key in CellLabCatalog.keys)
@@ -59,7 +66,9 @@ internal class CellLabModel(val key: String) : Disposable {
 
     fun value(key: String): Float = values[key] ?: 0f
 
-    private fun organ(types: List<String>, xs: FloatArray, ys: FloatArray, pairs: List<Int> = emptyList(), triangles: List<Int> = emptyList()): IntArray {
+    /** [motorDirX]/[motorDirY] — стрелка мотонейронов тела в позе покоя (волокно их мышц); ноль — без волокна. */
+    private fun organ(types: List<String>, xs: FloatArray, ys: FloatArray, pairs: List<Int> = emptyList(),
+                      triangles: List<Int> = emptyList(), motorDirX: Float = 0f, motorDirY: Float = 0f): IntArray {
         // Поза покоя для физики-библиотеки — те же координаты, по которым расставлены клетки.
         val areas = List(triangles.size / 3) { t ->
             val a = triangles[3 * t]; val b = triangles[3 * t + 1]; val d = triangles[3 * t + 2]
@@ -68,6 +77,10 @@ internal class CellLabModel(val key: String) : Disposable {
         val layout = BakedLayout(types.indices.toList(), pairs, triangleSlots = triangles, triangleRestArea2 = areas,
             restX = xs.toList(), restY = ys.toList(),
             restRadius = List(types.size) { 0.5f }, restBone = types.map { it == "bone" })
+            // Кластеры мотонейронов и волокна — как при запекании в редакторе (RCMSort).
+            .withMotorClusters(BooleanArray(types.size) { types[it] == "muscle" },
+                BooleanArray(types.size) { types[it] == "motor_neuron" },
+                FloatArray(types.size) { motorDirX }, FloatArray(types.size) { motorDirY })
         val o = world.organEntity.addOrgan(0, 0)
         world.organEntity.allocateArenas(o, layout, 8)
         world.organEntity.alreadyGrownUp[o] = true
@@ -95,6 +108,58 @@ internal class CellLabModel(val key: String) : Disposable {
 
     private fun single(type: String, x: Float, y: Float): Int = organ(listOf(type), floatArrayOf(x), floatArrayOf(y))[0]
 
+    /**
+     * Розетка стенда мотонейрона с центром ([cx], [cy]): клетка 0 — MotorNeuron со стрелкой
+     * ([fx], [fy]), 1..6 — Muscle по кругу через 60° от оси x, шесть треугольников. [tail] —
+     * ещё Leaf (7) и Muscle (8) цепочкой вправо от клетки 1; Leaf отодвинут так, чтобы не
+     * перекрывать несвязанных соседей (расстояние ≥ 1).
+     */
+    private fun rosette(cx: Float, cy: Float, fx: Float, fy: Float, tail: Boolean): IntArray {
+        val types = mutableListOf("motor_neuron"); repeat(6) { types += "muscle" }
+        val xs = FloatArray(if (tail) 9 else 7); val ys = FloatArray(xs.size)
+        xs[0] = cx; ys[0] = cy
+        for (k in 1..6) {
+            val a = (k - 1) * StrictMath.PI / 3
+            xs[k] = (cx + ROSETTE_LINK * StrictMath.cos(a)).toFloat(); ys[k] = (cy + ROSETTE_LINK * StrictMath.sin(a)).toFloat()
+        }
+        val pairs = mutableListOf<Int>()
+        for (k in 1..6) { pairs += 0; pairs += k }
+        for (k in 1..6) { pairs += k; pairs += k % 6 + 1 }
+        val triangles = mutableListOf<Int>()
+        for (k in 1..6) { triangles += 0; triangles += k; triangles += k % 6 + 1 }
+        if (tail) {
+            types += "leaf"; types += "muscle"
+            xs[7] = xs[1] + 0.61f; ys[7] = cy
+            xs[8] = xs[7] + 0.61f; ys[8] = cy
+            pairs += listOf(1, 7, 7, 8)
+        }
+        val ids = organ(types, xs, ys, pairs, triangles, fx, fy)
+        // Стрелка мотонейрона — та же, что волокно. Родитель центра — клетка 1 (первая связь),
+        // направление от него к центру — (-1, 0); стрелка задаётся поворотом к нему.
+        val center = ids[0]
+        c.angleDirectedCos[center] = -fx; c.angleDirectedSin[center] = -fy
+        c.angleCos[center] = fx; c.angleSin[center] = fy
+        return ids
+    }
+
+    /**
+     * Розетка стенда мотонейрона ([rosette]): доля длины покоя вдоль оси x тела (клетки 1–4) или,
+     * при [across], поперёк — между серединами пар 2–3 и 5–6. Мерится по самим клеткам: тело
+     * может повернуться, доли — нет.
+     */
+    fun rosetteSpan(ids: IntArray, across: Boolean): Float {
+        if (ids.size < 7 || (1..6).any { !c.isAlive[ids[it]] }) return 0f
+        fun x(k: Int) = c.getX(ids[k])
+        fun y(k: Int) = c.getY(ids[k])
+        return if (!across) {
+            val dx = x(1) - x(4); val dy = y(1) - y(4)
+            sqrt(dx * dx + dy * dy) / (2f * ROSETTE_LINK)
+        } else {
+            val dx = (x(2) + x(3) - x(5) - x(6)) * 0.5f; val dy = (y(2) + y(3) - y(5) - y(6)) * 0.5f
+            sqrt(dx * dx + dy * dy) / (2f * ROSETTE_LINK * ROSETTE_SIN60)
+        }
+    }
+
     private fun setup() {
         // У связанных клеток радиус 0.5, исходная длина связи 0.55: компактное тело,
         // как в редакторе. Свободные цели стоят дальше, чтобы сразу не расталкиваться.
@@ -113,7 +178,7 @@ internal class CellLabModel(val key: String) : Disposable {
                 organ(listOf("fat", "fat", "fat"), floatArrayOf(3.45f, 4.0f, 4.55f),
                     floatArrayOf(2.5f, 2.5f, 2.5f), listOf(0, 1, 1, 2))
             }
-            "fat", "punisher", "producer", "tail" -> {
+            "fat", "punisher", "producer", "tail", "speed_sensor" -> {
                 val ids = organ(listOf(key, "leaf"), floatArrayOf(4.0f, 3.45f), floatArrayOf(4.0f, 4.0f), listOf(0, 1))
                 primary = ids[0]; companion = ids[1]
                 if (key == "producer") world.organEntity.genomeIndex[c.organIndex[primary]] = growthGenome()
@@ -172,6 +237,17 @@ internal class CellLabModel(val key: String) : Disposable {
                 source = ids[0]; primary = ids[1]; companion = ids[2]
                 world.neuralLinkEntity.addNeuralLink(source, primary, false, Color.CYAN.toIntBits())
                 world.neuralLinkEntity.addNeuralLink(primary, companion, false, Color.CYAN.toIntBits())
+            }
+            "motor_neuron" -> {
+                // Два тела-розетки: MotorNeuron в центре, шесть Muscle вокруг и ни одной
+                // нейросвязи — сигнал мышцам раздаёт кластер. Стрелка (волокно) у левого вдоль
+                // оси x, у правого вдоль y: при одном сигнале левое сжимается в ширину, правое в
+                // высоту. У правого справа ещё Leaf и за ним Muscle: кластер через Leaf не идёт,
+                // эта Muscle не слушается.
+                leftRosette = rosette(2.2f, 4.0f, 1f, 0f, tail = false)
+                rightRosette = rosette(4.6f, 4.0f, 0f, 1f, tail = true)
+                primary = leftRosette[0]; companion = rightRosette[0]; source = rightRosette[8]
+                clusterCells = leftRosette + rightRosette
             }
             "zygote" -> {
                 val genome = growthGenome()
@@ -272,6 +348,12 @@ internal class CellLabModel(val key: String) : Disposable {
             when (key) {
                 "tail", "muscle", "neuron", "suction_cup", "sticky", "chameleon", "excreta" ->
                     c.neuronImpulseInput[primary] = value("signal")
+                "motor_neuron" -> {
+                    // Один сигнал обоим мотонейронам: тела различаются только стрелкой.
+                    c.neuronImpulseInput[primary] = value("signal")
+                    if (c.isAlive[companion]) c.neuronImpulseInput[companion] = value("signal")
+                    for (cell in clusterCells) if (c.isAlive[cell]) c.energy[cell] = c.maxEnergy[cell]
+                }
                 "producer" -> if (world.organEntity.aliveList.size < MAX_CELLS / 2) c.neuronImpulseInput[primary] = value("signal")
                 "controller" -> {
                     world.simulationData.controllerKeys[selected] = hardwarePressed || value("pressed") > 0f
@@ -438,5 +520,8 @@ internal class CellLabModel(val key: String) : Disposable {
         val KEYS = arrayOf("W", "A", "S", "D")
         const val DELAY_PERIOD = 90
         const val DELAY_PULSE = 10
+        /** Розетка стенда мотонейрона: связь центра с кругом, как у компактного тела гайда. */
+        const val ROSETTE_LINK = 0.55f
+        const val ROSETTE_SIN60 = 0.8660254f
     }
 }

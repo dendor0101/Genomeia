@@ -53,7 +53,8 @@ fun GridManager.pickParticle(
     x: Float,
     y: Float,
     particleEntity: ParticleEntity,
-    cellEntity: CellEntity
+    cellEntity: CellEntity,
+    includeCells: Boolean = true
 ): Int {
     var best = -1
     var bestDistSq = Float.MAX_VALUE
@@ -61,6 +62,7 @@ fun GridManager.pickParticle(
     val radius = particleEntity.radius
 
     forEachParticle(x.toInt(), y.toInt(), radius = 1) { p ->
+        if (!includeCells && particleEntity.isCell[p]) return@forEachParticle
         val dx = particleEntity.x(p) - x
         val dy = particleEntity.y(p) - y
         val distSq = dx * dx + dy * dy
@@ -71,6 +73,7 @@ fun GridManager.pickParticle(
         }
     }
 
+    if (!includeCells) return best
     val inGrid = particleEntity.isInGrid
     val particleIndexes = cellEntity.particleIndexes
     val cells = cellEntity.aliveList

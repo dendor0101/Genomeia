@@ -15,12 +15,15 @@ import io.github.some_example_name.old.game.applyCustomFont
 import io.github.some_example_name.old.game.MyGame
 
 /** Состояние галочек отладочного режима на момент открытия окна. */
-class DebugOptions(val showBoundary: Boolean, val showLinks: Boolean, val fillAreas: Boolean, val noTail: Boolean, val noDeepKill: Boolean)
+class DebugOptions(val showBoundary: Boolean, val showLinks: Boolean, val showNeuralLinks: Boolean, val fillAreas: Boolean, val genomeColors: Boolean, val noTail: Boolean, val noDeepKill: Boolean)
 
 /**
  * Галочки отладочного режима — окном под своей кнопкой рядом с фильтром, чтобы не занимали
  * верхнюю полосу. Как и все окна экрана, само ничего не меняет: каждое действие отдаёт
  * наружу, экран превращает его в команду. Клик мимо закрывает.
+ *
+ * Общее у симуляции и редактора генома. Галочка с обработчиком null не показывается: у
+ * редактора нет заливки между клетками ([onFillAreas]) и мира физики ([onPhysics]).
  */
 class DebugOptionsDialog(
     game: MyGame,
@@ -28,8 +31,10 @@ class DebugOptionsDialog(
     state: DebugOptions,
     onBoundary: (Boolean) -> Unit,
     onLinks: (Boolean) -> Unit,
-    onFillAreas: (Boolean) -> Unit,
-    onPhysics: (noTail: Boolean, noDeepKill: Boolean) -> Unit
+    onNeuralLinks: (Boolean) -> Unit,
+    onFillAreas: ((Boolean) -> Unit)?,
+    onGenomeColors: (Boolean) -> Unit,
+    onPhysics: ((noTail: Boolean, noDeepKill: Boolean) -> Unit)?
 ) : VisDialog(bundle.get("debugOptions")) {
 
     init {
@@ -56,11 +61,15 @@ class DebugOptionsDialog(
 
         box("debugBoundary", state.showBoundary) { onBoundary(it.isChecked) }
         box("debugLinks", state.showLinks) { onLinks(it.isChecked) }
-        box("debugFillAreas", state.fillAreas) { onFillAreas(it.isChecked) }
-        // Обе галочки физики идут одной командой мира, сразу с обоими значениями.
-        lateinit var noDeepKill: VisCheckBox
-        val noTail = box("debugNoTail", state.noTail) { onPhysics(it.isChecked, noDeepKill.isChecked) }
-        noDeepKill = box("debugNoDeepKill", state.noDeepKill) { onPhysics(noTail.isChecked, it.isChecked) }
+        box("debugNeuralLinks", state.showNeuralLinks) { onNeuralLinks(it.isChecked) }
+        if (onFillAreas != null) box("debugFillAreas", state.fillAreas) { onFillAreas(it.isChecked) }
+        box("debugGenomeColors", state.genomeColors) { onGenomeColors(it.isChecked) }
+        if (onPhysics != null) {
+            // Обе галочки физики идут одной командой мира, сразу с обоими значениями.
+            lateinit var noDeepKill: VisCheckBox
+            val noTail = box("debugNoTail", state.noTail) { onPhysics(it.isChecked, noDeepKill.isChecked) }
+            noDeepKill = box("debugNoDeepKill", state.noDeepKill) { onPhysics(noTail.isChecked, it.isChecked) }
+        }
         pack()
     }
 

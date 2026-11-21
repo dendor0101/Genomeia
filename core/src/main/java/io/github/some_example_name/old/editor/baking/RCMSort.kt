@@ -77,6 +77,8 @@ class RCMSort(
 
         val cells = cellsInSlotOrder(organIndex, cellIdsInSlotOrder)
         val boneType = cellEntity.cellList.requireIndex("bone")
+        val muscleType = cellEntity.cellList.requireIndex("muscle")
+        val motorNeuronType = cellEntity.cellList.requireIndex("motor_neuron")
 
         return BakedLayout(
             cellGenomeIdsInSlotOrder = cellIdsInSlotOrder.toList(),
@@ -101,6 +103,14 @@ class RCMSort(
         // Треугольники — по связям раскладки и позе покоя, тем же перебором, что и допекание
         // старых раскладок (trianglesOfLinks): запечённое и допечённое не расходятся.
         ).withTrianglesFromLinks()
+            // Кластеры мотонейронов — по связям взрослого тела, как кости (restBone); волокно —
+            // стрелка мотонейрона в этой же позе (angleCos/Sin в координатах редактора = позы покоя).
+            .withMotorClusters(
+                isMuscle = BooleanArray(cells.size) { cellEntity.cellType[cells[it]].toInt() == muscleType },
+                isMotorNeuron = BooleanArray(cells.size) { cellEntity.cellType[cells[it]].toInt() == motorNeuronType },
+                dirX = FloatArray(cells.size) { cellEntity.angleCos[cells[it]] },
+                dirY = FloatArray(cells.size) { cellEntity.angleSin[cells[it]] }
+            )
     }
 
     /** Клетки организма [organIndex] редактора в порядке слотов. */

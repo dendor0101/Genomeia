@@ -29,6 +29,10 @@ internal class DeferredModeRenderer(
         active.render(context)
     }
 
+    override fun contextLost() {
+        renderer?.contextLost()
+    }
+
     private fun createRenderer(): RenderComponent {
         val created = factory()
         created.create()

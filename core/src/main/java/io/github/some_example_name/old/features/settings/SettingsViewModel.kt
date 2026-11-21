@@ -67,6 +67,12 @@ sealed interface SettingsIntent : GameCommand {
         override val detail get() = visible.toString()
     }
 
+    @Serializable
+    data class SetAutoSendCrash(val enabled: Boolean) : SettingsIntent {
+        override val name get() = "SetAutoSendCrash"
+        override val detail get() = enabled.toString()
+    }
+
     /** Полный экран на ПК. Вид окна, на мир не влияет; при повторе бага окно не трогаем. */
     @Serializable
     data class SetFullscreen(val enabled: Boolean) : SettingsIntent {
@@ -139,6 +145,11 @@ class SettingsViewModel {
 
             is SettingsIntent.SetShowDebugInfo -> {
                 GlobalSettings.SHOW_DEBUG_INFO = intent.visible
+                UserPreferences.save()
+            }
+
+            is SettingsIntent.SetAutoSendCrash -> {
+                GlobalSettings.AUTO_SEND_CRASH = intent.enabled
                 UserPreferences.save()
             }
 
@@ -218,6 +229,7 @@ object GlobalSettings {
      * повтор .bug не влияет.
      */
     var SHOW_HINTS = true
+    var AUTO_SEND_CRASH = true
 
     /**
      * Подробный текст в углу симуляции: время тика, число клеток, частиц и связей, разбивка

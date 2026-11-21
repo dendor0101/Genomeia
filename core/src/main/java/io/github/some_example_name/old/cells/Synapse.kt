@@ -79,8 +79,9 @@ import kotlin.random.Random
  * ПАРАМЕТРЫ ГЕНОМА
  * ----------------
  * Обучение — в общих полях нейрона: a = затухание следов, b = learningRate,
- * c = depression (так они записаны во всех уже сохранённых геномах). Галочка торможения —
- * [SynapseData] в Action.special. Функция активации и способ сложения входов синапсу не
+ * c = depression (так они записаны во всех уже сохранённых геномах). Галочка торможения и
+ * начальный вес — [SynapseData] в Action.special (вес игрок задаёт в редакторе; без него вес
+ * выбирает первый тик, см. startWeight). Функция активации и способ сложения входов синапсу не
  * нужны: вход один, а активацию он не вызывает.
  *
  * СОСТОЯНИЕ
@@ -114,19 +115,21 @@ class Synapse(cellTypeId: Int): Cell(
     override fun editorSections(): List<CellEditorSection> = listOf(SynapseSection)
 
     /** Объект на синапс: состояние меняется каждый тик, общим оно быть не может. */
-    override fun createSpecialData(action: Action): SpecialModData =
-        SynapseState(inhibitory = (specialDataFor(action, SynapseData.DEFAULT) as SynapseData).inhibitory)
+    override fun createSpecialData(action: Action): SpecialModData {
+        val data = specialDataFor(action, SynapseData.DEFAULT) as SynapseData
+        return SynapseState(weight = data.initialWeight ?: NOT_STARTED, inhibitory = data.inhibitory)
+    }
 
     /** Мутация меняет только режим, выученный вес остаётся. */
     override fun mutateSpecialData(current: SpecialModData, action: Action): SpecialModData? {
         val data = action.special as? SynapseData ?: return null
-        val state = current as? SynapseState ?: return SynapseState(inhibitory = data.inhibitory)
+        val state = current as? SynapseState ?: return createSpecialData(action)
         if (state.inhibitory == data.inhibitory) return null
         return state.copy(inhibitory = data.inhibitory)
     }
 
     override fun genomeDataOf(data: SpecialModData?): SpecialModData? =
-        (data as? SynapseState)?.let { SynapseData(it.inhibitory) }
+        (data as? SynapseState)?.let { SynapseData(it.inhibitory, it.weight.takeIf { w -> w in 0f..1f }) }
 
     override fun onStart(cellIndex: Int, threadId: Int, genomeIndex: Int): Unit = with(cellEntity) {
         // Клетка могла мутировать из другого нейрона, у которого эти поля значат другое.
@@ -137,7 +140,7 @@ class Synapse(cellTypeId: Int): Cell(
         neuronImpulseOutput[cellIndex] = 0f
         // Вес здесь не ставится: при мутации в синапс onStart (MUTATE_ON_START) применяется
         // раньше, чем заводится SynapseState (ADD_SPECIAL_MOD_DATA), — объекта ещё нет.
-        // Вес ставит первый тик, см. startWeight.
+        // createSpecialData берёт вес из генома. Без заданного веса его выбирает первый тик.
     }
 
     override fun doOnTick(cellIndex: Int, threadId: Int): Unit = with(cellEntity) {
@@ -210,7 +213,7 @@ class Synapse(cellTypeId: Int): Cell(
     }
 
     /**
-     * Начальный вес — случайный, но воспроизводимый: зависит только от индекса клетки.
+     * Если геном не задал вес, выбираем его воспроизводимо по индексу клетки.
      * Отдельным методом: ветка раз за жизнь синапса, а Random — аллокация, ей не место
      * в теле горячего doOnTick.
      */
@@ -336,7 +339,7 @@ class Synapse(cellTypeId: Int): Cell(
 
 /**
  * Параметры синапса в геноме, кроме a, b, c: [inhibitory] — тормозящий (выход −w · вход).
- * Неизменяемые — общие для генома и всех его клеток.
+ * [initialWeight] задаёт стартовый вес для каждой новой клетки. При null вес выбирает первый тик.
  *
  * @SerialName не равен ключу клетки: "synapse" уже занят [SynapseState] в сохранённых мирах.
  */
@@ -344,8 +347,13 @@ class Synapse(cellTypeId: Int): Cell(
 @Serializable
 @SerialName("synapse_data")
 data class SynapseData(
-    @ProtoNumber(1) val inhibitory: Boolean = false
+    @ProtoNumber(1) val inhibitory: Boolean = false,
+    /** Выученный стартовый вес. Старые геномы получают обычный детерминированный посев. */
+    @ProtoNumber(2) val initialWeight: Float? = null
 ) : SpecialModData {
+    init {
+        require(initialWeight == null || initialWeight in 0f..1f)
+    }
     companion object {
         val DEFAULT = SynapseData()
     }
@@ -383,8 +391,8 @@ fun SpecialEntity.synapseState(cellIndex: Int): SynapseState? = getSpecialData(c
 
 /**
  * Параметры синапса в диалоге редактора вместо a, b, c обычного нейрона. Хранятся они в тех
- * же полях (a = затухание следов, b = learningRate, c = depression), галочка торможения —
- * в [SynapseData], см. Synapse.
+ * же полях (a = затухание следов, b = learningRate, c = depression), галочка торможения и
+ * начальный вес — в [SynapseData], см. Synapse.
  *
  * Пустое поле — значение по умолчанию. У learningRate и depression ноль тоже означает
  * «по умолчанию» (так их видит симуляция), поэтому ноль показывается пустым полем.
@@ -455,6 +463,24 @@ object SynapseSection : CellEditorSection {
                 actionSystem.action = actionSystem.action.copy(a = it)
                 memoryLabel?.setText(memoryText())
             }
+
+            // Начальный вес живёт в SynapseData, а не в a, b, c: пустое поле — null, и вес
+            // выбирает первый тик (startWeight), как у всех геномов до этого поля.
+            visLabel("${bundle.get("synapse.initialWeight")}:", font = game.extraLargeFont) { left().padRight(16.dp()) }
+                .hint(bundle.get("synapse.initialWeight.hint"))
+            visTextField(
+                text = data().initialWeight?.toString() ?: "",
+                hint = "0..1",
+                textFieldFilter = FloatDigitsOnlyFilter(false),
+                onTextChange = { text ->
+                    val weight = if (text.isBlank()) null else text.toFloatOrNull()?.takeIf { it in 0f..1f }
+                    if (text.isBlank() || weight != null) {
+                        actionSystem.action = actionSystem.action.copy(special = data().copy(initialWeight = weight))
+                    }
+                }
+            ) { left() }
+                .hint(bundle.get("synapse.initialWeight.hint"))
+            row()
         }
         row()
 
@@ -477,8 +503,11 @@ object SynapseSection : CellEditorSection {
         if (c != null && c != actual.c) out.append("${bundle.get("synapse.depression")}: ${actual.c} -> $c\n")
         val to = special as? SynapseData
         val from = actual.special as? SynapseData
-        if (to != null && to != from) {
+        if (to != null && to.inhibitory != from?.inhibitory) {
             out.append("${bundle.get("synapse.inhibitory")}: ${from?.inhibitory} -> ${to.inhibitory}\n")
+        }
+        if (to != null && to.initialWeight != from?.initialWeight) {
+            out.append("${bundle.get("synapse.initialWeight")}: ${from?.initialWeight} -> ${to.initialWeight}\n")
         }
     }
 

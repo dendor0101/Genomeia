@@ -2,6 +2,8 @@ package io.github.some_example_name.old.systems.render
 
 import io.github.some_example_name.old.cells.eyeData
 import io.github.some_example_name.old.cells.Cell
+import io.github.some_example_name.old.commands.aliveIn
+import io.github.some_example_name.old.journal.SessionJournal
 import io.github.some_example_name.old.core.DEBUG_CHECKS
 import io.github.some_example_name.old.core.PROFILE_INTERPOLATION
 import io.github.some_example_name.old.entities.CellEntity
@@ -41,8 +43,8 @@ import kotlin.math.sqrt
  * рисуют движение плавно (CellInstanceBuffer: «Интерполяция между тиками»). Прошлые позы
  * живут в [history] и [nonCellHistory].
  *
- * TODO(XPBD): когда в игру придёт новая физика (цель — 30 UPS, тик из нескольких
- * подшагов), на очень сильном замедлении линейной интерполяции между тиками станет мало:
+ * TODO(XPBD): снимок содержит конечную позу, которую вернул мир физики. На сильном
+ * замедлении линейная интерполяция между тиками теряет детали движения внутри шага:
  * клетка поедет по хорде, а не по дуге, и столкновение «проскочит» между двумя снимками.
  * Тогда снимок надо снимать и с подшагов решателя — прошлой позой каждого снимка будет
  * поза прошлого подшага, а рендер пройдёт их по очереди. См. TODO.md, раздел 11.
@@ -100,6 +102,28 @@ class RenderBufferManager(
 
     @Volatile
     var fillAreas = false
+
+    /**
+     * Галочка «Цвет из генома»: в отладке клетка своего цвета (particleEntity.color — его
+     * задаёт геном; хамелеон и ошибочный синапс перекрашивают его на ходу), а не
+     * defaultColor типа. Рисунок, стрелки и фильтры остаются. Пишет GL-поток, читает поток
+     * симуляции раз за [updateBuffer] — как [debugFilter]. По умолчанию включена: в отладке
+     * игрок хочет видеть организм в цветах своего генома. На мир и хэши не влияет — только рисунок.
+     */
+    @Volatile
+    var genomeColors = true
+
+    /**
+     * Галочка «Нейросвязи»: рисовать ли в отладке нейросвязи с бегущими импульсами. По
+     * умолчанию включена; снимают, когда связи закрывают сами клетки. Как и [showLinks],
+     * пишет GL-поток, читает поток симуляции раз за [updateBuffer]. Выключенная экономит
+     * проход по нейросвязям в оверлей. На мир и хэши не влияет.
+     */
+    @Volatile
+    var showNeuralLinks = true
+
+    /** [genomeColors] текущего [updateBuffer]; читается один раз, как и [debugFrame]. */
+    private var frameGenomeColors = false
     private val areaCache = DebugAreaCache()
     private var areaFrame = false
 
@@ -180,7 +204,7 @@ class RenderBufferManager(
     // Только полигональный эксперимент; не состояние мира. 12 B/клетку, без аллокаций за тик.
     private var renderOfCell=IntArray(0)
     private var renderCellStamp=IntArray(0)
-    private var cellOfRender=IntArray(0)
+    private var cellKeys = LongArray(0)
     private var polygonFrame=false
     private val polygonEpoch=Any()
     private var opticalGroups = IntArray(0)
@@ -216,10 +240,11 @@ class RenderBufferManager(
      * времени, а потом кадры стояли бы до следующего. Каждое измерение зажато в
      * [половину, удвоение] текущего значения: пауза или подвисание дают один огромный
      * промежуток, и без зажима после каждой паузы движение на несколько тиков замедлялось
-     * бы в разы. Смена UPS руками (60 → 10) догоняется за ~10 снимков.
+     * бы в разы. При смене заданного темпа первый снимок сразу получает новый период.
      */
     private var tickNanos = 0L
     private var lastPublishNanos = 0L
+    private var lastTarget = 0
 
     // ==================== Отладочный режим ====================
 
@@ -496,7 +521,9 @@ class RenderBufferManager(
         val angleSin = cellEntity.angleSin[cellIndex]
 
         val dir = CellInstanceBuffer.dir(angleCos, angleSin)
-        remember(particleIndex, cellEntity.getGeneration(cellIndex), x, y, dir)
+        val generation = cellEntity.getGeneration(cellIndex)
+        remember(particleIndex, generation, x, y, dir)
+        cellKeys[writeIndex] = (cellIndex.toLong() shl 32) or (generation.toLong() and 0xffffffffL)
         val hist = history
         val h = particleIndex * HISTORY_STRIDE
         val prevX = Float.fromBits(hist[h + 5])
@@ -504,7 +531,7 @@ class RenderBufferManager(
         val prevDir = hist[h + 7]
         if (areaFrame) areaCache.cell(writeIndex, particleEntity.physicsIndex[particleIndex])
         if(polygonFrame){
-            renderOfCell[cellIndex]=writeIndex;renderCellStamp[cellIndex]=serial;cellOfRender[writeIndex]=cellIndex
+            renderOfCell[cellIndex]=writeIndex;renderCellStamp[cellIndex]=serial
             opticalGroups[writeIndex] = if (cellEntity.organIndex[cellIndex] >= 0) cellEntity.organIndex[cellIndex] + 1 else -particleIndex - 1
             opticalColors[writeIndex] = pColor[particleIndex]
             opticalBirthTicks[writeIndex] = cellEntity.birthTick[cellIndex]
@@ -570,7 +597,8 @@ class RenderBufferManager(
         // присасывается ровно по нему. От него анимация рисунка, см. DebugCellPalette.
         val signal = cellEntity.neuronImpulseOutput[cellIndex]
         val o = writeIndex * CellInstanceBuffer.STRUCT_INTS
-        instances[o + CellInstanceBuffer.OFFSET_COLOR / 4] = palette.color(cellType, particleEntity.color[particleIndex])
+        // С галочкой «Цвет из генома» остаётся цвет, уже записанный writeCell.
+        if (!frameGenomeColors) instances[o + CellInstanceBuffer.OFFSET_COLOR / 4] = palette.color(cellType, particleEntity.color[particleIndex])
         instances[o + CellInstanceBuffer.OFFSET_LOOK / 4] =
             palette.look(cellType, signal, filter = filterByte(cellIndex, particleIndex, signal))
 
@@ -709,14 +737,14 @@ class RenderBufferManager(
     private fun writeBoundary() {
         val physics = particleEntity.physics ?: return
         physics.boundaryParticles(boundaryPairs)
-        writePairs(OverlayInstanceBuffer.params(OverlayInstanceBuffer.KIND_EDGE, 0f, 0), BOUNDARY_COLOR)
+        writePairs(OverlayInstanceBuffer.params(OverlayInstanceBuffer.KIND_EDGE, 0f, 0), DebugCellPalette.BOUNDARY_COLOR)
     }
 
     /** Все живые связи тел мира физики — тонко, под контуром (галочка «Связи»). */
     private fun writeLinks() {
         val physics = particleEntity.physics ?: return
         physics.linkParticles(boundaryPairs)
-        writePairs(OverlayInstanceBuffer.params(OverlayInstanceBuffer.KIND_LINK, 0f, 0), LINK_COLOR)
+        writePairs(OverlayInstanceBuffer.params(OverlayInstanceBuffer.KIND_LINK, 0f, 0), DebugCellPalette.LINK_COLOR)
     }
 
     /** Отрезки между частицами пар [boundaryPairs]; концы едут каждый со своей частицей. */
@@ -802,6 +830,9 @@ class RenderBufferManager(
         playerMarks?.follow(cellEntity)
         startSnapshot()
         val snapshot = snapshots.back()
+        snapshot.tick = simulationData.tickCounter
+        snapshot.epoch = SessionJournal.epoch
+        cellKeys = snapshot.reserveCellKeys(cellEntity.aliveList.size)
         // Сколько инстансов вообще может быть записано: клетки (в аренах и вне их) и
         // не-клетки. Не aliveList частиц: если их сумма с ним разойдётся (это ловит
         // DEBUG_CHECKS), снимок не должен выйти за массив.
@@ -812,7 +843,6 @@ class RenderBufferManager(
         if(polygonFrame){
             snapshot.reserveOptics()
             if(renderOfCell.size<cellEntity.isAlive.size){renderOfCell=IntArray(cellEntity.isAlive.size);renderCellStamp=IntArray(renderOfCell.size)}
-            if(cellOfRender.size<cellEntity.aliveList.size)cellOfRender=IntArray(cellEntity.aliveList.size*2)
         }
         opticalCullRanges=null
         if(polygonFrame){
@@ -827,6 +857,7 @@ class RenderBufferManager(
         areaFrame = debugFrame && fillAreas
         if (areaFrame) areaCache.reserveCells(cellEntity.aliveList.size)
         frameFilter = if (debugFrame) debugFilter else DebugFilter.ORIGINAL
+        frameGenomeColors = debugFrame && genomeColors
 
         val overlay = snapshot.overlay
         overlay.begin()
@@ -843,6 +874,7 @@ class RenderBufferManager(
             areaCache.publish(particleEntity.physics?.bridge?.world, written, snapshot.areaStorage)
         } else null
         val writtenCells=written
+        snapshot.cellCount = writtenCells
         written = writeNonCellParticles(written)
         if(polygonFrame)writeOpticalLinks(snapshot,written,writtenCells)
 
@@ -867,7 +899,7 @@ class RenderBufferManager(
         if (debugFrame && showBoundary) writeBoundary()
 
         // ==================== NEURAL LINKS ====================
-        if (debugFrame) writeNeuralLinks()
+        if (debugFrame && showNeuralLinks) writeNeuralLinks()
         overlay.end()
         snapshot.hasOverlay = debugFrame
 
@@ -884,7 +916,7 @@ class RenderBufferManager(
         val from=(opticalTotal.toLong()*k/opticalChunks).toInt();val to=(opticalTotal.toLong()*(k+1)/opticalChunks).toInt()
         for(i in from until to){
             if(i>=opticalCells){opticalCount[i]=terrainLinks.count(particleEntity.nonCellList.getInt(i-opticalCells));continue}
-            val base=cellOfRender[i]*CellEntity.MAX_LINKS_PER_CELL
+            val base=(cellKeys[i] ushr 32).toInt()*CellEntity.MAX_LINKS_PER_CELL
             var c=0
             for(l in 0 until CellEntity.MAX_LINKS_PER_CELL){
                 val other=cellEntity.cellLinks[base+l]
@@ -904,8 +936,9 @@ class RenderBufferManager(
                 terrainLinks.write(p,opticalCells,graph.neighbors,graph.offsets[i])
                 continue
             }
-            val cell=cellOfRender[i];val base=cell*CellEntity.MAX_LINKS_PER_CELL
-            graph.vertexParallel(i,(cell.toLong() shl 32) or (cellEntity.getGeneration(cell).toLong() and 0xffffffffL))
+            val cell=(cellKeys[i] ushr 32).toInt();val base=cell*CellEntity.MAX_LINKS_PER_CELL
+            // Ключ — как в однопоточном обходе: записан вместе с клеткой снимка (writeCell).
+            graph.vertexParallel(i,cellKeys[i])
             val organ=cellEntity.organIndex[cell]
             if(organ>=0)materialCoordinates.write(graph,i,cellEntity.organEntity.genomeIndex[organ],cellEntity.cellGenomeId[cell])
             var at=graph.offsets[i]
@@ -950,10 +983,10 @@ class RenderBufferManager(
                 graph.advance(terrainLinks.write(p,cells,graph.neighbors,graph.size)-graph.size)
                 continue
             }
-            val cell=cellOfRender[i];val base=cell*CellEntity.MAX_LINKS_PER_CELL
+            val cell=(cellKeys[i] ushr 32).toInt();val base=cell*CellEntity.MAX_LINKS_PER_CELL
             // Слот снимка сдвигается при рождении соседей. Ключ клетки сохраняется,
             // а поколение отличает новую клетку, занявшую освобождённый слот.
-            graph.vertex(i,(cell.toLong() shl 32) or (cellEntity.getGeneration(cell).toLong() and 0xffffffffL))
+            graph.vertex(i,cellKeys[i])
             val organ=cellEntity.organIndex[cell]
             if(organ>=0)materialCoordinates.write(graph,i,cellEntity.organEntity.genomeIndex[organ],cellEntity.cellGenomeId[cell])
             for(k in 0 until CellEntity.MAX_LINKS_PER_CELL){
@@ -975,22 +1008,14 @@ class RenderBufferManager(
         detailedPerformance = performanceInfo
 
         val cellIndex = simulationData.selectedCellIndex
-        if (cellIndex != -1 && cellEntity.isAlive[cellIndex]) {
-            selectedCellIndex = cellEntity.cellGenomeId[cellIndex]
-            neuronImpulseInput = cellEntity.neuronImpulseInput[cellIndex]
-            neuronImpulseOutput = cellEntity.neuronImpulseOutput[cellIndex]
+        if (cellIndex != -1 && cellEntity.isAlive[cellIndex] && simulationData.selectedFrameCell?.aliveIn(cellEntity) != false) {
+            writeCellInfo(spec, cellIndex)
             isCellSelected = true
             grabbedCellX = cellEntity.getX(cellIndex)
             grabbedCellY = cellEntity.getY(cellIndex)
             val particleIndex = cellEntity.getParticleIndex(cellIndex)
             grabbedPrevX = prevXOf(particleIndex, grabbedCellX!!)
             grabbedPrevY = prevYOf(particleIndex, grabbedCellY!!)
-            val cellType = cellEntity.cellType[cellIndex].toInt()
-            cellName = cellList[cellType].name +
-                if (cellEntity.isNeural[cellIndex])
-                    " ${cellEntity.formulas[cellEntity.getActivationFuncType(cellIndex)].label} " +
-                        "${cellEntity.getA(cellIndex)} ${cellEntity.getB(cellIndex)} ${cellEntity.getC(cellIndex)}"
-                else ""
         } else {
             neuronImpulseInput = null
             neuronImpulseOutput = null
@@ -1012,6 +1037,19 @@ class RenderBufferManager(
     private var stepMax = 0f
     private var stepTeleports = 0
 
+    /** Поток симуляции или чтение одной клетки под замком между тиками при клике. */
+    internal fun writeCellInfo(spec: RenderSpecificBufferData, cellIndex: Int) = with(spec) {
+        selectedCellIndex = cellEntity.cellGenomeId[cellIndex]
+        neuronImpulseInput = cellEntity.neuronImpulseInput[cellIndex]
+        neuronImpulseOutput = cellEntity.neuronImpulseOutput[cellIndex]
+        val cellType = cellEntity.cellType[cellIndex].toInt()
+        cellName = cellList[cellType].name +
+            if (cellEntity.isNeural[cellIndex])
+                " ${cellEntity.formulas[cellEntity.getActivationFuncType(cellIndex)].label} " +
+                    "${cellEntity.getA(cellIndex)} ${cellEntity.getB(cellIndex)} ${cellEntity.getC(cellIndex)}"
+            else ""
+    }
+
     private fun countStep(dx: Float, dy: Float) {
         val step = maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy))
         if (step > stepMax) stepMax = step
@@ -1027,13 +1065,15 @@ class RenderBufferManager(
             stepTeleports = 0
         }
         val now = System.nanoTime()
-        if (tickNanos == 0L || lastPublishNanos == 0L) {
+        val target = if (simulationData.maxSpeed) 0 else simulationData.targetUPS
+        if (lastPublishNanos == 0L || (target != 0 && lastTarget != target)) {
             tickNanos = NANOS_PER_SECOND / simulationData.targetUPS
         } else {
             val gap = (now - lastPublishNanos).coerceIn(tickNanos / 2, tickNanos * 2)
             tickNanos += (gap - tickNanos) / TICK_SMOOTHING
         }
         lastPublishNanos = now
+        lastTarget = target
 
         snapshot.publishedAtNanos = now
         snapshot.tickNanos = tickNanos
@@ -1041,12 +1081,6 @@ class RenderBufferManager(
     }
 
     private companion object {
-        /** Цвет границы — зелёный контура стенда (physics-lab, BOUNDARY_COLOR), упаковка Color.toIntBits. */
-        private val BOUNDARY_COLOR = com.badlogic.gdx.graphics.Color.valueOf("4BE08AFF").toIntBits()
-
-        /** Цвет связей — светло-серый полупрозрачный: сетка видна, контур поверх читается. */
-        private val LINK_COLOR = com.badlogic.gdx.graphics.Color.valueOf("D8DCE6A0").toIntBits()
-
         /** Поля [history] на частицу: номер снимка, ключ, x, y, dir, prevX, prevY, — — 32 байта. */
         const val HISTORY_STRIDE = 8
 
@@ -1083,6 +1117,16 @@ class RenderSnapshot(cellCapacity: Int, overlayCapacity: Int) {
     var instances = IntArray(cellCapacity * CellInstanceBuffer.STRUCT_INTS)
         private set
     var instanceCount = 0
+    var tick = -1
+    var epoch = -1
+    var cellCount = 0
+    var cellKeys = LongArray(0)
+        private set
+
+    fun reserveCellKeys(count: Int): LongArray {
+        if (cellKeys.size < count) cellKeys = LongArray(maxOf(count, cellKeys.size * 3 / 2))
+        return cellKeys
+    }
     val areaStorage = DebugAreaIndices()
     var areaIndices: DebugAreaIndices? = null
     // Три массива (12 байт/инстанс) растут только в режиме микроскопа.

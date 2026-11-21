@@ -20,6 +20,14 @@ public class Lwjgl3Launcher {
      * обычно.
      */
     public static void main(String[] args) {
+        if (Arrays.asList(args).contains("--mcp-config")) {
+            io.github.some_example_name.lwjgl3.mcp.McpSetup.printConfig();
+            return;
+        }
+        if (Arrays.asList(args).contains("--mcp")) {
+            io.github.some_example_name.lwjgl3.mcp.McpStdio.run();
+            return;
+        }
         if (StartupHelper.startNewJvmIfRequired(true, args))
             return; // This handles macOS support and helps on Windows.
         WindowsFileAssociations.register();
@@ -44,7 +52,10 @@ public class Lwjgl3Launcher {
                         return kotlin.Unit.INSTANCE;
                     });
                     WindowFit.fit();
-                    game.openFiles(Arrays.asList(args));
+                    if (Arrays.asList(args).contains("--enable-mcp")) {
+                        io.github.some_example_name.lwjgl3.mcp.GameBridge.start();
+                    }
+                    game.openFiles(Arrays.stream(args).filter(arg -> !arg.equals("--enable-mcp")).toList());
                 });
             }
 

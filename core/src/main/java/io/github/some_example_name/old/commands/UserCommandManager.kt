@@ -17,6 +17,7 @@ import io.github.some_example_name.old.systems.genomics.OrganismSpawner
 import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.physics.CollisionManager.Companion.PARTICLE_MAX_RADIUS
 import io.github.some_example_name.old.systems.physics.GridManager
+import io.github.some_example_name.old.systems.render.CommandGhosts
 import io.github.some_example_name.old.bug.BugReplay
 import io.github.some_example_name.old.journal.CommandSource
 import io.github.some_example_name.old.journal.Fnv
@@ -25,6 +26,9 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+
+internal fun ScreenCell.aliveIn(cells: CellEntity): Boolean =
+    epoch == SessionJournal.epoch && index in cells.isAlive.indices && cells.isAliveAndSameGen(index, generation)
 
 class UserCommandManager(
     val organEntity: OrganEntity,
@@ -145,10 +149,18 @@ class UserCommandManager(
      */
     private fun resolve(cmd: PlayerCommand): PlayerCommand =
         if (cmd is PlayerCommand.Tap && cmd.genomeIndex == null) {
-            PlayerCommand.Tap(cmd.x, cmd.y, cmd.isLeftButton, simulationData.currentGenomeIndex)
+            cmd.copy(genomeIndex = simulationData.currentGenomeIndex)
         } else {
             cmd
         }
+
+    private fun pickedParticle(x: Float, y: Float, target: ScreenCell?): Int {
+        if (target != null && target.index >= 0) {
+            return if (target.aliveIn(cellEntity)) cellEntity.particleIndexes[target.index] else -1
+        }
+        if (target != null && target.epoch != SessionJournal.epoch) return -1
+        return gridManager.pickParticle(x, y, particleEntity, cellEntity, includeCells = target == null)
+    }
 
     private fun applyCommand(cmd: PlayerCommand) {
         when (cmd) {
@@ -168,7 +180,7 @@ class UserCommandManager(
             }
 
             is PlayerCommand.TouchDown -> {
-                grabbedParticleIndex = gridManager.pickParticle(cmd.x, cmd.y, particleEntity, cellEntity)
+                grabbedParticleIndex = pickedParticle(cmd.x, cmd.y, cmd.target)
                 if (grabbedParticleIndex != -1) isDragging = false
 
                 tapX = cmd.x
@@ -194,8 +206,8 @@ class UserCommandManager(
             }
 
             is PlayerCommand.Tap -> {
-                val grabbedParticleIndexTap =
-                    gridManager.pickParticle(cmd.x, cmd.y, particleEntity, cellEntity)
+                val grabbedParticleIndexTap = pickedParticle(cmd.x, cmd.y, cmd.target)
+                simulationData.selectedFrameCell = cmd.target
 
                 simulationData.selectedCellIndex = if (grabbedParticleIndexTap != -1) {
                     if (particleEntity.isCell[grabbedParticleIndexTap]) {
@@ -205,11 +217,10 @@ class UserCommandManager(
                 } else -1
 
                 if (simulationData.selectedCellIndex == -1) {
+                    // Исчезновение нажатой клетки не превращает выбор в посадку или распыление.
+                    if (cmd.target != null && (cmd.target.index >= 0 || cmd.target.epoch != SessionJournal.epoch)) return
                     if (cmd.isLeftButton) {
-                        // На террейне и стенке не сажаем: толщи террейна в мире физики нет (StaticTerrain), и
-                        // организм вырос бы внутри. Под курсором частица террейна — значит, клик по нему.
-                        val onTerrain = grabbedParticleIndexTap != -1 && particleEntity.terrainCell[grabbedParticleIndexTap] != -1
-                        if (!onTerrain && cmd.x > 0 && cmd.x < gridManager.gridWidth && cmd.y > 0 && cmd.y < gridManager.gridHeight) {
+                        if (canSpawnAt(cmd.x, cmd.y, grabbedParticleIndexTap)) {
                             val genomeIndex = resolveGenomeIndex(cmd)
                             val randomAngle = if (isEditor) 0f else 0f//MathUtils.random(0f, MathUtils.PI2)
                             organismSpawner.spawn(
@@ -223,33 +234,15 @@ class UserCommandManager(
                             )
                         }
                     } else {
-                        val radius = 7.0f
-                        repeat(10) {
-                            val angle = random.nextFloat() * MathUtils.PI2
-
-                            val r = radius * sqrt(random.nextFloat())
-
-                            val x = cmd.x + MathUtils.cos(angle) * r
-                            val y = cmd.y + MathUtils.sin(angle) * r
-
-                            if (x > 0 && x < gridManager.gridWidth && y > 0 && y < gridManager.gridHeight) {
-
-                                // Через pickParticle, а не только сетку: иначе субстанция
-                                // рождалась бы внутри тела, где клеток в сетке нет.
-                                if (gridManager.pickParticle(x, y, particleEntity, cellEntity) == -1) {
-                                    val color = Color.RED.toIntBits()
-                                    val radius = random.nextFloat() * (0.5f - 0.1f) + 0.1f
-
-                                    // Буфер фиксированный, а не случайный: число буферов
-                                    // равно числу потоков и на другой машине другое.
-                                    // Фаза команд игрока однопоточная, гонки тут нет.
-                                    worldCommandsManager.worldCommandBuffer[0].push(
-                                        type = WorldCommandType.ADD_SUBSTANCE,
-                                        floats = floatArrayOf(x, y, radius),
-                                        ints = intArrayOf(color, 0)
-                                    )
-                                }
-                            }
+                        scatterSubstance(cmd.x, cmd.y, random) { x, y, radius ->
+                            // Буфер фиксированный, а не случайный: число буферов
+                            // равно числу потоков и на другой машине другое.
+                            // Фаза команд игрока однопоточная, гонки тут нет.
+                            worldCommandsManager.worldCommandBuffer[0].push(
+                                type = WorldCommandType.ADD_SUBSTANCE,
+                                floats = floatArrayOf(x, y, radius),
+                                ints = intArrayOf(Color.RED.toIntBits(), 0)
+                            )
                         }
                     }
                 }
@@ -257,8 +250,98 @@ class UserCommandManager(
 //                    println("Tap (${cmd.x}, ${cmd.y} ${cmd.isLeftButton} ${grabbedParticleIndex})")
             }
 
-            is PlayerCommand.KillCell -> killCell(cmd.x, cmd.y)
+            is PlayerCommand.KillCell -> killCell(cmd.x, cmd.y, cmd.target)
         }
+    }
+
+    /**
+     * Посадит ли касание организм. На террейне и стенке не сажаем: толщи террейна в мире
+     * физики нет (StaticTerrain), и организм вырос бы внутри. Под курсором частица террейна —
+     * значит, клик по нему.
+     */
+    private fun canSpawnAt(x: Float, y: Float, picked: Int): Boolean {
+        val onTerrain = picked != -1 && particleEntity.terrainCell[picked] != -1
+        return !onTerrain && x > 0 && x < gridManager.gridWidth && y > 0 && y < gridManager.gridHeight
+    }
+
+    /**
+     * Распыление вещества касанием: десять точек в круге. Один код и для применения, и для
+     * показа на паузе ([previewQueued]) — иначе показ потянул бы из генератора другие числа
+     * и разошёлся с тем, что выпадет на деле. Радиус берётся из генератора, только если точка
+     * свободна: этот порядок вызовов — часть детерминизма, не менять.
+     */
+    private inline fun scatterSubstance(cx: Float, cy: Float, rng: RandomXS128, put: (x: Float, y: Float, radius: Float) -> Unit) {
+        val spread = 7.0f
+        repeat(10) {
+            val angle = rng.nextFloat() * MathUtils.PI2
+            val r = spread * sqrt(rng.nextFloat())
+            val x = cx + MathUtils.cos(angle) * r
+            val y = cy + MathUtils.sin(angle) * r
+            // Через pickParticle, а не только сетку: иначе субстанция
+            // рождалась бы внутри тела, где клеток в сетке нет.
+            if (x > 0 && x < gridManager.gridWidth && y > 0 && y < gridManager.gridHeight &&
+                gridManager.pickParticle(x, y, particleEntity, cellEntity) == -1
+            ) {
+                put(x, y, rng.nextFloat() * (0.5f - 0.1f) + 0.1f)
+            }
+        }
+    }
+
+    /** Копия [random] для [previewQueued]: сам генератор показ не трогает. */
+    private val previewRandom = RandomXS128()
+
+    /**
+     * Что сделает очередь, когда её применит следующий тик: призраки посадок, вещества и
+     * убийств — в [out], номер выбранной клетки после очереди — в ответе (-1 — ничего не
+     * выбрано). Для паузы: тиков нет, а игрок должен сразу видеть итог касаний.
+     *
+     * Только чтение мира, звать под замком между тиками. Решения те же, что в
+     * [applyCommand]: тот же pickedParticle, то же [canSpawnAt], то же [scatterSubstance] с
+     * копией генератора. Точность — до тика: следующий тик сначала двигает мир, потом
+     * применяет очередь, так что точка вещества вплотную к клетке может и не выпасть.
+     * Цена — проход по очереди на каждое касание на паузе; в ходе игры не зовётся.
+     */
+    fun previewQueued(out: CommandGhosts): Int {
+        out.begin(simulationData.tickCounter, SessionJournal.epoch)
+        previewRandom.setState(random.getState(0), random.getState(1))
+        var selected = simulationData.selectedCellIndex
+        var grabbed = grabbedParticleIndex
+        for (cmd in commandQueue) {
+            when (cmd) {
+                PlayerCommand.StopDrag -> {
+                    grabbed = -1
+                    selected = -1
+                }
+                is PlayerCommand.TouchDown -> {
+                    grabbed = pickedParticle(cmd.x, cmd.y, cmd.target)
+                    selected = -1
+                }
+                is PlayerCommand.Drag -> if (grabbed != -1) selected = -1
+                is PlayerCommand.Tap -> selected = previewTap(cmd, out)
+                is PlayerCommand.KillCell -> {
+                    val p = pickedParticle(cmd.x, cmd.y, cmd.target)
+                    if (p != -1 && particleEntity.isCell[p]) {
+                        out.kill(particleEntity.x(p), particleEntity.y(p), particleEntity.radius[p])
+                        if (selected == particleEntity.holderEntityIndex[p]) selected = -1
+                        if (grabbed == p) grabbed = -1
+                    }
+                }
+                else -> {}
+            }
+        }
+        return selected
+    }
+
+    private fun previewTap(cmd: PlayerCommand.Tap, out: CommandGhosts): Int {
+        val picked = pickedParticle(cmd.x, cmd.y, cmd.target)
+        if (picked != -1 && particleEntity.isCell[picked]) return particleEntity.holderEntityIndex[picked]
+        if (cmd.target != null && (cmd.target.index >= 0 || cmd.target.epoch != SessionJournal.epoch)) return -1
+        if (cmd.isLeftButton) {
+            if (canSpawnAt(cmd.x, cmd.y, picked)) out.cell(cmd.x, cmd.y, PARTICLE_MAX_RADIUS, zygote.defaultColor.toIntBits())
+        } else {
+            scatterSubstance(cmd.x, cmd.y, previewRandom) { x, y, radius -> out.substance(x, y, radius, Color.RED.toIntBits()) }
+        }
+        return -1
     }
 
     /**
@@ -267,8 +350,8 @@ class UserCommandManager(
      * частица и орган, и всё это должно пройти штатным путём. Поколение в команде отсекает
      * случай, когда до исполнения на этом месте уже родилась другая клетка.
      */
-    private fun killCell(x: Float, y: Float) {
-        val particle = gridManager.pickParticle(x, y, particleEntity, cellEntity)
+    private fun killCell(x: Float, y: Float, target: ScreenCell?) {
+        val particle = pickedParticle(x, y, target)
         if (particle == -1 || !particleEntity.isCell[particle]) return
         val cellIndex = particleEntity.holderEntityIndex[particle]
         worldCommandsManager.worldCommandBuffer[0].push(
