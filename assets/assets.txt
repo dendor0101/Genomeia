@@ -2,29 +2,18 @@ body-export.txt
 button.png
 fonts/Roboto-Regular.ttf
 fonts/Rubik-Regular.ttf
-genomes/Armored Glist.genome
-genomes/Big walker.genome
 genomes/Burdock leaf.genome
-genomes/Chloroplast Bacterium.genome
-genomes/ControllWASD.genome
 genomes/Controlled Glist.genome
 genomes/Controlled Spider.genome
 genomes/Crayfish.genome
-genomes/Earthworm.genome
 genomes/Fish Snake.genome
-genomes/Glist.genome
 genomes/Hydrofin.genome
 genomes/Hypha.genome
 genomes/Inchworm.genome
 genomes/Jellyfish.genome
 genomes/Leech.genome
-genomes/Maggot.genome
-genomes/Megalodon.genome
 genomes/Motor Worm.genome
 genomes/Octopod.genome
-genomes/Stem grow emitter.genome
-genomes/Sucker.genome
-genomes/Tapeworm.genome
 genomes/Tardigrade.genome
 genomes/TorrentLarva.genome
 genomes/WaterBoatman.genome
