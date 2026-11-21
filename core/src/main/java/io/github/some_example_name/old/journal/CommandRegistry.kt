@@ -215,6 +215,9 @@ object CommandRegistry {
         t<EditorZoomCamera>(826),
         t<TutorialNextStep>(827),
         t<io.github.some_example_name.old.editor.system.logic.SetEditorDebugFilter>(828),
+        t<io.github.some_example_name.old.editor.system.logic.SetEditorShowBoundary>(829),
+        t<io.github.some_example_name.old.editor.system.logic.SetEditorShowNeuralLinks>(830),
+        t<io.github.some_example_name.old.editor.system.logic.SetEditorGenomeColors>(831),
 
         // --- События потока симуляции ---
         t<SessionStarted>(900),

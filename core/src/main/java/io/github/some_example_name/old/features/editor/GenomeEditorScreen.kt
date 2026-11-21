@@ -132,10 +132,7 @@ class GenomeEditorScreen(
         compose()
     }
 
-    private var displayedMode = renderSystem.mode
-
     private fun compose() {
-        displayedMode = renderSystem.mode
         composeGenomeEditor.composeGenomeEditor(
             stage,
             editorSimulationSystem,
@@ -178,7 +175,6 @@ class GenomeEditorScreen(
     override fun render(delta: Float) {
         Gdx.gl.glClearColor(0.10f, 0.12f, 0.14f, 1f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
-        if (displayedMode != renderSystem.mode) compose()
         if (state.currentTick != currentTick) {
             state.currentTick = currentTick
 

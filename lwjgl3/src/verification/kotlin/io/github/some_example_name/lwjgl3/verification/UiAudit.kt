@@ -89,7 +89,7 @@ fun main() {
         fun actors(a: Actor): List<Actor> = listOf(a) + if(a is Group) a.children.flatMap { actors(it) } else emptyList()
         fun allActors() = stages(Gdx.input.inputProcessor).flatMap { actors(it.root) }
         fun click(key: String) {
-            val text = if (key in listOf("editor-tools", "debug-filter-button")) key else DIGameGlobalContainer.bundle.get(key)
+            val text = if (key in listOf("editor-tools", "debug-filter-button", "debug-options-button")) key else DIGameGlobalContainer.bundle.get(key)
             val a = allActors().lastOrNull { (it.name == key || it is TextButton && it.text.toString()==text) && it.isVisible }
             checkNotNull(a) { "Missing button $key" }
             val pos = a.localToStageCoordinates(Vector2(a.width/2,a.height/2))
@@ -109,9 +109,9 @@ fun main() {
         steps += "world-settings" to { click("button.settings") }
         bottom("world-settings-bottom")
         route("GoGenomeEditor")
-        steps += "editor-filter" to { click("debug-filter-button") }
-        steps += "editor-energy" to { click("debugFilter.energy") }
-        steps += "editor-filter-verify" to { check(io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.editorRenderSystem.debugFilter == io.github.some_example_name.render.DebugFilter.ENERGY) }
+        steps += "editor-options" to { click("debug-options-button") }
+        steps += "editor-boundary" to { click("debugBoundary") }
+        steps += "editor-options-verify" to { check(io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.editorRenderSystem.showBoundary) }
         steps += "editor-tools-symmetry" to { if(allActors().any { it.name == "editor-tools" }) click("editor-tools") }
         steps += "editor-symmetry" to { click("button.symmetry") }
         route("GoGenomeEditor")

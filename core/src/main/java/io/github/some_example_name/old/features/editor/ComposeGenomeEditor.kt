@@ -1,17 +1,15 @@
 package io.github.some_example_name.old.features.editor
 
 import com.badlogic.gdx.graphics.Texture
+import com.badlogic.gdx.scenes.scene2d.ui.Container
 import com.badlogic.gdx.scenes.scene2d.ui.ScrollPane
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.kotcrab.vis.ui.widget.VisDialog
 import com.kotcrab.vis.ui.widget.VisTable
 import io.github.some_example_name.old.core.ui.makeStyledIconButton
 import io.github.some_example_name.old.core.ui.setupTitleSize
-import io.github.some_example_name.old.core.ui.showDebugFilterDialog
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
 import io.github.some_example_name.old.features.simulation.HudIcons
-import io.github.some_example_name.old.editor.system.logic.SetEditorDebugFilter
-import io.github.some_example_name.render.RenderMode
 import com.badlogic.gdx.Application
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Color
@@ -27,7 +25,6 @@ import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.isNeura
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.isRightClick
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.lastTick
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.linkColor
-import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.showPhysicalLink
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.symmetryManager
 import io.github.some_example_name.old.editor.system.logic.CtrlY
 import io.github.some_example_name.old.editor.system.logic.CtrlZ
@@ -38,9 +35,13 @@ import io.github.some_example_name.old.editor.system.logic.NextTickButtonTap
 import io.github.some_example_name.old.editor.system.logic.PrevTickButtonTap
 import io.github.some_example_name.old.editor.system.logic.SetNeuralLinkColor
 import io.github.some_example_name.old.editor.system.logic.SetNeuralLinking
-import io.github.some_example_name.old.editor.system.logic.SetRenderMode
 import io.github.some_example_name.old.editor.system.logic.SetRepeatLastAction
 import io.github.some_example_name.old.editor.system.logic.SetShowPhysicalLinks
+import io.github.some_example_name.old.editor.system.logic.SetEditorShowBoundary
+import io.github.some_example_name.old.editor.system.logic.SetEditorShowNeuralLinks
+import io.github.some_example_name.old.editor.system.logic.SetEditorGenomeColors
+import io.github.some_example_name.old.features.simulation.DebugOptions
+import io.github.some_example_name.old.features.simulation.DebugOptionsDialog
 import io.github.some_example_name.old.editor.system.logic.SetSymmetry
 import io.github.some_example_name.old.editor.system.logic.TimeSlider
 import io.github.some_example_name.old.editor.system.render.EditorRenderSystem
@@ -49,7 +50,6 @@ import io.github.some_example_name.old.features.editor.dialog.SymmetryDialog
 import io.github.some_example_name.old.core.ui.FlowAlignment
 import io.github.some_example_name.old.core.ui.STYLE_BLACK
 import io.github.some_example_name.old.core.ui.dp
-import io.github.some_example_name.old.core.ui.renderModeSelectBox
 import io.github.some_example_name.old.core.ui.globalVisTable
 import io.github.some_example_name.old.core.ui.hint
 import io.github.some_example_name.old.core.ui.visFlowRow
@@ -111,14 +111,6 @@ class ComposeGenomeEditor {
                     stage.saveDialog(isGoToMenu = false, genomeName = editorSimulationSystem.getGenome().name, editorLogicSystem)
                 }).hint(bundle.get("editor.hint.save"))
 
-                visToggleButton(
-                    text = bundle.get("button.showPhysicalLink"),
-                    checked = showPhysicalLink,
-                    onCheckedChange = {
-                        editorLogicSystem.putUiCommand(SetShowPhysicalLinks(it))
-                    }
-                ).hint(bundle.get("editor.hint.physicalLinks"))
-
                 visTextButton(bundle.get("button.neuralLinkColor"), onClick = {
                     stage.colorPickerDialog(
                         initColor = linkColor,
@@ -132,14 +124,6 @@ class ComposeGenomeEditor {
                         onApply = { editorLogicSystem.putUiCommand(SetSymmetry(it)) }
                     ).show(stage)
                 }).hint(bundle.get("editor.hint.symmetry"))
-
-                // Режим — свой у редактора, с режимом симуляции не связан.
-                add(
-                    renderModeSelectBox(
-                        selected = editorRenderSystem.mode,
-                        onSelect = { editorLogicSystem.putUiCommand(SetRenderMode(it)) }
-                    ).hint(bundle.get("editor.hint.renderMode"))
-                )
 
                 if (Gdx.app.type == Application.ApplicationType.Android) {
                     visToggleButton(
@@ -160,6 +144,39 @@ class ComposeGenomeEditor {
                 }
 
             }
+            // Редактор рисует только отладочным режимом и без фильтров (только оригинал),
+            // поэтому вместо фильтра — галочки отладки, как в симуляции, без заливки и физики.
+            val options = makeStyledIconButton(icons.options, textures)
+            options.name = "debug-options-button"
+            options.imageCell.grow()
+            options.pad(6.dp())
+            options.addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent?, actor: Actor?) {
+                    DebugOptionsDialog(
+                        game = game,
+                        bundle = bundle,
+                        state = DebugOptions(
+                            showBoundary = editorRenderSystem.showBoundary,
+                            showLinks = editorRenderSystem.showLinks,
+                            showNeuralLinks = editorRenderSystem.showNeuralLinks,
+                            fillAreas = false,
+                            genomeColors = editorRenderSystem.genomeColors,
+                            noTail = false,
+                            noDeepKill = false
+                        ),
+                        onBoundary = { editorLogicSystem.putUiCommand(SetEditorShowBoundary(it)) },
+                        onLinks = { editorLogicSystem.putUiCommand(SetShowPhysicalLinks(it)) },
+                        onNeuralLinks = { editorLogicSystem.putUiCommand(SetEditorShowNeuralLinks(it)) },
+                        onFillAreas = null,
+                        onGenomeColors = { editorLogicSystem.putUiCommand(SetEditorGenomeColors(it)) },
+                        onPhysics = null
+                    ).showUnder(stage, options)
+                }
+            })
+            options.hint(bundle.get("debugOptions.hint"))
+            // Квадрат 48 dp своим размером: в ряду кнопок (visFlowRow) ячейке размер не задать.
+            val optionsBox = Container(options).size(48.dp())
+
             visTable({ growX().pad(4.dp(), 4.dp(), 4.dp(), 56.dp()) }) {
                 if (compact) {
                     visTextButton(bundle.get("button.menu"), onClick = {
@@ -181,22 +198,15 @@ class ComposeGenomeEditor {
                         dialog.show(stage)
                         dialog.centerWindow()
                     }) { left() }.name = "editor-tools"
+                    add(optionsBox)
                 } else {
-                    visFlowRow(maxWidth = stage.width - 128.dp(), content = tools)
-                }
-                if (editorRenderSystem.mode == RenderMode.DEBUG) {
-                    val filter = makeStyledIconButton(icons.optics, textures)
-                    filter.name = "debug-filter-button"
-                    filter.imageCell.grow()
-                    filter.pad(6.dp())
-                    filter.addListener(object : ChangeListener() {
-                        override fun changed(event: ChangeEvent?, actor: Actor?) {
-                            stage.showDebugFilterDialog(editorRenderSystem.debugFilter) {
-                                editorLogicSystem.putUiCommand(SetEditorDebugFilter(it))
-                            }
-                        }
-                    })
-                    add(filter.hint(bundle.get("debugFilter.hint"))).size(48.dp())
+                    // Кнопка опций — последней в ряду: умещается — встаёт в ту же строку, нет —
+                    // переносится вместе с остальными. Отдельной ячейкой после ряда она всегда
+                    // уходила на новую строку: visFlowRow закрывает каждую свою строку row().
+                    visFlowRow(maxWidth = stage.width - 128.dp()) {
+                        tools()
+                        add(optionsBox)
+                    }
                 }
             }
             row()

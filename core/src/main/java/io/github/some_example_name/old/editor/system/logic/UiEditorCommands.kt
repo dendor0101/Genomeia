@@ -213,11 +213,34 @@ class SetShowPhysicalLinks(val visible: Boolean): UiEditorCommands {
     override val detail get() = visible.toString()
 }
 
+/** Галочка «Граница» в окне опций отладки редактора. */
+@Serializable
+class SetEditorShowBoundary(val show: Boolean) : UiEditorCommands {
+    override val name get() = "SetEditorShowBoundary"
+    override val detail get() = show.toString()
+}
+
+/** Галочка «Нейросвязи» в окне опций отладки редактора. */
+@Serializable
+class SetEditorShowNeuralLinks(val show: Boolean) : UiEditorCommands {
+    override val name get() = "SetEditorShowNeuralLinks"
+    override val detail get() = show.toString()
+}
+
+/** Галочка «Цвет из генома» в окне опций отладки редактора. */
+@Serializable
+class SetEditorGenomeColors(val enabled: Boolean) : UiEditorCommands {
+    override val name get() = "SetEditorGenomeColors"
+    override val detail get() = enabled.toString()
+}
+
+/** Устарела: фильтров в редакторе больше нет. Осталась ради старых .bug, см. EditorLogicSystem. */
 @Serializable
 class SetEditorDebugFilter(val filter: io.github.some_example_name.render.DebugFilter) : UiEditorCommands {
     override val name get() = "SetEditorDebugFilter"
 }
 
+/** Устарела: редактор рисует только отладочным режимом. Осталась ради старых .bug. */
 @Serializable
 class SetRenderMode(@Serializable(with=io.github.some_example_name.old.journal.SavedRenderMode::class) val mode: RenderMode): UiEditorCommands {
     override val name get() = "SetRenderMode"

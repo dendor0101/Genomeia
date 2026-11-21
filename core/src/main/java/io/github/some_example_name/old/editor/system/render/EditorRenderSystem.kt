@@ -22,6 +22,7 @@ import io.github.some_example_name.render.WorldRenderer
 import io.github.some_example_name.render.pack.CellInstanceBuffer
 import io.github.some_example_name.render.pack.CellLook
 import io.github.some_example_name.render.pack.OverlayInstanceBuffer
+import it.unimi.dsi.fastutil.ints.IntArrayList
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -33,9 +34,16 @@ import kotlin.math.sin
  * упакованные байты в тот же самый [WorldRenderer] — ровно ради этого переиспользования
  * упаковка и вынесена в CellInstanceBuffer.
  *
- * В отладочном режиме клетки красятся и подписываются по тем же правилам, что в
- * симуляции (DebugCellPalette): цвет из генома, рисунок типа, стрелки, лучи глаз, жгутики и
- * нейросвязи — шейдером, а не линиями ShapeRenderer.
+ * Редактор рисует только отладочным режимом и только без фильтра (оригинал). Другие режимы
+ * здесь отключены: микроскоп на телефоне в редакторе не рисовал ничего, кроме меток
+ * деления (баг игрока 20.11), а редактору нужна схема клеток, а не красивая картинка.
+ * Клетки красятся и подписываются по тем же правилам, что в симуляции (DebugCellPalette):
+ * цвет из генома, рисунок типа, стрелки, лучи глаз, жгутики и нейросвязи — шейдером.
+ *
+ * Галочки отладки — свои у редактора. Связи и граница считаются по самим клеткам
+ * ([EditorBodyMesh]): мира физики у редактора нет. Цвет из генома включён по умолчанию,
+ * как в симуляции; без него — цвет типа. Нейросвязи (включены) можно скрыть. Заливки между
+ * клетками и переключателей физики, как в симуляции, здесь нет.
  */
 class EditorRenderSystem(
     val worldRenderer: WorldRenderer,
@@ -62,11 +70,25 @@ class EditorRenderSystem(
         overlayBuffer.put(x0, y0, x1, y1, color, params)
     }
 
-    var debugFilter = DebugFilter.ORIGINAL
-        set(value) {
-            field = value
-            isUpdateBuffer = true
-        }
+    // Галочки отладки. Меняются только командами (EditorLogicSystem).
+
+    /** «Связи»: все связи тела тонкими линиями. */
+    var showLinks = false
+        set(value) { field = value; isUpdateBuffer = true }
+
+    /** «Граница»: контур тела — края, которые омывает среда, и края дыр. */
+    var showBoundary = false
+        set(value) { field = value; isUpdateBuffer = true }
+
+    /**
+     * «Цвет из генома»: цвет, заданный в геноме, а не цвет типа клетки. В редакторе включён
+     * по умолчанию: игрок красит клетки сам и ждёт увидеть свой цвет.
+     */
+    var genomeColors = true
+        set(value) { field = value; isUpdateBuffer = true }
+
+    /** «Нейросвязи»: рисовать нейросвязи. Включены по умолчанию. */
+    var showNeuralLinks = true
 
     var isUpdateBuffer = true
 
@@ -76,16 +98,13 @@ class EditorRenderSystem(
      */
     private var animationTime = 0f
 
-    /**
-     * Режим рендера редактора — свой, выбирается списком на экране редактора и с режимом
-     * симуляции не связан. Смена режима требует перезаливки буфера (см. [fillBuffer]),
-     * поэтому выставлять его — через этот сеттер, он об этом позаботится.
-     */
-    var mode: RenderMode = RenderMode.DEBUG
-        set(value) {
-            if (field != value) isUpdateBuffer = true
-            field = value
-        }
+    /** Положения и радиусы клеток кадра в порядке буфера — вход [mesh]. */
+    private var cellCount = 0
+    private var cellX = FloatArray(0)
+    private var cellY = FloatArray(0)
+    private var cellR = FloatArray(0)
+
+    private val mesh = EditorBodyMesh()
 
     fun create(
         shapeRenderer: ShapeRenderer,
@@ -118,13 +137,16 @@ class EditorRenderSystem(
             uploadCells = true
             // Редактор феромоны не рисует: в записи роста их нет.
             // Каждый кадр, а не только при isUpdateBuffer: связи и стрелки идут за живыми
-            // позициями частиц, как и линии DrawingHelperElements, которые они заменяют.
-            overlay = if (mode.drawsDebugOverlay) fillOverlay() else null
+            // позициями частиц.
+            overlay = fillOverlay()
+            // Заливки между клетками в редакторе нет: в позе покоя клетки и так закрывают
+            // свои треугольники почти целиком.
+            areaIndices = null
             // Сигналов в записи роста нет, импульсам по связям бежать нечем, но рисунки
             // клеток живут и без сигнала: хлоропласты текут, реснички бьют.
             time = animationTime
-            mode = this@EditorRenderSystem.mode
-            debugFilter = this@EditorRenderSystem.debugFilter
+            mode = RenderMode.DEBUG
+            debugFilter = DebugFilter.ORIGINAL
         }
         worldRenderer.render(frame)
 
@@ -132,59 +154,43 @@ class EditorRenderSystem(
         Gdx.gl.glDepthMask(false)
         Gdx.gl.glEnable(GL20.GL_BLEND)
 
-        drawingHelperElements.render(
-            touchedCellX,
-            touchedCellY,
-            drawsLinksAndDirections = !mode.drawsDebugOverlay
-        )
-    }
-
-    // В записи роста доступны позиции частиц. Нейронный сигнал в ней отсутствует.
-    private fun editorFilterByte(indexInTick: Int): Int = when (debugFilter) {
-        DebugFilter.ORIGINAL -> 0
-        DebugFilter.SIGNAL -> CellLook.signalFilterByte(0f)
-        DebugFilter.COLLISION -> CellLook.collisionFilterByte(cellReplay.collides(currentTick, indexInTick))
-        DebugFilter.ENERGY -> cellReplay.energyFill(currentTick, indexInTick)
-        // В редакторе нет мира физики и сна: все клетки «не спят».
-        DebugFilter.SLEEP -> CellLook.sleepFilterByte(false)
+        drawingHelperElements.render(touchedCellX, touchedCellY)
     }
 
     private fun fillBuffer() {
         cellBuffer.begin()
+        cellCount = 0
 
-        // Энергии в записи роста нет. Реалистичный и отладочный режимы её и не рисуют. В
-        // ностальгическом же ядро — это то, чем клетка отличается от субстанции, поэтому там
-        // клетки получают энергию, которую симуляция редактора и так держит у всех
-        // (EditorSimulationSystem: 5).
-        val energy = if (mode == RenderMode.NOSTALGIC) NOSTALGIC_ENERGY else 0f
-        val debug = mode == RenderMode.DEBUG
-
-        var indexInTick = 0
         cellReplay.forEachInTick(currentTick) { cellType, index, _, angleCos, angleSin, color ->
             val type = cellType.toInt()
+            val x = particleEntity.x(index)
+            val y = particleEntity.y(index)
+            val radius = particleEntity.radius[index]
             cellBuffer.putCell(
-                x = particleEntity.x(index),
-                y = particleEntity.y(index),
-                // Цвет из генома и в отладке — как с галочкой «Цвет из генома» в симуляции
-                // (она там включена по умолчанию): игрок видит организм в своих цветах.
-                color = color,
+                x = x,
+                y = y,
+                color = if (genomeColors) color else palette.color(type, color),
                 angleCos = angleCos,
                 angleSin = angleSin,
-                radius = particleEntity.radius[index],
-                energy = energy,
+                radius = radius,
+                // Энергии в записи роста нет, а отладочный режим её и не рисует.
+                energy = 0f,
                 cellType = type,
                 // Ключ шума — индекс частицы, как и в живом мире: он закреплён за клеткой
                 // и не зависит от порядка сборки буфера.
                 noiseSeed = index,
                 // Сигналов в записи роста нет: мышцы не сжаты, хвосты не тянут.
-                look = if (debug) palette.look(type, action = 0f, filter = editorFilterByte(indexInTick)) else 0
+                look = palette.look(type, action = 0f)
             )
-            indexInTick++
+            rememberCell(x, y, radius)
         }
 
+        // Связи и контур — только по настоящим клеткам: призраки ниже в буфере идут после
+        // них и в [mesh] не попадают.
+        if (showLinks || showBoundary) mesh.update(cellCount, cellX, cellY, cellR)
+
         // Клетка-призрак на месте будущего деления: показывает, куда и под каким углом
-        // пойдёт дочерняя, пока игрок настраивает деление. В реалистичном режиме она
-        // невидима (пустая текстура), в отладочном — полупрозрачная, с рисунком своего
+        // пойдёт дочерняя, пока игрок настраивает деление. Полупрозрачная, с рисунком своего
         // будущего типа: так видно, что за клетка появится на следующей стадии.
         val stage = currentTick
         val stageInstructions = editorSimulationSystem.genomeStageInstruction
@@ -203,7 +209,7 @@ class EditorRenderSystem(
                     cellBuffer.putCell(
                         x = particleEntity.x(index),
                         y = particleEntity.y(index),
-                        color = ownColor,
+                        color = if (futureType >= 0 && !genomeColors) palette.color(futureType, ownColor) else ownColor,
                         angleCos = cos(angle),
                         angleSin = sin(angle),
                         radius = particleEntity.radius[index],
@@ -211,7 +217,7 @@ class EditorRenderSystem(
                         // Пустая текстура, а не текстура какого-то типа: клетки ещё нет.
                         cellType = cellList.emptyTextureLayer,
                         noiseSeed = index,
-                        look = if (!debug) 0 else if (futureType >= 0) {
+                        look = if (futureType >= 0) {
                             palette.look(futureType, action = 0f, transparency = DebugCellPalette.GHOST_TRANSPARENCY)
                         } else {
                             CellLook.look(CellLook.PLAIN, transparency = DebugCellPalette.GHOST_TRANSPARENCY)
@@ -222,11 +228,22 @@ class EditorRenderSystem(
         }
     }
 
+    private fun rememberCell(x: Float, y: Float, radius: Float) {
+        if (cellCount == cellX.size) {
+            val grown = maxOf(64, cellX.size * 2)
+            cellX = cellX.copyOf(grown); cellY = cellY.copyOf(grown); cellR = cellR.copyOf(grown)
+        }
+        cellX[cellCount] = x
+        cellY[cellCount] = y
+        cellR[cellCount] = radius
+        cellCount++
+    }
+
     /**
-     * Оверлей отладочного режима: стрелки, лучи и жгутики у клеток текущего тика, нейросвязи —
-     * следующего (как и у DrawingHelperElements: связи показывают, что получится после
-     * шага). У клетки, которую сейчас тащат, стрелки нет, а её связи пропадают, пока она
-     * далеко от соседа, — тоже как было.
+     * Оверлей отладочного режима: стрелки, лучи и жгутики у клеток текущего тика, связи и
+     * контур тела, нейросвязи — следующего тика (связи показывают, что получится после
+     * шага). У клетки, которую сейчас тащат, стрелки нет, а её нейросвязи пропадают, пока
+     * она далеко от соседа.
      */
     private fun fillOverlay(): java.nio.ByteBuffer {
         overlayBuffer.begin()
@@ -251,6 +268,15 @@ class EditorRenderSystem(
             }
         }
 
+        // Связи тоньше и под контуром — порядок тот же, что в симуляции (RenderBufferManager).
+        if (showLinks) writePairs(mesh.links, OverlayInstanceBuffer.KIND_LINK, DebugCellPalette.LINK_COLOR)
+        if (showBoundary) writePairs(mesh.boundary, OverlayInstanceBuffer.KIND_EDGE, DebugCellPalette.BOUNDARY_COLOR)
+
+        if (showNeuralLinks) writeNeuralLinks()
+        return overlayBuffer.end()
+    }
+
+    private fun writeNeuralLinks() {
         neuralLinkReplay.forEachInTick(DIGenomeEditorContainer.nextStageTick) { isLink1NeuralDirected, color, cellA, cellB ->
             if (!drawingHelperElements.isLinkVisible(cellA, cellB)) return@forEachInTick
             // Сигнал идёт из второй клетки в первую при isLink1NeuralDirected — как в
@@ -266,11 +292,17 @@ class EditorRenderSystem(
                 seed = from
             )
         }
-        return overlayBuffer.end()
     }
 
-    private companion object {
-        /** Энергия клеток редактора в ностальгическом режиме — см. [fillBuffer]. */
-        const val NOSTALGIC_ENERGY = 5f
+    /** Отрезки между клетками пар [pairs] (номера буфера клеток кадра). */
+    private fun writePairs(pairs: IntArrayList, kind: Int, color: Int) {
+        val params = OverlayInstanceBuffer.params(kind, 0f, 0)
+        var k = 0
+        while (k < pairs.size) {
+            val a = pairs.getInt(k)
+            val b = pairs.getInt(k + 1)
+            k += 2
+            overlayBuffer.put(cellX[a], cellY[a], cellX[b], cellY[b], color, params)
+        }
     }
 }

@@ -245,5 +245,14 @@ class DebugCellPalette(private val cellList: List<Cell>) {
 
         /** Прозрачность «призрака» в редакторе — клетки, которая появится на следующей стадии. */
         const val GHOST_TRANSPARENCY = 0.55f
+
+        /**
+         * Цвет границы тела (галочка «Граница») — зелёный контура стенда (physics-lab,
+         * BOUNDARY_COLOR), упаковка Color.toIntBits. Общий у симуляции и редактора генома.
+         */
+        val BOUNDARY_COLOR = com.badlogic.gdx.graphics.Color.valueOf("4BE08AFF").toIntBits()
+
+        /** Цвет связей (галочка «Связи») — светло-серый полупрозрачный: сетка видна, контур поверх читается. */
+        val LINK_COLOR = com.badlogic.gdx.graphics.Color.valueOf("D8DCE6A0").toIntBits()
     }
 }
