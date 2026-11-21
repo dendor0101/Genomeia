@@ -84,4 +84,27 @@ class BoundaryOrientationTest {
         s.killEdgeNow(s.baked.edgeOf(1, 3)); s.refreshSurface(); verify()
         s.resetState(); verify()
     }
+    @Test fun boneVerticesDoNotMoveWhileASoftVertexCanTakeTheCorrection() {
+        // Вывернутый треугольник на стыке кости и ткани: вершины 0 и 1 — кость, вершина 2 — мягкая клетка.
+        val x = doubleArrayOf(0.0, 1.0, 0.4); val y = doubleArrayOf(0.0, 0.0, -0.2)
+        val w = doubleArrayOf(1.0, 1.0, 1.0)
+        val bone = intArrayOf(0, 0, -1)
+        solveBoundaryOrientation(1, intArrayOf(0), intArrayOf(1), intArrayOf(2), byteArrayOf(1), x, y, w, bone)
+        assertArrayEquals("клетки кости стоят", doubleArrayOf(0.0, 1.0), x.copyOf(2), 0.0)
+        assertArrayEquals(doubleArrayOf(0.0, 0.0), y.copyOf(2), 0.0)
+        assertEquals("треугольник расправлен мягкой вершиной", 0.0, area(x, y), 1e-15)
+        assertEquals("мягкая вершина вернулась на линию кости", 0.0, y[2], 1e-15)
+        // Мягкая вершина закреплена — расправлять приходится кости, как раньше.
+        val x2 = doubleArrayOf(0.0, 1.0, 0.4); val y2 = doubleArrayOf(0.0, 0.0, -0.2)
+        solveBoundaryOrientation(1, intArrayOf(0), intArrayOf(1), intArrayOf(2), byteArrayOf(1), x2, y2, doubleArrayOf(1.0, 1.0, 0.0), bone)
+        assertEquals(-0.2, y2[2], 0.0)
+        assertEquals(0.0, area(x2, y2), 1e-15)
+        assertTrue("кость сдвинулась к закреплённой клетке", y2[0] < 0.0 && y2[1] < 0.0)
+        // Все три вершины — кость: поправка делится как у обычной ткани.
+        val x3 = doubleArrayOf(0.0, 1.0, 0.4); val y3 = doubleArrayOf(0.0, 0.0, -0.2)
+        val x4 = x3.copyOf(); val y4 = y3.copyOf()
+        solveBoundaryOrientation(1, intArrayOf(0), intArrayOf(1), intArrayOf(2), byteArrayOf(1), x3, y3, w, intArrayOf(0, 0, 1))
+        solve(x4, y4, w)
+        assertArrayEquals(x4, x3, 0.0); assertArrayEquals(y4, y3, 0.0)
+    }
 }

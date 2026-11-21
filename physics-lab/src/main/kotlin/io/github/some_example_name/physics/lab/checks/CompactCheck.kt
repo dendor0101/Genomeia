@@ -158,7 +158,9 @@ private val contactScratch = setOf("boneCx", "boneCy", "keptKeys", "mark", "move
     "cRR", "cVn", "ddaX", "ddaY", "frcList", "lowKeys", "newKeys", "nearRestSlot",
     // Пробои подшага; метки «сдвинутых» сверяются со штампом, а штамп — счётчик за историю
     // мира, как и счётчик пересборок широкой фазы.
-    "pierceA", "pierceB", "movedMark", "movedStamp", "bpBuilds")
+    "pierceA", "pierceB", "movedMark", "movedStamp", "bpBuilds",
+    // Вид контакта и список упоров в неподвижное (cFixed): пишутся в каждом подшаге до чтения.
+    "cFixed", "fixedList")
 
 /** Диапазоны бодрствующих частиц сна: живая часть — spanCount, за ней остатки прошлых тиков. */
 private val sleepScratch = setOf("sleep.spanStart", "sleep.spanEnd")

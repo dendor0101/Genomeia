@@ -73,6 +73,7 @@ internal fun BodyState.deactivateFree(i: Int, refresh: Boolean = true) {
     if (foldTicks.size > i) foldTicks[i] = 0
     if (contactPressure.size > i) contactPressure[i] = 0.0
     if (contactPressureN.size > i) contactPressureN[i] = 0
+    if (impactSpeed.size > i) impactSpeed[i] = 0.0
     baked.touch(i)
     if (refresh) refreshSurface()
     structureVersion++

@@ -65,8 +65,11 @@ class DistanceSweepRegressionTest {
             if (len < 1e-12) continue
             dx /= len; dy /= len
             val m = s.conMuscle[c]
-            val rest = s.conRest[c] * (if (m < 0) 1.0 else s.muscleScaleOf[m])
-            val dl = -(len - rest) / (w + alpha)
+            val scale = if (m < 0) 1.0 else s.muscleScaleOf[m]
+            var over = len - s.conRest[c] * scale
+            // Потолок тяги мышцы — как в ядре, см. MUSCLE_MAX_PULL.
+            if (scale < 1.0 && over > MUSCLE_MAX_PULL * s.conRest[c]) over = MUSCLE_MAX_PULL * s.conRest[c]
+            val dl = -over / (w + alpha)
             s.px[i] += dx * dl * wi; s.py[i] += dy * dl * wi
             s.px[j] -= dx * dl * wj; s.py[j] -= dy * dl * wj
         }

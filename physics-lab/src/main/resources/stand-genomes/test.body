@@ -1,0 +1,62 @@
+# genomeia stand body 1
+name	Test
+source	C:/Users/Genomeia/StudioProjects/Genomeia/.claude/worktrees/nostalgic-shader/assets/genomes/Test.genome
+P 0 63.18039 64.85278 0.5000 bone 1
+P 1 62.96372 64.10741 0.5000 bone 1
+P 2 63.51459 64.35267 0.5000 fat 0
+P 3 63.77893 64.89464 0.5000 bone 1
+P 4 63.45187 63.75595 0.5000 tail 0
+P 5 63.67664 63.19965 0.5000 bone 1
+P 6 64.00000 64.00000 0.5000 zygote 0
+P 7 64.26297 64.53936 0.5000 fat 0
+P 8 64.22476 63.44369 0.5000 tail 0
+P 9 64.60000 64.00000 0.5000 leaf 0
+P 10 64.82589 63.44091 0.5000 bone 1
+L 0 1
+L 0 2
+L 0 3
+L 1 2
+L 1 4
+L 2 3
+L 2 4
+L 2 6
+L 2 7
+L 3 7
+L 4 5
+L 4 6
+L 4 8
+X 5 6
+L 5 8
+L 6 7
+L 6 8
+L 6 9
+L 7 9
+L 8 9
+L 8 10
+L 9 10
+T 0 1 2
+T 0 2 3
+T 1 4 2
+T 2 7 3
+T 2 4 6
+T 2 6 7
+T 4 5 8
+T 4 8 6
+T 6 9 7
+T 6 8 9
+T 8 10 9
+G 1 9 6
+G 2 7 9
+G 2 2 6
+G 3 4 2
+G 3 8 6
+G 4 5 4
+G 4 3 2
+G 4 10 9
+O 4 5
+O 4 3
+O 4 10
+G 5 1 2
+G 5 0 3
+O 5 1
+O 5 0

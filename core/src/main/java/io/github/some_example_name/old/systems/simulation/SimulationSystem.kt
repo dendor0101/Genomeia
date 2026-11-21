@@ -201,10 +201,12 @@ class SimulationSystem(
         // Клетки организма обязаны лежать в его арене — на этом будет держаться обход
         // организма по диапазону в параллельных фазах. Стоит здесь, вместе с проверкой
         // сетки: обе ловят «сущность есть, но её никто не обсчитывает».
-        if (DEBUG_CHECKS) cellEntity.verifyArenaIntegrity()
-        if (DEBUG_CHECKS) organEntity.triangles?.verify(organEntity, linkEntity)
+        // Сверки обходят весь мир — раз в DEBUG_VERIFY_PERIOD тиков: каждый тик они стоили ~3.6% главного потока (10.11).
+        val verifyNow = DEBUG_CHECKS && simulationData.tickCounter % DEBUG_VERIFY_PERIOD == 0
+        if (verifyNow) cellEntity.verifyArenaIntegrity()
+        if (verifyNow) organEntity.triangles?.verify(organEntity, linkEntity)
 
-        if (DEBUG_CHECKS) {
+        if (verifyNow) {
             gridManager.verifyIntegrity(
                 isAlive = particleEntity.isAlive,
                 particleCell = particleEntity.gridId,
@@ -469,7 +471,10 @@ class SimulationSystem(
             },
             input = userCommandManager::hashInput,
             grid = gridManager::hashOrder,
-            physics = worldPhysics::hash
+            physics = worldPhysics::hash,
+            // Части хэша независимы — по воркерам. Замер 10.11, 97k клеток: хэш раз в 60 тиков шёл
+            // ~140 мс в одном потоке (рывок каждые две секунды, 2.8% главного потока в среднем).
+            parallel = { n, job -> threadManager.executor.runChunks(n, Phase.WORLD_CMD, ParallelExecutor.ChunkJob { k, _ -> job(k) }) }
         )
         // Генератор команд игрока (часть PlayerInput) в каждом запуске с новым сидом: на мир без команд он не влияет.
         if (tick == hashWatchTick) hashWatchReport = "%016x".format(stateHashNames.indices.filter { stateHashNames[it] != "PlayerInput" }.fold(0L) { h, k -> Fnv.long(h, state.parts[k]) })
@@ -548,6 +553,7 @@ class SimulationSystem(
          * -Dgenomeia.stateHashPeriod=1 — каждый тик: так находится первый тик, где повтор
          * разошёлся. Запись и повтор должны идти с одним и тем же значением.
          */
+        const val DEBUG_VERIFY_PERIOD = 30
         val STATE_HASH_PERIOD = System.getProperty("genomeia.stateHashPeriod")?.toIntOrNull()?.coerceAtLeast(1) ?: 60
 
         /** Сколько спать, пока повтор держит мир на тике. */

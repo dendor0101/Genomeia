@@ -51,6 +51,8 @@ private fun BodyState.groundOne(i: Int, h: Double) {
     px[i] = prevX[i] + nvx * h; py[i] = prevY[i] + nvy * h
 }
 
+internal fun BodyState.gripCountNow(): Int { if (gripsDirty) countGrips(); return gripN }
+
 /** Сколько в мире частиц с опорой — пересчёт после смены или перестройки (gripsDirty). */
 private fun BodyState.countGrips() {
     var c = 0

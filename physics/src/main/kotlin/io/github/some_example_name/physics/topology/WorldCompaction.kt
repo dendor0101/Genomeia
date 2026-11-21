@@ -38,6 +38,7 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
     var lapT = System.nanoTime()
     fun lap(k: Int) { val now = System.nanoTime(); dbgCompactNs[k] = now - lapT; lapT = now }
     if (tearsPending) rebuildTimed()
+    splitDirtyBones()
     lap(0)
     val nOld = n
     require(removed.size >= nOld) { "removed — по частице мира" }
@@ -55,7 +56,8 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
     val eNew = numbering(edgeKept)
     val muscleKept = BooleanArray(old.muscleClusters.size) { old.muscleClusters[it].isNotEmpty() && !removed[old.muscleClusters[it][0]] }
     val mNew = numbering(muscleKept)
-    val boneKept = BooleanArray(rigidBones.size) { !removed[rigidBones[it][0]] }
+    // Пустая кость (все клетки погибли или разошлись одиночками, см. BoneSplit.kt) выбрасывается.
+    val boneKept = BooleanArray(rigidBones.size) { rigidBones[it].isNotEmpty() && !removed[rigidBones[it][0]] }
     val bNew = numbering(boneKept)
     val orgCount = organismCount
     val orgKept = BooleanArray(orgCount) { true }
@@ -73,7 +75,7 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
     fun p(a: IntArray, values: IntArray? = null) = if (a.size < nOld) a else pick(a, pNew, nOld, nNew, values)
     cellDead = p(cellDead); cellUnborn = p(cellUnborn); cellScale = p(cellScale); cellScaleTarget = p(cellScaleTarget); dragScale = p(dragScale)
     cellSoftness = p(cellSoftness); cellNoContact = p(cellNoContact); cellGroup = p(cellGroup)
-    cellFiberX = p(cellFiberX); cellFiberY = p(cellFiberY)
+    cellFiberX = p(cellFiberX); cellFiberY = p(cellFiberY) // волокно мышцы (MuscleFiber.kt)
     cellGrip = p(cellGrip); gripsDirty = true
     cellHomeCompliance = p(cellHomeCompliance); cellHomeX = p(cellHomeX); cellHomeY = p(cellHomeY)
     px = p(px); py = p(py); prevX = p(prevX); prevY = p(prevY); vx = p(vx); vy = p(vy)
@@ -85,6 +87,7 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
     sleepAnchorX = p(sleepAnchorX); sleepAnchorY = p(sleepAnchorY)
     tickJitterX = p(tickJitterX); tickJitterY = p(tickJitterY)
     contactPressure = p(contactPressure); contactPressureN = p(contactPressureN)
+    impactSpeed = p(impactSpeed)
     dbgOnly = dbgOnly?.let { p(it) }
     // Снимки разбора берутся заново в начале тика; сетка ловушек — черновик.
     dbgSnapX = DoubleArray(0); dbgSnapY = DoubleArray(0); dbgSnapVx = DoubleArray(0); dbgSnapVy = DoubleArray(0)
@@ -133,6 +136,7 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
     java.util.Arrays.fill(growEdges, growEdgeN, growEdges.size, 0)
     java.util.Arrays.fill(growTris, growTriN, growTris.size, 0)
     tearQueueN = 0
+    tearQueueQuiet = 0
     java.util.Arrays.fill(tearQueue, 0)
 
     lap(2)
@@ -222,6 +226,8 @@ internal fun BodyState.rebuildDerived(oldSurface: LocalSurface?, pNew: IntArray?
     distanceSweepOrder = DistanceSweepOrder.create(this)
     constraintBlocks = null
     initializeConstraintBlocks()
+    // Номера рёбер новые (уплотнение) или прочитаны заново (снимок): указатель временных связей роста — заново.
+    rebuildTempRetire()
     structureVersion++
     lap(7)
 }
@@ -336,6 +342,23 @@ private fun BodyDefinition.keep(removed: BooleanArray, pNew: IntArray, nNew: Int
     fun remap(c: IntArray) = IntArray(c.size) { pNew[c[it]] }
     val bones = boneClusters.filter { it.isNotEmpty() && !removed[it[0]] }.map(::remap).toTypedArray()
     val muscles = muscleClusters.indices.filter { muscleKept[it] }.map { remap(muscleClusters[it]) }.toTypedArray()
+    // Временные связи роста оставшихся тел: клетки, снимающие связь, — в новых номерах (они из того же тела).
+    var retireStart = IntArray(0); var retireCells = IntArray(0)
+    if (hasTempLinks) {
+        retireStart = IntArray(links.size + 1)
+        val cells = ArrayList<Int>()
+        for (k in links.indices) {
+            val l = links[k]
+            for (s in linkRetireStart[l] until linkRetireStart[l + 1]) {
+                val c = pNew[linkRetireCells[2 * s]]; val p0 = linkRetireCells[2 * s + 1]
+                val p = if (p0 < 0) -1 else pNew[p0]
+                if (c >= 0 && (p0 < 0 || p >= 0)) { cells.add(c); cells.add(p) }
+            }
+            retireStart[k + 1] = cells.size / 2
+        }
+        retireCells = cells.toIntArray()
+        if (retireCells.isEmpty()) retireStart = IntArray(0)
+    }
     return BodyDefinition(
         x = FloatArray(nNew) { x[idx[it]] }, y = FloatArray(nNew) { y[idx[it]] },
         radius = FloatArray(nNew) { radius[idx[it]] },
@@ -345,6 +368,7 @@ private fun BodyDefinition.keep(removed: BooleanArray, pNew: IntArray, nNew: Int
         triC = IntArray(tris.size) { pNew[triC[tris[it]]] },
         triRestArea2 = FloatArray(tris.size) { triRestArea2[tris[it]] },
         boneClusters = bones, muscleClusters = muscles, scale = scale,
+        linkRetireStart = retireStart, linkRetireCells = retireCells,
     )
 }
 
@@ -355,6 +379,8 @@ internal fun BodyState.everLinkedOf(def: BodyDefinition): LinkedPairs {
     for (l in 0 until def.linkCount) {
         val i = def.linkA[l]; val j = def.linkB[l]
         if (boneOf[i] != -1 && boneOf[i] == boneOf[j]) continue
+        // Временные связи роста в пары касаний не идут (TempLinks.kt).
+        if (def.isTempLink(l)) continue
         a[m] = i; b[m] = j; m++
     }
     return BoundaryContacts.linkedPairs(a, b, m)

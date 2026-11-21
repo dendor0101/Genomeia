@@ -24,4 +24,6 @@ class ContactConfig(parameters: Map<String, String> = emptyMap()) {
     val CONTACT_COMPLIANCE = this["CT_SOFT"]?.toDoubleOrNull() ?: 1.0e-8
     val CONTACT_OMEGA_PAIR = this["CT_OMEGA_PAIR"]?.toDoubleOrNull() ?: 2.0
     val CONTACT_SEAL = this["CT_SEAL"]?.toDoubleOrNull() ?: 1.05
+    /** Клин: быстрый удар принимает клин ткани за клеткой касания (ImpactWedge). CT_WEDGE=0 — без клина, для замеров «было — стало». */
+    val IMPACT_WEDGE = this["CT_WEDGE"] != "0"
 }

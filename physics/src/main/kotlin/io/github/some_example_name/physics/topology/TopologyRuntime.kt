@@ -171,14 +171,18 @@ fun BodyState.buildContacts() {
         conTendon[c] = (muscleOf[a] >= 0) != (muscleOf[b] >= 0)
     }
     rebuildBoundaryLinkLimits()
-    if (everLinked == null) everLinked = BoundaryContacts.linkedPairs(conA, conB, conCount)
+    // Временные связи роста в пары касаний не идут: касания тела — как у взрослого (TempLinks.kt).
+    if (everLinked == null) everLinked = permanentLinkedPairs()
     // Кандидаты касания в позе покоя считаются по ЦЕЛОМУ телу и от разрывов не зависят:
     // радиус контакта клетки не бывает больше половины её самой длинной связи с запасом шва.
-    if (restPairs == null) restPairs = BoundaryContacts.bakeRestPairs(
-        n,
-        BoundaryContacts.maxContactRadius(n, body.linkA, body.linkB, body.linkCount,
-            radius, CONTACT_SCALE, body.x, body.y, config.contacts.CONTACT_SEAL),
-        body.x, body.y, everLinked!!)
+    if (restPairs == null) {
+        val pa = body.permanentLinkA(); val pb = body.permanentLinkB()
+        restPairs = BoundaryContacts.bakeRestPairs(
+            n,
+            BoundaryContacts.maxContactRadius(n, pa, pb, pa.size,
+                radius, CONTACT_SCALE, body.x, body.y, config.contacts.CONTACT_SEAL),
+            body.x, body.y, everLinked!!)
+    }
     val ct = contacts
     if (ct == null) {
         contacts = BoundaryContacts.build(
@@ -339,6 +343,7 @@ fun BodyState.buildFlaps() {
         if (d >= 2) m += d * (d - 1) / 2
     }
     if (flapA.size < m) { flapA = IntArray(m); flapB = IntArray(m); flapRest = DoubleArray(m) }
+    if (flapV.size < m) flapV = IntArray(m)
     var k = 0
     for (v in 0 until n) {
         val s = flapStart[v]; val e = flapStart[v + 1]
@@ -348,7 +353,7 @@ fun BodyState.buildFlaps() {
             if (i == j) continue
             val dx = (body.x[i] - body.x[j]).toDouble()
             val dy = (body.y[i] - body.y[j]).toDouble()
-            flapA[k] = i; flapB[k] = j; flapRest[k] = sqrt(dx * dx + dy * dy); k++
+            flapA[k] = i; flapB[k] = j; flapRest[k] = sqrt(dx * dx + dy * dy); flapV[k] = v; k++
         }
     }
     flapCount = k
@@ -499,6 +504,14 @@ fun BodyState.fillConstraints(): Int {
     return m
 }
 
+/**
+ * Уплотнять рабочие списки только когда мёртвых накопилось заметно: 1/64 связей или треугольников.
+ * Мёртвые записи решатель пропускает по conDead, а проход по всему миру на каждый тик с разрывом
+ * стоил 2.4 мс в одном потоке (замер 10.11, 34 червя).
+ */
+internal fun BodyState.compactionDue(): Boolean =
+    tearQueueN * 64 >= conCount || (triCount - baked.liveTriangleCount) * 64 >= triCount
+
 fun BodyState.rebuildTimed() {
     val t0 = System.nanoTime()
     rebuilding = true
@@ -513,15 +526,21 @@ fun BodyState.killEdgeNow(e: Int) = killEdge(e, split = true)
 /**
  * Погасить ребро. [split] — разделить организм, если разрыв его рассёк; при удалении
  * тела целиком (removeBody) делить незачем: организм исчезает весь, а поиск сторон на
- * каждом ребре тела стоил бы порядка размера тела на ребро.
+ * каждом ребре тела стоил бы порядка размера тела на ребро. [quiet] — снята временная связь
+ * роста (TempLinks.kt): не разрыв — ни журнала гибели рёбер для клиента, ни счёта разрывов,
+ * ни пересмотра кости.
  */
-internal fun BodyState.killEdge(e: Int, split: Boolean) {
+internal fun BodyState.killEdge(e: Int, split: Boolean, quiet: Boolean = false) {
     if (!baked.kill(e)) return
     structureVersion++
     if (split) {
-        if (2 * edgeDeathN + 2 > edgeDeathLog.size) edgeDeathLog = edgeDeathLog.copyOf(edgeDeathLog.size * 2)
-        edgeDeathLog[2 * edgeDeathN] = baked.edgeU(e); edgeDeathLog[2 * edgeDeathN + 1] = baked.edgeV(e)
-        edgeDeathN++
+        if (!quiet) {
+            // Ребро между клетками одной кости: её связность пересмотрят между тиками. См. BoneSplit.kt.
+            noteBoneEdgeDeath(e)
+            if (2 * edgeDeathN + 2 > edgeDeathLog.size) edgeDeathLog = edgeDeathLog.copyOf(edgeDeathLog.size * 2)
+            edgeDeathLog[2 * edgeDeathN] = baked.edgeU(e); edgeDeathLog[2 * edgeDeathN + 1] = baked.edgeV(e)
+            edgeDeathN++
+        }
         // Разрыв будит организм: у спящего связь рвёт только чужой удар (гибель клетки).
         sleep.requestWake(baked.edgeU(e))
         // Разделяем компоненту ДО следующего удаления. split ищет две стороны
@@ -551,6 +570,7 @@ internal fun BodyState.killEdge(e: Int, split: Boolean) {
     }
     if (tearQueueN == tearQueue.size) tearQueue = tearQueue.copyOf(tearQueue.size * 2)
     tearQueue[tearQueueN++] = e
+    if (quiet) tearQueueQuiet++
     tearsPending = true
     // Погибли треугольники ребра — кольца мышц у его концов другие.
     refreshCellScaleRing(baked.edgeU(e)); refreshCellScaleRing(baked.edgeV(e))
@@ -563,6 +583,8 @@ internal fun BodyState.killEdge(e: Int, split: Boolean) {
  * идут подряд по одному экземпляру.
  */
 fun BodyState.restoreTopology() {
+    // Разделённые кости — снова по описанию: ниже по ним отбираются связи решателя.
+    restoreSplitBones()
     // Целое тело — это и живые клетки. Без этого лопнувшие при сбросе оставались
     // мёртвыми: не рисовались, не сталкивались, а первое же лопание снова рвало все
     // их восстановленные связи — в свежем теле появлялись дыры. Стенд столкновений
@@ -592,6 +614,7 @@ fun BodyState.restoreTopology() {
 
     tearsPending = false
     tearQueueN = 0
+    tearQueueQuiet = 0
     tornTotal = 0
     conHold.fill(0); triHold.fill(0)
     // Множители клеток — вход клиента, сброс их не трогает; связи и треугольники — заново.
@@ -602,6 +625,9 @@ fun BodyState.restoreTopology() {
     recomputeCellScales()
     buildBoundary(); buildBend(); buildFlaps(); buildOrganisms(); buildContacts()
     initializeConstraintBlocks()
+    // Целые тела — все клетки рождены: временные связи роста сняты, и рабочие списки сразу без них (TempLinks.kt).
+    rebuildTempRetire()
+    if (retireAllTempEdges()) { rebuildAfterTear(); rebuildTempRetire() }
 }
 
 fun BodyState.rebuildAfterTear() {
@@ -631,7 +657,9 @@ fun BodyState.rebuildAfterTear() {
         lap(0)
         return
     }
-    tornTotal += nd
+    // Тихо снятые временные связи роста (TempLinks.kt) уходят из списков, как порванные, но разрывом не считаются.
+    tornTotal += nd - tearQueueQuiet
+    tearQueueQuiet = 0
     val edgeDead = baked.edgeDead
     // Нерождённое ребро (рост тела) мертво, но из рабочих списков не выбрасывается:
     // клетка родится, и связь оживёт на том же месте. См. BakedTopology.edgeUnborn.
@@ -680,8 +708,10 @@ fun BodyState.rebuildAfterTear() {
             if (kept(conEdge[c])) {
                 constraintBlocks?.moveConstraint(c, m)
                 conA[m] = conA[c]; conB[m] = conB[c]; conRest[m] = conRest[c]
+                conDead[m] = conDead[c]
                 if (conHold.size > c) conHold[m] = conHold[c]
                 conMuscle[m] = conMuscle[c]; conEdge[m] = conEdge[c]; conCellScale[m] = conCellScale[c]; conSoftness[m] = conSoftness[c]
+                if (conFiberC2.size > c) conFiberC2[m] = conFiberC2[c] // волокно мышцы (MuscleFiber.kt)
                 if (conGrowTarget.size > c) conGrowTarget[m] = conGrowTarget[c]
                 if (conGrowAge.size > c) conGrowAge[m] = conGrowAge[c]
                 m++
@@ -701,8 +731,9 @@ fun BodyState.rebuildAfterTear() {
     for (c in 0 until conCount) {
         conNextForEdge[c] = conOfEdge[conEdge[c]]
         conOfEdge[conEdge[c]] = c
-        // Живая связь — не мёртвая; нерождённая остаётся мёртвой до рождения клетки.
-        conDead[c] = edgeDead[conEdge[c]]; linkTorn[c] = false
+        // Живое ребро внутри кости сохраняет топологию, но его пружина отключена.
+        // conDead переезжает с рабочей записью. Рождение само включает нужные связи.
+        linkTorn[c] = false
         conBoundary[c] = baked.triUse[conEdge[c]] <= 1
         conTendon[c] = (muscleOf[conA[c]] >= 0) != (muscleOf[conB[c]] >= 0)
 
@@ -742,7 +773,7 @@ fun BodyState.syncBoundaryArrays() {
     boundCount = localBoundary.count
     bendA = localBoundary.bend.a; bendB = localBoundary.bend.b; bendRest = localBoundary.bend.rest
     bendCount = localBoundary.bend.count
-    flapA = localBoundary.flap.a; flapB = localBoundary.flap.b; flapRest = localBoundary.flap.rest
+    flapA = localBoundary.flap.a; flapB = localBoundary.flap.b; flapRest = localBoundary.flap.rest; flapV = localBoundary.flap.owner
     flapCount = localBoundary.flap.count
 }
 

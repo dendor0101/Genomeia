@@ -12,6 +12,7 @@ import io.github.some_example_name.old.features.worldeditor.WorldTerrainManager
 import io.github.some_example_name.old.journal.Fnv
 import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.old.systems.physics.GridManager
+import io.github.some_example_name.physics.PhysicsJob
 import io.github.some_example_name.physics.PhysicsWorkers
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
 import it.unimi.dsi.fastutil.ints.IntArrayList
@@ -35,8 +36,8 @@ import it.unimi.dsi.fastutil.ints.IntArrayList
  *     Мягкость — клетка типа «жир» → setSoftness([FAT_SOFTNESS]), с мутацией туда и обратно.
  *     Присоска-чашка — хватка (трение о дно) каждый тик — setGrip; клетка без столкновений
  *     (isCollidable = false, присоска) — setContactless.
- *     Мышца клетки — degreeOfShortening (0.5–1.5, среднее гармоническое на связи, как
- *     было в LinkPhysicsSystem). Приращения скорости из параллельных стадий (жгутик, плавник,
+ *     Команда мышцы degreeOfShortening задаёт сокращение (0.5–1) или расслабление (1–1.5).
+ *     Приращения скорости из параллельных стадий (жгутик, плавник,
  *     липучка, присоска — ParticleEntity.pushVx/pushVy) уходят в мир с пробуждением организма.
  *     Однопоточные записи (мышь, отладочный бросок) идут в мир сразу — [setVelocity], [place].
  *  3. ШАГ МИРА.
@@ -81,8 +82,8 @@ class WorldPhysics(
     /** Липучки и их временные связи в мире физики ([requestStick], StickyJoints). */
     private val sticks = StickyJoints(cellEntity, particleEntity, substancesEntity, cellEntity.cellList.requireIndex("sticky"))
 
-    /** Мягкий террейн из плиток со швами (TerrainBodies): одно тело мира физики на мир. */
-    private val terrain = TerrainBodies(particleEntity)
+    /** Неподвижный террейн (StaticTerrain): кромка — неподвижные частицы мира физики, как стенка. */
+    private val terrain = StaticTerrain(particleEntity)
 
     private var boundsWidth = -1
     private var boundsHeight = -1
@@ -133,10 +134,10 @@ class WorldPhysics(
             bridge.setBounds(boundsWidth.toFloat(), boundsHeight.toFloat())
         }
         if (wallWidth != gridManager.gridWidth || wallHeight != gridManager.gridHeight) buildWall()
-        if (!terrain.built) terrain.build(bridge.world)
+        if (!terrain.built) buildTerrain()
         removeGone()
         spawnNewOrganisms()
-        for (k in 0 until organsWithBody.size) syncOrganism(organsWithBody.getInt(k))
+        syncOrganisms()
         syncSubstances()
         sticks.sync(bridge.world)
         bridge.step()
@@ -162,9 +163,20 @@ class WorldPhysics(
             val id = bridge.addWall(x, y, WorldTerrainManager.WALL_RADIUS)
             wallIds.add(id)
             // Стенка и террейн — одна группа касаний: террейн у рамки перекрывает стенку и не расталкивается.
-            bridge.world.setContactGroup(bridge.substanceParticle(id), TerrainBodies.TERRAIN_GROUP)
+            bridge.world.setContactGroup(bridge.substanceParticle(id), StaticTerrain.TERRAIN_GROUP)
         }
         mapWallParticles()
+    }
+
+    /**
+     * Террейн в мир физики (StaticTerrain) и клетки сетки игры у его частиц — один раз: террейн не
+     * движется, и в [updateGrid] ему места нет. Пересчёт нужен, потому что место кромки теперь читается
+     * из мира физики, а перевод единиц туда и обратно может сдвинуть его через границу клетки.
+     */
+    private fun buildTerrain() {
+        terrain.build(bridge)
+        publish()   // место кромки читается из мира физики: его массивы могли вырасти или появиться только что
+        for (k in 0 until terrain.count) updateCell(terrain.particle(k))
     }
 
     // --- сохранение мира (MapSave, этап B3) --------------------------------------------
@@ -236,7 +248,7 @@ class WorldPhysics(
         repeat(input.readInt()) { wallIds.add(input.readInt()) }
         sticks.read(input)
         terrain.read(input)
-        terrain.remap(bridge.world)
+        terrain.remap(bridge)
         mapWallParticles()
         compactions = bridge.world.compactions
         publish()
@@ -266,7 +278,7 @@ class WorldPhysics(
     fun requestStick(c: Int, gen: Int, p: Int) = sticks.request(bridge.world, c, gen, p, particleEntity.physicsIndex[p])
 
     /**
-     * Частицы стенки игры (ParticleEntity.terrainCell — метка TerrainBodies.wallMark) — к частицам стенки мира
+     * Частицы стенки игры (ParticleEntity.terrainCell — метка StaticTerrain.wallMark) — к частицам стенки мира
      * физики по номеру в раскладке ([wallIds] — в её же порядке): рисуются и спят по миру физики, липучка
      * липнет к ним по номеру. После постройки стенки, уплотнения мира и загрузки. Проход по частицам не-клеткам.
      */
@@ -277,7 +289,7 @@ class WorldPhysics(
             val p = list.getInt(k)
             val mark = pe.terrainCell[p]
             if (mark > -2) continue
-            val w = TerrainBodies.wallIndexOf(mark)
+            val w = StaticTerrain.wallIndexOf(mark)
             if (w < wallIds.size) pe.physicsIndex[p] = bridge.substanceParticle(wallIds.getInt(w))
         }
     }
@@ -290,6 +302,14 @@ class WorldPhysics(
 
     /** Однопоточная запись скорости в единицах игры (ParticleEntity.setVelocity). */
     fun setVelocity(i: Int, vx: Float, vy: Float) = bridge.setVelocity(i, vx, vy)
+
+    fun isRigidBone(p: Int): Boolean {
+        val i = particleEntity.physicsIndex[p]
+        return i >= 0 && bridge.world.state.bonesRigid && bridge.world.isBone(i)
+    }
+
+    fun pullBone(p: Int, x: Float, y: Float) =
+        bridge.world.pullToward(particleEntity.physicsIndex[p], x * PHYSICS_PER_GAME, y * PHYSICS_PER_GAME)
 
     /** Убивает ли глубокое проникновение частиц (галочка отладки, SimulationData.debugNoDeepKill). */
     var deepKillOn: Boolean
@@ -359,7 +379,78 @@ class WorldPhysics(
         }
     }
 
+    /** Клетки, которым сверка по воркерам нужна полным путём (см. [syncOrganismFast]): слоты по организмам. */
+    private var syncEvents = Array(64) { IntArray(8) }
+    private var syncEventN = IntArray(64)
+    private val syncJob = PhysicsJob { k, _ -> syncOrganismFast(k, organsWithBody.getInt(k)) }
+
+    /** Замер 10.11, 34 червя: сверка в одном потоке была около 3 мс на тик, пока воркеры стояли. */
+    private fun syncOrganisms() {
+        val count = organsWithBody.size
+        val w = workers
+        if (w == null || w.count <= 1 || count < 2) {
+            for (k in 0 until count) syncOrganism(organsWithBody.getInt(k))
+            return
+        }
+        if (syncEvents.size < count) { syncEvents = Array(count * 2) { IntArray(8) }; syncEventN = IntArray(count * 2) }
+        w.run(count, syncJob)
+        // Редкие клетки — в одном потоке, по организмам и слотам по порядку, как шёл прежний цикл.
+        for (k in 0 until count) {
+            val organ = organsWithBody.getInt(k)
+            val events = syncEvents[k]
+            for (e in 0 until syncEventN[k]) syncSlot(organ, events[e])
+        }
+    }
+
+    /**
+     * Обычная клетка: только цель мышцы. Редкое (рождение, смерть, кость, толчок, смена мягкости и
+     * хватки, просыпание от мышцы) — слот в список организма [k], его доделает syncSlot в одном потоке.
+     * Пишет только свои клетки; общие признаки могут только включиться, порядок записи им не важен.
+     */
+    private fun syncOrganismFast(k: Int, organ: Int) {
+        var events = syncEvents[k]
+        var en = 0
+        val world = bridge.world
+        val st = world.state
+        val dead = st.cellDead; val unborn = st.cellUnborn; val boneOf = st.boneOf
+        val target = st.cellScaleTarget; val scale = st.cellScale
+        val softness = st.cellSoftness; val noContact = st.cellNoContact; val grip = st.cellGrip
+        val first = bridge.particleOf(organ, 0)
+        val cellBase = organEntity.cellArenaBase[organ]
+        val particleBase = organEntity.particleArenaBase[organ]
+        val alive = cellEntity.isAlive; val shortening = cellEntity.degreeOfShortening; val cellType = cellEntity.cellType
+        val pe = particleEntity
+        val collidable = pe.isCollidable; val pushX = pe.pushVx; val pushY = pe.pushVy; val drag = pe.dragCoefficient
+        val sleepOn = world.sleepOn
+        for (slot in 0 until organEntity.cellArenaCapacity[organ]) {
+            val i = first + slot
+            val cell = cellBase + slot
+            if (unborn[i] && !alive[cell]) continue
+            if (!unborn[i] && dead[i]) continue
+            val p = particleBase + slot
+            val type = cellType[cell].toInt()
+            var rare = unborn[i] || !alive[cell] || (type == boneType && boneOf[i] < 0) ||
+                softness[i] != (if (type == fatType) FAT_SOFTNESS else 1f) || noContact[i] == collidable[p] ||
+                grip[i] != (if (type == suctionCupType) drag[p].coerceIn(0f, 1f) else 0f) || pushX[p] != 0f || pushY[p] != 0f
+            val s = shortening[cell]
+            if (!rare && target[i] != s && sleepOn) rare = true
+            if (rare) {
+                if (en == events.size) { events = events.copyOf(en * 2); syncEvents[k] = events }
+                events[en++] = slot
+                continue
+            }
+            if (target[i] != s) { target[i] = s; st.cellScalesOn = true }
+            if (scale[i] != s) st.cellScalesMoving = true
+        }
+        syncEventN[k] = en
+    }
+
     private fun syncOrganism(organ: Int) {
+        for (slot in 0 until organEntity.cellArenaCapacity[organ]) syncSlot(organ, slot)
+    }
+
+    /** Одна клетка организма [organ]: всё, что сверка делает с клеткой, в том числе редкое. */
+    private fun syncSlot(organ: Int, slot: Int) {
         val world = bridge.world
         val dead = world.state.cellDead
         val first = bridge.particleOf(organ, 0)
@@ -367,11 +458,11 @@ class WorldPhysics(
         val particleBase = organEntity.particleArenaBase[organ]
         val alive = cellEntity.isAlive
         val shortening = cellEntity.degreeOfShortening
-        for (slot in 0 until organEntity.cellArenaCapacity[organ]) {
+        run {
             val i = first + slot
             val cell = cellBase + slot
             if (world.isUnborn(i)) {
-                if (!alive[cell]) continue
+                if (!alive[cell]) return
                 // Мягкость — до рождения: связи новорождённой клетки возьмут её сразу.
                 world.setSoftness(i, softnessOf(cell))
                 world.setContactless(i, !particleEntity.isCollidable[particleBase + slot])
@@ -384,12 +475,12 @@ class WorldPhysics(
                     !world.isUnborn(first + ps) && !dead[first + ps]) world.activateFromParent(i, first + ps)
                 else world.activate(i)
                 onBorn(particleBase + slot, i)
-                continue
+                return
             }
             // Умершая в мире физики клетка заново не рождается (TODO к B2): у живой клетки игры
             // в таком слоте номера в мире физики нет, она стоит там, куда её поставила игра.
-            if (dead[i]) continue
-            if (!alive[cell]) { world.kill(i); refreshDragAround(i); continue }
+            if (dead[i]) return
+            if (!alive[cell]) { world.kill(i); refreshDragAround(i); return }
             // Клетка стала костью (мутация, деление с типом «кость»): кость включается с формой
             // на этот момент. У клетки не из кости раскладки и у уже включённой — ничего.
             if (cellEntity.cellType[cell].toInt() == boneType && !world.isBone(i)) world.setBone(i)
@@ -691,27 +782,71 @@ class WorldPhysics(
         }
         for (k in 0 until trackedSubstances.size) {
             val sub = trackedSubstances.getInt(k)
+            // Субстанция могла исчезнуть в этом же тике: из списка её уберёт removeGone на следующем.
+            if (!substancesEntity.isAlive[sub]) continue
             pe.physicsIndex[substancesEntity.particleIndex[sub]] = bridge.substanceParticle(freeOfSubstance[sub])
         }
-        terrain.remap(world)
+        terrain.remap(bridge)
         mapWallParticles()
         publish()
     }
 
+    /**
+     * Клетки сетки организмов по воркерам: каждая частица пишет только свой gridId. Источник феромона
+     * (и NaN при отладке) — слот в список организма [k], его доделает updateCell в одном потоке по
+     * организмам и слотам: команды феромонов идут в общий буфер в прежнем порядке. Замер 10.11, 34 червя:
+     * в одном потоке 1.8% главного потока.
+     */
+    private var gridEvents = Array(64) { IntArray(8) }
+    private var gridEventN = IntArray(64)
+    private val gridJob = PhysicsJob { k, _ -> updateGridFast(k, organsWithBody.getInt(k)) }
+
     private fun updateGrid() {
         val alive = particleEntity.isAlive
         val index = particleEntity.physicsIndex
-        for (k in 0 until organsWithBody.size) {
-            val organ = organsWithBody.getInt(k)
-            val particleBase = organEntity.particleArenaBase[organ]
-            for (slot in 0 until organEntity.cellArenaCapacity[organ]) {
-                val p = particleBase + slot
-                if (alive[p] && index[p] >= 0) updateCell(p)
+        val count = organsWithBody.size
+        val w = workers
+        if (w == null || w.count <= 1 || count < 2) {
+            for (k in 0 until count) {
+                val organ = organsWithBody.getInt(k)
+                val particleBase = organEntity.particleArenaBase[organ]
+                for (slot in 0 until organEntity.cellArenaCapacity[organ]) {
+                    val p = particleBase + slot
+                    if (alive[p] && index[p] >= 0) updateCell(p)
+                }
+            }
+        } else {
+            if (gridEvents.size < count) { gridEvents = Array(count * 2) { IntArray(8) }; gridEventN = IntArray(count * 2) }
+            w.run(count, gridJob)
+            for (k in 0 until count) {
+                val particleBase = organEntity.particleArenaBase[organsWithBody.getInt(k)]
+                val events = gridEvents[k]
+                for (e in 0 until gridEventN[k]) updateCell(particleBase + events[e])
             }
         }
         for (k in 0 until trackedSubstances.size) updateCell(substancesEntity.particleIndex[trackedSubstances.getInt(k)])
-        // Мягкий террейн тоже ходит: проминается и возвращается. Почти весь спит — клетка не меняется.
-        for (k in 0 until terrain.count) { val p = terrain.particle(k); if (alive[p] && index[p] >= 0) updateCell(p) }
+    }
+
+    /** Клетки сетки организма [organ] без источников феромонов: см. [updateGrid]. Пишет только свои gridId. */
+    private fun updateGridFast(k: Int, organ: Int) {
+        var events = gridEvents[k]
+        var en = 0
+        val pe = particleEntity
+        val alive = pe.isAlive; val index = pe.physicsIndex; val emitter = pe.isPheromoneEmitter; val gridId = pe.gridId
+        val particleBase = organEntity.particleArenaBase[organ]
+        for (slot in 0 until organEntity.cellArenaCapacity[organ]) {
+            val p = particleBase + slot
+            if (!alive[p] || index[p] < 0) continue
+            val x = pe.x(p); val y = pe.y(p)
+            if (emitter[p] || (DEBUG_CHECKS && (x.isNaN() || y.isNaN()))) {
+                if (en == events.size) { events = events.copyOf(en * 2); gridEvents[k] = events }
+                events[en++] = slot
+                continue
+            }
+            val cell = gridManager.cellIndexOfClamped(x.toInt(), y.toInt())
+            if (cell != gridId[p]) gridId[p] = cell
+        }
+        gridEventN[k] = en
     }
 
     private fun updateCell(p: Int) {

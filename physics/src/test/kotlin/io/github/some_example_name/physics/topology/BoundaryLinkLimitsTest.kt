@@ -6,6 +6,31 @@ import java.util.Random
 import kotlin.random.asKotlinRandom
 
 class BoundaryLinkLimitsTest {
+    @Test fun compactingTornEdgesKeepsBoneSpringsDisabledAndNewSlotsLive() {
+        val body = BodyDefinition(
+            floatArrayOf(0f, 1f, 2f, 1f), floatArrayOf(0f, 0f, 0f, 1f), FloatArray(4) { 0.25f },
+            booleanArrayOf(false, true, true, true), BooleanArray(4),
+            intArrayOf(0, 1, 2, 1), intArrayOf(1, 2, 3, 3),
+            intArrayOf(1), intArrayOf(2), intArrayOf(3), floatArrayOf(1f),
+            arrayOf(intArrayOf(1, 2, 3)), emptyArray(), 1f)
+        val w = PhysicsWorld(scale = WorldScale(1f, 0.0625))
+        val s = w.state
+        val first = w.bodyFirst(w.addBody(body, BooleanArray(4) { true }, BooleanArray(4)))
+        for (v in 1..3) assertTrue(w.setBone(first + v))
+        s.killEdgeNow(s.baked.edgeOf(first, first + 1))
+        s.rebuildAfterTear()
+        for ((i, j) in listOf(1 to 2, 2 to 3, 1 to 3)) {
+            val edge = s.baked.edgeOf(first + i, first + j)
+            assertFalse(s.baked.edgeDead[edge])
+            assertTrue(s.conDead[s.conOfEdge[edge]])
+        }
+        val next = w.bodyFirst(w.addBody(body, BooleanArray(4) { true }, BooleanArray(4)))
+        for (c in 0 until s.conCount) if (s.conA[c] >= next) {
+            assertFalse(s.conDead[c])
+            assertFalse(s.linkTorn[c])
+        }
+    }
+
     private fun grid(duplicate: Boolean = false): BodyState {
         val width = 5
         val triangles = ArrayList<IntArray>()

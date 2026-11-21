@@ -64,7 +64,7 @@ internal fun BodyState.initialize(definition: BodyDefinition) {
     dragScale = DoubleArray(n) { 1.0 }
     conCellScale = FloatArray(conA.size) { 1f }; triCellScale = FloatArray(triA.size) { 1f }
     cellSoftness = FloatArray(n) { 1f }
-    cellFiberX = FloatArray(n); cellFiberY = FloatArray(n)
+    cellFiberX = FloatArray(n); cellFiberY = FloatArray(n) // волокна задаёт клиент (PhysicsWorld.setCellFiber)
     cellNoContact = BooleanArray(n)
     cellGroup = IntArray(n)
     cellGrip = FloatArray(n); gripsDirty = true
@@ -78,7 +78,8 @@ internal fun BodyState.initialize(definition: BodyDefinition) {
     buildContacts()
     distanceSweepOrder = DistanceSweepOrder.create(this)
     initializeConstraintBlocks()
-
+    // Временные связи роста (они бывают в описании только из снимка): какая клетка какие снимает (TempLinks.kt).
+    rebuildTempRetire()
 }
 
 /** Возвращает рабочую топологию и численное состояние в исходную позу. */
@@ -90,7 +91,7 @@ internal fun BodyState.resetState() {
         vx[i] = 0.0; vy[i] = 0.0
         invMass[i] = restInvMass[i]; matchWeight[i] = restMatchWeight(i)
     }
-    trapTicks.fill(0); foldTicks.fill(0)
+    trapTicks.fill(0); foldTicks.fill(0); impactSpeed.fill(0.0)
     flowVX.fill(0.0); flowVY.fill(0.0)
     muscleActivation.fill(0.0)
     muscleTarget.fill(0.0)

@@ -4,6 +4,9 @@ dependencies {
   implementation project(':render')
   implementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion"
   runtimeOnly "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
+  // Шрифт с кириллицей для окна стендов (lab/stands/viewer): те же библиотеки, что у игры.
+  implementation "com.badlogicgames.gdx:gdx-freetype:$gdxVersion"
+  runtimeOnly "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-desktop"
   testImplementation "junit:junit:4.13.2"
   // Те же версии, что у прежнего лаунчера: перенос не должен менять native-бэкенд.
   constraints {
@@ -325,4 +328,36 @@ tasks.register('demoWindowCheck', JavaExec) {
   args = [project.findProperty('body') ?: 'body-export.txt',
           project.findProperty('windowReport') ?: 'build/reports/demo-window-check']
   jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+
+// СТЕНДЫ С ПРАВИЛАМИ (lab/stands): сотни сцен на мире, собранном как в игре, и монитор правил.
+//   gradlew --no-daemon :physics-lab:stands                 окно с переключением сцен
+//   gradlew --no-daemon :physics-lab:stands -Pstart=номер   открыть сразу нужную сцену
+//   gradlew :physics-lab:standsCheck                        пакетный прогон всех сцен с отчётом
+//   gradlew :physics-lab:standsCheck -Ponly=prim/,bone/     часть сцен; -Pdetail=номер — одна сцена по тикам
+//   gradlew :physics-lab:standsCheck -Pworkers=4            ещё и сверка «один поток = воркеры»
+//   gradlew :physics-lab:standsCheck -Pvary=base            только ровная решётка, без вариаций длин и радиусов
+//   gradlew :physics-lab:standsCheck -Psymmetry=1           ещё и проверка симметрии: сдвиг, поворот, отражение, перенумерация
+//   gradlew :physics-lab:standsCheck -Preference=1          ещё и сверка с простым эталонным решателем на 64 подшагах
+//   gradlew :physics-lab:standsPerf                         замер времени тика на тяжёлых сценах по числу воркеров
+//   gradlew :physics-lab:standGenomeIndex                   список тел геномов после :lwjgl3:standGenomeExport
+['standsCheck': 'io.github.some_example_name.physics.lab.stands.StandsCheckKt',
+ 'stands': 'io.github.some_example_name.physics.lab.stands.viewer.StandViewerKt',
+ 'standsPerf': 'io.github.some_example_name.physics.lab.stands.perf.StandsPerfKt',
+ 'standGenomeIndex': 'io.github.some_example_name.physics.lab.stands.GenomeIndexKt'].each { taskName, main ->
+  tasks.register(taskName, JavaExec) {
+    group = 'verification'
+    description = ['stands': 'Окно стендов физики: переключение сцен и правила вживую',
+                   'standsCheck': 'Пакетный прогон стендов физики по правилам; ненулевой код, если сцена не прошла',
+                   'standsPerf': 'Время тика на тяжёлых сценах стендов по числу воркеров',
+                   'standGenomeIndex': 'Список тел геномов для стендов (index.tsv)'][taskName]
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = main
+    workingDir = rootProject.projectDir
+    jvmArgs '-Xmx4g', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+    ['only', 'detail', 'repeat', 'workers', 'workersMin', 'jobs', 'start', 'shots', 'shotTick', 'shotDir', 'selfTest', 'config', 'vary', 'report',
+     'perfScale', 'perfTicks', 'perfWarm', 'perfRuns', 'symmetry', 'reference', 'referenceBudget', 'frame'].each { p ->
+      if (project.hasProperty(p)) systemProperty "stands.$p", project.property(p)
+    }
+  }
 }

@@ -129,14 +129,17 @@ class UserCommandManager(
             }
         }
 
-        if (grabbedParticleIndex != -1 && !isAlreadyDragged && isDragging) {
-            val grabDrag = 0.5f // To reduce oscillations
-
-            with(particleEntity) {
-                val p = grabbedParticleIndex
-                setVelocity(p, vx(p) * grabDrag + (tapX - x(p)) * 0.02f, vy(p) * grabDrag + (tapY - y(p)) * 0.02f)
-            }
+        val p = grabbedParticleIndex
+        if (p != -1 && isDragging) {
+            val physics = particleEntity.physics
+            // Событий мыши за тик бывает несколько. Кость тянем один раз к последней точке.
+            if (physics != null && physics.isRigidBone(p)) physics.pullBone(p, tapX, tapY)
+            else if (!isAlreadyDragged) dragParticle(p, tapX, tapY)
         }
+    }
+
+    private fun dragParticle(p: Int, targetX: Float, targetY: Float) = with(particleEntity) {
+        setVelocity(p, vx(p) * 0.5f + (targetX - x(p)) * 0.02f, vy(p) * 0.5f + (targetY - y(p)) * 0.02f)
     }
 
     private fun resolveGenomeIndex(cmd: PlayerCommand): Int =
@@ -191,12 +194,8 @@ class UserCommandManager(
             is PlayerCommand.Drag -> {
                 if (grabbedParticleIndex != -1) {
                     isAlreadyDragged = true
-                    val grabDrag = 0.5f // To reduce oscillations
-
-                    with(particleEntity) {
-                        val p = grabbedParticleIndex
-                        setVelocity(p, vx(p) * grabDrag + (cmd.x - x(p)) * 0.02f, vy(p) * grabDrag + (cmd.y - y(p)) * 0.02f)
-                    }
+                    val p = grabbedParticleIndex
+                    if (particleEntity.physics?.isRigidBone(p) != true) dragParticle(p, cmd.x, cmd.y)
                     isDragging = true
 
                     tapX = cmd.x
@@ -255,8 +254,8 @@ class UserCommandManager(
     }
 
     /**
-     * Посадит ли касание организм. На террейне и стенке не сажаем: в толще террейна касаний
-     * нет (TerrainBodies), и организм вырос бы внутри. Под курсором частица террейна —
+     * Посадит ли касание организм. На террейне и стенке не сажаем: толщи террейна в мире
+     * физики нет (StaticTerrain), и организм вырос бы внутри. Под курсором частица террейна —
      * значит, клик по нему.
      */
     private fun canSpawnAt(x: Float, y: Float, picked: Int): Boolean {

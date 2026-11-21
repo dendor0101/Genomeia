@@ -413,7 +413,11 @@ class MapSave(
          * тех, кого мир физики не ведёт (ParticleEntity.local*). Формат 2 не читается: позиций
          * клеток в нём для нового мира нет (решение 1 плана физики — без обратной совместимости).
          */
-        private const val FORMAT_VERSION = 3
+        /**
+         * 4 — террейн — неподвижные частицы мира физики, а не тело из плиток (StaticTerrain): другие
+         * снимок моста и мир физики. Формат 3 не читается: мягкий террейн в новом мире не продолжить.
+         */
+        private const val FORMAT_VERSION = 4
 
         private const val PREVIEW = "preview.png"
         private const val META = "meta.bin"

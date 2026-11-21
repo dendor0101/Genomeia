@@ -22,6 +22,13 @@ internal class GenomeMaterialCoordinates(private val genomes:List<Genome>) {
         }
     }
     private val entries=ArrayList<Entry?>()
+    /** Завести запись генома заранее: параллельная запись снимка только читает таблицу. */
+    fun prepare(genome:Int){
+        val source=genomes.getOrNull(genome)?:return
+        while(entries.size<=genome)entries.add(null)
+        val entry=entries[genome]
+        if(entry==null||entry.preview!==source.preview)entries[genome]=Entry(source.preview)
+    }
     fun write(graph:OpticalLinks,vertex:Int,genome:Int,cellId:Int){
         val source=genomes.getOrNull(genome)?:return
         while(entries.size<=genome)entries.add(null)

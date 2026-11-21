@@ -78,6 +78,9 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
                 block += 2
             }
         }
+        if (integrate && state.boundsOn) {
+            for (s in scratch) if (s.wallHits.size != 0) s.wallHits.drain { state.wallHits.add(it) }
+        }
     }
 
     /**
@@ -112,6 +115,71 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
     fun velocityBefore(h: Double) {
         passH = h
         state.activeWorkers!!.run(spanChunks(), beforeJob)
+    }
+
+    private var touchParts = 1
+    private val touchJob = PhysicsJob { k, worker ->
+        val n = state.velTouchN
+        state.finishVelocityTouchedRange((n.toLong() * k / touchParts).toInt(), (n.toLong() * (k + 1) / touchParts).toInt(), scratch[worker])
+    }
+
+    fun finishTouched() {
+        touchParts = 4 * scratch.size
+        state.activeWorkers!!.run(touchParts, touchJob)
+        for (s in scratch) {
+            if (s.peakSpeed2 > state.peakSpeed2) state.peakSpeed2 = s.peakSpeed2
+            s.peakSpeed2 = 0.0
+            state.speedCapHits += s.speedCapHits; s.speedCapHits = 0
+        }
+    }
+
+    // Слияние групп импульса по контактам: ключи пар организмов по кускам без повторов, само слияние — здесь.
+    private val noteKeys = Array(4 * workers) { LongArray(256) }
+    private val noteKeyN = IntArray(4 * workers)
+    private val noteRare = Array(4 * workers) { IntArray(16) }
+    private val noteRareN = IntArray(4 * workers)
+    private var noteCt: BoundaryContacts? = null
+    private val noteJob = PhysicsJob { k, _ ->
+        val ct = noteCt!!
+        val tm = state.tickMomentum; val inv = state.invMass
+        val n = ct.contactCount; val parts = noteKeys.size
+        var keys = noteKeys[k]; var kn = 0
+        var rare = noteRare[k]; var rn = 0
+        for (c in (n.toLong() * k / parts).toInt() until (n.toLong() * (k + 1) / parts).toInt()) {
+            val key = tm.contactKey(ct.contactI(c), ct.contactJ(c), inv)
+            if (key == -1L) continue
+            if (key == -2L) { if (rn == rare.size) { rare = rare.copyOf(rn * 2); noteRare[k] = rare }; rare[rn++] = c; continue }
+            if (kn == keys.size) { keys = keys.copyOf(kn * 2); noteKeys[k] = keys }
+            keys[kn++] = key
+        }
+        java.util.Arrays.sort(keys, 0, kn)
+        var u = 0
+        for (x in 0 until kn) if (u == 0 || keys[u - 1] != keys[x]) keys[u++] = keys[x]
+        noteKeyN[k] = u; noteRareN[k] = rn
+    }
+
+    fun noteContacts(ct: BoundaryContacts) {
+        noteCt = ct
+        state.activeWorkers!!.run(noteKeys.size, noteJob)
+        val tm = state.tickMomentum
+        for (k in noteKeys.indices) {
+            val keys = noteKeys[k]
+            for (x in 0 until noteKeyN[k]) tm.unionKey(keys[x])
+            val rare = noteRare[k]
+            for (x in 0 until noteRareN[k]) { val c = rare[x]; tm.unionContact(ct.contactI(c), ct.contactJ(c)) }
+        }
+    }
+
+    private val fastJob = PhysicsJob { k, worker -> state.velocityFastRange(spanFrom[k], spanTo[k], passH, scratch[worker]) }
+
+    fun velocityFast(h: Double) {
+        passH = h
+        state.activeWorkers!!.run(spanChunks(), fastJob)
+        for (s in scratch) {
+            if (s.peakSpeed2 > state.peakSpeed2) state.peakSpeed2 = s.peakSpeed2
+            s.peakSpeed2 = 0.0
+            state.speedCapHits += s.speedCapHits; s.speedCapHits = 0
+        }
     }
 
     fun velocityAfter(lastStep: Boolean, hTick: Double) {
@@ -149,16 +217,55 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         st.activeWorkers!!.run(spanChunks(), targetsJob)
     }
 
+    private var groupSums = emptyArray<TickMomentum.GroupSums>()
+    private val flattenJob = PhysicsJob { k, _ -> state.tickMomentum.flattenRange(spanFrom[k], spanTo[k]) }
+    private val momentumJob = PhysicsJob { k, _ ->
+        val st = state
+        st.tickMomentum.momentumRange(spanFrom[k], spanTo[k], st.px, st.py, st.vx, st.vy, st.invMass, groupSums[k])
+    }
+    private val inertiaJob = PhysicsJob { k, _ ->
+        val st = state
+        st.tickMomentum.inertiaRange(spanFrom[k], spanTo[k], st.px, st.py, st.invMass, groupSums[k])
+    }
+
+    private val comJob = PhysicsJob { k, _ ->
+        val st = state; val sums = groupSums[k]
+        sums.clear()
+        val inv = st.invMass; val org = st.organismOf; val vx = st.vx; val vy = st.vy
+        for (i in spanFrom[k] until spanTo[k]) {
+            if (inv[i] <= 0.0) continue
+            val m = 1.0 / inv[i]
+            val at = sums.at(org[i]); val v = sums.data
+            v[at] += m * vx[i]; v[at + 1] += m * vy[i]
+        }
+    }
+
+    /** Импульс организмов для запаса среды (applyNormalDrag): кусками, сложение — в порядке кусков. */
+    fun comSums() {
+        val st = state
+        val chunks = spanChunks()
+        if (groupSums.size < chunks) groupSums = Array(chunks) { TickMomentum.GroupSums() }
+        st.activeWorkers!!.run(chunks, comJob)
+        for (k in 0 until chunks) {
+            val sums = groupSums[k]; val v = sums.data
+            for (x in 0 until sums.count) { val o = sums.keyAt(x); val at = sums.offsetAt(x); st.comAccX[o] += v[at]; st.comAccY[o] += v[at + 1] }
+        }
+    }
+
     fun momentumCancel() {
         val st = state
         val tm = st.tickMomentum
         val w = st.activeWorkers!!
         val chunks = spanChunks()
+        if (groupSums.size < chunks) groupSums = Array(chunks) { TickMomentum.GroupSums() }
         w.run(chunks, clearJob)
-        tm.flattenGroups(st.sleep)
-        tm.addMomentum(st.px, st.py, st.vx, st.vy, st.invMass, st.sleep)
+        tm.mergeOrgGroups()
+        w.run(chunks, flattenJob)
+        w.run(chunks, momentumJob)
+        for (k in 0 until chunks) tm.mergeMomentum(groupSums[k])
         w.run(chunks, centreJob)
-        tm.addInertia(st.px, st.py, st.invMass, st.sleep)
+        w.run(chunks, inertiaJob)
+        for (k in 0 until chunks) tm.mergeInertia(groupSums[k])
         w.run(chunks, spinJob)
         w.run(chunks, applyJob)
     }
@@ -178,6 +285,8 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
     fun normalDrag(h: Double) {
         val st = state
         dragH = h
+        val layout = st.constraintBlocks
+        if (layout != null) { edgeH = h; runEdges(layout, 1); return }
         val db = dragBuckets
         if (!db.valid(st, 0L)) {
             db.begin()
@@ -228,7 +337,73 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         }
     }
 
+    // --- рёбра контура и общий проход пределов по блокам ---
+    // Ребро и связь контура лежат в одном блоке или в его наборе швов (blockOfSlot, blockOf): блоки
+    // считаются вместе, швы — после. Раскладка готова и разрывами не пересобирается: раньше раскладка по
+    // организмам пересобиралась в одном потоке после каждого разрыва (замер 10.11, 34 червя).
+    private var edgeLayout: ConstraintBlocks? = null
+    private var edgeFrom = 0
+    private var edgeMode = 0
+    private var edgeH = 0.0
+    private val edgeJob = PhysicsJob { k, _ ->
+        val layout = edgeLayout!!
+        val bucket = edgeFrom + k
+        if (bucket >= layout.seam || layout.awake[bucket] != 0) {
+            val list = layout.edges
+            val items = list.dense(bucket); val n = list.denseCount[bucket]
+            val st = state
+            if (edgeMode == 0) {
+                val a = st.boundA; val b = st.boundB; val opp = st.boundOpp; val ori = st.localBoundary.orientation
+                for (x in 0 until n) orientEdge(items[x], a, b, opp, ori, st.px, st.py, st.invMass, st.orientationBones())
+            } else for (x in 0 until n) st.normalDragEdge(items[x], edgeH)
+        }
+    }
+
+    private fun runEdges(layout: ConstraintBlocks, mode: Int) {
+        val w = state.activeWorkers!!
+        edgeLayout = layout; edgeMode = mode
+        edgeFrom = 0; w.run(layout.seam, edgeJob)
+        edgeFrom = layout.seam; w.run(layout.buckets - layout.seam, edgeJob)
+    }
+
+    private var limitStopItem = IntArray(16)
+    private var limitFrom = 0
+    private var limitLayout: ConstraintBlocks? = null
+    private val blockLimitsJob = PhysicsJob { k, worker ->
+        val layout = limitLayout!!
+        val bucket = limitFrom + k
+        if (bucket >= layout.seam || layout.awake[bucket] != 0) {
+            val items = layout.limits.dense(bucket); val n = layout.limits.denseCount[bucket]
+            val s = scratch[worker]
+            for (x in 0 until n) if (state.limitItemParallel(items[x], s)) { limitStopItem[bucket] = items[x]; break }
+        }
+    }
+
+    /** Общий проход пределов по блокам, затем по швам; остановленные перед событием — дорабатываются здесь. */
+    private fun globalLimitsByBlocks(layout: ConstraintBlocks) {
+        val w = state.activeWorkers!!
+        if (limitStopItem.size < layout.buckets) limitStopItem = IntArray(layout.buckets)
+        java.util.Arrays.fill(limitStopItem, 0, layout.buckets, -1)
+        limitLayout = layout
+        limitFrom = 0; w.run(layout.seam, blockLimitsJob); mergeCounters(); reworkLimits(layout, 0, layout.seam)
+        limitFrom = layout.seam; w.run(layout.buckets - layout.seam, blockLimitsJob); mergeCounters(); reworkLimits(layout, layout.seam, layout.buckets)
+    }
+
+    private fun reworkLimits(layout: ConstraintBlocks, from: Int, to: Int) {
+        for (bucket in from until to) {
+            val stop = limitStopItem[bucket]
+            if (stop < 0) continue
+            // Список блока мог поменяться от событий раньше по порядку: продолжаем с той же связи.
+            val items = layout.limits.dense(bucket).copyOf(layout.limits.denseCount[bucket])
+            var x = items.indexOf(stop)
+            if (x < 0) x = 0
+            while (x < items.size) { state.solveLimitItemSerial(items[x]); x++ }
+        }
+    }
+
     fun solveGlobalLimits() {
+        val blocksLayout = state.constraintBlocks
+        if (blocksLayout != null) { globalLimitsByBlocks(blocksLayout); return }
         val limits = state.boundaryLinkLimits
         limits.beginPass()
         val count = limits.count
@@ -272,7 +447,7 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         val ob = orientBuckets
         val a = st.boundA; val b = st.boundB; val opp = st.boundOpp; val ori = st.localBoundary.orientation
         for (k in ob.start[ob.task[t]] until ob.start[ob.task[t + 1]])
-            orientEdge(ob.items[k], a, b, opp, ori, st.px, st.py, st.invMass)
+            orientEdge(ob.items[k], a, b, opp, ori, st.px, st.py, st.invMass, st.orientationBones())
     }
     private val viscJob = PhysicsJob { t, _ ->
         val vb = viscBuckets
@@ -281,6 +456,8 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
 
     fun orientation() {
         val st = state
+        val layout = st.constraintBlocks
+        if (layout != null) { runEdges(layout, 0); return }
         val ob = orientBuckets
         if (!ob.valid(st, 0L)) {
             ob.begin()
@@ -301,9 +478,32 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         st.activeWorkers!!.run(ob.tasks, orientJob)
     }
 
+    // Вязкость по блокам: связь блока пишет только свои частицы, раскладка готова и не зависит от разрывов.
+    // Замер 10.11: пересборка раскладки по организмам каждый тик с разрывом была 1.7% главного потока.
+    private var viscLayout: ConstraintBlocks? = null
+    private var viscFrom = 0
+    private val viscBlockJob = PhysicsJob { k, _ ->
+        val layout = viscLayout!!
+        val b = viscFrom + k
+        if (b >= layout.seam || layout.awake[b] != 0) {
+            val links = layout.links
+            for (slot in links.start[b] until links.start[b] + links.count[b]) {
+                val c = links.items[slot]
+                if (c >= 0) state.viscousLink(c, viscK)
+            }
+        }
+    }
+
     fun viscosity(k: Double, layout: ConstraintBlocks?) {
         val st = state
         viscK = k
+        if (layout != null) {
+            val w = st.activeWorkers!!
+            viscLayout = layout
+            viscFrom = 0; w.run(layout.seam, viscBlockJob)
+            viscFrom = layout.seam; w.run(layout.buckets - layout.seam, viscBlockJob)
+            return
+        }
         val vb = viscBuckets
         if (!vb.valid(st, 0L)) {
             vb.begin()
@@ -368,6 +568,42 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         w.run(count, plasticJob)
     }
 
+    // --- вывернутые треугольники раз в тик ---
+    // Счётчик инверсии у каждого треугольника свой; гибель — событие топологии, в конце по возрастанию номеров.
+    private val invKills = Array(workers) { IntArray(16) }
+    private val invCount = IntArray(workers * 16)
+    private var invLayout: ConstraintBlocks? = null
+    private val invJob = PhysicsJob { b, worker ->
+        val layout = invLayout!!
+        if (b >= layout.seam || layout.awake[b] != 0) {
+            val areas = layout.areas
+            for (slot in areas.start[b] until areas.start[b] + areas.count[b]) {
+                val t = areas.items[slot]
+                if (t >= 0 && state.inversionExpired(t)) {
+                    val n = invCount[worker * 16]
+                    if (n == invKills[worker].size) invKills[worker] = invKills[worker].copyOf(n * 2)
+                    invKills[worker][n] = state.triId[t]
+                    invCount[worker * 16] = n + 1
+                }
+            }
+        }
+    }
+
+    fun scanInversions(layout: ConstraintBlocks) {
+        val w = state.activeWorkers!!
+        invLayout = layout
+        java.util.Arrays.fill(invCount, 0)
+        w.run(layout.buckets, invJob)
+        var total = 0
+        for (k in invKills.indices) total += invCount[k * 16]
+        if (total == 0) return
+        val all = IntArray(total)
+        var at = 0
+        for (k in invKills.indices) { System.arraycopy(invKills[k], 0, all, at, invCount[k * 16]); at += invCount[k * 16] }
+        all.sort()
+        for (id in all) state.killTriangleNow(id)
+    }
+
     private fun mergeCounters() {
         for (s in scratch) {
             state.linkCapHits += s.linkCapHits; s.linkCapHits = 0
@@ -379,15 +615,15 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
 }
 
 /**
- * Личное воркера: очередь пределов блока, черновики проекции кости и счётчики.
+ * Личное воркера: черновики проекции кости и счётчики.
  * Счётчики пишутся обычной записью; соседние объекты разных воркеров разделены
  * массивами-заглушками, чтобы не делить кэш-линию.
  */
 internal class WorkerScratch(state: BodyState) {
     @Suppress("unused") private val padBefore = LongArray(16)
-    var queue = IntArray(maxOf(16, state.conA.size))
     val boneDx = DoubleArray(state.boneDx.size)
     val boneDy = DoubleArray(state.boneDx.size)
+    val wallHits = BoneWallHits(state.rigidBones.size)
     var linkCapHits = 0
     var boneCapHits = 0
     var maxOverStrain = Double.NEGATIVE_INFINITY
@@ -400,7 +636,42 @@ internal class WorkerScratch(state: BodyState) {
  * Кусок поштучного прохода: 4096 частиц — ~200 КБ шести массивов double, порядка L2.
  * Мельче — больше кусков на воркер и ровнее нагрузка, но дороже раздача.
  */
-private const val PASS_CHUNK = 4096
+internal const val PASS_CHUNK = 4096
+
+/** Рёбра контура по блокам, затем швы, в одном потоке — тот же порядок, что у ParallelPhysics.runEdges. */
+internal fun BodyState.edgesByBlocksSerial(layout: ConstraintBlocks, mode: Int, h: Double) {
+    for (bucket in 0 until layout.buckets) {
+        if (bucket < layout.seam && layout.awake[bucket] == 0) continue
+        val items = layout.edges.dense(bucket); val n = layout.edges.denseCount[bucket]
+        if (mode == 0) {
+            val ori = localBoundary.orientation
+            for (x in 0 until n) orientEdge(items[x], boundA, boundB, boundOpp, ori, px, py, invMass, orientationBones())
+        } else for (x in 0 until n) normalDragEdge(items[x], h)
+    }
+}
+
+/** Импульс организмов для запаса среды кусками в одном потоке — те же куски, что у ParallelPhysics.comSums. */
+internal fun BodyState.comSumsSerial() {
+    val sums = TickMomentum.GroupSums()
+    val sl = sleep
+    for (q in 0 until sl.spanCount) {
+        var from = sl.spanStart[q]
+        val end = sl.spanEnd[q]
+        while (from < end) {
+            val to = minOf(end, from + PASS_CHUNK)
+            sums.clear()
+            for (i in from until to) {
+                if (invMass[i] <= 0.0) continue
+                val m = 1.0 / invMass[i]
+                val at = sums.at(organismOf[i]); val v = sums.data
+                v[at] += m * vx[i]; v[at + 1] += m * vy[i]
+            }
+            val v = sums.data
+            for (x in 0 until sums.count) { val o = sums.keyAt(x); val at = sums.offsetAt(x); comAccX[o] += v[at]; comAccY[o] += v[at + 1] }
+            from = to
+        }
+    }
+}
 
 internal fun BodyState.parallelPhysics(w: PhysicsWorkers): ParallelPhysics {
     val p = parallelPhysicsState
@@ -416,19 +687,24 @@ internal fun BodyState.parallelBlocksAllowed(w: PhysicsWorkers, layout: Constrai
 /**
  * Блок целиком воркером: те же стадии и та же арифметика, что solveConstraintBlockFrom,
  * без таймеров стадий и снимков. Возвращает -1 или точку остановки перед событием
- * топологии: (стадия << 32) | запись очереди пределов.
+ * топологии: (стадия << 32) | запись очереди пределов (в позднем проходе — номер в списке у порога).
  */
 internal fun BodyState.solveBlockParallel(h: Double, block: Int, layout: ConstraintBlocks,
                                           s: WorkerScratch, integrate: Boolean): Long {
-    if (integrate) integrateRange(layout.firstParticle[block], layout.firstParticle[block + 1], h)
+    if (integrate) {
+        if (closingPhaseOn) dampBucketVelocities(block, layout) // гашение скоростей до интегрирования (ClosingDamping.kt)
+        integrateRange(layout.firstParticle[block], layout.firstParticle[block + 1], h, s.wallHits)
+    }
     solveBlockLinks(h, block, layout)
     solveBlockFlaps(h, block, layout)
     if (MAXLEN_EARLY) {
         val stop = solveBlockLimitsParallel(block, layout, s)
         if (stop >= 0) return (BLOCK_STAGE_LIMITS_EARLY.toLong() shl 32) or stop.toLong()
     }
-    if (areasOn) solveBlockAreas(h, block, layout)
-    solveBlockBend(h, block, layout)
+    if (slowConstraintsNow) {
+        if (areasOn) solveBlockAreas(h * SLOW_CONSTRAINT_PERIOD, block, layout)
+        solveBlockBend(h * SLOW_CONSTRAINT_PERIOD, block, layout)
+    }
     if (bonesRigid) {
         var b = layout.bones.head[block]
         while (b >= 0) {
@@ -436,27 +712,58 @@ internal fun BodyState.solveBlockParallel(h: Double, block: Int, layout: Constra
             b = layout.bones.next[b]
         }
     }
-    val stop = solveBlockLimitsParallel(block, layout, s)
+    val stop = if (MAXLEN_EARLY) solveBlockNearLimitsParallel(block, layout, s) else solveBlockLimitsParallel(block, layout, s)
     if (stop >= 0) return (BLOCK_STAGE_LIMITS_LATE.toLong() shl 32) or stop.toLong()
     return -1
 }
 
 /**
- * Предел длины блока воркером. Та же проверка, что solveBlockLimits; нарушение без
- * события снимается той же поправкой (applyLinkLimitCorrection), на событии — выход
- * с номером записи, ничего не записав. Очередь — своя копия списка блока: список
- * между началом прохода и доработкой не меняется, событий в параллельном проходе нет.
+ * Предел длины блока воркером по всему контуру блока. Та же проверка, что solveBlockLimits, и тот
+ * же список у порога (ConstraintBlocks.nearItems): критерий в обоих записан одинаково, поэтому
+ * состав и порядок списка от числа воркеров не зависят. Нарушение без события снимается той же
+ * поправкой; на событии — выход с номером записи, ничего не записав и не внеся связь события в
+ * список: её и остаток внесёт доработка (solveBlockLimits с той же записи). Очередь — плотная копия
+ * списка блока: до доработки он не меняется, событий в параллельном проходе нет.
  */
 private fun BodyState.solveBlockLimitsParallel(block: Int, layout: ConstraintBlocks, s: WorkerScratch): Int {
     val list = layout.limits
-    var size = 0
-    var q = s.queue
-    var c0 = list.head[block]
-    while (c0 >= 0) {
-        if (size == q.size) { q = q.copyOf(size * 2); s.queue = q }
-        q[size++] = c0; c0 = list.next[c0]
+    val q = list.dense(block)
+    val size = list.denseCount[block]
+    val px = px; val py = py; val conA = conA; val conB = conB; val conRest = conRest; val conMuscle = conMuscle
+    val conDead = conDead; val ms = muscleScaleOf; val cs = if (cellScalesOn) conCellScale else null
+    var near = layout.nearItems[block]
+    var n = 0
+    var stop = -1
+    for (cursor in 0 until size) {
+        val c = q[cursor]
+        if (c < 0 || conDead[c]) continue
+        val i = conA[c]; val j = conB[c]
+        val dx = px[i] - px[j]
+        val dy = py[i] - py[j]
+        val len2 = dx * dx + dy * dy
+        val mus = conMuscle[c]
+        val base = if (mus < 0) 1.0 else ms[mus]
+        val scale = if (cs == null) base else base * cs[c]
+        val rest = conRest[c]
+        val crushLim = LINK_CRUSH_RATIO * (rest * limitShrink(c, scale))
+        val max = linkMaxLength(limitRest(c, rest, scale), scale)
+        val hi2 = max * max; val lo2 = crushLim * crushLim
+        val isNear = len2 > hi2 * LIMIT_NEAR_HI2 || (tearingOn && len2 < lo2 * LIMIT_NEAR_LO2)
+        if (!isNear) continue
+        val crushed = tearingOn && len2 < lo2
+        if ((crushed || len2 > hi2) && limitViolationParallel(c, len2, crushed, scale, max, s)) { stop = cursor; break }
+        if (n == near.size) near = layout.growNear(block, n)
+        near[n++] = c
     }
-    for (cursor in 0 until size) if (limitItemParallel(q[cursor], s)) return cursor
+    layout.nearCount[block] = n
+    return stop
+}
+
+/** Поздний предел блока воркером — по списку у порога из раннего прохода. Номер в списке перед событием или -1. */
+private fun BodyState.solveBlockNearLimitsParallel(block: Int, layout: ConstraintBlocks, s: WorkerScratch): Int {
+    val items = layout.nearItems[block]
+    val n = layout.nearCount[block]
+    for (x in 0 until n) if (limitItemParallel(items[x], s)) return x
     return -1
 }
 
@@ -475,18 +782,25 @@ internal fun BodyState.limitItemParallel(c: Int, s: WorkerScratch): Boolean {
     val base = if (mus < 0) 1.0 else muscleScaleOf[mus]
     val scale = if (cellScalesOn) base * conCellScale[c] else base
     val rest = conRest[c]
-    val restScale = rest * scale
+    val restScale = rest * limitShrink(c, scale)
     val crushLim = LINK_CRUSH_RATIO * restScale
-    val max = linkMaxLength(rest, scale)
+    val max = linkMaxLength(limitRest(c, rest, scale), scale)
     val crushed = tearingOn && len2 < crushLim * crushLim
     val over = len2 > max * max
     if (!crushed && !over) return false
+    return limitViolationParallel(c, len2, crushed, scale, max, s)
+}
+
+/** Нарушение предела у воркера — редкий путь отдельно от цикла. true — будет событие, ничего не записано. */
+private fun BodyState.limitViolationParallel(c: Int, len2: Double, crushed: Boolean, scale: Double, max: Double,
+                                             s: WorkerScratch): Boolean {
+    val i = conA[c]; val j = conB[c]
     if (invMass[i] + invMass[j] == 0.0) return false
     if (isGrowingLink(c)) return false      // см. isGrowingLink
     if (limitViolationIsEvent(c, len2, crushed, scale)) return true
     val len = sqrt(len2)
     if (len < 1e-12) return false
-    val overStrain = (len - max) / rest
+    val overStrain = (len - max) / conRest[c]
     if (overStrain > s.maxOverStrain) s.maxOverStrain = overStrain
     applyLinkLimitCorrection(i, j, len, max)
     s.linkCapHits++

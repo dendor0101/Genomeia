@@ -13,6 +13,7 @@ class Muscle(cellTypeId: Int) : Cell(
     override fun doOnTick(cellIndex: Int, threadId: Int) = with(cellEntity) {
         val impulse = neuronImpulseOutput[cellIndex]
 
+        // Формат команды для физики и сохранений: 0.5 — сокращение, 1 — покой, 1.5 — расслабление.
         degreeOfShortening[cellIndex] = impulse.coerceIn(-1f, 1f) * 0.5f + 1f
 
         energy[cellIndex] -= substrateSettings.cellsSettings[cellType[cellIndex].toInt()].energyActionCost

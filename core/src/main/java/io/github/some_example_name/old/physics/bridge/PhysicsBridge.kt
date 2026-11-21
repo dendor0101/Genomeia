@@ -135,7 +135,7 @@ class PhysicsBridge(
 
     // --- входы тика --------------------------------------------------------------------
 
-    /** Мышца клетки (миоцит, degreeOfShortening): доля длины покоя её связей, 0.5–1.5. */
+    /** Мышца клетки (миоцит, degreeOfShortening): команда 0.5–1.5 для сокращения и пассивного расслабления. */
     fun setMuscle(organ: Int, slot: Int, scale: Float) = world.setCellScale(particleOf(organ, slot), scale)
 
     /**

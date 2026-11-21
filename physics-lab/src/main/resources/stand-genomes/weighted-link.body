@@ -1,0 +1,88 @@
+# genomeia stand body 1
+name	weighted_link
+source	C:/Users/Genomeia/StudioProjects/Genomeia/.claude/worktrees/cell-radius/bugs/.sandbox/genomeia-20261020-160739-7cb9f803c736-report/bug/attachments/genomes/weighted_link.genome
+P 0 63.99354 65.64126 0.5000 synapse 0
+P 1 63.40000 65.20000 0.5000 neuron 0
+P 2 64.00000 65.20000 0.2000 synapse 0
+P 3 64.60000 65.20000 0.5000 neuron 0
+P 4 62.80000 64.60000 0.5000 chameleon 0
+P 5 62.80000 64.00000 0.5000 leaf 0
+P 6 65.20000 64.60000 0.5000 chameleon 0
+P 7 65.20000 64.00000 0.5000 leaf 0
+P 8 64.00000 64.60000 0.5000 leaf 0
+P 9 63.40000 64.60000 0.5000 neuron 0
+P 10 64.60000 64.60000 0.5000 neuron 0
+P 11 63.40000 64.00000 0.5000 leaf 0
+P 12 64.60000 64.00000 0.5000 leaf 0
+P 13 64.00000 64.00000 0.5000 zygote 0
+P 14 64.00000 63.40000 0.5000 leaf 0
+L 0 1
+L 0 2
+L 0 3
+L 1 2
+L 1 4
+L 1 8
+L 1 9
+L 2 3
+L 2 8
+X 2 9
+X 2 10
+L 3 6
+L 3 8
+L 3 10
+L 4 5
+L 4 9
+L 4 11
+X 5 9
+L 5 11
+L 6 7
+L 6 10
+X 6 12
+L 7 10
+L 7 12
+L 8 9
+L 8 10
+L 8 11
+L 8 12
+L 8 13
+L 9 11
+X 9 13
+L 10 12
+X 10 13
+L 11 13
+L 11 14
+L 12 13
+L 12 14
+L 13 14
+T 0 1 2
+T 0 2 3
+T 1 8 2
+T 1 4 9
+T 1 9 8
+T 2 8 3
+T 3 10 6
+T 3 8 10
+T 4 5 11
+T 4 11 9
+T 6 10 7
+T 7 10 12
+T 8 9 11
+T 8 12 10
+T 8 11 13
+T 8 13 12
+T 11 14 13
+T 12 13 14
+G 1 12 13
+G 2 14 12
+G 2 11 13
+G 3 8 13
+G 4 2 8
+G 4 10 12
+G 4 9 11
+G 5 1 9
+G 5 3 10
+G 5 5 11
+G 5 7 12
+G 6 4 9
+G 6 6 10
+G 7 0 3

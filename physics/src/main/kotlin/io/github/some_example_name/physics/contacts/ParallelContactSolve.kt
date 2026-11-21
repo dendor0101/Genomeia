@@ -66,9 +66,7 @@ internal class ParallelContactSolve(private val ct: BoundaryContacts, workers: I
     private var backwards = false
     private var rigid = false
 
-    /** Куски построения списков и их счётчики по диапазонам (ряды разнесены на 64 байта). */
-    private val parts = 4 * workers
-    private val partFrom = IntArray(parts + 1)
+    /** Счётчики по диапазонам — ряд на кусок решения (ряды разнесены на 64 байта). */
     private var buckets = 0
     private var stride = 0
     private var counts = IntArray(0)
@@ -79,7 +77,6 @@ internal class ParallelContactSolve(private val ct: BoundaryContacts, workers: I
     private var boneOrder = LongArray(64)
 
     private val solveJob = PhysicsJob { k, _ -> solveChunk(k) }
-    private val countJob = PhysicsJob { p, _ -> countPart(p) }
     private val fillJob = PhysicsJob { p, _ -> fillPart(p) }
     private val accumulateJob = PhysicsJob { b, _ -> accumulateBucket(b) }
     private val capContactsJob = PhysicsJob { k, _ -> capContacts(solveFrom[k], solveFrom[k + 1]) }
@@ -94,11 +91,15 @@ internal class ParallelContactSolve(private val ct: BoundaryContacts, workers: I
         if (wi.size < cN) { wi = DoubleArray(maxOf(cN, wi.size * 2)); wj = DoubleArray(wi.size) }
         chunks = minOf(sinks.size, maxOf(1, cN / 128))
         for (k in 0..chunks) solveFrom[k] = (cN.toLong() * k / chunks).toInt()
+        // Счёт по диапазонам — в той же задаче, что решение (countChunk): отдельный барьер подсчёта не нужен.
+        buckets = (ct.n ushr BUCKET_SHIFT) + 1
+        stride = buckets + 16
+        if (counts.size < chunks * stride) counts = IntArray(chunks * stride)
         w.run(chunks, solveJob)
         if (backwards) for (k in chunks - 1 downTo 0) ct.addSolved(sinks[k])
         else for (k in 0 until chunks) ct.addSolved(sinks[k])
 
-        buildLists(w, cN)
+        buildLists(w)
         w.run(buckets, accumulateJob)
         var anyCapped = false
         for (b in 0 until buckets) if (capped[b]) anyCapped = true
@@ -113,25 +114,26 @@ internal class ParallelContactSolve(private val ct: BoundaryContacts, workers: I
         val from = solveFrom[k]; val to = solveFrom[k + 1]
         if (backwards) { var c = to - 1; while (c >= from) { solveOne(c, sink); c-- } }
         else for (c in from until to) solveOne(c, sink)
+        countChunk(k)
     }
 
     private fun solveOne(c: Int, sink: ContactSolveSink) {
         if (ct.solveContactPair(c, px, py, vx, vy, invMass, h, 1.0, sink)) { wi[c] = sink.wi; wj[c] = sink.wj }
     }
 
-    private fun buildLists(w: PhysicsWorkers, cN: Int) {
-        buckets = (ct.n ushr BUCKET_SHIFT) + 1
-        stride = buckets + 16
-        if (counts.size < parts * stride) counts = IntArray(parts * stride)
+    /**
+     * Списки диапазонов по кускам решения: счёт уже сделан (countChunk), здесь смещения и заполнение. Куски —
+     * отрезки номеров контактов по возрастанию, и внутри куска запись идёт по возрастанию, поэтому список
+     * диапазона — по возрастанию номера контакта при любом числе кусков.
+     */
+    private fun buildLists(w: PhysicsWorkers) {
         if (bucketStart.size < buckets + 1) bucketStart = IntArray(buckets + 1)
         if (capped.size < buckets) capped = BooleanArray(buckets)
         if (touchedBones.size < buckets) touchedBones = Array(buckets) { LongBuffer() }
-        for (p in 0..parts) partFrom[p] = (cN.toLong() * p / parts).toInt()
-        w.run(parts, countJob)
         var total = 0
         for (b in 0 until buckets) {
             bucketStart[b] = total
-            for (p in 0 until parts) {
+            for (p in 0 until chunks) {
                 val slot = p * stride + b
                 val c = counts[slot]
                 counts[slot] = total
@@ -140,14 +142,15 @@ internal class ParallelContactSolve(private val ct: BoundaryContacts, workers: I
         }
         bucketStart[buckets] = total
         if (entries.size < total) entries = IntArray(maxOf(total, entries.size * 2))
-        w.run(parts, fillJob)
+        w.run(chunks, fillJob)
     }
 
-    private fun countPart(p: Int) {
-        val row = p * stride
+    /** Счёт куска [k] решения по диапазонам: силы его контактов уже записаны (solveContactPair). */
+    private fun countChunk(k: Int) {
+        val row = k * stride
         java.util.Arrays.fill(counts, row, row + buckets, 0)
         val ci = ct.cI; val cj = ct.cJ; val ax = ct.cAx; val ay = ct.cAy
-        for (c in partFrom[p] until partFrom[p + 1]) {
+        for (c in solveFrom[k] until solveFrom[k + 1]) {
             if (ax[c] == 0.0 && ay[c] == 0.0) continue
             val bi = ci[c] ushr BUCKET_SHIFT; val bj = cj[c] ushr BUCKET_SHIFT
             counts[row + bi]++
@@ -158,7 +161,7 @@ internal class ParallelContactSolve(private val ct: BoundaryContacts, workers: I
     private fun fillPart(p: Int) {
         val row = p * stride
         val ci = ct.cI; val cj = ct.cJ; val ax = ct.cAx; val ay = ct.cAy
-        for (c in partFrom[p] until partFrom[p + 1]) {
+        for (c in solveFrom[p] until solveFrom[p + 1]) {
             if (ax[c] == 0.0 && ay[c] == 0.0) continue
             val bi = ci[c] ushr BUCKET_SHIFT; val bj = cj[c] ushr BUCKET_SHIFT
             entries[counts[row + bi]++] = c

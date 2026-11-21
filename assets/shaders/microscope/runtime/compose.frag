@@ -14,12 +14,17 @@ uniform vec4 uFieldBounds;
 uniform vec2 uFieldTexel;
 uniform float uReliefHeight;
 uniform float uCohesion;
+// Подъём террейна хранится в альфа-канале уже привязанной карты окраски.
+uniform sampler2D uGenomeTint;
+// На сколько террейн выше фокуса: при uAperture = 176 (масштаб 1) размытие около 6 пикселей.
+const float TERRAIN_DEFOCUS=.03;
 vec3 tissueField(vec2 p){
-  vec4 v=texture(uTissueField,(p-uFieldBounds.xy)/uFieldBounds.zw);
+  vec2 at=(p-uFieldBounds.xy)/uFieldBounds.zw;
+  vec4 v=texture(uTissueField,at);
   float distance=(dot(v.rg,vec2(65280.,255.))/65535.-.5)*1.5;
   float height=dot(v.ba,vec2(65280.,255.))/65535.*.08;
   height*=smoothstep(0.,max(uFieldTexel.x,uFieldTexel.y)*1.2,-distance);
-  return vec3(distance,height,0.);
+  return vec3(distance,height,texture(uGenomeTint,at).a);
 }
 float reliefDepth(float height,float layer){return height*uReliefHeight*(.84-.5*layer);}
 vec2 reliefGradient(vec2 p,float stepWorld){
@@ -27,7 +32,7 @@ vec2 reliefGradient(vec2 p,float stepWorld){
               tissueField(p+vec2(0.,stepWorld)).y-tissueField(p-vec2(0.,stepWorld)).y)/(2.*stepWorld);
 }
 
-uniform sampler2D uMap,uBehind,uGenomeTint;
+uniform sampler2D uMap,uBehind;
 uniform vec2 uRes,uCam,uSpan;
 uniform float uColorFilter,uTintStrength,uRefraction,uPhase,uInspect,uMode,uPixelRatio;
 uniform float uDarkContrast,uCA,uFocus,uAperture,uScale;
@@ -46,10 +51,11 @@ void main(){
   // Теперь RGB действительно снимаются с разным смещением. Верхний правый край
   // получает синюю кайму, противоположный — тёплую; сплошной синий контур не рисуется.
   if(uCA>.001&&c.r>.002){
-    float height=tissueField(wp).y;
+    vec3 specimen=tissueField(wp);float height=specimen.y;
     vec2 hg=reliefGradient(wp,max(uScale,max(uFieldTexel.x,uFieldTexel.y)));
     float steep=smoothstep(.025,.18,length(hg)*uReliefHeight);
     float surfaceZ=.5+.0018*wp.x+.0012*wp.y+reliefDepth(height,4.);
+    surfaceZ=mix(surfaceZ,uFocus+TERRAIN_DEFOCUS,specimen.z);
     float focused=exp(-pow((surfaceZ-uFocus)*uAperture/2.6,2.));
     vec2 split=vec2(.707107)*uCA*(.65+3.8*steep*focused)*uPixelRatio;
     vec4 red=S(-split),blue=S(split);

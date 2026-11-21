@@ -70,8 +70,8 @@ private val SLEEP = System.getProperty("perf.sleep") != "0"
 private val JFR = System.getProperty("perf.jfr")
 private val SNAPSHOT = System.getProperty("perf.snapshot")
 private val WARM = System.getProperty("perf.warm")?.toIntOrNull() ?: 100
-/** Режим отрисовки (-Prender=realistic|debug|nostalgic): настройка игрока на замер не влияет. В отладочном идут наклейки и нейросвязи. */
-private val RENDER = io.github.some_example_name.render.RenderMode.valueOf((System.getProperty("perf.render") ?: "realistic").uppercase())
+/** Режим отрисовки (-Prender=tissue_map|debug|nostalgic): настройка игрока на замер не влияет. В отладочном идут наклейки и нейросвязи. */
+private val RENDER = io.github.some_example_name.render.RenderMode.valueOf((System.getProperty("perf.render") ?: "tissue_map").uppercase())
 private const val WORLD = 256
 private const val STEP_LOADED = 10
 private const val STEP_SAVE = 20

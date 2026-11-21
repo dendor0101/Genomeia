@@ -3,7 +3,7 @@ package io.github.some_example_name.old.features.worldeditor
 import com.badlogic.gdx.graphics.Color
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.entities.SubstancesEntity
-import io.github.some_example_name.old.physics.bridge.TerrainBodies
+import io.github.some_example_name.old.physics.bridge.StaticTerrain
 import kotlin.Float
 import kotlin.random.Random
 
@@ -41,8 +41,8 @@ class WorldTerrainManager(
                     if (element1) {
                         if (scaleX < gridWidth && scaleY < gridHeight) {
                             val p = particleEntity.addParticle(
-                                x = scaleX + (random.nextFloat() - 0.5f) * 0.1f,
-                                y = scaleY + (random.nextFloat() - 0.5f) * 0.1f,
+                                x = scaleX + (random.nextFloat() - 0.5f) * 0.75f,
+                                y = scaleY + (random.nextFloat() - 0.5f) * 0.75f,
                                 radius = 0.5f,
                                 color = getColor(random),
                                 isCell = false,
@@ -50,8 +50,8 @@ class WorldTerrainManager(
                                 holderEntityIndex = -1,
                                 dragCoefficient = 0.4f
                             )
-                            // Клетка карты — по ней мост физики режет террейн на плитки (TerrainBodies).
-                            particleEntity.terrainCell[p] = TerrainBodies.packCell(x, y)
+                            // Клетка карты — по ней мост физики отделяет кромку от толщи, а микроскоп сшивает ткань (StaticTerrain).
+                            particleEntity.terrainCell[p] = StaticTerrain.packCell(x, y)
                         }
 
                     } else {
@@ -81,7 +81,7 @@ class WorldTerrainManager(
                 dragCoefficient = 1.0f
             )
             // Номер в раскладке стенки — по нему мост физики привязывает частицу к стенке мира физики.
-            particleEntity.terrainCell[p] = TerrainBodies.wallMark(wall++)
+            particleEntity.terrainCell[p] = StaticTerrain.wallMark(wall++)
         }
     }
 

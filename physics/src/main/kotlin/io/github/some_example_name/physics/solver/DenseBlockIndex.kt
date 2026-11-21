@@ -28,8 +28,8 @@ class DenseBlockIndex(capacity: Int, blocks: Int) {
         for (b in owner) if (b >= 0) count[b]++
         var offset = 0
         for (b in count.indices) { start[b] = offset; offset += count[b]; count[b] = 0 }
-        // Для связей сохраняем прежний план независимых перестановок. Отбор в
-        // блок не меняет относительный порядок ограничений одной частицы.
+        // [order] — план обхода (DistanceSweepOrder); блоки связей сейчас строятся без него, см.
+        // initializeConstraintBlocks. Отбор в блок не меняет относительный порядок ограничений одной частицы.
         for (slot in 0 until (order?.size ?: owner.size)) {
             val id = order?.get(slot) ?: slot
             val b = owner[id]

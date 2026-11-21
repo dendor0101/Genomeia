@@ -82,6 +82,95 @@ internal fun BodyState.velocityAfterRange(from: Int, to: Int, lastStep: Boolean,
     }
 }
 
+/**
+ * ЛЁГКИЙ ПРОХОД ПО СКОРОСТЯМ на подшагах, кроме последнего в тике. У частицы без контакта между
+ * восстановлением скорости и потолком ничего не происходит: внешнего импульса нет, учёт ничего
+ * не складывает, и снимок для него не нужен. Поэтому один проход, а частицы контактов
+ * (и кости, которых они касаются) доделываются поштучно после отскока. Хватка и тяга мышью
+ * меняют скорость вне контактов — при них работает полный путь.
+ * Цена: 4 байта на частицу и 4 на кость; потоково читается один лишний массив.
+ */
+internal fun BodyState.velocityFastAllowed(): Boolean = dragId < 0 && gripCountNow() == 0
+
+/** Пометить частицы, чью скорость изменит отскок этого подшага: контакты и целиком их кости. */
+internal fun BodyState.markVelocityTouched() {
+    if (velTouchStamp.size < n) { velTouchStamp = IntArray(n); velTouchList = IntArray(n) }
+    if (velBoneStamp.size < rigidBones.size) velBoneStamp = IntArray(rigidBones.size)
+    velTouchPass++
+    velTouchN = 0
+    val ct = contacts
+    if (ct == null || !contactsOn || contactsStale) return
+    for (k in 0 until ct.contactCount) { markTouched(ct.contactI(k)); markTouched(ct.contactJ(k)) }
+}
+
+private fun BodyState.markTouched(i: Int) {
+    if (velTouchStamp[i] != velTouchPass) { velTouchStamp[i] = velTouchPass; velTouchList[velTouchN++] = i }
+    if (!bonesRigid) return
+    val b = boneOf[i]
+    if (b < 0 || velBoneStamp[b] == velTouchPass) return
+    velBoneStamp[b] = velTouchPass
+    for (k in rigidBones[b]) if (velTouchStamp[k] != velTouchPass) { velTouchStamp[k] = velTouchPass; velTouchList[velTouchN++] = k }
+}
+
+internal fun BodyState.velocityPassFast(h: Double) {
+    prepareAwakeSpans()
+    val w = activeWorkers
+    if (w != null && w.count > 1) { parallelPhysics(w).velocityFast(h); return }
+    val s = sleep
+    for (k in 0 until s.spanCount) velocityFastRange(s.spanStart[k], s.spanEnd[k], h, null)
+}
+
+internal fun BodyState.velocityFastRange(from: Int, to: Int, h: Double, acc: WorkerScratch?) {
+    val clamp = !dbgNoClamp
+    val maxV = MAX_SPEED_CELLS_PER_TICK * linkScale / DT
+    val maxV2 = maxV * maxV
+    val stamp = velTouchStamp; val pass = velTouchPass
+    val tm = if (cancelSpinOn) tickMomentum else null
+    for (i in from until to) {
+        if (invMass[i] == 0.0) {
+            vx[i] = 0.0; vy[i] = 0.0
+        } else {
+            vx[i] = (px[i] - prevX[i]) / h
+            vy[i] = (py[i] - prevY[i]) / h
+        }
+        if (stamp[i] == pass) { tm?.beforeAt(i, vx[i], vy[i]); continue }
+        if (inContact[i]) {
+            tm?.beforeAt(i, vx[i], vy[i])
+            if (vy[i] > 0.0) vy[i] *= GROUND_RESTITUTION
+            tm?.externalAt(i, px, py, vx, vy, invMass, inContact)
+        }
+        if (clamp) { if (acc == null) clampOne(i, maxV, maxV2) else clampOneInto(i, maxV, maxV2, acc) }
+    }
+}
+
+/** Частицы контактов после отскока: то же, что velocityAfterRange на подшаге без среды. */
+internal fun BodyState.finishVelocityTouched() {
+    // Кости, которых касаются контакты, помечаются целиком: список бывает в тысячи частиц (замер 10.11: 8% тика).
+    val w = activeWorkers
+    if (w != null && w.count > 1 && velTouchN >= 1024) { parallelPhysics(w).finishTouched(); return }
+    finishVelocityTouchedRange(0, velTouchN, null)
+}
+
+internal fun BodyState.finishVelocityTouchedRange(from: Int, to: Int, acc: WorkerScratch?) {
+    val clamp = !dbgNoClamp
+    val maxV = MAX_SPEED_CELLS_PER_TICK * linkScale / DT
+    val maxV2 = maxV * maxV
+    val tm = if (cancelSpinOn) tickMomentum else null
+    for (k in from until to) {
+        val i = velTouchList[k]
+        if (inContact[i] && vy[i] > 0.0) vy[i] *= GROUND_RESTITUTION
+        tm?.externalAt(i, px, py, vx, vy, invMass, inContact)
+        if (clamp) { if (acc == null) clampOne(i, maxV, maxV2) else clampOneInto(i, maxV, maxV2, acc) }
+    }
+}
+
+/** Слияние групп импульса по контактам подшага: по воркерам, если контактов много. */
+internal fun BodyState.noteContactsMomentum(ct: BoundaryContacts) {
+    val w = activeWorkers
+    if (w != null && w.count > 1 && ct.contactCount >= 1024) parallelPhysics(w).noteContacts(ct)
+    else tickMomentum.noteContacts(ct, invMass)
+}
+
 /** Доля скорости, что остаётся за тик у частицы со своим множителем сопротивления [d]. */
 internal fun mediumKeep(hTick: Double, d: Double): Double {
     val k = 1.0 - MEDIUM_DRAG * hTick * d
@@ -89,7 +178,7 @@ internal fun mediumKeep(hTick: Double, d: Double): Double {
 }
 
 /** clampOne со счётчиками воркера: та же арифметика. */
-private fun BodyState.clampOneInto(i: Int, maxV: Double, maxV2: Double, acc: WorkerScratch) {
+internal fun BodyState.clampOneInto(i: Int, maxV: Double, maxV2: Double, acc: WorkerScratch) {
     val v2 = vx[i] * vx[i] + vy[i] * vy[i]
     if (v2 > acc.peakSpeed2) acc.peakSpeed2 = v2
     if (v2 <= maxV2) return
@@ -99,7 +188,7 @@ private fun BodyState.clampOneInto(i: Int, maxV: Double, maxV2: Double, acc: Wor
 }
 
 /** Потолок одной частицы. Отдельной функцией, чтобы склеенный цикл остался маленьким для JIT. */
-private fun BodyState.clampOne(i: Int, maxV: Double, maxV2: Double) {
+internal fun BodyState.clampOne(i: Int, maxV: Double, maxV2: Double) {
     val v2 = vx[i] * vx[i] + vy[i] * vy[i]
     if (v2 > peakSpeed2) peakSpeed2 = v2
     if (v2 <= maxV2) return

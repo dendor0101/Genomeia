@@ -31,9 +31,9 @@ internal class PairKeyBuffer {
 }
 
 /**
- * ОТБОР УЦЕЛЕВШИХ ПАР, СЛИЯНИЕ И БЛИЖНИЙ СПИСОК ПО ВОРКЕРАМ — побитово тот же список.
+ * ОТБОР УЦЕЛЕВШИХ ПАР И СЛИЯНИЕ ПО ВОРКЕРАМ — побитово тот же список.
  *
- * Отбор и ближний список — фильтр с сохранением порядка: каждый кусок сначала
+ * Отбор — фильтр с сохранением порядка: каждый кусок сначала
  * считает, сколько оставит, потом пишет со своего смещения (префиксная сумма).
  *
  * Слияние: три упорядоченных источника (уцелевшие, новые, нижние) дают один
@@ -69,13 +69,10 @@ internal class ParallelPairs(private val ct: BoundaryContacts, private val worke
     private var runs = 0
     private val splitters = LongArray(parts + 1)
     private val outFrom = IntArray(parts + 1)
-    private val nearCount = IntArray(parts)
-    private val nearAt = IntArray(parts + 1)
     private val lowBuf = Array(parts) { LongArray(256) }
     private var kept = 0
     private var fresh = 0
     private val mergeJob = PhysicsJob { p, _ -> mergePart(p) }
-    private val nearJob = PhysicsJob { p, _ -> ct.writeNear(outFrom[p], outFrom[p + 1], nearAt[p]) }
 
     /**
      * [lowRunEnd] — концы отсортированных прогонов нижних ключей ([lowRuns] штук);
@@ -105,12 +102,8 @@ internal class ParallelPairs(private val ct: BoundaryContacts, private val worke
         ct.ensurePairCapacity(total)
         w.run(parts, mergeJob)
         outFrom[parts] = total
-        ct.finishParallelPairs(total, 0)
+        ct.finishParallelPairs(total)
         ct.ensureNearCapacity()
-        nearAt[0] = 0
-        for (p in 0 until parts) nearAt[p + 1] = nearAt[p] + nearCount[p]
-        w.run(parts, nearJob)
-        ct.finishParallelPairs(total, nearAt[parts])
         return true
     }
 
@@ -140,7 +133,6 @@ internal class ParallelPairs(private val ct: BoundaryContacts, private val worke
         if (runs > 1) java.util.Arrays.sort(buf, 0, lowN)
         outFrom[p] = out
         var l = 0
-        var near = 0
         val end = out + (iEnd - i) + (jEnd - j) + lowN
         while (out < end) {
             // Наименьший из трёх голов; ключи различны.
@@ -148,11 +140,10 @@ internal class ParallelPairs(private val ct: BoundaryContacts, private val worke
             if (i < iEnd) { best = kk[i]; from = 1 }
             if (j < jEnd && nk[j] < best) { best = nk[j]; from = 2 }
             if (l < lowN && buf[l] < best) { best = buf[l]; from = 3 }
+            val slot = if (from == 1) ct.keptSlotAt(i) else -2
             when (from) { 1 -> i++; 2 -> j++; else -> l++ }
-            ct.setPair(out++, best)
-            if ((best and 1L) != 0L) near++
+            ct.setPair(out++, best, slot)
         }
-        nearCount[p] = near
     }
 
     private fun lowerBound(a: LongArray, from: Int, to: Int, key: Long): Int {
@@ -222,14 +213,19 @@ internal class ParallelMoved(private val ct: BoundaryContacts, workers: Int) : O
 internal class ParallelBuild(private val ct: BoundaryContacts, workers: Int) : OrderedChunks(workers) {
     private var px = DoubleArray(0); private var py = DoubleArray(0)
     private var vx = DoubleArray(0); private var vy = DoubleArray(0)
+    private val lists = Array(parts) { IntArray(64) }
     private val countJob = PhysicsJob { k, _ ->
+        var list = lists[k]
         var c = 0
-        for (p in from[k] until from[k + 1]) if (ct.contactTouches(p, px, py)) c++
+        for (p in from[k] until from[k + 1]) if (ct.contactTouches(p, px, py)) {
+            if (c == list.size) { list = list.copyOf(c * 2); lists[k] = list }
+            list[c++] = p
+        }
         count[k] = c
     }
     private val writeJob = PhysicsJob { k, _ ->
-        var c = at[k]
-        for (p in from[k] until from[k + 1]) if (ct.contactTouches(p, px, py)) ct.writeContact(p, c++, px, py, vx, vy)
+        val list = lists[k]
+        for (x in 0 until count[k]) ct.writeContact(list[x], at[k] + x, px, py, vx, vy)
     }
 
     fun build(w: PhysicsWorkers, near: Int, px: DoubleArray, py: DoubleArray, vx: DoubleArray, vy: DoubleArray): Int {
@@ -238,8 +234,15 @@ internal class ParallelBuild(private val ct: BoundaryContacts, workers: Int) : O
         w.run(parts, countJob)
         val total = prefix()
         ct.ensureContactCapacity(total)
-        w.run(parts, writeJob)
+        // Запись идёт по найденным парам. Последовательно — только совсем мелкий список: запись контакта
+        // читает пары покоя вразброс, и 3.4 тысячи контактов в одном потоке стоили 7% тика (замер 10.11).
+        if (total < WRITE_PARALLEL_MIN) { for (k in 0 until parts) { val list = lists[k]; for (x in 0 until count[k]) ct.writeContact(list[x], at[k] + x, px, py, vx, vy) } }
+        else w.run(parts, writeJob)
         return total
+    }
+
+    private companion object {
+        const val WRITE_PARALLEL_MIN = 256
     }
 }
 
@@ -425,13 +428,110 @@ internal class ParallelPierce(private val ct: BoundaryContacts, workers: Int) {
         out.n = 0
         ct.findPierceRange(from[k], from[k + 1], px, py, qx, qy, org, out)
     }
+    private val boundChunks = 4 * workers
+    private val boundsJob = PhysicsJob { k, _ ->
+        val verts = ct.moverVertexCount
+        ct.pierceBoundsRange((verts.toLong() * k / boundChunks).toInt(), (verts.toLong() * (k + 1) / boundChunks).toInt(), px, py, qx, qy)
+    }
 
     fun run(w: PhysicsWorkers, px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray, org: IntArray) {
         this.px = px; this.py = py; this.qx = qx; this.qy = qy; this.org = org
+        if (!ct.boundsStale) w.run(boundChunks, boundsJob)
         val pairs = ct.candidatePairCount
         val k = minOf(buffers.size, maxOf(1, pairs / 64))
         for (c in 0..k) from[c] = (pairs.toLong() * c / k).toInt()
         w.run(k, job)
         for (c in 0 until k) ct.addPierces(buffers[c])
+    }
+}
+
+/**
+ * ПОДГОТОВКА КОНТАКТОВ ОДНОЙ ЗАДАЧЕЙ ПО КУСКАМ ПАР — отсев CCD, поиск пробоя и счёт касаний вместе
+ * (BoundaryContacts.prepareFused). Список пар у трёх проходов один (nearA — это pairA): кусок читает свои
+ * пары и их частицы один раз и копит три итога у себя — пары для CCD, пробитые рёбра и перекрытые пары, все
+ * в порядке пар. Склейка кусков по порядку даёт те же списки, что ParallelCcd, ParallelPierce и
+ * ParallelBuild по отдельности, при любом числе кусков. Было три барьера на подшаг, стал один, и ещё один
+ * на запись контактов.
+ */
+internal class ParallelPrepare(private val ct: BoundaryContacts, workers: Int) {
+    private val maxChunks = 16 * workers
+    private val from = IntArray(maxChunks + 1)
+    var chunks = 0; private set
+    private val ccdLists = Array(maxChunks) { IntArray(64) }
+    private val ccdN = IntArray(maxChunks)
+    private val pierceBufs = Array(maxChunks) { PierceBuffer() }
+    private val touchLists = Array(maxChunks) { IntArray(64) }
+    private val touchN = IntArray(maxChunks)
+    private val at = IntArray(maxChunks + 1)
+    private var px = DoubleArray(0); private var py = DoubleArray(0)
+    private var qx = DoubleArray(0); private var qy = DoubleArray(0)
+    private var vx = DoubleArray(0); private var vy = DoubleArray(0)
+    private var invMass = DoubleArray(0)
+    private var org = IntArray(0)
+    private val boundChunks = 4 * workers
+    private val boundsJob = PhysicsJob { k, _ ->
+        val verts = ct.moverVertexCount
+        ct.pierceBoundsRange((verts.toLong() * k / boundChunks).toInt(), (verts.toLong() * (k + 1) / boundChunks).toInt(), px, py, qx, qy)
+    }
+    private val scanJob = PhysicsJob { k, _ -> scanChunk(k) }
+    private val writeJob = PhysicsJob { k, _ ->
+        val list = touchLists[k]
+        for (x in 0 until touchN[k]) ct.writeContact(list[x], at[k] + x, px, py, vx, vy)
+    }
+
+    private fun scanChunk(k: Int) {
+        val a = from[k]; val b = from[k + 1]
+        var list = ccdLists[k]
+        var c = 0
+        for (p in a until b) {
+            if (ct.ccdSkips(p, px, py, qx, qy, invMass)) continue
+            if (c == list.size) { list = list.copyOf(c * 2); ccdLists[k] = list }
+            list[c++] = p
+        }
+        ccdN[k] = c
+        val out = pierceBufs[k]
+        out.n = 0
+        ct.findPierceRange(a, b, px, py, qx, qy, org, out)
+        var touch = touchLists[k]
+        var t = 0
+        for (p in a until b) if (ct.contactTouches(p, px, py)) {
+            if (t == touch.size) { touch = touch.copyOf(t * 2); touchLists[k] = touch }
+            touch[t++] = p
+        }
+        touchN[k] = t
+    }
+
+    /** Границы отсева пробоя (раз в два подшага, как у ParallelPierce), затем три прохода одной задачей. */
+    fun scan(w: PhysicsWorkers, px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray,
+             vx: DoubleArray, vy: DoubleArray, invMass: DoubleArray, org: IntArray) {
+        this.px = px; this.py = py; this.qx = qx; this.qy = qy; this.vx = vx; this.vy = vy
+        this.invMass = invMass; this.org = org
+        if (!ct.boundsStale) w.run(boundChunks, boundsJob)
+        val pairs = ct.candidatePairCount
+        val k = minOf(maxChunks, maxOf(1, pairs / 64))
+        for (c in 0..k) from[c] = (pairs.toLong() * c / k).toInt()
+        chunks = k
+        w.run(k, scanJob)
+    }
+
+    fun ccdFound(k: Int): IntArray = ccdLists[k]
+    fun ccdCount(k: Int): Int = ccdN[k]
+    fun pierces(k: Int): PierceBuffer = pierceBufs[k]
+
+    /** Контакты из перекрытых пар со смещения своего куска — те же номера, что подряд. Возвращает их число. */
+    fun writeContacts(w: PhysicsWorkers): Int {
+        at[0] = 0
+        for (k in 0 until chunks) at[k + 1] = at[k] + touchN[k]
+        val total = at[chunks]
+        ct.ensureContactCapacity(total)
+        if (total < WRITE_PARALLEL_MIN) {
+            for (k in 0 until chunks) { val list = touchLists[k]; for (x in 0 until touchN[k]) ct.writeContact(list[x], at[k] + x, px, py, vx, vy) }
+        } else w.run(chunks, writeJob)
+        return total
+    }
+
+    private companion object {
+        /** Как у ParallelBuild: мельче — запись в одном потоке дешевле барьера. */
+        const val WRITE_PARALLEL_MIN = 256
     }
 }

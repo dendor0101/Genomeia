@@ -79,41 +79,16 @@ internal fun strongerScale(a: Float, b: Float): Float {
 /** Слабейшая мышца из двух: множитель ближе к 1, при равном удалении — больший. */
 internal fun weakerScale(a: Float, b: Float): Float = if (strongerScale(a, b) == a && a != b) b else a
 
-private fun BodyState.linkCellScale(c: Int): Float {
-    val a = conA[c]; val b = conB[c]
-    val ea = cellScaleEff[a]
-    val s = weakerScale(ea, cellScaleEff[b])
-    if (!fibersOn || s == 1f) return s
-    // Волокно — у источника выбранного множителя; при равных значениях — у конца a.
-    return fiberLinkScale(s, if (s == ea) cellScaleSrc[a] else cellScaleSrc[b], a, b)
-}
-
-/**
- * Множитель связи a–b при множителе мышцы [s] с волокном клетки [src]: |F·e| одноосного
- * растяжения вдоль волокна (BodyState.cellFiberX), e — направление связи в позе покоя.
- * Вдоль волокна — s, поперёк — 1; при s = 1 — ровно 1 при любом волокне.
- */
-private fun BodyState.fiberLinkScale(s: Float, src: Int, a: Int, b: Int): Float {
-    val fx = cellFiberX[src]; val fy = cellFiberY[src]
-    if (fx == 0f && fy == 0f) return s
-    val dx = body.x[b] - body.x[a]; val dy = body.y[b] - body.y[a]
-    val len2 = dx * dx + dy * dy
-    if (len2 <= 0f) return s
-    val d = dx * fx + dy * fy
-    return sqrt(1f + (s * s - 1f) * (d * d / len2))
-}
+/** Волокно множителю связи не мешает: и сжатие, и мягкость расслабления по волокну ведут ядра (MuscleFiber.kt, conFiberC2). */
+private fun BodyState.linkCellScale(c: Int): Float = weakerScale(cellScaleEff[conA[c]], cellScaleEff[conB[c]])
 
 private fun BodyState.triangleCellScale(t: Int): Float {
     val i0 = triA[t]; val i1 = triB[t]; val i2 = triC[t]
     if (boneOf[i0] >= 0 || boneOf[i1] >= 0 || boneOf[i2] >= 0) return 1f
     val e = cellScaleEff
-    val s = weakerScale(weakerScale(e[i0], e[i1]), e[i2])
-    if (!fibersOn || s == 1f) return s
-    val v = if (s == e[i0]) i0 else if (s == e[i1]) i1 else i2
-    val src = cellScaleSrc[v]
-    if (cellFiberX[src] == 0f && cellFiberY[src] == 0f) return s
-    // Одноосное растяжение меняет площадь в det F = s раз, а ядро берёт квадрат множителя.
-    return sqrt(s)
+    // Волокно треугольнику множитель не меняет: сжатие по волокну ведут ядра (triFiberById), а расслабление площади —
+    // целиком: растянуть треугольник может только связь вдоль волокна, поперечные мягче не становятся (MuscleFiber.kt).
+    return weakerScale(weakerScale(e[i0], e[i1]), e[i2])
 }
 
 /** Мягкость связи — среднее концов (BodyState.cellSoftness): половинки пружины подряд. */
@@ -127,6 +102,7 @@ private fun BodyState.triangleSoftness(t: Int): Float =
  * Чей множитель действует на клетку [v] (cellScaleEff = cellScale[источника]): сильнейший из
  * своего и соседей по живому треугольнику. При равных значениях остаётся прежний — сама клетка
  * или первый по кольцу; кольцо постоянно, поэтому от порядка обхода клеток выбор не зависит.
+ * Волокно источника — волокно ткани вокруг (MuscleFiber.kt).
  */
 private fun BodyState.effectiveSource(v: Int): Int {
     val b = baked
@@ -155,8 +131,9 @@ internal fun BodyState.recomputeCellScales() {
         cellScaleSrc[v] = src
         cellScaleEff[v] = cellScale[src]
     }
-    for (c in 0 until conCount) conCellScale[c] = linkCellScale(c)
-    for (t in 0 until triCount) triCellScale[t] = triangleCellScale(t)
+    // Волокно (MuscleFiber.kt) — вместе с множителями связей и треугольников.
+    for (c in 0 until conCount) { conCellScale[c] = linkCellScale(c); refreshLinkFiber(c) }
+    for (t in 0 until triCount) { triCellScale[t] = triangleCellScale(t); refreshTriangleFiber(t) }
     if (softnessOn) {
         for (c in 0 until conCount) conSoftness[c] = linkSoftness(c)
         for (t in 0 until triCount) triSoftness[t] = triangleSoftness(t)
@@ -181,7 +158,7 @@ internal fun BodyState.refreshCellScaleRing(v: Int, out: CellScaleLerpBuffer? = 
 private fun BodyState.refreshEffective(u: Int, always: Boolean, out: CellScaleLerpBuffer?) {
     val src = effectiveSource(u)
     val e = cellScale[src]
-    // Источник важен только с волокнами: без них связь зависит лишь от значения.
+    // Источник важен только с волокнами: множитель тот же, а волокно — другой мышцы (MuscleFiber.kt).
     if (e == cellScaleEff[u] && (!fibersOn || src == cellScaleSrc[u]) && !always) return
     cellScaleEff[u] = e
     cellScaleSrc[u] = src
@@ -210,27 +187,37 @@ internal fun BodyState.refreshCellFiberRing(v: Int) {
  * результат не влияет.
  */
 internal fun BodyState.advanceCellScales(dt: Double) {
+    ensureFiberSize() // волокно мышцы (MuscleFiber.kt): массивы — до пересчёта колец на воркерах
     val s = cellScale; val target = cellScaleTarget
     val byEdges = constraintBlocks != null && !cellScalesDirty && cellScaleEff.size == n
     if (byEdges) beginCellScaleLerp()
-    // На воркерах кольца считаются после шага всех клеток (см. ParallelMuscles): результат тот же.
+    // КОЛЬЦА — ПОСЛЕ ШАГА ВСЕХ КЛЕТОК, и на воркерах (ParallelMuscles), и в одном потоке. Кольцо, пересчитанное
+    // сразу за шагом клетки, видит промежуточные множители соседей, и решение «действующий множитель не
+    // изменился — связи не трогать» выходило другим, чем по окончательным: bugReplayCheck 11.11 (мягкая ткань,
+    // 6 подшагов) — запись на 8 воркерах и повтор на одном разошлись на тике 643 в одной связи (1.461 против
+    // 1.384 — её множитель уже устарел, и один путь его пересчитал, а другой нет).
     val w = if (byEdges) activeWorkers else null
     val muscles = if (w != null && w.count > 1) parallelPhysics(w).muscles.also { it.begin() } else null
+    var movedN = 0
     var moving = false
     for (v in 0 until n) {
         val t = target[v]; val cur = s[v]
         if (cur == t) continue
         val away = kotlin.math.abs(t - 1f) > kotlin.math.abs(cur - 1f)
         val k = minOf(1.0, (if (away) muscleRateContract else muscleRateRelax) * dt)
-        var next = (cur + (t - cur) * k).toFloat()
+        var next = openingRateLimit(cur, (cur + (t - cur) * k).toFloat()) // ВРЕМЕННО (MX_OPEN = 2, MuscleExperiment.kt)
         if (kotlin.math.abs(t - next) < CELL_SCALE_SNAP) next = t else moving = true
         s[v] = next
         sleep.requestWake(v)
-        if (muscles != null) muscles.note(v) else if (byEdges) refreshCellScaleRing(v)
+        if (muscles != null) muscles.note(v)
+        else if (byEdges) {
+            if (movedN == cellScaleMoved.size) cellScaleMoved = cellScaleMoved.copyOf(movedN * 2)
+            cellScaleMoved[movedN++] = v
+        }
     }
     cellScalesMoving = moving
     if (byEdges) {
-        if (muscles != null) muscles.refreshRings(w!!)
+        if (muscles != null) muscles.refreshRings(w!!) else for (q in 0 until movedN) refreshCellScaleRing(cellScaleMoved[q])
         endCellScaleLerp()
         return
     }
@@ -266,6 +253,7 @@ private fun BodyState.refreshCellScaleAround(v: Int, out: CellScaleLerpBuffer?) 
         var c = conOfEdge[e]
         while (c >= 0) {
             conCellScale[c] = linkCellScale(c)
+            refreshLinkFiber(c) // волокно мышцы (MuscleFiber.kt)
             if (softnessOn) conSoftness[c] = linkSoftness(c)
             c = conNextForEdge[c]
         }
@@ -275,6 +263,7 @@ private fun BodyState.refreshCellScaleAround(v: Int, out: CellScaleLerpBuffer?) 
             if (w in 0 until triCount) {
                 if (lerpCapturing) captureTriLerp(id, w, out)
                 triCellScale[w] = triangleCellScale(w)
+                refreshTriangleFiber(w) // волокно мышцы (MuscleFiber.kt)
                 if (softnessOn) triSoftness[w] = triangleSoftness(w)
             }
         }

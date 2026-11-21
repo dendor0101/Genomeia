@@ -51,9 +51,10 @@ internal fun BodyState.markUnbornEdges(n0: Int) {
 /**
  * Нерождённое ребро уже не родится (тело удалено; клетка родилась в другом куске
  * порванного организма): оно и его нерождённые треугольники становятся просто
- * мёртвыми и уходят из рабочих списков при ближайшем уплотнении — как порванные.
+ * мёртвыми и уходят из рабочих списков при ближайшем уплотнении — как порванные. [quiet] —
+ * снята временная связь роста (TempLinks.kt): в счёт разрывов не идёт.
  */
-internal fun BodyState.retireUnbornEdge(e: Int) {
+internal fun BodyState.retireUnbornEdge(e: Int, quiet: Boolean = false) {
     baked.forgetUnborn(e)
     for (q in baked.edgeTriStart[e] until baked.edgeTriStart[e + 1]) {
         val t = baked.edgeTris[q]
@@ -62,6 +63,7 @@ internal fun BodyState.retireUnbornEdge(e: Int) {
     updateBoundaryLinkLimit(e)
     if (tearQueueN == tearQueue.size) tearQueue = tearQueue.copyOf(tearQueue.size * 2)
     tearQueue[tearQueueN++] = e
+    if (quiet) tearQueueQuiet++
     tearsPending = true
 }
 
@@ -98,6 +100,10 @@ internal fun BodyState.activateCell(i: Int, x: Double, y: Double, vx0: Double, v
         growEdges[growEdgeN++] = e
         updateBoundaryLinkLimit(e)
     }
+    // Клетка легла на временные связи роста — они сняты (TempLinks.kt). Только после того, как ожили её связи:
+    // раньше снятие на миг рассекало организм (связь была единственной между её концами), и связь новорождённой
+    // к «чужому» куску гасла как разрыв (TempLinksTest).
+    retireTempEdgesOf(i)
     var tris = 0
     for (s in baked.vertexTriStart[i] until baked.vertexTriStart[i + 1]) {
         val t = baked.vertexTriangles[s] / 3
@@ -131,7 +137,7 @@ private fun BodyState.startLinkGrowth(c: Int) {
     val target = conRest[c]
     if (target <= 0.0) return
     val dx = px[conA[c]] - px[conB[c]]; val dy = py[conA[c]] - py[conB[c]]
-    val start = sqrt(dx * dx + dy * dy) / (muscleScale(conMuscle[c]) * conCellScale[c])
+    val start = sqrt(dx * dx + dy * dy) / muscleLengthFactor(c, muscleScale(conMuscle[c]) * conCellScale[c]) /* волокно мышцы: MuscleFiber.kt */
     conGrowTarget[c] = target
     conRest[c] = maxOf(start, BIRTH_MIN_FRACTION * target)
     if (conGrowAge.size < conA.size) conGrowAge = conGrowAge.copyOf(conA.size)
@@ -150,9 +156,9 @@ private fun BodyState.startTriangleGrowth(id: Int) {
     if (target <= 0f) return
     val i0 = triA[w]; val i1 = triB[w]; val i2 = triC[w]
     val area2 = (px[i1] - px[i0]) * (py[i2] - py[i0]) - (py[i1] - py[i0]) * (px[i2] - px[i0])
-    val s = muscleScale(triMuscle[w]) * triCellScale[w]
+    val sa = muscleScale(triMuscle[w]) * triCellScale[w] // множитель площади — по волокну или по площади (MuscleFiber.kt)
     triGrowTarget[id] = target
-    triRestArea2[w] = maxOf(area2 / (s * s), BIRTH_MIN_FRACTION * target).toFloat()
+    triRestArea2[w] = maxOf(area2 / triangleAreaFactor(w, sa), BIRTH_MIN_FRACTION * target).toFloat()
     if (growTriN == growTris.size) growTris = growTris.copyOf(growTris.size * 2)
     growTris[growTriN++] = id
 }
@@ -187,7 +193,7 @@ internal fun BodyState.easeNewborn() {
                 val age = minOf(conGrowAge[c] + 1, BIRTH_GROW_TICKS)
                 conGrowAge[c] = age.toByte()
                 val dx = px[conA[c]] - px[conB[c]]; val dy = py[conA[c]] - py[conB[c]]
-                val len = sqrt(dx * dx + dy * dy) / (muscleScale(conMuscle[c]) * conCellScale[c])
+                val len = sqrt(dx * dx + dy * dy) / muscleLengthFactor(c, muscleScale(conMuscle[c]) * conCellScale[c]) /* волокно мышцы: MuscleFiber.kt */
                 val pull = BIRTH_MAX_PULL * target
                 if (age >= BIRTH_GROW_TICKS && len - target <= pull) {
                     conRest[c] = target; conGrowTarget[c] = 0.0
@@ -305,19 +311,6 @@ private fun BodyState.restPoseOfCurrentBone(b: Int) {
 }
 
 /**
- * ГДЕ РОДИТЬСЯ КЛЕТКЕ [i]: образ её точки покоя при повороте и общем масштабе, подогнанных
- * методом наименьших квадратов по рождённым соседям (по соседям соседей, если своих
- * меньше двух), и скорость, средняя по ним. Пишет x, y, vx, vy в [out]. Без соседей —
- * точка покоя тела и нулевая скорость. Цена — по соседям клетки, без аллокаций.
- *
- * Поворот с масштабом СОХРАНЯЕТ ОРИЕНТАЦИЮ: треугольники клетки рождаются невывернутыми,
- * а масштаб учитывает сжатую мышцей окрестность. Отвергнуто: подгонка точки по нынешним
- * длинам покоя (conRest · muscleScale) шагами Гаусса — Ньютона. У обрывка мышцы, который
- * не может сжаться, окружности длин почти касаются, шаги перескакивают через отрезок
- * соседей — треугольник рождается вывернутым. GrowthCheck 25.10: живых рёбер выросшего
- * тела 1706 из 2617 против 2483 у поворота с масштабом (у целой копии — 2612).
- */
-/**
  * Метки неуязвимости делящихся (BoundaryContacts.immuneStamp): концы дорастающих рёбер —
  * новорождённая и её соседи по связям. Раз в шаг, до контактов; O(дорастающих рёбер).
  * Номер шага растёт и без них, чтобы прошлые метки истекали.
@@ -347,6 +340,8 @@ internal fun BodyState.markGrowingCells() {
  * Пока дочь выходит из родителя, она его соседей не толкает; в своей точке позы она от них
  * дальше суммы радиусов (иначе это была бы пара покоя), и полное касание к тому времени
  * ничего не задевает. Пара остаётся в кандидатах широкой фазы — касание включается сразу.
+ * Только с клетками своего организма: упор в рельеф и в чужое тело полный с первого подшага
+ * (BoundaryContacts.contactRamp, находка 30 — иначе тело врастало в стену и в соседа).
  *
  * Новорождённая — клетка, у которой дорастают ВСЕ живые связи: у родителя и соседей есть
  * взрослые, их касания обычные. Выводится из дорастающих связей (conGrowAge в снимке),
@@ -407,10 +402,13 @@ internal fun BodyState.isGrowingNewborn(v: Int): Boolean {
  * соседом (отчёт 03.11 14:04, weighted_neural_link: s1 родится от s7, а связь у s1 только с
  * s6). Без связи выталкивать некому: клетка ложится в родителя, контакт разводит перекрытие
  * одним рывком, пара разлетается со скоростью 0.4 клетки/тик и рвёт соседние связи. Такая
- * клетка рождается по позе, как без родителя.
+ * клетка рождается по позе, как без родителя. Связь — постоянная: временная связь роста
+ * (TempLinks.kt) снимается, как только на неё ляжет ткань, и могла бы уйти раньше, чем вытолкнет
+ * дочь, — та осталась бы в родителе (Megalodon, 798 таких рождений: гибель в своей ткани 4 → 523
+ * клеток, находка 32).
  */
 internal fun BodyState.divisionPlacement(i: Int, parent: Int, out: DoubleArray) {
-    birthPlacement(i, out)
+    birthPlacement(i, out, seed = parent)
     if (!linkedInLayout(i, parent)) return
     val f = DIVISION_START_FRACTION
     out[0] = px[parent] + (out[0] - px[parent]) * f
@@ -418,14 +416,36 @@ internal fun BodyState.divisionPlacement(i: Int, parent: Int, out: DoubleArray) 
     out[2] = vx[parent]; out[3] = vy[parent]
 }
 
-/** Есть ли у [i] связь с [j] в раскладке тела (живая, нерождённая или порванная). */
+/** Есть ли у [i] постоянная связь с [j] в раскладке тела (живая, нерождённая или порванная; временные — не в счёт). */
 private fun BodyState.linkedInLayout(i: Int, j: Int): Boolean {
     val vs = baked.vertStart; val vo = baked.vertOther
-    for (s in vs[i] until vs[i + 1]) if (vo[s] == j) return true
+    for (s in vs[i] until vs[i + 1]) if (vo[s] == j && !isTempEdge(baked.vertEdge[s])) return true
     return false
 }
 
-internal fun BodyState.birthPlacement(i: Int, out: DoubleArray) {
+/**
+ * ГДЕ РОДИТЬСЯ КЛЕТКЕ [i]: образ её точки покоя при повороте и общем масштабе, подогнанных
+ * методом наименьших квадратов по рождённым соседям (по соседям соседей, если своих
+ * меньше двух), и скорость, средняя по ним. Пишет x, y, vx, vy в [out]. Без соседей —
+ * опора [seed] (родитель при делении) и его рождённые соседи; нет и его — точка покоя тела
+ * и нулевая скорость. Цена — по соседям клетки, без аллокаций.
+ *
+ * Поворот с масштабом СОХРАНЯЕТ ОРИЕНТАЦИЮ: треугольники клетки рождаются невывернутыми,
+ * а масштаб учитывает сжатую мышцей окрестность. Отвергнуто: подгонка точки по нынешним
+ * длинам покоя (conRest · muscleScale) шагами Гаусса — Ньютона. У обрывка мышцы, который
+ * не может сжаться, окружности длин почти касаются, шаги перескакивают через отрезок
+ * соседей — треугольник рождается вывернутым. GrowthCheck 25.10: живых рёбер выросшего
+ * тела 1706 из 2617 против 2483 у поворота с масштабом (у целой копии — 2612).
+ *
+ * ОПОРА — РОДИТЕЛЬ, ЕСЛИ СОСЕДЕЙ НЕТ (20.11.2026, рост из зиготы, reference.md, находка 30).
+ * Родителя назначает геном, и по раскладке он не обязан быть соседом; бывает, что у клетки к
+ * её стадии не родился ни один сосед. Раньше такая клетка ложилась в свою точку ИСХОДНОЙ
+ * раскладки (body.x, body.y) — где стояло бы взрослое тело, поставленное зиготой при посадке.
+ * Растущее тело к тому времени сдвинуто и повёрнуто: у Crayfish клетка 27 рождалась в шести
+ * связях от родителя, и стадии, привязывающие её к телу, рождались со связями в 5–8 раз
+ * длиннее покоя. Теперь она встаёт в свою точку позы относительно нынешнего тела.
+ */
+internal fun BodyState.birthPlacement(i: Int, out: DoubleArray, seed: Int = -1) {
     val vs = baked.vertStart; val vo = baked.vertOther
     // Опорные клетки подгонки: рождённые соседи; мало — ещё и их рождённые соседи.
     var refN = 0
@@ -438,6 +458,10 @@ internal fun BodyState.birthPlacement(i: Int, out: DoubleArray) {
     for (s in vs[i] until vs[i + 1]) addRef(vo[s])
     val own = refN
     if (refN < 2) for (k in 0 until own) { val u = ref[k]; for (s in vs[u] until vs[u + 1]) addRef(vo[s]) }
+    if (refN == 0 && seed >= 0 && !cellDead[seed]) {
+        addRef(seed)
+        for (s in vs[seed] until vs[seed + 1]) addRef(vo[s])
+    }
     if (refN == 0) {
         out[2] = 0.0; out[3] = 0.0
         freeSpot(i, body.x[i].toDouble(), body.y[i].toDouble(), out)

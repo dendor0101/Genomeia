@@ -15,6 +15,8 @@ import java.nio.ByteBuffer
 internal class TissueIslandMeshes(private val materials:IntArray):Disposable {
     private class Body(val signature:Long,val mesh:TissueTriangles,val coordinates:TissueRestCoordinates,var rest:Int,val triangles:Int,val rimNodes:Int,val renderTriangles:Int,val edges:IntArray,val materials:Int,val particles:Boolean,val canSmooth:Boolean,var smoothUvCount:Int):Disposable {
         var inEyepiece=true;var springs=0;var radius=0f
+        /** Террейн (OpticalLinks.TERRAIN_GROUP): ткань всегда над плоскостью фокуса, см. uLift в шейдерах. */
+        var lifted=false
         var output=0;var stamp=0
         override fun dispose(){Gdx.gl.glDeleteTexture(rest);Gdx.gl.glDeleteTexture(triangles);Gdx.gl.glDeleteTexture(rimNodes);if(springs!=0)Gdx.gl.glDeleteTexture(springs)}
     }
@@ -95,6 +97,7 @@ internal class TissueIslandMeshes(private val materials:IntArray):Disposable {
         }
         b.inEyepiece=inEyepiece
         b.radius=maxRadius
+        b.lifted=id==OpticalLinks.TERRAIN_GROUP
         b.output=output;b.stamp=stamp;visible.add(b);materialMask=materialMask or b.materials;triangleCount+=b.mesh.indices.size/3;rejectedEdges+=b.mesh.rejectedEdges
     }
     private fun texture(values:FloatArray):Int{
@@ -123,6 +126,7 @@ internal class TissueIslandMeshes(private val materials:IntArray):Disposable {
             // стягивало его почти в одну точку. Включаем постепенно с 5 до 12 клеток.
             program.f("uSmoothContour",if(b.canSmooth)smoothContour*((b.mesh.count-4)/8f).coerceIn(0f,1f) else 0f)
             program.i("uParticleBatch",if(b.particles)1 else 0)
+            program.f("uLift",if(b.lifted)1f else 0f)
             program.i("uSmoothUvCount",b.smoothUvCount)
             program.i("uBodyOffset",b.output);program.texture("uRest",b.rest,8);program.texture("uTriangles",b.triangles,9)
             program.f("uMaterialRadius",b.coordinates.radius)

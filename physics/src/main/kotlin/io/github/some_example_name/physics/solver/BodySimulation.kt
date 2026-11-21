@@ -4,6 +4,8 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 
 internal fun BodyState.solveTick(observer: StepObserver?) {
+    // Кости, потерявшие клетку или внутреннюю связь с прошлого тика, — до всех стадий. См. BoneSplit.kt.
+    splitDirtyBones()
     // Пересборка после разрывов стоит В САМОМ КОНВЕЙЕРЕ, а не в обёртке над ним.
     // Сначала она была в stepOnce — и не срабатывала в проверках вовсе, потому
     // что стенд зовёт simulate() напрямую: связи помечались порванными сотнями,
@@ -25,9 +27,14 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     wakeByInput()
     // Положения в начале тика: средняя скорость за тик нужна сопротивлению среды. См. TickMotion.
     beginTickMotion()
+    // Клин читает память удара клеток и положения начала тика (они же — в tickJitter до конца последнего подшага).
+    if (impactSpeed.size != n) impactSpeed = impactSpeed.copyOf(n)
+    contacts?.bindImpact(impactSpeed, tickJitterX, tickJitterY)
     if (cancelSpinOn) { tick0(); prepareAwakeSpans(); momentumBegin(); tick1(16) }
     if (cancelSpinOn) noteJointsMomentum()
     for (step in 0 until SUBSTEPS) {
+        // Площади и изгиб — на чётных подшагах, с шагом в два подшага: см. MaterialParameters.
+        slowConstraintsNow = (step and 1) == 0
         // Длина покоя мышцы доезжает до своего значения за тик, а не прыгает в первом
         // же подшаге — см. muscleScaleOf.
         updateMuscleScale((step + 1).toDouble() / SUBSTEPS)
@@ -38,6 +45,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         // КОНТАКТ ПРИКЛАДЫВАЕТСЯ К СКОРОСТИ ДО ИНТЕГРИРОВАНИЯ, как гравитация.
         // Почему именно так и что было раньше — см. toVelocity в solveContacts.
         if (contacts != null && contactsOn && CONTACT_BEFORE_INTEGRATE) {
+            contacts!!.bindBones(if (bonesRigid) boneOf else null, rigidBones)
             contacts!!.prepare(px, py, prevX, prevY, vx, vy, invMass)
             contacts!!.updateBones(px, py, invMass,
                 if (bonesRigid) boneOf else null, rigidBones)
@@ -83,7 +91,8 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         // только пока расстояние между ними не больше суммы радиусов. Растянутая
         // костью связь оставляет в мембране щель, и сквозь неё можно воткнуть
         // чужое тело — что и наблюдалось при резком рывке за кость.
-        tick0(); dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h); tick1(2)
+        // Без временных связей позиции после общего прохода за швами не менялись: повтор не нужен.
+        if (jointActiveN > 0 || constraintBlocks?.hasSeams() != true) { tick0(); dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h); tick1(2) }
 
         // Снять импульс и момент, внесённые ВНУТРЕННИМИ стадиями. Контакты стоят в том
         // же цикле, но их смещения копятся отдельно и не снимаются: контакт внешний
@@ -95,8 +104,14 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         // Закрываем перемещения внутренних ограничений контактом до восстановления скоростей.
         refreshSurface()
         val finalContacts = contacts
+        if (wallHits.size != 0) resolveBoneBounds(finalPass = false)
         if (finalContacts != null && contactsOn) {
             tick0()
+            // Пары обновляются на чётных подшагах и сразу после любого изменения контура.
+            finalContacts.skipCandidatesNow = (step and 1) == 1 && structureVersion == contactsVersion
+            contactsVersion = structureVersion
+            // Состав костей — до подготовки: обрезка по времени удара откатывает кость целиком. См. gatherCcdBones.
+            finalContacts.bindBones(if (bonesRigid) boneOf else null, rigidBones)
             finalContacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = false)
             // УДАР БУДИТ СПЯЩЕГО ДО РЕШЕНИЯ КОНТАКТА. Спящий заморожен (обратная масса 0): решённый
             // так контакт — удар о стену, налетевшая частица отскакивает, импульс не передан, а
@@ -108,7 +123,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
                 finalContacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = false)
             }
             tick1(6); tick0()
-            if (cancelSpinOn) tickMomentum.noteContacts(finalContacts, invMass)
+            if (cancelSpinOn) noteContactsMomentum(finalContacts)
             finalContacts.updateBones(px, py, invMass, if (bonesRigid) boneOf else null, rigidBones)
             tick1(13); tick0()
             finalContacts.solveContacts(px, py, vx, vy, invMass, h)
@@ -125,7 +140,9 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         // Восстановление скоростей вместе со снимком для учёта импульса — один проход.
         // См. FusedPasses.
         tick0()
-        velocityPassBefore(h)
+        // На всех подшагах, кроме последнего, частицам без контакта хватает одного прохода. См. FusedPasses.
+        val fastVelocity = step != SUBSTEPS - 1 && velocityFastAllowed()
+        if (fastVelocity) { markVelocityTouched(); velocityPassFast(h) } else velocityPassBefore(h)
         // Хватка (присоска-чашка) — после снимка скоростей: учёт импульса видит её внешней силой, как пол.
         applyGrip(h)
         tick1(17); tick0()
@@ -144,7 +161,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         // Отскок от пола, изотропная среда (раз в тик), потолок скорости и учёт внешнего
         // импульса — один проход. Учёт внешнего импульса теперь в таймере «скорости и
         // среда», а не «учёт импульса». См. FusedPasses.
-        velocityPassAfter(step == SUBSTEPS - 1, h * SUBSTEPS)
+        if (fastVelocity) finishVelocityTouched() else velocityPassAfter(step == SUBSTEPS - 1, h * SUBSTEPS)
         dbgMeasureV(11); tick1(9)
         if (cancelSpinOn && step == SUBSTEPS - 1) {
             tick0()
@@ -163,7 +180,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     tick0(); burstByPressure(); removePersistentInversions(); tick1(19)
     // Один проход упаковки за тик. Контактная топология уже актуальна;
     // упаковка нужна плотным рабочим массивам и чтению состояния стенда.
-    if (tearsPending) { tick0(); rebuildTimed(); tick1(11) }
+    if (tearsPending && compactionDue()) { tick0(); rebuildTimed(); tick1(11) }
     // Засыпание — в самом конце тика, когда все скорости и вся топология этого тика готовы.
     tick0(); updateSleep(); tick1(20)
     if (watchCell >= 0) watchReport()

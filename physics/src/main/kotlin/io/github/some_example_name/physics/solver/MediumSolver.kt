@@ -29,7 +29,7 @@ fun BodyState.integrate(h: Double) {
  * ограничениями блока (см. solveBlockedIteration): частицы блока остаются в кэше.
  * Спящая частица (invMass = 0) здесь — пустая работа: prevX и так равен px.
  */
-internal fun BodyState.integrateRange(from: Int, to: Int, h: Double) {
+internal fun BodyState.integrateRange(from: Int, to: Int, h: Double, hitBones: BoneWallHits = wallHits) {
     for (i in from until to) {
         val x = px[i]; val y = py[i]
         if (invMass[i] == 0.0) { prevX[i] = x; prevY[i] = y; inContact[i] = false; continue }
@@ -43,11 +43,19 @@ internal fun BodyState.integrateRange(from: Int, to: Int, h: Double) {
             ground = true
         }
         if (boundsOn) {
-            // Здесь стенку держит интегрирование; связи и контакты того же подшага могут
-            // вытолкнуть частицу за неё — к концу шага её возвращает clampToBounds.
+            // Частицу мягкой ткани ограничиваем сразу. У кости отмечаем первое
+            // пересечение, чтобы после решения формы сдвинуть все её вершины вместе.
             val r = radius[i]
-            if (nx < boundsMinX + r) nx = boundsMinX + r else if (nx > boundsMaxX - r) nx = boundsMaxX - r
-            if (ny < boundsMinY + r) ny = boundsMinY + r else if (ny > boundsMaxY - r) ny = boundsMaxY - r
+            if (nx < boundsMinX + r || nx > boundsMaxX - r || ny < boundsMinY + r || ny > boundsMaxY - r) {
+                val bone = if (bonesRigid) boneOf[i] else -1
+                if (bone >= 0) hitBones.add(bone)
+                else {
+                    if (nx < boundsMinX + r) nx = boundsMinX + r else if (nx > boundsMaxX - r) nx = boundsMaxX - r
+                    if (ny < boundsMinY + r) ny = boundsMinY + r else if (ny > boundsMaxY - r) ny = boundsMaxY - r
+                    // Рамка — опора: отнятый ею импульс учёт за тик телу не возвращает (TickMomentum.block).
+                    if (cancelSpinOn) tickMomentum.block(i)
+                }
+            }
         }
         prevX[i] = x; prevY[i] = y; vy[i] = nvy
         px[i] = nx; py[i] = ny; inContact[i] = ground
@@ -75,7 +83,8 @@ fun BodyState.applyViscosity(h: Double) {
     val layout = constraintBlocks
     val w = activeWorkers
     if (w != null && organismCount > 1) { parallelPhysics(w).viscosity(k, layout); return }
-    if (sleep.asleepCount == 0 || layout == null) {
+    // Без воркеров — тот же порядок, что у них: по блокам, затем швы.
+    if (layout == null) {
         for (c in 0 until conCount) viscousLink(c, k)
         return
     }
@@ -140,7 +149,11 @@ fun BodyState.applyNormalDrag(h: Double) {
         // Спящие: скорость ноль, масса ноль, запас среды ноль — проходы по ним пусты.
         prepareAwakeSpans()
         val s = sleep
-        for (q in 0 until s.spanCount) for (i in s.spanStart[q] until s.spanEnd[q]) {
+        // С воркерами (и с одним) — суммы кусками, как у учёта импульса: порядок сложения от их числа не зависит.
+        val cw = activeWorkers
+        if (cw != null) parallelPhysics(cw).comSums()
+        else if (constraintBlocks != null) comSumsSerial()
+        else for (q in 0 until s.spanCount) for (i in s.spanStart[q] until s.spanEnd[q]) {
             if (invMass[i] <= 0.0) continue
             val o = organismOf[i]
             val m = 1.0 / invMass[i]
@@ -183,7 +196,9 @@ fun BodyState.applyNormalDrag(h: Double) {
 
     // Рёбра контура — по организмам, порядок внутри организма прежний: см. ParallelPhysics.normalDrag.
     val w = activeWorkers
-    if (w != null && w.count > 1) { parallelPhysics(w).normalDrag(h); return }
+    if (w != null) { parallelPhysics(w).normalDrag(h); return }
+    val layout = constraintBlocks
+    if (layout != null) { edgesByBlocksSerial(layout, 1, h); return }
     for (e in 0 until boundCount) normalDragEdge(e, h)
 }
 
@@ -297,9 +312,13 @@ fun BodyState.applyMediumDrag(h: Double) {
  */
 fun BodyState.applyDragVelocity(h: Double) {
     val i = dragId
-    if (i < 0 || invMass[i] == 0.0) return
-    val dx = mouseX - px[i]
-    val dy = mouseY - py[i]
+    if (i >= 0) pullToward(i, mouseX, mouseY, h)
+}
+
+internal fun BodyState.pullToward(i: Int, targetX: Double, targetY: Double, h: Double) {
+    if (invMass[i] == 0.0) return
+    val dx = targetX - px[i]
+    val dy = targetY - py[i]
     val d = sqrt(dx * dx + dy * dy)
     if (d < 1e-12) return
 
@@ -326,7 +345,7 @@ fun BodyState.applyDragVelocity(h: Double) {
     val ids = if (b >= 0) rigidBones[b] else null
     if (ids != null) {
         for (k in ids) {
-            if (invMass[k] <= 0.0) continue
+            if (boneOf[k] != b || invMass[k] <= 0.0) continue
             val m = 1.0 / invMass[k]
             mTotal += m; cx += m * px[k]; cy += m * py[k]
         }
@@ -394,15 +413,12 @@ fun BodyState.applyDragVelocity(h: Double) {
     // так же отзывчиво, как лёгкую, а вот тело вокруг неё сопротивляется по
     // своей массе — что и требуется.
     var inertia = 0.0
-    var maxR = 0.0
     for (k in ids) {
-        if (invMass[k] <= 0.0) continue
+        if (boneOf[k] != b || invMass[k] <= 0.0) continue
         val rx = px[k] - cx; val ry = py[k] - cy
         val r2 = rx * rx + ry * ry
         inertia += r2 / invMass[k]
-        if (r2 > maxR) maxR = r2
     }
-    maxR = sqrt(maxR)
 
     // ЭФФЕКТИВНАЯ МАССА В ТОЧКЕ ЗАХВАТА — вот где был баг с хвостом.
     //
@@ -454,23 +470,26 @@ fun BodyState.applyDragVelocity(h: Double) {
     // ослабляем ВЕСЬ импульс — и поступательную часть, и вращательную. Резать
     // скорости по одной здесь нельзя: это сломало бы и жёсткость позы, и
     // сохранение импульса, ради которого весь этот кусок и написан.
-    var worst = 0.0
+    val dvx = jx / mTotal
+    val dvy = jy / mTotal
+    var worst2 = 0.0
     for (k in ids) {
-        if (invMass[k] <= 0.0) continue
+        if (boneOf[k] != b || invMass[k] <= 0.0) continue
         val rx = px[k] - cx; val ry = py[k] - cy
-        val nvx = vx[k] + jx / mTotal - dOmega * ry
-        val nvy = vy[k] + jy / mTotal + dOmega * rx
-        val v = sqrt(nvx * nvx + nvy * nvy)
-        if (v > worst) worst = v
+        val nvx = vx[k] + dvx - dOmega * ry
+        val nvy = vy[k] + dvy + dOmega * rx
+        val v2 = nvx * nvx + nvy * nvy
+        if (v2 > worst2) worst2 = v2
     }
+    val worst = sqrt(worst2)
     var sc = 1.0
     if (worst > vLimit && worst > 1e-18) sc = vLimit / worst
 
     for (k in ids) {
-        if (invMass[k] <= 0.0) continue
+        if (boneOf[k] != b || invMass[k] <= 0.0) continue
         val rx = px[k] - cx; val ry = py[k] - cy
-        vx[k] += sc * (jx / mTotal - dOmega * ry)
-        vy[k] += sc * (jy / mTotal + dOmega * rx)
+        vx[k] += sc * (dvx - dOmega * ry)
+        vy[k] += sc * (dvy + dOmega * rx)
     }
 }
 
@@ -517,9 +536,13 @@ internal fun BodyState.clampToBounds() {
         // толкала тело в стену. Отчёт 03.11 02:51 (Burdock leaf): после отпускания мыши скорость к
         // стене росла сама 200 тиков (0.06 → 0.083 клетки/тик при неподвижном центре), затем тело
         // выстреливало прочь — 400–500 погибших клеток. «Стена засасывает, потом откидывает».
+        if (x >= boundsMinX + r && x <= boundsMaxX - r && y >= boundsMinY + r && y <= boundsMaxY - r) continue
+        val bone = if (bonesRigid) boneOf[i] else -1
+        if (bone >= 0 && !cellDead[i] && !cellUnborn[i] && !isFixed(i)) { wallHits.add(bone); continue }
         if (x < boundsMinX + r) { px[i] = boundsMinX + r; if (vx[i] < 0.0) vx[i] = 0.0 }
         else if (x > boundsMaxX - r) { px[i] = boundsMaxX - r; if (vx[i] > 0.0) vx[i] = 0.0 }
         if (y < boundsMinY + r) { py[i] = boundsMinY + r; if (vy[i] < 0.0) vy[i] = 0.0 }
         else if (y > boundsMaxY - r) { py[i] = boundsMaxY - r; if (vy[i] > 0.0) vy[i] = 0.0 }
     }
+    if (wallHits.size != 0) resolveBoneBounds(finalPass = true)
 }

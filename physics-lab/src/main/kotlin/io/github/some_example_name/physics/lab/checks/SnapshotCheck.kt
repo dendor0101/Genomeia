@@ -24,7 +24,7 @@ import java.util.Locale
  *
  * Сценарий нагружает всё, что несёт историю: таран (разрывы, деление организмов,
  * пластика), рост тела по клетке (нерождённые связи, дорастание, позы костей), поток
- * свободных частиц, удаление тела с уплотнением, захват клетки мышью, сон и мышцы. На тике
+ * свободных частиц, удаление тела с уплотнением, захват клетки мышью, сон и мышцы (у половины клеток — с волокном). На тике
  * T мир W пишет снимок; из него читаются L (один поток) и Lp (N воркеров). Дальше:
  *  1. все поля состояния W и L совпадают — обход отражением по всему графу объектов
  *     решателя, а не по списку: забытое в снимке поле с содержимым всплывёт;
@@ -113,6 +113,10 @@ private class Scenario(val bodies: List<BodyDefinition>) {
         w.setBounds(minX - pad, minY - pad, maxX + pad, maxY + pad)
         val f = w.bodyFirst(ids[0])
         for (k in 0 until 20) { w.setMass(f + k, 2.0 / w.state.restInvMass[f + k]); w.setDrag(f + k, 1.5) }
+        // Волокно мышцы у половины клеток растущего тела (MuscleFiber.kt): в снимке — волокна, после чтения — производное заново.
+        val g = w.bodyFirst(ids[grow])
+        val fl = Math.sqrt(1.09) // волокно — единичный вектор (PhysicsWorld.setCellFiber)
+        for (j in 0 until bodies[grow].count) if (j % 2 == 0) w.setCellFiber(g + j, (1.0 / fl).toFloat(), (0.3 / fl).toFloat())
     }
 
     fun tick(worlds: List<PhysicsWorld>) {
@@ -203,11 +207,18 @@ private val scratchPrefixes = listOf("state.tickMomentumState.", "state.sleep.sp
     // прошлых шагов и разная ёмкость, на следующие тики они не влияют.
     "state.cellDeathLog", "state.edgeDeathLog",
     // Черновик activateCell: ожившие треугольники до старта дорастания, за пределами вызова не читается.
-    "state.bornTriScratch")
+    "state.bornTriScratch",
+    // Клин (ImpactWedge): клинья, область распорок и метки обходов — буферы подшага; список клеток с памятью
+    // удара собирается из неё заново в начале тика (bindImpact). Сама память — state.impactSpeed — сверяется.
+    "state.contacts.wedge.")
 private val contactScratch = setOf("boneCx", "boneCy", "boneI", "boneIds", "boneM", "boneOf", "bpMoved", "cAx", "cAy",
     "cI", "cJ", "cLam", "cLamTot", "cNx", "cNy", "cRR", "cVn", "ddaX", "ddaY", "dirtyBuf", "frcList", "frcN", "keptKeys",
     "lowKeys", "moved", "movedCount", "movedStamp", "moverCount", "movers", "nearA", "nearB", "nearN", "nearRestSlot",
-    "newKeys", "pairA", "pairB", "pairNear", "pass", "pierceA", "pierceB", "stamp", "staticCount", "velH")
+    "newKeys", "pairA", "pairB", "pairNear", "pass", "pierceA", "pierceB", "stamp", "staticCount", "velH",
+    // Вид контакта и список упоров в неподвижное (cFixed): пишутся в каждом подшаге до чтения.
+    "cFixed", "fixedList",
+    // Клин: положения начала подшага (ставит prepare) и признак «гибель уже осуждена» (ставит проход касаний).
+    "wedgeQx", "wedgeQy", "wedgeKillsJudged")
 
 private fun skip(name: String): Boolean =
     name in skipNames || name.startsWith("dbg") || name.startsWith("parallel") || name.startsWith("profile") ||

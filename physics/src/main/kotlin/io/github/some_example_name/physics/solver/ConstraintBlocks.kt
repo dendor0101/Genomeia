@@ -12,12 +12,37 @@ class BlockIndex(capacity: Int, blocks: Int) {
     var prev = IntArray(capacity) { -1 }; private set
     var owner = IntArray(capacity) { -1 }; private set
 
-    fun clear() { head.fill(-1); tail.fill(-1); owner.fill(-1) }
+    /**
+     * Плотная копия списка блока для счётного обхода (пределы длины, четыре прохода за подшаг):
+     * пересобирается только после правок блока. Блок обходит один воркер, поэтому гонки нет.
+     */
+    private val denseItems = Array(blocks) { IntArray(0) }
+    private val denseDirty = BooleanArray(blocks) { true }
+    val denseCount = IntArray(blocks)
+
+    fun dense(block: Int): IntArray {
+        if (denseDirty[block]) {
+            var size = 0
+            var c = head[block]
+            while (c >= 0) { size++; c = next[c] }
+            if (denseItems[block].size < size) denseItems[block] = IntArray(size * 2)
+            val items = denseItems[block]
+            var k = 0
+            c = head[block]
+            while (c >= 0) { items[k++] = c; c = next[c] }
+            denseCount[block] = size
+            denseDirty[block] = false
+        }
+        return denseItems[block]
+    }
+
+    fun clear() { head.fill(-1); tail.fill(-1); owner.fill(-1); denseDirty.fill(true) }
 
     fun add(id: Int, block: Int) {
         if (id >= owner.size) grow(id + 1)
         if (owner[id] >= 0) return
         owner[id] = block; next[id] = -1; prev[id] = tail[block]
+        denseDirty[block] = true
         if (tail[block] < 0) head[block] = id else next[tail[block]] = id
         tail[block] = id
     }
@@ -28,6 +53,7 @@ class BlockIndex(capacity: Int, blocks: Int) {
         if (id >= owner.size) return
         val block = owner[id]
         if (block < 0) return
+        denseDirty[block] = true
         val p = prev[id]; val q = next[id]
         if (p < 0) head[block] = q else next[p] = q
         if (q < 0) tail[block] = p else prev[q] = p
@@ -40,6 +66,7 @@ class BlockIndex(capacity: Int, blocks: Int) {
         remove(to)
         val block = owner[from]
         if (block < 0) return
+        denseDirty[block] = true
         owner[to] = block; prev[to] = prev[from]; next[to] = next[from]
         if (prev[to] < 0) head[block] = to else next[prev[to]] = to
         if (next[to] < 0) tail[block] = to else prev[next[to]] = to
@@ -185,11 +212,51 @@ class ConstraintBlocks(n: Int, bodyOf: IntArray, blockSize: Int,
         return if (block == particleBlock[c]) block else seamBucket[particleBlock[a]]
     }
 
+    /**
+     * СВЯЗИ КОНТУРА У ПОРОГА ПРЕДЕЛА ДЛИНЫ, по наборам: nearItems[набор][0 until nearCount[набор]].
+     *
+     * Предел длины проверялся трижды за подшаг по всем связям контура: в блоке сразу после связей, в блоке
+     * после площадей и костей, общий проход после швов. Замер 10.11, 34 червя: на раннем проходе 79% связей
+     * короче 0.97 предела, и из них к позднему проходу блока за предел уходит 0.1% нарушений. Поэтому ранний
+     * проход (он идёт по всем) складывает сюда связи ближе запаса к порогу (LIMIT_NEAR_*), а поздний проход
+     * блока идёт только по списку: впятеро меньше чтений. Пропущенное им нарушение снимает общий проход.
+     *
+     * ОБЩИЙ ПРОХОД ПО СПИСКУ — ОТВЕРГНУТО (10.11). К нему за предел уходит 0.3% нарушений, а на таране
+     * медузы (physicsCheck) тела проходили друг сквозь друга: 11.9 связи за встречное тело при пороге 1, по
+     * всему контуру — 0. Швы и кости через границу блока тянут связи уже после проходов блока, а общий
+     * проход — последний перед контактами.
+     *
+     * Список собирается заново каждым ранним проходом блока и читается только поздним проходом того же блока
+     * в том же подшаге. В состояние мира не входит, но его состав и порядок одинаковы при любом числе
+     * воркеров: критерий в однопоточном (solveBlockLimits) и параллельном (solveBlockLimitsParallel)
+     * сборщиках записан одинаково, связь события вносит доработка. Блок обходит один воркер; счётчик он пишет
+     * один раз в конце прохода: соседние блоки одной чётности лежат в одной кэш-линии. Объём: ~6 тыс. связей
+     * на 100k клеток — 25 КБ на весь мир.
+     */
+    val nearItems = Array(buckets) { IntArray(0) }
+    val nearCount = IntArray(buckets)
+
+    /** Вдвое больше места в списке у порога набора [bucket]; первые [n] записей переносятся. */
+    fun growNear(bucket: Int, n: Int): IntArray {
+        val items = nearItems[bucket].copyOf(maxOf(16, n * 2))
+        nearItems[bucket] = items
+        return items
+    }
+
+    fun addNear(bucket: Int, c: Int) {
+        val n = nearCount[bucket]
+        val items = if (n == nearItems[bucket].size) growNear(bucket, n) else nearItems[bucket]
+        items[n] = c; nearCount[bucket] = n + 1
+    }
+
     fun addLimit(c: Int, a: Int, b: Int) {
         if (limits.owner[c] >= 0) return
         val block = blockOf(a, b)
         limits.add(c, block)
-        if (activeLimitBlock == block) limitQueue[queueSize++] = c
+        // Новый край контура открыт разрывом и, скорее всего, натянут. Ранний проход своего блока проверит его
+        // из очереди; поздний (очереди у него нет) — из списка у порога. Запись в список другого блока лишняя,
+        // но безвредна: этот список либо соберёт заново его ранний проход, либо до следующего подшага не читают.
+        if (activeLimitBlock == block) limitQueue[queueSize++] = c else addNear(block, c)
     }
 
     /** Очередь не портится от удаления/добавления краёв внутри текущего прохода. */

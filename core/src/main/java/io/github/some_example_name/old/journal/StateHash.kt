@@ -72,8 +72,12 @@ object StateHash {
      *     (SpecialModDataEntity), а тик рождения клетки стал сохраняемым полем для возрастного рельефа.
      * 19 — синапс учится по следам спайков (SynapseState.preTrace/postTrace) вместо тиков
      *     последней пары; новые формулы lif и trace.
+     * 20 — террейн — неподвижные частицы мира физики, только кромка (StaticTerrain): формула хэша
+     *     та же, но мир другой, и старые хэши сверять нельзя.
+     * 21 — законы физики 16–18.11 (упор в неподвижное, касание своих клеток, потолок тяги мышцы, клин
+     *     ImpactWedge): формула хэша та же, но мир считается иначе, и старые хэши сверять нельзя.
      */
-    const val VERSION = 19
+    const val VERSION = 21
 
     class Result(val hash: Long, val parts: LongArray)
 
@@ -86,18 +90,21 @@ object StateHash {
         simulation: (Long) -> Long,
         input: (Long) -> Long,
         grid: (Long) -> Long,
-        physics: (Long) -> Long
+        physics: (Long) -> Long,
+        /** Исполнитель частей по воркерам: (число частей, часть) — части независимы, итог тот же. */
+        parallel: ((Int, (Int) -> Unit) -> Unit)? = null
     ): Result {
         val parts = LongArray(entities.size + 4)
-        entities.forEachIndexed { i, entity ->
-            val state = HashingState(slots = entity.lastId + 1)
-            entity.saveState(state)
-            parts[i] = state.hash
+        val part: (Int) -> Unit = { i ->
+            parts[i] = when (i) {
+                entities.size -> simulation(Fnv.OFFSET)
+                entities.size + 1 -> input(Fnv.OFFSET)
+                entities.size + 2 -> grid(Fnv.OFFSET)
+                entities.size + 3 -> physics(Fnv.OFFSET)
+                else -> HashingState(slots = entities[i].lastId + 1).also { entities[i].saveState(it) }.hash
+            }
         }
-        parts[entities.size] = simulation(Fnv.OFFSET)
-        parts[entities.size + 1] = input(Fnv.OFFSET)
-        parts[entities.size + 2] = grid(Fnv.OFFSET)
-        parts[entities.size + 3] = physics(Fnv.OFFSET)
+        if (parallel != null) parallel(parts.size, part) else for (i in parts.indices) part(i)
 
         var total = Fnv.int(Fnv.OFFSET, VERSION)
         for (part in parts) total = Fnv.long(total, part)
