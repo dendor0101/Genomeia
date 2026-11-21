@@ -230,8 +230,10 @@ class SimulationSystem(
         if (profiler.endTick()) {
             fillWorldStats()
             profiler.flush(worldStats)
-            // Раз в окно профиля, а не каждый тик: отчёт стоит проход по всем связям.
-            if (DEBUG_CHECKS) println(linkPhysicsSystem.describeLinkLocality())
+            // Отчёт о ленте связей (LinkPhysicsSystem.describeLinkLocality) здесь больше не
+            // печатается: при DEBUG_CHECKS он шёл раз в окно профиля по каждому организму и
+            // забивал лог и console.log в отчётах (06.11, SM-S928B: 7.2 тыс. строк из 8.2 тыс.).
+            // Тронул раскладку — вызвать его вручную.
         }
     }
 

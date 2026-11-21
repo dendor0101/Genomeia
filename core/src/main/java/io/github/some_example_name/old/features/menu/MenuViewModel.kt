@@ -144,9 +144,6 @@ class MenuViewModel(
     val genomeManager: GenomeManager = DISingleThreadSimulationContainer.genomeManager
 ) {
 
-    // Состав фоновой сцены: имя встроенного генома и число организмов.
-    private val sceneGenomes = listOf("bundled/Leech" to 5)
-
     private val navigation = DIGameGlobalContainer.navigationCommandsManager
 
     /** Перетащенную карту не удалось открыть — экран называет файл. */
@@ -254,7 +251,7 @@ class MenuViewModel(
         // Только список меню: файлы игрока и остальные встроенные геномы здесь не нужны.
         genomeManager.genomes.clear()
         val random = Random(SCENE_SEED)
-        for ((name, count) in sceneGenomes) {
+        for ((name, count) in SCENE_GENOMES) {
             val index = genomeManager.addSavedGenome(GenomeCatalog.load(name))
             repeat(count) {
                 var x: Float
@@ -313,8 +310,17 @@ class MenuViewModel(
         camera.update()
     }
 
-    private companion object {
-        const val TAG_MAPS = "MapImport"
-        const val SCENE_SEED = 12L
+    internal companion object {
+        private const val TAG_MAPS = "MapImport"
+        private const val SCENE_SEED = 12L
+
+        /**
+         * Состав фоновой сцены: имя встроенного генома и число организмов.
+         *
+         * Файл обязан быть в ассетах: меню строится первым экраном, и без генома игра падает
+         * на старте, ещё до любого действия игрока (отчёт 21.11 — из ассетов убрали Leech, а
+         * сцена ссылалась на него). Это ловит MenuSceneGenomesTest.
+         */
+        internal val SCENE_GENOMES = listOf("bundled/Inchworm" to 5)
     }
 }

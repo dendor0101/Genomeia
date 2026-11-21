@@ -60,7 +60,7 @@ try {
         const lib = await tool('list_genomes');
         assert.ok(lib.bundled.length > 0);
         assert.ok((await tool('read_genome', { id:lib.bundled[0], limit:1 })).stages.total > 0);
-        for (const name of ['Leech','Crayfish','Octopod']) {
+        for (const name of ['Inchworm','Crayfish','Octopod']) {
             const id='bundled/'+name;
             const {cells}=await tool('read_genome',{id,view:'cells',limit:1});
             const {links}=await tool('read_genome',{id,view:'links',limit:1});
