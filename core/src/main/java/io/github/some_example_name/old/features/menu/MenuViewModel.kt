@@ -236,6 +236,7 @@ class MenuViewModel(
     fun startMenuSimulation() {
         // Контейнер переживает экраны: новый вход в меню не должен добавлять ещё одну сцену.
         simulationSystem.dispose()
+        nextSceneTickNanos = 0L
         userCommandManager.startSession(SCENE_SEED)
         val width = DISingleThreadSimulationContainer.gridWidth
         val height = DISingleThreadSimulationContainer.gridHeight
@@ -270,8 +271,32 @@ class MenuViewModel(
     fun updateFrame(background: io.github.some_example_name.render.microscope.MenuMicroscopeBackground) {
         // Сменить режим до сборки снимка: Debug не требует подготовки оптических связей.
         renderSystem.mode = background.budget.mode
-        simulationSystem.updateTick()
+        if (isSceneTickDue(System.nanoTime())) simulationSystem.updateTick()
+        // И между тиками: рендер сам ведёт клетки от прошлого снимка к текущему
+        // (RenderSystem.interpolationLag), так что на 144 Гц фон не дёргается.
         renderSystem.render(background)
+    }
+
+    /** Когда положен следующий тик сцены; 0 — ещё ни одного (новая сцена). */
+    private var nextSceneTickNanos = 0L
+
+    /**
+     * Не больше [SCENE_MAX_UPS] тиков в секунду и не больше одного за кадр.
+     *
+     * Раньше тик шёл на каждом кадре: на мониторе 144 Гц фон жил впятеро быстрее, чем на
+     * телефоне с 30 кадрами, и столько же раз ел процессор, пока игрок просто смотрит на меню.
+     * Время здесь влияет только на темп фона: сцена меню не в журнале и не повторяется
+     * (её тиков и так было столько, сколько кадров).
+     *
+     * Догонять отставание нельзя: после свёрнутого окна или медленного кадра шаг сдвигается
+     * от текущего момента, а не выдаёт пачку тиков разом. Не больше одного тика за кадр —
+     * иначе на слабом телефоне догоняние само раздувало бы кадр.
+     */
+    private fun isSceneTickDue(now: Long): Boolean {
+        val next = nextSceneTickNanos
+        if (next != 0L && now - next < 0) return false
+        nextSceneTickNanos = if (next == 0L || now - next > SCENE_TICK_NANOS) now + SCENE_TICK_NANOS else next + SCENE_TICK_NANOS
+        return true
     }
 
     fun moveCamera(camera: Camera, delta: Float) {
@@ -313,6 +338,10 @@ class MenuViewModel(
     internal companion object {
         private const val TAG_MAPS = "MapImport"
         private const val SCENE_SEED = 12L
+
+        /** Предел темпа фоновой сцены, см. [isSceneTickDue]. */
+        private const val SCENE_MAX_UPS = 30
+        private const val SCENE_TICK_NANOS = 1_000_000_000L / SCENE_MAX_UPS
 
         /**
          * Состав фоновой сцены: имя встроенного генома и число организмов.
