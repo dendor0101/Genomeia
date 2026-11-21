@@ -1,0 +1,54 @@
+# genomeia stand body 1
+name	User genome
+source	C:/Users/Genomeia/StudioProjects/Genomeia/.claude/worktrees/physics-world/bugs/.sandbox/genomeia-20261104-190201-ca430c3c8d3d-report/bug/attachments/genomes/User genome.genome
+P 0 64.32500 65.57000 0.5000 fat 0
+P 1 64.60226 65.04053 0.5000 fat 0
+P 2 64.00000 65.04184 0.5000 fat 0
+P 3 64.90000 64.51962 0.5000 fat 0
+P 4 65.22500 64.01000 0.5000 fat 0
+P 5 64.29773 64.52092 0.5000 fat 0
+P 6 63.69773 64.52092 0.5000 fat 0
+P 7 63.39773 64.00130 0.5000 fat 0
+P 8 64.60000 64.00000 0.5000 leaf 0
+P 9 64.00000 64.00000 0.5000 zygote 0
+P 10 64.30227 63.47908 0.5000 sucker 0
+L 0 1
+L 0 2
+L 1 2
+L 1 3
+L 1 5
+L 2 5
+L 2 6
+L 3 4
+L 3 5
+L 3 8
+L 4 8
+L 5 6
+L 5 8
+L 5 9
+L 6 7
+L 6 9
+L 7 9
+L 8 9
+L 8 10
+L 9 10
+T 0 2 1
+T 1 2 5
+T 1 5 3
+T 2 6 5
+T 3 8 4
+T 3 5 8
+T 5 6 9
+T 5 9 8
+T 6 7 9
+T 8 9 10
+G 1 8 9
+G 2 10 8
+G 2 5 9
+G 3 6 5
+G 3 3 8
+G 4 7 6
+G 4 4 3
+G 5 2 5
+G 5 1 3
+G 6 0 1

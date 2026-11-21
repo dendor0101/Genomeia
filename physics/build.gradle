@@ -1,5 +1,98 @@
 // Чистый Kotlin/JDK. Ни libGDX, ни :core, ни файлы стенда сюда не входят.
+configurations { pitest; zooCompiler }
 dependencies {
   api "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
   testImplementation "junit:junit:4.13.2"
+  // Только для задачи mutationTest: в сборку игры не попадает.
+  pitest "org.pitest:pitest-command-line:1.30.2"
+  // Только для задачи bugZoo: компилятор, которым пересобирается копия исходников с откатом починки.
+  zooCompiler "org.jetbrains.kotlin:kotlin-compiler-embeddable:$kotlinVersion"
+}
+
+// Число подшагов физики в тестах: gradlew :physics:test -Psubsteps=16 (см. SolverParameters.SUBSTEPS).
+tasks.withType(Test).configureEach {
+  if (project.hasProperty('substeps')) systemProperty 'genomeia.substeps', project.property('substeps')
+}
+
+// МУТАЦИОННЫЙ ПРОГОН (план стабильности, этап 1, пункт 8): gradlew :physics:mutationTest
+//
+// PIT портит байткод ядер решателя по одной правке за раз (знак, граница сравнения, выброшенный
+// вызов) и гоняет тесты. Мутант «убит», если хоть один тест упал; «выжил» — значит эту строку
+// тесты не сторожат. Отчёт: physics/build/reports/pitest/index.html и mutations.csv.
+//
+//   -Pmutate=...    какие классы портить (через запятую, со звёздочками); по умолчанию — ядра
+//                   связей, площади, кости, среды, хватки и повреждений. Контакты — отдельно, они
+//                   большие: -Pmutate=io.github.some_example_name.physics.BoundaryContacts* (около часа).
+//   -PkillWith=...  какими тестами убивать; по умолчанию — все тесты модуля.
+//   -Pmutators=...  набор правок PIT (DEFAULTS, STRONGER, ALL); по умолчанию STRONGER.
+//   -Pthreads=N     потоков; по умолчанию 4.
+// (Имена classes и tests заняты задачами Gradle, поэтому свойства названы иначе.)
+//
+// PIT требует, чтобы без мутаций все тесты были зелёные. SoftnessTest исключён: его проверка
+// softLinksStretchMoreUnderTheSameTension красная при 6 подшагах (2.29 при пороге 2.3) — контраст
+// мягкости в цепочке зависит от числа подшагов, см. docs/physics/unit-tests.md.
+def pitPackage = 'io.github.some_example_name.physics'
+def pitKernels = ['ConstraintSolverKt', 'BlockConstraintKernelsKt', 'BlockedIterationKt', 'BoneSolverKt', 'BoneSplitKt',
+                  'MediumSolverKt', 'FusedPassesKt', 'GripKt', 'DamageModelKt', 'TickMotionKt', 'RigidContactBatch']
+tasks.register('mutationTest', JavaExec) {
+  group = 'verification'
+  description = 'Мутационный прогон PIT по ядрам решателя: какие строки тесты на самом деле сторожат'
+  dependsOn 'testClasses'
+  classpath = configurations.pitest
+  mainClass = 'org.pitest.mutationtest.commandline.MutationCoverageReport'
+  workingDir = projectDir
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+  doFirst {
+    def classes = project.findProperty('mutate') ?: pitKernels.collect { "${pitPackage}.${it}*" }.join(',')
+    def tests = project.findProperty('killWith') ?: "${pitPackage}.*Test"
+    args = [
+      '--reportDir', layout.buildDirectory.dir('reports/pitest').get().asFile.path,
+      '--targetClasses', classes,
+      '--targetTests', tests,
+      '--excludedTestClasses', "${pitPackage}.SoftnessTest",
+      '--sourceDirs', file('src/main/kotlin').path,
+      '--classPath', sourceSets.test.runtimeClasspath.files.findAll { it.exists() }.collect { it.path }.join(','),
+      '--mutators', project.findProperty('mutators') ?: 'STRONGER',
+      '--threads', project.findProperty('threads') ?: '4',
+      '--outputFormats', 'HTML,CSV,XML',
+      '--timestampedReports', 'false',
+      '--timeoutConst', '8000',
+      '--verbosity', 'QUIET_WITH_PROGRESS',
+      // Строки сообщений об ошибках и проверки под DEBUG_CHECKS портить незачем.
+      '--avoidCallsTo', 'kotlin.jvm.internal,java.io.PrintStream',
+      // Встраиваемые ядра: их тела исполняются только копиями внутри вызывающих функций (там и портятся),
+      // а сами функции не зовёт никто — их мутанты неубиваемы по построению.
+      '--excludedMethods', 'solveDistanceConstraint,solveDistanceConstraintCells,solveDistanceConstraintSoftCells,muscleLinkCorrection',
+      '--jvmArgs', '-Dfile.encoding=UTF-8' + (project.hasProperty('substeps') ? ",-Dgenomeia.substeps=${project.property('substeps')}" : ''),
+    ]
+  }
+}
+
+// ЗООПАРК СТАРЫХ БАГОВ (план стабильности, этап 1, пункт 8): gradlew :physics:bugZoo
+//
+// Каждая задокументированная починка откатывается в копии исходников, копия пересобирается, и хоть
+// один тест обязан упасть. Список починок и подробности — src/test/kotlin/.../zoo/BugZoo.kt.
+// Отчёт: physics/build/bugzoo/report.md. Ненулевой код — починку не сторожит ни один тест
+// или запись устарела.
+//   -Ponly=часть названия   только эти записи;   -Pjobs=N   сколько записей одновременно (по умолчанию 3).
+tasks.register('bugZoo', JavaExec) {
+  group = 'verification'
+  description = 'Зоопарк старых багов: откат каждой задокументированной починки обязан уронить хотя бы один тест'
+  dependsOn 'testClasses'
+  classpath = sourceSets.test.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.BugZooKt'
+  workingDir = projectDir
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+  doFirst {
+    // Имя модуля Kotlin входит в имена internal-членов классов: пересборка обязана дать то же.
+    def moduleFile = fileTree(dir: layout.buildDirectory.dir('classes/kotlin/main/META-INF').get().asFile, include: '*.kotlin_module').singleFile
+    systemProperty 'zoo.module', moduleFile.name - '.kotlin_module'
+    systemProperty 'zoo.sources', file('src/main/kotlin').path
+    systemProperty 'zoo.work', layout.buildDirectory.dir('bugzoo').get().asFile.path
+    systemProperty 'zoo.compiler', configurations.zooCompiler.files.collect { it.path }.join(File.pathSeparator)
+    systemProperty 'zoo.libs', sourceSets.test.runtimeClasspath.files.findAll { it.name.endsWith('.jar') }.collect { it.path }.join(File.pathSeparator)
+    systemProperty 'zoo.tests', sourceSets.test.output.classesDirs.files.findAll { it.exists() }.collect { it.path }.join(File.pathSeparator)
+    if (project.hasProperty('only')) systemProperty 'zoo.only', project.property('only')
+    if (project.hasProperty('jobs')) systemProperty 'zoo.jobs', project.property('jobs')
+  }
 }

@@ -1,0 +1,72 @@
+# genomeia stand body 1
+name	weighted_neural_link
+source	C:/Users/Genomeia/StudioProjects/Genomeia/.claude/worktrees/bug-replay/genomes/weighted_neural_link.genome
+P 0 65.20000 64.60000 0.5000 chameleon 0
+P 1 64.60000 64.60000 0.5000 leaf 0
+P 2 64.00000 64.60000 0.5000 leaf 0
+P 3 63.40000 64.60000 0.5000 chameleon 0
+P 4 65.20000 64.00000 0.5000 neuron 0
+P 5 65.20000 63.40000 0.5000 neuron 0
+P 6 64.60000 64.00000 0.5000 leaf 0
+P 7 64.00000 64.00000 0.5000 leaf 0
+P 8 63.40000 64.00000 0.5000 neuron 0
+P 9 63.40000 63.40000 0.5000 neuron 0
+P 10 64.60000 63.40000 0.5000 chameleon 0
+P 11 64.00000 63.40000 0.5000 chameleon 0
+P 12 64.29850 62.87779 0.5000 synapse 0
+L 0 1
+L 0 4
+X 0 6
+L 1 2
+L 1 4
+L 1 6
+X 1 7
+L 2 3
+L 2 6
+L 2 7
+X 2 8
+L 3 7
+L 3 8
+L 4 5
+L 4 6
+X 4 10
+L 5 6
+L 5 10
+L 6 7
+L 6 10
+X 6 11
+L 7 8
+L 7 9
+L 7 10
+L 7 11
+L 8 9
+X 8 11
+L 9 11
+L 10 11
+L 10 12
+L 11 12
+T 0 1 4
+T 1 2 6
+T 1 6 4
+T 2 3 7
+T 2 7 6
+T 3 8 7
+T 4 6 5
+T 5 6 10
+T 6 7 10
+T 7 8 9
+T 7 9 11
+T 7 11 10
+T 10 11 12
+G 1 6 7
+G 2 2 6
+G 2 1 7
+G 3 8 2
+G 3 4 6
+G 4 3 2
+G 4 0 4
+G 4 11 7
+G 4 10 6
+G 5 5 4
+G 5 9 8
+G 6 12 10

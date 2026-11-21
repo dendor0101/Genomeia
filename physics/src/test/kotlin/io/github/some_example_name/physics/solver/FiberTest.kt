@@ -68,10 +68,12 @@ class FiberTest {
         assertTrue("поперёк волокна держится: $alongY", alongY > 0.92)
         assertTrue("вдоль волокна сжимается: $acrossY", acrossY < 0.66)
 
-        // Растяжение (s = 1.5) — тоже только вдоль.
+        // Расслабление (s = 1.5) длин покоя не меняет, а делает ткань мягче на растяжение (ConstraintSolver.
+        // relaxedLinkCorrection; до слияния 21.11 в этой физике s > 1 удлиняло ткань, и здесь ждали «вдоль > 1.35»):
+        // без нагрузки розетка держит размер в обе стороны. Что мягче только вдоль волокна — в тесте множителей ниже.
         val (stretched, side) = squeezed(1f, 0f, 1.5f)
         println("волокно x, s=1.5: вдоль %.3f, поперёк %.3f".format(stretched, side))
-        assertTrue("вдоль волокна растягивается: $stretched", stretched > 1.35)
+        assertEquals("вдоль волокна длина покоя та же", 1.0, stretched, 0.06)
         assertEquals("поперёк размер держится", 1.0, side, 0.06)
     }
 
@@ -82,25 +84,64 @@ class FiberTest {
         assertTrue("поперёк сжимается так же: $along / $across", kotlin.math.abs(along - across) < 0.03)
     }
 
-    /** Множители связей — |F·e| одноосного растяжения, треугольников — sqrt(s); при s = 1 — ровно 1. */
-    @Test fun linkAndTriangleMultipliersFollowUniaxialStretch() {
+    /**
+     * Цели одноосного закона (k = 0, мир по умолчанию): длина связи под сжатием — |F·e| (MuscleFiber.limitShrink, по
+     * cos² связи к волокну conFiberC2), площадь треугольника — × s (fiberAreaFactor); при s = 1 — ровно 1; расслабление —
+     * мягкость связи |F·e| (вдоль волокна s, поперёк 1; fiberRelaxedSoftness), а команда связи — целиком s: предел длины
+     * у всей расслабленной мышцы (находка 34). До слияния 21.11 мотонейрон сворачивал и сжатие, и расслабление в
+     * conCellScale/triCellScale; теперь их ведут ядра, а числа закона те же.
+     */
+    @Test fun linkAndTriangleTargetsFollowUniaxialStretch() {
         val w = world()
         val first = w.bodyFirst(w.addBody(rosette()))
         for (i in 0 until 7) w.setCellFiber(first + i, 1f, 0f)
         w.setCellScale(first, 1f)
         w.step()
         val st = w.state
+        assertEquals("закон мира по умолчанию — одноосный", 0.0, st.fiberThicken, 0.0)
         for (c in 0 until st.conCount) assertEquals("при s = 1 волокно ничего не меняет", 1f, st.conCellScale[c], 0f)
+        fun cos2(c: Int): Float {
+            val a = st.conA[c]; val b = st.conB[c]
+            val dx = st.body.x[b] - st.body.x[a]; val dy = st.body.y[b] - st.body.y[a]
+            return dx * dx / (dx * dx + dy * dy)
+        }
         for (i in 0 until 7) w.setCellScale(first + i, 0.5f)
         repeat(300) { w.step() }
         for (c in 0 until st.conCount) {
             val a = st.conA[c] - first; val b = st.conB[c] - first
+            assertEquals("cos² связи $a–$b к волокну", cos2(c), st.conFiberC2[c], 1e-6f)
             // Связь вдоль x (спицы 0–1, 0–4) — 0.5; под 60° — sqrt(1 − 0.75·0.25).
-            val dx = st.body.x[b + first] - st.body.x[a + first]; val dy = st.body.y[b + first] - st.body.y[a + first]
-            val cos2 = dx * dx / (dx * dx + dy * dy)
-            assertEquals("связь $a–$b", kotlin.math.sqrt(1f - 0.75f * cos2), st.conCellScale[c], 1e-6f)
+            assertEquals("связь $a–$b", kotlin.math.sqrt(1f - 0.75f * cos2(c)).toDouble(), st.limitShrink(c, st.conCellScale[c].toDouble()), 1e-6)
         }
-        for (t in 0 until st.triCount) assertEquals(kotlin.math.sqrt(0.5f), st.triCellScale[t], 1e-6f)
+        for (t in 0 until st.triCount) {
+            assertTrue("треугольник $t сжимается по волокну", st.triFiberById[st.triId[t]])
+            assertEquals(0.5, fiberAreaFactor(st.triCellScale[t].toDouble(), st.fiberThicken), 1e-6)
+        }
+        for (i in 0 until 7) w.setCellScale(first + i, 1.5f)
+        repeat(300) { w.step() }
+        for (c in 0 until st.conCount) {
+            val a = st.conA[c] - first; val b = st.conB[c] - first
+            assertEquals("команда расслабления связи $a–$b — целиком", 1.5f, st.conCellScale[c], 0f)
+            assertEquals("мягкость связи $a–$b — только вдоль волокна", kotlin.math.sqrt(1.0 + 1.25 * cos2(c)),
+                fiberRelaxedSoftness(1.5, st.conFiberC2[c].toDouble()), 1e-6)
+        }
+    }
+
+    /**
+     * Расслабленная связь поперёк волокна (находка 34): мягкость обычной ткани, а предел длины и разрыва — расслабленной
+     * мышцы. Без запаса на разрыв поперёк волокна расслабленная мышца, которую тянут вбок, рвалась на 5%, как обычная
+     * ткань: на стендах это 86% лишних разрывов варианта «всё только вдоль».
+     */
+    @Test fun relaxedAcrossFiberKeepsTearReserve() {
+        val inner = booleanArrayOf(false)
+        val w = 2.0; val alpha = 3.0
+        val across = fiberRelaxedSoftness(1.5, 0.0)
+        assertEquals("поперёк волокна мягче не становится", 1.0, across, 0.0)
+        assertEquals("податливость обычной ткани", -0.2 / (w + alpha), relaxedLinkCorrection(1.2, 1.0, 1.5, w, alpha, inner, 0, across), 1e-15)
+        assertTrue("предел длины — у всей расслабленной мышцы: 1.2 покоя ещё не предел", linkMaxLength(1.0, 1.5) > 1.2)
+        assertEquals("вдоль волокна — как расслабленная мышца без волокна",
+            relaxedLinkCorrection(1.2, 1.0, 1.5, w, alpha, inner, 0),
+            relaxedLinkCorrection(1.2, 1.0, 1.5, w, alpha, inner, 0, fiberRelaxedSoftness(1.5, 1.0)), 1e-15)
     }
 
     /** Мир из снимка с волокнами идёт побитово так же, как мир, который его записал. */

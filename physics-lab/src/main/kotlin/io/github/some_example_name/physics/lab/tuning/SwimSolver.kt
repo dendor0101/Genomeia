@@ -4,6 +4,7 @@ import io.github.some_example_name.physics.ConstraintBlocks
 import io.github.some_example_name.physics.CONSTRAINT_BLOCK_SIZE
 import io.github.some_example_name.physics.CANCEL_INTERNAL_SPIN
 import io.github.some_example_name.physics.FLAP_COMPLIANCE
+import io.github.some_example_name.physics.MUSCLE_MAX_PULL
 import io.github.some_example_name.physics.SOLVER_ITERS
 import io.github.some_example_name.physics.SWEEP_FLIP
 import io.github.some_example_name.physics.BoundaryContacts
@@ -236,9 +237,12 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             val max = conMaxLen[c]
             if (len <= max || len < 1e-12) continue
             // Как в ядре: масса нужна лишь связи, нарушившей предел.
-            val wi = invMass[i]; val wj = invMass[j]
+            var wi = invMass[i]; var wj = invMass[j]
+            if (wi + wj == 0.0) continue
+            // Костный конец связи предел не двигает — как applyLinkLimitCorrection ядра.
+            val boneI = topo.boneOf[i] >= 0; val boneJ = topo.boneOf[j] >= 0
+            if (boneI && !boneJ && wj > 0.0) wi = 0.0 else if (boneJ && !boneI && wi > 0.0) wj = 0.0
             val w = wi + wj
-            if (w == 0.0) continue
             dx /= len; dy /= len
             // Собственный потолок поправки длины, как LINK_MAX_STEP в ядре:
             // стадия ЖЁСТКАЯ, перерастяжение она снимает целиком за один
@@ -257,8 +261,12 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     private val tickJitterX = DoubleArray(n)
     private val tickJitterY = DoubleArray(n)
 
+    /** Зеркало памяти удара ядра (BodyState.impactSpeed): клин касаний читает её и положения начала тика. */
+    private val impactSpeed = DoubleArray(n)
+
     private fun beginTickMotion() {
         System.arraycopy(px, 0, tickJitterX, 0, n); System.arraycopy(py, 0, tickJitterY, 0, n)
+        contacts.bindImpact(impactSpeed, tickJitterX, tickJitterY)
     }
 
     private fun removeTickJitter(dt: Double) {
@@ -399,8 +407,11 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             val len = sqrt(dx * dx + dy * dy)
             if (len < 1e-9) continue
             dx /= len; dy /= len
-            val rest = conRest[c] * muscleScale(topo.conMuscle[c])
-            val dL = -(len - rest) / (w + alpha)
+            val scale = muscleScale(topo.conMuscle[c])
+            var over = len - conRest[c] * scale
+            // Потолок тяги мышцы — как в решателе игры, см. MUSCLE_MAX_PULL.
+            if (scale < 1.0 && over > MUSCLE_MAX_PULL * conRest[c]) over = MUSCLE_MAX_PULL * conRest[c]
+            val dL = -over / (w + alpha)
             px[i] += dx * dL * wi; py[i] += dy * dL * wi
             px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
         }
@@ -465,7 +476,9 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
                 val t = (area2 / restArea2).coerceIn(0.0, 1.0)
                 alphaInv + (alpha - alphaInv) * t * t
             } else if (area2 < 0.0) alphaInv else alpha
-            var dL = -(area2 - restArea2) / (denom + a)
+            var excess = area2 - restArea2
+            if (s < 1.0) { val cap = 2.0 * MUSCLE_MAX_PULL * triRestArea2[t]; if (excess > cap) excess = cap }
+            var dL = -excess / (denom + a)
             // Потолок на норму поправки: |dL| * sqrt(denom) и есть её длина.
             if (maxStep > 0.0) {
                 val corr = abs(dL) * sqrt(denom)
@@ -886,8 +899,9 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
 
     private fun solveContactsAndBoundary(h: Double) {
         contacts.solveContacts(px, py, vx, vy, invMass, h)
+        // Клетки кости ориентация не двигает — как стадия ядра (projectBoundaryOrientation).
         solveBoundaryOrientation(topo.boundCount, topo.boundA, topo.boundB, topo.boundOpp,
-            topo.boundaryOrientation, px, py, invMass)
+            topo.boundaryOrientation, px, py, invMass, topo.boneOf)
     }
 
     /** Активация первой мышцы. Нужна замеру, чтобы отличить гребок от зажатой позы. */

@@ -388,6 +388,20 @@ tasks.register('bakeBundledGenomes', JavaExec) {
   args = [project.findProperty('dir') ?: 'assets/genomes']
 }
 
+// Тела настоящих геномов для стендов физики:
+//   gradlew --no-daemon :lwjgl3:standGenomeExport -Pfrom=путь[;путь…] [-Pto=каталог]
+// Каждый файл (.genome или старый JSON) проходит импорт игры с запеканием, и из него выгружается то, из
+// чего мост заводит тело в физике, вместе со стадиями роста. См. StandGenomeExport.kt.
+tasks.register('standGenomeExport', JavaExec) {
+  group = 'verification'
+  description = 'Выгружает тела геномов (поза, связи, треугольники, стадии роста) для стендов физики'
+  classpath = sourceSets.verification.runtimeClasspath
+  mainClass = 'io.github.some_example_name.lwjgl3.verification.StandGenomeExportKt'
+  workingDir = rootProject.projectDir
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+  args = [project.findProperty('to') ?: 'physics-lab/src/main/resources/stand-genomes', project.findProperty('from') ?: '']
+}
+
 // Запись и повтор бага целиком: gradlew :lwjgl3:bugReplayCheck
 // Ручная проверка отправки на настоящий сервер: -PbugFile=путь/к/отчёту.bug.
 tasks.register('bugUploadCheck', JavaExec) {

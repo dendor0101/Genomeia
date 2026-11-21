@@ -2,8 +2,13 @@ package io.github.some_example_name.physics
 
 import kotlin.math.sqrt
 
-/** Плотный список пар с принадлежностью вершине: заменить её ограничения можно за её степень. */
-class VertexPairs(n: Int) {
+/**
+ * Плотный список пар с принадлежностью вершине: заменить её ограничения можно за её степень.
+ * [vertexInBlock] — ядро пары читает и вершину (створка у новорождённой считает угол при ней, находка 30): пара идёт в
+ * блок решателя, только если в нём все три клетки, иначе — в швы. Иначе вершину из блока той же чётности мог бы в
+ * тот же миг двигать другой воркер, и итог зависел бы от числа воркеров.
+ */
+class VertexPairs(n: Int, private val vertexInBlock: Boolean = false) {
     internal var blockLayout: ConstraintBlocks? = null
     internal var blockIndex: BlockIndex? = null
     private var head = IntArray(n) { -1 }
@@ -13,7 +18,8 @@ class VertexPairs(n: Int) {
         val old = head.size
         head = head.copyOf(n); java.util.Arrays.fill(head, old, n, -1)
     }
-    private var owner = IntArray(maxOf(n, 16))
+    /** Вершина пары: у створки — клетка, при которой угол между голыми связями к a и b. */
+    var owner = IntArray(maxOf(n, 16)); private set
     private var next = IntArray(owner.size)
     private var prev = IntArray(owner.size)
     var a = IntArray(owner.size); private set
@@ -52,7 +58,7 @@ class VertexPairs(n: Int) {
         a[count] = i; b[count] = j; rest[count] = sqrt(dx * dx + dy * dy)
         owner[count] = v; prev[count] = -1; next[count] = head[v]
         if (head[v] >= 0) prev[head[v]] = count
-        blockIndex?.add(count, blockLayout!!.blockOf(i, j))
+        blockIndex?.add(count, if (vertexInBlock) blockLayout!!.blockOf(i, j, v) else blockLayout!!.blockOf(i, j))
         head[v] = count++
     }
 }
@@ -76,7 +82,7 @@ class LocalBoundaryConstraints(
     internal var blockLayout: ConstraintBlocks? = null
     internal var blockIndex: BlockIndex? = null
     val bend = VertexPairs(body.count)
-    val flap = VertexPairs(body.count)
+    val flap = VertexPairs(body.count, vertexInBlock = true)
     private var neighbors = IntArray(body.count)
 
     /**

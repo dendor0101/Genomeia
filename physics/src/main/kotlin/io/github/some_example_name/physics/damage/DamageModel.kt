@@ -31,6 +31,8 @@ fun BodyState.applyPierce(ct: BoundaryContacts) {
         if (e < 0 || baked.edgeDead[e]) continue
         val c = conOfEdge[e]
         if (c < 0 || c >= conCount || conDead[c]) continue
+        // Временную связь роста клетка прошла насквозь — ткань там уже есть: связь снята тихо (TempLinks.kt).
+        if (isTempEdge(e)) { retireTempEdge(e); continue }
         linkTorn[c] = true; conDead[c] = true; tearsPending = true
         killEdgeNow(e)
         piercedCount++
@@ -88,12 +90,16 @@ fun BodyState.killCell(v: Int) {
     contacts?.dropFromContacts(v)
     refreshSurface()
     structureVersion++
+    // Клиент зовёт между тиками: кость погибшей клетки пересматривается сразу.
+    splitDirtyBones()
 }
 
 fun BodyState.killIncidentEdges(v: Int) {
     if (cellDeathN == cellDeathLog.size) cellDeathLog = cellDeathLog.copyOf(cellDeathN * 2)
     cellDeathLog[cellDeathN++] = v
     localComponents.removeCell(v)
+    // Клетка кости: она выйдет из кости, а кость проверят на связность между тиками. См. BoneSplit.kt.
+    if (boneClusterOf[v] >= 0) markBoneDirty(boneClusterOf[v])
     for (s in baked.vertStart[v] until baked.vertStart[v + 1]) {
         val e = baked.vertEdge[s]
         val c = conOfEdge[e]

@@ -4,6 +4,8 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 
 internal fun BodyState.solveTick(observer: StepObserver?) {
+    // Кости, потерявшие клетку или внутреннюю связь с прошлого тика, — до всех стадий. См. BoneSplit.kt.
+    splitDirtyBones()
     // Пересборка после разрывов стоит В САМОМ КОНВЕЙЕРЕ, а не в обёртке над ним.
     // Сначала она была в stepOnce — и не срабатывала в проверках вовсе, потому
     // что стенд зовёт simulate() напрямую: связи помечались порванными сотнями,
@@ -25,6 +27,9 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     wakeByInput()
     // Положения в начале тика: средняя скорость за тик нужна сопротивлению среды. См. TickMotion.
     beginTickMotion()
+    // Клин читает память удара клеток и положения начала тика (они же — в tickJitter до конца последнего подшага).
+    if (impactSpeed.size != n) impactSpeed = impactSpeed.copyOf(n)
+    contacts?.bindImpact(impactSpeed, tickJitterX, tickJitterY)
     if (cancelSpinOn) { tick0(); prepareAwakeSpans(); momentumBegin(); tick1(16) }
     if (cancelSpinOn) noteJointsMomentum()
     for (step in 0 until SUBSTEPS) {
@@ -40,6 +45,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         // КОНТАКТ ПРИКЛАДЫВАЕТСЯ К СКОРОСТИ ДО ИНТЕГРИРОВАНИЯ, как гравитация.
         // Почему именно так и что было раньше — см. toVelocity в solveContacts.
         if (contacts != null && contactsOn && CONTACT_BEFORE_INTEGRATE) {
+            contacts!!.bindBones(if (bonesRigid) boneOf else null, rigidBones)
             contacts!!.prepare(px, py, prevX, prevY, vx, vy, invMass)
             contacts!!.updateBones(px, py, invMass,
                 if (bonesRigid) boneOf else null, rigidBones)
@@ -98,11 +104,14 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         // Закрываем перемещения внутренних ограничений контактом до восстановления скоростей.
         refreshSurface()
         val finalContacts = contacts
+        if (wallHits.size != 0) resolveBoneBounds(finalPass = false)
         if (finalContacts != null && contactsOn) {
             tick0()
             // Пары обновляются на чётных подшагах и сразу после любого изменения контура.
             finalContacts.skipCandidatesNow = (step and 1) == 1 && structureVersion == contactsVersion
             contactsVersion = structureVersion
+            // Состав костей — до подготовки: обрезка по времени удара откатывает кость целиком. См. gatherCcdBones.
+            finalContacts.bindBones(if (bonesRigid) boneOf else null, rigidBones)
             finalContacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = false)
             // УДАР БУДИТ СПЯЩЕГО ДО РЕШЕНИЯ КОНТАКТА. Спящий заморожен (обратная масса 0): решённый
             // так контакт — удар о стену, налетевшая частица отскакивает, импульс не передан, а

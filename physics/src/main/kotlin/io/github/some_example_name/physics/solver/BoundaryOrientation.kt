@@ -20,9 +20,9 @@ import kotlin.math.sqrt
  */
 fun solveBoundaryOrientation(
     count: Int, a: IntArray, b: IntArray, opposite: IntArray, orientation: ByteArray,
-    px: DoubleArray, py: DoubleArray, invMass: DoubleArray,
+    px: DoubleArray, py: DoubleArray, invMass: DoubleArray, bone: IntArray? = null,
 ) {
-    for (k in 0 until count) orientEdge(k, a, b, opposite, orientation, px, py, invMass)
+    for (k in 0 until count) orientEdge(k, a, b, opposite, orientation, px, py, invMass, bone)
 }
 
 /** Ориентация контура: по организмам, если есть воркеры (ParallelPhysics), иначе подряд. */
@@ -33,20 +33,23 @@ internal fun BodyState.solveBoundaryOrientationStage() {
     val layout = constraintBlocks
     if (layout != null && organismCount > 1) { edgesByBlocksSerial(layout, 0, 0.0); return }
     if (sleep.asleepCount == 0) solveBoundaryOrientation(boundCount, boundA, boundB, boundOpp,
-        localBoundary.orientation, px, py, invMass)
+        localBoundary.orientation, px, py, invMass, orientationBones())
     else solveBoundaryOrientationAwake()
 }
 
+/** Кости для стадии ориентации: клетки включённых костей она не двигает. См. projectBoundaryOrientation. */
+internal fun BodyState.orientationBones(): IntArray? = if (bonesRigid) boneOf else null
+
 internal fun orientEdge(
     k: Int, a: IntArray, b: IntArray, opposite: IntArray, orientation: ByteArray,
-    px: DoubleArray, py: DoubleArray, invMass: DoubleArray,
+    px: DoubleArray, py: DoubleArray, invMass: DoubleArray, bone: IntArray? = null,
 ) {
     val c = opposite[k]
     if (c < 0) return
     val i = a[k]; val j = b[k]
     val area = (px[j] - px[i]) * (py[c] - py[i]) - (py[j] - py[i]) * (px[c] - px[i])
     if (area * orientation[k] >= 0.0) return
-    projectBoundaryOrientation(i, j, c, area, px, py, invMass)
+    projectBoundaryOrientation(i, j, c, area, px, py, invMass, bone)
 }
 
 /**
@@ -56,15 +59,16 @@ internal fun orientEdge(
  * добавления, поэтому без сна идёт прежний сплошной список. См. BodySleep.
  */
 internal fun BodyState.solveBoundaryOrientationAwake() {
+    val bone = orientationBones()
     val layout = constraintBlocks ?: return solveBoundaryOrientation(boundCount, boundA, boundB,
-        boundOpp, localBoundary.orientation, px, py, invMass)
+        boundOpp, localBoundary.orientation, px, py, invMass, bone)
     val index = layout.edges
     val orientation = localBoundary.orientation
     for (block in 0 until layout.buckets) {
         if (block < layout.seam && layout.awake[block] == 0) continue
         var k = index.head[block]
         while (k >= 0) {
-            orientEdge(k, boundA, boundB, boundOpp, orientation, px, py, invMass)
+            orientEdge(k, boundA, boundB, boundOpp, orientation, px, py, invMass, bone)
             k = index.next[k]
         }
     }
@@ -76,12 +80,24 @@ internal fun BodyState.solveBoundaryOrientationAwake() {
  */
 internal fun projectBoundaryOrientation(
     a: Int, b: Int, c: Int, area: Double,
-    x: DoubleArray, y: DoubleArray, w: DoubleArray,
+    x: DoubleArray, y: DoubleArray, w: DoubleArray, bone: IntArray? = null,
 ) {
     val gax = y[b] - y[c]; val gay = x[c] - x[b]
     val gbx = y[c] - y[a]; val gby = x[a] - x[c]
     val gcx = y[a] - y[b]; val gcy = x[b] - x[a]
-    val wa = w[a]; val wb = w[b]; val wc = w[c]
+    var wa = w[a]; var wb = w[b]; var wc = w[c]
+    // КЛЕТКУ КОСТИ ОРИЕНТАЦИЯ НЕ ДВИГАЕТ (16.11.2026), пока в треугольнике есть подвижная мягкая клетка.
+    // Стадия стоит после контактов и проекции кости: сдвинутая ею клетка кости остаётся вне позы до
+    // следующего подшага, и кость выходит смятой. Трассировка удара двух тел с костными пластинами и
+    // мягким суставом (2 связи за тик): после починки предела длины кость всё ещё искажалась на 0.07
+    // связи — вывернутый треугольник на стыке кости и ткани расправлялся за счёт костных вершин.
+    // Вывернулась мягкая клетка — ей и возвращаться. Отдачу кости за тик возвращает учёт импульса.
+    if (bone != null) {
+        val ba = bone[a] >= 0; val bb = bone[b] >= 0; val bc = bone[c] >= 0
+        if ((ba || bb || bc) && ((!ba && wa > 0.0) || (!bb && wb > 0.0) || (!bc && wc > 0.0))) {
+            if (ba) wa = 0.0; if (bb) wb = 0.0; if (bc) wc = 0.0
+        }
+    }
     val den = wa * (gax * gax + gay * gay) + wb * (gbx * gbx + gby * gby) +
         wc * (gcx * gcx + gcy * gcy)
     if (den < 1e-18) return

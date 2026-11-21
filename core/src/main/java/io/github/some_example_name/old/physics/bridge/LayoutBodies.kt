@@ -2,6 +2,7 @@ package io.github.some_example_name.old.physics.bridge
 
 import io.github.some_example_name.old.systems.genomics.genome.BakedLayout
 import io.github.some_example_name.physics.BodyDefinition
+import io.github.some_example_name.physics.withTempLinks
 
 /**
  * ТЕЛО БИБЛИОТЕКИ ИЗ ЗАПЕЧЁННОЙ РАСКЛАДКИ ГЕНОМА. Частица k тела — слот k раскладки (то есть
@@ -44,11 +45,15 @@ fun bodyDefinitionOf(layout: BakedLayout, anchorSlot: Int, anchorX: Float, ancho
         allB[s] = layout.slotByCellGenomeId.get(pairs[2 * s + 1])
         check(allA[s] >= 0 && allB[s] >= 0) { "связь $s раскладки ссылается на клетку вне раскладки" }
     }
-    // Связи поперёк граней физика не получает (BakedLayout.crossingLinks): голая связь посреди
-    // ткани для неё край (контур, среда, касания). Опыт 03.11, вариант А заново: после того как
-    // дорастающая связь перестала рваться от падающего предела (isGrowingLink).
+    // Связи поперёк граней постоянными физика не получает (BakedLayout.crossingLinks): голая связь
+    // посреди ткани для неё край (контур, среда, касания). Опыт 03.11, вариант А заново: после того
+    // как дорастающая связь перестала рваться от падающего предела (isGrowingLink). Но растущему телу
+    // они нужны, пока на них не легли клетки: они идут в конец связей временными (withTempLinks,
+    // physics/topology/TempLinks.kt, находка 32) — у взрослого тела их нет вовсе (BodyDefinition.forBorn).
     val skip = BooleanArray(links)
     for (s in layout.crossingLinks) skip[s] = true
+    val crossA = IntArray(layout.crossingLinks.size) { allA[layout.crossingLinks[it]] }
+    val crossB = IntArray(layout.crossingLinks.size) { allB[layout.crossingLinks[it]] }
     val kept = links - layout.crossingLinks.size
     val linkA = IntArray(kept)
     val linkB = IntArray(kept)
@@ -78,7 +83,7 @@ fun bodyDefinitionOf(layout: BakedLayout, anchorSlot: Int, anchorX: Float, ancho
         boneClusters = boneClusters(n, allA, allB, bone),
         muscleClusters = emptyArray(),
         scale = k.toFloat()
-    )
+    ).withTempLinks(crossA, crossB)
 }
 
 /** Связные компоненты костных клеток по связям; порядок — по первому слоту компоненты. */

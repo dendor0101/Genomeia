@@ -27,10 +27,18 @@ internal const val SNAPSHOT_MAGIC = 0x50485753  // "PHWS"
 /**
  * 2 — мышца клетки с темпом: цель множителя клетки и признак «в пути» (27.10).
  * 3 — возраст дорастания связи (conGrowAge, мягкость молодой связи при делении, 02.11).
- * 4 — волокна мышц клеток (cellFiberX/Y, мотонейрон с направлением, 20.11). Снимок версии 3
- *     читается: волокон в нём нет, мышцы сжимаются во все стороны, как и писались.
+ * 4 — волокна мышц клеток (cellFiberX/Y и fibersOn: мотонейрон игры, 20.11; закон — MuscleFiber.kt). Снимок
+ *     версии 3 читается: волокон в нём нет, мышцы сжимаются во все стороны, как и писались.
+ * 5 — состав костей: списки клеток и boneClusterOf (кость делится вместе с телом, BoneSplit.kt, 16.11).
+ *     Снимки версий 3 и 4 читаются: состава в них нет, кости — по описанию, как раньше.
+ * 6 — память удара клеток (impactSpeed, клин: ImpactWedge, 18.11). Снимки версий 3–5 читаются: память в них нулевая.
+ * 7 — временные связи роста в описании (linkRetireStart/linkRetireCells: TempLinks.kt, 20.11). Снимки версий 3–6
+ *     читаются: временных связей в них нет, как тогда и было.
+ * Номера 5 и 6 даны при слиянии с alpha-0.2.4 (21.11): в ветке perf-experiment состав костей и память удара были
+ * версиями 4 и 5, а волокна — 6 после памяти удара; версия 4 игры уже лежит в сохранениях игроков, поэтому её
+ * формат остался, а ветка подвинулась. Снимки старой нумерации ветки (только проверки стендов) не читаются.
  */
-internal const val SNAPSHOT_VERSION = 4
+internal const val SNAPSHOT_VERSION = 7
 
 /** Самая старая версия снимка, которую мир ещё читает (см. [SNAPSHOT_VERSION]). */
 internal const val SNAPSHOT_OLDEST_READABLE = 3
@@ -64,9 +72,10 @@ internal fun DataOutput.writeDefinition(d: BodyDefinition) {
         writeInt(clusters.size); for (c in clusters) writeInts(c, c.size)
     }
     writeInt(java.lang.Float.floatToRawIntBits(d.scale))
+    writeInts(d.linkRetireStart, d.linkRetireStart.size); writeInts(d.linkRetireCells, d.linkRetireCells.size)
 }
 
-internal fun DataInput.readDefinition(): BodyDefinition {
+internal fun DataInput.readDefinition(version: Int = SNAPSHOT_VERSION): BodyDefinition {
     val x = readFloats(0); val y = readFloats(0); val r = readFloats(0)
     val bone = readBooleans(0); val muscle = readBooleans(0)
     val la = readInts(0); val lb = readInts(0)
@@ -74,7 +83,9 @@ internal fun DataInput.readDefinition(): BodyDefinition {
     val bones = Array(readInt()) { readInts(0) }
     val muscles = Array(readInt()) { readInts(0) }
     val scale = java.lang.Float.intBitsToFloat(readInt())
-    return BodyDefinition(x, y, r, bone, muscle, la, lb, ta, tb, tc, area, bones, muscles, scale)
+    val retireStart = if (version >= 7) readInts(0) else IntArray(0)
+    val retireCells = if (version >= 7) readInts(0) else IntArray(0)
+    return BodyDefinition(x, y, r, bone, muscle, la, lb, ta, tb, tc, area, bones, muscles, scale, retireStart, retireCells)
 }
 
 /**
@@ -87,6 +98,7 @@ internal fun BodyState.writeCore(out: DataOutput) {
     // Частицы.
     for (a in listOf(px, py, prevX, prevY, vx, vy, invMass, restInvMass, matchWeight, radius,
             sleepAnchorX, sleepAnchorY, tickJitterX, tickJitterY, contactPressure)) out.writeDoubles(a, a.size)
+    out.writeDoubles(impactSpeed, impactSpeed.size)
     for (a in listOf(cellDead, cellUnborn, inContact, crushedCell)) out.writeBooleans(a, a.size)
     out.writeFloats(cellScale, cellScale.size); out.writeBoolean(cellScalesOn)
     out.writeFloats(cellScaleTarget, cellScaleTarget.size); out.writeBoolean(cellScalesMoving)
@@ -104,9 +116,13 @@ internal fun BodyState.writeCore(out: DataOutput) {
     out.writeInts(organismSize, organismCount)
     for (a in listOf(organismMass, flowVX, flowVY)) out.writeDoubles(a, organismCount)
     out.writeDoubles(orgSleepDrift2, minOf(orgSleepDrift2.size, organismCount))
-    // Кости: позы покоя (у растущего тела — по рождённой части).
+    // Кости: состав (после разделения он уже не выводится из описания) и позы покоя
+    // (у растущего тела — по рождённой части).
     out.writeInt(rigidBones.size)
+    for (b in rigidBones.indices) out.writeInts(rigidBones[b], rigidBones[b].size)
+    out.writeInts(boneClusterOf, boneClusterOf.size)
     for (b in rigidBones.indices) { out.writeDoubles(boneRestQx[b], boneRestQx[b].size); out.writeDoubles(boneRestQy[b], boneRestQy[b].size) }
+    out.writeBoolean(bonesSplit)
     // Мышцы.
     for (a in listOf(muscleActivation, muscleActivationPrev, muscleTarget, muscleScaleOf)) out.writeDoubles(a, a.size)
     // Рабочие списки: длины, затем записи.
@@ -154,6 +170,7 @@ internal fun BodyState.readCore(input: DataInput, version: Int = SNAPSHOT_VERSIO
     matchWeight = input.readDoubles(0); radius = input.readDoubles(0)
     sleepAnchorX = input.readDoubles(0); sleepAnchorY = input.readDoubles(0)
     tickJitterX = input.readDoubles(0); tickJitterY = input.readDoubles(0); contactPressure = input.readDoubles(0)
+    impactSpeed = if (version >= 6) input.readDoubles(0) else DoubleArray(0)
     cellDead = input.readBooleans(0); cellUnborn = input.readBooleans(0); inContact = input.readBooleans(0)
     crushedCell = input.readBooleans(0)
     cellScale = input.readFloats(0); cellScalesOn = input.readBoolean()
@@ -175,8 +192,15 @@ internal fun BodyState.readCore(input: DataInput, version: Int = SNAPSHOT_VERSIO
     organismSize = input.readInts(n)
     organismMass = input.readDoubles(n); flowVX = input.readDoubles(n); flowVY = input.readDoubles(n)
     orgSleepDrift2 = input.readDoubles(0).let { if (it.isEmpty()) it else it.copyOf(n) }
-    check(input.readInt() == rigidBones.size) { "кости снимка не от этого описания" }
+    val boneCount = input.readInt()
+    if (version >= 5) {
+        rigidBones = Array(boneCount) { input.readInts(0) }
+        boneClusterOf = input.readInts(0)
+        boneRestQx = Array(boneCount) { DoubleArray(0) }; boneRestQy = Array(boneCount) { DoubleArray(0) }
+    } else check(boneCount == rigidBones.size) { "кости снимка не от этого описания" }
     for (b in rigidBones.indices) { boneRestQx[b] = input.readDoubles(0); boneRestQy[b] = input.readDoubles(0) }
+    if (version >= 5) bonesSplit = input.readBoolean()
+    boneDirtyN = 0; boneDirtyMark = BooleanArray(0)
     muscleActivation = input.readDoubles(0); muscleActivationPrev = input.readDoubles(0)
     muscleTarget = input.readDoubles(0); muscleScaleOf = input.readDoubles(0)
     val lc = body.linkCount; val tc = body.triCount

@@ -110,10 +110,14 @@ class CellLabModelTest {
             assertTrue(wl < 0.7f && hl > 0.9f, "левое сжимается только в ширину: $wl × $hl")
             assertTrue(hr < 0.75f && wr > 0.9f, "правое сжимается только в высоту: $wr × $hr")
         }
+        // Сигнал +1 — расслабление: в физике perf-experiment оно длину покоя не меняет, а делает ткань мягче на
+        // растяжение (ConstraintSolver.relaxedLinkCorrection; как у мышцы в тесте ниже), и мягче — только вдоль
+        // стрелки (MuscleFiber.kt, FiberTest). Без нагрузки розетка держит размер в обе стороны. В alpha-0.2.4,
+        // где расслабление удлиняет ткань, здесь ждали «ширина > 1.3» (слияние 21.11, reference.md, находка 33).
         lab(1f) { lab ->
             val wl = lab.rosetteSpan(lab.leftRosette, false); val hl = lab.rosetteSpan(lab.leftRosette, true)
             println("мотонейрон, сигнал +1: левое ширина %.3f высота %.3f".format(wl, hl))
-            assertTrue(wl > 1.3f && hl in 0.9f..1.1f, "левое растягивается только в ширину: $wl × $hl")
+            assertTrue(wl in 0.98f..1.02f && hl in 0.98f..1.02f, "левое расслаблено и держит размер: $wl × $hl")
         }
     }
 
@@ -123,11 +127,15 @@ class CellLabModelTest {
             try {
                 lab.apply(CellLabInput("set", "signal", signal))
                 repeat(180) { lab.step() }
-                return kotlin.math.abs(lab.c.getX(lab.companion) - lab.c.getX(lab.source))
+                return kotlin.math.hypot(lab.c.getX(lab.companion) - lab.c.getX(lab.source),
+                    lab.c.getY(lab.companion) - lab.c.getY(lab.source))
             } finally { lab.dispose() }
         }
-        val short = span(-1f); val long = span(1f)
-        assertTrue(long > short + 0.3f, "short=$short long=$long")
+        val neutral = span(0f)
+        val contracted = span(-1f)
+        val relaxed = span(1f)
+        assertTrue(contracted / neutral in 0.45f..0.55f, "contracted=$contracted neutral=$neutral")
+        assertTrue(relaxed / neutral in 0.98f..1.02f, "relaxed=$relaxed neutral=$neutral")
         fun displacement(signal: Float): Float {
             val lab = CellLabModel("suction_cup")
             try {

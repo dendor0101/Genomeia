@@ -70,7 +70,8 @@ class PhysicsWorld(
 
     /** Загрузить набор тел целиком — одно тело с номером 0. Прежнее содержимое мира пропадает. */
     fun load(definition: BodyDefinition) {
-        simulation.load(definition)
+        // Тела загружаются целыми: временных связей роста у них нет (TempLinks.kt).
+        simulation.load(definition.forBorn(null))
         bodyIds = 0; removedParticles = 0
         java.util.Arrays.fill(bodyStateOf, 0)
         record(0, definition.count, 0, definition.muscleClusters.size)
@@ -97,7 +98,9 @@ class PhysicsWorld(
      * [definition] с нулевыми скоростями; [born] — какие клетки рождены (рост, activate).
      * Возвращает НОМЕР ТЕЛА; его частицы — bodyFirst(номер) + смещение в [definition].
      */
-    fun addBody(definition: BodyDefinition, born: BooleanArray? = null, boneOn: BooleanArray? = null): Int {
+    fun addBody(body: BodyDefinition, born: BooleanArray? = null, boneOn: BooleanArray? = null): Int {
+        // Временные связи роста, которые рождённые клетки уже сняли бы, в мир не идут: взрослое тело — без них (TempLinks.kt).
+        val definition = body.forBorn(born)
         if (state.n == 0) {
             if (born == null && boneOn == null) { load(definition); reset(); return 0 }
             // Растущее тело дописывается в непустой мир (загрузка строит тело целиком). Клиент-
@@ -428,7 +431,7 @@ class PhysicsWorld(
         require(material == materialKey()) { "снимок записан с другим материалом мира" }
         state.worldScale = WorldScale(java.lang.Float.intBitsToFloat(input.readInt()),
             java.lang.Double.longBitsToDouble(input.readLong()))
-        simulation.load(input.readDefinition())
+        simulation.load(input.readDefinition(version))
         bodyIds = input.readInt()
         bodyFirstOf = input.readInts(8); bodyCountOf = input.readInts(8)
         bodyMuscleFirstOf = input.readInts(8); bodyMuscleCountOf = input.readInts(8)
@@ -468,6 +471,27 @@ class PhysicsWorld(
      */
     fun stepSolverOnly() = simulation.step()
 
+    /**
+     * Тик ЭТАЛОННОГО решателя вместо быстрого (ReferenceSolver): те же входы тика — мышцы, рост,
+     * временные связи, — затем свой простой конвейер на [substeps] подшагов. Мир для эталона
+     * собирается с выключенным сном. Игре не нужен: им стенды сверяют быстрый решатель.
+     */
+    fun stepReference(substeps: Int = REFERENCE_SUBSTEPS) {
+        if (state.n == 0) return
+        state.clearDeathLogs()
+        state.updateMuscles(DT)
+        if (state.cellScalesMoving) state.advanceCellScales(DT)
+        state.easeNewborn()
+        state.prepareJoints()
+        if (state.cellScalesDirty) state.recomputeCellScales()
+        val solver = reference?.takeIf { it.substeps == substeps } ?: ReferenceSolver(state, substeps).also { reference = it }
+        solver.tick()
+    }
+
+    /** Эталонный решатель этого мира: заводится первым вызовом [stepReference]; null — мир шагает быстрым. */
+    var reference: ReferenceSolver? = null
+        private set
+
     // --- входы тика ---
 
     val muscleCount: Int get() = state.muscleTarget.size
@@ -478,14 +502,15 @@ class PhysicsWorld(
     fun setAllMuscleTargets(value: Double) { state.muscleTarget.fill(value) }
 
     /**
-     * Мышца клетки [cell]: множитель её длины покоя, к которому она идёт (1 — расслаблена;
-     * игра — 0.5..1.5, сжатие и растяжение). Нынешний множитель подходит к цели с темпом мышцы
-     * стенда (BodyState.cellScale, advanceCellScales), связь берёт сильнейшую мышцу концов.
+     * Команда мышцы клетки [cell]: 0.5 — сократить длину покоя вдвое, 1 — покой,
+     * 1.5 — максимальная податливость на растяжение под внешней нагрузкой.
+     * Действующее значение плавно подходит к цели в advanceCellScales.
      * Изменённая цель будит организм, как мышечный кластер (wakeByInput): спящее тело иначе
      * так и стояло бы с прежними длинами.
      */
-    fun setCellScale(cell: Int, scale: Float) {
-        require(scale > 0f) { "множитель клетки должен быть больше нуля" }
+    fun setCellScale(cell: Int, command: Float) {
+        require(command > 0f) { "множитель клетки должен быть больше нуля" }
+        val scale = weakenedCommand(command) // ВРЕМЕННО (опыт 19.11.2026, MX_STRENGTH)
         if (state.cellScaleTarget[cell] != scale) {
             state.cellScaleTarget[cell] = scale
             state.cellScalesOn = true
@@ -494,7 +519,7 @@ class PhysicsWorld(
         if (state.cellScale[cell] != scale) state.cellScalesMoving = true
     }
 
-    /** Нынешний множитель длины покоя клетки (в пути к цели setCellScale). */
+    /** Действующая команда мышцы клетки после сглаживания цели setCellScale. */
     fun cellScale(cell: Int): Float = state.cellScale[cell]
 
     /**
@@ -516,12 +541,15 @@ class PhysicsWorld(
     fun softness(cell: Int): Float = state.cellSoftness[cell]
 
     /**
-     * Волокно мышцы клетки [cell] (BodyState.cellFiberX; игра — направление мотонейрона кластера):
-     * единичное направление сокращения ([x], [y]) в позе покоя тела, (0, 0) — мышца сжимается во
-     * все стороны. Вдоль волокна связь сжимается на множитель мышцы, поперёк — нет, площадь — в s
-     * раз. Длины покоя меняются только у сокращённой мышцы, поэтому тело не будится. Первое
-     * волокно включает его в счёт множителей — один полный пересчёт на мир; дальше — связи вокруг
-     * клетки и её соседей по кольцу. Игра задаёт волокна раз, при подсадке тела.
+     * Волокно мышцы клетки [cell] (BodyState.cellFiberX; игра — направление мотонейрона кластера,
+     * стенды — длинная ось куска мышц): единичное направление ([x], [y]) в позе покоя тела, (0, 0) —
+     * мышца сжимается по площади, во все стороны. Закон — config/FiberParameters.kt: сжатие s < 1 —
+     * вдоль волокна × s, поперёк × s^−k (k — настройка мира FIBER_THICKEN, по умолчанию 0: поперёк
+     * ткань держит размер), площадь × s^(1−k); расслабление s > 1 — мягче только вдоль волокна, запас
+     * на разрыв — у всей мышцы. Длины
+     * покоя меняются только у сокращённой мышцы, поэтому тело не будится. Первое волокно включает
+     * его в счёт множителей — один полный пересчёт на мир; дальше — связи вокруг клетки и её соседей
+     * по кольцу. Игра задаёт волокна раз, при подсадке тела, стенды — при постановке тела.
      */
     fun setCellFiber(cell: Int, x: Float, y: Float) {
         val st = state
@@ -755,6 +783,12 @@ class PhysicsWorld(
      * скорость обнулит — разбудить его [wake] (одного вызова на организм достаточно).
      */
     fun setVelocity(i: Int, vx: Double, vy: Double) { state.vx[i] = vx; state.vy[i] = vy }
+
+    /** Разовая тяга за точку тела. Кость получает общий импульс и момент в точке приложения. */
+    fun pullToward(i: Int, x: Double, y: Double) {
+        wake(i)
+        state.pullToward(i, x, y, DT)
+    }
 
     /** Переставить частицу в точку без скорости от переноса (prev там же). */
     fun place(i: Int, x: Double, y: Double) {

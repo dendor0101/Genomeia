@@ -148,6 +148,9 @@ internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = nul
     boundaryLinkLimits.grow(conCap)
     for (k in con0 until conCount) {
         val e = conEdge[k]
+        // После упаковки этот слот мог принадлежать удалённой или отключённой пружине.
+        conDead[k] = false
+        linkTorn[k] = false
         conNextForEdge[k] = conOfEdge[e]
         conOfEdge[e] = k
         conBoundary[k] = use[e] <= 1
@@ -173,22 +176,27 @@ internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = nul
     for (i in n0 until n) probe[i] = isFree[i] || probeAngle[i] < full
 
     // --- пары покоя нового тела: только внутри тела, в его номерах ---
+    // Временные связи роста в пары касаний не идут: касания тела — как у взрослого (TempLinks.kt).
     val addN = n - n0
-    val localA = IntArray(addLinks) { body.linkA[l0 + it] - n0 }
-    val localB = IntArray(addLinks) { body.linkB[l0 + it] - n0 }
+    val tempEdge = tempEdgeMask()
+    var permanent = 0
+    for (k in 0 until addLinks) if (!body.isTempLink(l0 + k)) permanent++
+    val localA = IntArray(permanent); val localB = IntArray(permanent)
+    run { var m = 0; for (k in 0 until addLinks) if (!body.isTempLink(l0 + k)) { localA[m] = body.linkA[l0 + k] - n0; localB[m] = body.linkB[l0 + k] - n0; m++ } }
     val localX = FloatArray(addN) { body.x[n0 + it] }; val localY = FloatArray(addN) { body.y[n0 + it] }
     val localR = DoubleArray(addN) { radius[n0 + it] }
     var lcount = 0
     val localConA = IntArray(conCount - con0); val localConB = IntArray(conCount - con0)
-    for (k in con0 until conCount) { localConA[lcount] = conA[k] - n0; localConB[lcount] = conB[k] - n0; lcount++ }
+    for (k in con0 until conCount) {
+        if (tempEdge != null && tempEdge[conEdge[k]]) continue
+        localConA[lcount] = conA[k] - n0; localConB[lcount] = conB[k] - n0; lcount++
+    }
     val localLinked = BoundaryContacts.linkedPairs(localConA, localConB, lcount)
     val addPairs = BoundaryContacts.bakeRestPairs(addN,
-        BoundaryContacts.maxContactRadius(addN, localA, localB, addLinks, localR, CONTACT_SCALE,
+        BoundaryContacts.maxContactRadius(addN, localA, localB, permanent, localR, CONTACT_SCALE,
             localX, localY, config.contacts.CONTACT_SEAL), localX, localY, localLinked)
     // Связанные пары мира — в общих номерах (линейный ключ пары, как в linkedPairs).
-    val worldConA = IntArray(conCount - con0) { conA[con0 + it] }
-    val worldConB = IntArray(conCount - con0) { conB[con0 + it] }
-    everLinked = everLinked?.plus(BoundaryContacts.linkedPairs(worldConA, worldConB, worldConA.size))
+    everLinked = everLinked?.plus(permanentLinkedPairs(con0, conCount))
 
     // --- контур: поверхность и ограничения контура по новым вершинам ---
     localBoundary.detachBlocks()
@@ -222,6 +230,8 @@ internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = nul
     distanceSweepOrder = DistanceSweepOrder.create(this)
     constraintBlocks = null
     initializeConstraintBlocks()
+    // Временные связи роста нового тела: какая клетка какие снимает (TempLinks.kt).
+    rebuildTempRetire()
     structureVersion++
 }
 
@@ -231,7 +241,7 @@ private fun BodyState.growParticleArrays(n0: Int) {
     cellScale = cellScale.copyOf(n).also { java.util.Arrays.fill(it, n0, n, 1f) }
     cellScaleTarget = cellScaleTarget.copyOf(n).also { java.util.Arrays.fill(it, n0, n, 1f) }
     cellSoftness = cellSoftness.copyOf(n).also { java.util.Arrays.fill(it, n0, n, 1f) }
-    cellFiberX = cellFiberX.copyOf(n); cellFiberY = cellFiberY.copyOf(n)
+    cellFiberX = cellFiberX.copyOf(n); cellFiberY = cellFiberY.copyOf(n) // волокно мышцы: у новых — нет, пока не задано
     cellNoContact = cellNoContact.copyOf(n)
     cellGroup = cellGroup.copyOf(n)
     cellGrip = cellGrip.copyOf(n)

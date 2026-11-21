@@ -148,7 +148,7 @@ internal class CellLabView(private val session: CellLabSession) {
             when (model.key) {
                 "eye", "touch_trigger", "controller", "neuron", "pheromone_sensor", "speed_sensor" -> metric("output", c.neuronImpulseOutput[a])
                 "muscle" -> {
-                    metric("length", c.degreeOfShortening[a])
+                    metric("output", c.neuronImpulseOutput[a])
                     if (c.isAlive[b] && c.isAlive[model.source]) {
                         val dx = c.getX(b) - c.getX(model.source); val dy = c.getY(b) - c.getY(model.source)
                         metric("span", sqrt(dx * dx + dy * dy))

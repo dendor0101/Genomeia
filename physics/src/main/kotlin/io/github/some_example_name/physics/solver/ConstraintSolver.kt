@@ -15,7 +15,9 @@ fun BodyState.solveConstraints(h: Double) {
     val conA = conA; val conB = conB; val conRest = conRest; val conMuscle = conMuscle
     val conDead = conDead; val ms = muscleScaleOf; val cs = if (cellScalesOn) conCellScale else null
     // Мягкость (BodyState.cellSoftness) — своим ядром; множители мышцы при ней ведутся всегда.
+    val boundary = conBoundary
     val soft = if (softnessOn) conSoftness else null; val cellScaleAll = conCellScale
+    val fiber = if (fibersOn) conFiberC2 else null; val fiberK = fiberThicken // волокно мышцы (MuscleFiber.kt)
     val plan = distanceSweepOrder
     // План целого графа не должен оставлять цену умерших связей после упаковки.
     // Для укороченного списка используем плотный проход ниже; reset возвращает
@@ -28,16 +30,16 @@ fun BodyState.solveConstraints(h: Double) {
         if (sweepBackwards) {
             for (k in order.lastIndex downTo 0) {
                 val c = order[k]
-                if (soft != null) solveDistanceConstraintSoft(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, cellScaleAll, soft, alpha)
+                if (soft != null) solveDistanceConstraintSoft(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, cellScaleAll, soft, boundary, alpha, fiber, fiberK)
                 else if (cs == null) solveDistanceConstraint(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, alpha)
-                else solveDistanceConstraintScaled(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, cs, alpha)
+                else solveDistanceConstraintScaled(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, cs, boundary, alpha, fiber, fiberK)
             }
         } else {
             for (k in order.indices) {
                 val c = order[k]
-                if (soft != null) solveDistanceConstraintSoft(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, cellScaleAll, soft, alpha)
+                if (soft != null) solveDistanceConstraintSoft(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, cellScaleAll, soft, boundary, alpha, fiber, fiberK)
                 else if (cs == null) solveDistanceConstraint(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, alpha)
-                else solveDistanceConstraintScaled(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, cs, alpha)
+                else solveDistanceConstraintScaled(c, k, px, py, invMass, planA, planB, conRest, conMuscle, conDead, ms, cs, boundary, alpha, fiber, fiberK)
             }
         }
         return
@@ -46,15 +48,15 @@ fun BodyState.solveConstraints(h: Double) {
     // обычный счётный цикл; формула ниже разворачивается Kotlin-компилятором.
     if (sweepBackwards) {
         for (c in conCount - 1 downTo 0) {
-            if (soft != null) solveDistanceConstraintSoft(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, cellScaleAll, soft, alpha)
+            if (soft != null) solveDistanceConstraintSoft(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, cellScaleAll, soft, boundary, alpha, fiber, fiberK)
             else if (cs == null) solveDistanceConstraint(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, alpha)
-            else solveDistanceConstraintScaled(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, cs, alpha)
+            else solveDistanceConstraintScaled(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, cs, boundary, alpha, fiber, fiberK)
         }
     } else {
         for (c in 0 until conCount) {
-            if (soft != null) solveDistanceConstraintSoft(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, cellScaleAll, soft, alpha)
+            if (soft != null) solveDistanceConstraintSoft(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, cellScaleAll, soft, boundary, alpha, fiber, fiberK)
             else if (cs == null) solveDistanceConstraint(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, alpha)
-            else solveDistanceConstraintScaled(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, cs, alpha)
+            else solveDistanceConstraintScaled(c, c, px, py, invMass, conA, conB, conRest, conMuscle, conDead, ms, cs, boundary, alpha, fiber, fiberK)
         }
     }
 }
@@ -77,21 +79,27 @@ internal inline fun solveDistanceConstraint(
     if (len < 1e-12) return
     dx /= len; dy /= len
     val m = conMuscle[c]
-    val rest = conRest[c] * (if (m < 0) 1.0 else ms[m])
-    val dL = -(len - rest) / (w + alpha)
+    val rest = conRest[c]
+    val scale = if (m < 0) 1.0 else ms[m]
+    var over = len - rest * scale
+    // Мышца тянет отстающую ткань не сильнее связи, растянутой на MUSCLE_MAX_PULL — см. там.
+    if (scale < 1.0 && over > MUSCLE_MAX_PULL * rest) over = MUSCLE_MAX_PULL * rest
+    val dL = -over / (w + alpha)
     px[i] += dx * dL * wi; py[i] += dy * dL * wi
     px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
 }
 
 /**
- * То же ядро с мышцей клетки (BodyState.cellScale): длина покоя × множитель связи [cs].
+ * Ядро с командой [cs] мышцы клетки. Закон сокращения и расслабления задаёт muscleLinkCorrection.
  * Отдельной функцией, а не параметром прежней: мир без множителей клеток (стенд) идёт
  * прежним байткодом — лишнее чтение и параметр в самом горячем ядре стоили ~5% тика.
  */
 internal fun solveDistanceConstraintScaled(
     c: Int, endpoint: Int, px: DoubleArray, py: DoubleArray, invMass: DoubleArray,
     conA: IntArray, conB: IntArray, conRest: DoubleArray, conMuscle: IntArray,
-    conDead: BooleanArray, ms: DoubleArray, cs: FloatArray, alpha: Double,
+    conDead: BooleanArray, ms: DoubleArray, cs: FloatArray, boundary: BooleanArray, alpha: Double,
+    fiber: FloatArray? = null, // волокно мышцы (MuscleFiber.kt)
+    fiberK: Double = 0.0, // показатель утолщения поперёк волокна (BodyState.fiberThicken)
 ) {
     if (conDead[c]) return
     val i = conA[endpoint]; val j = conB[endpoint]
@@ -104,8 +112,8 @@ internal fun solveDistanceConstraintScaled(
     if (len < 1e-12) return
     dx /= len; dy /= len
     val m = conMuscle[c]
-    val rest = conRest[c] * ((if (m < 0) 1.0 else ms[m]) * cs[c])
-    val dL = -(len - rest) / (w + alpha)
+    val scale = (if (m < 0) 1.0 else ms[m]) * cs[c]
+    val dL = muscleLinkCorrection(len, conRest[c], scale, w, alpha, boundary, c, fiber, fiberK)
     px[i] += dx * dL * wi; py[i] += dy * dL * wi
     px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
 }
@@ -119,7 +127,9 @@ internal fun solveDistanceConstraintScaled(
 internal fun solveDistanceConstraintSoft(
     c: Int, endpoint: Int, px: DoubleArray, py: DoubleArray, invMass: DoubleArray,
     conA: IntArray, conB: IntArray, conRest: DoubleArray, conMuscle: IntArray,
-    conDead: BooleanArray, ms: DoubleArray, cs: FloatArray, soft: FloatArray, alpha: Double,
+    conDead: BooleanArray, ms: DoubleArray, cs: FloatArray, soft: FloatArray, boundary: BooleanArray, alpha: Double,
+    fiber: FloatArray? = null, // волокно мышцы (MuscleFiber.kt)
+    fiberK: Double = 0.0, // показатель утолщения поперёк волокна (BodyState.fiberThicken)
 ) {
     if (conDead[c]) return
     val i = conA[endpoint]; val j = conB[endpoint]
@@ -132,8 +142,8 @@ internal fun solveDistanceConstraintSoft(
     if (len < 1e-12) return
     dx /= len; dy /= len
     val m = conMuscle[c]
-    val rest = conRest[c] * ((if (m < 0) 1.0 else ms[m]) * cs[c])
-    val dL = -(len - rest) / (w + alpha * soft[c])
+    val scale = (if (m < 0) 1.0 else ms[m]) * cs[c]
+    val dL = muscleLinkCorrection(len, conRest[c], scale, w, alpha * soft[c], boundary, c, fiber, fiberK)
     px[i] += dx * dL * wi; py[i] += dy * dL * wi
     px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
 }
@@ -142,7 +152,9 @@ internal fun solveDistanceConstraintSoft(
 @Suppress("NOTHING_TO_INLINE")
 internal inline fun solveDistanceConstraintCells(
     c: Int, px: DoubleArray, py: DoubleArray, invMass: DoubleArray, conA: IntArray, conB: IntArray,
-    conRest: DoubleArray, conDead: BooleanArray, cs: FloatArray, alpha: Double,
+    conRest: DoubleArray, conDead: BooleanArray, cs: FloatArray, boundary: BooleanArray, alpha: Double,
+    fiber: FloatArray? = null, // волокно мышцы (MuscleFiber.kt)
+    fiberK: Double = 0.0, // показатель утолщения поперёк волокна (BodyState.fiberThicken)
 ) {
     if (conDead[c]) return
     val i = conA[c]; val j = conB[c]
@@ -154,8 +166,7 @@ internal inline fun solveDistanceConstraintCells(
     val len = sqrt(dx * dx + dy * dy)
     if (len < 1e-12) return
     dx /= len; dy /= len
-    val rest = conRest[c] * cs[c]
-    val dL = -(len - rest) / (w + alpha)
+    val dL = muscleLinkCorrection(len, conRest[c], cs[c].toDouble(), w, alpha, boundary, c, fiber, fiberK)
     px[i] += dx * dL * wi; py[i] += dy * dL * wi
     px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
 }
@@ -164,7 +175,9 @@ internal inline fun solveDistanceConstraintCells(
 @Suppress("NOTHING_TO_INLINE")
 internal inline fun solveDistanceConstraintSoftCells(
     c: Int, px: DoubleArray, py: DoubleArray, invMass: DoubleArray, conA: IntArray, conB: IntArray,
-    conRest: DoubleArray, conDead: BooleanArray, cs: FloatArray, soft: FloatArray, alpha: Double,
+    conRest: DoubleArray, conDead: BooleanArray, cs: FloatArray, soft: FloatArray, boundary: BooleanArray, alpha: Double,
+    fiber: FloatArray? = null, // волокно мышцы (MuscleFiber.kt)
+    fiberK: Double = 0.0, // показатель утолщения поперёк волокна (BodyState.fiberThicken)
 ) {
     if (conDead[c]) return
     val i = conA[c]; val j = conB[c]
@@ -176,8 +189,7 @@ internal inline fun solveDistanceConstraintSoftCells(
     val len = sqrt(dx * dx + dy * dy)
     if (len < 1e-12) return
     dx /= len; dy /= len
-    val rest = conRest[c] * cs[c]
-    val dL = -(len - rest) / (w + alpha * soft[c])
+    val dL = muscleLinkCorrection(len, conRest[c], cs[c].toDouble(), w, alpha * soft[c], boundary, c, fiber, fiberK)
     px[i] += dx * dL * wi; py[i] += dy * dL * wi
     px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
 }
@@ -228,9 +240,9 @@ fun BodyState.solveLinkMaxLength() {
         val base = if (mus < 0) 1.0 else ms[mus]
         val scale = if (cs == null) base else base * cs[c]
         val rest = conRest[c]
-        val restScale = rest * scale
+        val restScale = rest * limitShrink(c, scale)
         val crushLim = LINK_CRUSH_RATIO * restScale
-        val max = linkMaxLength(rest, scale)
+        val max = linkMaxLength(limitRest(c, rest, scale), scale)
         val crushed = tearingOn && len2 < crushLim * crushLim
         val over = len2 > max * max
         // Запас до разрыва за прогон — только когда он кому-то интересен: у худших
@@ -268,9 +280,9 @@ internal fun BodyState.solveLimitItemSerial(c: Int) {
     val base = if (mus < 0) 1.0 else muscleScaleOf[mus]
     val scale = if (cellScalesOn) base * conCellScale[c] else base
     val rest = conRest[c]
-    val restScale = rest * scale
+    val restScale = rest * limitShrink(c, scale)
     val crushLim = LINK_CRUSH_RATIO * restScale
-    val max = linkMaxLength(rest, scale)
+    val max = linkMaxLength(limitRest(c, rest, scale), scale)
     val crushed = tearingOn && len2 < crushLim * crushLim
     val over = len2 > max * max
     if (!crushed && !over) return
@@ -278,13 +290,45 @@ internal fun BodyState.solveLimitItemSerial(c: Int) {
     solveLinkLimitViolation(c, len2, crushed, scale)
 }
 
-/**
- * ПРЕДЕЛ ДЛИНЫ СВЯЗИ — LINK_MAX_STRETCH длины покоя. У растянутой мышцы клетки ([scale] > 1,
- * игра растягивает миоцит до 1.5) — от растянутой длины: иначе предел резал бы растяжение и
- * рвал мышцу. Сжатие предела не трогает — прежняя арифметика, те же биты.
- */
+/** Старый формат сигнала клетки 0.5..1.5 остаётся совместим с геномами и снимками. */
+private fun relaxation(scale: Double): Double = ((scale - 1.0) * 2.0).coerceAtMost(1.0)
+
+// При +1 податливость под нагрузкой вчетверо выше. Сжатие и нулевой сигнал — прежний материал.
+internal fun tensileCompliance(alpha: Double, scale: Double): Double =
+    alpha * (1.0 + 3.0 * relaxation(scale))
+
+private const val RELAXED_MAX_STRETCH = 1.25
+
 internal fun linkMaxLength(rest: Double, scale: Double): Double =
-    if (scale > 1.0) LINK_MAX_STRETCH * rest * scale else LINK_MAX_STRETCH * rest
+    if (scale <= 1.0) LINK_MAX_STRETCH * rest
+    else rest * (LINK_MAX_STRETCH + (RELAXED_MAX_STRETCH - LINK_MAX_STRETCH) * relaxation(scale))
+
+@Suppress("NOTHING_TO_INLINE")
+internal inline fun muscleLinkCorrection(len: Double, rest: Double, scale: Double, w: Double, alpha: Double,
+                                         boundary: BooleanArray, c: Int, fiber: FloatArray? = null, fiberK: Double = 0.0): Double {
+    if (scale <= 1.0) {
+        // Мышца с волокном (MuscleFiber.kt): своя цель у каждой связи не вдоль волокна.
+        if (fiber != null && scale < 1.0 && c < fiber.size && fiber[c] < 1f) return fiberLinkCorrection(len, rest, scale, w, alpha, fiber[c].toDouble(), fiberK)
+        var over = len - rest * scale
+        // Мышца тянет отстающую ткань не сильнее связи, растянутой на MUSCLE_MAX_PULL — см. там.
+        if (scale < 1.0 && over > MUSCLE_MAX_PULL * rest) over = cappedPull(len, rest, rest * scale) // ВРЕМЕННО: cappedPull (MX_SPLIT)
+        return -over / (w + alpha)
+    }
+    // Расслабленная мышца с волокном мягче только вдоль волокна, а предел длины и разрыва — у всей мышцы (MuscleFiber.kt).
+    val soft = if (fiber != null && c < fiber.size && fiber[c] < 1f) fiberRelaxedSoftness(scale, fiber[c].toDouble()) else scale
+    return relaxedLinkCorrection(len, rest, scale, w, alpha, boundary, c, soft)
+}
+
+/** Связь расслабленной мышцы: мягче на растяжение по [soft] (с волокном — только вдоль него), предел длины — по [scale]. */
+internal fun relaxedLinkCorrection(len: Double, rest: Double, scale: Double, w: Double, alpha: Double,
+                                   boundary: BooleanArray, c: Int, soft: Double = scale): Double {
+    val stretch = len - rest
+    if (stretch <= 0.0) return -stretch / (w + alpha)
+    val elastic = -stretch / (w + tensileCompliance(alpha, soft))
+    // У контура предел и разрыв решаются вместе следующей стадией. У внутренней связи её нет.
+    if (len <= LINK_MAX_STRETCH * rest || boundary[c]) return elastic
+    return minOf(elastic, (linkMaxLength(rest, scale) - len) / w)
+}
 
 /**
  * ДОРАСТАЮЩАЯ СВЯЗЬ ВНЕ ПРЕДЕЛА И РАЗРЫВА (деление, 02.11). Её длина покоя сама идёт от
@@ -301,14 +345,15 @@ fun BodyState.solveLinkLimitViolation(c: Int, len2: Double, crushed: Boolean, sc
     if (isGrowingLink(c)) return
     val i = conA[c]; val j = conB[c]
     val mus = conMuscle[c]
-    val max = linkMaxLength(conRest[c], scale)
+    val restL = limitRest(c, conRest[c], scale) // ВРЕМЕННО (MX_FIBER): удлинённая поперёк волокна
+    val max = linkMaxLength(restL, scale)
     val len = sqrt(len2)
     // РАЗДАВЛЕННАЯ СВЯЗЬ РВЁТСЯ ТАК ЖЕ, КАК ПЕРЕРАСТЯНУТАЯ. См. LINK_CRUSH_RATIO.
     if (crushed) {
         linkTorn[c] = true; conDead[c] = true; tearsPending = true; killEdgeNow(conEdge[c])
         crushedCell[i] = true; crushedCell[j] = true
         dbgTornCrush++; if (mus >= 0) dbgTornCrushMuscle++
-        dbgTear(c, i, j, "сжатие", len / (conRest[c] * scale))
+        dbgTear(c, i, j, "сжатие", len / (conRest[c] * minOf(1.0, scale)))
         return
     }
     if (dbgSealOn && conBoundary[c]) dbgSeal(c, i, j, len)
@@ -329,7 +374,7 @@ fun BodyState.solveLinkLimitViolation(c: Int, len2: Double, crushed: Boolean, sc
     if (overStrain > dbgMaxOverStrain) dbgMaxOverStrain = overStrain
     // Пик недобора за всё время: сколько связь хотела сверх предела.
     val tear = if (conTendon[c]) linkTearStrain * tendonTear else linkTearStrain
-    if (len - max > tear * conRest[c]) {
+    if (len - LINK_MAX_STRETCH * restL > tear * restL) {
         linkTorn[c] = true
         if (tearingOn) { conDead[c] = true; tearsPending = true; killEdgeNow(conEdge[c]) }
         dbgTornPull++; if (mus >= 0) dbgTornPullMuscle++
@@ -337,7 +382,7 @@ fun BodyState.solveLinkLimitViolation(c: Int, len2: Double, crushed: Boolean, sc
     }
     // МЕМБРАНА ХРУПЧЕ ТКАНИ. См. MEMBRANE_TEAR_STRAIN.
     if (tearingOn && membraneTearStrain >= 0.0 && conBoundary[c] && !conDead[c] &&
-        len - max > membraneTearStrain * conRest[c]) {
+        len - max > membraneTearStrain * restL) {
         linkTorn[c] = true; conDead[c] = true; tearsPending = true; killEdgeNow(conEdge[c])
         membraneTearCount++
     }
@@ -356,7 +401,21 @@ fun BodyState.solveLinkLimitViolation(c: Int, len2: Double, crushed: Boolean, sc
  * Делится по паре в тех же долях, поэтому импульс пары сохраняется.
  */
 internal fun BodyState.applyLinkLimitCorrection(i: Int, j: Int, len: Double, max: Double) {
-    val wi = invMass[i]; val wj = invMass[j]; val w = wi + wj
+    var wi = invMass[i]; var wj = invMass[j]
+    // КОСТНЫЙ КОНЕЦ СВЯЗИ ПРЕДЕЛ НЕ ДВИГАЕТ (16.11.2026). Предел стоит ПОСЛЕ проекции кости — нарочно,
+    // чтобы последнее слово было за сшитой мембраной. Но поправку он делил между концами по массам
+    // клеток, и клетку кости вытягивало из кости вслед за мягкой соседкой: до следующей проекции кость
+    // стояла смятой, а контакты и скорости считались по смятой. Стенд free/hit/plates-plates (две
+    // костные пластины с мягким суставом, удар 2 связи за тик): кость искажена на 0.18 связи при
+    // допуске 0.05; трассировка — искажение растёт в подшагах без единого контакта и без обрезки.
+    // Теперь у связи «кость — мягкая клетка» всю поправку берёт мягкая клетка, а кость остаётся в позе.
+    // Отдача кости при этом не прикладывается; её за тик возвращает организму учёт импульса
+    // (TickMomentum) — обе клетки в одном организме.
+    if (bonesRigid) {
+        val boneI = boneOf[i] >= 0; val boneJ = boneOf[j] >= 0
+        if (boneI && !boneJ && wj > 0.0) wi = 0.0 else if (boneJ && !boneI && wi > 0.0) wj = 0.0
+    }
+    val w = wi + wj
     val dx = (px[i] - px[j]) / len; val dy = (py[i] - py[j]) / len
     var dL = -(len - max) / w
     val capL = LINK_MAX_STEP * linkScale / w
@@ -379,17 +438,22 @@ internal fun BodyState.limitViolationIsEvent(c: Int, len2: Double, crushed: Bool
         len > (contacts?.contactRadiusOf(i) ?: 0.0) +
             (contacts?.contactRadiusOf(j) ?: 0.0) + 2.0 * dbgSealMinR) return true
     if (len < 1e-12) return false
-    val max = linkMaxLength(conRest[c], scale)
+    val restL = limitRest(c, conRest[c], scale) // ВРЕМЕННО (MX_FIBER): удлинённая поперёк волокна
+    val max = linkMaxLength(restL, scale)
     val tear = if (conTendon[c]) linkTearStrain * tendonTear else linkTearStrain
-    if (len - max > tear * conRest[c]) return true
+    if (len - LINK_MAX_STRETCH * restL > tear * restL) return true
     return tearingOn && membraneTearStrain >= 0.0 && conBoundary[c] && !conDead[c] &&
-        len - max > membraneTearStrain * conRest[c]
+        len - max > membraneTearStrain * restL
 }
 
-/** Односторонняя: только не даёт сойтись ближе позы покоя. */
+/**
+ * Односторонняя: только не даёт сойтись ближе позы покоя. Створки по всему миру (эталон, тесты) — тот же закон, что
+ * solveBlockFlaps: у новорождённой — взрослый угол при нынешних длинах, не длиннее взрослой.
+ */
 fun BodyState.solveFlaps(h: Double) {
     if (flapCount == 0) return
     val alpha = FLAP_COMPLIANCE / (h * h)
+    val ramp = if (rampN > 0) contactRamp else null
     for (c in 0 until flapCount) {
         val i = flapA[c]; val j = flapB[c]
         val wi = invMass[i]; val wj = invMass[j]
@@ -398,7 +462,8 @@ fun BodyState.solveFlaps(h: Double) {
         var dx = px[i] - px[j]
         var dy = py[i] - py[j]
         val len = sqrt(dx * dx + dy * dy)
-        val rest = flapRest[c]
+        var rest = flapRest[c]
+        if (ramp != null && (ramp[i] < 1f || ramp[j] < 1f || ramp[flapV[c]] < 1f)) rest = minOf(rest, flapAngleRest(flapV[c], i, j))
         if (len >= rest || len < 1e-12) continue
         dx /= len; dy /= len
         val dL = -(len - rest) / (w + alpha)
@@ -438,6 +503,7 @@ fun BodyState.solveAreas(h: Double) {
     val rest2 = triRestArea2; val tm = triMuscle; val ms = muscleScaleOf; val ts = if (cellScalesOn) triCellScale else null
     val ks = if (softnessOn) triSoftness else null
     val alive = baked.triAlive; val tid = triId
+    val fibersOn = fibersOn; val fiberK = fiberThicken // волокно мышцы (MuscleFiber.kt)
     for (t in 0 until triCount) {
         // Треугольник умирает вместе с любым своим ребром И СРАЗУ, ещё до пересборки:
         // держать площадь ткани, которой уже нет, он не должен. См. tearQueue.
@@ -462,16 +528,23 @@ fun BodyState.solveAreas(h: Double) {
         val m = tm[t]
         val s0 = if (m < 0) 1.0 else ms[m]
         val s = if (ts == null) s0 else s0 * ts[t]
-        val restArea2 = rest2[t].toDouble() * s * s
+        val active = minOf(1.0, s)
+        // Мышца с волокном (MuscleFiber.kt): площадь × s^(1−k).
+        val fiberArea = s < 1.0 && fibersOn && triId[t] < triFiberById.size && triFiberById[triId[t]]
+        val restArea2 = if (fiberArea) rest2[t].toDouble() * fiberAreaFactor(s, fiberK) else rest2[t].toDouble() * active * active
         val area2 = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0)
         // Мягкость ткани (BodyState.cellSoftness) — множитель податливости; вывернутым своя, нулевая.
-        val alphaT = if (ks == null) alpha else alpha * ks[t]
+        val material = if (ks == null) alpha else alpha * ks[t]
+        val alphaT = if (s > 1.0 && area2 > restArea2) tensileCompliance(material, s) else material
         // Плавный переход вместо ступеньки — см. AREA_SMOOTH_RAMP.
         val a = if (AREA_SMOOTH_RAMP) {
             val q = (area2 / restArea2).coerceIn(0.0, 1.0)
             alphaInverted + (alphaT - alphaInverted) * q * q
         } else if (area2 < 0.0) alphaInverted else alphaT
-        var dL = -(area2 - restArea2) / (denom + a)
+        var excess = area2 - restArea2
+        // Площадь мышцы тянет не сильнее удвоенной доли площади покоя — см. MUSCLE_MAX_PULL.
+        if (if (fiberArea) fiberAreaFactor(s, fiberK) < 1.0 else active < 1.0) { val cap = 2.0 * MUSCLE_MAX_PULL * rest2[t]; if (excess > cap) excess = cap }
+        var dL = -excess / (denom + a)
         // Потолок на длину поправки — см. AREA_MAX_STEP.
         if (maxStep > 0.0) {
             val corr = abs(dL) * sqrt(denom)

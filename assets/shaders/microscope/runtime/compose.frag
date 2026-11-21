@@ -14,8 +14,8 @@ uniform vec4 uFieldBounds;
 uniform vec2 uFieldTexel;
 uniform float uReliefHeight;
 uniform float uCohesion;
-// Подъём ткани над плоскостью фокуса (террейн), 0..1: вес окраски поля, в живой игре окраска нейтральна.
-uniform sampler2D uTissueLift;
+// Подъём террейна хранится в альфа-канале уже привязанной карты окраски.
+uniform sampler2D uGenomeTint;
 // На сколько террейн выше фокуса: при uAperture = 176 (масштаб 1) размытие около 6 пикселей.
 const float TERRAIN_DEFOCUS=.03;
 vec3 tissueField(vec2 p){
@@ -24,7 +24,7 @@ vec3 tissueField(vec2 p){
   float distance=(dot(v.rg,vec2(65280.,255.))/65535.-.5)*1.5;
   float height=dot(v.ba,vec2(65280.,255.))/65535.*.08;
   height*=smoothstep(0.,max(uFieldTexel.x,uFieldTexel.y)*1.2,-distance);
-  return vec3(distance,height,texture(uTissueLift,at).a);
+  return vec3(distance,height,texture(uGenomeTint,at).a);
 }
 float reliefDepth(float height,float layer){return height*uReliefHeight*(.84-.5*layer);}
 vec2 reliefGradient(vec2 p,float stepWorld){
@@ -32,7 +32,7 @@ vec2 reliefGradient(vec2 p,float stepWorld){
               tissueField(p+vec2(0.,stepWorld)).y-tissueField(p-vec2(0.,stepWorld)).y)/(2.*stepWorld);
 }
 
-uniform sampler2D uMap,uBehind,uGenomeTint;
+uniform sampler2D uMap,uBehind;
 uniform vec2 uRes,uCam,uSpan;
 uniform float uColorFilter,uTintStrength,uRefraction,uPhase,uInspect,uMode,uPixelRatio;
 uniform float uDarkContrast,uCA,uFocus,uAperture,uScale;

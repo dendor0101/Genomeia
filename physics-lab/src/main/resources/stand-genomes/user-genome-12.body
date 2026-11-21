@@ -1,0 +1,10 @@
+# genomeia stand body 1
+name	User genome
+source	C:/Users/Genomeia/StudioProjects/Genomeia/.Codex/worktrees/polygon-tissue/bugs/.sandbox/genomeia-20261105-164015-17873c7477aa-report/bug/attachments/genomes/User genome.genome
+P 0 63.36000 64.01000 0.5000 leaf 0
+P 1 64.00000 64.00000 0.5000 zygote 0
+P 2 64.60000 64.00000 0.5000 punisher 0
+L 0 1
+L 1 2
+G 1 2 1
+G 2 0 1

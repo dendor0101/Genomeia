@@ -26,15 +26,29 @@ fun main(args: Array<String>) {
     var ok = true
     fun report(name: String, pass: Boolean, detail: String) { println("CLIENT ${if (pass) "ok  " else "FAIL"} $name: $detail"); if (!pass) ok = false }
 
-    // 1. Мышца клетки: все клетки на s — связи ужимаются (растягиваются) до s длины покоя.
-    for (s in floatArrayOf(0.7f, 1.3f)) {
+    // 1. Мышца клетки: в свободном теле сокращение меняет длину, расслабление сохраняет исходную.
+    for (s in floatArrayOf(0.5f, 1f, 1.5f)) {
         val w = world(config, scale, null); w.addBody(grid)
         for (i in 0 until w.particleCount) w.setCellScale(i, s)
         repeat(150) { w.step() }
         val ratio = meanLinkRatio(w)
-        report("мышца клетки ×$s", Math.abs(ratio - s) < 0.05 && w.state.tornTotal == 0,
+        report("мышца клетки ×$s", Math.abs(ratio - minOf(1f, s)) < 0.05 && w.state.tornTotal == 0,
             "средняя длина связи %.3f длины покоя, разрывов ${w.state.tornTotal}".format(ratio))
     }
+    // Одинаковый импульс от центра наружу. Команду меняем до опыта на свободном теле.
+    fun pulledRatio(command: Float): Double {
+        val w = world(config, scale, null); w.addBody(grid)
+        for (i in 0 until grid.count) w.setCellScale(i, command)
+        repeat(150) { w.step() }
+        val cx = grid.x.average(); val cy = grid.y.average()
+        for (i in 0 until grid.count) w.setVelocity(i, grid.x[i] - cx, grid.y[i] - cy)
+        w.step()
+        return meanLinkRatio(w)
+    }
+    val neutral = pulledRatio(1f)
+    val relaxed = pulledRatio(1.5f)
+    report("одинаковая внешняя тяга", relaxed > neutral && neutral > 1.0 && relaxed <= 1.25,
+        "длина к исходной: сигнал 0 %.5f, сигнал +1 %.5f".format(neutral, relaxed))
     // Бегущая волна по клеткам: один поток = N воркеров побитово.
     run {
         val a = world(config, scale, null); val b = world(config, scale, PhysicsWorkers.shared(workers))

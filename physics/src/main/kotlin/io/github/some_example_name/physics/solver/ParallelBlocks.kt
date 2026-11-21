@@ -78,6 +78,9 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
                 block += 2
             }
         }
+        if (integrate && state.boundsOn) {
+            for (s in scratch) if (s.wallHits.size != 0) s.wallHits.drain { state.wallHits.add(it) }
+        }
     }
 
     /**
@@ -351,7 +354,7 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
             val st = state
             if (edgeMode == 0) {
                 val a = st.boundA; val b = st.boundB; val opp = st.boundOpp; val ori = st.localBoundary.orientation
-                for (x in 0 until n) orientEdge(items[x], a, b, opp, ori, st.px, st.py, st.invMass)
+                for (x in 0 until n) orientEdge(items[x], a, b, opp, ori, st.px, st.py, st.invMass, st.orientationBones())
             } else for (x in 0 until n) st.normalDragEdge(items[x], edgeH)
         }
     }
@@ -444,7 +447,7 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         val ob = orientBuckets
         val a = st.boundA; val b = st.boundB; val opp = st.boundOpp; val ori = st.localBoundary.orientation
         for (k in ob.start[ob.task[t]] until ob.start[ob.task[t + 1]])
-            orientEdge(ob.items[k], a, b, opp, ori, st.px, st.py, st.invMass)
+            orientEdge(ob.items[k], a, b, opp, ori, st.px, st.py, st.invMass, st.orientationBones())
     }
     private val viscJob = PhysicsJob { t, _ ->
         val vb = viscBuckets
@@ -620,6 +623,7 @@ internal class WorkerScratch(state: BodyState) {
     @Suppress("unused") private val padBefore = LongArray(16)
     val boneDx = DoubleArray(state.boneDx.size)
     val boneDy = DoubleArray(state.boneDx.size)
+    val wallHits = BoneWallHits(state.rigidBones.size)
     var linkCapHits = 0
     var boneCapHits = 0
     var maxOverStrain = Double.NEGATIVE_INFINITY
@@ -641,7 +645,7 @@ internal fun BodyState.edgesByBlocksSerial(layout: ConstraintBlocks, mode: Int, 
         val items = layout.edges.dense(bucket); val n = layout.edges.denseCount[bucket]
         if (mode == 0) {
             val ori = localBoundary.orientation
-            for (x in 0 until n) orientEdge(items[x], boundA, boundB, boundOpp, ori, px, py, invMass)
+            for (x in 0 until n) orientEdge(items[x], boundA, boundB, boundOpp, ori, px, py, invMass, orientationBones())
         } else for (x in 0 until n) normalDragEdge(items[x], h)
     }
 }
@@ -687,7 +691,10 @@ internal fun BodyState.parallelBlocksAllowed(w: PhysicsWorkers, layout: Constrai
  */
 internal fun BodyState.solveBlockParallel(h: Double, block: Int, layout: ConstraintBlocks,
                                           s: WorkerScratch, integrate: Boolean): Long {
-    if (integrate) integrateRange(layout.firstParticle[block], layout.firstParticle[block + 1], h)
+    if (integrate) {
+        if (closingPhaseOn) dampBucketVelocities(block, layout) // гашение скоростей до интегрирования (ClosingDamping.kt)
+        integrateRange(layout.firstParticle[block], layout.firstParticle[block + 1], h, s.wallHits)
+    }
     solveBlockLinks(h, block, layout)
     solveBlockFlaps(h, block, layout)
     if (MAXLEN_EARLY) {
@@ -738,8 +745,8 @@ private fun BodyState.solveBlockLimitsParallel(block: Int, layout: ConstraintBlo
         val base = if (mus < 0) 1.0 else ms[mus]
         val scale = if (cs == null) base else base * cs[c]
         val rest = conRest[c]
-        val crushLim = LINK_CRUSH_RATIO * (rest * scale)
-        val max = linkMaxLength(rest, scale)
+        val crushLim = LINK_CRUSH_RATIO * (rest * limitShrink(c, scale))
+        val max = linkMaxLength(limitRest(c, rest, scale), scale)
         val hi2 = max * max; val lo2 = crushLim * crushLim
         val isNear = len2 > hi2 * LIMIT_NEAR_HI2 || (tearingOn && len2 < lo2 * LIMIT_NEAR_LO2)
         if (!isNear) continue
@@ -775,9 +782,9 @@ internal fun BodyState.limitItemParallel(c: Int, s: WorkerScratch): Boolean {
     val base = if (mus < 0) 1.0 else muscleScaleOf[mus]
     val scale = if (cellScalesOn) base * conCellScale[c] else base
     val rest = conRest[c]
-    val restScale = rest * scale
+    val restScale = rest * limitShrink(c, scale)
     val crushLim = LINK_CRUSH_RATIO * restScale
-    val max = linkMaxLength(rest, scale)
+    val max = linkMaxLength(limitRest(c, rest, scale), scale)
     val crushed = tearingOn && len2 < crushLim * crushLim
     val over = len2 > max * max
     if (!crushed && !over) return false

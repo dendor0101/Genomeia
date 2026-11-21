@@ -19,6 +19,9 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     val DRAG_SPEED_LIMIT = config.DRAG_SPEED_LIMIT
     val KILL_ON_DEEP_OVERLAP = config.KILL_ON_DEEP_OVERLAP
 
+    init { configureMuscleExperiment(config) } // ВРЕМЕННО (опыт 19.11.2026, solver/MuscleExperiment.kt)
+    init { configureClosingDamping(config) } // ВРЕМЕННО (опыт 19.11.2026, solver/ClosingDamping.kt)
+
     /**
      * Воркеры параллельных стадий; null — всё в вызывающем потоке. Результат от их
      * числа не зависит побитово (см. ParallelBlocks). Игра может подставить свой пул.
@@ -406,6 +409,15 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
 
     lateinit var boneDy: DoubleArray
 
+    /** Кости, чей состав надо пересмотреть между тиками: погибла клетка или внутренняя связь. См. BoneSplit.kt. */
+    internal var boneDirty = IntArray(8)
+    internal var boneDirtyN = 0
+    internal var boneDirtyMark = BooleanArray(0)
+    /** Черновик разделения кости: место клетки в списке кости + 1. 4 байта на частицу, заводится при первом разделении. */
+    internal var boneLocal = IntArray(0)
+    /** Делились ли кости с загрузки: сброс мира возвращает их к описанию (restoreSplitBones). */
+    internal var bonesSplit = false
+
     // --- мышцы ---
     lateinit var muscleOf: IntArray
 
@@ -482,6 +494,12 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
 
     var flapRest = DoubleArray(0)
 
+    /**
+     * Вершина створки: клетка, при которой угол между голыми связями к flapA и flapB (BlockConstraintKernels.
+     * solveBlockFlaps). Производное от топологии, как flapA и flapB: строится вместе с ними, в снимок не входит.
+     */
+    var flapV = IntArray(0)
+
     var bendNb0 = IntArray(0)
 
     var bendNb1 = IntArray(0)
@@ -556,9 +574,9 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     var muscleScaleOf = DoubleArray(0)
 
     /**
-     * МЫШЦА ПО КЛЕТКЕ (клиент-игра: у каждого миоцита своя активация, сжатие и растяжение).
-     * cellScaleTarget — множитель длины покоя, который велел клиент (1 — не мышца или
-     * расслаблена; игра даёт 0.5..1.5); cellScale — нынешний: подходит к цели с темпом мышцы
+     * МЫШЦА ПО КЛЕТКЕ (клиент-игра: у каждого миоцита своя активация, сокращение и расслабление).
+     * cellScaleTarget — команда: 0.5..1 задаёт сокращение, 1..1.5 повышает податливость на растяжение.
+     * cellScale — нынешнее значение, подходит к цели с темпом мышцы
      * стенда (advanceCellScales: удаление от 1 — muscleRateContract, возвращение — Relax).
      * Скачок длины покоя за тик XPBD выполняет почти сразу — ткань рвало (standParityCheck,
      * 27.10: 15–21 разрыв за 240 тиков гребка; с темпом — ни одного).
@@ -569,14 +587,16 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * множителей соседей по живому треугольнику. Связь берёт слабейший действующий множитель
      * концов — сокращается, только если оба конца в кольце мышцы (связь из кольца наружу — нет,
      * как у стенда); треугольник — слабейший из трёх вершин, с костной вершиной не сокращается
-     * (кость держит сторону, площадь уронила бы вершину на кость — см. muscleOfTri). Площадь —
-     * квадрат множителя. Без захвата (сильнейшая мышца концов, 27.10) A-11 плыл 7.5 связи за 600
+     * (кость держит сторону, площадь уронила бы вершину на кость — см. muscleOfTri). Целевая площадь при сокращении —
+     * исходная площадь на квадрат множителя; при расслаблении она остаётся исходной. Без захвата (сильнейшая мышца концов, 27.10) A-11 плыл 7.5 связи за 600
      * тиков гребка против 22.8 у стенда. В ядрах масштаб = масштаб кластера мышцы × множитель
      * связи; при всех множителях 1 — те же биты: x · 1 = x.
      */
     var cellScale = FloatArray(0)
     var cellScaleTarget = FloatArray(0)
     var cellScaleEff = FloatArray(0)
+    /** Производное: клетка, чей множитель — действующий (cellScaleEff); её волокно — волокно ткани вокруг (MuscleFiber.kt). */
+    var cellScaleSrc = IntArray(0)
     /** Черновик activateCell: ожившие треугольники до старта их дорастания. */
     var bornTriScratch = IntArray(16)
     var conCellScale = FloatArray(0)
@@ -607,14 +627,12 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     var cellScalesOn = false
 
     /**
-     * ВОЛОКНО МЫШЦЫ ПО КЛЕТКЕ (клиент-игра: направление мотонейрона кластера, PhysicsWorld.setCellFiber).
-     * cellFiberX/Y — единичное направление сокращения в позе покоя тела (BodyDefinition.x/y); ноль —
-     * мышца сжимается во все стороны, как раньше. С волокном f множитель s — одноосное растяжение
-     * F = I + (s − 1)·f·fᵀ: связь с направлением покоя e берёт |F·e| = sqrt(1 + (s² − 1)·(f·e)²) —
-     * вдоль волокна s, поперёк 1; треугольник — площадь det F = s (а не s²; в ядрах площадь —
-     * квадрат множителя, поэтому triCellScale = sqrt(s)). Длины и площадь — от одного и того же F,
-     * поэтому согласованы: ткань не дерётся сама с собой. Считается только при пересчёте
-     * множителей (кольцо мышцы), ядра решателя не меняются.
+     * ВОЛОКНО МЫШЦЫ ПО КЛЕТКЕ (PhysicsWorld.setCellFiber; игра — направление мотонейрона кластера, стенды — длинная
+     * ось куска мышц). cellFiberX/Y — единичное направление в позе покоя тела (BodyDefinition.x/y); ноль — волокна
+     * нет, мышца сжимается по площади, во все стороны, как раньше. Закон — config/FiberParameters.kt, как он ложится
+     * на связи и треугольники — solver/MuscleFiber.kt: сжатие s < 1 — вдоль волокна × s, поперёк × s^−k
+     * (k = fiberThicken), площадь × s^(1−k), в ядрах решателя (conFiberC2, triFiberById); расслабление s > 1 длин
+     * не меняет: мягче на растяжение только вдоль волокна (тоже в ядрах), а запас на разрыв — у всей мышцы.
      *
      * Волокно связи и треугольника — у клетки, чей множитель выбран (cellScaleSrc): кольцо мышцы
      * сжимается по её волокну. Источник выбирается, а не считается, поэтому результат от порядка
@@ -622,10 +640,17 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      */
     var cellFiberX = FloatArray(0)
     var cellFiberY = FloatArray(0)
-    /** Клиент задавал волокна (хоть одно не ноль). Как softnessOn: однажды включённый, не гаснет и входит в снимок. */
+    /**
+     * Клиент задавал волокна (хоть одно не ноль). Пока нет — мир идёт прежним путём побитово. Как softnessOn: однажды
+     * включённый, не гаснет и входит в снимок.
+     */
     var fibersOn = false
-    /** Чей множитель стоит в cellScaleEff клетки: она сама или сосед по треугольнику. Производное, как cellScaleEff. */
-    var cellScaleSrc = IntArray(0)
+    /** Производное: cos² угла связи в позе покоя к волокну клетки, задающей ей множитель; 1 — без волокна. */
+    var conFiberC2 = FloatArray(0)
+    /** Производное: треугольник сокращается по волокну — по постоянному номеру треугольника. */
+    var triFiberById = BooleanArray(0)
+    /** Показатель утолщения поперёк волокна k — настройка мира FIBER_THICKEN (config/FiberParameters.kt). */
+    val fiberThicken: Double = config["FIBER_THICKEN"]?.toDoubleOrNull() ?: FIBER_THICKEN
 
     /**
      * МЯГКОСТЬ ТКАНИ ПО КЛЕТКЕ (клиент-игра: жир мягче листа, PhysicsWorld.setSoftness).
@@ -706,6 +731,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * сама (prev). Выключена — без стенок, как стенд.
      */
     var boundsOn = false
+    internal var wallHits = BoneWallHits(0)
     var boundsMinX = 0.0
     var boundsMinY = 0.0
     var boundsMaxX = 0.0
@@ -856,6 +882,31 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     var tearQueueN = 0
 
     var tornTotal = 0
+
+    /** Сколько рёбер очереди сняты тихо (временные связи роста, TempLinks.kt): в счёт разрывов они не идут. */
+    var tearQueueQuiet = 0
+
+    /**
+     * ВРЕМЕННЫЕ СВЯЗИ РОСТА (topology/TempLinks.kt): рёбра, которые снимает рождение клетки, — по клетке мира (CSR):
+     * tempRetireEdge[tempRetireStart[i] until tempRetireStart[i + 1]]. Пусто — временных связей в мире нет.
+     * Производное от описания и номеров рёбер (rebuildTempRetire), в снимок не входит.
+     */
+    var tempRetireStart = IntArray(0)
+    var tempRetireEdge = IntArray(0)
+    /** Вторая клетка пары: −1 — клетка ложится на связь сама; иначе связь снимет ожившая пересекающая связь с ней. */
+    var tempRetireOther = IntArray(0)
+    /** Признак временного ребра по номеру ребра — для пробоя (applyPierce). Производное, как указатель выше. */
+    var tempEdge = BooleanArray(0)
+    /**
+     * Временные рёбра, на которые ткань уже легла, но снять их — оторвать клетку от тела (ребро — мост): ждут обходного
+     * пути, проверяются на каждом рождении (TempLinks.kt). Производное: строится заново вместе с указателем.
+     */
+    var tempPending = IntArray(0)
+    var tempPendingN = 0
+    /** Метки и очередь обхода «есть ли путь в обход ребра» — рабочие, без выделений на рождение. */
+    var tempStamp = IntArray(0)
+    var tempStampId = 0
+    var tempQueue = IntArray(0)
 
     /**
      * СОБЫТИЯ ДЛЯ КЛИЕНТА (игра, этап B2): что погибло за последний шаг мира, в порядке гибели.
@@ -1096,6 +1147,14 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
 
     /** Сколько толчков контакта получила клетка за тик. Пара к contactPressure. */
     var contactPressureN = IntArray(0)
+
+    /**
+     * ПАМЯТЬ УДАРА клетки: наибольшая скорость сближения, которую видели её касания, связей за тик;
+     * затухает каждый подшаг (ImpactWedge). Ноль или больше IMPACT_FROM. Живёт несколько тиков, поэтому
+     * это состояние мира: пишется в снимок, переезжает при уплотнении, обнуляется у освобождённого слота.
+     * 8 байт на частицу; читается только у клеток касания с ударом и у клеток их клиньев.
+     */
+    var impactSpeed = DoubleArray(0)
 
     /** Разбор: зовётся в конце каждого подшага с его номером. */
     var dbgSubstepHook: ((Int) -> Unit)? = null

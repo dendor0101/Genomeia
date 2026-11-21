@@ -59,4 +59,57 @@ class TickMomentumTest {
         vx[0]=7.0;a.cancel(x,y,vx,vy,w)
         assertEquals(0.0,vx[0],0.0);assertEquals(0.0,vx[1],0.0)
     }
+    @Test fun deadCellDoesNotSwitchOffItsOrganism() {
+        // Погибшая клетка (вне учёта, обратная масса ноль) не блокирует группу своего организма.
+        val x = doubleArrayOf(-1.0, 0.0, 1.0, 2.0); val y = doubleArrayOf(0.0, 1.0, 0.0, 1.0)
+        val vx = DoubleArray(4); val vy = DoubleArray(4)
+        val w = doubleArrayOf(1.0, 1.0, 0.0, 1.0); val dead = booleanArrayOf(false, false, true, false)
+        val a = TickMomentum(4)
+        a.begin(x, y, vx, vy, w, intArrayOf(0, 0, 0, 0), null, dead)
+        vx[0] += 0.9; vy[3] -= 0.3
+        a.cancel(x, y, vx, vy, w)
+        same(doubleArrayOf(0.0, 0.0, 0.0), momentum(x, y, vx, vy, w))
+        assertEquals("погибшая клетка стоит", 0.0, vx[2], 0.0); assertEquals(0.0, vy[2], 0.0)
+    }
+
+    @Test fun frozenParticleInsideGroupBlocksCorrection() {
+        // Неподвижная частица В ГРУППЕ (спящая, закреплённая — не погибшая) держит импульс группы: поправка не делается.
+        val x = doubleArrayOf(-1.0, 0.0, 1.0); val y = DoubleArray(3)
+        val vx = DoubleArray(3); val vy = DoubleArray(3)
+        val w = doubleArrayOf(1.0, 0.0, 1.0)
+        val a = TickMomentum(3)
+        a.begin(x, y, vx, vy, w, intArrayOf(0, 0, 0))
+        vx[0] += 0.9
+        a.cancel(x, y, vx, vy, w)
+        assertEquals(0.9, vx[0], 0.0); assertEquals(0.0, vx[2], 0.0)
+    }
+
+    @Test fun contactMergesGroupsAndTouchingFrozenBlocks() {
+        // Два организма в контакте — одна группа: импульс, перешедший от одного к другому, не «исправляется».
+        val x = doubleArrayOf(-2.0, -1.0, 1.0, 2.0); val y = DoubleArray(4)
+        val vx = doubleArrayOf(1.0, 1.0, 0.0, 0.0); val vy = DoubleArray(4)
+        val w = DoubleArray(4) { 1.0 }
+        val a = TickMomentum(4)
+        a.begin(x, y, vx, vy, w, intArrayOf(0, 0, 1, 1))
+        a.noteJoint(1, 2, w)                         // то же слияние, что у контакта
+        vx[1] -= 0.6; vx[2] += 0.6                   // обмен импульсом внутри пары
+        a.cancel(x, y, vx, vy, w)
+        assertEquals(0.4, vx[1], 1e-12); assertEquals(0.6, vx[2], 1e-12)
+        // Без слияния тот же обмен считался бы ошибкой каждого организма и был бы снят.
+        val vx2 = doubleArrayOf(1.0, 1.0, 0.0, 0.0)
+        val b = TickMomentum(4)
+        b.begin(x, y, vx2, vy, w, intArrayOf(0, 0, 1, 1))
+        vx2[1] -= 0.6; vx2[2] += 0.6
+        b.cancel(x, y, vx2, vy, w)
+        assertEquals("импульс первого организма возвращён", 2.0, vx2[0] + vx2[1], 1e-12)
+        assertEquals("импульс второго организма возвращён", 0.0, vx2[2] + vx2[3], 1e-12)
+        // Касание неподвижной частицы блокирует группу касающегося.
+        val w3 = doubleArrayOf(1.0, 1.0, 0.0, 0.0); val vx3 = doubleArrayOf(1.0, 1.0, 0.0, 0.0)
+        val c = TickMomentum(4)
+        c.begin(x, y, vx3, vy, w3, intArrayOf(0, 0, 1, 1))
+        c.noteJoint(1, 2, w3)
+        vx3[1] -= 0.6
+        c.cancel(x, y, vx3, vy, w3)
+        assertEquals(0.4, vx3[1], 0.0); assertEquals(1.0, vx3[0], 0.0)
+    }
 }

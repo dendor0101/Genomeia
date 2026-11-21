@@ -1,0 +1,10 @@
+# genomeia stand body 1
+name	realistic plant
+source	C:/Users/Genomeia/Desktop/Genomes/realistic plant.json
+P 0 63.40000 64.00000 0.5000 sticky 0
+P 1 64.00000 64.00000 0.5000 leaf 0
+P 2 64.60000 64.00000 0.5000 zygote 0
+L 0 1
+L 1 2
+G 1 2 1
+G 2 0 1

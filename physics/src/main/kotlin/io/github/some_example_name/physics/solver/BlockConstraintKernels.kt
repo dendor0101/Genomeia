@@ -3,10 +3,29 @@ package io.github.some_example_name.physics
 import kotlin.math.abs
 import kotlin.math.sqrt
 
+/**
+ * СТВОРКИ (лоскуты): у клетки с двумя голыми связями (ни в одном живом треугольнике) её соседи не сходятся ближе,
+ * чем во взрослом теле, — угол между голыми связями не складывается. Длина створки — взрослое расстояние соседей.
+ *
+ * У НОВОРОЖДЁННОЙ — ВЗРОСЛЫЙ УГОЛ ПРИ НЫНЕШНИХ ДЛИНАХ (20.11.2026, рост из зиготы, reference.md, находка 30). Растущее
+ * тело почти всё из голых связей: треугольник оживает, когда родятся все три вершины. Дочь рождается почти в центре
+ * родителя, её связи дорастают за BIRTH_GROW_TICKS, а створка «сосед родителя — дочь» сразу требовала взрослого
+ * РАССТОЯНИЯ и в первом же подшаге выталкивала дочь по прямой от соседа — вбок, по продолжению связи «сосед —
+ * родитель», а не к её точке позы. Следующие клетки подгоняются уже по сдвинутой и рождаются туда же: у Crayfish
+ * боковые колонны тела вырастали поперёк средней, и сшивающие их стадии рождались со связями в 5–10 раз длиннее
+ * покоя. Теперь, если на конце створки или в её вершине новорождённая (contactRamp < 1, BodyGrowth.isGrowingNewborn),
+ * длина створки — сторона треугольника со взрослым углом при вершине и нынешними расстояниями от вершины до концов, но
+ * не больше взрослой: дочь, поставленная под своим углом, не толкается, а угол держится в полную силу. Без потолка
+ * створка разгоняла сама себя, где связь у вершины растянута (у Huesos — в 26–88 раз): длина по углу росла вместе с
+ * расстояниями, створка расталкивала концы ещё дальше, и тело улетало в бесконечность. Ослаблять створку нельзя: мягкий
+ * старт по доле возраста (как у касаний) ломал рост цепочек — у Earthworm (стадия за тик) голая цепочка складывалась
+ * сама в себя, и гибло 968 клеток из 2967. Без новорождённых ядро идёт прежним путём побитово (ramp = null).
+ */
 internal fun BodyState.solveBlockFlaps(h: Double, block: Int, layout: ConstraintBlocks) {
     if (flapCount == 0) return
     val alpha = FLAP_COMPLIANCE / (h * h)
     val list = layout.flaps
+    val ramp = if (rampN > 0) contactRamp else null
     var cursor = list.head[block]
     while (cursor >= 0) {
         val c = cursor; cursor = list.next[cursor]
@@ -17,7 +36,8 @@ internal fun BodyState.solveBlockFlaps(h: Double, block: Int, layout: Constraint
         var dx = px[i] - px[j]
         var dy = py[i] - py[j]
         val len = sqrt(dx * dx + dy * dy)
-        val rest = flapRest[c]
+        var rest = flapRest[c]
+        if (ramp != null && (ramp[i] < 1f || ramp[j] < 1f || ramp[flapV[c]] < 1f)) rest = minOf(rest, flapAngleRest(flapV[c], i, j))
         if (len >= rest || len < 1e-12) continue
         dx /= len; dy /= len
         val dL = -(len - rest) / (w + alpha)
@@ -59,7 +79,8 @@ internal fun BodyState.solveBlockAreas(h: Double, block: Int, layout: Constraint
     val ta = triA; val tb = triB; val tc = triC
     val rest2 = triRestArea2; val tm = triMuscle; val ms = muscleScaleOf; val ts = if (cellScalesOn) triCellScale else null
     val ks = if (softnessOn) triSoftness else null
-    val alive = baked.triAlive; val tid = triId
+    val alive = baked.triAlive; val tid = triId; val fib = triFiberById
+    val fibersOn = fibersOn; val fiberK = fiberThicken // волокно мышцы (MuscleFiber.kt)
     val list = layout.areas
     for (slot in list.start[block] until list.start[block] + list.count[block]) {
         val t = list.items[slot]
@@ -87,16 +108,23 @@ internal fun BodyState.solveBlockAreas(h: Double, block: Int, layout: Constraint
         val m = tm[t]
         val s0 = if (m < 0) 1.0 else ms[m]
         val s = if (ts == null) s0 else s0 * ts[t]
-        val restArea2 = rest2[t].toDouble() * s * s
+        val active = minOf(1.0, s)
+        // Мышца с волокном (MuscleFiber.kt): площадь × s^(1−k).
+        val fiberArea = s < 1.0 && fibersOn && tid[t] < fib.size && fib[tid[t]]
+        val restArea2 = if (fiberArea) rest2[t].toDouble() * fiberAreaFactor(s, fiberK) else rest2[t].toDouble() * active * active
         val area2 = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0)
         // Мягкость ткани (BodyState.cellSoftness) — множитель податливости; вывернутым своя, нулевая.
-        val alphaT = if (ks == null) alpha else alpha * ks[t]
+        val material = if (ks == null) alpha else alpha * ks[t]
+        val alphaT = if (s > 1.0 && area2 > restArea2) tensileCompliance(material, s) else material
         // Плавный переход вместо ступеньки — см. AREA_SMOOTH_RAMP.
         val a = if (AREA_SMOOTH_RAMP) {
             val q = (area2 / restArea2).coerceIn(0.0, 1.0)
             alphaInverted + (alphaT - alphaInverted) * q * q
         } else if (area2 < 0.0) alphaInverted else alphaT
-        var dL = -(area2 - restArea2) / (denom + a)
+        var excess = area2 - restArea2
+        // Площадь мышцы тянет не сильнее удвоенной доли площади покоя — см. MUSCLE_MAX_PULL.
+        if (if (fiberArea) fiberAreaFactor(s, fiberK) < 1.0 else active < 1.0) { val cap = 2.0 * MUSCLE_MAX_PULL * rest2[t]; if (excess > cap) excess = cap }
+        var dL = -excess / (denom + a)
         // Потолок на длину поправки — см. AREA_MAX_STEP.
         if (maxStep > 0.0) {
             val corr = abs(dL) * sqrt(denom)
@@ -141,9 +169,9 @@ internal fun BodyState.solveBlockLimits(block: Int, layout: ConstraintBlocks, fr
         val base = if (mus < 0) 1.0 else ms[mus]
         val scale = if (cs == null) base else base * cs[c]
         val rest = conRest[c]
-        val restScale = rest * scale
+        val restScale = rest * limitShrink(c, scale)
         val crushLim = LINK_CRUSH_RATIO * restScale
-        val max = linkMaxLength(rest, scale)
+        val max = linkMaxLength(limitRest(c, rest, scale), scale)
         val hi2 = max * max; val lo2 = crushLim * crushLim
         val isNear = len2 > hi2 * LIMIT_NEAR_HI2 || (tearingOn && len2 < lo2 * LIMIT_NEAR_LO2)
         if (isNear) layout.addNear(block, c)
@@ -176,4 +204,21 @@ internal fun BodyState.solveBlockLimits(block: Int, layout: ConstraintBlocks, fr
 internal fun BodyState.solveBlockNearLimits(block: Int, layout: ConstraintBlocks, from: Int) {
     var x = from
     while (x < layout.nearCount[block]) solveLimitItemSerial(layout.nearItems[block][x++])
+}
+
+/**
+ * Длина створки с вершиной [v] и концами [i], [j] по взрослому углу при вершине (поза покоя тела) и нынешним
+ * расстояниям от вершины до концов: d1² + d2² − 2·d1·d2·cos θ. См. solveBlockFlaps.
+ */
+internal fun BodyState.flapAngleRest(v: Int, i: Int, j: Int): Double {
+    val ax = (body.x[i] - body.x[v]).toDouble(); val ay = (body.y[i] - body.y[v]).toDouble()
+    val bx = (body.x[j] - body.x[v]).toDouble(); val by = (body.y[j] - body.y[v]).toDouble()
+    val la = sqrt(ax * ax + ay * ay); val lb = sqrt(bx * bx + by * by)
+    if (la < 1e-12 || lb < 1e-12) return 0.0
+    val cos = (ax * bx + ay * by) / (la * lb)
+    val dix = px[i] - px[v]; val diy = py[i] - py[v]
+    val djx = px[j] - px[v]; val djy = py[j] - py[v]
+    val d1 = sqrt(dix * dix + diy * diy); val d2 = sqrt(djx * djx + djy * djy)
+    val r2 = d1 * d1 + d2 * d2 - 2.0 * d1 * d2 * cos
+    return if (r2 > 0.0) sqrt(r2) else 0.0
 }

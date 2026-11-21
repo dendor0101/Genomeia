@@ -1,0 +1,58 @@
+# genomeia stand body 1
+name	test chameleon
+source	C:/Users/Genomeia/StudioProjects/Genomeia/.claude/worktrees/physics-world/bugs/.sandbox/genomeia-20261027-185213-7cb9f803c736-report/bug/attachments/genomes/test chameleon.genome
+P 0 65.20000 63.40000 0.5000 neuron 0
+P 1 64.60000 63.40000 0.5000 neuron 0
+P 2 64.00000 63.40000 0.5000 neuron 0
+P 3 65.20000 64.00000 0.5000 leaf 0
+P 4 64.60000 64.00000 0.5000 leaf 0
+P 5 64.00000 64.00000 0.5000 zygote 0
+P 6 64.60000 64.60000 0.5000 neuron 0
+P 7 65.20000 64.60000 0.5000 neuron 0
+P 8 64.00000 64.60000 0.5000 neuron 0
+P 9 64.60000 65.20000 0.5000 leaf 0
+P 10 64.60000 65.80000 0.5000 chameleon 0
+L 0 1
+L 0 3
+X 0 4
+L 1 2
+L 1 3
+L 1 4
+X 1 5
+L 2 4
+L 2 5
+L 3 4
+L 3 6
+L 3 7
+L 4 5
+L 4 6
+X 4 7
+X 4 8
+L 5 6
+L 5 8
+L 6 7
+L 6 8
+L 6 9
+L 7 9
+L 8 9
+L 9 10
+T 0 3 1
+T 1 4 2
+T 1 3 4
+T 2 4 5
+T 3 6 4
+T 3 7 6
+T 4 6 5
+T 5 6 8
+T 6 7 9
+T 6 9 8
+G 1 4 5
+G 2 3 4
+G 3 2 5
+G 3 1 4
+G 3 0 3
+G 4 8 5
+G 4 6 4
+G 4 7 3
+G 5 9 6
+G 6 10 9

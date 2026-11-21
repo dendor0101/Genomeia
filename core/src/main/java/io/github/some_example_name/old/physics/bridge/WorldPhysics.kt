@@ -36,8 +36,8 @@ import it.unimi.dsi.fastutil.ints.IntArrayList
  *     Мягкость — клетка типа «жир» → setSoftness([FAT_SOFTNESS]), с мутацией туда и обратно.
  *     Присоска-чашка — хватка (трение о дно) каждый тик — setGrip; клетка без столкновений
  *     (isCollidable = false, присоска) — setContactless.
- *     Мышца клетки — degreeOfShortening (0.5–1.5, среднее гармоническое на связи, как
- *     было в LinkPhysicsSystem). Приращения скорости из параллельных стадий (жгутик, плавник,
+ *     Команда мышцы degreeOfShortening задаёт сокращение (0.5–1) или расслабление (1–1.5).
+ *     Приращения скорости из параллельных стадий (жгутик, плавник,
  *     липучка, присоска — ParticleEntity.pushVx/pushVy) уходят в мир с пробуждением организма.
  *     Однопоточные записи (мышь, отладочный бросок) идут в мир сразу — [setVelocity], [place].
  *  3. ШАГ МИРА.
@@ -302,6 +302,14 @@ class WorldPhysics(
 
     /** Однопоточная запись скорости в единицах игры (ParticleEntity.setVelocity). */
     fun setVelocity(i: Int, vx: Float, vy: Float) = bridge.setVelocity(i, vx, vy)
+
+    fun isRigidBone(p: Int): Boolean {
+        val i = particleEntity.physicsIndex[p]
+        return i >= 0 && bridge.world.state.bonesRigid && bridge.world.isBone(i)
+    }
+
+    fun pullBone(p: Int, x: Float, y: Float) =
+        bridge.world.pullToward(particleEntity.physicsIndex[p], x * PHYSICS_PER_GAME, y * PHYSICS_PER_GAME)
 
     /** Убивает ли глубокое проникновение частиц (галочка отладки, SimulationData.debugNoDeepKill). */
     var deepKillOn: Boolean
