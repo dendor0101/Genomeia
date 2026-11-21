@@ -92,6 +92,14 @@ interface RenderComponent {
     fun render(context: RenderContext)
 
     /**
+     * GL-контекст потерян и создан заново (GlContextWatch). Шейдеры, Mesh и текстуры libGDX
+     * восстановил сам; сырые GL-объекты прохода мертвы, и их нужно забыть (не удаляя) и
+     * создать снова, а FrameBuffer'ы — освободить через releaseRebuiltFrameBuffer.
+     * У прохода без сырого GL и своих FBO делать нечего.
+     */
+    fun contextLost() = Unit
+
+    /**
      * Release all GPU resources.
      */
     fun dispose()

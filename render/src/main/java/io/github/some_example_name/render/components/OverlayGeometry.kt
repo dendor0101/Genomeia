@@ -124,6 +124,15 @@ class OverlayGeometry {
         gl30.glBindVertexArray(0)
     }
 
+    /** Контекст GL создан заново — забыть мёртвые имена и создать всё снова, см. CellGeometry. */
+    fun recreateAfterContextLoss() {
+        vao = 0
+        baseVbo = 0
+        instanceVbo = 0
+        instanceCapacityBytes = 0
+        create()
+    }
+
     fun dispose() {
         val gl = Gdx.gl
         val gl30 = Gdx.gl30

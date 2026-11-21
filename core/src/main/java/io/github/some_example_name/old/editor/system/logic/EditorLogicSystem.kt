@@ -19,7 +19,6 @@ import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.lastTic
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.linkColor
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.nextStageTick
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.previousCtrlClicked
-import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.showPhysicalLink
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.uiScreenCommands
 import io.github.some_example_name.old.editor.entities.CellReplay
 import io.github.some_example_name.old.editor.system.CellSearchManager
@@ -208,10 +207,16 @@ class EditorLogicSystem(
 
             is SetSymmetry -> DIGenomeEditorContainer.symmetryManager.symmetryMode = command.mode
 
-            is SetShowPhysicalLinks -> showPhysicalLink = command.visible
+            // Галочки отладки редактора (окно «Опции»). Связи — прежней командой кнопки
+            // «Отображать связи»: номер команды — формат файла.
+            is SetShowPhysicalLinks -> DIGenomeEditorContainer.editorRenderSystem.showLinks = command.visible
+            is SetEditorShowBoundary -> DIGenomeEditorContainer.editorRenderSystem.showBoundary = command.show
+            is SetEditorShowNeuralLinks -> DIGenomeEditorContainer.editorRenderSystem.showNeuralLinks = command.show
+            is SetEditorGenomeColors -> DIGenomeEditorContainer.editorRenderSystem.genomeColors = command.enabled
 
-            is SetEditorDebugFilter -> DIGenomeEditorContainer.editorRenderSystem.debugFilter = command.filter
-            is SetRenderMode -> DIGenomeEditorContainer.editorRenderSystem.mode = command.mode
+            // Редактор рисует только отладочным режимом без фильтра. Команды остались ради
+            // старых .bug: в повторе они ничего не меняют — как и в игре теперь.
+            is SetEditorDebugFilter, is SetRenderMode -> Unit
 
             is SaveGenome -> saveCurrentGenome(command.genomeName)
 

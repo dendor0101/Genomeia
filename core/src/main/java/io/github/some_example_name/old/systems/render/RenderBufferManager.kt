@@ -709,14 +709,14 @@ class RenderBufferManager(
     private fun writeBoundary() {
         val physics = particleEntity.physics ?: return
         physics.boundaryParticles(boundaryPairs)
-        writePairs(OverlayInstanceBuffer.params(OverlayInstanceBuffer.KIND_EDGE, 0f, 0), BOUNDARY_COLOR)
+        writePairs(OverlayInstanceBuffer.params(OverlayInstanceBuffer.KIND_EDGE, 0f, 0), DebugCellPalette.BOUNDARY_COLOR)
     }
 
     /** Все живые связи тел мира физики — тонко, под контуром (галочка «Связи»). */
     private fun writeLinks() {
         val physics = particleEntity.physics ?: return
         physics.linkParticles(boundaryPairs)
-        writePairs(OverlayInstanceBuffer.params(OverlayInstanceBuffer.KIND_LINK, 0f, 0), LINK_COLOR)
+        writePairs(OverlayInstanceBuffer.params(OverlayInstanceBuffer.KIND_LINK, 0f, 0), DebugCellPalette.LINK_COLOR)
     }
 
     /** Отрезки между частицами пар [boundaryPairs]; концы едут каждый со своей частицей. */
@@ -983,12 +983,6 @@ class RenderBufferManager(
     }
 
     private companion object {
-        /** Цвет границы — зелёный контура стенда (physics-lab, BOUNDARY_COLOR), упаковка Color.toIntBits. */
-        private val BOUNDARY_COLOR = com.badlogic.gdx.graphics.Color.valueOf("4BE08AFF").toIntBits()
-
-        /** Цвет связей — светло-серый полупрозрачный: сетка видна, контур поверх читается. */
-        private val LINK_COLOR = com.badlogic.gdx.graphics.Color.valueOf("D8DCE6A0").toIntBits()
-
         /** Поля [history] на частицу: номер снимка, ключ, x, y, dir, prevX, prevY, — — 32 байта. */
         const val HISTORY_STRIDE = 8
 

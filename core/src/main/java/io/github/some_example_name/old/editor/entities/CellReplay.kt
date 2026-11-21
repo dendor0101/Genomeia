@@ -2,7 +2,6 @@ package io.github.some_example_name.old.editor.entities
 
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.ParticleEntity
-import io.github.some_example_name.render.pack.CellLook
 
 /**
  * Клетки по тикам роста в редакторе. Хранит изменения, а не снимок каждого тика, —
@@ -34,8 +33,6 @@ class CellReplay(
             record[o + ANGLE_SIN] = cellEntity.angleSin[cell].toRawBits()
             record[o + SPECIAL] = cellEntity.specialEntity.specialTypeIndexes[cell]
             record[o + NEURAL] = cellEntity.neuralIndexes[cell]
-            record[o + ENERGY_FILL] = CellLook.energyFilterByte(cellEntity.energy[cell], cellEntity.maxEnergy[cell]) and 255
-            record[o + COLLIDES] = if (particleEntity.isInGrid[particle]) 1 else 0
             record[o + COLOR] = particleEntity.color[cell]
             record[o + PHEROMONE] = cellEntity.pheromoneType[cell]
             o += WIDTH
@@ -83,9 +80,6 @@ class CellReplay(
     fun getNeuralIndexes(tick: Int, indexInTick: Int): Int = field(tick, indexInTick, NEURAL)
     fun getColor(tick: Int, indexInTick: Int): Int = field(tick, indexInTick, COLOR)
     fun getPheromone(tick: Int, indexInTick: Int): Int = field(tick, indexInTick, PHEROMONE)
-    fun collides(tick: Int, indexInTick: Int): Boolean = field(tick, indexInTick, COLLIDES) != 0
-    /** Байт заливки энергии (CellLook.energyFilterByte), 0..255. */
-    fun energyFill(tick: Int, indexInTick: Int): Int = field(tick, indexInTick, ENERGY_FILL)
 
     companion object {
         const val CELL_TYPE = 0
@@ -95,10 +89,8 @@ class CellReplay(
         const val ANGLE_SIN = 4
         const val SPECIAL = 5
         const val NEURAL = 6
-        const val ENERGY_FILL = 7
-        const val COLLIDES = 8
-        const val COLOR = 9
-        const val PHEROMONE = 10
-        const val WIDTH = 11
+        const val COLOR = 7
+        const val PHEROMONE = 8
+        const val WIDTH = 9
     }
 }

@@ -52,6 +52,9 @@ class WorldRenderer(
 
     private val components = mutableListOf<RenderComponent>()
 
+    /** Номер GL-контекста, под который созданы ресурсы, — см. [checkContext]. */
+    private var glGeneration = 0
+
     var currentWidth = Gdx.graphics.width.coerceAtLeast(1)
         private set
     var currentHeight = Gdx.graphics.height.coerceAtLeast(1)
@@ -76,6 +79,8 @@ class WorldRenderer(
     }
 
     private fun create() {
+        GlContextWatch.ensureStarted()
+        glGeneration = GlContextWatch.generation
         createFullscreenMesh()
         cellGeometry.create()
 
@@ -121,10 +126,44 @@ class WorldRenderer(
         components.forEach { it.resize(safeW, safeH) }
     }
 
+    /**
+     * Восстановиться, если GL-контекст пересоздан (Android, см. GlContextWatch). Звать в
+     * начале кадра, до первого обращения к FBO и геометрии. Цена — сравнение двух int.
+     */
+    private fun checkContext() {
+        if (GlContextWatch.generation != glGeneration) recoverLostContext()
+    }
+
+    /**
+     * Контекст потерян и создан заново: libGDX восстановил шейдеры, Mesh и текстуры, а всё
+     * остальное здесь. Без этого после возврата в игру мир не рисовался до перезапуска.
+     */
+    private fun recoverLostContext() {
+        glGeneration = GlContextWatch.generation
+        Gdx.app.log("WorldRenderer", "GL context recreated: rebuilding render resources")
+
+        cellGeometry.recreateAfterContextLoss()
+        uploadedCells = null
+        components.forEach { it.contextLost() }
+
+        fbo?.let { releaseRebuiltFrameBuffer(it, attachmentCount = 1) }
+        fbo = null
+        offscreenScene?.let { releaseRebuiltFrameBuffer(it, attachmentCount = 1) }
+        offscreenScene = null
+
+        // Микроскоп целиком на сыром GL: удалять его объекты нельзя (номера в новом
+        // контексте уже могут быть чужими), поэтому он просто брошен и строится заново.
+        // Его шейдеры остаются в списке управляемых libGDX — утечка в несколько программ
+        // на каждую потерю контекста, а не на кадр.
+        tissue = null
+        tissuePreview = null
+    }
+
     fun render(frame: RenderFrame) {
         // GLFW может запросить кадр во время сворачивания окна с размером 0×0.
         val width = Gdx.graphics.backBufferWidth
         if (width <= 0 || Gdx.graphics.backBufferHeight <= 0) return
+        checkContext()
         if (frame.mode == RenderMode.NOSTALGIC && fbo == null) {
             fbo = createSceneFbo(currentWidth, currentHeight)
             fbo!!.colorBufferTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
@@ -134,6 +173,7 @@ class WorldRenderer(
 
     /** Превью Debug и микроскоп выводят прямо в output; Nostalgic нужен промежуточный depth/stencil. */
     fun renderOffscreen(frame: RenderFrame, output: FrameBuffer) {
+        checkContext()
         if (frame.mode == RenderMode.NOSTALGIC && (offscreenScene == null ||
             offscreenWidth != output.width || offscreenHeight != output.height)) {
             offscreenScene?.dispose()

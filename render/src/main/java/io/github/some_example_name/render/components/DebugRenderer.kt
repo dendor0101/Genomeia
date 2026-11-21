@@ -9,6 +9,7 @@ import com.badlogic.gdx.graphics.glutils.FrameBuffer
 import com.badlogic.gdx.graphics.glutils.GLFrameBuffer
 import com.badlogic.gdx.graphics.glutils.ShaderProgram
 import io.github.some_example_name.render.RenderMode
+import io.github.some_example_name.render.releaseRebuiltFrameBuffer
 
 /**
  * Отладочный режим: клетки цвета своего типа со схемой-рисунком (CellLook — хлоропласты,
@@ -135,8 +136,8 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
             existing.dispose()
         }
 
-        // Порядок вложений = индексы COLOR/OWNER/DEPTH_ATTACHMENT ниже. Два цветовых — это
-        // MRT: libGDX сам включает оба через glDrawBuffers.
+        // Порядок вложений = индексы COLOR/OWNER/DEPTH_ATTACHMENT ниже, всего их
+        // ATTACHMENT_COUNT. Два цветовых — это MRT: libGDX сам включает оба через glDrawBuffers.
         val built = GLFrameBuffer.FrameBufferBuilder(width, height)
             .addBasicColorTextureAttachment(Pixmap.Format.RGBA8888)
             .addBasicColorTextureAttachment(Pixmap.Format.RGBA8888)
@@ -314,6 +315,22 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         if (location >= 0) shader.setUniformi(location, value)
     }
 
+    /**
+     * Контекст GL создан заново. Шейдеры libGDX перекомпилировал сам. FBO он тоже пересобрал,
+     * но с мёртвыми текстурами в начале списка вложений (см. releaseRebuiltFrameBuffer) и
+     * со сброшенной фильтрацией: глубина с LINEAR в GLES 3.0 неполна и читалась бы нулями.
+     * Поэтому FBO — освободить, ensureFbo создаст новый. VAO заливки ссылается на мёртвый
+     * VBO клеток — забыть, drawAreas создаст его заново с новым.
+     */
+    override fun contextLost() {
+        overlay.recreateAfterContextLoss()
+        areas = null
+        fbo?.let { releaseRebuiltFrameBuffer(it, ATTACHMENT_COUNT) }
+        fbo = null
+        fboWidth = 0
+        fboHeight = 0
+    }
+
     override fun dispose() {
         if (::fillShader.isInitialized) fillShader.dispose()
         if (::edgeShader.isInitialized) edgeShader.dispose()
@@ -334,6 +351,7 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         private const val COLOR_ATTACHMENT = 0
         private const val OWNER_ATTACHMENT = 1
         private const val DEPTH_ATTACHMENT = 2
+        private const val ATTACHMENT_COUNT = 3
 
         /**
          * Глубина окна = d/R * DEPTH_SCALE. Половина, а не единица: тогда очистка (d/R = 1)

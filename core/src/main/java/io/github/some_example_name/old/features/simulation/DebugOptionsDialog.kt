@@ -21,6 +21,9 @@ class DebugOptions(val showBoundary: Boolean, val showLinks: Boolean, val showNe
  * Галочки отладочного режима — окном под своей кнопкой рядом с фильтром, чтобы не занимали
  * верхнюю полосу. Как и все окна экрана, само ничего не меняет: каждое действие отдаёт
  * наружу, экран превращает его в команду. Клик мимо закрывает.
+ *
+ * Общее у симуляции и редактора генома. Галочка с обработчиком null не показывается: у
+ * редактора нет заливки между клетками ([onFillAreas]) и мира физики ([onPhysics]).
  */
 class DebugOptionsDialog(
     game: MyGame,
@@ -29,9 +32,9 @@ class DebugOptionsDialog(
     onBoundary: (Boolean) -> Unit,
     onLinks: (Boolean) -> Unit,
     onNeuralLinks: (Boolean) -> Unit,
-    onFillAreas: (Boolean) -> Unit,
+    onFillAreas: ((Boolean) -> Unit)?,
     onGenomeColors: (Boolean) -> Unit,
-    onPhysics: (noTail: Boolean, noDeepKill: Boolean) -> Unit
+    onPhysics: ((noTail: Boolean, noDeepKill: Boolean) -> Unit)?
 ) : VisDialog(bundle.get("debugOptions")) {
 
     init {
@@ -59,12 +62,14 @@ class DebugOptionsDialog(
         box("debugBoundary", state.showBoundary) { onBoundary(it.isChecked) }
         box("debugLinks", state.showLinks) { onLinks(it.isChecked) }
         box("debugNeuralLinks", state.showNeuralLinks) { onNeuralLinks(it.isChecked) }
-        box("debugFillAreas", state.fillAreas) { onFillAreas(it.isChecked) }
+        if (onFillAreas != null) box("debugFillAreas", state.fillAreas) { onFillAreas(it.isChecked) }
         box("debugGenomeColors", state.genomeColors) { onGenomeColors(it.isChecked) }
-        // Обе галочки физики идут одной командой мира, сразу с обоими значениями.
-        lateinit var noDeepKill: VisCheckBox
-        val noTail = box("debugNoTail", state.noTail) { onPhysics(it.isChecked, noDeepKill.isChecked) }
-        noDeepKill = box("debugNoDeepKill", state.noDeepKill) { onPhysics(noTail.isChecked, it.isChecked) }
+        if (onPhysics != null) {
+            // Обе галочки физики идут одной командой мира, сразу с обоими значениями.
+            lateinit var noDeepKill: VisCheckBox
+            val noTail = box("debugNoTail", state.noTail) { onPhysics(it.isChecked, noDeepKill.isChecked) }
+            noDeepKill = box("debugNoDeepKill", state.noDeepKill) { onPhysics(noTail.isChecked, it.isChecked) }
+        }
         pack()
     }
 
