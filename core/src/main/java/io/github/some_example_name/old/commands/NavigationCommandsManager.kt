@@ -4,6 +4,7 @@ import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Screen
 import io.github.some_example_name.old.bug.BugReplay
 import io.github.some_example_name.old.cells.base.CellPalette
+import io.github.some_example_name.old.cells.base.Formulas
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
 import io.github.some_example_name.old.core.DISimulationContainer
@@ -140,10 +141,16 @@ class NavigationCommandsManager {
         }
 
         val allowed = level.allowedCells.filterValues { it }.keys
-        DIGenomeEditorContainer.cellPalette = if (allowed.isEmpty()) {
+        // Пустая карта — старая запись «разрешено всё». Карта, в которой все значения
+        // false, — это явное «ни одной клетки»; её нельзя путать с FULL, иначе редактор
+        // уровня с выключенными галочками внезапно разрешал бы все клетки.
+        DIGenomeEditorContainer.cellPalette = if (level.allowedCells.isEmpty()) {
             CellPalette.FULL
         } else {
-            CellPalette.only(allowed, setOf())
+            // Уровень ограничивает клетки, а не формулы: рецепты гайдов («time» → «sin»,
+            // осциллятор для присоски) иначе в уровне не собрать. Выведенные формулы всё
+            // равно отсекает сам CellPalette, а сама палитра на симуляцию не влияет.
+            CellPalette.only(allowed, Formulas.all().map { it.key }.toSet())
         }
     }
 

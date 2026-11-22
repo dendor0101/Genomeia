@@ -12,6 +12,7 @@ import com.badlogic.gdx.utils.Align
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisTable
 import com.kotcrab.vis.ui.widget.VisTextField
+import io.github.some_example_name.old.cells.base.CellPalette
 import io.github.some_example_name.old.commands.GoBack
 import io.github.some_example_name.old.commands.GoSimulation
 import io.github.some_example_name.old.commands.GoWorldEditor
@@ -96,9 +97,10 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
         DIGameGlobalContainer.levelEditorsData = ::setMap
         DIGameGlobalContainer.levelEditorMapData = worldMap
         if (newLevel) {
-            println(DISimulationContainer.cellList.filterNot { it.name in listOf("foodsensor", "suctioncup", "touchtrigger", "pheromoneemitter", "pheromonesensor", "speedsensor") })
-            for (cell in DISimulationContainer.cellList.filterNot { it.name.lowercase() in listOf("foodsensor", "suctioncup", "touchtrigger", "pheromoneemitter", "pheromonesensor", "speedsensor") }) {
-                allowedCellsList[cell.name.lowercase()] = true
+            // Ключ клетки, а не имя: у touch_trigger и suction_cup они не совпадают с
+            // name.lowercase(), и уровень сохранял бы клетку, которой нет в палитре.
+            for (cell in DISimulationContainer.cellList.filterNot { it.key in CellPalette.RETIRED_CELLS }) {
+                allowedCellsList[cell.key] = true
             }
         }
     }
@@ -274,8 +276,8 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
         AllowCellsDialog(::setAllowedCells, allowedCellsList).show(stage)
     }
 
-    fun setAllowedCells(name: String, valBool: Boolean) {
-        allowedCellsList[name.lowercase()] = valBool
+    fun setAllowedCells(key: String, valBool: Boolean) {
+        allowedCellsList[key] = valBool
     }
 
     fun mapEditor() {
@@ -289,7 +291,7 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
         // загруженный из файла уровень должен попасть и в контейнер, а не только на холст.
         DIGameGlobalContainer.levelEditorMapData = worldMap
         canvas.viewModel = worldMap
-        canvas.syncTexture()
+        canvas.syncTexture(force = true)
     }
 
     /** Список уровней из папки levels: загрузка идёт из локального хранилища, а не из системного окна. */
@@ -326,7 +328,28 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
         applyStateToWidgets()
 
         allowedCellsList.clear()
-        allowedCellsList.putAll(level.allowedCells)
+        if (level.allowedCells.isEmpty()) {
+            // Пустая карта — прежний смысл «разрешено всё». Раскрываем её в явный список,
+            // иначе первый же клик в диалоге оставил бы в файле одну клетку и спрятал все
+            // остальные: пустая карта и карта с одной записью значат разное.
+            for (cell in DISimulationContainer.cellList.filterNot { it.key in CellPalette.RETIRED_CELLS }) {
+                allowedCellsList[cell.key] = true
+            }
+        } else {
+            allowedCellsList.putAll(level.allowedCells)
+        }
+
+        // Старые уровни могли сохранить имя клетки без подчёркивания (touchtrigger вместо
+        // touch_trigger). Переводим такие ключи один раз при загрузке, иначе диалог покажет
+        // клетку выключенной, а в файле останется включённая запись, которую палитра не видит.
+        for (cell in DISimulationContainer.cellList) {
+            val legacy = cell.name.lowercase()
+            if (legacy != cell.key) {
+                allowedCellsList.remove(legacy)?.let { value ->
+                    if (cell.key !in allowedCellsList) allowedCellsList[cell.key] = value
+                }
+            }
+        }
 
         setMap(WorldEditorViewModel.fromSpec(level.world))
     }
@@ -349,87 +372,103 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
         logLabel.setText(text)
     }
 
-    fun saveMap() {
+    /**
+     * Общая сборка уровня для «Сохранить» и «Протестировать».
+     *
+     * Раньше проверки были только в saveMap, а playLevel звал toInt/toFloat на сырых
+     * полях: пустое поле или опечатка роняли редактор. Здесь один путь для обеих кнопок:
+     * проверка Lua, чисел, согласованности финиша и зоны старта и хотя бы одной
+     * разрешённой клетки.
+     */
+    private fun readLevelData(): LevelInfo? {
         val hasLua = textEditor.text.isNotEmpty()
         if (hasLua) {
             DIGameGlobalContainer.luaEnv.setScript(textEditor.text)
-            val luaSucces = DIGameGlobalContainer.luaEnv.check()
-            if (luaSucces.isNotEmpty()) {
-                setLog(luaSucces)
-                return
+            val luaResult = DIGameGlobalContainer.luaEnv.check()
+            if (luaResult.isNotEmpty()) {
+                setLog(luaResult)
+                return null
             }
         }
 
         if (needCells.text.isEmpty() || levelName.text.isEmpty() || destX.text.isEmpty() || destY.text.isEmpty() ||
             spawnX.text.isEmpty() || spawnY.text.isEmpty() || spawnRadius.text.isEmpty()) {
-            setLog("Ни одно свойство не должно быть пустым") //TODO поменять на bundle
-            return
+            setLog("Ни одно свойство не должно быть пустым")
+            return null
         }
 
-        try {
-            needCells.text.toInt()
-            destX.text.toFloat()
-            destY.text.toFloat()
-            spawnX.text.toFloat()
-            spawnY.text.toFloat()
-            spawnRadius.text.toFloat()
-        }
-        catch (e: Exception) {
-            setLog("Пишите значения в свойствах с правильным типом данных.") //TODO: поменять на bundle
-            return
+        val cellsNeedValue = needCells.text.toIntOrNull()
+        val destXValue = destX.text.toFloatOrNull()
+        val destYValue = destY.text.toFloatOrNull()
+        val spawnXValue = spawnX.text.toFloatOrNull()
+        val spawnYValue = spawnY.text.toFloatOrNull()
+        val spawnRadiusValue = spawnRadius.text.toFloatOrNull()
+        if (cellsNeedValue == null || destXValue == null || destYValue == null ||
+            spawnXValue == null || spawnYValue == null || spawnRadiusValue == null
+        ) {
+            setLog("Пишите значения в свойствах с правильным типом данных.")
+            return null
         }
 
-        val spawnRadiusValue = spawnRadius.text.toFloat()
+        if (!destXValue.isFinite() || !destYValue.isFinite() ||
+            !spawnXValue.isFinite() || !spawnYValue.isFinite() || !spawnRadiusValue.isFinite()
+        ) {
+            setLog("Координаты и радиус должны быть конечными числами.")
+            return null
+        }
+
+        // Финиш задан либо обеими координатами, либо ни одной. Одна -1 и вторая 64 —
+        // это не «нет финиша», а финиш в (-1, 64), до которого нельзя дойти.
+        val needDestination = !(destXValue == -1f && destYValue == -1f)
+        if (needDestination && (destXValue == -1f || destYValue == -1f)) {
+            setLog("Финиш: либо обе координаты -1, либо обе заданы.")
+            return null
+        }
+
         val hasSpawnZone = spawnRadiusValue > 0f
+        // Пустая карта allowedCells у старых уровней значит «разрешено всё»; такая карта
+        // раскрывается в loadLevel. Пустой набор уже после этого — это «ни одной клетки»,
+        // его нельзя сохранить: геном в таком уровне не из чего собрать.
+        val hasAllowedCell = allowedCellsList.any { (key, allowed) ->
+            allowed && key !in CellPalette.RETIRED_CELLS && DISimulationContainer.cellList.containsKey(key)
+        }
+        if (!hasAllowedCell) {
+            setLog("Разрешите хотя бы одну клетку.")
+            return null
+        }
 
-        val levelData = LevelInfo(
+        return LevelInfo(
             id = levelName.text.hashCode(),
             nameKey = levelName.text,
             logic = textEditor.text,
-            allowedCells = allowedCellsList,
-            cellsNeed = needCells.text.toInt(),
-            needDestination = !(destX.text == "-1" && destY.text == "-1"),
-            destination = destX.text.toFloat() to destY.text.toFloat(),
+            allowedCells = allowedCellsList.toMap(),
+            cellsNeed = cellsNeedValue,
+            needDestination = needDestination,
+            destination = destXValue to destYValue,
             world = worldMap.toSpec(),
-            hasLua = textEditor.text.isNotEmpty(),
-            spawnX = if (hasSpawnZone) spawnX.text.toFloat() else -1f,
-            spawnY = if (hasSpawnZone) spawnY.text.toFloat() else -1f,
+            hasLua = hasLua,
+            spawnX = if (hasSpawnZone) spawnXValue else -1f,
+            spawnY = if (hasSpawnZone) spawnYValue else -1f,
             spawnRadius = if (hasSpawnZone) spawnRadiusValue else 0f
-            )
+        )
+    }
 
+    fun saveMap() {
+        val levelData = readLevelData() ?: return
         try {
             LevelFiles.write(levelData)
             setLog("Level saved")
         }
         catch (e: Exception) {
-            setLog("Cannot save file") //TODO bundle get sdelat
+            setLog("Cannot save file")
         }
     }
 
-    fun playLevel() { //при этом менять настройки SimulationData
-        val hasLua = textEditor.text.isNotEmpty()
-        val worldData = worldMap.toSpec()
-        val spawnRadiusValue = spawnRadius.text.toFloat()
-        val hasSpawnZone = spawnRadiusValue > 0f
-        val levelData = LevelInfo(id = levelName.text.hashCode(), levelName.text,
-            logic = textEditor.text,
-            allowedCells = allowedCellsList.toMap(),
-            cellsNeed = needCells.text.toInt(),
-            needDestination = !(destX.text == "-1" && destY.text == "-1"),
-            destination = destX.text.toFloat() to destY.text.toFloat(),
-            world = worldData,
-            hasLua = hasLua,
-            spawnX = if (hasSpawnZone) spawnX.text.toFloat() else -1f,
-            spawnY = if (hasSpawnZone) spawnY.text.toFloat() else -1f,
-            spawnRadius = if (hasSpawnZone) spawnRadiusValue else 0f
-            )
-
-        println(allowedCellsList.keys.toSet())
-        //DIGameGlobalContainer.luaEnv.env.rules.reset()
-
+    fun playLevel() {
         // Уровень едет в команде: lua, палитру и сам LevelInfo ставит менеджер навигации
         // при её выполнении. Иначе в журнале оставалось только «запустить мир», и повтор
         // .bug из уровня поднимал обычную симуляцию.
+        val levelData = readLevelData() ?: return
         DIGameGlobalContainer.navigationCommandsManager.performCommand(
             GoSimulation(world = null, genomeName = null, level = levelData)
         )

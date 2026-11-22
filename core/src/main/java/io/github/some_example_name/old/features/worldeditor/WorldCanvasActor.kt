@@ -137,8 +137,11 @@ class WorldCanvasActor(
      * это 36 тысяч пикселей, то есть доли миллисекунды, а вот пересоздавать Texture на
      * каждый мазок (как было раньше) — это аллокация и новый GL-объект каждый кадр.
      */
-    fun syncTexture() {
-        if (uploadedVersion == viewModel.mapVersion) return
+    fun syncTexture(force: Boolean = false) {
+        // mapVersion — счётчик внутри конкретной вьюхи. У другой вьюхи он может совпасть
+        // с уже загруженным (например, оба уровня без правок), поэтому при смене
+        // viewModel нужен принудительный sync, иначе на холсте останется старая карта.
+        if (!force && uploadedVersion == viewModel.mapVersion) return
         ensureSize()
 
         val map = viewModel.map

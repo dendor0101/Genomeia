@@ -8,6 +8,7 @@ import com.kotcrab.vis.ui.widget.VisDialog
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisScrollPane
 import com.kotcrab.vis.ui.widget.VisTable
+import io.github.some_example_name.old.cells.base.CellPalette
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
 import io.github.some_example_name.old.core.DISimulationContainer
@@ -41,17 +42,22 @@ class AllowCellsDialog(val allowFunc: (String, Boolean) -> Unit, val allowCell: 
         cellsListTab.background = makeStyledNP(LevelEditorScreen.PANEL_BG, LevelEditorScreen.PANEL_BORDER, mutableListOf())
         cellsListTab.top()
 
-        for (cell in DISimulationContainer.cellList.filterNot { it.name.lowercase() in listOf("foodsensor", "suctioncup", "touchtrigger", "pheromoneemitter", "pheromonesensor", "speedsensor") }) {
-//            if (allowCell.isEmpty()) {
-//                allowedCells[cell.name] = true
-//            }
+        // Показываем все клетки, кроме выведенных из игры. Ключ клетки (cell.key) — это
+        // то, что лежит в LevelInfo.allowedCells и в CellPalette; имя (cell.name) нужно
+        // только для подписи. Раньше здесь брали name.lowercase(), и клетки с подчёркиванием
+        // (touch_trigger, suction_cup, pheromone_emitter) не совпадали с ключами файла.
+        for (cell in DISimulationContainer.cellList.filterNot { it.key in CellPalette.RETIRED_CELLS }) {
             val cellTab = VisTable()
             val cellName = VisLabel(cell.name)
-            val cellBool = makeStyledButton("Use", game, mutableListOf<Texture>(), true).apply { isChecked = true; addListener(
+            // Пустая карта в старых уровнях значила «разрешено всё» (см. NavigationCommandsManager).
+            val allowed = allowCell.isEmpty() || (allowCell[cell.key] ?: false)
+            val cellBool = makeStyledButton("Use", game, mutableListOf<Texture>(), true).apply {
+                isChecked = allowed
+                addListener(
                 object: ClickListener() {
                     override fun clicked(event: InputEvent?, x: Float, y: Float) {
                         super.clicked(event, x, y)
-                        changeUse(cell.name, isChecked)
+                        changeUse(cell.key, isChecked)
                     }
                 }
             )}

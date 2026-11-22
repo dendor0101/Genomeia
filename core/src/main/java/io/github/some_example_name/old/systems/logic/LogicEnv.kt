@@ -60,6 +60,30 @@ class LogicEnv {
                 val (posX, posY) = getAveragePos()
                 listOf(LuaNumber.of(posX.toDouble()), LuaNumber.of(posY.toDouble()))
             }
+            // Есть ли в организме игрока живая клетка этого типа. Нужно уровням-гайдам:
+            // палитра прячет лишние клетки, но не мешает пройти уровень вообще без той,
+            // которой он посвящён. Смотрим последний поставленный мышью организм: скриптовые
+            // спавны (продюсер, враг уровня) не должны закрывать условие за игрока.
+            "has_cell" -> {
+                val key = string(args, 1)
+                val typeIndex = DISimulationContainer.cellList.indexOfKey(key)
+                val organIndex = simulationData.lastPlacedOrganIndex
+                var found = 0
+                if (typeIndex >= 0 && organIndex >= 0) {
+                    val cells = DISimulationContainer.cellEntity
+                    val alive = cells.aliveList
+                    for (i in 0 until alive.size) {
+                        val cellIndex = alive.getInt(i)
+                        if (cells.organIndex[cellIndex] == organIndex &&
+                            cells.cellType[cellIndex].toInt() == typeIndex
+                        ) {
+                            found = 1
+                            break
+                        }
+                    }
+                }
+                listOf(LuaNumber.of(found))
+            }
             else -> listOf()
         }
     }

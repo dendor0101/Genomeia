@@ -9,6 +9,7 @@ import com.kotcrab.vis.ui.widget.VisDialog
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisScrollPane
 import com.kotcrab.vis.ui.widget.VisTable
+import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
 import io.github.some_example_name.old.core.ui.dp
 import io.github.some_example_name.old.core.ui.makeStyledButton
@@ -68,6 +69,17 @@ class LevelSelectDialog(names: List<String>, private val onPick: (String) -> Uni
         val listHeight = min(list.prefHeight, Gdx.graphics.height * 0.55f)
         scroll.setFadeScrollBars(false)
         table.add(scroll).center().width(400.dp()).height(listHeight).padBottom(10.dp()).row()
+
+        // Без этой кнопки диалог закрывался только Escape, а на телефоне Escape нет:
+        // при пустом списке или неверном выборе игрок оставался в модальном окне.
+        val closeButton = makeStyledButton(bundle.get("button.close"), game, textures)
+        closeButton.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) {
+                super.clicked(event, x, y)
+                remove()
+            }
+        })
+        table.add(closeButton).center().padBottom(10.dp()).row()
 
         add(table)
 
