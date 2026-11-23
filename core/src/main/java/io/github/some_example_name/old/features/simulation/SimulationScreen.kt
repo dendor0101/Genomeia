@@ -30,6 +30,7 @@ import com.kotcrab.vis.ui.VisUI
 import com.kotcrab.vis.ui.widget.VisDialog
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisTextButton
+import io.github.some_example_name.old.bug.BugReplay
 import io.github.some_example_name.old.bug.ReplayTarget
 import io.github.some_example_name.old.commands.GameCommand
 import io.github.some_example_name.old.commands.GoGenomeEditor
@@ -132,6 +133,12 @@ class SimulationScreen(
 
     /** Кнопка паузы: эффект ViewModel поправляет её отметку. Пересоздаётся в rebuildMenu. */
     private var pauseButton: Button? = null
+
+    /** Открытая панель «Настройки мира» или null. Лежит на сцене отдельно от [root]. */
+    private var worldPanel: WorldSettingsPanel? = null
+
+    /** Что показывает панель настроек мира — живёт дольше самой панели, см. openWorldSettings. */
+    private var rulesView: WorldRulesView? = null
 
     /**
      * Самая верхняя из кнопок внизу экрана: над ней рисуется текст угла (FPS, UPS…), чтобы
@@ -467,6 +474,9 @@ class SimulationScreen(
         currentScreenWidth = width
         currentScreenHeight = height
         rebuildMenu()
+        // Размер панели настроек мира — от окна: открытая строится заново, с той же вкладкой.
+        val view = rulesView
+        if (worldPanel != null && view != null) showWorldPanel(view)
         stage.keepWindowsOnScreen()
     }
 
@@ -492,6 +502,7 @@ class SimulationScreen(
         // бы просыпаться по таймауту до самой смерти процесса. Порядок важен: сначала
         // останавливается поток симуляции, только потом пул, которым он пользуется.
         DISimulationContainer.threadManager.dispose()
+        closeWorldSettings()
         stage.dispose()
         spriteBatch.dispose()
         font.dispose()
@@ -506,6 +517,7 @@ class SimulationScreen(
         root.clear()
         pauseButton = null
         bottomAnchor = null
+        worldPanel?.isVisible = viewModel.isUiVisible
 
         // Интерфейс спрятан (клавиша Z) — только мир, без единой кнопки.
         if (!viewModel.isUiVisible) return
@@ -642,6 +654,7 @@ class SimulationScreen(
             // Режим — свой у симуляции: ни меню, ни редактор генома его не видят.
             onRenderMode = { viewModel.handle(SimulationIntent.SetRenderMode(it)) },
             onRestart = { viewModel.handle(SimulationIntent.Restart) },
+            onWorldSettings = ::openWorldSettings,
             onSettings = { openOnTop(GoSettings, resume = true) },
             // Сохранение только у обычного мира: тест генома — временный мир, из которого
             // возвращаются в редактор.
@@ -649,6 +662,54 @@ class SimulationScreen(
             onSaveAndExit = if (viewModel.isSandbox) ({ showSaveDialog(exitAfter = true) }) else null,
             onExit = ::exit,
         ).show(stage)
+    }
+
+    /**
+     * Панель «Настройки мира» (WorldSettingsPanel). Снимок правил — между тиками; на паузе
+     * остаётся прежний: в нём уже то, что игрок поставил, а команды ещё ждут тика. При повторе
+     * бага — всегда свежий: правила меняет запись, а не панель.
+     */
+    private fun openWorldSettings() {
+        val old = rulesView
+        val view = if (old != null && viewModel.isPaused && !BugReplay.isActive) old
+        else simulationSystem.betweenTicks { WorldRulesView.of(DISimulationContainer.worldRules) }.also { fresh ->
+            if (old != null) { fresh.section = old.section; fresh.cellType = old.cellType }
+        }
+        rulesView = view
+        showWorldPanel(view)
+    }
+
+    /**
+     * Панель по размеру окна: справа, под верхними кнопками, не шире экрана без полей (ширину по
+     * содержимому выбирает сама). Пересоздаётся при смене размера.
+     */
+    private fun showWorldPanel(view: WorldRulesView) {
+        worldPanel?.remove()
+        val density = Gdx.graphics.density
+        val top = (HUD_BUTTON_DP + 2 * 8f + 4f) * density
+        val height = (stage.height - top - 8f * density).coerceAtLeast(160f * density)
+        val panel = WorldSettingsPanel(
+            game = DIGameGlobalContainer.game,
+            bundle = DIGameGlobalContainer.bundle,
+            icons = icons,
+            view = view,
+            cells = DISimulationContainer.cellList,
+            maxWidth = stage.width - 16f * density,
+            panelHeight = height,
+            // Правила меняют мир — командой мира, в тике (на паузе — в следующем).
+            onRule = { key, cellType, value -> viewModel.pushWorldCommand(PlayerCommand.SetWorldRule(key, value, cellType)) },
+            onReset = { viewModel.pushWorldCommand(PlayerCommand.ResetWorldRules) },
+            onClose = ::closeWorldSettings
+        )
+        panel.place(stage, top)
+        panel.isVisible = viewModel.isUiVisible
+        stage.addActor(panel)
+        worldPanel = panel
+    }
+
+    private fun closeWorldSettings() {
+        worldPanel?.remove()
+        worldPanel = null
     }
 
     private fun showDebugOptions(anchor: Actor) {

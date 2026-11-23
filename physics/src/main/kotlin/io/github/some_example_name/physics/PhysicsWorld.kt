@@ -743,6 +743,51 @@ class PhysicsWorld(
     fun neighborCount(cell: Int): Int = state.baked.vertStart[cell + 1] - state.baked.vertStart[cell]
     fun neighbor(cell: Int, k: Int): Int = state.baked.vertOther[state.baked.vertStart[cell] + k]
 
+    /**
+     * СРЕДА МИРА от клиента (игра: «Настройки мира»), раз в тик до шага, как [deepKillOn]: в снимок
+     * не входит. [gravityY] — гравитация по y, единиц мира в с²; остальное — множители к материалу
+     * (1 — как подбирали на стендах; тогда счёт побитово прежний, см. WorldEnvironment):
+     * [mediumScale] — изотропная среда, [edgeDragScale] — сопротивление рёбер контура (тяга и
+     * торможение гребка), [softness] — податливость связей и площадей ткани, [frictionScale] —
+     * кулоново трение касания (CONTACT_FRICTION).
+     *
+     * Сменилась гравитация — спящие просыпаются: их покой держался без неё ([wakeAll]).
+     */
+    fun setEnvironment(gravityY: Double, mediumScale: Double, edgeDragScale: Double, softness: Double, frictionScale: Double) {
+        require(mediumScale >= 0.0 && edgeDragScale >= 0.0 && softness > 0.0 && frictionScale >= 0.0) { "среда мира вне допустимого" }
+        val env = state.environment
+        if (env.gravityY != gravityY) { env.gravityY = gravityY; wakeAll() }
+        env.mediumDrag = MEDIUM_DRAG * mediumScale
+        env.normalDrag = NORMAL_DRAG * edgeDragScale
+        env.normalDragQuadratic = NORMAL_DRAG_QUADRATIC * edgeDragScale
+        env.softCompliance = SOFT_COMPLIANCE * softness
+        env.areaCompliance = AREA_COMPLIANCE * softness
+        val friction = CONTACT_FRICTION * frictionScale
+        env.contactFriction = friction
+        state.contacts?.friction = friction
+    }
+
+    /**
+     * Разбудить все спящие организмы (в начале следующего подшага). Неподвижные — стенку и
+     * террейн (обратная масса покоя 0) — не трогает: им двигаться некуда, а проснувшись, они
+     * SLEEP_TICKS тиков стояли бы в проходах по бодрствующим. Проход по организмам; у спящего
+     * диапазон частиц может быть шире настоящего (BodySleep.first), поэтому берётся первая частица
+     * именно этого организма. Для редкого события клиента (сменилась гравитация), не для тика.
+     */
+    fun wakeAll() {
+        val st = state
+        val s = st.sleep
+        if (s.asleepCount == 0) return
+        for (o in 0 until st.organismCount) {
+            if (!s.asleep[o]) continue
+            for (i in s.first[o]..s.last[o]) {
+                if (st.organismOf[i] != o) continue
+                if (st.restInvMass[i] > 0.0) s.requestWake(i)
+                break
+            }
+        }
+    }
+
     /** Рамка мира: частицы не выходят за прямоугольник (игра — границы сетки). */
     fun setBounds(minX: Double, minY: Double, maxX: Double, maxY: Double) {
         require(maxX > minX && maxY > minY) { "пустая рамка мира" }

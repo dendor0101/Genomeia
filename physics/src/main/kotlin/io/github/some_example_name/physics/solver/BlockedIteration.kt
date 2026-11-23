@@ -171,7 +171,7 @@ internal fun BodyState.solveConstraintBlockFrom(h: Double, block: Int, layout: C
 internal fun BodyState.solveBlockLinks(h: Double, block: Int, layout: ConstraintBlocks) {
     // Мышц-кластеров нет (игра: мышца — множитель клетки): без чтения conMuscle. См. solveBlockLinksCells.
     if (cellScalesOn && muscleScaleOf.isEmpty()) { solveBlockLinksCells(h, block, layout); return }
-    val alpha = SOFT_COMPLIANCE / (h * h)
+    val alpha = environment.softCompliance / (h * h)
     val px = px; val py = py; val mass = invMass
     val a = conA; val b = conB; val rest = conRest; val muscles = conMuscle
     val dead = conDead; val scales = muscleScaleOf; val cellScales = if (cellScalesOn) conCellScale else null
@@ -204,7 +204,7 @@ internal fun BodyState.solveBlockLinks(h: Double, block: Int, layout: Constraint
  * читается на 4 байта меньше (было 29: conDead, conA, conB, conMuscle, conRest, conCellScale, conSoftness).
  */
 private fun BodyState.solveBlockLinksCells(h: Double, block: Int, layout: ConstraintBlocks) {
-    val alpha = SOFT_COMPLIANCE / (h * h)
+    val alpha = environment.softCompliance / (h * h)
     val px = px; val py = py; val mass = invMass
     val a = conA; val b = conB; val rest = conRest; val dead = conDead; val cs = conCellScale
     val boundary = conBoundary

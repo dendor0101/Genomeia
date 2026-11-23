@@ -45,6 +45,7 @@ class SimulationMenuDialog(
     onMaxSpeed: (Boolean) -> Unit,
     onRenderMode: (RenderMode) -> Unit,
     onRestart: () -> Unit,
+    onWorldSettings: () -> Unit,
     onSettings: () -> Unit,
     onSave: (() -> Unit)?,
     onSaveAndExit: (() -> Unit)?,
@@ -101,6 +102,7 @@ class SimulationMenuDialog(
             options.add(button).row()
         }
         action("button.restart", block = onRestart)
+        action("button.worldSettings", block = onWorldSettings)
         action("button.settings", block = onSettings)
         if (onSave != null) action("button.save", block = onSave)
         if (onSaveAndExit != null) action("button.saveAndExit", block = onSaveAndExit)

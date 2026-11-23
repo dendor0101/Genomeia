@@ -18,6 +18,7 @@ import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.physics.CollisionManager.Companion.PARTICLE_MAX_RADIUS
 import io.github.some_example_name.old.systems.physics.GridManager
 import io.github.some_example_name.old.systems.render.CommandGhosts
+import io.github.some_example_name.old.systems.rules.WorldRules
 import io.github.some_example_name.old.bug.BugReplay
 import io.github.some_example_name.old.journal.CommandSource
 import io.github.some_example_name.old.journal.Fnv
@@ -48,6 +49,12 @@ class UserCommandManager(
 ): Disposable {
 
     private val commandQueue = ConcurrentLinkedQueue<PlayerCommand>()
+
+    /**
+     * Настройки мира — их меняют команды SetWorldRule и ResetWorldRules. Только у основной
+     * симуляции (DISimulationContainer); у редактора генома null, и такие команды ничего не делают.
+     */
+    var worldRules: WorldRules? = null
 
     /** Посадка организма игроком — та же, что у потомков в мире (см. OrganismSpawner). */
     private val organismSpawner = OrganismSpawner(organEntity, cellEntity, genomeManager, zygote)
@@ -176,6 +183,8 @@ class UserCommandManager(
                 simulationData.debugNoTailThrust = cmd.noTailThrust
                 simulationData.debugNoDeepKill = cmd.noDeepKill
             }
+            is PlayerCommand.SetWorldRule -> worldRules?.set(cmd.key, cmd.cellType, cmd.value)
+            PlayerCommand.ResetWorldRules -> worldRules?.reset()
             PlayerCommand.StopDrag -> {
                 grabbedParticleIndex = -1
                 simulationData.selectedCellIndex = -1

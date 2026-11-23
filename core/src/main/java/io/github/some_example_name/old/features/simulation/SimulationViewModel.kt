@@ -615,6 +615,9 @@ class SimulationViewModel(
             worldSpec?.worldHeight ?: DISimulationContainer.DEFAULT_GRID_SIZE
         )
         simulationSystem.dispose()
+        // Новый мир — с настройками по стандарту; сохранённый прочтёт свои (MapSave.load).
+        // Поток симуляции ещё не запущен, поэтому прямо здесь, а не командой.
+        DISimulationContainer.worldRules.reset()
         // С этого момента UI-команды экрана получают отметку тика мира.
         SessionJournal.simTick = { simulationData.tickCounter }
         val loaded = savedWorld != null && loadSavedWorld(savedWorld)

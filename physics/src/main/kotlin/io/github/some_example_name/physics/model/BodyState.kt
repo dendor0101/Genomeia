@@ -1138,6 +1138,9 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     /** Доля касательного трения от нормального. См. TANGENT_DRAG. */
     var tangentDrag = config["RB_TANGENT"]?.toDoubleOrNull() ?: TANGENT_DRAG
 
+    /** Среда мира, которую клиент меняет на ходу (гравитация, среда, мягкость, трение). См. WorldEnvironment. */
+    val environment = WorldEnvironment()
+
     /**
      * Изотропное сопротивление среды. Нормировано на h, поэтому от числа подшагов
      * не зависит. Тягу не создаёт — см. комментарий у MEDIUM_DRAG.

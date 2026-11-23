@@ -43,6 +43,7 @@ import io.github.some_example_name.old.journal.StateHash
 import io.github.some_example_name.old.journal.StateHashed
 import io.github.some_example_name.old.journal.WorldStopped
 import io.github.some_example_name.old.journal.WorldSaveCommitted
+import io.github.some_example_name.old.systems.rules.WorldRules
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -69,7 +70,9 @@ class SimulationSystem(
     val renderBufferManager: RenderBufferManager,
     val pheromonesManager: PheromonesManager,
     val worldPhysics: WorldPhysics,
-    val worldTerrainManager: WorldTerrainManager
+    val worldTerrainManager: WorldTerrainManager,
+    /** Настройки мира: часть SimulationData в хэше мира. Перезапуск их не сбрасывает, см. WorldRules. */
+    val worldRules: WorldRules
 ) {
 
     private var simulationThread: Thread? = null
@@ -469,7 +472,8 @@ class SimulationSystem(
                 x = Fnv.word(x, simulationData.stressFlingEvery)
                 x = Fnv.word(x, simulationData.stressSpawnEvery)
                 x = Fnv.word(x, if (simulationData.debugNoTailThrust) 1 else 0)
-                Fnv.word(x, if (simulationData.debugNoDeepKill) 1 else 0)
+                x = Fnv.word(x, if (simulationData.debugNoDeepKill) 1 else 0)
+                worldRules.hash(x)
             },
             input = userCommandManager::hashInput,
             grid = gridManager::hashOrder,
