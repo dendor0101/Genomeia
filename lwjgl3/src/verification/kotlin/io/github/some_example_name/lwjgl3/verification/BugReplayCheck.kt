@@ -48,6 +48,8 @@ import io.github.some_example_name.old.systems.genomics.genome.LinkData
 import io.github.some_example_name.old.systems.genomics.genome.encodeGenome
 import io.github.some_example_name.old.systems.genomics.library.GenomeCatalog
 import io.github.some_example_name.old.systems.maps.MapSave
+import io.github.some_example_name.old.systems.rules.CellRule
+import io.github.some_example_name.old.systems.rules.WorldRule
 import io.github.some_example_name.render.DebugFilter
 import io.github.some_example_name.render.RenderMode
 import java.io.File
@@ -378,6 +380,16 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 DISimulationContainer.userCommandManager.push(PlayerCommand.Drag(61f, 61f, 1f, 1f))
                 DISimulationContainer.userCommandManager.push(PlayerCommand.StopDrag)
                 DISimulationContainer.userCommandManager.push(PlayerCommand.Tap(120f, 120f, isLeftButton = false))
+                // Настройки мира (окно «Настройки мира»): гравитация будит спящих и идёт внешней
+                // силой по воркерам, остальное — среда физики и числа клеток. Дальше их несут
+                // сохранение (шаг 11), рестарт (12) и загрузка (16, 17) — см. шаг 18.
+                val rules = DISimulationContainer.worldRules
+                for ((key, value) in WORLD_RULES) DISimulationContainer.userCommandManager.push(PlayerCommand.SetWorldRule(key, value))
+                DISimulationContainer.userCommandManager.push(
+                    PlayerCommand.SetWorldRule("light", rules.standard[WorldRule.LIGHT.ordinal] * 2f)
+                )
+                DISimulationContainer.userCommandManager.push(PlayerCommand.SetWorldRule("maxEnergy", LEAF_MAX_ENERGY, "leaf"))
+                DISimulationContainer.userCommandManager.push(PlayerCommand.SetWorldRule("cellSoftness", 3f, "fat"))
                 untilTick(data.tickCounter + 200)
             }
 
@@ -459,6 +471,13 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
 
             // Отчёт кнопкой-жуком (без окна) — и конец.
             18 -> {
+                // Загруженный мир (шаг 17) живёт по своим настройкам, а не по стандарту.
+                val rules = DISimulationContainer.worldRules
+                for ((key, value) in WORLD_RULES) {
+                    check(rules[WorldRule.byKey(key)!!] == value) { "после загрузки мира настройка $key = ${rules[WorldRule.byKey(key)!!]}, а не $value" }
+                }
+                val leaf = rules.cellKeys.indexOf("leaf")
+                check(rules[CellRule.MAX_ENERGY, leaf] == LEAF_MAX_ENERGY) { "после загрузки мира запас энергии листа не тот" }
                 val bug = BugReports.create(BugKind.REPORT, "bugReplayCheck: сквозная проверка")
                 // Как в окне отчёта: игрок дописал пояснение и приложил картинку после
                 // первой кнопки — перепаковка не должна задеть журнал (повтор это проверит).
@@ -501,6 +520,12 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
     }
 
     companion object {
+        /** Настройки мира шага 7: множители среды физики (стандарт 1) и гравитация, клеток в с². */
+        val WORLD_RULES = listOf(
+            "gravity" to 6f, "viscosity" to 2f, "waterDrag" to 1.5f, "friction" to 0.5f, "softness" to 1.5f
+        )
+        const val LEAF_MAX_ENERGY = 8f
+
         /**
          * Организмы стоят плотно: столкновения тел — то место, где порядок потоков мог бы
          * просочиться в мир. -PspawnGrid=N ставит их сеткой N×N.

@@ -150,6 +150,17 @@ class PhysicsBridge(
     /** Множитель сопротивления среды частицы: 1 — среда мира. */
     fun setDrag(particle: Int, scale: Double) = world.setDrag(particle, scale)
 
+    /**
+     * Среда мира (настройки мира, WorldRules): [gravity] — вниз по экрану, клеток игры в с²;
+     * остальное — множители к материалу, см. PhysicsWorld.setEnvironment. Множителями, а не
+     * значениями: 1f переводится в 1.0 точно, и при стандарте счёт побитово прежний (0.3f — нет).
+     */
+    fun setEnvironment(gravity: Float, viscosity: Float, waterDrag: Float, softness: Float, friction: Float) =
+        world.setEnvironment(
+            if (gravity == 0f) 0.0 else -gravity * PHYSICS_PER_GAME,
+            viscosity.toDouble(), waterDrag.toDouble(), softness.toDouble(), friction.toDouble()
+        )
+
     /** Рамка мира — сетка игры [width] × [height] клеток. */
     fun setBounds(width: Float, height: Float) =
         world.setBounds(0.0, 0.0, width * PHYSICS_PER_GAME, height * PHYSICS_PER_GAME)

@@ -76,8 +76,9 @@ object StateHash {
      *     та же, но мир другой, и старые хэши сверять нельзя.
      * 21 — законы физики 16–18.11 (упор в неподвижное, касание своих клеток, потолок тяги мышцы, клин
      *     ImpactWedge): формула хэша та же, но мир считается иначе, и старые хэши сверять нельзя.
+     * 22 — в часть SimulationData вошли настройки мира (WorldRules.hash).
      */
-    const val VERSION = 21
+    const val VERSION = 22
 
     class Result(val hash: Long, val parts: LongArray)
 

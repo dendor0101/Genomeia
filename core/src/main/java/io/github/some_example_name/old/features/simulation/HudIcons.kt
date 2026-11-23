@@ -27,6 +27,10 @@ class HudIcons : Disposable {
     val organism = icon(::drawOrganism)
     val optics by lazy { icon { p -> ring(p,54,54,32,7); white(p); thickLine(p,75,75,107,107,6) } }
     val options by lazy { icon { p -> white(p); thickLine(p,24,40,104,40,5); thickLine(p,24,88,104,88,5); p.fillCircle(46,40,13); p.fillCircle(82,88,13) } }
+    /** Крестик — закрыть панель (настройки мира). */
+    val close by lazy { icon { p -> white(p); thickLine(p, 36, 36, 92, 92, 8); thickLine(p, 92, 36, 36, 92, 8) } }
+    /** Стрелка по кругу — вернуть к стандарту (настройки мира). */
+    val reset by lazy { icon(::drawReset) }
     val spawnCell = icon(::drawSpawnCell)
     val spawnFood = icon(::drawFood)
     val killCell = icon(::drawKill)
@@ -77,6 +81,13 @@ class HudIcons : Disposable {
             for (i in 0..steps) {
                 p.fillCircle(x1 + (dx * i / steps).toInt(), y1 + (dy * i / steps).toInt(), r)
             }
+        }
+
+        /** Кольцо с вырезом справа сверху и стрелкой на конце выреза — «вернуть». */
+        fun drawReset(p: Pixmap) {
+            ring(p, 64, 64, 40, 11)
+            clear(p); p.fillTriangle(64, 64, 127, 64, 100, 2)
+            white(p); p.fillTriangle(78, 68, 120, 68, 99, 42)
         }
 
         /** Три полосы — «меню». */

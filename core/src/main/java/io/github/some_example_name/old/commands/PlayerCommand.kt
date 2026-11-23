@@ -77,4 +77,22 @@ sealed interface PlayerCommand : GameCommand {
         override val name get() = "SetPhysicsDebug"
         override val detail get() = "noTail=$noTailThrust noDeepKill=$noDeepKill"
     }
+
+    /**
+     * Настройка мира (окно «Настройки мира», WorldRules): правило [key] в [value]. Значение уже
+     * итоговое — проценты ползунка переведены в него при создании команды. [cellType] — ключ типа
+     * клетки у правил клетки (CellRule), пусто — правило всего мира (WorldRule). Командой мира, как
+     * отладка физики: меняет мир, поэтому применяется в тике и лежит в журнале с его номером.
+     */
+    @Serializable
+    data class SetWorldRule(val key: String, val value: Float, val cellType: String = "") : PlayerCommand {
+        override val name get() = "SetWorldRule"
+        override val detail get() = if (cellType.isEmpty()) "$key=$value" else "$cellType.$key=$value"
+    }
+
+    /** «Сбросить» в окне настроек мира: все правила — к стандарту нового мира. */
+    @Serializable
+    object ResetWorldRules : PlayerCommand {
+        override val name get() = "ResetWorldRules"
+    }
 }

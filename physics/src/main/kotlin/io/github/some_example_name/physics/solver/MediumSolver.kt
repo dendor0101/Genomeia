@@ -234,7 +234,9 @@ internal fun BodyState.normalDragEdge(e: Int, h: Double) {
 
     // Линейная плюс квадратичная. Квадратичная сила равна NORMAL_DRAG_Q * vn*|vn|,
     // поэтому в коэффициенте (он делится на vn) остаётся |vn|.
-    var k = (NORMAL_DRAG + NORMAL_DRAG_QUADRATIC * abs(vn)) * len * h
+    // Из среды мира (WorldEnvironment): по умолчанию те же константы, игрок может менять.
+    val env = environment
+    var k = (env.normalDrag + env.normalDragQuadratic * abs(vn)) * len * h
     if (k > 0.5) k = 0.5      // выше — переброс скорости через ноль, то есть раскачка
 
     val dv = -vn * k
@@ -245,7 +247,7 @@ internal fun BodyState.normalDragEdge(e: Int, h: Double) {
     if (tangentDrag > 0.0) {
         val tx = ex / len; val ty = ey / len
         val vt = vmx * tx + vmy * ty
-        var kt = tangentDrag * NORMAL_DRAG * len * h
+        var kt = tangentDrag * env.normalDrag * len * h
         if (kt > 0.5) kt = 0.5
         val dvt = -vt * kt
         vx[i] += dvt * tx; vy[i] += dvt * ty
@@ -268,9 +270,31 @@ fun BodyState.applyRestitution() {
     }
 }
 
+/**
+ * ГРАВИТАЦИЯ МИРА (WorldEnvironment.gravityY) — по скоростям, после снимка скоростей подшага и до
+ * учёта внешнего импульса (velocityPassAfter), как хватка. Не в интегрировании: там она шла бы
+ * мимо учёта, и снятие внутреннего импульса (TickMomentum) за тик возвращало бы телу прежний
+ * импульс — тела висели бы в воздухе. Константа GRAVITY в интегрировании — пол стенда, ноль.
+ *
+ * Неподвижные (стенка, террейн), спящие и мёртвые — с нулевой обратной массой: им ничего.
+ * Цена при включённой гравитации — проход по бодрствующим частицам за подшаг и полный путь
+ * скоростей вместо быстрого (velocityFastAllowed); при нуле — одно сравнение.
+ */
+internal fun BodyState.applyGravity(h: Double) {
+    val g = environment.gravityY
+    if (g == 0.0) return
+    val dv = g * h
+    prepareAwakeSpans()
+    val s = sleep
+    val vy = vy; val invMass = invMass
+    for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
+        if (invMass[i] > 0.0) vy[i] += dv
+    }
+}
+
 fun BodyState.applyMediumDrag(h: Double) {
     if (dbgIsoDragOff) return
-    var keep = 1.0 - MEDIUM_DRAG * h
+    var keep = 1.0 - environment.mediumDrag * h
     if (keep < 0.0) keep = 0.0
     prepareAwakeSpans()
     val s = sleep

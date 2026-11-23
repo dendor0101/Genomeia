@@ -24,6 +24,7 @@ import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.genomics.genome.GenomeProto
 import io.github.some_example_name.old.systems.simulation.SimulationData
 import io.github.some_example_name.old.systems.simulation.SimulationSystem
+import io.github.some_example_name.old.systems.rules.WorldRules
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -46,7 +47,9 @@ class SavedMap(val slot: String, val lastModified: Long)
  *  - types.bin          ключи типов клеток и формул по номерам, какими они были при сохранении;
  *  - entities/<имя>.bin состояние каждой сущности, см. EntityState;
  *  - physics.bin        мир физики-библиотеки целиком (WorldPhysics.encodeState): позиции
- *                       клеток и субстанций живут только в нём.
+ *                       клеток и субстанций живут только в нём;
+ *  - rules.bin          настройки мира (WorldRules.encode). В мирах до 22.11 его нет — тогда
+ *                       стандарт: формат мира от этого не меняется.
  */
 class MapSave(
     /** Сущности мира под стабильными именами: имя — это имя файла в архиве. */
@@ -57,6 +60,7 @@ class MapSave(
     private val simulationData: SimulationData,
     private val simulationSystem: SimulationSystem,
     private val worldPhysics: WorldPhysics,
+    private val worldRules: WorldRules,
     private val diContext: DIContext,
     /** Пересобрать сетку под размер загружаемого мира: у каждого мира он свой. */
     private val resizeWorld: (width: Int, height: Int) -> Unit
@@ -94,6 +98,7 @@ class MapSave(
             // Последним: запись уплотняет мир физики (номера его частиц), а сущности игры
             // номеров мира физики не хранят — им всё равно, до или после.
             entries[PHYSICS] = writeBytes { worldPhysics.encodeState(it) }
+            entries[RULES] = writeBytes { worldRules.encode(it) }
         }
 
         writeArchive(target, entries)
@@ -148,6 +153,9 @@ class MapSave(
         cellEntity.repairEdgeFlagsAfterLoad()
         // Последним: номера частиц мира физики раздаются по аренам организмов и субстанциям.
         worldPhysics.decodeState(DataInputStream((entries[PHYSICS] ?: throw IllegalStateException("в мире нет $PHYSICS")).inputStream()))
+        // Настройки мира — по ключам типов, после сущностей: «максимальная энергия» типа правит клетки.
+        val rules = entries[RULES]
+        if (rules != null) worldRules.decode(DataInputStream(rules.inputStream())) else worldRules.reset()
 
         simulationData.tickCounter = meta.tickCounter
         simulationData.timeSimulation = meta.timeSimulation
@@ -425,6 +433,7 @@ class MapSave(
         private const val CELL_ACTIONS = "cellActions.bin"
         private const val TYPES = "types.bin"
         private const val PHYSICS = "physics.bin"
+        private const val RULES = "rules.bin"
         private fun entityEntry(name: String) = "entities/$name.bin"
 
         private const val EDIT_STROKE = 0

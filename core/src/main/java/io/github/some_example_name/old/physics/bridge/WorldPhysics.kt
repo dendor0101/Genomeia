@@ -12,6 +12,7 @@ import io.github.some_example_name.old.features.worldeditor.WorldTerrainManager
 import io.github.some_example_name.old.journal.Fnv
 import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.old.systems.physics.GridManager
+import io.github.some_example_name.old.systems.rules.WorldRules
 import io.github.some_example_name.physics.PhysicsJob
 import io.github.some_example_name.physics.PhysicsWorkers
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap
@@ -33,7 +34,10 @@ import it.unimi.dsi.fastutil.ints.IntArrayList
  *     команд нет: проход по слотам ловит любой путь создания и удаления, в том числе загрузку.
  *     Стенка вдоль рамки — неподвижные частицы на месте террейна, раз на размер мира ([buildWall]).
  *  2. ВХОДЫ. Кость — клетка игры стала типа «кость» (мутация) → setBone, форма на этот момент.
- *     Мягкость — клетка типа «жир» → setSoftness([FAT_SOFTNESS]), с мутацией туда и обратно.
+ *     Мягкость — по типу клетки → setSoftness: из настроек мира ([rules], WorldRules.cellSoftness), без
+ *     них — как подобрано ([standardSoftness]: жир мягче), с мутацией туда и обратно.
+ *     Среда мира (гравитация, вязкость, сопротивление воды, мягкость ткани, трение) — тоже из
+ *     настроек мира, раз в тик до шага ([pushEnvironment]).
  *     Присоска-чашка — хватка (трение о дно) каждый тик — setGrip; клетка без столкновений
  *     (isCollidable = false, присоска) — setContactless.
  *     Команда мышцы degreeOfShortening задаёт сокращение (0.5–1) или расслабление (1–1.5).
@@ -73,8 +77,17 @@ class WorldPhysics(
     /** Тип клетки «кость» (Bone) — по ключу: номер это место в реестре типов. */
     private val boneType = cellEntity.cellList.requireIndex("bone")
 
-    /** Тип клетки «жир» (Fat) — мягкая ткань, [FAT_SOFTNESS]. */
-    private val fatType = cellEntity.cellList.requireIndex("fat")
+    /**
+     * Настройки мира (WorldRules): среда физики и мягкость по типу клетки. null — как подобрано
+     * (редактор генома, гайд, однопоточный мир): там игрок правила мира не меняет.
+     */
+    var rules: WorldRules? = null
+
+    /** Мягкость по номеру типа без настроек мира — [standardSoftness]. */
+    private val standardSoftnessByType = FloatArray(cellEntity.cellList.size) { standardSoftness(cellEntity.cellList[it].key) }
+
+    /** Мягкость по номеру типа: плотный массив на ~30 типов, читается каждой клетке в сверке. */
+    private fun softnessByType(): FloatArray = rules?.cellSoftness ?: standardSoftnessByType
 
     /** Тип клетки «присоска-чашка» (SuctionCup): хватка каждый тик (PhysicsWorld.setGrip). */
     private val suctionCupType = cellEntity.cellList.requireIndex("suction_cup")
@@ -140,11 +153,21 @@ class WorldPhysics(
         syncOrganisms()
         syncSubstances()
         sticks.sync(bridge.world)
+        pushEnvironment()
         bridge.step()
         publish()
         reportDeaths()
         syncSurface()
         updateGrid()
+    }
+
+    /**
+     * Среда мира из настроек мира — раз в тик до шага: в снимок мира физики она не входит, её
+     * хранят и хэшируют сами настройки (WorldRules). Без настроек — как подобрано.
+     */
+    private fun pushEnvironment() {
+        val r = rules ?: return
+        bridge.setEnvironment(r.gravity, r.viscosity, r.waterDrag, r.softness, r.friction)
     }
 
     /**
@@ -422,6 +445,7 @@ class WorldPhysics(
         val pe = particleEntity
         val collidable = pe.isCollidable; val pushX = pe.pushVx; val pushY = pe.pushVy; val drag = pe.dragCoefficient
         val sleepOn = world.sleepOn
+        val typeSoftness = softnessByType()
         for (slot in 0 until organEntity.cellArenaCapacity[organ]) {
             val i = first + slot
             val cell = cellBase + slot
@@ -430,7 +454,7 @@ class WorldPhysics(
             val p = particleBase + slot
             val type = cellType[cell].toInt()
             var rare = unborn[i] || !alive[cell] || (type == boneType && boneOf[i] < 0) ||
-                softness[i] != (if (type == fatType) FAT_SOFTNESS else 1f) || noContact[i] == collidable[p] ||
+                softness[i] != typeSoftness[type] || noContact[i] == collidable[p] ||
                 grip[i] != (if (type == suctionCupType) drag[p].coerceIn(0f, 1f) else 0f) || pushX[p] != 0f || pushY[p] != 0f
             val s = shortening[cell]
             if (!rare && target[i] != s && sleepOn) rare = true
@@ -494,7 +518,7 @@ class WorldPhysics(
         }
     }
 
-    private fun softnessOf(cell: Int): Float = if (cellEntity.cellType[cell].toInt() == fatType) FAT_SOFTNESS else 1f
+    private fun softnessOf(cell: Int): Float = softnessByType()[cellEntity.cellType[cell].toInt()]
 
     private fun syncSubstances() {
         val alive = substancesEntity.aliveList
@@ -876,17 +900,20 @@ class WorldPhysics(
         }
     }
 
-    private companion object {
+    companion object {
         /** Вязкость среды мира по умолчанию — GlobalSettings.viscosityOfTheEnvironment. */
-        const val DEFAULT_VISCOSITY = 0.03f
+        private const val DEFAULT_VISCOSITY = 0.03f
 
         /**
          * Мягкость жира: податливость его связей и треугольников в 5 раз больше обычной
          * (PhysicsWorld.setSoftness; связь жира с листом — среднее, 3). Решение 03.11: сначала 2.5
          * (в старой физике linkStiffness жира — вдвое меньше), после осмотра в игре — ещё вдвое мягче.
          */
-        const val FAT_SOFTNESS = 5f
+        private const val FAT_SOFTNESS = 5f
 
-        val EMPTY = DoubleArray(0)
+        /** Мягкость ткани типа клетки по ключу, как подобрана: жир — [FAT_SOFTNESS], остальные — 1. */
+        fun standardSoftness(typeKey: String): Float = if (typeKey == "fat") FAT_SOFTNESS else 1f
+
+        private val EMPTY = DoubleArray(0)
     }
 }
