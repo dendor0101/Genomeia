@@ -175,6 +175,15 @@ class PhysicsBridge(
     fun setDrag(particle: Int, scale: Float) = world.setDrag(particle, scale)
 
     /**
+     * Среда мира (настройки мира, WorldRules): [gravity] — вниз по экрану, клеток игры в с²;
+     * остальное — множители к материалу, см. PhysicsWorld.setEnvironment. Множителями, а не
+     * значениями: при стандарте множитель ровно 1, и счёт побитово прежний (0.3f — нет).
+     * Ускорение — только масштаб, без сдвига начала координат ([originX]).
+     */
+    fun setEnvironment(gravity: Float, viscosity: Float, waterDrag: Float, softness: Float, friction: Float) =
+        world.setEnvironment(if (gravity == 0f) 0f else -gravity * PHYSICS_PER_GAME, viscosity, waterDrag, softness, friction)
+
+    /**
      * Рамка мира — сетка игры [width] × [height] клеток. Пока мир физики пуст, ставит его начало
      * координат в центр рамки ([originX]); у мира с частицами начало остаётся прежним.
      */

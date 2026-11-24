@@ -144,6 +144,8 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         if (fastVelocity) { markVelocityTouched(); velocityPassFast(h) } else velocityPassBefore(h)
         // Хватка (присоска-чашка) — после снимка скоростей: учёт импульса видит её внешней силой, как пол.
         applyGrip(h)
+        // Гравитация мира — так же внешней силой в окне учёта импульса. См. applyGravity.
+        applyGravity(h)
         tick1(17); tick0()
         // Отскок: позиционная часть удар гасит целиком, см. solveRestitution.
         dbgMarkV()

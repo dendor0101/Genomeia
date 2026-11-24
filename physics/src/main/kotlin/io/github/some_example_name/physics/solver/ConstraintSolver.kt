@@ -8,7 +8,7 @@ fun BodyState.bendCompliance(): Float = BEND_LEVELS[bendLevel]
 
 fun BodyState.solveConstraints(h: Float) {
     if (conCount == 0) return
-    val alpha = SOFT_COMPLIANCE / (h * h)
+    val alpha = environment.softCompliance / (h * h)
     // ВСЁ В ЛОКАЛЬНЫЕ. Стадия идёт 64 раза за тик по пяти тысячам связей, и на таком
     // числе проходов заметно даже обращение к полю: у lateinit оно с проверкой.
     val px = px; val py = py; val invMass = invMass
@@ -504,7 +504,7 @@ fun BodyState.solveBend(h: Float) {
 }
 
 fun BodyState.solveAreas(h: Float) {
-    val alpha = AREA_COMPLIANCE / (h * h)
+    val alpha = environment.areaCompliance / (h * h)
     // Вывернутым треугольникам своя, нулевая — см. AREA_COMPLIANCE_INVERTED.
     val alphaInverted = AREA_COMPLIANCE_INVERTED / (h * h)
     val maxStep = AREA_MAX_STEP * linkScale

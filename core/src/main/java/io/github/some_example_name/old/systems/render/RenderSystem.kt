@@ -215,6 +215,9 @@ class RenderSystem(
             uploadCells = fresh || packedNow
             interpolationLag = lag
             overlay = if (mode.drawsDebugOverlay && snapshot.hasOverlay) snapshot.overlay.end() else null
+            pheromones = if (mode.drawsDebugOverlay && snapshot.hasOverlay) snapshot.pheromones.end() else null
+            pheromoneK = PheromonesManager.K
+            pheromoneP = PheromonesManager.P
             time = animationTime
             this.mode = if(mode==RenderMode.TISSUE_MAP && !useOptics) RenderMode.DEBUG else mode
             // Из снимка, а не из выбора игрока: байты фильтра в клетках упакованы под него.

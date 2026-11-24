@@ -37,6 +37,9 @@ import io.github.some_example_name.render.releaseRebuiltFrameBuffer
  *     полупиксельную полосу у неё, заодно рисуя стенку между клетками (cell_edge.frag).
  *     Над пустотой за окружностью тут же рисуется бахрома рисунков — реснички, иглы,
  *     шипы, — а полупрозрачные клетки («призрак» в редакторе) рисуются здесь целиком.
+ *  3½. Феромоны: мягкие пятна цвета феромона поверх клеток, как в реалистичном режиме до
+ *     06.11 (PheromoneLayer, pheromone.vert/.frag). Над клетками, а не под ними: так было
+ *     и там, и облако вокруг тела видно. Под оверлеем: нейросвязи и стрелки остаются чёткими.
  *  4. Оверлей: нейросвязи, стрелки, лучи, кольца, жгутики — инстансами по кваду
  *     (overlay.frag). Жгутик читает владельцев пикселей из прохода 1: над клетками его нет.
  *
@@ -78,6 +81,8 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
     private lateinit var edgeShader: ShaderProgram
     private lateinit var compositeShader: ShaderProgram
     private lateinit var overlayShader: ShaderProgram
+    private lateinit var pheromoneShader: ShaderProgram
+    private val pheromones = PheromoneLayer()
 
     private var fbo: FrameBuffer? = null
     private var fboWidth = 0
@@ -92,6 +97,8 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         ).also(::check)
         overlayShader = compile("overlay.vert", "overlay.frag")
         overlay.create()
+        pheromoneShader = compile("pheromone.vert", "pheromone.frag")
+        pheromones.create(pheromoneShader)
     }
 
     private fun compile(vertex: String, fragment: String): ShaderProgram =
@@ -170,6 +177,9 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
             depth = target.textureAttachments[DEPTH_ATTACHMENT],
             owner = target.textureAttachments[OWNER_ATTACHMENT]
         )
+        context.pheromoneData?.let { data ->
+            if (context.numPheromoneInstances > 0) pheromones.draw(context, data, context.numPheromoneInstances)
+        }
         drawOverlay(context, owner = target.textureAttachments[OWNER_ATTACHMENT])
 
         context.endOutput()
@@ -324,6 +334,7 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
      */
     override fun contextLost() {
         overlay.recreateAfterContextLoss()
+        pheromones.contextLost()
         areas = null
         fbo?.let { releaseRebuiltFrameBuffer(it, ATTACHMENT_COUNT) }
         fbo = null
@@ -336,6 +347,8 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         if (::edgeShader.isInitialized) edgeShader.dispose()
         if (::compositeShader.isInitialized) compositeShader.dispose()
         if (::overlayShader.isInitialized) overlayShader.dispose()
+        if (::pheromoneShader.isInitialized) pheromoneShader.dispose()
+        pheromones.dispose()
         areaShader?.dispose()
         areas?.dispose()
         overlay.dispose()

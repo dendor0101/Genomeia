@@ -21,17 +21,18 @@
   <a href="/reports">Обновить список</a>
   <div class="table">
     <table>
-      <thead><tr><th>Файл</th><th>Получен</th><th>Версия</th><th>Платформа</th><th>Тип</th><th>Размер</th><th></th></tr></thead>
+      <thead><tr><th>Файл</th><th>Получен</th><th>Версия</th><th>Коммит</th><th>Платформа</th><th>Тип</th><th>Размер</th><th></th></tr></thead>
       <tbody>
       {% for report in reports %}
         <tr>
           <td class="name">{{ report.name }}</td><td>{{ report.created }}</td><td>{{ report.game }}</td>
+          <td class="name" title="{{ report.commit_full }}">{{ report.commit }}</td>
           <td>{{ report.platform }}</td><td>{{ report.kind }}</td>
           <td>{{ '%.2f'|format(report.size / 1024 / 1024) }} МиБ</td>
           <td><a class="download" href="{{ url_for('download', report_id=report.id) }}">Скачать</a></td>
         </tr>
       {% else %}
-        <tr><td colspan="7">Отчётов пока нет. Отправьте первый из игры.</td></tr>
+        <tr><td colspan="8">Отчётов пока нет. Отправьте первый из игры.</td></tr>
       {% endfor %}
       </tbody>
     </table>

@@ -70,6 +70,16 @@ class RenderFrame {
     var overlay: ByteBuffer? = null
 
     /**
+     * Феромоны отладочного режима — буфер из PheromoneInstanceBuffer.end(): x, y,
+     * концентрация A и цвет на штуку. null — не рисовать. [pheromoneK] и [pheromoneP] — закон
+     * концентрации A / (1 + K r^2) и её порог (PheromonesManager.K/P): по ним шейдер
+     * считает размер и прозрачность пятна, а рендер о симуляции не знает.
+     */
+    var pheromones: ByteBuffer? = null
+    var pheromoneK: Float = 0f
+    var pheromoneP: Float = 0f
+
+    /**
      * Секунды для анимации оверлея (бегущие по нейросвязям импульсы). По кругу с периодом
      * [TIME_WRAP]: float с ростом теряет дробную часть, и через несколько часов игры
      * импульсы задёргались бы. Шаг на обороте незаметен — см. TIME_WRAP.

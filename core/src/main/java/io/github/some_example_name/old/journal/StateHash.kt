@@ -81,8 +81,9 @@ object StateHash {
      *     (docs/physics/reference.md, находка 40): мир считается иначе, старые хэши сверять нельзя.
      * 24 — блоки решателя по 500 частиц, куски проходов по 1024, кость у шва, деления в ядрах (24.11, находка 41):
      *     формула хэша та же, но мир считается иначе, и старые хэши сверять нельзя.
+     * 25 — в часть SimulationData вошли настройки мира (WorldRules.hash; в ветке настроек мира это было 22).
      */
-    const val VERSION = 24
+    const val VERSION = 25
 
     class Result(val hash: Long, val parts: LongArray)
 

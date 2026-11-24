@@ -25,6 +25,7 @@ import io.github.some_example_name.render.pack.OpticalLinks
 import io.github.some_example_name.render.pack.DebugAreaIndices
 import io.github.some_example_name.render.pack.CellLook
 import io.github.some_example_name.render.pack.OverlayInstanceBuffer
+import io.github.some_example_name.render.pack.PheromoneInstanceBuffer
 import kotlin.math.round
 import kotlin.math.sqrt
 
@@ -729,6 +730,21 @@ class RenderBufferManager(
     }
 
     /**
+     * Пятна феромонов (PheromoneLayer в :render): позиция, накопленная концентрация и цвет —
+     * 16 байт на феромон, проход по живым феромонам, без аллокаций. Как было в реалистичном
+     * режиме до 06.11.
+     */
+    private fun writePheromones(snapshot: RenderSnapshot) = with(pheromoneEntity) {
+        val pheromones = snapshot.pheromones
+        pheromones.begin(aliveList.size)
+        for (bufIndex in 0..<aliveList.size) {
+            val i = aliveList.getInt(bufIndex)
+            pheromones.put(x = x[i], y = y[i], a = time[i], color = color[i])
+        }
+        pheromones.end()
+    }
+
+    /**
      * Контур тел мира физики — рёбра, которые омываются средой, включая края дыр и голые связи
      * (как зелёная граница стенда). Концы едут каждый со своей частицей, как у нейросвязи: их
      * прошлые позиции уже записаны проходом по клеткам. Цена — проход по рёбрам контура, только
@@ -902,6 +918,8 @@ class RenderBufferManager(
         if (debugFrame && showNeuralLinks) writeNeuralLinks()
         overlay.end()
         snapshot.hasOverlay = debugFrame
+        // Пятна феромонов — только в отладочный снимок: другим режимам их не рисовать.
+        if (debugFrame) writePheromones(snapshot) else snapshot.pheromones.run { begin(); end() }
 
         writeSpecific(snapshot.spec, performanceInfo)
         publish(snapshot)
@@ -1160,6 +1178,9 @@ class RenderSnapshot(cellCapacity: Int, overlayCapacity: Int) {
 
     val overlay = OverlayInstanceBuffer(overlayCapacity)
 
+    /** Феромоны отладочного режима; пустые в снимке другого режима. 16 Б на феромон. */
+    val pheromones = PheromoneInstanceBuffer()
+
     /** Под какой фильтр отладки упакованы байты look, см. RenderBufferManager.debugFilter. */
     var filter = DebugFilter.ORIGINAL
 
@@ -1184,6 +1205,8 @@ class RenderSnapshot(cellCapacity: Int, overlayCapacity: Int) {
         // не мусор из неинициализированной ёмкости.
         overlay.begin()
         overlay.end()
+        pheromones.begin()
+        pheromones.end()
     }
 }
 

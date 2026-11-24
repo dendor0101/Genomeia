@@ -27,7 +27,8 @@ class CellSystem(
     val divideManager: DivideManager,
     val mutateManager: MutateManager,
     val threadManager: ThreadManager?,
-    private val linkEnergyTransfer: Float = energyTransportRate
+    /** Доля переноса энергии по связи за тик. У мира её меняют настройки мира (WorldRules). */
+    var linkEnergyTransfer: Float = energyTransportRate
 ): Disposable {
 
     /**

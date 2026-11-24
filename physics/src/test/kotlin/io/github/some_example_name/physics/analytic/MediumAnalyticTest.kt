@@ -198,8 +198,8 @@ class MediumAnalyticTest {
         val keep = 1.0f - MEDIUM_DRAG * DT
         assertEquals(v * keep, st.vx[p], 1e-15f); assertEquals(-0.5f * v * keep, st.vy[p], 1e-15f)
         assertEquals(v * (1.0f - 2 * MEDIUM_DRAG * DT), st.vx[q], 1e-15f)
-        assertEquals("доля не уходит ниже нуля", 0.0f, mediumKeep(1000.0f, 1.0f), 0.0f)
-        assertEquals(1.0f - MEDIUM_DRAG * 0.5f * 3, mediumKeep(0.5f, 3.0f), 1e-15f)
+        assertEquals("доля не уходит ниже нуля", 0.0f, st.mediumKeep(1000.0f, 1.0f), 0.0f)
+        assertEquals(1.0f - MEDIUM_DRAG * 0.5f * 3, st.mediumKeep(0.5f, 3.0f), 1e-15f)
         st.dbgIsoDragOff = true
         val before = st.vx[p]
         st.applyMediumDrag(DT)

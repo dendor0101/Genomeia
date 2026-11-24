@@ -1,6 +1,5 @@
 package io.github.some_example_name.old.entities
 
-import com.badlogic.gdx.graphics.Color
 import io.github.some_example_name.old.core.DEBUG_CHECKS
 import io.github.some_example_name.old.core.DIContext
 import io.github.some_example_name.old.core.DISimulationContainer.linkMaxLength2
@@ -274,15 +273,17 @@ class LinkEntity(
                 continue
             }
 
-            // Сосед красится ДО удаления: deleteLink обнулит блок связи, и после него
-            // связь уже не скажет, кто был на другом конце.
-            //
             // isOnEdge здесь НЕ ставится: границу соседу открывает сам deleteLink через
             // refreshOnEdge. Прямая запись была ошибкой: refreshOnEdge видел флаг уже
             // выставленным, выходил сразу, и частица соседа так и не возвращалась в сетку
             // столкновений. Клетка у края раны считала себя граничной, а ни с чем не
             // сталкивалась — мембрана после Punisher становилась дырявой (отчёт 21.10 17:17).
-            cellEntity.setColor(otherCellIndex, EDGE_COLOR)
+            //
+            // Цвет соседа не трогается. До 21.11 здесь сосед погибшей клетки навсегда
+            // становился красным; это убрано по решению автора. Учтите: цвет видят глаза
+            // (Eye) и он в хэше состояния, поэтому записи .bug, сделанные до этого, после
+            // первой такой гибели расходятся по хэшу.
+            //
             // Тот же смысл, что у reinitParentLink: у выжившего соседа не должно остаться
             // ссылки на индекс, который вот-вот переиспользует новая клетка.
             if (cellEntity.parentIndex[otherCellIndex] == cellIndex) {
@@ -391,9 +392,6 @@ class LinkEntity(
     }
 
     companion object {
-        /** Цвет клетки, оставшейся на краю после разрыва связи. Считается один раз. */
-        private val EDGE_COLOR = Color.RED.toIntBits()
-
         /**
          * Поколение "не проверять". Настоящее поколение живой клетки всегда >= 1:
          * Entity.generation начинается с нуля и инкрементируется в add() ДО того, как

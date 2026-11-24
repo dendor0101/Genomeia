@@ -187,7 +187,7 @@ fun BodyState.buildContacts() {
     if (ct == null) {
         contacts = BoundaryContacts.build(
             n, conA, conB, conCount, boundA, boundB, boundCount, boundOpp, radius,
-            CONTACT_SCALE, CCD_CORE, CONTACT_RESTITUTION, CONTACT_FRICTION,
+            CONTACT_SCALE, CCD_CORE, CONTACT_RESTITUTION, environment.contactFriction,
             body.x, body.y,
             linkScale.toFloat(), CONTACT_MAX_STEP, probeCells(), everLinked,
             cellDead, restPairs, config.contacts,

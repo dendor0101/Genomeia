@@ -246,30 +246,37 @@ internal fun BodyState.flowPaymentRange(from: Int, to: Int) {
 
 /** Сопротивление среды одному ребру контура: для проверок поштучно. Циклы стадии идут через normalDragEdgesOf. */
 internal fun BodyState.normalDragEdge(e: Int, h: Float) =
-    normalDragEdgeAt(e, h, boundA, boundB, px, py, vx, vy, organismOf, flowVX, flowVY, tangentDrag)
+    normalDragEdgeAt(e, h, boundA, boundB, px, py, vx, vy, organismOf, flowVX, flowVY, tangentDrag,
+        environment.normalDrag, environment.normalDragQuadratic)
 
 /** Сопротивление среды рёбрам списка [items] на местах [from, to). Массивы — в локальные: см. lengthsBeforeLoop. */
 internal fun BodyState.normalDragEdgesOf(items: IntArray, from: Int, to: Int, h: Float) {
     val a = boundA; val b = boundB; val px = px; val py = py; val vx = vx; val vy = vy
     val org = organismOf; val flowVX = flowVX; val flowVY = flowVY; val tangent = tangentDrag
+    val drag = environment.normalDrag; val dragQ = environment.normalDragQuadratic
     lengthsBeforeLoop(a.size or b.size or px.size or py.size or vx.size or vy.size or org.size or flowVX.size or
         flowVY.size or items.size)
-    for (x in from until to) normalDragEdgeAt(items[x], h, a, b, px, py, vx, vy, org, flowVX, flowVY, tangent)
+    for (x in from until to) normalDragEdgeAt(items[x], h, a, b, px, py, vx, vy, org, flowVX, flowVY, tangent, drag, dragQ)
 }
 
 /** Сопротивление среды рёбрам [from, to) по номерам. */
 internal fun BodyState.normalDragEdgesRange(from: Int, to: Int, h: Float) {
     val a = boundA; val b = boundB; val px = px; val py = py; val vx = vx; val vy = vy
     val org = organismOf; val flowVX = flowVX; val flowVY = flowVY; val tangent = tangentDrag
+    val drag = environment.normalDrag; val dragQ = environment.normalDragQuadratic
     lengthsBeforeLoop(a.size or b.size or px.size or py.size or vx.size or vy.size or org.size or flowVX.size or flowVY.size)
-    for (e in from until to) normalDragEdgeAt(e, h, a, b, px, py, vx, vy, org, flowVX, flowVY, tangent)
+    for (e in from until to) normalDragEdgeAt(e, h, a, b, px, py, vx, vy, org, flowVX, flowVY, tangent, drag, dragQ)
 }
 
-/** Ядро сопротивления ребра — единственная запись арифметики; `inline` с массивами в параметрах (см. lengthsBeforeLoop). */
+/**
+ * Ядро сопротивления ребра — единственная запись арифметики; `inline` с массивами в параметрах (см. lengthsBeforeLoop).
+ * [normalDrag], [normalDragQ] — из среды мира (WorldEnvironment): по умолчанию ровно NORMAL_DRAG и NORMAL_DRAG_QUADRATIC,
+ * игрок может менять; читаются раз на вызов стадии.
+ */
 @Suppress("NOTHING_TO_INLINE")
 internal inline fun normalDragEdgeAt(e: Int, h: Float, boundA: IntArray, boundB: IntArray, px: FloatArray, py: FloatArray,
                                      vx: FloatArray, vy: FloatArray, organismOf: IntArray, flowVX: FloatArray,
-                                     flowVY: FloatArray, tangentDrag: Float) {
+                                     flowVY: FloatArray, tangentDrag: Float, normalDrag: Float, normalDragQ: Float) {
     val i = boundA[e]; val j = boundB[e]
     val ex = px[j] - px[i]
     val ey = py[j] - py[i]
@@ -293,7 +300,7 @@ internal inline fun normalDragEdgeAt(e: Int, h: Float, boundA: IntArray, boundB:
 
     // Линейная плюс квадратичная. Квадратичная сила равна NORMAL_DRAG_Q * vn*|vn|,
     // поэтому в коэффициенте (он делится на vn) остаётся |vn|.
-    var k = (NORMAL_DRAG + NORMAL_DRAG_QUADRATIC * abs(vn)) * len * h
+    var k = (normalDrag + normalDragQ * abs(vn)) * len * h
     if (k > 0.5f) k = 0.5f      // выше — переброс скорости через ноль, то есть раскачка
 
     val dv = -vn * k
@@ -304,7 +311,7 @@ internal inline fun normalDragEdgeAt(e: Int, h: Float, boundA: IntArray, boundB:
     if (tangentDrag > 0.0f) {
         val tx = ex * invLen; val ty = ey * invLen
         val vt = vmx * tx + vmy * ty
-        var kt = tangentDrag * NORMAL_DRAG * len * h
+        var kt = tangentDrag * normalDrag * len * h
         if (kt > 0.5f) kt = 0.5f
         val dvt = -vt * kt
         vx[i] += dvt * tx; vy[i] += dvt * ty
@@ -327,9 +334,31 @@ fun BodyState.applyRestitution() {
     }
 }
 
+/**
+ * ГРАВИТАЦИЯ МИРА (WorldEnvironment.gravityY) — по скоростям, после снимка скоростей подшага и до
+ * учёта внешнего импульса (velocityPassAfter), как хватка. Не в интегрировании: там она шла бы
+ * мимо учёта, и снятие внутреннего импульса (TickMomentum) за тик возвращало бы телу прежний
+ * импульс — тела висели бы в воздухе. Константа GRAVITY в интегрировании — пол стенда, ноль.
+ *
+ * Неподвижные (стенка, террейн), спящие и мёртвые — с нулевой обратной массой: им ничего.
+ * Цена при включённой гравитации — проход по бодрствующим частицам за подшаг и полный путь
+ * скоростей вместо быстрого (velocityFastAllowed); при нуле — одно сравнение.
+ */
+internal fun BodyState.applyGravity(h: Float) {
+    val g = environment.gravityY
+    if (g == 0.0f) return
+    val dv = g * h
+    prepareAwakeSpans()
+    val s = sleep
+    val vy = vy; val invMass = invMass
+    for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
+        if (invMass[i] > 0.0f) vy[i] += dv
+    }
+}
+
 fun BodyState.applyMediumDrag(h: Float) {
     if (dbgIsoDragOff) return
-    var keep = 1.0f - MEDIUM_DRAG * h
+    var keep = 1.0f - environment.mediumDrag * h
     if (keep < 0.0f) keep = 0.0f
     prepareAwakeSpans()
     val s = sleep

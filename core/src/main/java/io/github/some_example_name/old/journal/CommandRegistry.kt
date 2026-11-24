@@ -184,6 +184,8 @@ object CommandRegistry {
         t<PlayerCommand.KillCell>(704),
         t<PlayerCommand.SetStress>(705),
         t<PlayerCommand.SetPhysicsDebug>(706),
+        t<PlayerCommand.SetWorldRule>(707),
+        t<PlayerCommand.ResetWorldRules>(708),
 
         // --- Редактор генома ---
         t<PrevTickButtonTap>(800),

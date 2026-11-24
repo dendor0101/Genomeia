@@ -69,7 +69,7 @@ internal fun BodyState.velocityPassAfter(lastStep: Boolean, hTick: Float) {
 internal fun BodyState.velocityAfterRange(from: Int, to: Int, lastStep: Boolean, hTick: Float,
                                           acc: WorkerScratch?) {
     val medium = lastStep && !dbgIsoDragOff
-    var keep = 1.0f - MEDIUM_DRAG * hTick
+    var keep = 1.0f - environment.mediumDrag * hTick
     if (keep < 0.0f) keep = 0.0f
     val clamp = !dbgNoClamp
     val maxV = MAX_SPEED_CELLS_PER_TICK * linkScale / DT
@@ -105,10 +105,10 @@ internal fun BodyState.velocityAfterRange(from: Int, to: Int, lastStep: Boolean,
  * восстановлением скорости и потолком ничего не происходит: внешнего импульса нет, учёт ничего
  * не складывает, и снимок для него не нужен. Поэтому один проход, а частицы контактов
  * (и кости, которых они касаются) доделываются поштучно после отскока. Хватка и тяга мышью
- * меняют скорость вне контактов — при них работает полный путь.
+ * меняют скорость вне контактов — при них работает полный путь; гравитация мира (applyGravity) — тоже.
  * Цена: 4 байта на частицу и 4 на кость; потоково читается один лишний массив.
  */
-internal fun BodyState.velocityFastAllowed(): Boolean = dragId < 0 && gripCountNow() == 0
+internal fun BodyState.velocityFastAllowed(): Boolean = dragId < 0 && gripCountNow() == 0 && environment.gravityY == 0.0f
 
 /** Пометить частицы, чью скорость изменит отскок этого подшага: контакты и целиком их кости. */
 internal fun BodyState.markVelocityTouched() {
@@ -210,8 +210,8 @@ internal fun BodyState.noteContactsMomentum(ct: BoundaryContacts) {
 }
 
 /** Доля скорости, что остаётся за тик у частицы со своим множителем сопротивления [d]. */
-internal fun mediumKeep(hTick: Float, d: Float): Float {
-    val k = 1.0f - MEDIUM_DRAG * hTick * d
+internal fun BodyState.mediumKeep(hTick: Float, d: Float): Float {
+    val k = 1.0f - environment.mediumDrag * hTick * d
     return if (k < 0.0f) 0.0f else k
 }
 

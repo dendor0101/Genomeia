@@ -13,6 +13,7 @@ import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.GameFilePaths
 import io.github.some_example_name.old.core.ReplayFileException
 import io.github.some_example_name.old.core.GameFiles
+import io.github.some_example_name.old.core.BuildInfo
 import io.github.some_example_name.old.core.GameVersion
 import io.github.some_example_name.old.features.simulation.SimulationIntent
 import io.github.some_example_name.old.journal.CellLabRecord
@@ -633,6 +634,23 @@ object BugReplay {
         if (recorded != null && recorded != GameVersion.NAME) {
             note("баг записан в версии $recorded, а это ${GameVersion.NAME} — повтор может разойтись")
         }
+        noteBuildCommit()
+    }
+
+    /**
+     * Сборка отчёта против этой. Другой коммит — не ошибка, но расхождение хэшей тогда может
+     * быть от разницы сборок, а не от недетерминизма; печатаем, как повторить на той.
+     */
+    private fun noteBuildCommit() {
+        val commit = manifest["build.commit"] ?: return
+        val dirty = manifest["build.dirty"] == "true"
+        println("[$TAG] Сборка отчёта: $commit (${manifest["build.branch"] ?: "?"})" +
+            if (dirty) ", с незакоммиченными правками" else "")
+        if (commit != "unknown" && commit != BuildInfo.COMMIT) {
+            note("отчёт собран из коммита ${commit.take(SHORT_COMMIT)}, а это ${BuildInfo.COMMIT.take(SHORT_COMMIT)} — " +
+                "если не повторяется, повторить на той сборке: git worktree add ../bug-${commit.take(SHORT_COMMIT)} $commit")
+        }
+        if (dirty) note("отчёт собран с незакоммиченными правками: коммит описывает его сборку не целиком")
     }
 
     private fun JournalEntry.describe(): String =
@@ -669,6 +687,9 @@ object BugReplay {
     }
 
     private const val TAG = "BugReplay"
+
+    /** Сколько знаков коммита печатать: как git log --oneline. */
+    private const val SHORT_COMMIT = 7
     private const val SANDBOX_DIR = ".sandbox"
     private const val FRAME_BUDGET_NS = 8_000_000L
     private const val STALL_NS = 15_000_000_000L

@@ -33,6 +33,12 @@ class RenderContext {
     var overlayData: ByteBuffer? = null
     var numOverlayInstances: Int = 0
 
+    /** Феромоны отладочного режима, см. RenderFrame.pheromones. */
+    var pheromoneData: ByteBuffer? = null
+    var numPheromoneInstances: Int = 0
+    var pheromoneK: Float = 0f
+    var pheromoneP: Float = 0f
+
     /** Секунды для анимации, см. RenderFrame.time. */
     var time: Float = 0f
 

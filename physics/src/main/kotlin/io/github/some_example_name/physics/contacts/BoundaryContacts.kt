@@ -57,7 +57,8 @@ class BoundaryContacts(
      */
     @Suppress("unused")
     private val restitution: Float,
-    private val friction: Float,
+    /** Трение касания; клиент меняет его на ходу (WorldEnvironment.contactFriction, PhysicsWorld.setEnvironment). */
+    internal var friction: Float,
     /** Средняя длина связи — масштаб, в котором задан потолок поправки. */
     private val meanLink: Float,
     /** Потолок поправки контакта за подшаг, в долях средней связи. */

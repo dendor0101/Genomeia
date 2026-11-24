@@ -81,7 +81,7 @@ internal fun BodyState.solveBlockBend(h: Float, block: Int, layout: ConstraintBl
 }
 
 internal fun BodyState.solveBlockAreas(h: Float, block: Int, layout: ConstraintBlocks) {
-    val alpha = AREA_COMPLIANCE / (h * h)
+    val alpha = environment.areaCompliance / (h * h)
     // Вывернутым треугольникам своя, нулевая — см. AREA_COMPLIANCE_INVERTED.
     val alphaInverted = AREA_COMPLIANCE_INVERTED / (h * h)
     val maxStep = AREA_MAX_STEP * linkScale
