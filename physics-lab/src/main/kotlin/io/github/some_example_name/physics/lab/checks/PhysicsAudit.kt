@@ -58,8 +58,8 @@ fun main(args: Array<String>) {
     val accArea = DoubleArray(3)
     val accBone = DoubleArray(3)
     for (fr in 0 until 600) {
-        P.muscleTarget.fill(0.0)
-        if (P.muscleTarget.isNotEmpty()) P.muscleTarget[0] = 1.0
+        P.muscleTarget.fill(0.0f)
+        if (P.muscleTarget.isNotEmpty()) P.muscleTarget[0] = 1.0f
         P.updateMuscles(dt)
         for (s in 0 until sub) {
             P.integrate(h)
@@ -136,7 +136,7 @@ fun main(args: Array<String>) {
     P.resetState()
     for (fr in 1..60) P.frame(dt, sub, contract = true)
     println("после 60 кадров гребка: скорость увлечённой среды = ${g(P.flowPeak())}")
-    for (i in 0 until P.n) { P.vx[i] = 0.0; P.vy[i] = 0.0 }
+    for (i in 0 until P.n) { P.vx[i] = 0.0f; P.vy[i] = 0.0f }
     val b0 = P.pX(); val b1 = P.pY(); val b2 = P.angMom()
     P.applyNormalDrag(h)
     println("за ОДИН вызов при v=0: dP=(${e(P.pX() - b0)}, ${e(P.pY() - b1)}) dL=${e(P.angMom() - b2)}")
@@ -169,10 +169,10 @@ fun main(args: Array<String>) {
         val cs = cos(ang); val sn = sin(ang)
         for (i in 0 until P.n) {
             val qx = P.body.x[i] - rx0; val qy = P.body.y[i] - ry0
-            P.px[i] = rx0 + cs * qx - sn * qy
-            P.py[i] = ry0 + sn * qx + cs * qy
-            P.vx[i] = -omega * (P.py[i] - ry0)
-            P.vy[i] = omega * (P.px[i] - rx0)
+            P.px[i] = (rx0 + cs * qx - sn * qy).toFloat()
+            P.py[i] = (ry0 + sn * qx + cs * qy).toFloat()
+            P.vx[i] = (-omega * (P.py[i] - ry0)).toFloat()
+            P.vy[i] = (omega * (P.px[i] - rx0)).toFloat()
         }
         val q0 = P.pX(); val q1 = P.pY()
         for (s in 0 until sub) P.applyNormalDrag(h)

@@ -32,8 +32,8 @@ fun main(args: Array<String>) {
     repeat(30) { live.stepOnce() }
     live.act('D', 0)
     repeat(30) {
-        live.state.mouseX = live.state.px[0] + 0.003
-        live.state.mouseY = live.state.py[0] + 0.001
+        live.state.mouseX = (live.state.px[0] + 0.003).toFloat()
+        live.state.mouseY = (live.state.py[0] + 0.001).toFloat()
         live.stepOnce()
     }
     live.act('U')

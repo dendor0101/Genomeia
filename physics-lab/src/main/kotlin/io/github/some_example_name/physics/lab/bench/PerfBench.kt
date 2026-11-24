@@ -56,8 +56,8 @@ fun main(args: Array<String>) {
         cx /= m; cy /= m
         for (i in 0 until P.n) {
             if (org[i] != big) continue
-            P.vx[i] = -w0 * (P.py[i] - cy)
-            P.vy[i] = w0 * (P.px[i] - cx)
+            P.vx[i] = (-w0 * (P.py[i] - cy)).toFloat()
+            P.vy[i] = (w0 * (P.px[i] - cx)).toFloat()
         }
         fun omega(): Double {
             var mm = 0.0; var qx = 0.0; var qy = 0.0; var ux = 0.0; var uy = 0.0
@@ -197,8 +197,8 @@ fun main(args: Array<String>) {
         // в три контактных диаметра друг от друга.
         val cx = 5000.0 * ml; val cy = 5000.0 * ml
         val v = speed * ml / dt
-        P.px[a] = cx - 1.5 * rr; P.py[a] = cy
-        P.px[b] = cx + 1.5 * rr; P.py[b] = cy
+        P.px[a] = (cx - 1.5 * rr).toFloat(); P.py[a] = cy.toFloat()
+        P.px[b] = (cx + 1.5 * rr).toFloat(); P.py[b] = cy.toFloat()
         P.prevX[a] = P.px[a]; P.prevY[a] = P.py[a]
         P.prevX[b] = P.px[b]; P.prevY[b] = P.py[b]
         var deepest = 0.0
@@ -207,21 +207,21 @@ fun main(args: Array<String>) {
         // Смотрим и ПО ПОДШАГАМ: отрисовка интерполирует по ним, значит игрок видит
         // именно эти положения, а не только состояние на границе тика.
         P.demo.state.dbgSubstepHook = { _ ->
-            val dd = Math.hypot(P.px[b] - P.px[a], P.py[b] - P.py[a])
+            val dd = Math.hypot((P.px[b] - P.px[a]).toDouble(), (P.py[b] - P.py[a]).toDouble())
             val o = 1.0 - dd / rr
             if (o > deepestSub) deepestSub = o
         }
         // Вторую клетку держим неподвижной — это упор, в который давит рука.
         val holdInv = P.invMass[b]
-        P.invMass[b] = 0.0
+        P.invMass[b] = 0.0f
         for (fr in 0 until 240) {
             // ДАВИМ РУКОЙ, а не подменой скорости. Рука прикладывает силу КАЖДЫЙ
             // подшаг (applyDragVelocity), и только так выходит настоящая постоянная
             // нагрузка: подменённая раз в тик скорость гаснет в первом же подшаге,
             // контакт разводит пару, и к границе тика перекрытия не остаётся вовсе.
-            P.dragTo(a, P.px[b], P.py[b])
+            P.dragTo(a, P.px[b].toDouble(), P.py[b].toDouble())
             P.frame(dt, sub, contract = false)
-            val dd = Math.hypot(P.px[b] - P.px[a], P.py[b] - P.py[a])
+            val dd = Math.hypot((P.px[b] - P.px[a]).toDouble(), (P.py[b] - P.py[a]).toDouble())
             val overlap = 1.0 - dd / rr
             if (overlap > deepest) { deepest = overlap; atFrame = fr }
         }
@@ -273,8 +273,8 @@ fun main(args: Array<String>) {
                 for (i in 0 until P.n) {
                     if (org[i] != big) continue
                     if (Math.abs(P.py[i] - y) > ml) continue
-                    if (P.px[i] < lo) lo = P.px[i]
-                    if (P.px[i] > hi) hi = P.px[i]
+                    if (P.px[i] < lo) lo = P.px[i].toDouble()
+                    if (P.px[i] > hi) hi = P.px[i].toDouble()
                     cnt++
                 }
                 if (cnt > 10 && hi - lo > bestSpan) { bestSpan = hi - lo; bestY = y; minX = lo; maxX = hi }
@@ -284,9 +284,9 @@ fun main(args: Array<String>) {
         if (bestSpan <= 0.0) { println("ПРОТАСКИВАНИЕ: не нашлось горизонтали через тело"); return }
         val startX = minX - 5.0 * ml
         val endX = maxX + 5.0 * ml
-        P.px[free] = startX; P.py[free] = bestY
+        P.px[free] = startX.toFloat(); P.py[free] = bestY.toFloat()
         P.prevX[free] = P.px[free]; P.prevY[free] = P.py[free]
-        P.vx[free] = 0.0; P.vy[free] = 0.0
+        P.vx[free] = 0.0f; P.vy[free] = 0.0f
         val frames = Math.round(secs / dt).toInt()
         var inside = 0
         var deepest = 0.0
@@ -301,7 +301,7 @@ fun main(args: Array<String>) {
             val bc: Int = P.get("boundCount")
             var hit = false
             for (e in 0 until bc) {
-                if (segCross(prevX, prevY, nx, ny, P.px[bndA[e]], P.py[bndA[e]], P.px[bndB[e]], P.py[bndB[e]])) {
+                if (segCross(prevX.toDouble(), prevY.toDouble(), nx.toDouble(), ny.toDouble(), P.px[bndA[e]].toDouble(), P.py[bndA[e]].toDouble(), P.px[bndB[e]].toDouble(), P.py[bndB[e]].toDouble())) {
                     hit = true; break
                 }
             }
@@ -357,11 +357,11 @@ fun main(args: Array<String>) {
         // Курсор уходит от тела ровно со скоростью потолка тяги: быстрее тяга всё равно
         // не пойдёт, а медленнее — не проверка.
         val step = P.const("DRAG_SPEED_LIMIT") * P.const("MAX_SPEED_CELLS_PER_TICK") * ml
-        var tx = P.px[grab]; var ty = P.py[grab]
+        var tx = P.px[grab].toDouble(); var ty = P.py[grab].toDouble()
         var tornAt = -1
         var peakStretch = 0.0
         val conA: IntArray = P.get("conA"); val conB: IntArray = P.get("conB")
-        val conRest: DoubleArray = P.get("conRest"); val conDead: BooleanArray = P.get("conDead")
+        val conRest: FloatArray = P.get("conRest"); val conDead: BooleanArray = P.get("conDead")
         for (fr in 0 until frames) {
             tx += dirX * step; ty += dirY * step
             P.dragTo(grab, tx, ty)
@@ -370,13 +370,13 @@ fun main(args: Array<String>) {
             for (c in 0 until cc) {
                 if (conDead[c]) continue
                 if (conA[c] != grab && conB[c] != grab) continue
-                val s = Math.hypot(P.px[conA[c]] - P.px[conB[c]], P.py[conA[c]] - P.py[conB[c]]) / conRest[c]
+                val s = Math.hypot((P.px[conA[c]] - P.px[conB[c]]).toDouble(), (P.py[conA[c]] - P.py[conB[c]]).toDouble()) / conRest[c]
                 if (s > peakStretch) peakStretch = s
             }
             if (tornAt < 0 && P.killedLinks() > 0) tornAt = fr
         }
         P.dragRelease()
-        val gap = Math.hypot(P.px[grab] - tx, P.py[grab] - ty) / ml
+        val gap = Math.hypot((P.px[grab] - tx).toDouble(), (P.py[grab] - ty).toDouble()) / ml
         println("ТЯГА МЫШЬЮ на %s: тянем клетку #%d %.1f с, ускорение %.0f, потолок скорости %.2f"
             .format(path, grab, secs, P.const("DRAG_ACCEL"), P.const("DRAG_SPEED_LIMIT")))
         println("  порвано связей %d%s; пиковое растяжение связи схваченной клетки %.3f (рвёт выше %.2f)"
@@ -483,7 +483,7 @@ fun main(args: Array<String>) {
         fun peakCell(): Double {
             var v = 0.0
             for (i in 0 until P.n) {
-                val s = Math.hypot(P.vx[i], P.vy[i]) * dt / P.body.meanLinkLength
+                val s = Math.hypot(P.vx[i].toDouble(), P.vy[i].toDouble()) * dt / P.body.meanLinkLength
                 if (s > v) { v = s; peakWho = i }
             }
             return v
@@ -502,7 +502,7 @@ fun main(args: Array<String>) {
             val muscleOf: IntArray = P.get("muscleOf")
             val boneOf: IntArray = P.get("boneOf")
             val conA: IntArray = P.get("conA"); val conB: IntArray = P.get("conB")
-            val conRest: DoubleArray = P.get("conRest"); val conCount: Int = P.get("conCount")
+            val conRest: FloatArray = P.get("conRest"); val conCount: Int = P.get("conCount")
             val conDead: BooleanArray = P.get("conDead")
             val conMuscle: IntArray = P.get("conMuscle")
             val ml = P.body.meanLinkLength
@@ -511,7 +511,7 @@ fun main(args: Array<String>) {
             for (c in 0 until conCount) {
                 if (conDead[c] || (conA[c] != i && conB[c] != i)) continue
                 val j = if (conA[c] == i) conB[c] else conA[c]
-                val d = Math.hypot(P.px[i] - P.px[j], P.py[i] - P.py[j])
+                val d = Math.hypot((P.px[i] - P.px[j]).toDouble(), (P.py[i] - P.py[j]).toDouble())
                 println("    связь с #%d: длина %.3f покоя (мышца %d, покой %.3f св)"
                     .format(j, d / conRest[c], conMuscle[c], conRest[c] / ml))
             }
@@ -519,14 +519,14 @@ fun main(args: Array<String>) {
                 val a = ct.contactI(k); val b = ct.contactJ(k)
                 if (a != i && b != i) continue
                 val j = if (a == i) b else a
-                val d = Math.hypot(P.px[i] - P.px[j], P.py[i] - P.py[j])
+                val d = Math.hypot((P.px[i] - P.px[j]).toDouble(), (P.py[i] - P.py[j]).toDouble())
                 println("    контакт с #%d: %.3f упора".format(j, d / ct.contactDistanceOf(i, j)))
             }
             var sub2 = 0
             P.demo.state.dbgSubstepHook = { st ->
                 println("    подшаг %d.%02d: x %+.5f y %+.5f  v %.4f кл/тик"
                     .format(sub2, st, P.px[i] / ml, P.py[i] / ml,
-                        Math.hypot(P.vx[i], P.vy[i]) * dt / ml))
+                        Math.hypot(P.vx[i].toDouble(), P.vy[i].toDouble()) * dt / ml))
             }
             for (f in 0 until 2) { sub2 = f; P.frameHold(dt, which) }
             P.demo.state.dbgSubstepHook = null
@@ -580,7 +580,7 @@ fun main(args: Array<String>) {
             if (P.demo.state.dbgRebuildN > worstReb) worstReb = P.demo.state.dbgRebuildN
             P.demo.state.dbgRebuildN = 0
             for (i in 0 until P.n) {
-                val v = Math.hypot(P.vx[i], P.vy[i]) * dt / P.body.meanLinkLength
+                val v = Math.hypot(P.vx[i].toDouble(), P.vy[i].toDouble()) * dt / P.body.meanLinkLength
                 if (v > vPeak) { vPeak = v; vWho = i }
             }
             for (k in marks.indices) if (fr == marks[k]) at[k] = P.killedLinks()

@@ -13,10 +13,10 @@ class LocalSurface(
      * его задаёт клиент при рождении (BodyState.activateFree). У клеток тел это то же число,
      * что в описании (radius = body.radius при загрузке и дописывании).
      */
-    private var cellRadius: DoubleArray,
-    private val scale: Double,
-    private val seal: Double,
-    private val angleEps: Double,
+    private var cellRadius: FloatArray,
+    private val scale: Float,
+    private val seal: Float,
+    private val angleEps: Float,
     free: BooleanArray,
     probe: BooleanArray,
     private val probesEnabled: Boolean = true,
@@ -29,7 +29,7 @@ class LocalSurface(
     var boundary = IntArray(adj.size); private set
     var opposite = IntArray(adj.size); private set
     var boundaryEnd = IntArray(body.count); private set
-    var radius = DoubleArray(body.count); private set
+    var radius = FloatArray(body.count); private set
     var active = BooleanArray(body.count); private set
 
     /**
@@ -62,7 +62,7 @@ class LocalSurface(
      * состояние копируется как есть; строки новых заполнит update. Массивы клеток
      * мира (boneOf, dead, free, probe) после роста — новые объекты, ссылки обновляются.
      */
-    internal fun grow(body: BodyDefinition, boneOf: IntArray, dead: BooleanArray, cellRadius: DoubleArray,
+    internal fun grow(body: BodyDefinition, boneOf: IntArray, dead: BooleanArray, cellRadius: FloatArray,
                       free: BooleanArray, probe: BooleanArray) {
         this.body = body; this.boneOf = boneOf; this.dead = dead; this.cellRadius = cellRadius
         this.free = free; this.probe = probe
@@ -100,7 +100,7 @@ class LocalSurface(
     }
 
     fun update(v: Int) {
-        var a = start[v]; var b = a; var degree = 0; var r = 0.0
+        var a = start[v]; var b = a; var degree = 0; var r = 0.0f
         for (s in start[v] until start[v + 1]) {
             val edge = topology.vertEdge[s]
             if (topology.edgeDead[edge]) continue
@@ -109,18 +109,18 @@ class LocalSurface(
             if (boneOf[v] < 0 || boneOf[v] != boneOf[other]) adj[a++] = other
             if (topology.triUse[edge] > 1) continue
             boundary[b] = other; opposite[b++] = topology.opposite(edge)
-            val dx = (body.x[v] - body.x[other]).toDouble()
-            val dy = (body.y[v] - body.y[other]).toDouble()
-            r = maxOf(r, 0.5 * sqrt(dx * dx + dy * dy) * seal)
+            val dx = (body.x[v] - body.x[other]).toFloat()
+            val dy = (body.y[v] - body.y[other]).toFloat()
+            r = maxOf(r, 0.5f * sqrt(dx * dx + dy * dy) * seal)
         }
         adjEnd[v] = a; boundaryEnd[v] = b
         free[v] = degree == 0
-        probe[v] = free[v] || topology.surfaceAngle(v) < 2.0 * Math.PI - angleEps
+        probe[v] = free[v] || topology.surfaceAngle(v) < 2.0f * Math.PI - angleEps
         val exposed = free[v] || (probesEnabled && probe[v])
         val was = active[v]
         active[v] = !dead[v] && (b > start[v] || exposed)
         if (active[v] != was) noteActiveChanged(v)
-        if (r == 0.0 && (a == start[v] || exposed)) r = cellRadius[v] * scale
-        radius[v] = if (dead[v]) 0.0 else r
+        if (r == 0.0f && (a == start[v] || exposed)) r = cellRadius[v] * scale
+        radius[v] = if (dead[v]) 0.0f else r
     }
 }

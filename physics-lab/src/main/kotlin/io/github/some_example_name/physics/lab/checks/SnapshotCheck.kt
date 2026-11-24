@@ -84,7 +84,7 @@ private fun read(bytes: ByteArray, config: PhysicsConfig, workers: PhysicsWorker
 private fun hash(w: PhysicsWorld): Long {
     var h = 1125899906842597L
     fun mix(v: Long) { h = (h xor v) * -7046029254386353131L }
-    for (i in 0 until w.particleCount) { mix(w.x[i].toRawBits()); mix(w.y[i].toRawBits()); mix(w.vx[i].toRawBits()); mix(w.vy[i].toRawBits()) }
+    for (i in 0 until w.particleCount) { mix(w.x[i].toRawBits().toLong()); mix(w.y[i].toRawBits().toLong()); mix(w.vx[i].toRawBits().toLong()); mix(w.vy[i].toRawBits().toLong()) }
     return h
 }
 
@@ -106,13 +106,13 @@ private class Scenario(val bodies: List<BodyDefinition>) {
             val born = if (k == grow) BooleanArray(bodies[k].count).also { it[order[0]] = true } else null
             ids[k] = w.addBody(bodies[k], born)
         }
-        minX = (0 until w.particleCount).minOf { w.x[it] }; maxX = (0 until w.particleCount).maxOf { w.x[it] }
-        minY = (0 until w.particleCount).minOf { w.y[it] }; maxY = (0 until w.particleCount).maxOf { w.y[it] }
+        minX = ((0 until w.particleCount).minOf { w.x[it] }).toDouble(); maxX = ((0 until w.particleCount).maxOf { w.x[it] }).toDouble()
+        minY = ((0 until w.particleCount).minOf { w.y[it] }).toDouble(); maxY = ((0 until w.particleCount).maxOf { w.y[it] }).toDouble()
         // Входы клиента-игры: рамка мира, масса и сопротивление клеток первого тела.
         val pad = 0.2 * (maxX - minX)
-        w.setBounds(minX - pad, minY - pad, maxX + pad, maxY + pad)
+        w.setBounds((minX - pad).toFloat(), (minY - pad).toFloat(), (maxX + pad).toFloat(), (maxY + pad).toFloat())
         val f = w.bodyFirst(ids[0])
-        for (k in 0 until 20) { w.setMass(f + k, 2.0 / w.state.restInvMass[f + k]); w.setDrag(f + k, 1.5) }
+        for (k in 0 until 20) { w.setMass(f + k, (2.0 / w.state.restInvMass[f + k]).toFloat()); w.setDrag(f + k, 1.5f) }
         // Волокно мышцы у половины клеток растущего тела (MuscleFiber.kt): в снимке — волокна, после чтения — производное заново.
         val g = w.bodyFirst(ids[grow])
         val fl = Math.sqrt(1.09) // волокно — единичный вектор (PhysicsWorld.setCellFiber)
@@ -129,7 +129,7 @@ private class Scenario(val bodies: List<BodyDefinition>) {
             val r = 0.5 * w0.meanLinkLength * (0.6 + 0.8 * rnd.nextDouble())
             var id = -1
             val drag = if (rnd.nextBoolean()) 1.0 else 0.4
-            for (w in worlds) id = w.addFree(x, y, r, 0.0, 0.0, drag = drag)
+            for (w in worlds) id = w.addFree(x.toFloat(), y.toFloat(), r.toFloat(), 0.0f, 0.0f, drag = drag.toFloat())
             free.add(id)
         }
         var k = 0
@@ -139,7 +139,7 @@ private class Scenario(val bodies: List<BodyDefinition>) {
         if (tick == 90) for (w in worlds) w.grab(w.bodyFirst(ids[0]) + 5)
         if (tick in 90..200) for (w in worlds) {
             val c = w.bodyFirst(ids[0]) + 5
-            w.dragTo(w.x[c] + 0.02 * Math.cos(tick * 0.1), w.y[c] + 0.02 * Math.sin(tick * 0.1))
+            w.dragTo((w.x[c] + 0.02 * Math.cos(tick * 0.1)).toFloat(), (w.y[c] + 0.02 * Math.sin(tick * 0.1)).toFloat())
         }
         if (tick == 200) for (w in worlds) w.release()
         // Мышцы клеток растущего тела — бегущая волна; гибель клетки первого тела раз в 50 тиков.
@@ -150,7 +150,7 @@ private class Scenario(val bodies: List<BodyDefinition>) {
         }
         // Свободные частицы: половина — со своим сопротивлением.
         val on = if (tick % 40 < 20) 1.0 else 0.0
-        for (w in worlds) { w.setAllMuscleTargets(on); w.step() }
+        for (w in worlds) { w.setAllMuscleTargets(on.toFloat()); w.step() }
         tick++
     }
 
@@ -166,7 +166,7 @@ private class Scenario(val bodies: List<BodyDefinition>) {
         val speed = 0.8 * MAX_SPEED_CELLS_PER_TICK * w.meanLinkLength / DT
         for ((b, sgn) in listOf(0 to 1.0, ram to -1.0)) {
             val f = w.bodyFirst(ids[b])
-            for (i in f until f + w.bodyCount(ids[b])) w.setVelocity(i, sgn * dx * speed, sgn * dy * speed)
+            for (i in f until f + w.bodyCount(ids[b])) w.setVelocity(i, (sgn * dx * speed).toFloat(), (sgn * dy * speed).toFloat())
             w.wake(f)
         }
     }
@@ -208,17 +208,15 @@ private val scratchPrefixes = listOf("state.tickMomentumState.", "state.sleep.sp
     "state.cellDeathLog", "state.edgeDeathLog",
     // Черновик activateCell: ожившие треугольники до старта дорастания, за пределами вызова не читается.
     "state.bornTriScratch",
-    // Клин (ImpactWedge): клинья, область распорок и метки обходов — буферы подшага; список клеток с памятью
-    // удара собирается из неё заново в начале тика (bindImpact). Сама память — state.impactSpeed — сверяется.
-    "state.contacts.wedge.")
+    // Плавность дорастания по подшагам (applyGrowthLerp): списки одного тика, к его концу пусты (счётчики
+    // growLerpN/growLerpTriN сверяются и равны нулю); за счётчиком — остатки прошлых тиков и разная ёмкость.
+    "state.growLerpEdge", "state.growLerpFrom", "state.growLerpTo", "state.growLerpTri")
 private val contactScratch = setOf("boneCx", "boneCy", "boneI", "boneIds", "boneM", "boneOf", "bpMoved", "cAx", "cAy",
     "cI", "cJ", "cLam", "cLamTot", "cNx", "cNy", "cRR", "cVn", "ddaX", "ddaY", "dirtyBuf", "frcList", "frcN", "keptKeys",
     "lowKeys", "moved", "movedCount", "movedStamp", "moverCount", "movers", "nearA", "nearB", "nearN", "nearRestSlot",
     "newKeys", "pairA", "pairB", "pairNear", "pass", "pierceA", "pierceB", "stamp", "staticCount", "velH",
     // Вид контакта и список упоров в неподвижное (cFixed): пишутся в каждом подшаге до чтения.
-    "cFixed", "fixedList",
-    // Клин: положения начала подшага (ставит prepare) и признак «гибель уже осуждена» (ставит проход касаний).
-    "wedgeQx", "wedgeQy", "wedgeKillsJudged")
+    "cFixed", "fixedList")
 
 private fun skip(name: String): Boolean =
     name in skipNames || name.startsWith("dbg") || name.startsWith("parallel") || name.startsWith("profile") ||

@@ -136,12 +136,12 @@ class PhysicsBridgeTest {
         val layout = hexLayout(rings = 2)
         val bridge = grow(layout, null, settle = 0)
         // Скорость игры: смещение за тик — vx · 7.5 (PhysicsUnits); без сопротивления.
-        val id = bridge.addSubstance(20f, 20f, 0.3f, vx = 0.01f, vy = 0f, drag = 0.0)
+        val id = bridge.addSubstance(20f, 20f, 0.3f, vx = 0.01f, vy = 0f, drag = 0.0f)
         val p = bridge.substanceParticle(id)
         bridge.step()
         assertEquals(20f + 0.075f, bridge.x(p), 0.01f)
         // Пущенная в стенку остаётся внутри рамки.
-        val wall = bridge.addSubstance(198f, 100f, 0.3f, vx = 0.2f, vy = 0f, drag = 0.0)
+        val wall = bridge.addSubstance(198f, 100f, 0.3f, vx = 0.2f, vy = 0f, drag = 0.0f)
         repeat(30) { bridge.step() }
         val w = bridge.substanceParticle(wall)
         assertTrue(bridge.x(w) <= 200f - 0.3f + 0.15f, "субстанция внутри рамки: x = ${bridge.x(w)}")

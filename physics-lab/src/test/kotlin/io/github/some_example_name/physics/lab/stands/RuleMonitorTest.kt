@@ -44,7 +44,7 @@ class RuleMonitorTest {
         s.tick(3)
         assertFalse(s.failed(Rule.CROSS))
         val p = s.w.world.freeParticle(ball)
-        s.tick { s.w.world.place(p, 6.0 * k, 0.1 * k) }
+        s.tick { s.w.world.place(p, (6.0 * k).toFloat(), (0.1 * k).toFloat()) }
         assertTrue("перенос частицы через квадрат не пойман", s.failed(Rule.CROSS))
         assertFalse("частица снаружи тела не должна считаться сидящей в ткани", s.failed(Rule.FOREIGN))
     }
@@ -55,7 +55,7 @@ class RuleMonitorTest {
         val s = stage { body(Shapes.square(6), 0.0, 0.0); ball = ball(-6.0, 5.0) }
         val p = s.w.world.freeParticle(ball)
         s.tick(3)
-        s.tick { s.w.world.place(p, 6.0 * k, 5.0 * k) }
+        s.tick { s.w.world.place(p, (6.0 * k).toFloat(), (5.0 * k).toFloat()) }
         assertFalse("частица пролетела выше тела — пересечений нет", s.failed(Rule.CROSS))
     }
 
@@ -69,7 +69,7 @@ class RuleMonitorTest {
         val w = s.w
         val cx = (w.gameX(b.particle(t[0])) + w.gameX(b.particle(t[1])) + w.gameX(b.particle(t[2]))) / 3
         val cy = (w.gameY(b.particle(t[0])) + w.gameY(b.particle(t[1])) + w.gameY(b.particle(t[2]))) / 3
-        s.tick { w.world.place(w.world.freeParticle(ball), cx * k, cy * k) }
+        s.tick { w.world.place(w.world.freeParticle(ball), (cx * k).toFloat(), (cy * k).toFloat()) }
         assertTrue("частица в середине треугольника тела не поймана", s.failed(Rule.FOREIGN))
     }
 
@@ -79,7 +79,7 @@ class RuleMonitorTest {
         val s = stage { rock(0.0, 0.0); ball = ball(5.0, 0.0) }
         s.tick(2)
         assertFalse(s.failed(Rule.TERRAIN))
-        s.tick { s.w.world.place(s.w.world.freeParticle(ball), 0.05 * k, 0.0) }
+        s.tick { s.w.world.place(s.w.world.freeParticle(ball), (0.05 * k).toFloat(), 0.0f) }
         assertTrue("частица в центре частицы рельефа не поймана", s.failed(Rule.TERRAIN))
     }
 
@@ -89,7 +89,7 @@ class RuleMonitorTest {
         val s = stage { terrain(0.0, 0.0, 9, 9, jitter = false) { _, _ -> true }; ball = ball(-5.0, 0.0) }
         s.tick(2)
         // Середина плиты 9×9: вокруг только твёрдые клетки, частиц рельефа там нет.
-        s.tick { s.w.world.place(s.w.world.freeParticle(ball), 4 * TERRAIN_STEP * k, 4 * TERRAIN_STEP * k) }
+        s.tick { s.w.world.place(s.w.world.freeParticle(ball), (4 * TERRAIN_STEP * k).toFloat(), (4 * TERRAIN_STEP * k).toFloat()) }
         assertTrue("частица в толще рельефа не поймана", s.failed(Rule.TERRAIN))
     }
 
@@ -100,7 +100,7 @@ class RuleMonitorTest {
         s.tick(3)
         assertFalse("честный толчок не должен нарушать правило энергии", s.failed(Rule.ENERGY))
         val st = s.w.world.state
-        s.tick { for (c in 0 until b.count) { val p = b.particle(c); st.vx[p] *= 3.0; st.vy[p] *= 3.0 } }
+        s.tick { for (c in 0 until b.count) { val p = b.particle(c); st.vx[p] *= 3.0f; st.vy[p] *= 3.0f } }
         assertTrue("утроенная скорость тела не поймана", s.failed(Rule.ENERGY))
     }
 
@@ -109,7 +109,7 @@ class RuleMonitorTest {
         lateinit var b: StandBody
         val s = stage { b = body(Shapes.square(6), 0.0, 0.0) }
         s.tick(2)
-        s.tick { s.w.world.state.px[b.particle(3)] = Double.NaN }
+        s.tick { s.w.world.state.px[b.particle(3)] = Float.NaN }
         assertTrue(s.failed(Rule.NUMBERS))
     }
 
@@ -145,7 +145,7 @@ class RuleMonitorTest {
         assertFalse("целая кость в покое не должна считаться смятой", s.failed(Rule.BONES))
         val w = s.w.world
         val p = b.particle(0)
-        s.tick { w.place(p, w.x[p] - 1.5 * k, w.y[p] - 1.5 * k) }
+        s.tick { w.place(p, (w.x[p] - 1.5 * k).toFloat(), (w.y[p] - 1.5 * k).toFloat()) }
         assertTrue("клетка кости, унесённая на полторы единицы, не поймана", s.failed(Rule.BONES))
     }
 
@@ -168,7 +168,7 @@ class RuleMonitorTest {
         // Крайнюю клетку уводят от тела по связи за тик: связи растягиваются за предел и рвутся.
         val x0 = w.x[p]; val y0 = w.y[p]
         var step = 0
-        s.tick(12) { step++; w.place(p, x0 + step * 0.6 * k, y0) }
+        s.tick(12) { step++; w.place(p, (x0 + step * 0.6 * k).toFloat(), y0) }
         assertTrue("клетку оторвали от тела, а разрыв не пойман (порвано ${s.m.torn})", s.failed(Rule.TEARS))
     }
 
@@ -180,7 +180,7 @@ class RuleMonitorTest {
         assertEquals("тело в покое должно уснуть за 120 тиков", 0, s.m.awake)
         val st = s.w.world.state
         val p = b.particle(5)
-        s.tick { st.px[p] += 0.01 * k }
+        s.tick { st.px[p] += (0.01 * k).toFloat() }
         assertTrue(s.failed(Rule.STILL))
     }
 
@@ -212,7 +212,7 @@ class RuleMonitorTest {
         val p = b.particle(b.shape.extreme(1.0, 0.0))
         s.tick(49)
         // В последний тик крайняя клетка вдавлена внутрь на треть связи: связи короче исходных.
-        s.tick { w.place(p, w.x[p] - 0.2 * k, w.y[p]) }
+        s.tick { w.place(p, (w.x[p] - 0.2 * k).toFloat(), w.y[p]) }
         s.m.finish()
         assertTrue("сжатая связь в конце сцены не поймана", s.failed(Rule.SHAPE))
     }

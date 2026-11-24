@@ -37,7 +37,7 @@ class KillCauses(private val w: StandWorld) {
     var keepLines = 0
     val lines = ArrayList<String>()
     private val st = w.world.state
-    private val hook = { i: Int, j: Int, d: Double, atStart: Boolean -> note(i, j, d, atStart) }
+    private val hook = { i: Int, j: Int, d: Float, atStart: Boolean -> note(i, j, d.toDouble(), atStart) }
     /** Тик, в котором клетка уже сочтена погибшей: вторая заявка на неё в том же тике не в счёт. */
     private var countedAt = IntArray(0)
 
@@ -72,7 +72,7 @@ class KillCauses(private val w: StandWorld) {
         val kind = if (st.invMass[i] <= 0.0 || st.invMass[j] <= 0.0) FIXED else if (bi < 0 || bj < 0) BALL else if (bi == bj) SELF else FOREIGN
         // Сближение пары за подшаг вдоль линии центров — по скоростям на входе в подшаг.
         val dx = st.px[i] - st.px[j]; val dy = st.py[i] - st.py[j]
-        val len = sqrt(dx * dx + dy * dy).coerceAtLeast(1e-12)
+        val len = sqrt(dx * dx + dy * dy).coerceAtLeast(1e-12f)
         val closing = -((st.vx[i] - st.vx[j]) * dx + (st.vy[i] - st.vy[j]) * dy) / len * (DT / SUBSTEPS)
         val way = if (atStart) DEEP else if (d + closing >= rr) FLEW else PRESSED
         count[kind * WAYS.size + way] += dead

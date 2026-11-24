@@ -36,7 +36,7 @@ class RuleMonitorDamageTest {
         val x0 = s.w.world.x[p]; val y0 = s.w.world.y[p]
         // Сдвиг на 0.03 связи то вправо, то влево — втрое больше порога заметности.
         val step = 0.03 * PHYSICS_LINK
-        s.tick(JITTER_TICKS + 12) { t -> s.w.world.place(p, x0 + if (t % 2 == 0) step else -step, y0) }
+        s.tick(JITTER_TICKS + 12) { t -> s.w.world.place(p, (x0 + if (t % 2 == 0) step else -step).toFloat(), y0) }
         assertTrue("дрожь частицы не поймана; самая долгая серия ${s.m.jitterLongest}", s.failed(Rule.JITTER))
         assertTrue(s.m.jitterTicks > 0)
     }
@@ -49,8 +49,8 @@ class RuleMonitorDamageTest {
         val p = b.particle(0)
         val x0 = s.w.world.x[p]; val y0 = s.w.world.y[p]
         // Частицу ведут в одну сторону, потом качают с периодом в тридцать тиков — как ткань после удара.
-        s.tick(40) { t -> s.w.world.place(p, x0 + 0.02 * PHYSICS_LINK * t, y0) }
-        s.tick(120) { t -> s.w.world.place(p, x0 + 0.4 * PHYSICS_LINK * Math.sin(2 * Math.PI * t / 30.0), y0) }
+        s.tick(40) { t -> s.w.world.place(p, (x0 + 0.02 * PHYSICS_LINK * t).toFloat(), y0) }
+        s.tick(120) { t -> s.w.world.place(p, (x0 + 0.4 * PHYSICS_LINK * Math.sin(2 * Math.PI * t / 30.0)).toFloat(), y0) }
         assertFalse("ровный ход или плавное колебание приняты за дрожь; серия ${s.m.jitterLongest}", s.failed(Rule.JITTER))
     }
 
@@ -62,7 +62,7 @@ class RuleMonitorDamageTest {
         val p = b.particle(0)
         val x0 = s.w.world.x[p]; val y0 = s.w.world.y[p]
         val step = 0.2 * JITTER_STEP * PHYSICS_LINK
-        s.tick(60) { t -> s.w.world.place(p, x0 + if (t % 2 == 0) step else -step, y0) }
+        s.tick(60) { t -> s.w.world.place(p, (x0 + if (t % 2 == 0) step else -step).toFloat(), y0) }
         assertFalse(s.failed(Rule.JITTER))
     }
 
@@ -154,8 +154,8 @@ class RuleMonitorDamageTest {
         w.kick(b, 1.0, 0.0)
         repeat(10) { w.step() }
         // Тело толкнули на связь за тик, а клетка с хваткой 1 ушла меньше чем на сотую связи.
-        assertTrue("присоска ушла на ${Math.hypot(w.world.x[p] - x0, w.world.y[p] - y0) / PHYSICS_LINK} связи",
-            Math.hypot(w.world.x[p] - x0, w.world.y[p] - y0) / PHYSICS_LINK < 0.01)
+        assertTrue("присоска ушла на ${Math.hypot((w.world.x[p] - x0).toDouble(), (w.world.y[p] - y0).toDouble()) / PHYSICS_LINK} связи",
+            Math.hypot((w.world.x[p] - x0).toDouble(), (w.world.y[p] - y0).toDouble()) / PHYSICS_LINK < 0.01)
         assertTrue(k > 0)
     }
 }

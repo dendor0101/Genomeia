@@ -3,10 +3,39 @@ package io.github.some_example_name.physics
 /** Эксперимент: баланс импульса за тик. Внешние изменения скоростей учитываются
  * отдельно; контакты объединяют группы. Разрыв в середине тика не отменяет уже
  * переданный импульс. Раздельные тела вновь разделяются на следующем begin.
- * 12 double + 2 int + boolean на частицу: ~10.5 МБ при 100k, больше L2.
+ * 10 double + 2 float + 2 int + boolean на частицу: ~9.7 МБ при 100k, больше L2.
  * Это цена прямого варианта; выигрыш должен подтвердить замер.
+ *
+ * ЦЕЛИ И СУММЫ — В DOUBLE, хотя физика во float (22.11, docs/physics/reference.md, находка 36). Момент
+ * считается относительно начала координат мира: m (x · vy − y · vx) при x до 25 единиц физики против
+ * поправки тела в сотые доли — разность двух больших чисел. Во float её точность съедает рычаг: вдали от
+ * нуля момент вращающегося тела утекал (находка 35), а одиночная частица набирала скорость из шума.
+ * Произведение двух float в double точное, поэтому здесь рычаг ничего не стоит. Массивы мира не меняются:
+ * double только в учёте, который проходит по частице раз в подшаг.
+ *
+ * [minSpinArm] — наименьший радиус инерции группы, у которого есть вращение (SPIN_MIN_ARM в единицах мира).
  */
-class TickMomentum(internal val n: Int) {
+/**
+ * Внешний импульс одной частицы за подшаг — единственная запись этой арифметики. Массивы учёта идут параметрами:
+ * склеенные проходы (FusedPasses) держат их в локальных переменных, а [TickMomentum.externalAt] передаёт свои.
+ * [onFloor] — частица стоит на опоре: её группа из учёта выходит.
+ */
+@Suppress("NOTHING_TO_INLINE")
+internal inline fun momentumExternalAt(i: Int, x: FloatArray, y: FloatArray, vx: FloatArray, vy: FloatArray,
+                                       invMass: FloatArray, onFloor: Boolean, beforeX: FloatArray, beforeY: FloatArray,
+                                       targetX: DoubleArray, targetY: DoubleArray, targetL: DoubleArray, blocked: BooleanArray) {
+    val w = invMass[i]
+    if (w <= 0.0f) { if (onFloor) blocked[i] = true; return }
+    val m = 1.0 / w
+    val fx = m * (vx[i] - beforeX[i]); val fy = m * (vy[i] - beforeY[i])
+    val tx = targetX[i] + fx; val ty = targetY[i] + fy
+    val tl = targetL[i] + (x[i] * fy - y[i] * fx)
+    targetX[i] = tx; targetY[i] = ty; targetL[i] = tl
+    if (onFloor) blocked[i] = true
+}
+
+class TickMomentum(internal val n: Int, minSpinArm: Float) {
+    private val minArm2 = minSpinArm.toDouble() * minSpinArm
     private val parent = IntArray(n)
     private val first = IntArray(n)
     /**
@@ -16,11 +45,14 @@ class TickMomentum(internal val n: Int) {
      */
     private val orgParent = IntArray(n)
     private var orgOf = IntArray(0)
-    private val targetX = DoubleArray(n)
-    private val targetY = DoubleArray(n)
-    private val targetL = DoubleArray(n)
-    private val beforeX = DoubleArray(n)
-    private val beforeY = DoubleArray(n)
+    // Цели, снимок и признак опоры открыты модулю: склеенные проходы по скоростям (FusedPasses) берут их в
+    // локальные переменные до цикла — вызов beforeAt/externalAt на каждую частицу читал бы заголовки этих
+    // массивов заново (см. lengthsBeforeLoop).
+    internal val targetX = DoubleArray(n)
+    internal val targetY = DoubleArray(n)
+    internal val targetL = DoubleArray(n)
+    internal val beforeX = FloatArray(n)
+    internal val beforeY = FloatArray(n)
     private val mass = DoubleArray(n)
     private val cx = DoubleArray(n)
     private val cy = DoubleArray(n)
@@ -28,7 +60,7 @@ class TickMomentum(internal val n: Int) {
     private val dy = DoubleArray(n)
     private val dl = DoubleArray(n)
     private val inertia = DoubleArray(n)
-    private val blocked = BooleanArray(n)
+    internal val blocked = BooleanArray(n)
     private fun find(i: Int): Int {
         var r = i
         while (parent[r] != r) r = parent[r]
@@ -81,8 +113,8 @@ class TickMomentum(internal val n: Int) {
      * исключались только нерождённые, и первая же погибшая клетка навсегда выключала учёт
      * импульса всему организму (BirthKickProbe 03.11: у Crayfish со стадии 25 роста).
      */
-    fun begin(x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
-              invMass: DoubleArray, org: IntArray, sleep: BodySleep? = null, outside: BooleanArray? = null) {
+    fun begin(x: FloatArray, y: FloatArray, vx: FloatArray, vy: FloatArray,
+              invMass: FloatArray, org: IntArray, sleep: BodySleep? = null, outside: BooleanArray? = null) {
         beginGroups(org, sleep, outside)
         spans(sleep) { from, to -> beginTargets(from, to, x, y, vx, vy, invMass) }
     }
@@ -103,13 +135,17 @@ class TickMomentum(internal val n: Int) {
     }
 
     /** Импульс частиц [from, to) в начале тика. Кусок параллельного прохода: у каждой частицы свои поля. */
-    internal fun beginTargets(from: Int, to: Int, x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
-                              invMass: DoubleArray) {
+    internal fun beginTargets(from: Int, to: Int, x: FloatArray, y: FloatArray, vx: FloatArray, vy: FloatArray,
+                              invMass: FloatArray) {
+        // Свои массивы — в локальные, длины — до цикла: см. lengthsBeforeLoop. То же в остальных кусках учёта ниже.
+        val targetX = targetX; val targetY = targetY; val targetL = targetL; val blocked = blocked
+        lengthsBeforeLoop(x.size or y.size or vx.size or vy.size or invMass.size or targetX.size or targetY.size or
+            targetL.size or blocked.size)
         for (i in from until to) {
-            val m = if (invMass[i] > 0.0) 1.0 / invMass[i] else 0.0
+            val m = if (invMass[i] > 0.0f) 1.0 / invMass[i] else 0.0
             targetX[i] = m * vx[i]; targetY[i] = m * vy[i]
-            targetL[i] = m * (x[i] * vy[i] - y[i] * vx[i])
-            blocked[i] = invMass[i] <= 0.0
+            targetL[i] = m * (x[i].toDouble() * vy[i] - y[i].toDouble() * vx[i])
+            blocked[i] = invMass[i] <= 0.0f
         }
     }
 
@@ -140,8 +176,8 @@ class TickMomentum(internal val n: Int) {
     fun block(i: Int) { blocked[i] = true }
 
     /** Временная связь (BodyState.solveJoints) объединяет группы концов, как контакт ([noteContacts]). */
-    fun noteJoint(i: Int, j: Int, invMass: DoubleArray) {
-        if (invMass[i] <= 0.0 || invMass[j] <= 0.0) { blocked[i] = true; blocked[j] = true }
+    fun noteJoint(i: Int, j: Int, invMass: FloatArray) {
+        if (invMass[i] <= 0.0f || invMass[j] <= 0.0f) { blocked[i] = true; blocked[j] = true }
         else unionParticles(i, j)
     }
 
@@ -150,8 +186,8 @@ class TickMomentum(internal val n: Int) {
      * (неподвижная частица помечает группу, свой организм уже в группе), -2 — поштучный путь.
      * Итог слияния от порядка не зависит: корень группы — наименьший номер частицы.
      */
-    internal fun contactKey(i: Int, j: Int, invMass: DoubleArray): Long {
-        if (invMass[i] <= 0.0 || invMass[j] <= 0.0) { blocked[i] = true; blocked[j] = true; return -1L }
+    internal fun contactKey(i: Int, j: Int, invMass: FloatArray): Long {
+        if (invMass[i] <= 0.0f || invMass[j] <= 0.0f) { blocked[i] = true; blocked[j] = true; return -1L }
         val oi = orgOf[i]; val oj = orgOf[j]
         if (oi < 0 || oj < 0 || first[oi] < 0 || first[oj] < 0) return -2L
         if (oi == oj) return -1L
@@ -161,10 +197,10 @@ class TickMomentum(internal val n: Int) {
     internal fun unionKey(key: Long) = unionOrg((key ushr 32).toInt(), key.toInt())
     internal fun unionContact(i: Int, j: Int) = unionParticles(i, j)
 
-    fun noteContacts(c: BoundaryContacts, invMass: DoubleArray) {
+    fun noteContacts(c: BoundaryContacts, invMass: FloatArray) {
         for (k in 0 until c.contactCount) {
             val i = c.contactI(k); val j = c.contactJ(k)
-            if (invMass[i] <= 0.0 || invMass[j] <= 0.0) { blocked[i] = true; blocked[j] = true }
+            if (invMass[i] <= 0.0f || invMass[j] <= 0.0f) { blocked[i] = true; blocked[j] = true }
             else unionParticles(i, j)
         }
     }
@@ -184,7 +220,7 @@ class TickMomentum(internal val n: Int) {
      * Только диапазоны бодрствующих частиц: у спящих скорость ноль и не меняется.
      * Без [sleep] (зеркало SwimSolver) — все частицы. См. BodySleep.
      */
-    fun beforeExternal(vx: DoubleArray, vy: DoubleArray, sleep: BodySleep? = null) {
+    fun beforeExternal(vx: FloatArray, vy: FloatArray, sleep: BodySleep? = null) {
         val spans = sleep?.spanCount ?: 1
         for (k in 0 until spans) {
             val s = if (sleep == null) 0 else sleep.spanStart[k]
@@ -193,8 +229,8 @@ class TickMomentum(internal val n: Int) {
             System.arraycopy(vy, s, beforeY, s, len)
         }
     }
-    fun afterExternal(x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
-                      invMass: DoubleArray, floor: BooleanArray? = null, sleep: BodySleep? = null) {
+    fun afterExternal(x: FloatArray, y: FloatArray, vx: FloatArray, vy: FloatArray,
+                      invMass: FloatArray, floor: BooleanArray? = null, sleep: BodySleep? = null) {
         // Сначала все чтения частицы, потом записи: см. BodyState.integrate. Худшая
         // раскладка массивов на 100k: 16.7 мс за тик против 12.9 подряд.
         val spans = sleep?.spanCount ?: 1
@@ -206,23 +242,15 @@ class TickMomentum(internal val n: Int) {
     }
 
     /** Снимок скорости одной частицы до внешних стадий. Склеенный проход: см. FusedPasses. */
-    fun beforeAt(i: Int, vx: Double, vy: Double) { beforeX[i] = vx; beforeY[i] = vy }
+    fun beforeAt(i: Int, vx: Float, vy: Float) { beforeX[i] = vx; beforeY[i] = vy }
 
-    /** Внешний импульс одной частицы за подшаг. Тот же код, что в afterExternal. */
-    fun externalAt(i: Int, x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
-                   invMass: DoubleArray, floor: BooleanArray?) {
-        val onFloor = floor != null && floor[i]
-        val w = invMass[i]
-        if (w <= 0.0) { if (onFloor) blocked[i] = true; return }
-        val m = 1.0 / w
-        val fx = m * (vx[i] - beforeX[i]); val fy = m * (vy[i] - beforeY[i])
-        val tx = targetX[i] + fx; val ty = targetY[i] + fy
-        val tl = targetL[i] + (x[i] * fy - y[i] * fx)
-        targetX[i] = tx; targetY[i] = ty; targetL[i] = tl
-        if (onFloor) blocked[i] = true
+    /** Внешний импульс одной частицы за подшаг. Тот же код, что в afterExternal: арифметика — в [momentumExternalAt]. */
+    fun externalAt(i: Int, x: FloatArray, y: FloatArray, vx: FloatArray, vy: FloatArray,
+                   invMass: FloatArray, floor: BooleanArray?) {
+        momentumExternalAt(i, x, y, vx, vy, invMass, floor != null && floor[i], beforeX, beforeY, targetX, targetY, targetL, blocked)
     }
-    fun cancel(x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
-               invMass: DoubleArray, sleep: BodySleep? = null) {
+    fun cancel(x: FloatArray, y: FloatArray, vx: FloatArray, vy: FloatArray,
+               invMass: FloatArray, sleep: BodySleep? = null) {
         spans(sleep) { from, to -> clearRange(from, to) }
         flattenGroups(sleep)
         // Те же куски, что у воркеров: порядок сложения не зависит от их числа.
@@ -302,18 +330,21 @@ class TickMomentum(internal val n: Int) {
     }
 
     /** То же, что addMomentum, на куске частиц: в таблицу куска, общие суммы не трогает. */
-    internal fun momentumRange(from: Int, to: Int, x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray,
-                               invMass: DoubleArray, sums: GroupSums) {
+    internal fun momentumRange(from: Int, to: Int, x: FloatArray, y: FloatArray, vx: FloatArray, vy: FloatArray,
+                               invMass: FloatArray, sums: GroupSums) {
         sums.clear()
+        val parent = parent; val blocked = blocked; val targetX = targetX; val targetY = targetY; val targetL = targetL
+        lengthsBeforeLoop(x.size or y.size or vx.size or vy.size or invMass.size or parent.size or blocked.size or
+            targetX.size or targetY.size or targetL.size)
         for (i in from until to) {
             val g = parent[i]
-            if (blocked[i] || invMass[i] <= 0.0) { blocked[g] = true; continue }
+            if (blocked[i] || invMass[i] <= 0.0f) { blocked[g] = true; continue }
             val m = 1.0 / invMass[i]
             val o = sums.at(g)
             val v = sums.data
             v[o] += m; v[o + 1] += m * x[i]; v[o + 2] += m * y[i]
             v[o + 3] += m * vx[i] - targetX[i]; v[o + 4] += m * vy[i] - targetY[i]
-            v[o + 5] += m * (x[i] * vy[i] - y[i] * vx[i]) - targetL[i]
+            v[o + 5] += m * (x[i].toDouble() * vy[i] - y[i].toDouble() * vx[i]) - targetL[i]
         }
     }
 
@@ -327,10 +358,12 @@ class TickMomentum(internal val n: Int) {
     }
 
     /** То же, что addInertia, на куске. */
-    internal fun inertiaRange(from: Int, to: Int, x: DoubleArray, y: DoubleArray, invMass: DoubleArray, sums: GroupSums) {
+    internal fun inertiaRange(from: Int, to: Int, x: FloatArray, y: FloatArray, invMass: FloatArray, sums: GroupSums) {
         sums.clear()
+        val parent = parent; val cx = cx; val cy = cy
+        lengthsBeforeLoop(x.size or y.size or invMass.size or parent.size or cx.size or cy.size)
         for (i in from until to) {
-            if (invMass[i] <= 0.0) continue
+            if (invMass[i] <= 0.0f) continue
             val g = parent[i]; val rx = x[i] - cx[g]; val ry = y[i] - cy[g]
             val o = sums.at(g)
             sums.data[o] += (rx * rx + ry * ry) / invMass[i]
@@ -348,6 +381,8 @@ class TickMomentum(internal val n: Int) {
      * приходит к тому же корню. Слияния организмов к этому времени уже в дереве частиц (mergeOrgGroups).
      */
     internal fun flattenRange(from: Int, to: Int) {
+        val parent = parent
+        lengthsBeforeLoop(parent.size)
         for (i in from until to) {
             var r = i
             while (parent[r] != r) r = parent[r]
@@ -383,20 +418,22 @@ class TickMomentum(internal val n: Int) {
         spans(sleep) { from, to -> for (i in from until to) parent[i] = find(i) }
     }
 
-    internal fun addMomentum(x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray, invMass: DoubleArray, sleep: BodySleep?) {
+    internal fun addMomentum(x: FloatArray, y: FloatArray, vx: FloatArray, vy: FloatArray, invMass: FloatArray, sleep: BodySleep?) {
         spans(sleep) { from, to ->
             for (i in from until to) {
                 val g = parent[i]
-                if (blocked[i] || invMass[i] <= 0.0) { blocked[g] = true; continue }
+                if (blocked[i] || invMass[i] <= 0.0f) { blocked[g] = true; continue }
                 val m = 1.0 / invMass[i]
                 mass[g] += m; cx[g] += m * x[i]; cy[g] += m * y[i]
                 dx[g] += m * vx[i] - targetX[i]; dy[g] += m * vy[i] - targetY[i]
-                dl[g] += m * (x[i] * vy[i] - y[i] * vx[i]) - targetL[i]
+                dl[g] += m * (x[i].toDouble() * vy[i] - y[i].toDouble() * vx[i]) - targetL[i]
             }
         }
     }
 
     internal fun centreRange(from: Int, to: Int) {
+        val mass = mass; val cx = cx; val cy = cy; val dx = dx; val dy = dy; val dl = dl
+        lengthsBeforeLoop(mass.size or cx.size or cy.size or dx.size or dy.size or dl.size)
         for (g in from until to) if (mass[g] > 0.0) {
             cx[g] /= mass[g]; cy[g] /= mass[g]
             dl[g] -= cx[g] * dy[g] - cy[g] * dx[g]
@@ -404,10 +441,10 @@ class TickMomentum(internal val n: Int) {
         }
     }
 
-    internal fun addInertia(x: DoubleArray, y: DoubleArray, invMass: DoubleArray, sleep: BodySleep?) {
+    internal fun addInertia(x: FloatArray, y: FloatArray, invMass: FloatArray, sleep: BodySleep?) {
         spans(sleep) { from, to ->
             for (i in from until to) {
-                if (invMass[i] <= 0.0) continue
+                if (invMass[i] <= 0.0f) continue
                 val g = parent[i]; val rx = x[i] - cx[g]; val ry = y[i] - cy[g]
                 inertia[g] += (rx * rx + ry * ry) / invMass[i]
             }
@@ -415,15 +452,21 @@ class TickMomentum(internal val n: Int) {
     }
 
     internal fun spinRange(from: Int, to: Int) {
-        for (g in from until to) dl[g] = if (inertia[g] > 1e-18) dl[g] / inertia[g] else 0.0
+        // Вращение — только у группы с радиусом инерции больше SPIN_MIN_ARM: см. там, почему не абсолютный порог.
+        val dl = dl; val inertia = inertia; val mass = mass
+        lengthsBeforeLoop(dl.size or inertia.size or mass.size)
+        for (g in from until to) dl[g] = if (inertia[g] > mass[g] * minArm2) dl[g] / inertia[g] else 0.0
     }
 
-    internal fun applyRange(from: Int, to: Int, x: DoubleArray, y: DoubleArray, vx: DoubleArray, vy: DoubleArray, invMass: DoubleArray) {
+    internal fun applyRange(from: Int, to: Int, x: FloatArray, y: FloatArray, vx: FloatArray, vy: FloatArray, invMass: FloatArray) {
+        val parent = parent; val blocked = blocked; val dx = dx; val dy = dy; val dl = dl; val cx = cx; val cy = cy
+        lengthsBeforeLoop(x.size or y.size or vx.size or vy.size or invMass.size or parent.size or blocked.size or
+            dx.size or dy.size or dl.size or cx.size or cy.size)
         for (i in from until to) {
             val g = parent[i]
-            if (blocked[g] || invMass[i] <= 0.0) continue
-            vx[i] -= dx[g] - dl[g] * (y[i] - cy[g])
-            vy[i] -= dy[g] + dl[g] * (x[i] - cx[g])
+            if (blocked[g] || invMass[i] <= 0.0f) continue
+            vx[i] = (vx[i] - (dx[g] - dl[g] * (y[i] - cy[g]))).toFloat()
+            vy[i] = (vy[i] - (dy[g] + dl[g] * (x[i] - cx[g]))).toFloat()
         }
     }
 }

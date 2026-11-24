@@ -88,10 +88,8 @@ internal fun BodyState.initializeConstraintBlocks() {
  * частицы, а шов решается после обеих чётностей, когда проинтегрированы все.
  * Пропущенный спящий блок интегрировать незачем: у его частиц prevX и так равен px.
  */
-internal fun BodyState.solveBlockedIteration(h: Double, integrate: Boolean = false) {
+internal fun BodyState.solveBlockedIteration(h: Float, integrate: Boolean = false) {
     val layout = constraintBlocks!!
-    // Гашение скоростей (ClosingDamping.kt): связи и треугольники швов — до интегрирования всех блоков.
-    if (integrate && closingPhaseOn) for (bucket in layout.seam until layout.buckets) dampBucketVelocities(bucket, layout)
     val w = activeWorkers
     if (w != null && parallelBlocksAllowed(w, layout)) {
         // Блоки одной чётности — по воркерам; швы и доработка событий — здесь. См. ParallelBlocks.
@@ -113,15 +111,14 @@ internal fun BodyState.solveBlockedIteration(h: Double, integrate: Boolean = fal
 }
 
 /** Блок целиком в вызывающем потоке: обычный обход и тела из ConstraintBlocks.serialBlock. */
-internal fun BodyState.solveBlockSerial(h: Double, block: Int, layout: ConstraintBlocks, integrate: Boolean) {
+internal fun BodyState.solveBlockSerial(h: Float, block: Int, layout: ConstraintBlocks, integrate: Boolean) {
     if (integrate) {
-        if (closingPhaseOn) dampBucketVelocities(block, layout) // гашение скоростей до интегрирования (ClosingDamping.kt)
         tick0(); integrateRange(layout.firstParticle[block], layout.firstParticle[block + 1], h); tick1(15)
     }
     solveConstraintBlock(h, block, layout)
 }
 
-private fun BodyState.solveConstraintBlock(h: Double, block: Int, layout: ConstraintBlocks) =
+private fun BodyState.solveConstraintBlock(h: Float, block: Int, layout: ConstraintBlocks) =
     solveConstraintBlockFrom(h, block, layout, BLOCK_STAGE_START, 0)
 
 /** Стадии блока, с которых можно продолжить: остановка параллельного прохода — только в пределах. */
@@ -135,7 +132,7 @@ internal const val BLOCK_STAGE_LIMITS_LATE = 2
  * остановил перед событием топологии (ParallelBlocks): всё до этой точки уже
  * посчитано воркером той же арифметикой.
  */
-internal fun BodyState.solveConstraintBlockFrom(h: Double, block: Int, layout: ConstraintBlocks,
+internal fun BodyState.solveConstraintBlockFrom(h: Float, block: Int, layout: ConstraintBlocks,
                                                 stage: Int, cursor: Int) {
     if (stage == BLOCK_STAGE_START) {
         tick0(); dbgMark(); solveBlockLinks(h, block, layout); dbgMeasure(0, h); tick1(0)
@@ -168,32 +165,63 @@ internal fun BodyState.solveConstraintBlockFrom(h: Double, block: Int, layout: C
     dbgMeasure(4, h); tick1(2); refreshSurface()
 }
 
-internal fun BodyState.solveBlockLinks(h: Double, block: Int, layout: ConstraintBlocks) {
+internal fun BodyState.solveBlockLinks(h: Float, block: Int, layout: ConstraintBlocks) {
     // Мышц-кластеров нет (игра: мышца — множитель клетки): без чтения conMuscle. См. solveBlockLinksCells.
     if (cellScalesOn && muscleScaleOf.isEmpty()) { solveBlockLinksCells(h, block, layout); return }
     val alpha = SOFT_COMPLIANCE / (h * h)
     val px = px; val py = py; val mass = invMass
     val a = conA; val b = conB; val rest = conRest; val muscles = conMuscle
-    val dead = conDead; val scales = muscleScaleOf; val cellScales = if (cellScalesOn) conCellScale else null
+    val dead = conDead; val scales = muscleScaleOf; val cellScaleAll = conCellScale
     val boundary = conBoundary
-    val soft = if (softnessOn) conSoftness else null; val cellScaleAll = conCellScale
-    val fiber = if (fibersOn) conFiberC2 else null; val fiberK = fiberThicken // волокно мышцы (MuscleFiber.kt)
+    val fiber = if (fibersOn) conFiberC2 else NO_FLOATS; val fiberK = fiberThicken // волокно мышцы (MuscleFiber.kt)
     val list = layout.links
-    if (sweepBackwards) {
-        for (slot in list.start[block] + list.count[block] - 1 downTo list.start[block]) {
-            val c = list.items[slot]
+    val from = list.start[block]; val to = from + list.count[block]
+    val items = list.items
+    // Длины — до цикла, а выбор ядра (мягкость, множители клеток) — снаружи цикла, отдельным циклом на каждый
+    // случай: проверка массива на null внутри цикла возвращает чтение его длины в цикл. См. lengthsBeforeLoop.
+    lengthsBeforeLoop(px.size or py.size or mass.size or a.size or b.size or rest.size or muscles.size or dead.size or
+        scales.size or cellScaleAll.size or boundary.size or fiber.size or items.size)
+    if (softnessOn) {
+        val soft = conSoftness
+        lengthsBeforeLoop(soft.size)
+        if (sweepBackwards) {
+            for (slot in to - 1 downTo from) {
+                val c = items[slot]
+                if (c < 0) continue
+                solveDistanceConstraintSoft(c, c, px, py, mass, a, b, rest, muscles, dead, scales, cellScaleAll, soft, boundary, alpha, fiber, fiberK)
+            }
+        } else {
+            for (slot in from until to) {
+                val c = items[slot]
+                if (c < 0) continue
+                solveDistanceConstraintSoft(c, c, px, py, mass, a, b, rest, muscles, dead, scales, cellScaleAll, soft, boundary, alpha, fiber, fiberK)
+            }
+        }
+    } else if (!cellScalesOn) {
+        if (sweepBackwards) {
+            for (slot in to - 1 downTo from) {
+                val c = items[slot]
+                if (c < 0) continue
+                solveDistanceConstraint(c, c, px, py, mass, a, b, rest, muscles, dead, scales, alpha)
+            }
+        } else {
+            for (slot in from until to) {
+                val c = items[slot]
+                if (c < 0) continue
+                solveDistanceConstraint(c, c, px, py, mass, a, b, rest, muscles, dead, scales, alpha)
+            }
+        }
+    } else if (sweepBackwards) {
+        for (slot in to - 1 downTo from) {
+            val c = items[slot]
             if (c < 0) continue
-            if (soft != null) solveDistanceConstraintSoft(c, c, px, py, mass, a, b, rest, muscles, dead, scales, cellScaleAll, soft, boundary, alpha, fiber, fiberK)
-            else if (cellScales == null) solveDistanceConstraint(c, c, px, py, mass, a, b, rest, muscles, dead, scales, alpha)
-            else solveDistanceConstraintScaled(c, c, px, py, mass, a, b, rest, muscles, dead, scales, cellScales, boundary, alpha, fiber, fiberK)
+            solveDistanceConstraintScaled(c, c, px, py, mass, a, b, rest, muscles, dead, scales, cellScaleAll, boundary, alpha, fiber, fiberK)
         }
     } else {
-        for (slot in list.start[block] until list.start[block] + list.count[block]) {
-            val c = list.items[slot]
+        for (slot in from until to) {
+            val c = items[slot]
             if (c < 0) continue
-            if (soft != null) solveDistanceConstraintSoft(c, c, px, py, mass, a, b, rest, muscles, dead, scales, cellScaleAll, soft, boundary, alpha, fiber, fiberK)
-            else if (cellScales == null) solveDistanceConstraint(c, c, px, py, mass, a, b, rest, muscles, dead, scales, alpha)
-            else solveDistanceConstraintScaled(c, c, px, py, mass, a, b, rest, muscles, dead, scales, cellScales, boundary, alpha, fiber, fiberK)
+            solveDistanceConstraintScaled(c, c, px, py, mass, a, b, rest, muscles, dead, scales, cellScaleAll, boundary, alpha, fiber, fiberK)
         }
     }
 }
@@ -203,28 +231,45 @@ internal fun BodyState.solveBlockLinks(h: Double, block: Int, layout: Constraint
  * не читает. Те же биты: множитель мышцы при m < 0 равен 1.0, а 1.0 · cs — ровно cs. На связь потоком
  * читается на 4 байта меньше (было 29: conDead, conA, conB, conMuscle, conRest, conCellScale, conSoftness).
  */
-private fun BodyState.solveBlockLinksCells(h: Double, block: Int, layout: ConstraintBlocks) {
+private fun BodyState.solveBlockLinksCells(h: Float, block: Int, layout: ConstraintBlocks) {
     val alpha = SOFT_COMPLIANCE / (h * h)
     val px = px; val py = py; val mass = invMass
     val a = conA; val b = conB; val rest = conRest; val dead = conDead; val cs = conCellScale
     val boundary = conBoundary
-    val soft = if (softnessOn) conSoftness else null
-    val fiber = if (fibersOn) conFiberC2 else null; val fiberK = fiberThicken // волокно мышцы (MuscleFiber.kt)
+    val fiber = if (fibersOn) conFiberC2 else NO_FLOATS; val fiberK = fiberThicken // волокно мышцы (MuscleFiber.kt)
     val list = layout.links
     val from = list.start[block]; val to = from + list.count[block]
-    if (sweepBackwards) {
+    val items = list.items
+    // Длины — до цикла, мягкость — отдельным циклом, а не проверкой на null в цикле: см. lengthsBeforeLoop.
+    lengthsBeforeLoop(px.size or py.size or mass.size or a.size or b.size or rest.size or dead.size or cs.size or
+        boundary.size or fiber.size or items.size)
+    if (softnessOn) {
+        val soft = conSoftness
+        lengthsBeforeLoop(soft.size)
+        if (sweepBackwards) {
+            for (slot in to - 1 downTo from) {
+                val c = items[slot]
+                if (c < 0) continue
+                solveDistanceConstraintSoftCells(c, px, py, mass, a, b, rest, dead, cs, soft, boundary, alpha, fiber, fiberK)
+            }
+        } else {
+            for (slot in from until to) {
+                val c = items[slot]
+                if (c < 0) continue
+                solveDistanceConstraintSoftCells(c, px, py, mass, a, b, rest, dead, cs, soft, boundary, alpha, fiber, fiberK)
+            }
+        }
+    } else if (sweepBackwards) {
         for (slot in to - 1 downTo from) {
-            val c = list.items[slot]
+            val c = items[slot]
             if (c < 0) continue
-            if (soft != null) solveDistanceConstraintSoftCells(c, px, py, mass, a, b, rest, dead, cs, soft, boundary, alpha, fiber, fiberK)
-            else solveDistanceConstraintCells(c, px, py, mass, a, b, rest, dead, cs, boundary, alpha, fiber, fiberK)
+            solveDistanceConstraintCells(c, px, py, mass, a, b, rest, dead, cs, boundary, alpha, fiber, fiberK)
         }
     } else {
         for (slot in from until to) {
-            val c = list.items[slot]
+            val c = items[slot]
             if (c < 0) continue
-            if (soft != null) solveDistanceConstraintSoftCells(c, px, py, mass, a, b, rest, dead, cs, soft, boundary, alpha, fiber, fiberK)
-            else solveDistanceConstraintCells(c, px, py, mass, a, b, rest, dead, cs, boundary, alpha, fiber, fiberK)
+            solveDistanceConstraintCells(c, px, py, mass, a, b, rest, dead, cs, boundary, alpha, fiber, fiberK)
         }
     }
 }

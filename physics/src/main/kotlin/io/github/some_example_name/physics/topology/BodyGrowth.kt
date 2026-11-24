@@ -78,7 +78,7 @@ internal fun BodyState.retireUnbornEdge(e: Int, quiet: Boolean = false) {
  * порваться и сосед оказался в другом куске, ребро к нему не рождается, а умирает:
  * слияние организмов при рождении — отдельная задача (план, раздел 2.1).
  */
-internal fun BodyState.activateCell(i: Int, x: Double, y: Double, vx0: Double, vy0: Double) {
+internal fun BodyState.activateCell(i: Int, x: Float, y: Float, vx0: Float, vy0: Float) {
     require(cellUnborn[i]) { "клетка $i не ждёт рождения" }
     cellUnborn[i] = false; cellDead[i] = false
     invMass[i] = restInvMass[i]; matchWeight[i] = restMatchWeight(i)
@@ -135,7 +135,7 @@ internal fun BodyState.activateCell(i: Int, x: Double, y: Double, vx0: Double, v
 private fun BodyState.startLinkGrowth(c: Int) {
     if (conGrowTarget.size < conA.size) conGrowTarget = conGrowTarget.copyOf(conA.size)
     val target = conRest[c]
-    if (target <= 0.0) return
+    if (target <= 0.0f) return
     val dx = px[conA[c]] - px[conB[c]]; val dy = py[conA[c]] - py[conB[c]]
     val start = sqrt(dx * dx + dy * dy) / muscleLengthFactor(c, muscleScale(conMuscle[c]) * conCellScale[c]) /* волокно мышцы: MuscleFiber.kt */
     conGrowTarget[c] = target
@@ -178,6 +178,7 @@ private fun BodyState.startTriangleGrowth(id: Int) {
  */
 internal fun BodyState.easeNewborn() {
     markGrowingCells()
+    growLerpN = 0; growLerpTriN = 0
     if (growEdgeN == 0 && growTriN == 0) return
     var m = 0
     for (k in 0 until growEdgeN) {
@@ -187,7 +188,8 @@ internal fun BodyState.easeNewborn() {
         var c = conOfEdge[e]
         while (c >= 0) {
             val target = conGrowTarget[c]
-            if (target > 0.0) {
+            val was = conRest[c]
+            if (target > 0.0f) {
                 // Возраст не растёт дальше BIRTH_GROW_TICKS: далёкая связь (ниже) дорастает
                 // дольше, а байт переполнился бы.
                 val age = minOf(conGrowAge[c] + 1, BIRTH_GROW_TICKS)
@@ -196,13 +198,16 @@ internal fun BodyState.easeNewborn() {
                 val len = sqrt(dx * dx + dy * dy) / muscleLengthFactor(c, muscleScale(conMuscle[c]) * conCellScale[c]) /* волокно мышцы: MuscleFiber.kt */
                 val pull = BIRTH_MAX_PULL * target
                 if (age >= BIRTH_GROW_TICKS && len - target <= pull) {
-                    conRest[c] = target; conGrowTarget[c] = 0.0
+                    conRest[c] = target; conGrowTarget[c] = 0.0f
                 } else {
-                    val eased = len + (target - len) * (age.toDouble() / BIRTH_GROW_TICKS)
+                    val eased = len + (target - len) * (age.toFloat() / BIRTH_GROW_TICKS)
                     conRest[c] = maxOf(eased, len - pull, BIRTH_MIN_FRACTION * target)
                     growing = true
                 }
             }
+            // Шаг этого тика решатель проходит по подшагам (applyGrowthLerp): запись на каждую связь ребра, по цепочке.
+            noteGrowthLerp(e, was, conRest[c])
+            conRest[c] = was
             c = conNextForEdge[c]
         }
         if (growing) growEdges[m++] = e
@@ -218,10 +223,71 @@ internal fun BodyState.easeNewborn() {
         val step = target / BIRTH_GROW_TICKS
         val r = triRestArea2[w]
         val next = if (r < target) minOf(r + step, target) else maxOf(r - step, target)
-        triRestArea2[w] = next
+        noteGrowthLerpTri(id, r, next)
         if (next == target) triGrowTarget[id] = 0f else growTris[m++] = id
     }
     growTriN = m
+}
+
+// --- плавность дорастания по подшагам -------------------------------------------------------------------------
+//
+// ШАГ ДОРАСТАНИЯ РАЗ В ТИК ПРИ ЖЁСТКОЙ ТКАНИ — РЫВОК (24.11.2026). easeNewborn сдвигает длину покоя молодой связи и
+// площадь покоя молодого треугольника раз в тик, целиком. Пока ткань была в восемь раз мягче, а подшагов шесть, такой
+// шаг сглаживался сам. С жёсткой тканью и 16–32 подшагами решатель выполняет его за первые подшаги тика, а
+// восстановление скоростей делит сдвиг на малый шаг: новорождённая упирается в потолок скорости, молодые связи рвутся.
+// Каталог стендов, рост тел геномов (983 сцены gen-grow), жёсткая ткань без клина и гашения: сцен со срывом в потолок
+// скорости 120 при 16 подшагах и 361 при 32 (при шести и мягкой ткани — 11), с разрушением 88 и 136 (было 67).
+// Та же беда была у мышцы клетки (27.10, MuscleDriver.applyCellScaleLerp) и вылечена так же: шаг раз в тик, как
+// прежде, а решатель идёт от «было» к «станет» линейно по подшагам; к концу тика значение ровно то, что дал шаг.
+
+private fun BodyState.noteGrowthLerp(e: Int, from: Float, to: Float) {
+    if (growLerpN == growLerpEdge.size) {
+        growLerpEdge = growLerpEdge.copyOf(growLerpN * 2); growLerpFrom = growLerpFrom.copyOf(growLerpN * 2); growLerpTo = growLerpTo.copyOf(growLerpN * 2)
+    }
+    growLerpEdge[growLerpN] = e; growLerpFrom[growLerpN] = from; growLerpTo[growLerpN] = to; growLerpN++
+}
+
+private fun BodyState.noteGrowthLerpTri(id: Int, from: Float, to: Float) {
+    if (growLerpTriN == growLerpTri.size) {
+        growLerpTri = growLerpTri.copyOf(growLerpTriN * 2); growLerpTriFrom = growLerpTriFrom.copyOf(growLerpTriN * 2)
+        growLerpTriTo = growLerpTriTo.copyOf(growLerpTriN * 2)
+    }
+    growLerpTri[growLerpTriN] = id; growLerpTriFrom[growLerpTriN] = from; growLerpTriTo[growLerpTriN] = to; growLerpTriN++
+}
+
+/**
+ * Подшаг [step] из [count]: длина покоя молодых связей и площадь покоя молодых треугольников — на долю
+ * (step + 1) / count пути от «было» к «станет»; на последнем — ровно «станет», и списки пустеют. Ребро и постоянный
+ * номер треугольника переживают перепаковку рабочих списков посреди тика; порванное и мёртвое пропускается.
+ * Дорастающих мало (клетки последних BIRTH_GROW_TICKS тиков), поэтому в одном потоке.
+ */
+internal fun BodyState.applyGrowthLerp(step: Int, count: Int) {
+    if (growLerpN == 0 && growLerpTriN == 0) return
+    val last = step == count - 1
+    val f = (step + 1).toFloat() / count
+    var k = 0
+    while (k < growLerpN) {
+        val e = growLerpEdge[k]
+        // Записи ребра идут в порядке его цепочки связей; ребро, порванное посреди тика, пропускается целиком.
+        var c = if (baked.edgeDead[e]) -1 else conOfEdge[e]
+        while (k < growLerpN && growLerpEdge[k] == e) {
+            if (c >= 0) {
+                val from = growLerpFrom[k]; val to = growLerpTo[k]
+                conRest[c] = if (last) to else from + (to - from) * f
+                c = conNextForEdge[c]
+            }
+            k++
+        }
+    }
+    val slot = constraintBlocks?.triangleSlot
+    if (slot != null) for (q in 0 until growLerpTriN) {
+        val id = growLerpTri[q]
+        val w = slot[id]
+        if (w !in 0 until triCount || !baked.triAlive[id]) continue
+        val from = growLerpTriFrom[q]; val to = growLerpTriTo[q]
+        triRestArea2[w] = if (last) to else from + (to - from) * f
+    }
+    if (last) { growLerpN = 0; growLerpTriN = 0 }
 }
 
 /**
@@ -235,9 +301,9 @@ internal fun BodyState.restPoseOfBornBone(b: Int) {
     for (i in ids) if (!cellUnborn[i] && boneOf[i] == b) bornCount++
     if (bornCount == ids.size) { restPoseOfBone(b); return }
     val qx = boneRestQx[b]; val qy = boneRestQy[b]
-    java.util.Arrays.fill(qx, 0.0); java.util.Arrays.fill(qy, 0.0)
+    java.util.Arrays.fill(qx, 0.0f); java.util.Arrays.fill(qy, 0.0f)
     if (bornCount == 0) return
-    var cx = 0.0; var cy = 0.0
+    var cx = 0.0f; var cy = 0.0f
     for (i in ids) if (!cellUnborn[i] && boneOf[i] == b) { cx += body.x[i]; cy += body.y[i] }
     cx /= bornCount; cy /= bornCount
     for (k in ids.indices) if (!cellUnborn[ids[k]] && boneOf[ids[k]] == b) {
@@ -247,8 +313,8 @@ internal fun BodyState.restPoseOfBornBone(b: Int) {
 }
 
 /** Вес клетки [i] в позе её кости без захвата мышью: 0 у кости, которую клиент ещё не включил. */
-internal fun BodyState.restMatchWeight(i: Int): Double =
-    if (boneClusterOf[i] >= 0 && boneOf[i] != boneClusterOf[i]) 0.0 else 1.0
+internal fun BodyState.restMatchWeight(i: Int): Float =
+    if (boneClusterOf[i] >= 0 && boneOf[i] != boneClusterOf[i]) 0.0f else 1.0f
 
 /**
  * ВКЛЮЧИТЬ КОСТЬ КЛЕТКИ [i] (клиент: клетка стала костью мутацией). Клетка входит в свою кость
@@ -272,7 +338,7 @@ internal fun BodyState.activateBone(i: Int): Boolean {
     if (boneOf[i] == b) return true
     if (isGrowingNewborn(i)) return false
     boneOf[i] = b
-    if (dragId != i) matchWeight[i] = 1.0
+    if (dragId != i) matchWeight[i] = 1.0f
     val blocks = constraintBlocks
     for (q in baked.vertStart[i] until baked.vertStart[i + 1]) {
         val j = baked.vertOther[q]
@@ -299,8 +365,8 @@ internal fun BodyState.activateBone(i: Int): Boolean {
 private fun BodyState.restPoseOfCurrentBone(b: Int) {
     val ids = rigidBones[b]
     val qx = boneRestQx[b]; val qy = boneRestQy[b]
-    java.util.Arrays.fill(qx, 0.0); java.util.Arrays.fill(qy, 0.0)
-    var cx = 0.0; var cy = 0.0; var count = 0
+    java.util.Arrays.fill(qx, 0.0f); java.util.Arrays.fill(qy, 0.0f)
+    var cx = 0.0f; var cy = 0.0f; var count = 0
     for (i in ids) if (boneOf[i] == b && !cellDead[i]) { cx += px[i]; cy += py[i]; count++ }
     if (count == 0) return
     cx /= count; cy /= count
@@ -358,7 +424,7 @@ private fun BodyState.rampNewbornContacts() {
         val e = growEdges[k]
         if (baked.edgeDead[e]) continue
         val c = conOfEdge[e]
-        if (c < 0 || conGrowTarget[c] <= 0.0) continue
+        if (c < 0 || conGrowTarget[c] <= 0.0f) continue
         val f = conGrowAge[c].toFloat() / BIRTH_GROW_TICKS
         rampIfNewborn(baked.edgeU(e), f)
         rampIfNewborn(baked.edgeV(e), f)
@@ -385,7 +451,7 @@ internal fun BodyState.isGrowingNewborn(v: Int): Boolean {
         val e = baked.vertEdge[s]
         if (baked.edgeDead[e]) continue
         val c = conOfEdge[e]
-        if (c < 0 || c >= conGrowTarget.size || conGrowTarget[c] <= 0.0) return false
+        if (c < 0 || c >= conGrowTarget.size || conGrowTarget[c] <= 0.0f) return false
         any = true
     }
     return any
@@ -407,7 +473,7 @@ internal fun BodyState.isGrowingNewborn(v: Int): Boolean {
  * дочь, — та осталась бы в родителе (Megalodon, 798 таких рождений: гибель в своей ткани 4 → 523
  * клеток, находка 32).
  */
-internal fun BodyState.divisionPlacement(i: Int, parent: Int, out: DoubleArray) {
+internal fun BodyState.divisionPlacement(i: Int, parent: Int, out: FloatArray) {
     birthPlacement(i, out, seed = parent)
     if (!linkedInLayout(i, parent)) return
     val f = DIVISION_START_FRACTION
@@ -445,7 +511,7 @@ private fun BodyState.linkedInLayout(i: Int, j: Int): Boolean {
  * связях от родителя, и стадии, привязывающие её к телу, рождались со связями в 5–8 раз
  * длиннее покоя. Теперь она встаёт в свою точку позы относительно нынешнего тела.
  */
-internal fun BodyState.birthPlacement(i: Int, out: DoubleArray, seed: Int = -1) {
+internal fun BodyState.birthPlacement(i: Int, out: FloatArray, seed: Int = -1) {
     val vs = baked.vertStart; val vo = baked.vertOther
     // Опорные клетки подгонки: рождённые соседи; мало — ещё и их рождённые соседи.
     var refN = 0
@@ -463,19 +529,19 @@ internal fun BodyState.birthPlacement(i: Int, out: DoubleArray, seed: Int = -1) 
         for (s in vs[seed] until vs[seed + 1]) addRef(vo[s])
     }
     if (refN == 0) {
-        out[2] = 0.0; out[3] = 0.0
-        freeSpot(i, body.x[i].toDouble(), body.y[i].toDouble(), out)
+        out[2] = 0.0f; out[3] = 0.0f
+        freeSpot(i, body.x[i].toFloat(), body.y[i].toFloat(), out)
         return
     }
 
-    var rx = 0.0; var ry = 0.0; var cx = 0.0; var cy = 0.0; var mvx = 0.0; var mvy = 0.0
+    var rx = 0.0f; var ry = 0.0f; var cx = 0.0f; var cy = 0.0f; var mvx = 0.0f; var mvy = 0.0f
     for (k in 0 until refN) {
         val u = ref[k]
         rx += body.x[u]; ry += body.y[u]; cx += px[u]; cy += py[u]; mvx += vx[u]; mvy += vy[u]
     }
     rx /= refN; ry /= refN; cx /= refN; cy /= refN; mvx /= refN; mvy /= refN
     // s·R = argmin Σ |s·R·a − b|²: cos·s = Σa·b / Σ|a|², sin·s = Σa×b / Σ|a|².
-    var dot = 0.0; var cross = 0.0; var aa = 0.0
+    var dot = 0.0f; var cross = 0.0f; var aa = 0.0f
     for (k in 0 until refN) {
         val u = ref[k]
         val ax = body.x[u] - rx; val ay = body.y[u] - ry
@@ -483,9 +549,9 @@ internal fun BodyState.birthPlacement(i: Int, out: DoubleArray, seed: Int = -1) 
         dot += ax * bx + ay * by; cross += ax * by - ay * bx; aa += ax * ax + ay * ay
     }
     // Одна опорная клетка — поворот не определён: сдвиг позы покоя без поворота.
-    val fit = aa > 1e-30 && dot * dot + cross * cross > 1e-60
-    val cos = if (fit) dot / aa else 1.0
-    val sin = if (fit) cross / aa else 0.0
+    val fit = aa > 1e-30f && dot * dot + cross * cross > 1e-60f
+    val cos = if (fit) dot / aa else 1.0f
+    val sin = if (fit) cross / aa else 0.0f
     val ox = body.x[i] - rx; val oy = body.y[i] - ry
     out[2] = mvx; out[3] = mvy
     freeSpot(i, cx + cos * ox - sin * oy, cy + sin * ox + cos * oy, out)
@@ -517,7 +583,7 @@ internal fun BodyState.birthPlacement(i: Int, out: DoubleArray, seed: Int = -1) 
  * Дальние куски того же тела и чужие тела не смотрятся (1–2 случая за рост): для них
  * нужна сетка контактов, а она между тиками не обязана быть свежей.
  */
-private fun BodyState.freeSpot(i: Int, x0: Double, y0: Double, out: DoubleArray) {
+private fun BodyState.freeSpot(i: Int, x0: Float, y0: Float, out: FloatArray) {
     val vs = baked.vertStart; val vo = baked.vertOther
     val near = birthNear
     // Обход по кольцам: near[0] = i, дальше кольцо за кольцом. Первое кольцо — свои
@@ -546,15 +612,15 @@ private fun BodyState.freeSpot(i: Int, x0: Double, y0: Double, out: DoubleArray)
             val j = near[k]
             if (cellDead[j]) continue
             // Ближе позы покоя контакт и сам не толкает (пары покоя), так что и круг не шире.
-            val rdx = (body.x[i] - body.x[j]).toDouble(); val rdy = (body.y[i] - body.y[j]).toDouble()
+            val rdx = (body.x[i] - body.x[j]).toFloat(); val rdy = (body.y[i] - body.y[j]).toFloat()
             val rest = sqrt(rdx * rdx + rdy * rdy)
             val clear = minOf(rest, BIRTH_CLEAR * maxOf(radius[i], radius[j]))
             val dx = x - px[j]; val dy = y - py[j]
             val d2 = dx * dx + dy * dy
             if (d2 >= clear * clear) continue
             val d = sqrt(d2)
-            if (d > 1e-12 * clear) { x = px[j] + dx / d * clear; y = py[j] + dy / d * clear }
-            else if (rest > 1e-12) { x = px[j] + rdx / rest * clear; y = py[j] + rdy / rest * clear }
+            if (d > 1e-12f * clear) { x = px[j] + dx / d * clear; y = py[j] + dy / d * clear }
+            else if (rest > 1e-12f) { x = px[j] + rdx / rest * clear; y = py[j] + rdy / rest * clear }
             else x = px[j] + clear  // ровно в центре и в позе покоя тоже: любое направление
             moved = true
         }
@@ -570,7 +636,7 @@ private const val BIRTH_SEARCH_RINGS = 3
 private const val BIRTH_PUSH_ITERATIONS = 8
 
 /** Запретный круг — чуть шире зоны смерти глубокого контакта (центр внутри чужого радиуса). */
-private const val BIRTH_CLEAR = 1.1
+private const val BIRTH_CLEAR = 1.1f
 
 /** Опорные клетки подгонки рождения: соседей у клетки единицы, с соседями соседей — десятки. */
 private val birthRefPool = ThreadLocal.withInitial { IntArray(64) }

@@ -28,7 +28,7 @@ fun main(args: Array<String>) {
     val probe = base()
     var minX = Double.MAX_VALUE; var minY = Double.MAX_VALUE; var maxX = -Double.MAX_VALUE; var maxY = -Double.MAX_VALUE
     for (i in 0 until probe.particleCount) {
-        minX = minOf(minX, probe.x[i]); maxX = maxOf(maxX, probe.x[i]); minY = minOf(minY, probe.y[i]); maxY = maxOf(maxY, probe.y[i])
+        minX = minOf(minX, probe.x[i].toDouble()); maxX = maxOf(maxX, probe.x[i].toDouble()); minY = minOf(minY, probe.y[i].toDouble()); maxY = maxOf(maxY, probe.y[i].toDouble())
     }
     // Сетка частиц — правее сцены на её ширину (на полу встречаются все, кто тонет):
     // тела до неё не доплывают, и замер меряет сами частицы, а не разрывы от столкновений.
@@ -43,13 +43,13 @@ fun main(args: Array<String>) {
     val vx = DoubleArray(count) { (rnd.nextDouble() - 0.5) * 0.1 }; val vy = DoubleArray(count) { (rnd.nextDouble() - 0.5) * 0.1 }
 
     val none = base()
-    val pool = base().apply { for (k in 0 until count) addFree(px[k], py[k], r, vx[k], vy[k]) }
+    val pool = base().apply { for (k in 0 until count) addFree(px[k].toFloat(), py[k].toFloat(), r.toFloat(), vx[k].toFloat(), vy[k].toFloat()) }
     val def = base().apply {
         val d = BodyDefinition(FloatArray(count) { px[it].toFloat() }, FloatArray(count) { py[it].toFloat() },
             FloatArray(count) { r.toFloat() }, BooleanArray(count), BooleanArray(count), IntArray(0), IntArray(0),
             IntArray(0), IntArray(0), IntArray(0), FloatArray(0), emptyArray(), emptyArray(), bodies[0].scale)
         val first = bodyFirst(addBody(d))
-        for (k in 0 until count) setVelocity(first + k, vx[k], vy[k])
+        for (k in 0 until count) setVelocity(first + k, vx[k].toFloat(), vy[k].toFloat())
     }
     val runs = listOf("без частиц" to none, "пул addFree" to pool, "тело из клеток" to def)
     for ((label, w) in runs + runs) {
@@ -58,7 +58,7 @@ fun main(args: Array<String>) {
         w.state.dbgTimeOn = System.getenv("FREE_STAGES") == "1"
         for (k in 0 until ticks) {
             if (k == ticks / 3) java.util.Arrays.fill(w.state.dbgTimeNs, 0L)
-            w.setAllMuscleTargets(if (k % 40 < 20) 1.0 else 0.0)
+            w.setAllMuscleTargets((if (k % 40 < 20) 1.0 else 0.0).toFloat())
             val t0 = System.nanoTime(); w.step(); t[k] = System.nanoTime() - t0
         }
         val warm = t.copyOfRange(ticks / 3, ticks).sorted()

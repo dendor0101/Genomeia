@@ -47,12 +47,12 @@ import kotlin.math.sqrt
 class SwimSolver(private val topo: Topology, var p: SwimParams) {
 
     private val n = topo.n
-    val px = DoubleArray(n)
-    val py = DoubleArray(n)
-    private val prevX = DoubleArray(n)
-    private val prevY = DoubleArray(n)
-    val vx = DoubleArray(n)
-    val vy = DoubleArray(n)
+    val px = FloatArray(n)
+    val py = FloatArray(n)
+    private val prevX = FloatArray(n)
+    private val prevY = FloatArray(n)
+    val vx = FloatArray(n)
+    val vy = FloatArray(n)
     /**
      * Обратная масса из радиуса клетки — как buildMasses() в демо.
      *
@@ -60,36 +60,36 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
      * подобранные константы не зависели от того, какого размера клетки сохранил редактор.
      */
     private val invMass = run {
-        var meanArea = 0.0
-        for (k in 0 until n) { val r = topo.restR[k].toDouble(); meanArea += r * r }
+        var meanArea = 0.0f
+        for (k in 0 until n) { val r = topo.restR[k].toFloat(); meanArea += r * r }
         meanArea /= n
-        DoubleArray(n) { i ->
-            val r = topo.restR[i].toDouble()
-            val m = if (meanArea > 0.0) (r * r) / meanArea else 1.0
-            if (m > 1e-12) 1.0 / m else 1.0
+        FloatArray(n) { i ->
+            val r = topo.restR[i].toFloat()
+            val m = if (meanArea > 0.0f) (r * r) / meanArea else 1.0f
+            if (m > 1e-12f) 1.0f / m else 1.0f
         }
     }
-    private val matchWeight = DoubleArray(n) { 1.0 }
+    private val matchWeight = FloatArray(n) { 1.0f }
 
-    private val muscleActivation = DoubleArray(topo.muscleCount)
-    private val muscleTarget = DoubleArray(topo.muscleCount)
+    private val muscleActivation = FloatArray(topo.muscleCount)
+    private val muscleTarget = FloatArray(topo.muscleCount)
 
     /** PER_EDGE: запас у каждого ребра. */
-    private val flowEx = DoubleArray(topo.boundCount)
-    private val flowEy = DoubleArray(topo.boundCount)
+    private val flowEx = FloatArray(topo.boundCount)
+    private val flowEy = FloatArray(topo.boundCount)
 
     /** GLOBAL_RESERVOIR: один вектор скорости увлечённой среды на организм. */
-    private val flowVX = DoubleArray(topo.organismCount)
-    private val flowVY = DoubleArray(topo.organismCount)
-    private val comAccX = DoubleArray(topo.organismCount)
-    private val comAccY = DoubleArray(topo.organismCount)
+    private val flowVX = FloatArray(topo.organismCount)
+    private val flowVY = FloatArray(topo.organismCount)
+    private val comAccX = FloatArray(topo.organismCount)
+    private val comAccY = FloatArray(topo.organismCount)
 
     // --- самоконтакт границы: та же реализация, что в демо ---
-    private val radius = DoubleArray(n) { topo.restR[it].toDouble() }
+    private val radius = FloatArray(n) { topo.restR[it].toFloat() }
 
     /** Масса организма — знаменатель скорости центра масс, см. запас среды. */
-    private val organismMass = DoubleArray(topo.organismCount).also { a ->
-        for (i in 0 until n) if (invMass[i] > 0.0) a[topo.organismOf[i]] += 1.0 / invMass[i]
+    private val organismMass = FloatArray(topo.organismCount).also { a ->
+        for (i in 0 until n) if (invMass[i] > 0.0f) a[topo.organismOf[i]] += 1.0f / invMass[i]
     }
     /**
      * СВОИ копии длин и площадей покоя: пластичность их МЕНЯЕТ, а Topology общая на
@@ -98,7 +98,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     private val conRest = topo.conRest.copyOf()
     private val triRestArea2 = topo.triRestArea2.copyOf()
 
-    private val conMaxLen = DoubleArray(topo.conCount) { c ->
+    private val conMaxLen = FloatArray(topo.conCount) { c ->
         p.linkMaxStretch * conRest[c]
     }
     val contacts = BoundaryContacts.build(
@@ -106,7 +106,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         topo.boundA, topo.boundB, topo.boundCount, topo.boundOpp, radius,
         p.contactScale, p.ccdCore, p.contactRestitution, p.contactFriction,
         topo.restX, topo.restY,
-        topo.meanLinkLength.toDouble(), p.contactMaxStep, topo.contactProbes,
+        topo.meanLinkLength.toFloat(), p.contactMaxStep, topo.contactProbes,
         config = DemoSettings.fromEnvironment().contacts,
     )
 
@@ -117,7 +117,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
      */
     private val flapA: IntArray
     private val flapB: IntArray
-    private val flapRest: DoubleArray
+    private val flapRest: FloatArray
 
     init {
         val use = HashMap<Long, Int>(topo.triA.size * 3)
@@ -137,18 +137,18 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             bare.getOrPut(i) { ArrayList() }.add(j)
             bare.getOrPut(j) { ArrayList() }.add(i)
         }
-        val a = ArrayList<Int>(); val b = ArrayList<Int>(); val r = ArrayList<Double>()
+        val a = ArrayList<Int>(); val b = ArrayList<Int>(); val r = ArrayList<Float>()
         for ((_, list) in bare) {
             if (list.size < 2) continue
             for (p in list.indices) for (q in p + 1 until list.size) {
                 val i = list[p]; val j = list[q]
                 if (i == j) continue
-                val dx = (topo.restX[i] - topo.restX[j]).toDouble()
-                val dy = (topo.restY[i] - topo.restY[j]).toDouble()
+                val dx = (topo.restX[i] - topo.restX[j]).toFloat()
+                val dy = (topo.restY[i] - topo.restY[j]).toFloat()
                 a.add(i); b.add(j); r.add(kotlin.math.sqrt(dx * dx + dy * dy))
             }
         }
-        flapA = a.toIntArray(); flapB = b.toIntArray(); flapRest = r.toDoubleArray()
+        flapA = a.toIntArray(); flapB = b.toIntArray(); flapRest = r.toFloatArray()
     }
 
     private val blocks = ConstraintBlocks(n, topo.organismOf, CONSTRAINT_BLOCK_SIZE,
@@ -167,7 +167,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         }
     }
 
-    private fun solveBlockedIteration(h: Double) {
+    private fun solveBlockedIteration(h: Float) {
         for (parity in 0..1) {
             var block = parity
             while (block < blocks.blockCount) { solveConstraintBlock(h, block); block += 2 }
@@ -176,7 +176,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         if (blocks.hasSeams()) solveLinkMaxLength()
     }
 
-    private fun solveConstraintBlock(h: Double, block: Int) {
+    private fun solveConstraintBlock(h: Float, block: Int) {
         solveConstraints(h, block)
         solveFlaps(h, block)
         solveLinkMaxLength(block)
@@ -188,8 +188,8 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     }
 
     /** Зеркало демо: снятие импульса и момента внутренних стадий. См. InternalMomentum. */
-    private val internalMom = InternalMomentum(n)
-    private val tickMomentum = io.github.some_example_name.physics.TickMomentum(n)
+    private val internalMom = InternalMomentum(n, io.github.some_example_name.physics.SPIN_MIN_ARM * topo.meanLinkLength)
+    private val tickMomentum = io.github.some_example_name.physics.TickMomentum(n, io.github.some_example_name.physics.SPIN_MIN_ARM * topo.meanLinkLength)
 
     private fun markInternal() {
         internalMom.mark(px, py, topo.organismOf, topo.organismCount)
@@ -199,7 +199,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         internalMom.cancel(topo.organismOf, topo.organismCount, px, py, prevX, prevY, invMass)
     }
 
-    private fun solveFlaps(h: Double, block: Int) {
+    private fun solveFlaps(h: Float, block: Int) {
         if (flapA.isEmpty()) return
         val alpha = DemoConst.FLAP_COMPLIANCE / (h * h)
         val list = blocks.flaps
@@ -209,12 +209,12 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             val i = flapA[c]; val j = flapB[c]
             val wi = invMass[i]; val wj = invMass[j]
             val w = wi + wj
-            if (w == 0.0) continue
+            if (w == 0.0f) continue
             var dx = px[i] - px[j]
             var dy = py[i] - py[j]
             val len = kotlin.math.sqrt(dx * dx + dy * dy)
             val rest = flapRest[c]
-            if (len >= rest || len < 1e-12) continue
+            if (len >= rest || len < 1e-12f) continue
             dx /= len; dy /= len
             val dL = -(len - rest) / (w + alpha)
             px[i] += dx * dL * wi; py[i] += dy * dL * wi
@@ -235,13 +235,13 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             var dy = py[i] - py[j]
             val len = sqrt(dx * dx + dy * dy)
             val max = conMaxLen[c]
-            if (len <= max || len < 1e-12) continue
+            if (len <= max || len < 1e-12f) continue
             // Как в ядре: масса нужна лишь связи, нарушившей предел.
             var wi = invMass[i]; var wj = invMass[j]
-            if (wi + wj == 0.0) continue
+            if (wi + wj == 0.0f) continue
             // Костный конец связи предел не двигает — как applyLinkLimitCorrection ядра.
             val boneI = topo.boneOf[i] >= 0; val boneJ = topo.boneOf[j] >= 0
-            if (boneI && !boneJ && wj > 0.0) wi = 0.0 else if (boneJ && !boneI && wi > 0.0) wj = 0.0
+            if (boneI && !boneJ && wj > 0.0f) wi = 0.0f else if (boneJ && !boneI && wi > 0.0f) wj = 0.0f
             val w = wi + wj
             dx /= len; dy /= len
             // Собственный потолок поправки длины, как LINK_MAX_STEP в ядре:
@@ -258,21 +258,17 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     }
 
     /** Зеркало TickMotion ядра: положения в начале тика, затем дрожь скорости. */
-    private val tickJitterX = DoubleArray(n)
-    private val tickJitterY = DoubleArray(n)
-
-    /** Зеркало памяти удара ядра (BodyState.impactSpeed): клин касаний читает её и положения начала тика. */
-    private val impactSpeed = DoubleArray(n)
+    private val tickJitterX = FloatArray(n)
+    private val tickJitterY = FloatArray(n)
 
     private fun beginTickMotion() {
         System.arraycopy(px, 0, tickJitterX, 0, n); System.arraycopy(py, 0, tickJitterY, 0, n)
-        contacts.bindImpact(impactSpeed, tickJitterX, tickJitterY)
     }
 
-    private fun removeTickJitter(dt: Double) {
-        val inv = 1.0 / dt
+    private fun removeTickJitter(dt: Float) {
+        val inv = 1.0f / dt
         for (i in 0 until n) {
-            if (invMass[i] == 0.0) { tickJitterX[i] = 0.0; tickJitterY[i] = 0.0; continue }
+            if (invMass[i] == 0.0f) { tickJitterX[i] = 0.0f; tickJitterY[i] = 0.0f; continue }
             val mx = (px[i] - tickJitterX[i]) * inv
             val my = (py[i] - tickJitterY[i]) * inv
             tickJitterX[i] = vx[i] - mx; tickJitterY[i] = vy[i] - my
@@ -284,7 +280,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         for (i in 0 until n) { vx[i] += tickJitterX[i]; vy[i] += tickJitterY[i] }
     }
 
-    private fun clampSpeed(dt: Double) {
+    private fun clampSpeed(dt: Float) {
         val maxV = p.maxSpeedCellsPerTick * topo.meanLinkLength / dt
         val maxV2 = maxV * maxV
         for (i in 0 until n) {
@@ -295,8 +291,8 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         }
     }
 
-    private val boneDx = DoubleArray(topo.maxBoneSize)
-    private val boneDy = DoubleArray(topo.maxBoneSize)
+    private val boneDx = FloatArray(topo.maxBoneSize)
+    private val boneDy = FloatArray(topo.maxBoneSize)
 
     var diverged = false
         private set
@@ -308,15 +304,15 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         conHold.fill(0); triHold.fill(0)
         for (c in conMaxLen.indices) conMaxLen[c] = p.linkMaxStretch * conRest[c]
         for (i in 0 until n) {
-            px[i] = topo.restX[i].toDouble(); py[i] = topo.restY[i].toDouble()
+            px[i] = topo.restX[i].toFloat(); py[i] = topo.restY[i].toFloat()
             prevX[i] = px[i]; prevY[i] = py[i]
-            vx[i] = 0.0; vy[i] = 0.0
-            matchWeight[i] = 1.0
+            vx[i] = 0.0f; vy[i] = 0.0f
+            matchWeight[i] = 1.0f
         }
-        flowEx.fill(0.0); flowEy.fill(0.0)
-        flowVX.fill(0.0); flowVY.fill(0.0)
-        muscleActivation.fill(0.0); muscleTarget.fill(0.0)
-        muscleActivationPrev.fill(0.0); muscleFrac = 1.0
+        flowEx.fill(0.0f); flowEy.fill(0.0f)
+        flowVX.fill(0.0f); flowVY.fill(0.0f)
+        muscleActivation.fill(0.0f); muscleTarget.fill(0.0f)
+        muscleActivationPrev.fill(0.0f); muscleFrac = 1.0f
         gaitFrame = 0
         diverged = false
     }
@@ -326,13 +322,13 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     // =================================================================
 
     /** Активация на начало тика: длина покоя доезжает по подшагам, зеркало демо. */
-    private val muscleActivationPrev = DoubleArray(topo.muscleCount)
-    private var muscleFrac = 1.0
+    private val muscleActivationPrev = FloatArray(topo.muscleCount)
+    private var muscleFrac = 1.0f
 
-    private fun muscleScale(m: Int): Double {
-        if (m < 0) return 1.0
+    private fun muscleScale(m: Int): Float {
+        if (m < 0) return 1.0f
         val a = muscleActivationPrev[m] + (muscleActivation[m] - muscleActivationPrev[m]) * muscleFrac
-        return 1.0 - a * (1.0 - p.muscleContraction)
+        return 1.0f - a * (1.0f - p.muscleContraction)
     }
 
     /**
@@ -341,10 +337,10 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
      * условие пола не срабатывает никогда, а значит и applyRestitution холостая.
      * Появится гравитация — эти строки надо будет вернуть и сверку перепроверить.
      */
-    private fun integrate(h: Double) {
+    private fun integrate(h: Float) {
         for (i in 0 until n) {
             prevX[i] = px[i]; prevY[i] = py[i]
-            if (invMass[i] == 0.0) continue
+            if (invMass[i] == 0.0f) continue
             px[i] += vx[i] * h
             py[i] += vy[i] * h
         }
@@ -367,12 +363,12 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
      * зеркалом одной сцены. Поэтому подбор смотрит на эти два числа, а окончательная
      * проверка «не рвётся» всё равно делается на настоящем теле, см. PERF_GAIT.
      */
-    var worstCrush = 1.0
+    var worstCrush = 1.0f
         private set
-    var worstStretch = 1.0
+    var worstStretch = 1.0f
         private set
 
-    fun resetStress() { worstCrush = 1.0; worstStretch = 1.0 }
+    fun resetStress() { worstCrush = 1.0f; worstStretch = 1.0f }
 
     /** Зовётся раз в подшаг, после позиционных стадий. */
     private fun trackStress() {
@@ -381,7 +377,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             val dx = px[i] - px[j]; val dy = py[i] - py[j]
             val len = sqrt(dx * dx + dy * dy)
             val rest = conRest[c]
-            if (rest < 1e-12) continue
+            if (rest < 1e-12f) continue
             val crush = len / (rest * muscleScale(topo.conMuscle[c]))
             if (crush < worstCrush) worstCrush = crush
             val stretch = len / rest
@@ -389,7 +385,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         }
     }
 
-    private fun solveConstraints(h: Double, block: Int) {
+    private fun solveConstraints(h: Float, block: Int) {
         val alpha = p.softCompliance / (h * h)
         // Здесь исходный линейный порядок: ядро может переставлять независимые
         // связи, а PhysicsCheck сверяет, что порядок поправок каждой частицы тот же.
@@ -401,16 +397,16 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             val i = topo.conA[c]; val j = topo.conB[c]
             val wi = invMass[i]; val wj = invMass[j]
             val w = wi + wj
-            if (w == 0.0) continue
+            if (w == 0.0f) continue
             var dx = px[i] - px[j]
             var dy = py[i] - py[j]
             val len = sqrt(dx * dx + dy * dy)
-            if (len < 1e-9) continue
+            if (len < 1e-9f) continue
             dx /= len; dy /= len
             val scale = muscleScale(topo.conMuscle[c])
             var over = len - conRest[c] * scale
             // Потолок тяги мышцы — как в решателе игры, см. MUSCLE_MAX_PULL.
-            if (scale < 1.0 && over > MUSCLE_MAX_PULL * conRest[c]) over = MUSCLE_MAX_PULL * conRest[c]
+            if (scale < 1.0f && over > MUSCLE_MAX_PULL * conRest[c]) over = MUSCLE_MAX_PULL * conRest[c]
             val dL = -over / (w + alpha)
             px[i] += dx * dL * wi; py[i] += dy * dL * wi
             px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
@@ -422,8 +418,8 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
      * Стадия ставится ПОСЛЕ площадей и перед проекцией кости — там же, где живут
      * остальные позиционные ограничения.
      */
-    private fun solveBend(h: Double, block: Int) {
-        if (p.bendCompliance < 0.0) return
+    private fun solveBend(h: Float, block: Int) {
+        if (p.bendCompliance < 0.0f) return
         val alpha = p.bendCompliance / (h * h)
         val list = blocks.bends
         var cursor = list.head[block]
@@ -432,11 +428,11 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             val i = topo.bendA[c]; val j = topo.bendB[c]
             val wi = invMass[i]; val wj = invMass[j]
             val w = wi + wj
-            if (w == 0.0) continue
+            if (w == 0.0f) continue
             var dx = px[i] - px[j]
             var dy = py[i] - py[j]
             val len = sqrt(dx * dx + dy * dy)
-            if (len < 1e-12) continue
+            if (len < 1e-12f) continue
             dx /= len; dy /= len
             val dL = -(len - topo.bendRest[c]) / (w + alpha)
             px[i] += dx * dL * wi; py[i] += dy * dL * wi
@@ -444,11 +440,11 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         }
     }
 
-    private fun solveAreas(h: Double, block: Int) {
+    private fun solveAreas(h: Float, block: Int) {
         val alpha = p.areaCompliance / (h * h)
         // -1 значит «не разделять»: тогда ветка ниже выбирает то же самое число, и
         // поведение совпадает с демо до бита.
-        val alphaInv = if (p.areaComplianceInverted >= 0.0) p.areaComplianceInverted / (h * h) else alpha
+        val alphaInv = if (p.areaComplianceInverted >= 0.0f) p.areaComplianceInverted / (h * h) else alpha
         val maxStep = p.areaMaxStep * topo.meanLinkLength
         val list = blocks.areas
         for (slot in list.start[block] until list.start[block] + list.count[block]) {
@@ -466,21 +462,21 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             val denom = w0 * (g0x * g0x + g0y * g0y) +
                 w1 * (g1x * g1x + g1y * g1y) +
                 w2 * (g2x * g2x + g2y * g2y)
-            if (denom < 1e-12) continue
+            if (denom < 1e-12f) continue
 
             val s = muscleScale(topo.triMuscle[t])
-            val restArea2 = triRestArea2[t].toDouble() * s * s
+            val restArea2 = triRestArea2[t].toFloat() * s * s
             val area2 = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0)
             // Плавный переход убирает ступеньку жёсткости ровно на нулевой площади.
             val a = if (p.areaSmoothRamp) {
-                val t = (area2 / restArea2).coerceIn(0.0, 1.0)
+                val t = (area2 / restArea2).coerceIn(0.0f, 1.0f)
                 alphaInv + (alpha - alphaInv) * t * t
-            } else if (area2 < 0.0) alphaInv else alpha
+            } else if (area2 < 0.0f) alphaInv else alpha
             var excess = area2 - restArea2
-            if (s < 1.0) { val cap = 2.0 * MUSCLE_MAX_PULL * triRestArea2[t]; if (excess > cap) excess = cap }
+            if (s < 1.0f) { val cap = 2.0f * MUSCLE_MAX_PULL * triRestArea2[t]; if (excess > cap) excess = cap }
             var dL = -excess / (denom + a)
             // Потолок на норму поправки: |dL| * sqrt(denom) и есть её длина.
-            if (maxStep > 0.0) {
+            if (maxStep > 0.0f) {
                 val corr = abs(dL) * sqrt(denom)
                 if (corr > maxStep) dL *= maxStep / corr
             }
@@ -497,7 +493,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         val q0y = topo.boneRestQy[b]
         val ox = px[ids[0]]; val oy = py[ids[0]]
 
-        var cx = 0.0; var cy = 0.0; var wsum = 0.0
+        var cx = 0.0f; var cy = 0.0f; var wsum = 0.0f
         for (i in ids) {
             val w = matchWeight[i]
             cx += w * (px[i] - ox); cy += w * (py[i] - oy)
@@ -505,7 +501,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         }
         cx /= wsum; cy /= wsum
 
-        var s = 0.0; var t = 0.0
+        var s = 0.0f; var t = 0.0f
         for (k in ids.indices) {
             val i = ids[k]
             val w = matchWeight[i]
@@ -514,10 +510,10 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             t += w * (q0x[k] * ppy - q0y[k] * ppx)
         }
         val norm = sqrt(s * s + t * t)
-        if (norm < 1e-9) return
+        if (norm < 1e-9f) return
         val cos = s / norm; val sin = t / norm
 
-        var sdx = 0.0; var sdy = 0.0
+        var sdx = 0.0f; var sdy = 0.0f
         for (k in ids.indices) {
             val i = ids[k]
             val tx = ox + cx + cos * q0x[k] - sin * q0y[k]
@@ -530,16 +526,16 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
 
         // Потолок на смещение за подшаг — как BONE_MAX_STEP в демо. Масштабируется
         // весь набор ОДНИМ множителем, поэтому обнулённая сумма остаётся нулём.
-        var maxD2 = 0.0
+        var maxD2 = 0.0f
         for (k in ids.indices) {
             val dx = boneDx[k] - mdx
             val dy = boneDy[k] - mdy
             val d2 = dx * dx + dy * dy
             if (d2 > maxD2) maxD2 = d2
         }
-        var scale = 1.0
+        var scale = 1.0f
         val cap = p.boneMaxStep * topo.meanLinkLength
-        if (cap > 0.0 && maxD2 > cap * cap) scale = cap / sqrt(maxD2)
+        if (cap > 0.0f && maxD2 > cap * cap) scale = cap / sqrt(maxD2)
 
         for (k in ids.indices) {
             val i = ids[k]
@@ -548,26 +544,26 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         }
     }
 
-    private fun updateVelocities(h: Double) {
+    private fun updateVelocities(h: Float) {
         for (i in 0 until n) {
-            if (invMass[i] == 0.0) { vx[i] = 0.0; vy[i] = 0.0; continue }
+            if (invMass[i] == 0.0f) { vx[i] = 0.0f; vy[i] = 0.0f; continue }
             vx[i] = (px[i] - prevX[i]) / h
             vy[i] = (py[i] - prevY[i]) / h
         }
     }
 
-    private fun applyViscosity(h: Double) {
+    private fun applyViscosity(h: Float) {
         var k = p.viscosity * h
-        if (k > 0.5) k = 0.5
+        if (k > 0.5f) k = 0.5f
         for (c in 0 until topo.conCount) {
             val i = topo.conA[c]; val j = topo.conB[c]
             val wi = invMass[i]; val wj = invMass[j]
             val w = wi + wj
-            if (w == 0.0) continue
+            if (w == 0.0f) continue
             var nx = px[j] - px[i]
             var ny = py[j] - py[i]
             val len = sqrt(nx * nx + ny * ny)
-            if (len < 1e-9) continue
+            if (len < 1e-9f) continue
             nx /= len; ny /= len
             val dv = (vx[j] - vx[i]) * nx + (vy[j] - vy[i]) * ny
             val si = k * wi / w; val sj = k * wj / w
@@ -583,42 +579,42 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
      * составляющая относительной скорости, сила пропорциональна длине ребра,
      * коэффициент линейный плюс квадратичный.
      */
-    private fun applyNormalDrag(h: Double) {
+    private fun applyNormalDrag(h: Float) {
         var kd = p.flowDecay * h
-        if (kd > 1.0) kd = 1.0
+        if (kd > 1.0f) kd = 1.0f
 
         // Импульс, переданный телу за этот вызов. Нужен только общему запасу:
         // ровно он и уходит в среду с обратным знаком.
-        var impX = 0.0
-        var impY = 0.0
+        var impX = 0.0f
+        var impY = 0.0f
 
         val global = p.flowModel == FlowModel.GLOBAL_RESERVOIR
         val tracking = p.flowModel == FlowModel.GLOBAL_TRACKING
         val perEdge = p.flowModel == FlowModel.PER_EDGE
         var kf = p.flowEntrain * h
-        if (kf > 1.0) kf = 1.0
+        if (kf > 1.0f) kf = 1.0f
 
         if (tracking) {
             // Запас догоняет скорость ЦЕНТРА МАСС СВОЕГО организма, а не всего мира.
             // Одно среднее на всех было прямой ошибкой: тела делили запас и толкали
             // друг друга на любом расстоянии. См. flowVX в DemoSession.
-            for (o in 0 until topo.organismCount) { comAccX[o] = 0.0; comAccY[o] = 0.0 }
+            for (o in 0 until topo.organismCount) { comAccX[o] = 0.0f; comAccY[o] = 0.0f }
             for (i in 0 until n) {
                 val o = topo.organismOf[i]
-                if (invMass[i] <= 0.0) continue
-                val mw = 1.0 / invMass[i]
+                if (invMass[i] <= 0.0f) continue
+                val mw = 1.0f / invMass[i]
                 comAccX[o] += mw * vx[i]; comAccY[o] += mw * vy[i]
             }
 
             // Демпфер между телом и запасом: за шаг относительная скорость падает на
             // kf*(1 + flowMass). Выше единицы это переброс через ноль, то есть раскачка,
             // поэтому коэффициент здесь и ограничивается — устойчиво при любых массах.
-            val limit = 0.9 / (1.0 + p.flowMass)
+            val limit = 0.9f / (1.0f + p.flowMass)
             val kfe = if (kf > limit) limit else kf
 
             for (o in 0 until topo.organismCount) {
                 val mo = organismMass[o]
-                if (mo <= 0.0) continue
+                if (mo <= 0.0f) continue
                 val comVX = comAccX[o] / mo
                 val comVY = comAccY[o] / mo
                 val dfx = (comVX - flowVX[o]) * kfe
@@ -645,13 +641,13 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             val ex = px[j] - px[i]
             val ey = py[j] - py[i]
             val len = sqrt(ex * ex + ey * ey)
-            if (len < 1e-9) continue
+            if (len < 1e-9f) continue
 
             val nx = -ey / len
             val ny = ex / len
 
-            val vmx = (vx[i] + vx[j]) * 0.5
-            val vmy = (vy[i] + vy[j]) * 0.5
+            val vmx = (vx[i] + vx[j]) * 0.5f
+            val vmy = (vy[i] + vy[j]) * 0.5f
             val vnAbs = vmx * nx + vmy * ny
 
             var vn = vnAbs
@@ -668,7 +664,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             }
 
             var k = (p.normalDrag + p.normalDragQuadratic * abs(vn)) * len * h
-            if (k > 0.5) k = 0.5
+            if (k > 0.5f) k = 0.5f
 
             val dv = -vn * k
             vx[i] += dv * nx; vy[i] += dv * ny
@@ -677,11 +673,11 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             impY += 2 * dv * ny
 
             // Трение ВДОЛЬ ребра. См. TANGENT_DRAG в DemoSession.
-            if (p.tangentDrag > 0.0) {
+            if (p.tangentDrag > 0.0f) {
                 val tx = ex / len; val ty = ey / len
                 val vt = (vmx - flowVX[topo.organismOf[i]]) * tx + (vmy - flowVY[topo.organismOf[i]]) * ty
                 var kt = p.tangentDrag * p.normalDrag * len * h
-                if (kt > 0.5) kt = 0.5
+                if (kt > 0.5f) kt = 0.5f
                 val dvt = -vt * kt
                 vx[i] += dvt * tx; vy[i] += dvt * ty
                 vx[j] += dvt * tx; vy[j] += dvt * ty
@@ -702,9 +698,9 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         }
     }
 
-    private fun applyMediumDrag(h: Double) {
-        var keep = 1.0 - p.mediumDrag * h
-        if (keep < 0.0) keep = 0.0
+    private fun applyMediumDrag(h: Float) {
+        var keep = 1.0f - p.mediumDrag * h
+        if (keep < 0.0f) keep = 0.0f
         for (i in 0 until n) { vx[i] *= keep; vy[i] *= keep }
     }
 
@@ -713,11 +709,11 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     // =================================================================
 
     /** [gait] — крутить автоматический гребок; иначе мышцы отпущены. */
-    fun frame(dt: Double, substeps: Int, gait: Boolean) {
-        muscleTarget.fill(0.0)
+    fun frame(dt: Float, substeps: Int, gait: Boolean) {
+        muscleTarget.fill(0.0f)
         if (gait) {
             val duty = (p.gaitPeriod * p.gaitDuty).toInt().coerceAtLeast(1)
-            if (gaitFrame % p.gaitPeriod < duty) muscleTarget.fill(1.0)
+            if (gaitFrame % p.gaitPeriod < duty) muscleTarget.fill(1.0f)
             gaitFrame++
         }
         System.arraycopy(muscleActivation, 0, muscleActivationPrev, 0, muscleActivation.size)
@@ -725,7 +721,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             val target = muscleTarget[m]
             val rate = if (target > muscleActivation[m]) p.muscleRateContract else p.muscleRateRelax
             var k = rate * dt
-            if (k > 1.0) k = 1.0
+            if (k > 1.0f) k = 1.0f
             muscleActivation[m] += (target - muscleActivation[m]) * k
         }
 
@@ -733,7 +729,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         val h = dt / substeps
         beginTickMotion()
         for (s in 0 until substeps) {
-            muscleFrac = (s + 1).toDouble() / substeps
+            muscleFrac = (s + 1).toFloat() / substeps
             integrate(h)
             // Фаза чередования — как в демо, см. SWEEP_FLIP.
             if (DemoConst.SWEEP_FLIP == 1) sweepBackwards = !sweepBackwards
@@ -781,68 +777,68 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     private val conHold = ByteArray(topo.conCount)
     private val triHold = ByteArray(topo.triCount)
 
-    private fun applyPlasticity(dt: Double) {
-        if (p.plasticRate <= 0.0) return
+    private fun applyPlasticity(dt: Float) {
+        if (p.plasticRate <= 0.0f) return
         var k = p.plasticRate * dt
-        if (k > 1.0) k = 1.0
+        if (k > 1.0f) k = 1.0f
         for (c in 0 until topo.conCount) {
             if (topo.conMuscle[c] >= 0) continue
             val target = conRest[c]
-            if (target < 1e-12) continue
+            if (target < 1e-12f) continue
             val dx = px[topo.conA[c]] - px[topo.conB[c]]
             val dy = py[topo.conA[c]] - py[topo.conB[c]]
             val len = sqrt(dx * dx + dy * dy)
-            val strain = len / target - 1.0
+            val strain = len / target - 1.0f
             val over = when {
                 strain > p.plasticYield -> strain - p.plasticYield
                 strain < -p.plasticYield -> strain + p.plasticYield
-                else -> 0.0
+                else -> 0.0f
             }
-            if (over == 0.0) { conHold[c] = 0; continue }
+            if (over == 0.0f) { conHold[c] = 0; continue }
             if (conHold[c] < p.plasticHold) { conHold[c]++; continue }
-            conRest[c] *= 1.0 + over * k
+            conRest[c] *= 1.0f + over * k
             conMaxLen[c] = p.linkMaxStretch * conRest[c]
         }
         for (t in 0 until topo.triCount) {
             if (topo.triMuscle[t] >= 0) continue
-            val rest2 = triRestArea2[t].toDouble()
-            if (kotlin.math.abs(rest2) < 1e-18) continue
+            val rest2 = triRestArea2[t].toFloat()
+            if (kotlin.math.abs(rest2) < 1e-18f) continue
             val i0 = topo.triA[t]; val i1 = topo.triB[t]; val i2 = topo.triC[t]
             val area2 = (px[i1] - px[i0]) * (py[i2] - py[i0]) -
                 (py[i1] - py[i0]) * (px[i2] - px[i0])
             // ВЫВЕРНУТЫМ ТЕЧЬ НЕЛЬЗЯ: подогнав площадь покоя под сложенное состояние,
             // пластика УЗАКОНИТ складку, и та не разойдётся уже никогда. Проверка
             // ловила это прямо: складка 50% и 75% переставали расходиться за 8 секунд.
-            if (area2 <= 0.0) continue
-            val strain = area2 / rest2 - 1.0
+            if (area2 <= 0.0f) continue
+            val strain = area2 / rest2 - 1.0f
             val over = when {
                 strain > p.plasticYield -> strain - p.plasticYield
                 strain < -p.plasticYield -> strain + p.plasticYield
-                else -> 0.0
+                else -> 0.0f
             }
-            if (over == 0.0) { triHold[t] = 0; continue }
+            if (over == 0.0f) { triHold[t] = 0; continue }
             if (triHold[t] < p.plasticHold) { triHold[t]++; continue }
-            triRestArea2[t] = (triRestArea2[t] * (1.0 + over * k)).toFloat()
+            triRestArea2[t] = (triRestArea2[t] * (1.0f + over * k)).toFloat()
         }
     }
 
     /** Держать мышцу 0 сокращённой — режим сверки с демо и ручных замеров. */
-    fun frameHoldMuscle0(dt: Double, substeps: Int, hold: Boolean) {
-        muscleTarget.fill(0.0)
-        if (hold && muscleTarget.isNotEmpty()) muscleTarget[0] = 1.0
+    fun frameHoldMuscle0(dt: Float, substeps: Int, hold: Boolean) {
+        muscleTarget.fill(0.0f)
+        if (hold && muscleTarget.isNotEmpty()) muscleTarget[0] = 1.0f
         System.arraycopy(muscleActivation, 0, muscleActivationPrev, 0, muscleActivation.size)
         for (m in muscleActivation.indices) {
             val target = muscleTarget[m]
             val rate = if (target > muscleActivation[m]) p.muscleRateContract else p.muscleRateRelax
             var k = rate * dt
-            if (k > 1.0) k = 1.0
+            if (k > 1.0f) k = 1.0f
             muscleActivation[m] += (target - muscleActivation[m]) * k
         }
         if (DemoConst.CANCEL_INTERNAL_SPIN) tickMomentum.begin(px, py, vx, vy, invMass, topo.organismOf)
         val h = dt / substeps
         beginTickMotion()
         for (s in 0 until substeps) {
-            muscleFrac = (s + 1).toDouble() / substeps
+            muscleFrac = (s + 1).toFloat() / substeps
             integrate(h)
             // Фаза чередования — как в демо, см. SWEEP_FLIP.
             if (DemoConst.SWEEP_FLIP == 1) sweepBackwards = !sweepBackwards
@@ -884,10 +880,10 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     }
 
     /** Жёстко поставить тело в повёрнутую позу покоя с твердотельной скоростью. */
-    fun setRigidRotation(angle: Double, omega: Double, cx: Double, cy: Double) {
+    fun setRigidRotation(angle: Float, omega: Float, cx: Float, cy: Float) {
         val cs = kotlin.math.cos(angle); val sn = kotlin.math.sin(angle)
         for (i in 0 until n) {
-            val qx = topo.restX[i].toDouble() - cx; val qy = topo.restY[i].toDouble() - cy
+            val qx = topo.restX[i].toFloat() - cx; val qy = topo.restY[i].toFloat() - cy
             px[i] = cx + cs * qx - sn * qy
             py[i] = cy + sn * qx + cs * qy
             vx[i] = -omega * (py[i] - cy)
@@ -895,9 +891,9 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         }
     }
 
-    fun dragOnly(h: Double) = applyNormalDrag(h)
+    fun dragOnly(h: Float) = applyNormalDrag(h)
 
-    private fun solveContactsAndBoundary(h: Double) {
+    private fun solveContactsAndBoundary(h: Float) {
         contacts.solveContacts(px, py, vx, vy, invMass, h)
         // Клетки кости ориентация не двигает — как стадия ядра (projectBoundaryOrientation).
         solveBoundaryOrientation(topo.boundCount, topo.boundA, topo.boundB, topo.boundOpp,
@@ -905,7 +901,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     }
 
     /** Активация первой мышцы. Нужна замеру, чтобы отличить гребок от зажатой позы. */
-    fun activation0(): Double = if (muscleActivation.isEmpty()) 0.0 else muscleActivation[0].toDouble()
+    fun activation0(): Float = if (muscleActivation.isEmpty()) 0.0f else muscleActivation[0].toFloat()
 
     /**
      * Сколько треугольников ВЫВЕРНУТО наизнанку.
@@ -935,10 +931,10 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     }
 
     // --- измерители ---
-    fun comX(): Double { var s = 0.0; for (i in 0 until n) s += px[i]; return s / n }
-    fun comY(): Double { var s = 0.0; for (i in 0 until n) s += py[i]; return s / n }
-    fun momX(): Double { var s = 0.0; for (i in 0 until n) s += vx[i]; return s }
-    fun momY(): Double { var s = 0.0; for (i in 0 until n) s += vy[i]; return s }
+    fun comX(): Float { var s = 0.0f; for (i in 0 until n) s += px[i]; return s / n }
+    fun comY(): Float { var s = 0.0f; for (i in 0 until n) s += py[i]; return s / n }
+    fun momX(): Float { var s = 0.0f; for (i in 0 until n) s += vx[i]; return s }
+    fun momY(): Float { var s = 0.0f; for (i in 0 until n) s += vy[i]; return s }
     /**
      * НЕВЯЗКА СВЯЗЕЙ: корень из среднего квадрата (len - rest), в долях средней связи.
      *
@@ -947,8 +943,8 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
      * получается мягче, чем задано, и невязка большая. Именно этим и надо выбирать
      * число подшагов, а не туннелированием: его закрывает CCD.
      */
-    fun linkResidual(): Double {
-        var s = 0.0
+    fun linkResidual(): Float {
+        var s = 0.0f
         for (c in 0 until topo.conCount) {
             val i = topo.conA[c]; val j = topo.conB[c]
             val dx = px[i] - px[j]; val dy = py[i] - py[j]
@@ -958,28 +954,28 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         return sqrt(s / topo.conCount) / topo.meanLinkLength
     }
 
-    fun kinetic(): Double {
-        var e = 0.0
-        for (i in 0 until n) e += 0.5 * (vx[i] * vx[i] + vy[i] * vy[i])
+    fun kinetic(): Float {
+        var e = 0.0f
+        for (i in 0 until n) e += 0.5f * (vx[i] * vx[i] + vy[i] * vy[i])
         return e
     }
 
     fun momentum() = sqrt(momX() * momX() + momY() * momY())
 
     /** Момент импульса относительно центра масс, за вычетом поступательного движения. */
-    fun angularMomentum(): Double {
+    fun angularMomentum(): Float {
         val cx = comX(); val cy = comY()
         val vxm = momX() / n; val vym = momY() / n
-        var l = 0.0
+        var l = 0.0f
         for (i in 0 until n) {
             l += (px[i] - cx) * (vy[i] - vym) - (py[i] - cy) * (vx[i] - vxm)
         }
         return l
     }
 
-    fun inertia(): Double {
+    fun inertia(): Float {
         val cx = comX(); val cy = comY()
-        var j = 0.0
+        var j = 0.0f
         for (i in 0 until n) {
             val rx = px[i] - cx; val ry = py[i] - cy
             j += rx * rx + ry * ry
@@ -987,17 +983,17 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         return j
     }
 
-    fun maxSpeed(): Double {
-        var mx = 0.0
+    fun maxSpeed(): Float {
+        var mx = 0.0f
         for (i in 0 until n) {
-            val s = vx[i].toDouble() * vx[i] + vy[i].toDouble() * vy[i]
+            val s = vx[i].toFloat() * vx[i] + vy[i].toFloat() * vy[i]
             if (s > mx) mx = s
         }
         return sqrt(mx)
     }
 
     /** Расходимость: NaN или заведомо нефизичная скорость. Кандидат такой отвергается. */
-    fun checkDiverged(limit: Double = 50.0): Boolean {
+    fun checkDiverged(limit: Float = 50.0f): Boolean {
         for (i in 0 until n) {
             if (px[i].isNaN() || py[i].isNaN() || vx[i].isNaN() || vy[i].isNaN()) { diverged = true; return true }
         }

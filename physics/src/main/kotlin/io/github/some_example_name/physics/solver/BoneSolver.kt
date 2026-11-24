@@ -11,9 +11,9 @@ fun BodyState.cancelInternalSpin() {
     internalMom?.cancel(organismOf, organismCount, px, py, prevX, prevY, invMass, cellUnborn)
 }
 
-fun BodyState.cancelInternalDrift(beforeX: Double, beforeY: Double) {
-    var afterX = 0.0
-    var afterY = 0.0
+fun BodyState.cancelInternalDrift(beforeX: Float, beforeY: Float) {
+    var afterX = 0.0f
+    var afterY = 0.0f
     for (i in 0 until n) { afterX += px[i]; afterY += py[i] }
     val dx = (afterX - beforeX - dragShiftX) / n
     val dy = (afterY - beforeY - dragShiftY) / n
@@ -78,26 +78,30 @@ fun BodyState.projectBone(b: Int) {
  * свои (ParallelBlocks). Возвращает, сработал ли потолок смещения — счётчик ведёт
  * вызывающий.
  */
-internal fun BodyState.projectBoneInto(b: Int, boneDx: DoubleArray, boneDy: DoubleArray): Boolean {
+internal fun BodyState.projectBoneInto(b: Int, boneDx: FloatArray, boneDy: FloatArray): Boolean {
     val ids = rigidBones[b]
     val q0x = boneRestQx[b]
     val q0y = boneRestQy[b]
+    // Массивы — в локальные, длины — до циклов: кость проецируется каждый подшаг, пять проходов по её клеткам
+    // (см. lengthsBeforeLoop).
+    val px = px; val py = py; val matchWeight = matchWeight
+    lengthsBeforeLoop(px.size or py.size or matchWeight.size or ids.size or q0x.size or q0y.size or boneDx.size or boneDy.size)
 
     // Начало отсчёта — первая вершина кости. Дальше все числа порядка размера
     // кости, и сокращения значащих разрядов больше нет.
     val ox = px[ids[0]]; val oy = py[ids[0]]
 
-    var cx = 0.0; var cy = 0.0; var wsum = 0.0
+    var cx = 0.0f; var cy = 0.0f; var wsum = 0.0f
     for (i in ids) {
         val w = matchWeight[i]
         cx += w * (px[i] - ox); cy += w * (py[i] - oy)
         wsum += w
     }
     // Кость без рождённых клеток (рост тела: у нерождённых вес ноль) не проецируется.
-    if (wsum <= 0.0) return false
+    if (wsum <= 0.0f) return false
     cx /= wsum; cy /= wsum
 
-    var s = 0.0; var t = 0.0
+    var s = 0.0f; var t = 0.0f
     for (k in ids.indices) {
         val i = ids[k]
         val w = matchWeight[i]
@@ -106,12 +110,12 @@ internal fun BodyState.projectBoneInto(b: Int, boneDx: DoubleArray, boneDy: Doub
         t += w * (q0x[k] * ppy - q0y[k] * ppx)
     }
     val norm = sqrt(s * s + t * t)
-    if (norm < 1e-12) return false
+    if (norm < 1e-12f) return false
     val cos = s / norm; val sin = t / norm
 
     // Считаются ПОПРАВКИ, а не сразу позиции: только по ним и можно обнулить
     // утечку. Сама поправка мала (1e-6), поэтому её сумма считается точно.
-    var sdx = 0.0; var sdy = 0.0
+    var sdx = 0.0f; var sdy = 0.0f
     for (k in ids.indices) {
         val i = ids[k]
         val tx = ox + cx + cos * q0x[k] - sin * q0y[k]
@@ -128,23 +132,23 @@ internal fun BodyState.projectBoneInto(b: Int, boneDx: DoubleArray, boneDy: Doub
     // сумма поправок уже обнулена выше, а умножение нуля на что угодно остаётся
     // нулём. Обрезать поправки по отдельности было бы нельзя — сохранение центра
     // масс, ради которого весь этот код и переписан, сломалось бы сразу.
-    var maxD2 = 0.0
+    var maxD2 = 0.0f
     for (k in ids.indices) {
         // Нерождённая клетка (вес ноль, рост тела) кость не ограничивает и не двигается ею.
-        if (matchWeight[ids[k]] == 0.0) continue
+        if (matchWeight[ids[k]] == 0.0f) continue
         val dx = boneDx[k] - mdx
         val dy = boneDy[k] - mdy
         val d2 = dx * dx + dy * dy
         if (d2 > maxD2) maxD2 = d2
     }
-    var scale = 1.0
+    var scale = 1.0f
     val cap = BONE_MAX_STEP * linkScale
     val capped = maxD2 > cap * cap
     if (capped) scale = cap / sqrt(maxD2)
 
     for (k in ids.indices) {
         val i = ids[k]
-        if (matchWeight[i] == 0.0) continue
+        if (matchWeight[i] == 0.0f) continue
         px[i] += (boneDx[k] - mdx) * scale
         py[i] += (boneDy[k] - mdy) * scale
     }

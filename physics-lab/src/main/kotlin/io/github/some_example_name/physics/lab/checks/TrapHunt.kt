@@ -287,20 +287,20 @@ object TrapHunt {
         for (i in 0 until P.n) {
             val o = P.organismOf[i]
             if (o == oa) {
-                P.px[i] = P.px[i] - ca[0] + ax
-                P.py[i] = P.py[i] - ca[1]
+                P.px[i] = (P.px[i] - ca[0] + ax).toFloat()
+                P.py[i] = (P.py[i] - ca[1]).toFloat()
             } else if (o == ob) {
                 val x = P.px[i] - cb[0]; val y = P.py[i] - cb[1]
-                P.px[i] = x * cs - y * sn + bx
-                P.py[i] = x * sn + y * cs + by
+                P.px[i] = (x * cs - y * sn + bx).toFloat()
+                P.py[i] = (x * sn + y * cs + by).toFloat()
             }
         }
         val v = c.speedFrac * vmax * ml / dt
         for (i in 0 until P.n) {
             val o = P.organismOf[i]
-            if (o == oa) { P.vx[i] = v * 0.5; P.vy[i] = 0.0 }
-            else if (o == ob) { P.vx[i] = -v * 0.5; P.vy[i] = 0.0 }
-            else { P.vx[i] = 0.0; P.vy[i] = 0.0 }
+            if (o == oa) { P.vx[i] = (v * 0.5).toFloat(); P.vy[i] = 0.0f }
+            else if (o == ob) { P.vx[i] = (-v * 0.5).toFloat(); P.vy[i] = 0.0f }
+            else { P.vx[i] = 0.0f; P.vy[i] = 0.0f }
         }
         // Вращение второго тела: по касательной той же величины, что и сближение.
         if (c.spinFrac != 0.0 && rb > 1e-9) {
@@ -308,7 +308,7 @@ object TrapHunt {
             for (i in 0 until P.n) {
                 if (P.organismOf[i] != ob) continue
                 val dx = P.px[i] - bx; val dy = P.py[i] - by
-                P.vx[i] += -om * dy; P.vy[i] += om * dx
+                P.vx[i] += (-om * dy).toFloat(); P.vy[i] += (om * dx).toFloat()
             }
         }
         // СВОБОДНЫЕ ЧАСТИЦЫ СТАВЯТСЯ В ЗАЗОР, а не туда, куда их положил загрузчик:
@@ -316,9 +316,9 @@ object TrapHunt {
         var k = 0
         for (i in 0 until P.n) {
             if (!P.isFree(i)) continue
-            P.px[i] = 0.0
-            P.py[i] = (k - (c.freeParticles - 1) * 0.5) * ml * 1.3
-            P.vx[i] = 0.0; P.vy[i] = 0.0
+            P.px[i] = 0.0f
+            P.py[i] = ((k - (c.freeParticles - 1) * 0.5) * ml * 1.3).toFloat()
+            P.vx[i] = 0.0f; P.vy[i] = 0.0f
             k++
         }
         for (i in 0 until P.n) { P.prevX[i] = P.px[i]; P.prevY[i] = P.py[i] }
@@ -362,7 +362,7 @@ object TrapHunt {
                 if (sumR > 1e-9 && d / sumR < lastMet) lastMet = d / sumR
                 if (ct != null) {
                     val pen = ct.maxPenetration(P.px, P.py)
-                    if (pen > lastPen) lastPen = pen
+                    if (pen > lastPen) lastPen = pen.toDouble()
                 }
             }
             lastTorn = P.tornCount()
@@ -391,7 +391,7 @@ object TrapHunt {
             val a = P.triA[t]; val b = P.triB[t]; val c = P.triC[t]
             if (a == i || b == i || c == i) continue
             if (P.organismOf[a] == oi) continue
-            val ax = P.px[a]; val ay = P.py[a]
+            val ax = P.px[a].toDouble(); val ay = P.py[a].toDouble()
             val bx = P.px[b]; val by = P.py[b]
             val cx = P.px[c]; val cy = P.py[c]
             val d1 = (bx - ax) * (y - ay) - (by - ay) * (x - ax)
@@ -415,7 +415,7 @@ object TrapHunt {
             if (el < 1e-12) continue
             ex /= el; ey /= el
             val d = Math.abs((P.px[i] - P.px[p0]) * ey - (P.py[i] - P.py[p0]) * ex)
-            if (d < best) best = d
+            if (d < best) best = d.toDouble()
         }
         return if (best == Double.MAX_VALUE) 0.0 else best / ml
     }
@@ -505,7 +505,7 @@ object TrapHunt {
         // этим потолком не связаны вовсе. Если на ударе ткань уезжает за подшаг дальше,
         // чем контакт способен отжать, прорыв не в скорости и не в CCD.
         val wasX = DoubleArray(P.n); val wasY = DoubleArray(P.n)
-        for (q in 0 until P.n) { wasX[q] = P.px[q]; wasY[q] = P.py[q] }
+        for (q in 0 until P.n) { wasX[q] = P.px[q].toDouble(); wasY[q] = P.py[q].toDouble() }
         P.demo.state.dbgSubstepHook = { step ->
             if (tick in fromTick..toTick) {
                 val ct = P.contactsObj()
@@ -516,13 +516,13 @@ object TrapHunt {
                     if (j == cell || dead[j] || org[j] == org[cell]) continue
                     val dx = P.px[j] - x; val dy = P.py[j] - y
                     val d = sqrt(dx * dx + dy * dy)
-                    if (d < nd) { nd = d; nj = j }
+                    if (d < nd) { nd = d.toDouble(); nj = j }
                 }
                 var be = -1; var bd = Double.MAX_VALUE
                 for (e in 0 until P.boundCount) {
                     val a = P.boundA[e]; val b = P.boundB[e]
                     if (org[a] == org[cell] || dead[a] || dead[b]) continue
-                    val ax = P.px[a]; val ay = P.py[a]
+                    val ax = P.px[a].toDouble(); val ay = P.py[a].toDouble()
                     val ex = P.px[b] - ax; val ey = P.py[b] - ay
                     val l2 = ex * ex + ey * ey
                     var t = if (l2 < 1e-18) 0.0 else ((x - ax) * ex + (y - ay) * ey) / l2
@@ -547,7 +547,7 @@ object TrapHunt {
                     val j = if (a == cell) b else a
                     val dx = P.px[j] - x; val dy = P.py[j] - y
                     val q = sqrt(dx * dx + dy * dy) / ct.contactDistanceOf(cell, j)
-                    cc++; if (q < cmin) cmin = q
+                    cc++; if (q < cmin) cmin = q.toDouble()
                 }
                 val moved = sqrt((x - prevX) * (x - prevX) + (y - prevY) * (y - prevY)) / ml
                 // Наибольший ход за подшаг по всей сцене и у ближайшей чужой клетки.
@@ -570,7 +570,7 @@ object TrapHunt {
                     String.format(Locale.ROOT,
                         " | ход чужой %.3f, наибольший в сцене %.3f (#%d)", njMove, maxMove, maxWho))
                 prevX = x; prevY = y
-                for (q in 0 until P.n) { wasX[q] = P.px[q]; wasY[q] = P.py[q] }
+                for (q in 0 until P.n) { wasX[q] = P.px[q].toDouble(); wasY[q] = P.py[q].toDouble() }
             }
         }
         for (t in 1..toTick) { tick = t; P.frame(dt, sub, contract = false) }

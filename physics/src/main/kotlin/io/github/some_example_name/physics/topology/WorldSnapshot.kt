@@ -31,14 +31,16 @@ internal const val SNAPSHOT_MAGIC = 0x50485753  // "PHWS"
  *     версии 3 читается: волокон в нём нет, мышцы сжимаются во все стороны, как и писались.
  * 5 — состав костей: списки клеток и boneClusterOf (кость делится вместе с телом, BoneSplit.kt, 16.11).
  *     Снимки версий 3 и 4 читаются: состава в них нет, кости — по описанию, как раньше.
- * 6 — память удара клеток (impactSpeed, клин: ImpactWedge, 18.11). Снимки версий 3–5 читаются: память в них нулевая.
+ * 6 — память удара клеток (клин, 18.11). Снимки версий 3–5 читаются: памяти в них нет.
  * 7 — временные связи роста в описании (linkRetireStart/linkRetireCells: TempLinks.kt, 20.11). Снимки версий 3–6
  *     читаются: временных связей в них нет, как тогда и было.
+ * 8 — без памяти удара клеток: клин убран вместе с гашением (24.11, находка 40). Снимки версий 6 и 7 читаются:
+ *     память удара в них пропускается.
  * Номера 5 и 6 даны при слиянии с alpha-0.2.4 (21.11): в ветке perf-experiment состав костей и память удара были
  * версиями 4 и 5, а волокна — 6 после памяти удара; версия 4 игры уже лежит в сохранениях игроков, поэтому её
  * формат остался, а ветка подвинулась. Снимки старой нумерации ветки (только проверки стендов) не читаются.
  */
-internal const val SNAPSHOT_VERSION = 7
+internal const val SNAPSHOT_VERSION = 8
 
 /** Самая старая версия снимка, которую мир ещё читает (см. [SNAPSHOT_VERSION]). */
 internal const val SNAPSHOT_OLDEST_READABLE = 3
@@ -46,20 +48,20 @@ internal const val SNAPSHOT_OLDEST_READABLE = 3
 // --- массивы: длина, затем значения; числа — сырыми битами, без нормализации NaN ---
 
 internal fun DataOutput.writeInts(a: IntArray, count: Int) { writeInt(count); for (i in 0 until count) writeInt(a[i]) }
-internal fun DataOutput.writeDoubles(a: DoubleArray, count: Int) { writeInt(count); for (i in 0 until count) writeLong(java.lang.Double.doubleToRawLongBits(a[i])) }
+internal fun DataOutput.writeDoubles(a: FloatArray, count: Int) { writeInt(count); for (i in 0 until count) writeLong(java.lang.Double.doubleToRawLongBits(a[i].toDouble())) }
 internal fun DataOutput.writeFloats(a: FloatArray, count: Int) { writeInt(count); for (i in 0 until count) writeInt(java.lang.Float.floatToRawIntBits(a[i])) }
 internal fun DataOutput.writeBooleans(a: BooleanArray, count: Int) { writeInt(count); for (i in 0 until count) writeBoolean(a[i]) }
 internal fun DataOutput.writeBytes(a: ByteArray, count: Int) { writeInt(count); write(a, 0, count) }
 
 /** Прочитать массив; длина результата — не меньше [minSize] (ёмкость), записанное — в начале. */
 internal fun DataInput.readInts(minSize: Int): IntArray { val c = readInt(); val a = IntArray(maxOf(c, minSize)); for (i in 0 until c) a[i] = readInt(); return a }
-internal fun DataInput.readDoubles(minSize: Int): DoubleArray { val c = readInt(); val a = DoubleArray(maxOf(c, minSize)); for (i in 0 until c) a[i] = java.lang.Double.longBitsToDouble(readLong()); return a }
+internal fun DataInput.readDoubles(minSize: Int): FloatArray { val c = readInt(); val a = FloatArray(maxOf(c, minSize)); for (i in 0 until c) a[i] = java.lang.Double.longBitsToDouble(readLong()).toFloat(); return a }
 internal fun DataInput.readFloats(minSize: Int): FloatArray { val c = readInt(); val a = FloatArray(maxOf(c, minSize)); for (i in 0 until c) a[i] = java.lang.Float.intBitsToFloat(readInt()); return a }
 internal fun DataInput.readBooleans(minSize: Int): BooleanArray { val c = readInt(); val a = BooleanArray(maxOf(c, minSize)); for (i in 0 until c) a[i] = readBoolean(); return a }
 internal fun DataInput.readBytes(minSize: Int): ByteArray { val c = readInt(); val a = ByteArray(maxOf(c, minSize)); readFully(a, 0, c); return a }
 
-private fun DataOutput.writeDouble64(v: Double) = writeLong(java.lang.Double.doubleToRawLongBits(v))
-private fun DataInput.readDouble64(): Double = java.lang.Double.longBitsToDouble(readLong())
+private fun DataOutput.writeDouble64(v: Float) = writeLong(java.lang.Double.doubleToRawLongBits(v.toDouble()))
+private fun DataInput.readDouble64(): Float = java.lang.Double.longBitsToDouble(readLong()).toFloat()
 
 /** Описание мира: склейка описаний тел, в том числе пулов свободных частиц. */
 internal fun DataOutput.writeDefinition(d: BodyDefinition) {
@@ -98,7 +100,6 @@ internal fun BodyState.writeCore(out: DataOutput) {
     // Частицы.
     for (a in listOf(px, py, prevX, prevY, vx, vy, invMass, restInvMass, matchWeight, radius,
             sleepAnchorX, sleepAnchorY, tickJitterX, tickJitterY, contactPressure)) out.writeDoubles(a, a.size)
-    out.writeDoubles(impactSpeed, impactSpeed.size)
     for (a in listOf(cellDead, cellUnborn, inContact, crushedCell)) out.writeBooleans(a, a.size)
     out.writeFloats(cellScale, cellScale.size); out.writeBoolean(cellScalesOn)
     out.writeFloats(cellScaleTarget, cellScaleTarget.size); out.writeBoolean(cellScalesMoving)
@@ -110,7 +111,7 @@ internal fun BodyState.writeCore(out: DataOutput) {
     out.writeFloats(cellGrip, cellGrip.size)
     for (a in listOf(cellHomeCompliance, cellHomeX, cellHomeY)) out.writeDoubles(a, a.size)
     out.writeBoolean(boundsOn)
-    for (b in doubleArrayOf(boundsMinX, boundsMinY, boundsMaxX, boundsMaxY)) out.writeLong(java.lang.Double.doubleToRawLongBits(b))
+    for (b in floatArrayOf(boundsMinX, boundsMinY, boundsMaxX, boundsMaxY)) out.writeLong(java.lang.Double.doubleToRawLongBits(b.toDouble()))
     for (a in listOf(trapTicks, trapOrg, foldTicks, contactPressureN, boneOf, muscleOf, organismOf)) out.writeInts(a, a.size)
     // Организмы.
     out.writeInts(organismSize, organismCount)
@@ -152,7 +153,7 @@ internal fun BodyState.writeCore(out: DataOutput) {
     out.writeInt(tornTotal); out.writeBoolean(sweepBackwards); out.writeInt(playTick)
     for (b in booleanArrayOf(contactsOn, probeOn, bonesRigid, tearingOn, areasOn, crushBurstOn, membranePassTear,
             trapKillFolds, cancelSpinOn)) out.writeBoolean(b)
-    for (d in doubleArrayOf(muscleContraction, muscleRateContract, muscleRateRelax, gaitDuty, tendonTear,
+    for (d in floatArrayOf(muscleContraction, muscleRateContract, muscleRateRelax, gaitDuty, tendonTear,
             linkTearStrain, tangentDrag, pressureBurst, membraneTearStrain)) out.writeDouble64(d)
     for (i in intArrayOf(gaitPeriod, muscleTouch, sweepFlip, trapKillTicks, bendLevel)) out.writeInt(i)
     writeJoints(out)
@@ -170,7 +171,8 @@ internal fun BodyState.readCore(input: DataInput, version: Int = SNAPSHOT_VERSIO
     matchWeight = input.readDoubles(0); radius = input.readDoubles(0)
     sleepAnchorX = input.readDoubles(0); sleepAnchorY = input.readDoubles(0)
     tickJitterX = input.readDoubles(0); tickJitterY = input.readDoubles(0); contactPressure = input.readDoubles(0)
-    impactSpeed = if (version >= 6) input.readDoubles(0) else DoubleArray(0)
+    // Память удара клина (версии 6 и 7): клина больше нет, массив читается и отбрасывается.
+    if (version in 6..7) input.readDoubles(0)
     cellDead = input.readBooleans(0); cellUnborn = input.readBooleans(0); inContact = input.readBooleans(0)
     crushedCell = input.readBooleans(0)
     cellScale = input.readFloats(0); cellScalesOn = input.readBoolean()
@@ -196,7 +198,7 @@ internal fun BodyState.readCore(input: DataInput, version: Int = SNAPSHOT_VERSIO
     if (version >= 5) {
         rigidBones = Array(boneCount) { input.readInts(0) }
         boneClusterOf = input.readInts(0)
-        boneRestQx = Array(boneCount) { DoubleArray(0) }; boneRestQy = Array(boneCount) { DoubleArray(0) }
+        boneRestQx = Array(boneCount) { FloatArray(0) }; boneRestQy = Array(boneCount) { FloatArray(0) }
     } else check(boneCount == rigidBones.size) { "кости снимка не от этого описания" }
     for (b in rigidBones.indices) { boneRestQx[b] = input.readDoubles(0); boneRestQy[b] = input.readDoubles(0) }
     if (version >= 5) bonesSplit = input.readBoolean()

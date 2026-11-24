@@ -3,12 +3,12 @@ package io.github.some_example_name.physics
 import kotlin.math.abs
 import kotlin.math.sqrt
 
-fun BodyState.dbgSeal(c: Int, i: Int, j: Int, len: Double) {
+fun BodyState.dbgSeal(c: Int, i: Int, j: Int, len: Float) {
     val ct = contacts ?: return
     val ra = ct.contactRadiusOf(i); val rb = ct.contactRadiusOf(j)
-    if (ra <= 0.0 || rb <= 0.0) return
-    val need = 2.0 * dbgSealMinR
-    if (need <= 0.0) return
+    if (ra <= 0.0f || rb <= 0.0f) return
+    val need = 2.0f * dbgSealMinR
+    if (need <= 0.0f) return
     val q = (len - ra - rb) / need
     SealStats.checks++
     SealStats.minR = dbgSealMinR / linkScale
@@ -16,12 +16,12 @@ fun BodyState.dbgSeal(c: Int, i: Int, j: Int, len: Double) {
         SealStats.worst = q; SealStats.worstI = i; SealStats.worstJ = j
         SealStats.worstStretch = len / conRest[c]
     }
-    if (q > 1.0) {
+    if (q > 1.0f) {
         SealStats.over++
         if (tearingOn) SealStats.overTearing++ else SealStats.overNoTear++
     }
-    if (q > 2.0) SealStats.over2++
-    if (q > 5.0) SealStats.over5++
+    if (q > 2.0f) SealStats.over2++
+    if (q > 5.0f) SealStats.over5++
     // Отдельно — ЖИВАЯ мембрана: связь, которая ещё не должна была порваться. Стенд
     // ставит сцены, перенося клетки, и связь через такой перенос растянута в сотни
     // раз — по ней о проходимости судить нельзя.
@@ -31,11 +31,11 @@ fun BodyState.dbgSeal(c: Int, i: Int, j: Int, len: Double) {
         if (q > SealStats.liveWorst) {
             SealStats.liveWorst = q; SealStats.liveI = i; SealStats.liveJ = j; SealStats.liveStretch = st
         }
-        if (q > 1.0) SealStats.liveOver++
+        if (q > 1.0f) SealStats.liveOver++
     }
 }
 
-fun BodyState.dbgTear(c: Int, i: Int, j: Int, why: String, ratio: Double) {
+fun BodyState.dbgTear(c: Int, i: Int, j: Int, why: String, ratio: Float) {
     val log = dbgTearLog ?: return
     if (log.length > 20000) return
     log.append("    тик %d: связь #%d-#%d %s %.3f, связь мышцы %d, клетки: мышцы %d/%d, кости %d/%d, сухожилие %s".format(
@@ -57,7 +57,7 @@ fun BodyState.dbgMark() {
     // Снимок нужен и наблюдению за одной клеткой: инициализатор поля в Kotlin не
     // проходит через сеттер, так что dbgStages по знаку среды сам не включится.
     if (!dbgStages && watchCell < 0) return
-    if (dbgSnapX.size < n) { dbgSnapX = DoubleArray(n); dbgSnapY = DoubleArray(n) }
+    if (dbgSnapX.size < n) { dbgSnapX = FloatArray(n); dbgSnapY = FloatArray(n) }
     System.arraycopy(px, 0, dbgSnapX, 0, n)
     System.arraycopy(py, 0, dbgSnapY, 0, n)
 }
@@ -65,7 +65,7 @@ fun BodyState.dbgMark() {
 /** То же для проходов по СКОРОСТЯМ: импульс берётся прямо из vx, vy. */
 fun BodyState.dbgMarkV() {
     if (!dbgStages) return
-    if (dbgSnapVx.size < n) { dbgSnapVx = DoubleArray(n); dbgSnapVy = DoubleArray(n) }
+    if (dbgSnapVx.size < n) { dbgSnapVx = FloatArray(n); dbgSnapVy = FloatArray(n) }
     System.arraycopy(vx, 0, dbgSnapVx, 0, n)
     System.arraycopy(vy, 0, dbgSnapVy, 0, n)
 }
@@ -82,41 +82,41 @@ fun BodyState.watchNote(k: Int) {
 fun BodyState.watchReport() {
     val i = watchCell
     if (i < 0 || i >= n) return
-    var sum = 0.0
+    var sum = 0.0f
     for (v in watchStage) sum += v
-    val ml = linkScale.toDouble()
-    if (sum > 1e-12) {
+    val ml = linkScale.toFloat()
+    if (sum > 1e-12f) {
         val sb = StringBuilder()
         sb.append("[стадии] клетка #").append(i).append(" тик ").append(playTick)
         sb.append(": всего ").append(String.format(java.util.Locale.ROOT, "%.3f", sum / ml)).append(" св")
         for (k in watchStage.indices) {
-            if (watchStage[k] <= 1e-12) continue
+            if (watchStage[k] <= 1e-12f) continue
             sb.append("  ").append(watchNames[k]).append(' ')
                 .append(String.format(java.util.Locale.ROOT, "%.3f", watchStage[k] / ml))
         }
         println(sb.toString())
     }
-    java.util.Arrays.fill(watchStage, 0.0)
+    java.util.Arrays.fill(watchStage, 0.0f)
 }
 
 fun BodyState.dbgMeasureV(k: Int) {
     if (!dbgStages) return
     val only = dbgOnly
-    var m0 = 0.0; var cx = 0.0; var cy = 0.0
+    var m0 = 0.0f; var cx = 0.0f; var cy = 0.0f
     for (i in 0 until n) {
-        if (invMass[i] <= 0.0) continue
+        if (invMass[i] <= 0.0f) continue
         if (only != null && !only[i]) continue
-        val m = 1.0 / invMass[i]
+        val m = 1.0f / invMass[i]
         m0 += m; cx += m * px[i]; cy += m * py[i]
     }
-    if (m0 > 0.0) { cx /= m0; cy /= m0 }
-    var dpx = 0.0; var dpy = 0.0; var dl = 0.0; var hits = 0
+    if (m0 > 0.0f) { cx /= m0; cy /= m0 }
+    var dpx = 0.0f; var dpy = 0.0f; var dl = 0.0f; var hits = 0
     for (i in 0 until n) {
-        if (invMass[i] <= 0.0) continue
+        if (invMass[i] <= 0.0f) continue
         if (only != null && !only[i]) continue
-        val m = 1.0 / invMass[i]
+        val m = 1.0f / invMass[i]
         val ddx = vx[i] - dbgSnapVx[i]; val ddy = vy[i] - dbgSnapVy[i]
-        if (ddx != 0.0 || ddy != 0.0) hits++
+        if (ddx != 0.0f || ddy != 0.0f) hits++
         dpx += m * ddx; dpy += m * ddy
         dl += m * ((px[i] - cx) * ddy - (py[i] - cy) * ddx)
     }
@@ -125,18 +125,18 @@ fun BodyState.dbgMeasureV(k: Int) {
     dbgStageL[k] += dl
 }
 
-fun BodyState.dbgMeasure(k: Int, h: Double) {
+fun BodyState.dbgMeasure(k: Int, h: Float) {
     watchNote(k)
     if (!dbgStages) return
-    var worst = 0.0
+    var worst = 0.0f
     var hits = 0
     val only = dbgOnly
     for (i in 0 until n) {
-        if (invMass[i] <= 0.0) continue
+        if (invMass[i] <= 0.0f) continue
         if (only != null && !only[i]) continue
         val dx = px[i] - dbgSnapX[i]; val dy = py[i] - dbgSnapY[i]
-        val d = Math.sqrt(dx * dx + dy * dy)
-        if (d > 1e-12) hits++
+        val d = kotlin.math.sqrt(dx * dx + dy * dy)
+        if (d > 1e-12f) hits++
         if (d > worst) worst = d
         dbgStageAbs[k] += d
     }
@@ -144,21 +144,21 @@ fun BodyState.dbgMeasure(k: Int, h: Double) {
     dbgStageHits[k] += hits
     // Момент считается от общего центра масс замеряемых клеток. Начало отсчёта
     // роли не играет, пока суммарный импульс стадии нулевой, но так надёжнее.
-    var m0 = 0.0; var cx = 0.0; var cy = 0.0
+    var m0 = 0.0f; var cx = 0.0f; var cy = 0.0f
     for (i in 0 until n) {
-        if (invMass[i] <= 0.0) continue
+        if (invMass[i] <= 0.0f) continue
         if (only != null && !only[i]) continue
-        val m = 1.0 / invMass[i]
+        val m = 1.0f / invMass[i]
         m0 += m; cx += m * dbgSnapX[i]; cy += m * dbgSnapY[i]
     }
-    if (m0 <= 0.0) return
+    if (m0 <= 0.0f) return
     cx /= m0; cy /= m0
-    var dl = 0.0
-    var dpx = 0.0; var dpy = 0.0
+    var dl = 0.0f
+    var dpx = 0.0f; var dpy = 0.0f
     for (i in 0 until n) {
-        if (invMass[i] <= 0.0) continue
+        if (invMass[i] <= 0.0f) continue
         if (only != null && !only[i]) continue
-        val m = 1.0 / invMass[i]
+        val m = 1.0f / invMass[i]
         val rx = dbgSnapX[i] - cx; val ry = dbgSnapY[i] - cy
         val ddx = px[i] - dbgSnapX[i]; val ddy = py[i] - dbgSnapY[i]
         dl += m * (rx * ddy - ry * ddx)
@@ -201,8 +201,8 @@ fun BodyState.scanTrapped() {
     if (trapGridStart.size < h + 1) { trapGridStart = IntArray(h + 1); trapGridCount = IntArray(h + 1) }
     val start = trapGridStart; val cur = trapGridCount
     java.util.Arrays.fill(start, 0, h + 1, 0)
-    val inv = 1.0 / (2.0 * linkScale)
-    val off = 1048576.0         // сдвиг, чтобы отбросить дробь без floor у отрицательных
+    val inv = 1.0f / (2.0f * linkScale)
+    val off = 1048576.0f         // сдвиг, чтобы отбросить дробь без floor у отрицательных
     if (trapTriBox.size < tn * 4) trapTriBox = IntArray(tn * 8)
     val box = trapTriBox
     // 1. Ячейки каждого треугольника и сколько записей в корзине.
@@ -235,7 +235,7 @@ fun BodyState.scanTrapped() {
     }
     // 3. Клетки с контактом: центр в чужом треугольнике своей корзины.
     for (i in 0 until n) {
-        if (dead[i] || ct.contactRadiusOf(i) <= 0.0) { ticks[i] = 0; foldTicks[i] = 0; continue }
+        if (dead[i] || ct.contactRadiusOf(i) <= 0.0f) { ticks[i] = 0; foldTicks[i] = 0; continue }
         val x = px[i]; val y = py[i]
         val xx = (x * inv + off).toInt(); val yy = (y * inv + off).toInt()
         val k = ((xx * 73856093) xor (yy * 19349663)) and mask
@@ -283,8 +283,8 @@ fun BodyState.scanTrapped() {
         if (trapOrg.size == n) trapOrg[i] = org[ta[foreign]]
         dbgTrapNow++
         if (boneOf[i] >= 0) dbgTrapBone++
-        if (ct.contactRadiusOf(ta[foreign]) <= 0.0 && ct.contactRadiusOf(tb[foreign]) <= 0.0 &&
-            ct.contactRadiusOf(tc[foreign]) <= 0.0) dbgTrapDeep++
+        if (ct.contactRadiusOf(ta[foreign]) <= 0.0f && ct.contactRadiusOf(tb[foreign]) <= 0.0f &&
+            ct.contactRadiusOf(tc[foreign]) <= 0.0f) dbgTrapDeep++
     }
     dbgTrapNs += System.nanoTime() - t0
 }

@@ -122,9 +122,9 @@ class VariationTest {
             val w = StandWorld()
             val ids = (0 until 40).map { w.ball(it * 2.0, 0.0) }
             val radii = ids.map { w.world.state.radius[w.world.freeParticle(it)] / PHYSICS_PER_GAME }
-            for (r in radii) assertTrue("${v.id}: радиус частицы $r", r >= 0.2 - 1e-9 && r <= 0.5 + 1e-9)
+            for (r in radii) assertTrue("${v.id}: радиус частицы $r", r >= 0.2 - 1e-6 && r <= 0.5 + 1e-6)   // радиус мира физики во float
             if (v.changesRadius && v != Variation.SMALL) assertTrue("${v.id}: частицы одного радиуса", radii.max() - radii.min() > 0.1)
-            if (!v.changesRadius) assertTrue("${v.id}: радиус частицы обязан остаться 0.5", radii.all { Math.abs(it - 0.5) < 1e-9 })
+            if (!v.changesRadius) assertTrue("${v.id}: радиус частицы обязан остаться 0.5", radii.all { Math.abs(it - 0.5) < 1e-6 }   /* радиус мира физики во float */)
         }
     }
 }

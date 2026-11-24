@@ -83,7 +83,7 @@ class BirthLog {
             if (q == d || !alive(q)) continue
             val dx = st.px[first + q] - st.px[p]; val dy = st.py[first + q] - st.py[p]
             val r2 = dx * dx + dy * dy
-            if (r2 < near2) near2 = r2
+            if (r2 < near2) near2 = r2.toDouble()
         }
         if (count == particle.size) {
             val size = count * 2

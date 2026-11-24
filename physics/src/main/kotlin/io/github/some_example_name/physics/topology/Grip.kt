@@ -24,28 +24,28 @@ package io.github.some_example_name.physics
  */
 
 /** Подшаг [h]: пружины к месту и хватка у бодрствующих частиц. */
-internal fun BodyState.applyGrip(h: Double) {
+internal fun BodyState.applyGrip(h: Float) {
     if (gripsDirty) countGrips()
     if (gripN == 0) return
     prepareAwakeSpans()
     val s = sleep
     for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
-        if (cellGrip[i] > 0f || cellHomeCompliance[i] > 0.0) groundOne(i, h)
+        if (cellGrip[i] > 0f || cellHomeCompliance[i] > 0.0f) groundOne(i, h)
     }
 }
 
-private fun BodyState.groundOne(i: Int, h: Double) {
+private fun BodyState.groundOne(i: Int, h: Float) {
     val w = invMass[i]
-    if (w == 0.0) return
+    if (w == 0.0f) return
     var nvx = vx[i]; var nvy = vy[i]
     val hc = cellHomeCompliance[i]
-    if (hc > 0.0) {
+    if (hc > 0.0f) {
         // Ограничение к точке: поправка доли w / (w + alpha/h²) смещения от места.
         val f = w / (w + hc / (h * h))
         val dx = (cellHomeX[i] - px[i]) * f; val dy = (cellHomeY[i] - py[i]) * f
         nvx += dx / h; nvy += dy / h
     }
-    val keep = 1.0 - cellGrip[i]
+    val keep = 1.0f - cellGrip[i]
     nvx *= keep; nvy *= keep
     vx[i] = nvx; vy[i] = nvy
     px[i] = prevX[i] + nvx * h; py[i] = prevY[i] + nvy * h
@@ -56,7 +56,7 @@ internal fun BodyState.gripCountNow(): Int { if (gripsDirty) countGrips(); retur
 /** Сколько в мире частиц с опорой — пересчёт после смены или перестройки (gripsDirty). */
 private fun BodyState.countGrips() {
     var c = 0
-    for (i in 0 until n) if (cellGrip[i] > 0f || cellHomeCompliance[i] > 0.0) c++
+    for (i in 0 until n) if (cellGrip[i] > 0f || cellHomeCompliance[i] > 0.0f) c++
     gripN = c
     gripsDirty = false
 }

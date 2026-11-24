@@ -71,7 +71,7 @@ class MapFileTest {
             }
             val all = listOf("types.bin", "genomes.bin", "cellActions.bin", "entities/cell.bin", "physics.bin")
             val file = root.child("outside.map")
-            val valid = map(4, all)
+            val valid = map(5, all)
             file.writeBytes(valid, false)
             MapSave.validateImport(file)
             file.writeBytes(valid.copyOf(70), false)
@@ -82,7 +82,10 @@ class MapFileTest {
             // Формат 3 — мягкий террейн из плиток: в мире с неподвижным террейном его не продолжить.
             file.writeBytes(map(3, all), false)
             assertFailsWith<IllegalArgumentException> { MapSave.validateImport(file) }
-            file.writeBytes(map(4, all - "physics.bin"), false)
+            // Формат 4 — мир физики от 0 до W, без начала координат в снимке моста.
+            file.writeBytes(map(4, all), false)
+            assertFailsWith<IllegalArgumentException> { MapSave.validateImport(file) }
+            file.writeBytes(map(5, all - "physics.bin"), false)
             assertFailsWith<IllegalArgumentException> { MapSave.validateImport(file) }
         } finally {
             root.deleteDirectory()

@@ -55,16 +55,16 @@ internal object PlayerLog {
     }
 
     /**
-     * Сумма по позициям и скоростям. Берутся БИТЫ double, а не значения: расхождение
-     * в последнем разряде и есть то, что надо поймать, — дальше оно растёт само.
+     * Сумма по позициям и скоростям. Берутся БИТЫ float (физика во float с 21.11), а не значения:
+     * расхождение в последнем разряде и есть то, что надо поймать, — дальше оно растёт само.
      */
-    fun stateHash(n: Int, px: DoubleArray, py: DoubleArray, vx: DoubleArray, vy: DoubleArray): Long {
+    fun stateHash(n: Int, px: FloatArray, py: FloatArray, vx: FloatArray, vy: FloatArray): Long {
         var h = 1125899906842597L
         for (i in 0 until n) {
-            h = mix(h, java.lang.Double.doubleToLongBits(px[i]))
-            h = mix(h, java.lang.Double.doubleToLongBits(py[i]))
-            h = mix(h, java.lang.Double.doubleToLongBits(vx[i]))
-            h = mix(h, java.lang.Double.doubleToLongBits(vy[i]))
+            h = mix(h, java.lang.Float.floatToIntBits(px[i]).toLong())
+            h = mix(h, java.lang.Float.floatToIntBits(py[i]).toLong())
+            h = mix(h, java.lang.Float.floatToIntBits(vx[i]).toLong())
+            h = mix(h, java.lang.Float.floatToIntBits(vy[i]).toLong())
         }
         return h
     }

@@ -1,10 +1,17 @@
 package io.github.some_example_name.physics
 
-/** Захват «было» для плавности мышцы (см. MuscleDriver) у одного куска. */
+/** Рабочие списки одного куска шага мышц (см. MuscleDriver): изменившиеся клетки и захват «было» для плавности. */
 internal class CellScaleLerpBuffer {
     var edgeIds = IntArray(64); var edgeFrom = FloatArray(64); var edgeN = 0
     var triIds = IntArray(64); var triFrom = FloatArray(64); var triN = 0
+    /** Клетки куска, которым второй проход пересчитывает связи и треугольники (refreshEffectiveChunk). */
+    var changed = IntArray(64); var changedN = 0
     @Suppress("unused") private val pad = LongArray(16)
+
+    fun addChanged(u: Int) {
+        if (changedN == changed.size) changed = changed.copyOf(changedN * 2)
+        changed[changedN++] = u
+    }
 
     fun addEdge(e: Int, from: Float) {
         if (edgeN == edgeIds.size) { edgeIds = edgeIds.copyOf(edgeN * 2); edgeFrom = edgeFrom.copyOf(edgeN * 2) }
@@ -27,9 +34,12 @@ internal class CellScaleLerpBuffer {
  * работает и для одного большого тела, а не только для многих маленьких. Тела без
  * параллельного обхода (ConstraintBlocks.serialBlock) считаются в конце в одном потоке.
  *
- * Значения выбираются, а не складываются, и последний пересчёт видит окончательные множители,
- * поэтому порядок проходов на результат не влияет. Замер 09.11, 34 червя, 8 воркеров: мышцы
- * были 10% тика в одном потоке.
+ * Значения выбираются, а не складываются, поэтому порядок кусков на результат не влияет. Замер 09.11, 34 червя,
+ * 8 воркеров: мышцы были 10% тика в одном потоке.
+ *
+ * С 24.11 проходов по три цвета два (MuscleDriver, «в два прохода»): сначала действующие множители клеток у всех
+ * кусков, потом связи и треугольники — они читают множители клеток соседних блоков, и те должны быть уже
+ * окончательными. Шесть барьеров на тик вместо трёх, зато каждая клетка, связь и треугольник считаются один раз.
  */
 internal class ParallelMuscles(private val st: BodyState) {
     private var moved = IntArray(1024)
@@ -43,7 +53,8 @@ internal class ParallelMuscles(private val st: BodyState) {
     private val colorN = IntArray(COLORS)
     private var running = IntArray(0)
 
-    private val ringJob = PhysicsJob { k, _ -> ringChunk(running[k]) }
+    private val effectiveJob = PhysicsJob { k, _ -> effectiveChunk(running[k]) }
+    private val aroundJob = PhysicsJob { k, _ -> aroundChunk(running[k]) }
 
     // --- плавность по подшагам: куски записей подряд ---
     private var lerpF = 0f
@@ -68,7 +79,7 @@ internal class ParallelMuscles(private val st: BodyState) {
     /** Кольца всех сдвинувшихся клеток и захват «было» в общие списки плавности. */
     fun refreshRings(w: PhysicsWorkers) {
         if (movedN < PARALLEL_MIN_MOVED) {
-            for (q in 0 until movedN) st.refreshCellScaleRing(moved[q])
+            st.refreshMovedRings(moved, movedN)
             return
         }
         val layout = st.constraintBlocks!!
@@ -83,12 +94,19 @@ internal class ParallelMuscles(private val st: BodyState) {
             addChunk(b, q, e, layout)
             q = e
         }
+        // Проход 1 — действующие множители клеток: у всех кусков, и только потом проход 2 — связи и треугольники.
         for (color in 0 until COLORS) {
             if (colorN[color] == 0) continue
             running = colored[color]
-            w.run(colorN[color], ringJob)
+            w.run(colorN[color], effectiveJob)
         }
-        for (x in 0 until chunks) if (layout.serialBlock[blockOf[x]]) ringChunk(x)
+        for (x in 0 until chunks) if (layout.serialBlock[blockOf[x]]) effectiveChunk(x)
+        for (color in 0 until COLORS) {
+            if (colorN[color] == 0) continue
+            running = colored[color]
+            w.run(colorN[color], aroundJob)
+        }
+        for (x in 0 until chunks) if (layout.serialBlock[blockOf[x]]) aroundChunk(x)
         for (x in 0 until chunks) st.appendCellScaleLerp(buffers[x])
     }
 
@@ -108,10 +126,12 @@ internal class ParallelMuscles(private val st: BodyState) {
         chunks++
     }
 
-    private fun ringChunk(x: Int) {
+    private fun effectiveChunk(x: Int) = st.refreshEffectiveChunk(moved, from[x], to[x], buffers[x])
+
+    private fun aroundChunk(x: Int) {
         val out = buffers[x]
         out.edgeN = 0; out.triN = 0
-        for (q in from[x] until to[x]) st.refreshCellScaleRing(moved[q], out)
+        st.refreshAroundChanged(out.changed, out.changedN, out)
     }
 
     /** Шаг плавности подшага: записи независимы, каждая про своё ребро или треугольник. */

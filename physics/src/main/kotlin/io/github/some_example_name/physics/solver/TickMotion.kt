@@ -32,7 +32,7 @@ package io.github.some_example_name.physics
  */
 internal fun BodyState.beginTickMotion() {
     if (tickJitterX.size != n) {
-        tickJitterX = DoubleArray(n); tickJitterY = DoubleArray(n)
+        tickJitterX = FloatArray(n); tickJitterY = FloatArray(n)
     }
     prepareAwakeSpans()
     val s = sleep
@@ -51,9 +51,9 @@ internal fun BodyState.beginTickMotion() {
  */
 internal fun BodyState.removeTickJitter() {
     if (orgSleepDrift2.size < n) {
-        orgSleepDrift2 = DoubleArray(n); sleepAnchorX = DoubleArray(n); sleepAnchorY = DoubleArray(n)
+        orgSleepDrift2 = FloatArray(n); sleepAnchorX = FloatArray(n); sleepAnchorY = FloatArray(n)
     }
-    java.util.Arrays.fill(orgSleepDrift2, 0, organismCount, 0.0)
+    java.util.Arrays.fill(orgSleepDrift2, 0, organismCount, 0.0f)
     prepareAwakeSpans()
     val s = sleep
     val w = activeWorkers
@@ -63,7 +63,7 @@ internal fun BodyState.removeTickJitter() {
     val calm = s.calmTicks
     if (calm.isEmpty()) return
     for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
-        if (invMass[i] == 0.0) continue
+        if (invMass[i] == 0.0f) continue
         val x = px[i]; val y = py[i]
         val o = organismOf[i]
         if (calm[o] == 0) { sleepAnchorX[i] = x; sleepAnchorY[i] = y; continue }
@@ -75,9 +75,13 @@ internal fun BodyState.removeTickJitter() {
 
 /** Частицы [from, to): скорость — средняя за тик, дрожь — в tickJitter. Кусок параллельного прохода. */
 internal fun BodyState.removeJitterRange(from: Int, to: Int) {
-    val inv = 1.0 / DT
+    val inv = 1.0f / DT
+    // Массивы — в локальные, длины — до цикла: см. lengthsBeforeLoop.
+    val px = px; val py = py; val vx = vx; val vy = vy; val invMass = invMass
+    val tickJitterX = tickJitterX; val tickJitterY = tickJitterY
+    lengthsBeforeLoop(px.size or py.size or vx.size or vy.size or invMass.size or tickJitterX.size or tickJitterY.size)
     for (i in from until to) {
-        if (invMass[i] == 0.0) { tickJitterX[i] = 0.0; tickJitterY[i] = 0.0; continue }
+        if (invMass[i] == 0.0f) { tickJitterX[i] = 0.0f; tickJitterY[i] = 0.0f; continue }
         val mx = (px[i] - tickJitterX[i]) * inv
         val my = (py[i] - tickJitterY[i]) * inv
         tickJitterX[i] = vx[i] - mx; tickJitterY[i] = vy[i] - my
@@ -94,6 +98,8 @@ internal fun BodyState.restoreTickJitter() {
 }
 
 internal fun BodyState.restoreJitterRange(from: Int, to: Int) {
+    val vx = vx; val vy = vy; val tickJitterX = tickJitterX; val tickJitterY = tickJitterY
+    lengthsBeforeLoop(vx.size or vy.size or tickJitterX.size or tickJitterY.size)
     for (i in from until to) { vx[i] += tickJitterX[i]; vy[i] += tickJitterY[i] }
 }
 

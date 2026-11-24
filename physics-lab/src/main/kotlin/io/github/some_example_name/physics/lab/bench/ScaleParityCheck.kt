@@ -67,18 +67,18 @@ fun main(args: Array<String>) {
         val snapshot = snapshotType.getDeclaredMethod("snapshots").apply { isAccessible = true }
         val dt = type.getMethod("const", String::class.java).invoke(probe, "DT") as Double
         val substeps = type.getMethod("constInt", String::class.java).invoke(probe, "SUBSTEPS") as Int
-        lateinit var x: DoubleArray; lateinit var y: DoubleArray
-        lateinit var vx: DoubleArray; lateinit var vy: DoubleArray
+        lateinit var x: FloatArray; lateinit var y: FloatArray
+        lateinit var vx: FloatArray; lateinit var vy: FloatArray
         val wall = DoubleArray(ticks)
         val processor = DoubleArray(ticks)
 
         fun load(count: Int) {
             boot.invoke(probe, body, count, 0, 0.0, 0L)
             reset.invoke(probe)
-            x = type.getMethod("getPx").invoke(probe) as DoubleArray
-            y = type.getMethod("getPy").invoke(probe) as DoubleArray
-            vx = type.getMethod("getVx").invoke(probe) as DoubleArray
-            vy = type.getMethod("getVy").invoke(probe) as DoubleArray
+            x = type.getMethod("getPx").invoke(probe) as FloatArray
+            y = type.getMethod("getPy").invoke(probe) as FloatArray
+            vx = type.getMethod("getVx").invoke(probe) as FloatArray
+            vy = type.getMethod("getVy").invoke(probe) as FloatArray
         }
         fun step(tick: Int) {
             val p0 = cpu.currentThreadCpuTime

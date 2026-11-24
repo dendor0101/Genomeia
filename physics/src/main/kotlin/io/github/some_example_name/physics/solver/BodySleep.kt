@@ -309,7 +309,7 @@ internal fun BodyState.noteSleepContacts(ct: BoundaryContacts): Boolean {
         val sleeper = if (si) i else j
         if (isFixed(sleeper)) continue
         val dx = px[mover] - tickJitterX[mover]; val dy = py[mover] - tickJitterY[mover]
-        val limit2 = if (cellHomeCompliance.size > sleeper && cellHomeCompliance[sleeper] > 0.0) ground2 else wake2
+        val limit2 = if (cellHomeCompliance.size > sleeper && cellHomeCompliance[sleeper] > 0.0f) ground2 else wake2
         if (dx * dx + dy * dy > limit2) { s.requestWake(sleeper); any = true }
     }
     return any
@@ -339,8 +339,8 @@ private fun BodyState.sleepOrganism(o: Int) {
     val block = constraintBlocks?.particleBlock
     for (i in sleep.first[o]..sleep.last[o]) {
         if (organismOf[i] != o) continue
-        invMass[i] = 0.0
-        vx[i] = 0.0; vy[i] = 0.0
+        invMass[i] = 0.0f
+        vx[i] = 0.0f; vy[i] = 0.0f
         prevX[i] = px[i]; prevY[i] = py[i]
         // Поштучные проходы спящего больше не видят (см. spanStart): всё, что они
         // обнуляли бы каждый подшаг, обнуляется здесь один раз.
@@ -348,7 +348,7 @@ private fun BodyState.sleepOrganism(o: Int) {
         if (awake != null) awake[block!![i]]--
     }
     // Запас среды — скорость увлечённой воды; у стоящего тела ей не с чего быть.
-    flowVX[o] = 0.0; flowVY[o] = 0.0
+    flowVX[o] = 0.0f; flowVY[o] = 0.0f
     sleep.setAsleep(o, true)
     parkBoundaryLimits(o, park = true)
     // Пары спящего со спящими соседями больше не нужны: см. BoundaryContacts.broadphase.
@@ -360,7 +360,7 @@ private fun BodyState.wakeOrganism(o: Int) {
     val block = constraintBlocks?.particleBlock
     for (i in sleep.first[o]..sleep.last[o]) {
         if (organismOf[i] != o) continue
-        invMass[i] = if (cellDead[i]) 0.0 else restInvMass[i]
+        invMass[i] = if (cellDead[i]) 0.0f else restInvMass[i]
         // Средняя скорость за остаток тика — от места пробуждения. См. TickMotion.
         if (tickJitterX.size == n) { tickJitterX[i] = px[i]; tickJitterY[i] = py[i] }
         if (cancelSpinOn) tickMomentum.admitFrozen(i)

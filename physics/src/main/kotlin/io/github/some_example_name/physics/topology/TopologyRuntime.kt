@@ -88,9 +88,9 @@ fun BodyState.buildOrganisms(relabel: Boolean = true) {
     // Ёмкость держится по числу клеток: больше компонент, чем клеток, не бывает.
     val fresh = !isorganismSizeInitialized() || organismSize.size < n
     if (fresh) {
-        organismSize = IntArray(n); organismMass = DoubleArray(n)
-        flowVX = DoubleArray(n); flowVY = DoubleArray(n)
-        comAccX = DoubleArray(n); comAccY = DoubleArray(n)
+        organismSize = IntArray(n); organismMass = FloatArray(n)
+        flowVX = FloatArray(n); flowVY = FloatArray(n)
+        comAccX = FloatArray(n); comAccY = FloatArray(n)
     }
     // КУСОК УНАСЛЕДУЕТ ЗАПАС СРЕДЫ У ТОГО, ИЗ КОГО ВЫШЕЛ.
     //
@@ -108,36 +108,36 @@ fun BodyState.buildOrganisms(relabel: Boolean = true) {
     // движутся примерно с прежней скоростью, так что это как раз непрерывное
     // продолжение, а обнуление было разрывом.
     if (relabel && !fresh) {
-        if (orgFlowX.size < n) { orgFlowX = DoubleArray(n); orgFlowY = DoubleArray(n) }
+        if (orgFlowX.size < n) { orgFlowX = FloatArray(n); orgFlowY = FloatArray(n) }
         System.arraycopy(flowVX, 0, orgFlowX, 0, n)
         System.arraycopy(flowVY, 0, orgFlowY, 0, n)
         for (o in 0 until comp) {
             val was = orgPrev[orgSeed[o]]
-            if (was < 0) { flowVX[o] = 0.0; flowVY[o] = 0.0 }
+            if (was < 0) { flowVX[o] = 0.0f; flowVY[o] = 0.0f }
             else { flowVX[o] = orgFlowX[was]; flowVY[o] = orgFlowY[was] }
         }
     }
-    java.util.Arrays.fill(comAccX, 0, comp, 0.0)
-    java.util.Arrays.fill(comAccY, 0, comp, 0.0)
+    java.util.Arrays.fill(comAccX, 0, comp, 0.0f)
+    java.util.Arrays.fill(comAccY, 0, comp, 0.0f)
     // БЕЗ ПЕРЕНУМЕРАЦИИ РАЗМЕРЫ И МАССЫ НЕ МЕНЯЮТСЯ: кто в каком организме — то же
     // самое, массы берутся из позы покоя. Значит и считать нечего. Раньше два прохода
     // по всем клеткам шли на КАЖДУЮ пересборку, а их бывает под два десятка за тик.
     if (!relabel && organismsCounted) return
     organismsCounted = true
     java.util.Arrays.fill(organismSize, 0, comp, 0)
-    java.util.Arrays.fill(organismMass, 0, comp, 0.0)
+    java.util.Arrays.fill(organismMass, 0, comp, 0.0f)
     for (i in 0 until n) organismSize[organismOf[i]]++
     // МАССА организма, а не число клеток: запас среды заряжается от скорости
     // ЦЕНТРА МАСС, а она есть сумма m*v делённая на сумму m. См. applyNormalDrag.
     for (i in 0 until n) {
-        if (restInvMass[i] <= 0.0) continue
-        organismMass[organismOf[i]] += 1.0 / restInvMass[i]
+        if (restInvMass[i] <= 0.0f) continue
+        organismMass[organismOf[i]] += 1.0f / restInvMass[i]
     }
     if (!rebuilding && !quiet) println("[DemoSession] organisms = $comp (own flow reservoir each)")
 }
 
 fun BodyState.buildContacts() {
-    if (!isradiusInitialized()) radius = DoubleArray(n) { body.radius[it].toDouble() }
+    if (!isradiusInitialized()) radius = FloatArray(n) { body.radius[it].toFloat() }
     if (!isisFreeInitialized()) isFree = BooleanArray(n)
     isFree.fill(true)
     for (k in 0 until lnkCount) { isFree[lnkA[k]] = false; isFree[lnkB[k]] = false }
@@ -189,7 +189,7 @@ fun BodyState.buildContacts() {
             n, conA, conB, conCount, boundA, boundB, boundCount, boundOpp, radius,
             CONTACT_SCALE, CCD_CORE, CONTACT_RESTITUTION, CONTACT_FRICTION,
             body.x, body.y,
-            linkScale.toDouble(), CONTACT_MAX_STEP, probeCells(), everLinked,
+            linkScale.toFloat(), CONTACT_MAX_STEP, probeCells(), everLinked,
             cellDead, restPairs, config.contacts,
         )
     } else {
@@ -216,8 +216,8 @@ fun BodyState.buildContacts() {
         // проникновение, и оно запрещено везде, а не только в лаборатории.
         it.killOnDeep = deepKillOn
         it.killDepth = KILL_DEPTH
-        if (internalMom?.n != n) internalMom = InternalMomentum(n)
-        if (contactPressure.size != n) contactPressure = DoubleArray(n)
+        if (internalMom?.n != n) internalMom = InternalMomentum(n, SPIN_MIN_ARM * linkScale)
+        if (contactPressure.size != n) contactPressure = FloatArray(n)
         it.pressure = contactPressure
         it.organismOf = organismOf
         it.noContact = cellNoContact
@@ -259,37 +259,37 @@ fun BodyState.buildContacts() {
  */
 fun BodyState.buildProbes() {
     if (probe.size != n) probe = BooleanArray(n)
-    if (probeAngle.size != n) probeAngle = DoubleArray(n)
-    java.util.Arrays.fill(probeAngle, 0.0)
+    if (probeAngle.size != n) probeAngle = FloatArray(n)
+    java.util.Arrays.fill(probeAngle, 0.0f)
     for (t in 0 until triCount) {
         val a = triA[t]; val b = triB[t]; val c = triC[t]
         probeAngle[a] += angleAt(a, b, c)
         probeAngle[b] += angleAt(b, a, c)
         probeAngle[c] += angleAt(c, a, b)
     }
-    val full = 2.0 * Math.PI - PROBE_ANGLE_EPS
+    val full = 2.0f * Math.PI - PROBE_ANGLE_EPS
     for (i in 0 until n) probe[i] = isFree[i] || probeAngle[i] < full
 }
 
 /** Угол при вершине v в треугольнике (v, p, q) в позе ПОКОЯ: топология, не движение. */
-fun BodyState.angleAt(v: Int, p: Int, q: Int): Double {
-    val ax = (body.x[p] - body.x[v]).toDouble(); val ay = (body.y[p] - body.y[v]).toDouble()
-    val bx = (body.x[q] - body.x[v]).toDouble(); val by = (body.y[q] - body.y[v]).toDouble()
+fun BodyState.angleAt(v: Int, p: Int, q: Int): Float {
+    val ax = (body.x[p] - body.x[v]).toFloat(); val ay = (body.y[p] - body.y[v]).toFloat()
+    val bx = (body.x[q] - body.x[v]).toFloat(); val by = (body.y[q] - body.y[v]).toFloat()
     val na = sqrt(ax * ax + ay * ay); val nb = sqrt(bx * bx + by * by)
-    if (na < 1e-12 || nb < 1e-12) return 0.0
+    if (na < 1e-12f || nb < 1e-12f) return 0.0f
     var c = (ax * bx + ay * by) / (na * nb)
-    if (c > 1.0) c = 1.0 else if (c < -1.0) c = -1.0
-    return StrictMath.acos(c)
+    if (c > 1.0f) c = 1.0f else if (c < -1.0f) c = -1.0f
+    return StrictMath.acos((c).toDouble()).toFloat()
 }
 
 fun BodyState.buildMasses() {
-    restInvMass = DoubleArray(n)
+    restInvMass = FloatArray(n)
     // Нормировка — постоянная мира, а не среднее по загруженному: см. WorldScale.
     val meanArea = worldScale!!.meanCellArea
     for (i in 0 until n) {
-        val r = body.radius[i].toDouble()
-        val m = if (meanArea > 0.0) (r * r) / meanArea else 1.0
-        restInvMass[i] = if (m > 1e-12) 1.0 / m else 1.0
+        val r = body.radius[i].toFloat()
+        val m = if (meanArea > 0.0f) (r * r) / meanArea else 1.0f
+        restInvMass[i] = if (m > 1e-12f) 1.0f / m else 1.0f
     }
 }
 
@@ -342,7 +342,7 @@ fun BodyState.buildFlaps() {
         val d = flapStart[v + 1] - flapStart[v]
         if (d >= 2) m += d * (d - 1) / 2
     }
-    if (flapA.size < m) { flapA = IntArray(m); flapB = IntArray(m); flapRest = DoubleArray(m) }
+    if (flapA.size < m) { flapA = IntArray(m); flapB = IntArray(m); flapRest = FloatArray(m) }
     if (flapV.size < m) flapV = IntArray(m)
     var k = 0
     for (v in 0 until n) {
@@ -351,8 +351,8 @@ fun BodyState.buildFlaps() {
         for (p in s until e) for (q in p + 1 until e) {
             val i = flapNb[p]; val j = flapNb[q]
             if (i == j) continue
-            val dx = (body.x[i] - body.x[j]).toDouble()
-            val dy = (body.y[i] - body.y[j]).toDouble()
+            val dx = (body.x[i] - body.x[j]).toFloat()
+            val dy = (body.y[i] - body.y[j]).toFloat()
             flapA[k] = i; flapB[k] = j; flapRest[k] = sqrt(dx * dx + dy * dy); flapV[k] = v; k++
         }
     }
@@ -372,15 +372,15 @@ fun BodyState.buildBend() {
         deg[j]++
     }
     if (!isbendAInitialized() || bendA.size < n) {
-        bendA = IntArray(n); bendB = IntArray(n); bendRest = DoubleArray(n)
+        bendA = IntArray(n); bendB = IntArray(n); bendRest = FloatArray(n)
     }
     var m = 0
     for (v in 0 until n) {
         if (deg[v] != 2) continue
         val i = nb0[v]; val j = nb1[v]
         if (i < 0 || j < 0 || i == j) continue
-        val dx = (body.x[i] - body.x[j]).toDouble()
-        val dy = (body.y[i] - body.y[j]).toDouble()
+        val dx = (body.x[i] - body.x[j]).toFloat()
+        val dy = (body.y[i] - body.y[j]).toFloat()
         bendA[m] = i; bendB[m] = j; bendRest[m] = sqrt(dx * dx + dy * dy); m++
     }
     bendCount = m
@@ -399,13 +399,13 @@ fun BodyState.buildBend() {
  * каждый подшаг сдвигала бы кость на этот остаток — а это и был дрейф.
  */
 fun BodyState.buildBoneRestPose() {
-    boneRestQx = Array(rigidBones.size) { DoubleArray(rigidBones[it].size) }
-    boneRestQy = Array(rigidBones.size) { DoubleArray(rigidBones[it].size) }
+    boneRestQx = Array(rigidBones.size) { FloatArray(rigidBones[it].size) }
+    boneRestQy = Array(rigidBones.size) { FloatArray(rigidBones[it].size) }
     var maxSize = 1
     rigidBones.forEachIndexed { b, ids ->
         if (ids.size > maxSize) maxSize = ids.size
         val qx = boneRestQx[b]; val qy = boneRestQy[b]
-        var cx = 0.0; var cy = 0.0
+        var cx = 0.0f; var cy = 0.0f
         for (i in ids) { cx += body.x[i]; cy += body.y[i] }
         cx /= ids.size; cy /= ids.size
         for (k in ids.indices) {
@@ -413,15 +413,15 @@ fun BodyState.buildBoneRestPose() {
             qy[k] = body.y[ids[k]] - cy
         }
         for (pass in 0 until 3) {
-            var sx = 0.0; var sy = 0.0
+            var sx = 0.0f; var sy = 0.0f
             for (k in ids.indices) { sx += qx[k]; sy += qy[k] }
-            if (sx == 0.0 && sy == 0.0) break
+            if (sx == 0.0f && sy == 0.0f) break
             val dx = sx / ids.size; val dy = sy / ids.size
             for (k in ids.indices) { qx[k] -= dx; qy[k] -= dy }
         }
     }
-    boneDx = DoubleArray(maxSize)
-    boneDy = DoubleArray(maxSize)
+    boneDx = FloatArray(maxSize)
+    boneDy = FloatArray(maxSize)
 }
 
 /**
@@ -496,7 +496,7 @@ fun BodyState.fillConstraints(): Int {
         if (boneOf[i] != -1 && boneOf[i] == boneOf[j]) continue
         val dx = body.x[i] - body.x[j]; val dy = body.y[i] - body.y[j]
         conA[m] = i; conB[m] = j
-        conRest[m] = sqrt((dx * dx + dy * dy).toDouble())
+        conRest[m] = sqrt((dx * dx + dy * dy).toFloat())
         conEdge[m] = lnkEdge[k]
         conMuscle[m] = muscleOfPair(i, j)
         m++
@@ -591,7 +591,7 @@ fun BodyState.restoreTopology() {
     // сбрасывается перед каждой вариацией, и мёртвые копились там от сцены к сцене.
     cellDead.fill(false)
     cellUnborn.fill(false)
-    conGrowTarget.fill(0.0); conGrowAge.fill(0); triGrowTarget.fill(0f); growEdgeN = 0; growTriN = 0
+    conGrowTarget.fill(0.0f); conGrowAge.fill(0); triGrowTarget.fill(0f); growEdgeN = 0; growTriN = 0
     deadCount = 0
     crushedCell.fill(false)
     lnkCount = body.linkCount
@@ -607,7 +607,7 @@ fun BodyState.restoreTopology() {
 
     if (conA.size < lnkCount) {
         conA = IntArray(lnkCount); conB = IntArray(lnkCount)
-        conRest = DoubleArray(lnkCount); conMuscle = IntArray(lnkCount)
+        conRest = FloatArray(lnkCount); conMuscle = IntArray(lnkCount)
         conEdge = IntArray(lnkCount)
     }
     conCount = fillConstraints()
@@ -720,7 +720,7 @@ fun BodyState.rebuildAfterTear() {
         }
         // Хвост за уплотнённым списком — свободные места: следующее дописанное тело займёт
         // их своими связями, и чужая цель дорастания им не нужна.
-        if (conGrowTarget.size > m) java.util.Arrays.fill(conGrowTarget, m, minOf(conCount, conGrowTarget.size), 0.0)
+        if (conGrowTarget.size > m) java.util.Arrays.fill(conGrowTarget, m, minOf(conCount, conGrowTarget.size), 0.0f)
         conCount = m
         constraintBlocks?.links?.packDirty()
     }
@@ -763,7 +763,7 @@ fun BodyState.refreshSurface() {
     }
     syncBoundaryArrays()
     contacts?.updateSurface(localSurface, changed, count)
-    dbgSealMinR = contacts?.minContactRadius ?: 0.0
+    dbgSealMinR = contacts?.minContactRadius ?: 0.0f
     baked.clearDirty()
     if (DEBUG_CHECKS && dbgTimeOn) dbgTimeNs[12] += System.nanoTime() - surfaceT0
 }

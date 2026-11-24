@@ -38,7 +38,7 @@ object SlamTest {
             var onB = 0
             var rmin = Double.MAX_VALUE; var rmax = 0.0
             for (i in 0 until P.n) {
-                val r = ct?.contactRadiusOf(i) ?: 0.0
+                val r = ct?.contactRadiusOf(i)?.toDouble() ?: 0.0
                 if (r > 0.0) { onB++; if (r < rmin) rmin = r; if (r > rmax) rmax = r }
             }
             var lmin = Double.MAX_VALUE; var lmax = 0.0
@@ -69,7 +69,7 @@ object SlamTest {
                         if (ct.contactRadiusOf(j) <= 0.0) continue
                         if (P.organismOf[i] == P.organismOf[j]) continue
                         val dx = P.px[i] - P.px[j]; val dy = P.py[i] - P.py[j]
-                        val d = Math.sqrt(dx * dx + dy * dy)
+                        val d = Math.sqrt((dx * dx + dy * dy).toDouble())
                         if (d > 1.5 * ct.contactDistanceOf(i, j)) continue
                         near++
                         if (ct.isBonded(i, j)) excluded++

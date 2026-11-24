@@ -36,7 +36,7 @@ fun BodyState.applyPierce(ct: BoundaryContacts) {
         linkTorn[c] = true; conDead[c] = true; tearsPending = true
         killEdgeNow(e)
         piercedCount++
-        dbgTear(c, conA[c], conB[c], "пробой", 0.0)
+        dbgTear(c, conA[c], conB[c], "пробой", 0.0f)
     }
     ct.clearPierce()
     refreshSurface()
@@ -62,7 +62,7 @@ fun BodyState.applyKills(ct: BoundaryContacts) {
         // тягу, и невидимая клетка (отрисовка мёртвых пропускает) полетит по сцене
         // без контактного радиуса — сквозь всё. Ноль обратной массы выводит её из
         // интегрирования так же, как неподвижные частицы бассейна.
-        vx[v] = 0.0; vy[v] = 0.0; invMass[v] = 0.0
+        vx[v] = 0.0f; vy[v] = 0.0f; invMass[v] = 0.0f
         // Из контактов клетка выводится сразу, а СТРУКТУРА перестраивается один раз
         // в конце тика: смерть приходит изнутри итерации решателя, и пересборка на
         // каждую смерть означала бы до 64 пересборок за тик.
@@ -82,11 +82,11 @@ fun BodyState.applyKills(ct: BoundaryContacts) {
  */
 fun BodyState.killCell(v: Int) {
     if (cellDead[v] || isFixed(v)) return
-    if (dragId == v) { matchWeight[v] = 1.0; dragId = -1 }
+    if (dragId == v) { matchWeight[v] = 1.0f; dragId = -1 }
     cellDead[v] = true
     deadCount++
     killIncidentEdges(v)
-    vx[v] = 0.0; vy[v] = 0.0; invMass[v] = 0.0
+    vx[v] = 0.0f; vy[v] = 0.0f; invMass[v] = 0.0f
     contacts?.dropFromContacts(v)
     refreshSurface()
     structureVersion++
@@ -110,13 +110,13 @@ fun BodyState.killIncidentEdges(v: Int) {
     localSurface.update(v)
     surfaceOne[0] = v
     contacts?.updateSurface(localSurface, surfaceOne, 1)
-    dbgSealMinR = contacts?.minContactRadius ?: 0.0
+    dbgSealMinR = contacts?.minContactRadius ?: 0.0f
 }
 
-fun BodyState.applyPlasticity(dt: Double) {
-    if (PLASTIC_RATE <= 0.0) return
+fun BodyState.applyPlasticity(dt: Float) {
+    if (PLASTIC_RATE <= 0.0f) return
     var k = PLASTIC_RATE * dt
-    if (k > 1.0) k = 1.0
+    if (k > 1.0f) k = 1.0f
     // Выдержка принадлежит конкретной связи/треугольнику и переезжает вместе
     // с ними при упаковке; разрыв в другом месте не сбрасывает накопленную пластику.
     if (conHold.size < conA.size) conHold = conHold.copyOf(conA.size)
@@ -130,27 +130,85 @@ fun BodyState.applyPlasticity(dt: Double) {
     val w = activeWorkers
     if (w != null) { parallelPhysics(w).plasticity(k, layout); return }
     if (sleep.asleepCount == 0 || layout == null) {
-        for (c in 0 until conCount) plasticLink(c, k)
-        for (t in 0 until triCount) plasticTriangle(t, k)
+        plasticLinksRange(0, conCount, k)
+        plasticTrianglesRange(0, triCount, k)
         return
     }
-    val links = layout.links
-    val areas = layout.areas
     for (block in 0 until layout.buckets) {
         if (block < layout.seam && layout.awake[block] == 0) continue
-        for (slot in links.start[block] until links.start[block] + links.count[block]) {
-            val c = links.items[slot]
-            if (c >= 0) plasticLink(c, k)
-        }
-        for (slot in areas.start[block] until areas.start[block] + areas.count[block]) {
-            val t = areas.items[slot]
-            if (t >= 0) plasticTriangle(t, k)
-        }
+        plasticBlock(block, layout, k)
     }
 }
 
-internal fun BodyState.plasticLink(c: Int, k: Double) {
-    if (baked.edgeDead[conEdge[c]]) return
+/*
+ * ЦИКЛ ПЛАСТИКИ — В ОДНОМ МЕТОДЕ СО СВОИМ ЯДРОМ (23.11.2026). Раньше связь и треугольник текли вызовом функции на
+ * каждый элемент, и та на каждом вызове заново читала десяток полей состояния и длины их массивов — на телефоне это
+ * чтение заголовков массивов мимо кэша (см. lengthsBeforeLoop). Теперь ядра plasticLinkAt и plasticTriangleAt —
+ * `inline` с массивами в параметрах, а циклы (по номерам и по блоку раскладки) держат массивы в локальных
+ * переменных. Арифметика та же, порядок обхода тот же; одним и тем же кодом идут и один поток, и воркеры.
+ */
+
+/** Связи [c0, c1) по номерам: без сна. Кусок параллельного прохода — см. ParallelPhysics.plasticity. */
+internal fun BodyState.plasticLinksRange(c0: Int, c1: Int, k: Float) {
+    val edgeDead = baked.edgeDead; val conEdge = conEdge; val conMuscle = conMuscle
+    val csOn = cellScalesOn; val cs = conCellScale; val conRest = conRest
+    val px = px; val py = py; val conA = conA; val conB = conB; val hold = conHold
+    lengthsBeforeLoop(edgeDead.size or conEdge.size or conMuscle.size or cs.size or conRest.size or px.size or py.size or
+        conA.size or conB.size or hold.size)
+    for (c in c0 until c1) plasticLinkAt(c, k, edgeDead, conEdge, conMuscle, csOn, cs, conRest, px, py, conA, conB, hold)
+}
+
+/** Треугольники [t0, t1) по номерам: без сна. Кусок параллельного прохода. */
+internal fun BodyState.plasticTrianglesRange(t0: Int, t1: Int, k: Float) {
+    val triAlive = baked.triAlive; val triId = triId; val triMuscle = triMuscle
+    val tsOn = cellScalesOn; val ts = triCellScale; val rest2 = triRestArea2
+    val px = px; val py = py; val triA = triA; val triB = triB; val triC = triC; val hold = triHold
+    lengthsBeforeLoop(triAlive.size or triId.size or triMuscle.size or ts.size or rest2.size or px.size or py.size or
+        triA.size or triB.size or triC.size or hold.size)
+    for (t in t0 until t1) plasticTriangleAt(t, k, triAlive, triId, triMuscle, tsOn, ts, rest2, px, py, triA, triB, triC, hold)
+}
+
+/** Связи и треугольники блока или шва [block] раскладки: со сном — только бодрствующие блоки. */
+internal fun BodyState.plasticBlock(block: Int, layout: ConstraintBlocks, k: Float) {
+    plasticBlockLinks(block, layout, k)
+    plasticBlockTriangles(block, layout, k)
+}
+
+private fun BodyState.plasticBlockLinks(block: Int, layout: ConstraintBlocks, k: Float) {
+    val edgeDead = baked.edgeDead; val conEdge = conEdge; val conMuscle = conMuscle
+    val csOn = cellScalesOn; val cs = conCellScale; val conRest = conRest
+    val px = px; val py = py; val conA = conA; val conB = conB; val hold = conHold
+    val links = layout.links
+    val from = links.start[block]; val to = from + links.count[block]
+    val items = links.items
+    lengthsBeforeLoop(edgeDead.size or conEdge.size or conMuscle.size or cs.size or conRest.size or px.size or py.size or
+        conA.size or conB.size or hold.size or items.size)
+    for (slot in from until to) {
+        val c = items[slot]
+        if (c >= 0) plasticLinkAt(c, k, edgeDead, conEdge, conMuscle, csOn, cs, conRest, px, py, conA, conB, hold)
+    }
+}
+
+private fun BodyState.plasticBlockTriangles(block: Int, layout: ConstraintBlocks, k: Float) {
+    val triAlive = baked.triAlive; val triId = triId; val triMuscle = triMuscle
+    val tsOn = cellScalesOn; val ts = triCellScale; val rest2 = triRestArea2
+    val px = px; val py = py; val triA = triA; val triB = triB; val triC = triC; val hold = triHold
+    val areas = layout.areas
+    val from = areas.start[block]; val to = from + areas.count[block]
+    val items = areas.items
+    lengthsBeforeLoop(triAlive.size or triId.size or triMuscle.size or ts.size or rest2.size or px.size or py.size or
+        triA.size or triB.size or triC.size or hold.size or items.size)
+    for (slot in from until to) {
+        val t = items[slot]
+        if (t >= 0) plasticTriangleAt(t, k, triAlive, triId, triMuscle, tsOn, ts, rest2, px, py, triA, triB, triC, hold)
+    }
+}
+
+@Suppress("NOTHING_TO_INLINE")
+internal inline fun plasticLinkAt(c: Int, k: Float, edgeDead: BooleanArray, conEdge: IntArray, conMuscle: IntArray,
+                                  csOn: Boolean, cs: FloatArray, conRest: FloatArray, px: FloatArray, py: FloatArray,
+                                  conA: IntArray, conB: IntArray, hold: ByteArray) {
+    if (edgeDead[conEdge[c]]) return
     // МЫШЦЫ НЕ ТЕКУТ, и это не осторожность, а необходимость.
     //
     // У сокращённой мышцы цель заметно короче (MUSCLE_CONTRACTION = 0.50), а
@@ -160,46 +218,49 @@ internal fun BodyState.plasticLink(c: Int, k: Double) {
     // длину и тянуть перестаёт. Проверка ловила это сразу: тело переставало
     // останавливаться вовсе (замедление 1.0x вместо 20x за минуту), потому что
     // ползущая длина покоя вечно шевелила границу, а среда это выпрямляла в тягу.
-    if (conMuscle[c] >= 0 || (cellScalesOn && conCellScale[c] != 1f)) return
+    if (conMuscle[c] >= 0 || (csOn && cs[c] != 1f)) return
     val target = conRest[c]
-    if (target < 1e-12) return
+    if (target < 1e-12f) return
     val dx = px[conA[c]] - px[conB[c]]
     val dy = py[conA[c]] - py[conB[c]]
     val len = sqrt(dx * dx + dy * dy)
-    val strain = len / target - 1.0
+    val strain = len / target - 1.0f
     val over = when {
         strain > PLASTIC_YIELD -> strain - PLASTIC_YIELD
         strain < -PLASTIC_YIELD -> strain + PLASTIC_YIELD
-        else -> 0.0
+        else -> 0.0f
     }
-    if (over == 0.0) { conHold[c] = 0; return }
-    if (conHold[c] < PLASTIC_HOLD) { conHold[c]++; return }
+    if (over == 0.0f) { hold[c] = 0; return }
+    if (hold[c] < PLASTIC_HOLD) { hold[c]++; return }
     // Предел длины идёт ЗА длиной покоя сам собой: он и есть
     // LINK_MAX_STRETCH * conRest, считается на месте. См. conMaxLen.
-    conRest[c] *= 1.0 + over * k
+    conRest[c] *= 1.0f + over * k
 }
 
-internal fun BodyState.plasticTriangle(t: Int, k: Double) {
-    if (!baked.triAlive[triId[t]]) return
-    if (triMuscle[t] >= 0 || (cellScalesOn && triCellScale[t] != 1f)) return          // мышечные — по той же причине
-    val rest2 = triRestArea2[t].toDouble()
-    if (abs(rest2) < 1e-18) return
+@Suppress("NOTHING_TO_INLINE")
+internal inline fun plasticTriangleAt(t: Int, k: Float, triAlive: BooleanArray, triId: IntArray, triMuscle: IntArray,
+                                      tsOn: Boolean, ts: FloatArray, triRestArea2: FloatArray, px: FloatArray, py: FloatArray,
+                                      triA: IntArray, triB: IntArray, triC: IntArray, hold: ByteArray) {
+    if (!triAlive[triId[t]]) return
+    if (triMuscle[t] >= 0 || (tsOn && ts[t] != 1f)) return          // мышечные — по той же причине
+    val rest2 = triRestArea2[t].toFloat()
+    if (abs(rest2) < 1e-18f) return
     val i0 = triA[t]; val i1 = triB[t]; val i2 = triC[t]
     val area2 = (px[i1] - px[i0]) * (py[i2] - py[i0]) -
         (py[i1] - py[i0]) * (px[i2] - px[i0])
     // ВЫВЕРНУТЫМ ТЕЧЬ НЕЛЬЗЯ: подогнав площадь покоя под сложенное состояние,
     // пластика УЗАКОНИТ складку, и та не разойдётся уже никогда. Проверка
     // ловила это прямо: складка 50% и 75% переставали расходиться за 8 секунд.
-    if (area2 <= 0.0) return
-    val strain = area2 / rest2 - 1.0
+    if (area2 <= 0.0f) return
+    val strain = area2 / rest2 - 1.0f
     val over = when {
         strain > PLASTIC_YIELD -> strain - PLASTIC_YIELD
         strain < -PLASTIC_YIELD -> strain + PLASTIC_YIELD
-        else -> 0.0
+        else -> 0.0f
     }
-    if (over == 0.0) { triHold[t] = 0; return }
-    if (triHold[t] < PLASTIC_HOLD) { triHold[t]++; return }
-    triRestArea2[t] = (triRestArea2[t] * (1.0 + over * k)).toFloat()
+    if (over == 0.0f) { hold[t] = 0; return }
+    if (hold[t] < PLASTIC_HOLD) { hold[t]++; return }
+    triRestArea2[t] = (triRestArea2[t] * (1.0f + over * k)).toFloat()
 }
 
 // Возврат застрявших и запрет разрыва удалены: возврат повышал дребезг,
@@ -215,25 +276,36 @@ fun BodyState.burstByPressure() {
     // Спящие и так пропускаются по invMass <= 0: обходим только бодрствующих. См. BodySleep.
     prepareAwakeSpans()
     val s = sleep
+    // Массивы и условия прохода — в локальные, длины — до цикла (см. lengthsBeforeLoop): проход идёт по всем
+    // бодрствующим частицам раз в тик и читал девять массивов через поля состояния. Гибель клетки (редкая ветка
+    // ниже) пишет в те же массивы по месту и их не пересоздаёт.
+    val cellDead = cellDead; val boneOf = boneOf; val invMass = invMass
+    val pressure = contactPressure; val pressureN = contactPressureN; val pnOn = pressureN.size == n
+    val crushed = crushedCell; val isFree = isFree; val trap = trapTicks; val fold = foldTicks
+    val burst = pressureBurst; val crushOn = crushBurstOn; val killTicks = trapKillTicks
+    val trapOn = killTicks > 0 && trap.size == n
+    val foldOn = killTicks > 0 && trapKillFolds && fold.size == n
+    lengthsBeforeLoop(cellDead.size or boneOf.size or invMass.size or pressure.size or pressureN.size or crushed.size or
+        isFree.size or trap.size or fold.size)
     for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
-        if (cellDead[i] || boneOf[i] >= 0 || invMass[i] <= 0.0) continue
+        if (cellDead[i] || boneOf[i] >= 0 || invMass[i] <= 0.0f) continue
         // ДАВЛЕНИЕ НА ОДИН КОНТАКТ, а не сумма. Сумма не умеет отличить клетку,
         // раздавленную в чужой ткани, от клетки в плотной толпе: у второй толчков
         // много, но каждый мелкий. По журналу 9-й сцены сумма выносила всю засыпку
         // ёмкости — из 663 частиц оставалось живых 10.
-        val pn = if (contactPressureN.size == n) contactPressureN[i] else 1
-        val byPressure = pressureBurst > 0.0 && contactPressure[i] > lim * maxOf(1, pn)
+        val pn = if (pnOn) pressureN[i] else 1
+        val byPressure = burst > 0.0f && pressure[i] > lim * maxOf(1, pn)
         // РАЗДАВЛЕННАЯ КЛЕТКА ЛОПАЕТСЯ: связь порвалась на сжатии, и клетка осталась
         // совсем без связей. Иначе она свободной частицей остаётся внутри своей же
         // смятой ткани, где с ней ничто не сталкивается.
-        val byCrush = crushBurstOn && crushedCell[i] && isFree[i]
-        val byTrap = trapKillTicks > 0 && trapTicks.size == n && trapTicks[i] >= trapKillTicks
-        val byFold = trapKillTicks > 0 && trapKillFolds && foldTicks.size == n && foldTicks[i] >= trapKillTicks
+        val byCrush = crushOn && crushed[i] && isFree[i]
+        val byTrap = trapOn && trap[i] >= killTicks
+        val byFold = foldOn && fold[i] >= killTicks
         if (!byPressure && !byCrush && !byTrap && !byFold) continue
         cellDead[i] = true; deadCount++
         when { byPressure -> pressureBurstCount++; byCrush -> crushBurstCount++; byTrap -> trapKillCount++; else -> foldKillCount++ }
         // Заморозка, а не остановка. Причина та же, см. applyKills.
-        vx[i] = 0.0; vy[i] = 0.0; invMass[i] = 0.0
+        vx[i] = 0.0f; vy[i] = 0.0f; invMass[i] = 0.0f
         contacts?.invalidateStatic()
         killIncidentEdges(i)
         any = true

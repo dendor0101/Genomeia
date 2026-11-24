@@ -11,9 +11,9 @@ internal class ContactSolveSink {
     var kills = IntArray(32)
     var killN = 0
     var attract = 0
-    var impulse = 0.0
-    var wi = 0.0
-    var wj = 0.0
+    var impulse = 0.0f
+    var wi = 0.0f
+    var wj = 0.0f
     @Suppress("unused") private val pad = LongArray(16)
 
     fun addKill(v: Int) {
@@ -21,7 +21,7 @@ internal class ContactSolveSink {
         kills[killN++] = v
     }
 
-    fun reset() { killN = 0; attract = 0; impulse = 0.0 }
+    fun reset() { killN = 0; attract = 0; impulse = 0.0f }
 }
 
 private class LongBuffer {
@@ -56,13 +56,13 @@ internal class ParallelContactSolve(private val ct: BoundaryContacts, workers: I
     private val sinks = Array(16 * workers) { ContactSolveSink() }
     private val solveFrom = IntArray(16 * workers + 1)
     private var chunks = 0
-    private var wi = DoubleArray(4096)
-    private var wj = DoubleArray(4096)
+    private var wi = FloatArray(4096)
+    private var wj = FloatArray(4096)
 
-    private var px = DoubleArray(0); private var py = DoubleArray(0)
-    private var vx = DoubleArray(0); private var vy = DoubleArray(0)
-    private var invMass = DoubleArray(0)
-    private var h = 0.0
+    private var px = FloatArray(0); private var py = FloatArray(0)
+    private var vx = FloatArray(0); private var vy = FloatArray(0)
+    private var invMass = FloatArray(0)
+    private var h = 0.0f
     private var backwards = false
     private var rigid = false
 
@@ -82,13 +82,13 @@ internal class ParallelContactSolve(private val ct: BoundaryContacts, workers: I
     private val capContactsJob = PhysicsJob { k, _ -> capContacts(solveFrom[k], solveFrom[k + 1]) }
     private val applyJob = PhysicsJob { b, _ -> applyBucket(b) }
 
-    fun run(w: PhysicsWorkers, px: DoubleArray, py: DoubleArray, vx: DoubleArray, vy: DoubleArray,
-            invMass: DoubleArray, h: Double) {
+    fun run(w: PhysicsWorkers, px: FloatArray, py: FloatArray, vx: FloatArray, vy: FloatArray,
+            invMass: FloatArray, h: Float) {
         this.px = px; this.py = py; this.vx = vx; this.vy = vy; this.invMass = invMass; this.h = h
         backwards = ct.ctBackwards
         rigid = ct.rigidForcesApply
         val cN = ct.cN
-        if (wi.size < cN) { wi = DoubleArray(maxOf(cN, wi.size * 2)); wj = DoubleArray(wi.size) }
+        if (wi.size < cN) { wi = FloatArray(maxOf(cN, wi.size * 2)); wj = FloatArray(wi.size) }
         chunks = minOf(sinks.size, maxOf(1, cN / 128))
         for (k in 0..chunks) solveFrom[k] = (cN.toLong() * k / chunks).toInt()
         // Счёт по диапазонам — в той же задаче, что решение (countChunk): отдельный барьер подсчёта не нужен.
@@ -118,7 +118,7 @@ internal class ParallelContactSolve(private val ct: BoundaryContacts, workers: I
     }
 
     private fun solveOne(c: Int, sink: ContactSolveSink) {
-        if (ct.solveContactPair(c, px, py, vx, vy, invMass, h, 1.0, sink)) { wi[c] = sink.wi; wj[c] = sink.wj }
+        if (ct.solveContactPair(c, px, py, vx, vy, invMass, h, 1.0f, sink)) { wi[c] = sink.wi; wj[c] = sink.wj }
     }
 
     /**
@@ -151,7 +151,7 @@ internal class ParallelContactSolve(private val ct: BoundaryContacts, workers: I
         java.util.Arrays.fill(counts, row, row + buckets, 0)
         val ci = ct.cI; val cj = ct.cJ; val ax = ct.cAx; val ay = ct.cAy
         for (c in solveFrom[k] until solveFrom[k + 1]) {
-            if (ax[c] == 0.0 && ay[c] == 0.0) continue
+            if (ax[c] == 0.0f && ay[c] == 0.0f) continue
             val bi = ci[c] ushr BUCKET_SHIFT; val bj = cj[c] ushr BUCKET_SHIFT
             counts[row + bi]++
             if (bj != bi) counts[row + bj]++
@@ -162,7 +162,7 @@ internal class ParallelContactSolve(private val ct: BoundaryContacts, workers: I
         val row = p * stride
         val ci = ct.cI; val cj = ct.cJ; val ax = ct.cAx; val ay = ct.cAy
         for (c in solveFrom[p] until solveFrom[p + 1]) {
-            if (ax[c] == 0.0 && ay[c] == 0.0) continue
+            if (ax[c] == 0.0f && ay[c] == 0.0f) continue
             val bi = ci[c] ushr BUCKET_SHIFT; val bj = cj[c] ushr BUCKET_SHIFT
             entries[counts[row + bi]++] = c
             if (bj != bi) entries[counts[row + bj]++] = c
@@ -188,11 +188,11 @@ internal class ParallelContactSolve(private val ct: BoundaryContacts, workers: I
         if (j ushr BUCKET_SHIFT == b) touch(j, -ax, -ay, wj[c], rank + 1, b)
     }
 
-    private fun touch(k: Int, ax: Double, ay: Double, w: Double, rank: Long, b: Int) {
+    private fun touch(k: Int, ax: Float, ay: Float, w: Float, rank: Long, b: Int) {
         val x = ct.frcX; val y = ct.frcY; val weight = ct.frcW; val stamp = ct.frcStamp
         if (stamp[k] != ct.pass) {
             stamp[k] = ct.pass
-            x[k] = 0.0; y[k] = 0.0; weight[k] = 0.0
+            x[k] = 0.0f; y[k] = 0.0f; weight[k] = 0.0f
             if (rigid && ct.boneIdx(k) >= 0) touchedBones[b].add((rank shl 32) or k.toLong())
         }
         x[k] += ax; y[k] += ay
@@ -207,13 +207,13 @@ internal class ParallelContactSolve(private val ct: BoundaryContacts, workers: I
         for (i in (b shl BUCKET_SHIFT) until minOf(ct.n, (b + 1) shl BUCKET_SHIFT)) {
             if (stamp[i] != pass) continue
             val w = weight[i]
-            var s = 1.0
-            if (w > 0.0) {
+            var s = 1.0f
+            if (w > 0.0f) {
                 val d2 = (x[i] * x[i] + y[i] * y[i]) * w * w
                 if (d2 > cap * cap) { s = cap / sqrt(d2); any = true }
             }
             share[i] = s
-            x[i] = 0.0; y[i] = 0.0
+            x[i] = 0.0f; y[i] = 0.0f
         }
         capped[b] = any
     }
@@ -222,11 +222,11 @@ internal class ParallelContactSolve(private val ct: BoundaryContacts, workers: I
     private fun capContacts(from: Int, to: Int) {
         val ci = ct.cI; val cj = ct.cJ; val ax = ct.cAx; val ay = ct.cAy; val share = ct.frcS
         for (c in from until to) {
-            if (ax[c] == 0.0 && ay[c] == 0.0) continue
+            if (ax[c] == 0.0f && ay[c] == 0.0f) continue
             val si = share[ci[c]]; val sj = share[cj[c]]
             val s = if (si < sj) si else sj
-            if (s < 1.0) {
-                ct.cLamTot[c] -= (1.0 - s) * (ax[c] * ct.cNx[c] + ay[c] * ct.cNy[c])
+            if (s < 1.0f) {
+                ct.cLamTot[c] -= (1.0f - s) * (ax[c] * ct.cNx[c] + ay[c] * ct.cNy[c])
                 ct.cLam[c] *= s
             }
         }
@@ -242,7 +242,7 @@ internal class ParallelContactSolve(private val ct: BoundaryContacts, workers: I
         for (i in (b shl BUCKET_SHIFT) until minOf(ct.n, (b + 1) shl BUCKET_SHIFT)) {
             if (stamp[i] != pass) continue
             val ax = x[i]; val ay = y[i]
-            if (ax == 0.0 && ay == 0.0) continue
+            if (ax == 0.0f && ay == 0.0f) continue
             if (toVelocity) {
                 vx[i] += invMass[i] * ax / velH; vy[i] += invMass[i] * ay / velH
             } else if (!rigid || ct.boneIdx(i) < 0) {
@@ -256,9 +256,9 @@ internal class ParallelContactSolve(private val ct: BoundaryContacts, workers: I
         val ax = ct.cAx[c]; val ay = ct.cAy[c]
         val si = ct.frcS[i]; val sj = ct.frcS[j]
         val s = if (si < sj) si else sj
-        if (s <= 0.0) return
+        if (s <= 0.0f) return
         val pr = ct.pressure; val pn = ct.pressureN
-        val push = if (pr != null) sqrt(ax * ax + ay * ay) * s else 0.0
+        val push = if (pr != null) sqrt(ax * ax + ay * ay) * s else 0.0f
         if (i ushr BUCKET_SHIFT == b) {
             ct.frcX[i] += ax * s; ct.frcY[i] += ay * s
             if (pr != null) { pr[i] += push * invMass[i]; if (pn != null) pn[i]++ }

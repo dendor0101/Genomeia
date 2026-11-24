@@ -3,7 +3,7 @@ package io.github.some_example_name.physics
 import kotlin.math.abs
 import kotlin.math.sqrt
 
-/** Число подшагов эталона за тик. У быстрого решателя — SUBSTEPS (6). */
+/** Число подшагов эталона за тик. У быстрого решателя — SUBSTEPS (с 24.11 — 20, то есть эталон мельче в 3.2 раза; при шести было вдесятеро). */
 const val REFERENCE_SUBSTEPS = 64
 
 /**
@@ -20,10 +20,10 @@ const val REFERENCE_ALL_PAIRS = 64
  * при любом числе подшагов.
  */
 const val REFERENCE_CONTACT_SWEEPS = 64
-const val REFERENCE_CONTACT_SLACK = 1e-3
+const val REFERENCE_CONTACT_SLACK = 1e-3f
 
 /** С какой точностью снимается лишняя скорость выталкивания старого перекрытия (restitution), связей за тик. */
-const val REFERENCE_SPEED_SLACK = 1e-6
+const val REFERENCE_SPEED_SLACK = 1e-6f
 
 /**
  * С какой глубины, в связях, первое касание пары считается проскоченным ударом
@@ -31,7 +31,7 @@ const val REFERENCE_SPEED_SLACK = 1e-6
  * новорождённых клеток: их дистанция касания первые тики — десятая связи, и без этой мерки
  * проскоченным выходило любое их касание.
  */
-const val REFERENCE_MISSED_DEPTH = 0.25
+const val REFERENCE_MISSED_DEPTH = 0.25f
 
 /**
  * ЭТАЛОННЫЙ РЕШАТЕЛЬ — ТА ЖЕ ФИЗИКА, НАПИСАННАЯ ПРОСТО И МЕДЛЕННО.
@@ -49,7 +49,9 @@ const val REFERENCE_MISSED_DEPTH = 0.25
  * ЧТО ОБЩЕЕ С БЫСТРЫМ. Только данные и учёт топологии: массивы BodyState, кто с кем связан и какая
  * связь жива, контур, состав костей, радиусы касания и исключённые пары (BoundaryContacts как
  * справочник, без его поиска пар и без его решения), рождение и гибель клеток, пластика и снятие
- * вывернутых треугольников раз в тик. Ни одной стадии быстрого решателя эталон не зовёт.
+ * вывернутых треугольников раз в тик. Ни одной стадии быстрого решателя эталон не зовёт. Формулы закона волокна
+ * мышцы (MuscleFiber.kt: цель длины связи, площадь, мягкость расслабления, длины для предела) — общие с быстрым:
+ * это сам закон, а не способ его считать (внесены 24.11.2026, до того эталон волокна не знал).
  *
  * ЧЕМ ЗАКОНЫ ОТЛИЧАЮТСЯ — нарочно, там, где у быстрого закон привязан к его подшагу:
  *  - касание снимает перекрытие целиком, а не 0.8 за подшаг (CT_OMEGA_PAIR): круги не перекрываются;
@@ -87,45 +89,47 @@ const val REFERENCE_MISSED_DEPTH = 0.25
 class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_SUBSTEPS) {
     init { require(substeps > 0) { "подшагов должно быть больше нуля" } }
 
-    private var startX = DoubleArray(0); private var startY = DoubleArray(0)
-    private var jitterX = DoubleArray(0); private var jitterY = DoubleArray(0)
+    private var startX = FloatArray(0); private var startY = FloatArray(0)
+    private var jitterX = FloatArray(0); private var jitterY = FloatArray(0)
     /** Направление обхода ограничений: меняется каждый подшаг, чтобы порядок не копил перекос. */
     private var backwards = false
 
     // Кости на подшаг: масса, момент инерции и центр масс включённых живых клеток (projectBones).
-    private var boneMass = DoubleArray(0); private var boneInertia = DoubleArray(0)
-    private var boneCx = DoubleArray(0); private var boneCy = DoubleArray(0)
+    private var boneMass = FloatArray(0); private var boneInertia = FloatArray(0)
+    /** Квадрат наименьшего радиуса инерции, у которого есть поворот (SPIN_MIN_ARM в долях связи мира). */
+    private val minArm2 = (SPIN_MIN_ARM * st.linkScale) * (SPIN_MIN_ARM * st.linkScale)
+    private var boneCx = FloatArray(0); private var boneCy = FloatArray(0)
 
     // Касания подшага: пара, расстояние упора, скорость сближения до решения, нормаль.
     private var cI = IntArray(256); private var cJ = IntArray(256)
-    private var cRest = DoubleArray(256); private var cApproach = DoubleArray(256)
-    private var cNx = DoubleArray(256); private var cNy = DoubleArray(256)
+    private var cRest = FloatArray(256); private var cApproach = FloatArray(256)
+    private var cNx = FloatArray(256); private var cNy = FloatArray(256)
     /** Наибольшая скорость расхождения, которую пара вправе вынести из касания (restitution); бесконечность — без предела. */
-    private var cGoal = DoubleArray(256)
+    private var cGoal = FloatArray(256)
     private var cN = 0
     private var members = IntArray(0)
     private var cellHead = IntArray(0); private var cellNext = IntArray(0); private var cellOf = IntArray(0)
     private var pairKeys = LongArray(256)
     private var kills = IntArray(16); private var killN = 0
     // Одновременное решение касаний: сколько касаний у частицы и у кости в этом проходе и что им набежало.
-    private var touch = IntArray(0); private var accX = DoubleArray(0); private var accY = DoubleArray(0)
+    private var touch = IntArray(0); private var accX = FloatArray(0); private var accY = FloatArray(0)
     private var dirty = IntArray(0); private var dirtyN = 0
-    private var boneTouch = IntArray(0); private var boneJx = DoubleArray(0); private var boneJy = DoubleArray(0)
-    private var boneTurn = DoubleArray(0); private var dirtyBone = IntArray(0); private var dirtyBoneN = 0
+    private var boneTouch = IntArray(0); private var boneJx = FloatArray(0); private var boneJy = FloatArray(0)
+    private var boneTurn = FloatArray(0); private var dirtyBone = IntArray(0); private var dirtyBoneN = 0
     private var cActive = BooleanArray(256)
 
-    private var orgX = DoubleArray(0); private var orgY = DoubleArray(0)
+    private var orgX = FloatArray(0); private var orgY = FloatArray(0)
     // Учёт импульса за тик (cancelMomentum). На частицу: импульс и момент импульса, которые ей положены
     // (что было в начале тика плюс данное внешними стадиями), скорость до внешних стадий подшага, группа
     // тел (group — предок, корень — наименьший номер частицы) и «опирается на неподвижное».
-    private var dueX = DoubleArray(0); private var dueY = DoubleArray(0); private var dueSpin = DoubleArray(0)
-    private var wasVx = DoubleArray(0); private var wasVy = DoubleArray(0)
+    private var dueX = FloatArray(0); private var dueY = FloatArray(0); private var dueSpin = FloatArray(0)
+    private var wasVx = FloatArray(0); private var wasVy = FloatArray(0)
     private var group = IntArray(0); private var propped = BooleanArray(0)
     private var firstOf = IntArray(0)
     // Суммы группы, по номеру её корня: масса, центр масс, лишний импульс, лишний момент импульса, момент инерции.
-    private var gMass = DoubleArray(0); private var gCx = DoubleArray(0); private var gCy = DoubleArray(0)
-    private var gX = DoubleArray(0); private var gY = DoubleArray(0); private var gSpin = DoubleArray(0)
-    private var gInertia = DoubleArray(0)
+    private var gMass = FloatArray(0); private var gCx = FloatArray(0); private var gCy = FloatArray(0)
+    private var gX = FloatArray(0); private var gY = FloatArray(0); private var gSpin = FloatArray(0)
+    private var gInertia = FloatArray(0)
 
     /** Счётчики за всё время — для отчёта сверки. */
     var tornByStretch = 0; private set
@@ -151,16 +155,17 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
         st.splitDirtyBones()
         if (st.tearsPending) st.refreshSurface()
         val n = st.n
-        if (startX.size < n) { startX = DoubleArray(n); startY = DoubleArray(n); jitterX = DoubleArray(n); jitterY = DoubleArray(n) }
+        if (startX.size < n) { startX = FloatArray(n); startY = FloatArray(n); jitterX = FloatArray(n); jitterY = FloatArray(n) }
         System.arraycopy(st.px, 0, startX, 0, n); System.arraycopy(st.py, 0, startY, 0, n)
         if (st.crushedCell.size == n) java.util.Arrays.fill(st.crushedCell, false)
-        if (st.contactPressure.size == n) java.util.Arrays.fill(st.contactPressure, 0.0)
+        if (st.contactPressure.size == n) java.util.Arrays.fill(st.contactPressure, 0.0f)
         val h = DT / substeps
         beginMomentum()
         for (step in 0 until substeps) {
             // Команда мышцы доезжает до цели за тик, а не прыгает в первом подшаге.
-            st.updateMuscleScale((step + 1).toDouble() / substeps)
+            st.updateMuscleScale((step + 1).toFloat() / substeps)
             st.applyCellScaleLerp(step, substeps)
+            st.applyGrowthLerp(step, substeps)
             backwards = !backwards
             integrate(h)
             solveLinks(h)
@@ -204,12 +209,12 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
     // --- движение ---
 
     /** Предсказание: положение сдвигается на скорость × подшаг. Внешних сил (тяжести) в игре нет. */
-    private fun integrate(h: Double) {
+    private fun integrate(h: Float) {
         val px = st.px; val py = st.py; val qx = st.prevX; val qy = st.prevY
         val vx = st.vx; val vy = st.vy; val w = st.invMass
         for (i in 0 until st.n) {
             qx[i] = px[i]; qy[i] = py[i]
-            if (w[i] == 0.0) continue
+            if (w[i] == 0.0f) continue
             px[i] += vx[i] * h; py[i] += vy[i] * h
         }
         if (st.boundsOn) keepInBounds()
@@ -223,24 +228,24 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
         val px = st.px; val py = st.py; val w = st.invMass; val r = st.radius
         val x0 = st.boundsMinX; val x1 = st.boundsMaxX; val y0 = st.boundsMinY; val y1 = st.boundsMaxY
         for (i in 0 until st.n) {
-            if (w[i] == 0.0 || boneIndex(i) >= 0) continue
+            if (w[i] == 0.0f || boneIndex(i) >= 0) continue
             val x = px[i].coerceIn(minOf(x0 + r[i], x1 - r[i]), maxOf(x0 + r[i], x1 - r[i]))
             val y = py[i].coerceIn(minOf(y0 + r[i], y1 - r[i]), maxOf(y0 + r[i], y1 - r[i]))
             if (x != px[i] || y != py[i]) { px[i] = x; py[i] = y; propped[i] = true }
         }
         if (!st.bonesRigid) return
         for (b in st.rigidBones.indices) {
-            var lowX = Double.NEGATIVE_INFINITY; var highX = Double.POSITIVE_INFINITY
-            var lowY = Double.NEGATIVE_INFINITY; var highY = Double.POSITIVE_INFINITY
+            var lowX = Float.NEGATIVE_INFINITY; var highX = Float.POSITIVE_INFINITY
+            var lowY = Float.NEGATIVE_INFINITY; var highY = Float.POSITIVE_INFINITY
             for (i in st.rigidBones[b]) {
-                if (st.boneOf[i] != b || w[i] == 0.0) continue
+                if (st.boneOf[i] != b || w[i] == 0.0f) continue
                 lowX = maxOf(lowX, x0 + r[i] - px[i]); highX = minOf(highX, x1 - r[i] - px[i])
                 lowY = maxOf(lowY, y0 + r[i] - py[i]); highY = minOf(highY, y1 - r[i] - py[i])
             }
-            val dx = if (lowX > highX) (lowX + highX) / 2 else 0.0.coerceIn(lowX, highX)
-            val dy = if (lowY > highY) (lowY + highY) / 2 else 0.0.coerceIn(lowY, highY)
-            if (dx == 0.0 && dy == 0.0) continue
-            for (i in st.rigidBones[b]) if (st.boneOf[i] == b && w[i] > 0.0) { px[i] += dx; py[i] += dy; propped[i] = true }
+            val dx = if (lowX > highX) (lowX + highX) / 2 else 0.0f.coerceIn(lowX, highX)
+            val dy = if (lowY > highY) (lowY + highY) / 2 else 0.0f.coerceIn(lowY, highY)
+            if (dx == 0.0f && dy == 0.0f) continue
+            for (i in st.rigidBones[b]) if (st.boneOf[i] == b && w[i] > 0.0f) { px[i] += dx; py[i] += dy; propped[i] = true }
         }
     }
 
@@ -259,26 +264,26 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
 
     /** Касание или временная связь: два тела — одна группа. Неподвижный участник — опора для другого. */
     private fun bind(i: Int, j: Int) {
-        if (st.invMass[i] == 0.0 || st.invMass[j] == 0.0) { propped[i] = true; propped[j] = true } else join(i, j)
+        if (st.invMass[i] == 0.0f || st.invMass[j] == 0.0f) { propped[i] = true; propped[j] = true } else join(i, j)
     }
 
     /** Начало тика: что положено каждой частице; группы — по организмам, временная связь объединяет тела сразу. */
     private fun beginMomentum() {
         val n = st.n; val w = st.invMass
         if (group.size < n) {
-            dueX = DoubleArray(n); dueY = DoubleArray(n); dueSpin = DoubleArray(n)
-            wasVx = DoubleArray(n); wasVy = DoubleArray(n)
+            dueX = FloatArray(n); dueY = FloatArray(n); dueSpin = FloatArray(n)
+            wasVx = FloatArray(n); wasVy = FloatArray(n)
             group = IntArray(n); propped = BooleanArray(n)
-            gMass = DoubleArray(n); gCx = DoubleArray(n); gCy = DoubleArray(n)
-            gX = DoubleArray(n); gY = DoubleArray(n); gSpin = DoubleArray(n); gInertia = DoubleArray(n)
+            gMass = FloatArray(n); gCx = FloatArray(n); gCy = FloatArray(n)
+            gX = FloatArray(n); gY = FloatArray(n); gSpin = FloatArray(n); gInertia = FloatArray(n)
         }
         if (firstOf.size < st.organismCount) firstOf = IntArray(st.organismCount)
         java.util.Arrays.fill(firstOf, 0, st.organismCount, -1)
         for (i in 0 until n) {
-            val m = if (w[i] > 0.0) 1.0 / w[i] else 0.0
+            val m = if (w[i] > 0.0f) 1.0f / w[i] else 0.0f
             dueX[i] = m * st.vx[i]; dueY[i] = m * st.vy[i]
             dueSpin[i] = m * (st.px[i] * st.vy[i] - st.py[i] * st.vx[i])
-            group[i] = i; propped[i] = w[i] == 0.0
+            group[i] = i; propped[i] = w[i] == 0.0f
         }
         for (i in 0 until n) {
             // Погибшая клетка заморожена там, где погибла: она сама по себе и свой организм опёртым не делает.
@@ -301,7 +306,7 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
     private fun noteExternal() {
         val w = st.invMass
         for (i in 0 until st.n) {
-            if (w[i] == 0.0) continue
+            if (w[i] == 0.0f) continue
             val fx = (st.vx[i] - wasVx[i]) / w[i]; val fy = (st.vy[i] - wasVy[i]) / w[i]
             dueX[i] += fx; dueY[i] += fy; dueSpin[i] += st.px[i] * fy - st.py[i] * fx
         }
@@ -330,45 +335,45 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
      */
     private fun cancelMomentum() {
         val n = st.n; val px = st.px; val py = st.py; val vx = st.vx; val vy = st.vy; val w = st.invMass
-        java.util.Arrays.fill(gMass, 0, n, 0.0); java.util.Arrays.fill(gCx, 0, n, 0.0); java.util.Arrays.fill(gCy, 0, n, 0.0)
-        java.util.Arrays.fill(gX, 0, n, 0.0); java.util.Arrays.fill(gY, 0, n, 0.0)
-        java.util.Arrays.fill(gSpin, 0, n, 0.0); java.util.Arrays.fill(gInertia, 0, n, 0.0)
+        java.util.Arrays.fill(gMass, 0, n, 0.0f); java.util.Arrays.fill(gCx, 0, n, 0.0f); java.util.Arrays.fill(gCy, 0, n, 0.0f)
+        java.util.Arrays.fill(gX, 0, n, 0.0f); java.util.Arrays.fill(gY, 0, n, 0.0f)
+        java.util.Arrays.fill(gSpin, 0, n, 0.0f); java.util.Arrays.fill(gInertia, 0, n, 0.0f)
         for (i in 0 until n) {
             val g = root(i)
             // Опёртая частица и клетка, погибшая в этом тике (её масса из группы ушла), выводят группу из учёта.
-            if (propped[i] || w[i] == 0.0) { propped[g] = true; continue }
-            val m = 1.0 / w[i]
+            if (propped[i] || w[i] == 0.0f) { propped[g] = true; continue }
+            val m = 1.0f / w[i]
             gMass[g] += m; gCx[g] += m * px[i]; gCy[g] += m * py[i]
             gX[g] += m * vx[i] - dueX[i]; gY[g] += m * vy[i] - dueY[i]
             gSpin[g] += m * (px[i] * vy[i] - py[i] * vx[i]) - dueSpin[i]
         }
         for (g in 0 until n) {
-            if (gMass[g] == 0.0) continue
+            if (gMass[g] == 0.0f) continue
             gCx[g] /= gMass[g]; gCy[g] /= gMass[g]
             // Момент считался вокруг начала координат: лишний момент группы — вокруг её центра масс.
             gSpin[g] -= gCx[g] * gY[g] - gCy[g] * gX[g]
             gX[g] /= gMass[g]; gY[g] /= gMass[g]
         }
         for (i in 0 until n) {
-            if (w[i] == 0.0) continue
+            if (w[i] == 0.0f) continue
             val g = root(i); val rx = px[i] - gCx[g]; val ry = py[i] - gCy[g]
             gInertia[g] += (rx * rx + ry * ry) / w[i]
         }
         for (i in 0 until n) {
-            if (w[i] == 0.0) continue
+            if (w[i] == 0.0f) continue
             val g = root(i)
             if (propped[g]) continue
-            val turn = if (gInertia[g] > 1e-18) gSpin[g] / gInertia[g] else 0.0
+            val turn = if (gInertia[g] > gMass[g] * minArm2) gSpin[g] / gInertia[g] else 0.0f
             vx[i] -= gX[g] - turn * (py[i] - gCy[g])
             vy[i] -= gY[g] + turn * (px[i] - gCx[g])
         }
     }
 
     /** Скорость — это пройденное за подшаг: всё, что сделали ограничения с положением, становится скоростью. */
-    private fun updateVelocities(h: Double) {
+    private fun updateVelocities(h: Float) {
         val px = st.px; val py = st.py; val qx = st.prevX; val qy = st.prevY; val w = st.invMass
         for (i in 0 until st.n) {
-            if (w[i] == 0.0) { st.vx[i] = 0.0; st.vy[i] = 0.0; continue }
+            if (w[i] == 0.0f) { st.vx[i] = 0.0f; st.vy[i] = 0.0f; continue }
             st.vx[i] = (px[i] - qx[i]) / h; st.vy[i] = (py[i] - qy[i]) / h
         }
     }
@@ -393,47 +398,61 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
     // --- ткань: связи, площади, складки ---
 
     /** Команда связи: множитель группы мышц × команда клеток (1 — покой, 0.5 — сжатие, 1.5 — расслабление). */
-    private fun commandOf(c: Int): Double {
+    private fun commandOf(c: Int): Float {
         val m = st.conMuscle[c]
-        val group = if (m < 0) 1.0 else st.muscleScaleOf[m]
+        val group = if (m < 0) 1.0f else st.muscleScaleOf[m]
         return if (st.cellScalesOn || st.softnessOn) group * st.conCellScale[c] else group
     }
 
     /** Насколько мышца расслаблена: 0 при команде ≤ 1, 1 при команде 1.5 и выше. */
-    private fun relaxation(command: Double): Double = if (command <= 1.0) 0.0 else minOf(1.0, (command - 1.0) * 2.0)
+    private fun relaxation(command: Float): Float = if (command <= 1.0f) 0.0f else minOf(1.0f, (command - 1.0f) * 2.0f)
 
     /** Наибольшая длина связи: 1.05 длины покоя, у расслабленной мышцы — до 1.25. */
-    private fun maxLength(rest: Double, command: Double): Double = rest * (LINK_MAX_STRETCH + (1.25 - LINK_MAX_STRETCH) * relaxation(command))
+    private fun maxLength(rest: Float, command: Float): Float = rest * (LINK_MAX_STRETCH + (1.25f - LINK_MAX_STRETCH) * relaxation(command))
 
     /**
      * Связь — пружина XPBD с податливостью SOFT_COMPLIANCE (× мягкость ткани). Сжатая мышца тянется к
      * длине покоя × команда, но не сильнее связи, растянутой на MUSCLE_MAX_PULL длины покоя: у мышцы
      * есть наибольшая сила. Расслабленная длины не меняет, но растягивается вчетверо легче, а
      * внутренняя связь (у которой нет стадии предела) не идёт дальше своей наибольшей длины.
+     *
+     * МЫШЦА С ВОЛОКНОМ (закон 20–21.11, MuscleFiber.kt; в эталон внесён 24.11.2026). Сжатая мышца сокращается вдоль
+     * волокна (× команда), поперёк — × команда^−k: цель у каждой связи своя, по косинусу её угла к волокну в позе
+     * покоя (conFiberC2; 1 — волокна нет). Расслабленная мягче только вдоль волокна. До 24.11 эталон волокна не
+     * знал и сжимал мышцу во все стороны; пока ткань была мягкой и мышца почти не сжимала тело, разница пряталась
+     * (0.4 связи на 44 связях пути), с жёсткой тканью вышла наружу: 1.4–1.7 связи при любом шаге, а без волокон —
+     * 0.000 на шаге игры и 0.014 на 64 подшагах (reference.md, находка 40).
      */
-    private fun solveLinks(h: Double) {
+    private fun solveLinks(h: Float) {
         val px = st.px; val py = st.py; val w = st.invMass
         val count = st.conCount
+        val fiber = if (st.fibersOn) st.conFiberC2 else NO_FLOATS
+        val fiberK = st.fiberThicken
         for (q in 0 until count) {
             val c = if (backwards) count - 1 - q else q
             if (st.conDead[c]) continue
             val i = st.conA[c]; val j = st.conB[c]
             val wsum = w[i] + w[j]
-            if (wsum == 0.0) continue
+            if (wsum == 0.0f) continue
             var dx = px[i] - px[j]; var dy = py[i] - py[j]
             val len = sqrt(dx * dx + dy * dy)
-            if (len < 1e-12) continue
+            if (len < 1e-12f) continue
             dx /= len; dy /= len
             val rest = st.conRest[c]; val command = commandOf(c)
             var alpha = SOFT_COMPLIANCE / (h * h)
             if (st.softnessOn) alpha *= st.conSoftness[c]
+            val c2 = if (c < fiber.size) fiber[c] else 1.0f
             val lambda = when {
+                // Сжатая мышца с волокном, связь не вдоль него: своя цель длины и тот же потолок тяги (MuscleFiber.kt).
+                command < 1.0f && c2 < 1.0f -> fiberLinkCorrection(len, rest, command, wsum, alpha, c2, fiberK)
                 // Мышца тянет отстающую ткань не сильнее связи, растянутой на MUSCLE_MAX_PULL длины покоя.
-                command < 1.0 -> -minOf(len - rest * command, MUSCLE_MAX_PULL * rest) / (wsum + alpha)
-                command <= 1.0 -> -(len - rest * command) / (wsum + alpha)
+                command < 1.0f -> -minOf(len - rest * command, MUSCLE_MAX_PULL * rest) / (wsum + alpha)
+                command <= 1.0f -> -(len - rest * command) / (wsum + alpha)
                 len <= rest -> -(len - rest) / (wsum + alpha)
                 else -> {
-                    val elastic = -(len - rest) / (wsum + alpha * (1.0 + 3.0 * relaxation(command)))
+                    // Расслабленная мышца с волокном мягче только вдоль него; предел длины — по команде, как у всей мышцы.
+                    val soft = if (c2 < 1.0f) fiberRelaxedSoftness(command, c2) else command
+                    val elastic = -(len - rest) / (wsum + alpha * (1.0f + 3.0f * relaxation(soft)))
                     if (len <= LINK_MAX_STRETCH * rest || st.conBoundary[c]) elastic
                     else minOf(elastic, (maxLength(rest, command) - len) / wsum)
                 }
@@ -448,7 +467,7 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
      * новорождённой — взрослый угол при нынешних длинах, не длиннее взрослой: закон быстрого решателя (solveBlockFlaps,
      * находка 30).
      */
-    private fun solveFlaps(h: Double) {
+    private fun solveFlaps(h: Float) {
         val alpha = FLAP_COMPLIANCE / (h * h)
         val ramp = if (st.rampN > 0) st.contactRamp else null
         for (c in 0 until st.flapCount) {
@@ -460,20 +479,20 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
     }
 
     /** Изгиб контура: выключен, пока уровень изгиба ноль (BEND_LEVELS). */
-    private fun solveBend(h: Double) {
+    private fun solveBend(h: Float) {
         val compliance = st.bendCompliance()
-        if (compliance < 0.0) return
+        if (compliance < 0.0f) return
         val alpha = compliance / (h * h)
         for (c in 0 until st.bendCount) pairSpring(st.bendA[c], st.bendB[c], st.bendRest[c], alpha, onlyPush = false)
     }
 
-    private fun pairSpring(i: Int, j: Int, rest: Double, alpha: Double, onlyPush: Boolean) {
+    private fun pairSpring(i: Int, j: Int, rest: Float, alpha: Float, onlyPush: Boolean) {
         val px = st.px; val py = st.py; val w = st.invMass
         val wsum = w[i] + w[j]
-        if (wsum == 0.0) return
+        if (wsum == 0.0f) return
         var dx = px[i] - px[j]; var dy = py[i] - py[j]
         val len = sqrt(dx * dx + dy * dy)
-        if (len < 1e-12 || (onlyPush && len >= rest)) return
+        if (len < 1e-12f || (onlyPush && len >= rest)) return
         dx /= len; dy /= len
         val lambda = -(len - rest) / (wsum + alpha)
         px[i] += dx * lambda * w[i]; py[i] += dy * lambda * w[i]
@@ -485,7 +504,7 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
      * мышцы площадь покоя сжимается вместе с длинами (× команда²). Чем ближе треугольник к
      * вырождению, тем он жёстче; вывернутый держится без податливости вовсе — ткань не выворачивается.
      */
-    private fun solveAreas(h: Double) {
+    private fun solveAreas(h: Float) {
         val px = st.px; val py = st.py; val w = st.invMass; val qx = st.prevX; val qy = st.prevY
         val alive = st.baked.triAlive
         val count = st.triCount
@@ -498,28 +517,32 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
             val gbx = py[c] - py[a]; val gby = px[a] - px[c]
             val gcx = py[a] - py[b]; val gcy = px[b] - px[a]
             val denom = w[a] * (gax * gax + gay * gay) + w[b] * (gbx * gbx + gby * gby) + w[c] * (gcx * gcx + gcy * gcy)
-            if (denom < 1e-18) continue
+            if (denom < 1e-18f) continue
             val m = st.triMuscle[t]
-            var command = if (m < 0) 1.0 else st.muscleScaleOf[m]
+            var command = if (m < 0) 1.0f else st.muscleScaleOf[m]
             if (st.cellScalesOn || st.softnessOn) command *= st.triCellScale[t]
-            val squeeze = minOf(1.0, command)
-            val rest2 = st.triRestArea2[t].toDouble() * squeeze * squeeze
+            val squeeze = minOf(1.0f, command)
+            // Мышца с волокном (MuscleFiber.kt): площадь идёт как команда^(1−k), а не как её квадрат.
+            val id = st.triId[t]
+            val alongFiber = command < 1.0f && st.fibersOn && id < st.triFiberById.size && st.triFiberById[id]
+            val shrink = if (alongFiber) fiberAreaFactor(command, st.fiberThicken) else squeeze * squeeze
+            val rest2 = st.triRestArea2[t].toFloat() * shrink
             val area2 = (px[b] - px[a]) * (py[c] - py[a]) - (py[b] - py[a]) * (px[c] - px[a])
             var alpha = AREA_COMPLIANCE / (h * h)
             if (st.softnessOn) alpha *= st.triSoftness[t]
-            if (command > 1.0 && area2 > rest2) alpha *= 1.0 + 3.0 * relaxation(command)
-            val whole = (area2 / rest2).coerceIn(0.0, 1.0)
+            if (command > 1.0f && area2 > rest2) alpha *= 1.0f + 3.0f * relaxation(command)
+            val whole = (area2 / rest2).coerceIn(0.0f, 1.0f)
             alpha = AREA_COMPLIANCE_INVERTED / (h * h) + (alpha - AREA_COMPLIANCE_INVERTED / (h * h)) * whole * whole
             var excess = area2 - rest2
             // У мышцы — не больше удвоенной доли площади покоя (MUSCLE_MAX_PULL): площадь идёт как квадрат длины.
-            if (squeeze < 1.0) excess = minOf(excess, 2.0 * MUSCLE_MAX_PULL * st.triRestArea2[t])
+            if (shrink < 1.0f) excess = minOf(excess, 2.0f * MUSCLE_MAX_PULL * st.triRestArea2[t])
             var lambda = -excess / (denom + alpha)
             // Потолок возврата — AREA_MAX_STEP связи за два подшага игры, в пересчёте на свой подшаг.
             // В него входит и то, насколько треугольник уже вернулся за этот подшаг сам, по инерции.
             val before = (qx[b] - qx[a]) * (qy[c] - qy[a]) - (qy[b] - qy[a]) * (qx[c] - qx[a])
             val root = sqrt(denom)
-            val gone = (area2 - before) * (if (rest2 > area2) 1.0 else -1.0) / root
-            val room = (areaStep - maxOf(0.0, gone)).coerceAtLeast(0.0)
+            val gone = (area2 - before) * (if (rest2 > area2) 1.0f else -1.0f) / root
+            val room = (areaStep - maxOf(0.0f, gone)).coerceAtLeast(0.0f)
             val step = abs(lambda) * root
             if (step > room) lambda *= room / step
             px[a] += w[a] * lambda * gax; py[a] += w[a] * lambda * gay
@@ -531,7 +554,7 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
     // --- кости ---
 
     /** Номер включённой кости живой клетки или −1. */
-    private fun boneIndex(i: Int): Int = if (st.bonesRigid && st.invMass[i] > 0.0) st.boneOf[i] else -1
+    private fun boneIndex(i: Int): Int = if (st.bonesRigid && st.invMass[i] > 0.0f) st.boneOf[i] else -1
 
     /**
      * Кость — твёрдое тело: её клетки двигаются только вместе. После каждой стадии, двигавшей клетки
@@ -543,38 +566,38 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
         if (!st.bonesRigid) return
         val bones = st.rigidBones
         if (boneMass.size < bones.size) {
-            boneMass = DoubleArray(bones.size); boneInertia = DoubleArray(bones.size)
-            boneCx = DoubleArray(bones.size); boneCy = DoubleArray(bones.size)
+            boneMass = FloatArray(bones.size); boneInertia = FloatArray(bones.size)
+            boneCx = FloatArray(bones.size); boneCy = FloatArray(bones.size)
         }
         val px = st.px; val py = st.py; val w = st.invMass
         for (b in bones.indices) {
             val ids = bones[b]; val qx = st.boneRestQx[b]; val qy = st.boneRestQy[b]
-            var m = 0.0; var cx = 0.0; var cy = 0.0; var rx = 0.0; var ry = 0.0
+            var m = 0.0f; var cx = 0.0f; var cy = 0.0f; var rx = 0.0f; var ry = 0.0f
             for (k in ids.indices) {
                 val i = ids[k]
-                if (st.boneOf[i] != b || w[i] == 0.0) continue
-                val mi = 1.0 / w[i]
+                if (st.boneOf[i] != b || w[i] == 0.0f) continue
+                val mi = 1.0f / w[i]
                 m += mi; cx += mi * px[i]; cy += mi * py[i]; rx += mi * qx[k]; ry += mi * qy[k]
             }
-            boneMass[b] = m; boneInertia[b] = 0.0
-            if (m <= 0.0) continue
+            boneMass[b] = m; boneInertia[b] = 0.0f
+            if (m <= 0.0f) continue
             cx /= m; cy /= m; rx /= m; ry /= m
             boneCx[b] = cx; boneCy[b] = cy
-            var dot = 0.0; var cross = 0.0; var inertia = 0.0
+            var dot = 0.0f; var cross = 0.0f; var inertia = 0.0f
             for (k in ids.indices) {
                 val i = ids[k]
-                if (st.boneOf[i] != b || w[i] == 0.0) continue
-                val mi = 1.0 / w[i]
+                if (st.boneOf[i] != b || w[i] == 0.0f) continue
+                val mi = 1.0f / w[i]
                 val ax = qx[k] - rx; val ay = qy[k] - ry; val bx = px[i] - cx; val by = py[i] - cy
                 dot += mi * (ax * bx + ay * by); cross += mi * (ax * by - ay * bx); inertia += mi * (ax * ax + ay * ay)
             }
             boneInertia[b] = inertia
             val norm = sqrt(dot * dot + cross * cross)
-            if (norm < 1e-12) continue
+            if (norm < 1e-12f) continue
             val cos = dot / norm; val sin = cross / norm
             for (k in ids.indices) {
                 val i = ids[k]
-                if (st.boneOf[i] != b || w[i] == 0.0) continue
+                if (st.boneOf[i] != b || w[i] == 0.0f) continue
                 val ax = qx[k] - rx; val ay = qy[k] - ry
                 px[i] = cx + cos * ax - sin * ay; py[i] = cy + sin * ax + cos * ay
             }
@@ -582,30 +605,30 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
     }
 
     /** Обратная масса частицы вдоль направления (nx, ny): у клетки кости — всей кости в этой точке. */
-    private fun inverseMass(i: Int, nx: Double, ny: Double): Double {
+    private fun inverseMass(i: Int, nx: Float, ny: Float): Float {
         val b = boneIndex(i)
         if (b < 0) return st.invMass[i]
         val m = boneMass[b]
-        if (m <= 0.0) return 0.0
+        if (m <= 0.0f) return 0.0f
         val arm = (st.px[i] - boneCx[b]) * ny - (st.py[i] - boneCy[b]) * nx
-        return 1.0 / m + if (boneInertia[b] > 1e-18) arm * arm / boneInertia[b] else 0.0
+        return 1.0f / m + if (boneInertia[b] > m * minArm2) arm * arm / boneInertia[b] else 0.0f
     }
 
     /**
      * Толчок в частицу: (jx, jy) — масса × сдвиг ([velocity] — масса × скорость). Свободная частица
      * сдвигается сама, кость — целиком: переносом и поворотом вокруг своего центра масс.
      */
-    private fun push(i: Int, jx: Double, jy: Double, velocity: Boolean = false) {
+    private fun push(i: Int, jx: Float, jy: Float, velocity: Boolean = false) {
         val x = if (velocity) st.vx else st.px; val y = if (velocity) st.vy else st.py
         val b = boneIndex(i)
         if (b < 0) { x[i] += jx * st.invMass[i]; y[i] += jy * st.invMass[i]; return }
         val m = boneMass[b]
-        if (m <= 0.0) return
+        if (m <= 0.0f) return
         val cx = boneCx[b]; val cy = boneCy[b]
         val tx = jx / m; val ty = jy / m
-        val turn = if (boneInertia[b] > 1e-18) ((st.px[i] - cx) * jy - (st.py[i] - cy) * jx) / boneInertia[b] else 0.0
+        val turn = if (boneInertia[b] > m * minArm2) ((st.px[i] - cx) * jy - (st.py[i] - cy) * jx) / boneInertia[b] else 0.0f
         for (k in st.rigidBones[b]) {
-            if (st.boneOf[k] != b || st.invMass[k] == 0.0) continue
+            if (st.boneOf[k] != b || st.invMass[k] == 0.0f) continue
             val rx = st.px[k] - cx; val ry = st.py[k] - cy
             x[k] += tx - turn * ry; y[k] += ty + turn * rx
         }
@@ -614,7 +637,7 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
 
     // --- временные связи между телами (липучка) ---
 
-    private fun solveJoints(h: Double) {
+    private fun solveJoints(h: Float) {
         val px = st.px; val py = st.py
         val tear = LINK_MAX_STRETCH + st.linkTearStrain
         for (q in 0 until st.jointActiveN) {
@@ -624,10 +647,10 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
             var dx = px[i] - px[j]; var dy = py[i] - py[j]
             val len = sqrt(dx * dx + dy * dy)
             if (len > tear * st.jointRest[k]) { st.freeJoint(k); continue }
-            if (len < 1e-12) continue
+            if (len < 1e-12f) continue
             dx /= len; dy /= len
             val wsum = inverseMass(i, dx, dy) + inverseMass(j, dx, dy)
-            if (wsum == 0.0) continue
+            if (wsum == 0.0f) continue
             val lambda = -(len - st.jointRest[k]) / (wsum + st.jointCompliance[k] / (h * h))
             push(i, dx * lambda, dy * lambda); push(j, -dx * lambda, -dy * lambda)
         }
@@ -654,15 +677,18 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
             val c = if (backwards) count - 1 - q else q
             if (st.conDead[c] || !st.conBoundary[c] || st.isGrowingLink(c)) continue
             val i = st.conA[c]; val j = st.conB[c]
-            if (w[i] + w[j] == 0.0) continue
+            if (w[i] + w[j] == 0.0f) continue
             var dx = px[i] - px[j]; var dy = py[i] - py[j]
             val len = sqrt(dx * dx + dy * dy)
-            val rest = st.conRest[c]; val command = commandOf(c)
-            if (st.tearingOn && len < LINK_CRUSH_RATIO * rest * minOf(1.0, command)) {
+            val command = commandOf(c)
+            // У мышцы с волокном длина для раздавливания и для предела — по закону волокна (limitShrink, limitRest в
+            // MuscleFiber.kt): связь поперёк волокна не укорачивается, а при k > 0 — удлиняется. Без волокна — как прежде.
+            if (st.tearingOn && len < LINK_CRUSH_RATIO * st.conRest[c] * st.limitShrink(c, command)) {
                 tear(c); st.crushedCell[i] = true; st.crushedCell[j] = true
                 tornByCrush++; tore = true
                 continue
             }
+            val rest = st.limitRest(c, st.conRest[c], command)
             val max = maxLength(rest, command)
             if (len <= max) continue
             val strain = if (st.conTendon[c]) st.linkTearStrain * st.tendonTear else st.linkTearStrain
@@ -672,10 +698,10 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
             }
             dx /= len; dy /= len
             val wsum = inverseMass(i, dx, dy) + inverseMass(j, dx, dy)
-            if (wsum == 0.0) continue
+            if (wsum == 0.0f) continue
             val before = sqrt((qx[i] - qx[j]) * (qx[i] - qx[j]) + (qy[i] - qy[j]) * (qy[i] - qy[j]))
-            val room = back - maxOf(0.0, before - len)
-            if (room <= 0.0) continue
+            val room = back - maxOf(0.0f, before - len)
+            if (room <= 0.0f) continue
             val lambda = -minOf(len - max, room) / wsum
             push(i, dx * lambda, dy * lambda); push(j, -dx * lambda, -dy * lambda)
             moved = true
@@ -691,7 +717,7 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
 
     // --- касания ---
 
-    private fun addContact(i: Int, j: Int, rest: Double) {
+    private fun addContact(i: Int, j: Int, rest: Float) {
         if (cN == cI.size) {
             val cap = cN * 2
             cI = cI.copyOf(cap); cJ = cJ.copyOf(cap); cRest = cRest.copyOf(cap)
@@ -703,7 +729,7 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
 
     /** Пара касается, если она не связана тканью, хоть одна из двух подвижна и круги касания перекрылись. */
     private fun testPair(ct: BoundaryContacts, i: Int, j: Int) {
-        if (st.invMass[i] == 0.0 && st.invMass[j] == 0.0) return
+        if (st.invMass[i] == 0.0f && st.invMass[j] == 0.0f) return
         val dx = st.px[i] - st.px[j]; val dy = st.py[i] - st.py[j]
         val reach = ct.contactRadiusOf(i) + ct.contactRadiusOf(j)
         if (dx * dx + dy * dy >= reach * reach || ct.isBonded(i, j)) return
@@ -721,10 +747,10 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
         val ct = st.contacts!!
         cN = 0
         if (members.size < st.n) members = IntArray(st.n)
-        var m = 0; var reach = 0.0
+        var m = 0; var reach = 0.0f
         for (i in 0 until st.n) {
             val r = ct.contactRadiusOf(i)
-            if (r <= 0.0 || !ct.inContactSet(i)) continue
+            if (r <= 0.0f || !ct.inContactSet(i)) continue
             members[m++] = i
             if (r > reach) reach = r
         }
@@ -733,7 +759,7 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
                 for (a in 0 until m) for (b in a + 1 until m) testPair(ct, members[a], members[b])
             } else {
                 gridSubsteps++
-                gridPairs(ct, m, 2.0 * reach)
+                gridPairs(ct, m, 2.0f * reach)
                 sortContacts()
             }
         }
@@ -742,16 +768,16 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
             val i = cI[c]; val j = cJ[c]
             var nx = st.px[i] - st.px[j]; var ny = st.py[i] - st.py[j]
             val d = sqrt(nx * nx + ny * ny)
-            if (d > 1e-12) { nx /= d; ny /= d } else { nx = 1.0; ny = 0.0 }
+            if (d > 1e-12f) { nx /= d; ny /= d } else { nx = 1.0f; ny = 0.0f }
             cNx[c] = nx; cNy[c] = ny
             cApproach[c] = (st.vx[i] - st.vx[j]) * nx + (st.vy[i] - st.vy[j]) * ny
         }
         if (cN > peakContacts) peakContacts = cN
     }
 
-    private fun gridPairs(ct: BoundaryContacts, m: Int, cell: Double) {
+    private fun gridPairs(ct: BoundaryContacts, m: Int, cell: Float) {
         val px = st.px; val py = st.py
-        var x0 = Double.MAX_VALUE; var y0 = Double.MAX_VALUE; var x1 = -Double.MAX_VALUE; var y1 = -Double.MAX_VALUE
+        var x0 = Float.MAX_VALUE; var y0 = Float.MAX_VALUE; var x1 = -Float.MAX_VALUE; var y1 = -Float.MAX_VALUE
         for (a in 0 until m) {
             val i = members[a]
             if (px[i] < x0) x0 = px[i]; if (px[i] > x1) x1 = px[i]
@@ -759,7 +785,7 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
         }
         // Разлетевшаяся сцена: ячейку крупнее, чтобы сетка осталась в пределах памяти. Пары те же, проверок больше.
         var size = cell
-        while (((x1 - x0) / size + 1.0) * ((y1 - y0) / size + 1.0) > 4.0e6) size *= 2.0
+        while (((x1 - x0) / size + 1.0f) * ((y1 - y0) / size + 1.0f) > 4.0e6f) size *= 2.0f
         val cols = ((x1 - x0) / size).toInt() + 1; val rows = ((y1 - y0) / size).toInt() + 1
         if (cellHead.size < cols * rows) cellHead = IntArray(cols * rows)
         java.util.Arrays.fill(cellHead, 0, cols * rows, -1)
@@ -788,7 +814,7 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
         val keyed = LongArray(cN) { (cI[it].toLong() shl 42) or (cJ[it].toLong() shl 21) or it.toLong() }
         check(cN < (1 shl 21) && st.n < (1 shl 21)) { "слишком много частиц для ключа пары" }
         keyed.sort()
-        val i = IntArray(cN); val j = IntArray(cN); val rest = DoubleArray(cN)
+        val i = IntArray(cN); val j = IntArray(cN); val rest = FloatArray(cN)
         for (k in 0 until cN) { val from = (keyed[k] and 0x1FFFFF).toInt(); i[k] = cI[from]; j[k] = cJ[from]; rest[k] = cRest[from] }
         System.arraycopy(i, 0, cI, 0, cN); System.arraycopy(j, 0, cJ, 0, cN); System.arraycopy(rest, 0, cRest, 0, cN)
     }
@@ -810,7 +836,7 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
         prepareGather()
         if (cActive.size < cN) cActive = BooleanArray(cI.size)
         for (sweep in 0 until REFERENCE_CONTACT_SWEEPS) {
-            var active = 0; var deepest = 0.0
+            var active = 0; var deepest = 0.0f
             for (c in 0 until cN) {
                 val i = cI[c]; val j = cJ[c]
                 val dx = px[i] - px[j]; val dy = py[i] - py[j]
@@ -818,7 +844,7 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
                 cActive[c] = d2 < cRest[c] * cRest[c]
                 if (!cActive[c]) continue
                 active++; countTouch(i); countTouch(j)
-                val depth = 1.0 - sqrt(d2) / cRest[c]
+                val depth = 1.0f - sqrt(d2) / cRest[c]
                 if (depth > deepest) deepest = depth
                 if (sweep == 0) {
                     val deep = ct.killDepth * maxOf(ct.contactRadiusOf(i), ct.contactRadiusOf(j))
@@ -832,9 +858,9 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
                     // обычной (первые тики — десятая связи), и по радиусу проскоченным выходило любое их касание
                     // (сотни ложных отметок в сценах роста).
                     val ox = qx[i] - qx[j]; val oy = qy[i] - qy[j]
-                    if (ox * ox + oy * oy > 1.02 * cRest[c] * cRest[c]) {
-                        val depth = if (ox * dx + oy * dy < 0.0) cRest[c] + sqrt(d2) else cRest[c] - sqrt(d2)
-                        if (kill || (depth > 0.5 * cRest[c] && depth > REFERENCE_MISSED_DEPTH * st.linkScale)) missedHits++
+                    if (ox * ox + oy * oy > 1.02f * cRest[c] * cRest[c]) {
+                        val depth = if (ox * dx + oy * dy < 0.0f) cRest[c] + sqrt(d2) else cRest[c] - sqrt(d2)
+                        if (kill || (depth > 0.5f * cRest[c] && depth > REFERENCE_MISSED_DEPTH * st.linkScale)) missedHits++
                     }
                 }
             }
@@ -845,9 +871,9 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
                 val i = cI[c]; val j = cJ[c]
                 var nx = px[i] - px[j]; var ny = py[i] - py[j]
                 val d = sqrt(nx * nx + ny * ny)
-                if (d > 1e-12) { nx /= d; ny /= d } else { nx = cNx[c]; ny = cNy[c] }
+                if (d > 1e-12f) { nx /= d; ny /= d } else { nx = cNx[c]; ny = cNy[c] }
                 val wsum = splitMass(i, nx, ny) + splitMass(j, nx, ny)
-                if (wsum <= 0.0) continue
+                if (wsum <= 0.0f) continue
                 val lambda = (cRest[c] - d) / wsum
                 gather(i, nx * lambda, ny * lambda); gather(j, -nx * lambda, -ny * lambda)
                 contactsSolved++
@@ -863,11 +889,11 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
 
     private fun prepareGather() {
         val n = st.n
-        if (touch.size < n) { touch = IntArray(n); accX = DoubleArray(n); accY = DoubleArray(n); dirty = IntArray(n) }
+        if (touch.size < n) { touch = IntArray(n); accX = FloatArray(n); accY = FloatArray(n); dirty = IntArray(n) }
         val bones = st.rigidBones.size
         if (boneTouch.size < bones) {
-            boneTouch = IntArray(bones); boneJx = DoubleArray(bones); boneJy = DoubleArray(bones)
-            boneTurn = DoubleArray(bones); dirtyBone = IntArray(bones)
+            boneTouch = IntArray(bones); boneJx = FloatArray(bones); boneJy = FloatArray(bones)
+            boneTurn = FloatArray(bones); dirtyBone = IntArray(bones)
         }
         dirtyN = 0; dirtyBoneN = 0
     }
@@ -880,13 +906,13 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
     }
 
     /** Обратная масса частицы для одного из её касаний: тело делит массу между касаниями поровну. */
-    private fun splitMass(i: Int, nx: Double, ny: Double): Double {
+    private fun splitMass(i: Int, nx: Float, ny: Float): Float {
         val b = boneIndex(i)
         return if (b >= 0) boneTouch[b] * inverseMass(i, nx, ny) else touch[i] * st.invMass[i]
     }
 
     /** Толчок (jx, jy) в частицу откладывается до конца прохода: все касания видят одни и те же положения. */
-    private fun gather(i: Int, jx: Double, jy: Double) {
+    private fun gather(i: Int, jx: Float, jy: Float) {
         val b = boneIndex(i)
         if (b < 0) { accX[i] += jx * st.invMass[i]; accY[i] += jy * st.invMass[i]; return }
         boneJx[b] += jx; boneJy[b] += jy
@@ -899,23 +925,23 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
         for (k in 0 until dirtyN) {
             val i = dirty[k]
             x[i] += accX[i]; y[i] += accY[i]
-            accX[i] = 0.0; accY[i] = 0.0; touch[i] = 0
+            accX[i] = 0.0f; accY[i] = 0.0f; touch[i] = 0
         }
         for (k in 0 until dirtyBoneN) {
             val b = dirtyBone[k]
             val m = boneMass[b]
-            if (m > 0.0) {
+            if (m > 0.0f) {
                 val cx = boneCx[b]; val cy = boneCy[b]
                 val tx = boneJx[b] / m; val ty = boneJy[b] / m
-                val turn = if (boneInertia[b] > 1e-18) boneTurn[b] / boneInertia[b] else 0.0
+                val turn = if (boneInertia[b] > m * minArm2) boneTurn[b] / boneInertia[b] else 0.0f
                 for (p in st.rigidBones[b]) {
-                    if (st.boneOf[p] != b || st.invMass[p] == 0.0) continue
+                    if (st.boneOf[p] != b || st.invMass[p] == 0.0f) continue
                     val rx = st.px[p] - cx; val ry = st.py[p] - cy
                     x[p] += tx - turn * ry; y[p] += ty + turn * rx
                 }
                 if (!velocity) { boneCx[b] = cx + tx; boneCy[b] = cy + ty }
             }
-            boneJx[b] = 0.0; boneJy[b] = 0.0; boneTurn[b] = 0.0; boneTouch[b] = 0
+            boneJx[b] = 0.0f; boneJy[b] = 0.0f; boneTurn[b] = 0.0f; boneTouch[b] = 0
         }
         dirtyN = 0; dirtyBoneN = 0
     }
@@ -954,36 +980,36 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
      * несколькими касаниями за проход отдаёт лишь часть лишнего, поэтому снятие лишнего повторяется до
      * сходимости (без повторов два лоскута на 64 подшагах расходились на 0.44 связи за тик вместо 0.10).
      */
-    private fun restitution(h: Double) {
+    private fun restitution(h: Float) {
         if (cN == 0) return
         prepareGather()
         val qx = st.prevX; val qy = st.prevY
         // Доля скорости выталкивания, которой на шаге игры не было бы.
-        val spare = 1.0 - SUBSTEPS.toDouble() / substeps
+        val spare = 1.0f - SUBSTEPS.toFloat() / substeps
         var capped = false
         for (c in 0 until cN) {
             val i = cI[c]; val j = cJ[c]
-            cActive[c] = false; cGoal[c] = Double.POSITIVE_INFINITY
-            if (st.invMass[i] == 0.0 && st.invMass[j] == 0.0) continue
+            cActive[c] = false; cGoal[c] = Float.POSITIVE_INFINITY
+            if (st.invMass[i] == 0.0f && st.invMass[j] == 0.0f) continue
             var nx = st.px[i] - st.px[j]; var ny = st.py[i] - st.py[j]
             val d = sqrt(nx * nx + ny * ny)
-            if (d > 1e-12) { nx /= d; ny /= d } else { nx = cNx[c]; ny = cNy[c] }
+            if (d > 1e-12f) { nx /= d; ny /= d } else { nx = cNx[c]; ny = cNy[c] }
             cNx[c] = nx; cNy[c] = ny
             val now = (st.vx[i] - st.vx[j]) * nx + (st.vy[i] - st.vy[j]) * ny
             // Скорость расхождения, положенная паре: доля отскока, а если пара и так расходилась — её прежняя.
-            val due = if (cApproach[c] < 0.0) -CONTACT_RESTITUTION * cApproach[c] else cApproach[c]
-            var change = 0.0
+            val due = if (cApproach[c] < 0.0f) -CONTACT_RESTITUTION * cApproach[c] else cApproach[c]
+            var change = 0.0f
             if (now < due) {
                 // Сколько скорости расхождения не хватает до доли отскока.
-                if (cApproach[c] < 0.0) change = due - now
-            } else if (spare > 0.0) {
+                if (cApproach[c] < 0.0f) change = due - now
+            } else if (spare > 0.0f) {
                 val old = cRest[c] - sqrt((qx[i] - qx[j]) * (qx[i] - qx[j]) + (qy[i] - qy[j]) * (qy[i] - qy[j]))
-                if (old > 0.0) {
+                if (old > 0.0f) {
                     cGoal[c] = maxOf(due, now - old / h * spare)
                     change = cGoal[c] - now; capped = true
                 }
             }
-            if (change == 0.0) continue
+            if (change == 0.0f) continue
             cRest[c] = change
             cActive[c] = true; countTouch(i); countTouch(j)
         }
@@ -994,7 +1020,7 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
                 var active = 0
                 for (c in 0 until cN) {
                     cActive[c] = false
-                    if (cGoal[c] == Double.POSITIVE_INFINITY) continue
+                    if (cGoal[c] == Float.POSITIVE_INFINITY) continue
                     val i = cI[c]; val j = cJ[c]
                     val over = (st.vx[i] - st.vx[j]) * cNx[c] + (st.vy[i] - st.vy[j]) * cNy[c] - cGoal[c]
                     if (over <= slack) continue
@@ -1014,7 +1040,7 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
             if (!cActive[c]) continue
             val i = cI[c]; val j = cJ[c]
             val wsum = splitMass(i, cNx[c], cNy[c]) + splitMass(j, cNx[c], cNy[c])
-            if (wsum <= 0.0) continue
+            if (wsum <= 0.0f) continue
             val p = cRest[c] / wsum
             gather(i, cNx[c] * p, cNy[c] * p); gather(j, -cNx[c] * p, -cNy[c] * p)
         }
@@ -1034,15 +1060,15 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
             if (c < 0) continue
             val a = st.boundA[k]; val b = st.boundB[k]
             val area = (px[b] - px[a]) * (py[c] - py[a]) - (py[b] - py[a]) * (px[c] - px[a])
-            if (area * sign[k] >= 0.0) continue
+            if (area * sign[k] >= 0.0f) continue
             val gax = py[b] - py[c]; val gay = px[c] - px[b]
             val gbx = py[c] - py[a]; val gby = px[a] - px[c]
             val gcx = py[a] - py[b]; val gcy = px[b] - px[a]
             val denom = w[a] * (gax * gax + gay * gay) + w[b] * (gbx * gbx + gby * gby) + w[c] * (gcx * gcx + gcy * gcy)
-            if (denom < 1e-18) continue
+            if (denom < 1e-18f) continue
             // Площадь вдоль градиента — квадратичная функция шага: берётся ближайший корень, а не линейный шаг.
             val bend = (w[a] * w[b] + w[b] * w[c] + w[c] * w[a]) * area
-            val lambda = -2.0 * area / (denom + sqrt((denom * denom - 4.0 * bend * area).coerceAtLeast(0.0)))
+            val lambda = -2.0f * area / (denom + sqrt((denom * denom - 4.0f * bend * area).coerceAtLeast(0.0f)))
             px[a] += w[a] * lambda * gax; py[a] += w[a] * lambda * gay
             px[b] += w[b] * lambda * gbx; py[b] += w[b] * lambda * gby
             px[c] += w[c] * lambda * gcx; py[c] += w[c] * lambda * gcy
@@ -1058,18 +1084,18 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
      * (1 − grip за каждый из SUBSTEPS); эталон гасит за тик ту же долю, разложив её на свои подшаги.
      * «Дом» клетки — пружина к точке с податливостью XPBD.
      */
-    private fun grip(h: Double) {
+    private fun grip(h: Float) {
         val grips = st.cellGrip; val homes = st.cellHomeCompliance
         for (i in 0 until minOf(st.n, grips.size, homes.size)) {
-            if (grips[i] <= 0f && homes[i] <= 0.0) continue
+            if (grips[i] <= 0f && homes[i] <= 0.0f) continue
             val w = st.invMass[i]
-            if (w == 0.0) continue
+            if (w == 0.0f) continue
             var vx = st.vx[i]; var vy = st.vy[i]
-            if (homes[i] > 0.0) {
+            if (homes[i] > 0.0f) {
                 val share = w / (w + homes[i] / (h * h))
                 vx += (st.cellHomeX[i] - st.px[i]) * share / h; vy += (st.cellHomeY[i] - st.py[i]) * share / h
             }
-            val keep = Math.pow((1.0 - grips[i]).coerceAtLeast(0.0), SUBSTEPS.toDouble() / substeps)
+            val keep = StrictMath.pow(((1.0f - grips[i]).coerceAtLeast(0.0f)).toDouble(), (SUBSTEPS.toFloat() / substeps).toDouble()).toFloat()
             vx *= keep; vy *= keep
             st.vx[i] = vx; st.vy[i] = vy
             st.px[i] = st.prevX[i] + vx * h; st.py[i] = st.prevY[i] + vy * h
@@ -1079,17 +1105,17 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
     // --- среда: раз в тик, по скоростям ---
 
     /** Вязкость ткани: связь гасит долю VISCOSITY × тик встречной скорости своих концов вдоль себя. */
-    private fun viscosity(dt: Double) {
-        val k = minOf(0.5, VISCOSITY * dt)
+    private fun viscosity(dt: Float) {
+        val k = minOf(0.5f, VISCOSITY * dt)
         val px = st.px; val py = st.py; val vx = st.vx; val vy = st.vy; val w = st.invMass
         for (c in 0 until st.conCount) {
             if (st.conDead[c]) continue
             val i = st.conA[c]; val j = st.conB[c]
             val wsum = w[i] + w[j]
-            if (wsum == 0.0) continue
+            if (wsum == 0.0f) continue
             var nx = px[j] - px[i]; var ny = py[j] - py[i]
             val len = sqrt(nx * nx + ny * ny)
-            if (len < 1e-12) continue
+            if (len < 1e-12f) continue
             nx /= len; ny /= len
             val closing = (vx[j] - vx[i]) * nx + (vy[j] - vy[i]) * ny
             vx[i] += closing * nx * k * w[i] / wsum; vy[i] += closing * ny * k * w[i] / wsum
@@ -1104,35 +1130,35 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
      * Сопротивление видит среднюю скорость клетки за тик (пройденное за тик / тик), а не мгновенную:
      * внутренняя дрожь ткани не должна превращаться в тягу.
      */
-    private fun normalDrag(dt: Double) {
+    private fun normalDrag(dt: Float) {
         if (st.dbgDragOff) return
         val px = st.px; val py = st.py; val vx = st.vx; val vy = st.vy; val w = st.invMass
         val n = st.n
         for (i in 0 until n) {
-            if (w[i] == 0.0) { jitterX[i] = 0.0; jitterY[i] = 0.0; continue }
+            if (w[i] == 0.0f) { jitterX[i] = 0.0f; jitterY[i] = 0.0f; continue }
             val mx = (px[i] - startX[i]) / DT; val my = (py[i] - startY[i]) / DT
             jitterX[i] = vx[i] - mx; jitterY[i] = vy[i] - my
             vx[i] = mx; vy[i] = my
         }
         val orgs = st.organismCount
-        if (orgX.size < orgs) { orgX = DoubleArray(orgs); orgY = DoubleArray(orgs) }
-        java.util.Arrays.fill(orgX, 0, orgs, 0.0); java.util.Arrays.fill(orgY, 0, orgs, 0.0)
+        if (orgX.size < orgs) { orgX = FloatArray(orgs); orgY = FloatArray(orgs) }
+        java.util.Arrays.fill(orgX, 0, orgs, 0.0f); java.util.Arrays.fill(orgY, 0, orgs, 0.0f)
         for (i in 0 until n) {
-            if (w[i] <= 0.0) continue
+            if (w[i] <= 0.0f) continue
             val o = st.organismOf[i]
             orgX[o] += vx[i] / w[i]; orgY[o] += vy[i] / w[i]
         }
-        val entrain = minOf(FLOW_ENTRAIN * dt, 0.9 / (1.0 + FLOW_MASS))
-        val decay = minOf(1.0, FLOW_DECAY * dt)
+        val entrain = minOf(FLOW_ENTRAIN * dt, 0.9f / (1.0f + FLOW_MASS))
+        val decay = minOf(1.0f, FLOW_DECAY * dt)
         for (o in 0 until orgs) {
             val mass = st.organismMass[o]
-            if (mass <= 0.0) { orgX[o] = 0.0; orgY[o] = 0.0; continue }
+            if (mass <= 0.0f) { orgX[o] = 0.0f; orgY[o] = 0.0f; continue }
             val gainX = (orgX[o] / mass - st.flowVX[o]) * entrain; val gainY = (orgY[o] / mass - st.flowVY[o]) * entrain
-            st.flowVX[o] = (st.flowVX[o] + gainX) * (1.0 - decay); st.flowVY[o] = (st.flowVY[o] + gainY) * (1.0 - decay)
+            st.flowVX[o] = (st.flowVX[o] + gainX) * (1.0f - decay); st.flowVY[o] = (st.flowVY[o] + gainY) * (1.0f - decay)
             orgX[o] = gainX; orgY[o] = gainY
         }
         for (i in 0 until n) {
-            if (w[i] <= 0.0) continue
+            if (w[i] <= 0.0f) continue
             val o = st.organismOf[i]
             vx[i] -= FLOW_MASS * orgX[o]; vy[i] -= FLOW_MASS * orgY[o]
         }
@@ -1140,18 +1166,18 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
             val i = st.boundA[e]; val j = st.boundB[e]
             val ex = px[j] - px[i]; val ey = py[j] - py[i]
             val len = sqrt(ex * ex + ey * ey)
-            if (len < 1e-12) continue
+            if (len < 1e-12f) continue
             val nx = -ey / len; val ny = ex / len
             val o = st.organismOf[i]
-            val mx = (vx[i] + vx[j]) * 0.5 - st.flowVX[o]; val my = (vy[i] + vy[j]) * 0.5 - st.flowVY[o]
+            val mx = (vx[i] + vx[j]) * 0.5f - st.flowVX[o]; val my = (vy[i] + vy[j]) * 0.5f - st.flowVY[o]
             val across = mx * nx + my * ny
-            val k = minOf(0.5, (NORMAL_DRAG + NORMAL_DRAG_QUADRATIC * abs(across)) * len * dt)
+            val k = minOf(0.5f, (NORMAL_DRAG + NORMAL_DRAG_QUADRATIC * abs(across)) * len * dt)
             vx[i] -= across * k * nx; vy[i] -= across * k * ny
             vx[j] -= across * k * nx; vy[j] -= across * k * ny
-            if (st.tangentDrag > 0.0) {
+            if (st.tangentDrag > 0.0f) {
                 val tx = ex / len; val ty = ey / len
                 val along = mx * tx + my * ty
-                val kt = minOf(0.5, st.tangentDrag * NORMAL_DRAG * len * dt)
+                val kt = minOf(0.5f, st.tangentDrag * NORMAL_DRAG * len * dt)
                 vx[i] -= along * kt * tx; vy[i] -= along * kt * ty
                 vx[j] -= along * kt * tx; vy[j] -= along * kt * ty
             }
@@ -1160,10 +1186,10 @@ class ReferenceSolver(private val st: BodyState, val substeps: Int = REFERENCE_S
     }
 
     /** Общее торможение о среду: каждая частица теряет долю MEDIUM_DRAG × тик скорости (× свой множитель). */
-    private fun mediumDrag(dt: Double) {
+    private fun mediumDrag(dt: Float) {
         if (st.dbgIsoDragOff) return
         for (i in 0 until st.n) {
-            val keep = (1.0 - MEDIUM_DRAG * dt * st.dragScale[i]).coerceAtLeast(0.0)
+            val keep = (1.0f - MEDIUM_DRAG * dt * st.dragScale[i]).coerceAtLeast(0.0f)
             st.vx[i] *= keep; st.vy[i] *= keep
         }
     }

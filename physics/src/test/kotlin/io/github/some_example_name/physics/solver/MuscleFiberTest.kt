@@ -17,10 +17,10 @@ import kotlin.math.sqrt
  */
 class MuscleFiberTest {
     /** Масштаб мира игры: связь 0.6 и радиус 0.5 клетки игры при 0.048 единицы физики на клетку. */
-    private val link = 0.0288
-    private val r = 0.024
+    private val link = 0.0288f
+    private val r = 0.024f
     /** Настройка мира опыта: показатель утолщения поперёк волокна k = 0.5. */
-    private val stands = mapOf("FIBER_THICKEN" to "0.5")
+    private val stands = mapOf("FIBER_THICKEN" to "0.5f")
     private fun world(config: Map<String, String> = stands) = PhysicsWorld(PhysicsConfig(config), workers = null,
         scale = WorldScale(meanLinkLength = link.toFloat(), meanCellArea = r * r)).apply { state.quiet = true }
 
@@ -43,7 +43,7 @@ class MuscleFiberTest {
             }
         }
         return BodyDefinition(
-            FloatArray(n) { (1.0 + (it % cols) * link).toFloat() }, FloatArray(n) { (1.0 + (it / cols) * link).toFloat() },
+            FloatArray(n) { (1.0f + (it % cols) * link).toFloat() }, FloatArray(n) { (1.0f + (it / cols) * link).toFloat() },
             FloatArray(n) { r.toFloat() }, BooleanArray(n), BooleanArray(n),
             la.toIntArray(), lb.toIntArray(), ta.toIntArray(), tb.toIntArray(), tc.toIntArray(), area.toFloatArray(),
             emptyArray(), emptyArray(), 1f,
@@ -61,18 +61,18 @@ class MuscleFiberTest {
     }
 
     /** Средняя длина связей решётки вдоль x и вдоль y, в длинах покоя. */
-    private fun meanLengths(w: PhysicsWorld, first: Int): DoubleArray {
+    private fun meanLengths(w: PhysicsWorld, first: Int): FloatArray {
         val st = w.state
-        var sx = 0.0; var nx = 0; var sy = 0.0; var ny = 0
+        var sx = 0.0f; var nx = 0; var sy = 0.0f; var ny = 0
         for (row in 0 until rows) for (c in 0 until cols) {
             val i = first + row * cols + c
             if (c + 1 < cols) { val j = i + 1; sx += sqrt(sq(st.px[j] - st.px[i]) + sq(st.py[j] - st.py[i])); nx++ }
             if (row + 1 < rows) { val j = i + cols; sy += sqrt(sq(st.px[j] - st.px[i]) + sq(st.py[j] - st.py[i])); ny++ }
         }
-        return doubleArrayOf(sx / nx / link, sy / ny / link)
+        return floatArrayOf(sx / nx / link, sy / ny / link)
     }
 
-    private fun sq(v: Double) = v * v
+    private fun sq(v: Float) = v * v
 
     /**
      * Волокно вдоль x: связи вдоль волокна укорачиваются к s = 0.5, поперёк — удлиняются к s^−k = √2 (k = 0.5), площадь
@@ -84,16 +84,16 @@ class MuscleFiberTest {
         repeat(400) { w.step() }
         val (along, across) = meanLengths(w, first).let { it[0] to it[1] }
         println("волокно вдоль x: вдоль ${"%.3f".format(along)}, поперёк ${"%.3f".format(across)} длины покоя")
-        assertTrue("вдоль волокна укорачивается: $along", along < 0.7)
-        assertTrue("поперёк волокна утолщается: $across", across > 1.2)
+        assertTrue("вдоль волокна укорачивается: $along", along < 0.7f)
+        assertTrue("поперёк волокна утолщается: $across", across > 1.2f)
 
         val v = world()
         val f2 = contracted(v, fiberX = false)
         repeat(400) { v.step() }
         val (x, y) = meanLengths(v, f2).let { it[0] to it[1] }
         println("без волокна: по x ${"%.3f".format(x)}, по y ${"%.3f".format(y)} длины покоя")
-        assertTrue("без волокна сжимается и по x: $x", x < 0.7)
-        assertTrue("без волокна сжимается и по y: $y", y < 0.7)
+        assertTrue("без волокна сжимается и по x: $x", x < 0.7f)
+        assertTrue("без волокна сжимается и по y: $y", y < 0.7f)
     }
 
     /** Мир из снимка посреди сокращения по волокну идёт дальше побитово так же, как мир, который снимок писал. */
@@ -108,8 +108,8 @@ class MuscleFiberTest {
         assertArrayEquals(a.state.cellFiberY, b.state.cellFiberY, 0f)
         assertTrue(b.state.fibersOn)
         repeat(40) { a.step(); b.step() }
-        assertArrayEquals("x после загрузки", a.state.px, b.state.px, 0.0)
-        assertArrayEquals("y после загрузки", a.state.py, b.state.py, 0.0)
+        assertArrayEquals("x после загрузки", a.state.px, b.state.px, 0.0f)
+        assertArrayEquals("y после загрузки", a.state.py, b.state.py, 0.0f)
     }
 
     /**
@@ -125,8 +125,8 @@ class MuscleFiberTest {
         val f2 = contracted(off, fiberX = false)
         repeat(120) { off.step() }
         assertEquals(f1, f2)
-        assertArrayEquals(px, off.state.px, 0.0)
-        assertArrayEquals(py, off.state.py, 0.0)
+        assertArrayEquals(px, off.state.px, 0.0f)
+        assertArrayEquals(py, off.state.py, 0.0f)
     }
 
     /**
@@ -134,7 +134,7 @@ class MuscleFiberTest {
      * вперемешку, идут побитово так же, как каждый в одиночку. До слияния 21.11 показатель был общим на процесс.
      */
     @Test fun lawIsPerWorld() {
-        fun alone(config: Map<String, String>): DoubleArray {
+        fun alone(config: Map<String, String>): FloatArray {
             val w = world(config); contracted(w, fiberX = true); repeat(60) { w.step() }; return w.state.px.copyOf()
         }
         val thick = alone(stands); val flat = alone(emptyMap())
@@ -142,7 +142,7 @@ class MuscleFiberTest {
         val a = world(stands); val b = world(emptyMap())
         contracted(a, fiberX = true); contracted(b, fiberX = true)
         repeat(60) { a.step(); b.step() }
-        assertArrayEquals("k = 0.5 рядом с k = 0", thick, a.state.px, 0.0)
-        assertArrayEquals("k = 0 рядом с k = 0.5", flat, b.state.px, 0.0)
+        assertArrayEquals("k = 0.5f рядом с k = 0", thick, a.state.px, 0.0f)
+        assertArrayEquals("k = 0 рядом с k = 0.5f", flat, b.state.px, 0.0f)
     }
 }

@@ -20,7 +20,6 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     val KILL_ON_DEEP_OVERLAP = config.KILL_ON_DEEP_OVERLAP
 
     init { configureMuscleExperiment(config) } // ВРЕМЕННО (опыт 19.11.2026, solver/MuscleExperiment.kt)
-    init { configureClosingDamping(config) } // ВРЕМЕННО (опыт 19.11.2026, solver/ClosingDamping.kt)
 
     /**
      * Воркеры параллельных стадий; null — всё в вызывающем потоке. Результат от их
@@ -58,22 +57,22 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     // --- частицы (SoA) ---
     var n = 0
 
-    lateinit var px: DoubleArray
+    lateinit var px: FloatArray
 
-    lateinit var py: DoubleArray
+    lateinit var py: FloatArray
 
-    lateinit var prevX: DoubleArray
+    lateinit var prevX: FloatArray
 
-    lateinit var prevY: DoubleArray
+    lateinit var prevY: FloatArray
 
-    lateinit var vx: DoubleArray
+    lateinit var vx: FloatArray
 
-    lateinit var vy: DoubleArray
+    lateinit var vy: FloatArray
 
-    lateinit var invMass: DoubleArray
+    lateinit var invMass: FloatArray
 
     /** Обратная масса позы покоя: из радиуса клетки, см. buildMasses(). */
-    lateinit var restInvMass: DoubleArray
+    lateinit var restInvMass: FloatArray
 
     // --- самоконтакт границы ---
     var contacts: BoundaryContacts? = null
@@ -83,7 +82,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
 
     var contactsOn = CONTACTS_ON
 
-    lateinit var radius: DoubleArray
+    lateinit var radius: FloatArray
 
     /** Клетка без единой связи — свободная частица, см. FREE_PARTICLES. */
     lateinit var isFree: BooleanArray
@@ -94,7 +93,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      */
     var probe = BooleanArray(0)
 
-    var probeAngle = DoubleArray(0)
+    var probeAngle = FloatArray(0)
 
     /** Зонды по признаку угла можно выключить: RB_PROBE=0 — только свободные клетки. */
     var probeOn = config["RB_PROBE"]?.let { it != "0" } ?: PROBE_UNCOVERED
@@ -149,7 +148,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * У body-export это 39 КБ, которые читались 144 раза за тик — стадия предела длины
      * зовётся чаще всех. Осталось умножение на месте.
      */
-    lateinit var matchWeight: DoubleArray
+    lateinit var matchWeight: FloatArray
 
     lateinit var inContact: BooleanArray
 
@@ -162,7 +161,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
 
     lateinit var conB: IntArray
 
-    lateinit var conRest: DoubleArray
+    lateinit var conRest: FloatArray
 
     lateinit var conMuscle: IntArray
     /** Версия структуры при последней подготовке контактов: см. skipCandidatesNow. */
@@ -185,7 +184,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
 
     lateinit var bendB: IntArray
 
-    lateinit var bendRest: DoubleArray
+    lateinit var bendRest: FloatArray
 
     /** Индекс в BEND_LEVELS. 0 — выключено. Переключается клавишей E. */
     var bendLevel = 0
@@ -271,40 +270,40 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     /** Размеры и массы организмов уже посчитаны для нынешней разметки. */
     var organismsCounted = false
 
-    lateinit var organismMass: DoubleArray
+    lateinit var organismMass: FloatArray
 
-    lateinit var flowVX: DoubleArray
+    lateinit var flowVX: FloatArray
 
-    lateinit var flowVY: DoubleArray
+    lateinit var flowVY: FloatArray
 
     /** Номера организмов и их запас ДО перенумерации — по ним куски наследуют накат. */
     var orgPrev = IntArray(0)
 
     var orgSeed = IntArray(0)
 
-    var orgFlowX = DoubleArray(0)
+    var orgFlowX = FloatArray(0)
 
-    var orgFlowY = DoubleArray(0)
+    var orgFlowY = FloatArray(0)
 
     /** Черновик под сумму скоростей организма. Заводится один раз, в цикле не аллоцируется. */
-    lateinit var comAccX: DoubleArray
+    lateinit var comAccX: FloatArray
 
-    lateinit var comAccY: DoubleArray
+    lateinit var comAccY: FloatArray
 
     /**
      * Положения бодрствующих частиц в начале тика, на последнем подшаге — дрожь
      * скорости (мгновенная минус средняя за тик). См. TickMotion.
      */
-    var tickJitterX = DoubleArray(0)
-    var tickJitterY = DoubleArray(0)
+    var tickJitterX = FloatArray(0)
+    var tickJitterY = FloatArray(0)
 
     /**
      * Место, где началась серия покоя организма, и наибольшее удаление его клеток от
      * этого места (в квадрате) на этом тике. См. SLEEP_DRIFT_CELLS.
      */
-    var sleepAnchorX = DoubleArray(0)
-    var sleepAnchorY = DoubleArray(0)
-    var orgSleepDrift2 = DoubleArray(0)
+    var sleepAnchorX = FloatArray(0)
+    var sleepAnchorY = FloatArray(0)
+    var orgSleepDrift2 = FloatArray(0)
 
     /** Сон организмов: см. BodySleep. Выключается RB_SLEEP=0. */
     val sleep = BodySleep(config["RB_SLEEP"]?.let { it != "0" } ?: SLEEP_ON)
@@ -400,14 +399,14 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * экономит работу: сумма w*q0 досажена в НОЛЬ ровно во float, и без этого зачёт
      * поправки в projectBone не имел бы смысла — см. её комментарий.
      */
-    lateinit var boneRestQx: Array<DoubleArray>
+    lateinit var boneRestQx: Array<FloatArray>
 
-    lateinit var boneRestQy: Array<DoubleArray>
+    lateinit var boneRestQy: Array<FloatArray>
 
     /** Черновик поправок самой большой кости. Заводится один раз, в горячем цикле не аллоцируется. */
-    lateinit var boneDx: DoubleArray
+    lateinit var boneDx: FloatArray
 
-    lateinit var boneDy: DoubleArray
+    lateinit var boneDy: FloatArray
 
     /** Кости, чей состав надо пересмотреть между тиками: погибла клетка или внутренняя связь. См. BoneSplit.kt. */
     internal var boneDirty = IntArray(8)
@@ -421,7 +420,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     // --- мышцы ---
     lateinit var muscleOf: IntArray
 
-    lateinit var muscleActivation: DoubleArray
+    lateinit var muscleActivation: FloatArray
 
     /**
      * Куда каждая мышца едет в этом кадре: 1 — сокращаться, 0 — распрямляться.
@@ -430,15 +429,15 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * наведение мышью, цифровые клавиши и автоматический гребок, — и они должны
      * складываться, а не перебивать друг друга.
      */
-    lateinit var muscleTarget: DoubleArray
+    lateinit var muscleTarget: FloatArray
 
     var bonesRigid = true
 
     var dragId = -1
 
-    var mouseX = 0.0
+    var mouseX = 0.0f
 
-    var mouseY = 0.0
+    var mouseY = 0.0f
 
     var orgQueue = IntArray(0)
 
@@ -492,7 +491,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
 
     var flapB = IntArray(0)
 
-    var flapRest = DoubleArray(0)
+    var flapRest = FloatArray(0)
 
     /**
      * Вершина створки: клетка, при которой угол между голыми связями к flapA и flapB (BlockConstraintKernels.
@@ -543,15 +542,15 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * RB_CONTRACTION, RB_RATE_CONTRACT, RB_RATE_RELAX, RB_PERIOD, RB_DUTY.
      * Без переменных это ровно константы выше.
      */
-    var muscleContraction = config["RB_CONTRACTION"]?.toDoubleOrNull() ?: MUSCLE_CONTRACTION
+    var muscleContraction = config["RB_CONTRACTION"]?.toFloatOrNull() ?: MUSCLE_CONTRACTION
 
-    var muscleRateContract = config["RB_RATE_CONTRACT"]?.toDoubleOrNull() ?: MUSCLE_RATE_CONTRACT
+    var muscleRateContract = config["RB_RATE_CONTRACT"]?.toFloatOrNull() ?: MUSCLE_RATE_CONTRACT
 
-    var muscleRateRelax = config["RB_RATE_RELAX"]?.toDoubleOrNull() ?: MUSCLE_RATE_RELAX
+    var muscleRateRelax = config["RB_RATE_RELAX"]?.toFloatOrNull() ?: MUSCLE_RATE_RELAX
 
     var gaitPeriod = config["RB_PERIOD"]?.toIntOrNull() ?: GAIT_PERIOD
 
-    var gaitDuty = config["RB_DUTY"]?.toDoubleOrNull() ?: GAIT_DUTY
+    var gaitDuty = config["RB_DUTY"]?.toFloatOrNull() ?: GAIT_DUTY
 
     /** Захватывает ли мышца край: 0/1/2. См. MUSCLE_TOUCH. Окружение RB_TOUCH. */
     var muscleTouch = config["RB_TOUCH"]?.toIntOrNull() ?: MUSCLE_TOUCH
@@ -571,7 +570,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * РОВНО за тик, но по подшагам: доля f = (step + 1) / SUBSTEPS. За тик изменение то
      * же самое, только размазано, как оно и происходит на самом деле.
      */
-    var muscleScaleOf = DoubleArray(0)
+    var muscleScaleOf = FloatArray(0)
 
     /**
      * МЫШЦА ПО КЛЕТКЕ (клиент-игра: у каждого миоцита своя активация, сокращение и расслабление).
@@ -610,14 +609,28 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * ПЛАВНОСТЬ МЫШЦЫ КЛЕТКИ ПО ПОДШАГАМ (MuscleDriver.applyCellScaleLerp): связи (по ребру) и
      * треугольники (по постоянному номеру), чей множитель сдвинул шаг мышцы, с «было» и «станет».
      * Рабочие данные одного шага: собираются в advanceCellScales, к концу шага пусты — в снимок
-     * не входят. Метки — номер шага, чтобы не захватить элемент дважды.
+     * не входят. Метки — номер шага: клетка, ребро и треугольник пересчитываются за шаг мышц один раз
+     * (MuscleDriver.refreshMovedRings), поэтому и захватываются один раз.
      */
-    var lerpCapturing = false
     var lerpEdgeIds = IntArray(64); var lerpEdgeFrom = FloatArray(64); var lerpEdgeTo = FloatArray(64); var lerpEdgeN = 0
     /** Клетки, сдвинувшие множитель в этом шаге мышц, — кольца им пересчитываются после шага всех (advanceCellScales). */
     internal var cellScaleMoved = IntArray(64)
+    /** Клетки, у которых в этом шаге мышц сменился действующий множитель (и все сдвинувшиеся): им пересчитываются связи и треугольники. */
+    internal var cellScaleChanged = IntArray(64)
     var lerpTriIds = IntArray(64); var lerpTriFrom = FloatArray(64); var lerpTriTo = FloatArray(64); var lerpTriN = 0
     var lerpEdgeStamp = IntArray(0); var lerpTriStamp = IntArray(0); var lerpStampNow = 0
+    internal var lerpCellStamp = IntArray(0)
+
+    /**
+     * ПЛАВНОСТЬ ДОРАСТАНИЯ ПО ПОДШАГАМ (BodyGrowth.applyGrowthLerp): молодые связи (по ребру; у ребра с несколькими
+     * связями — запись на каждую, в порядке цепочки conNextForEdge) и молодые треугольники (по постоянному номеру) с
+     * длиной и площадью покоя «было» и «станет». Рабочие данные одного тика: собираются в easeNewborn, к концу тика
+     * пусты — в снимок не входят.
+     */
+    internal var growLerpEdge = IntArray(64); internal var growLerpFrom = FloatArray(64); internal var growLerpTo = FloatArray(64)
+    internal var growLerpN = 0
+    internal var growLerpTri = IntArray(64); internal var growLerpTriFrom = FloatArray(64); internal var growLerpTriTo = FloatArray(64)
+    internal var growLerpTriN = 0
 
     /**
      * Клиент задавал множители клеток (хоть один не 1). Пока нет — ядра идут прежним путём,
@@ -650,7 +663,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     /** Производное: треугольник сокращается по волокну — по постоянному номеру треугольника. */
     var triFiberById = BooleanArray(0)
     /** Показатель утолщения поперёк волокна k — настройка мира FIBER_THICKEN (config/FiberParameters.kt). */
-    val fiberThicken: Double = config["FIBER_THICKEN"]?.toDoubleOrNull() ?: FIBER_THICKEN
+    val fiberThicken: Float = config["FIBER_THICKEN"]?.toFloatOrNull() ?: FIBER_THICKEN
 
     /**
      * МЯГКОСТЬ ТКАНИ ПО КЛЕТКЕ (клиент-игра: жир мягче листа, PhysicsWorld.setSoftness).
@@ -700,18 +713,18 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * Пружина к своему месту (террейн: точка на карте) — податливость по частице, 0 — нет пружины;
      * место — cellHomeX/Y. Решается вместе с хваткой (Grip.kt). Входит в снимок.
      */
-    var cellHomeCompliance = DoubleArray(0)
-    var cellHomeX = DoubleArray(0); var cellHomeY = DoubleArray(0)
+    var cellHomeCompliance = FloatArray(0)
+    var cellHomeX = FloatArray(0); var cellHomeY = FloatArray(0)
     var gripN = 0
     /** Список [gripIds] устарел: смена хватки, уплотнение, снимок. */
     var gripsDirty = false
 
     /** Временные связи между частицами разных тел (липучка) — см. Joints.kt. Слоты пула, входят в снимок. */
     var jointA = IntArray(0); var jointB = IntArray(0)
-    var jointRest = DoubleArray(0); var jointCompliance = DoubleArray(0)
+    var jointRest = FloatArray(0); var jointCompliance = FloatArray(0)
     var jointLive = BooleanArray(0)
     /** Порог пробуждения соседа по связи, доля длины покоя; 0 — будит всегда (липучка), см. prepareJoints. */
-    var jointWakeStrain = DoubleArray(0)
+    var jointWakeStrain = FloatArray(0)
     /** Связи, у которых хоть один конец движется, — на этот тик (prepareJoints); в снимок не входят. */
     var jointActive = IntArray(0); var jointActiveN = 0
     var jointSlots = 0; var jointLiveCount = 0
@@ -723,7 +736,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * 0.003 за тик — это и есть MEDIUM_DRAG · DT). Считается только у частиц с множителем
      * не 1: остальные — прежняя арифметика, те же биты.
      */
-    var dragScale = DoubleArray(0)
+    var dragScale = FloatArray(0)
 
     /**
      * РАМКА МИРА (клиент-игра: границы сетки мира). Включена — частица не выходит за неё:
@@ -732,13 +745,13 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      */
     var boundsOn = false
     internal var wallHits = BoneWallHits(0)
-    var boundsMinX = 0.0
-    var boundsMinY = 0.0
-    var boundsMaxX = 0.0
-    var boundsMaxY = 0.0
+    var boundsMinX = 0.0f
+    var boundsMinY = 0.0f
+    var boundsMaxX = 0.0f
+    var boundsMaxY = 0.0f
 
     /** Активация на НАЧАЛО тика — между ней и текущей идёт разгон по подшагам. */
-    var muscleActivationPrev = DoubleArray(0)
+    var muscleActivationPrev = FloatArray(0)
 
     /**
      * ПЛАСТИЧЕСКОЕ ТЕЧЕНИЕ ТКАНИ. Зовётся РАЗ В ТИК, см. PLASTIC_RATE.
@@ -769,7 +782,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * треугольника. growEdges/growTris — кого обходить в тике: рёбра и постоянные номера
      * треугольников, в порядке рождения. Всё это влияет на будущие тики — состояние мира.
      */
-    var conGrowTarget = DoubleArray(0)
+    var conGrowTarget = FloatArray(0)
     /** Возраст дорастания связи в тиках (мягкость молодой связи, easeNewborn); переезжает с conGrowTarget. */
     var conGrowAge = ByteArray(0)
     var triGrowTarget = FloatArray(0)
@@ -796,7 +809,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      */
     var dbgSealOn = config["RB_SEAL"] != null
 
-    var dbgSealMinR = 0.0
+    var dbgSealMinR = 0.0f
 
     /** Сколько раз предел длины связи сработал с последнего сброса. Видно в HUD. */
     var linkCapHits = 0
@@ -808,13 +821,13 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     var dbgLinkExtremaOn = false
 
     /** Разбор при dbgLinkExtremaOn: самая смятая и растянутая связь за прогон, в долях покоя. */
-    var dbgWorstCrush2 = 1.0
+    var dbgWorstCrush2 = 1.0f
 
-    val dbgWorstCrush: Double get() = sqrt(dbgWorstCrush2)
+    val dbgWorstCrush: Float get() = sqrt(dbgWorstCrush2)
 
-    var dbgWorstStretch2 = 1.0
+    var dbgWorstStretch2 = 1.0f
 
-    val dbgWorstStretch: Double get() = sqrt(dbgWorstStretch2)
+    val dbgWorstStretch: Float get() = sqrt(dbgWorstStretch2)
 
     /** Разбор: чем порвано — сжатием или растяжением, и сколько из этого мышечные связи. */
     var dbgTornCrush = 0
@@ -826,7 +839,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     var dbgTornPullMuscle = 0
 
     /** Разбор: наибольший недобор связи сверх предела, в долях покоя. Сбрасывает читатель. */
-    var dbgMaxOverStrain = 0.0
+    var dbgMaxOverStrain = 0.0f
 
     /** После смерти клетки скоростной проход ждёт следующего обновления списка пар. */
     var contactsStale = false
@@ -952,11 +965,11 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     var speedCapHits = 0
 
     /** Наибольшая увиденная скорость в квадрате, ДО обрезки. Замер, а не гадание. */
-    var peakSpeed2 = 0.0
+    var peakSpeed2 = 0.0f
 
-    var dragShiftX = 0.0
+    var dragShiftX = 0.0f
 
-    var dragShiftY = 0.0
+    var dragShiftY = 0.0f
 
     /**
      * Направление обхода связей в solveConstraints. Переворачивается каждый подшаг.
@@ -1021,7 +1034,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * 11 изотропная среда+пол+потолок скорости, 12 снятие дрейфа.
      */
 
-    val dbgStageMove = DoubleArray(DBG_STAGES)
+    val dbgStageMove = FloatArray(DBG_STAGES)
 
     /**
      * Сколько МОМЕНТА ИМПУЛЬСА внесла стадия. Считается как сумма m * (r x dp) / h.
@@ -1031,24 +1044,24 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * тождественно. Поэтому ненулевое число здесь сразу называет виновника, и гадать
      * по списку стадий больше не нужно.
      */
-    val dbgStageL = DoubleArray(DBG_STAGES)
+    val dbgStageL = FloatArray(DBG_STAGES)
 
     /** Сколько ЛИНЕЙНОГО импульса внесла стадия, вектором. Тяга берётся отсюда. */
-    val dbgStagePx = DoubleArray(DBG_STAGES)
+    val dbgStagePx = FloatArray(DBG_STAGES)
 
-    val dbgStagePy = DoubleArray(DBG_STAGES)
+    val dbgStagePy = FloatArray(DBG_STAGES)
 
     val dbgStageHits = IntArray(DBG_STAGES)
 
     /** Сумма модулей смещений стадии по замеряемым клеткам — сколько она РАБОТАЕТ. */
-    val dbgStageAbs = DoubleArray(DBG_STAGES)
+    val dbgStageAbs = FloatArray(DBG_STAGES)
 
     /** Если задан, замер идёт только по этим клеткам. */
     var dbgOnly: BooleanArray? = null
 
-    var dbgSnapX = DoubleArray(0)
+    var dbgSnapX = FloatArray(0)
 
-    var dbgSnapY = DoubleArray(0)
+    var dbgSnapY = FloatArray(0)
 
     /**
      * ЗАМЕР ВРЕМЕНИ ПО СТАДИЯМ: включается на время опыта, см. PerfBench.
@@ -1058,14 +1071,18 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      */
     var dbgTimeOn = false
 
-    val dbgTimeNs = LongArray(21)
+    val dbgTimeNs = LongArray(23)
 
+    // «Команды мышц» — шаг множителей клеток раз в тик (advanceCellScales: кольца, связи и треугольники движущихся
+    // мышц), «плавность мышц» — ведение их множителей по подшагам (applyCellScaleLerp). До 24.11 обе шли «вне таймеров»,
+    // а на настоящих геномах с работающими мышцами это 22–48% тика (находка 40).
     val dbgTimeNames = arrayOf(
         "связи", "лоскуты", "предел длины", "площади", "изгиб", "кость",
         "подготовка контактов", "решатель контактов", "снятие момента",
         "скорости и среда", "ловушка", "пересборка", "локальная поверхность", "контактные кости",
         "ориентация контура", "интегрирование", "учёт импульса",
-        "восстановление скоростей", "пластичность", "давление и инверсии", "сон")
+        "восстановление скоростей", "пластичность", "давление и инверсии", "сон",
+        "команды мышц", "плавность мышц")
 
     var dbgTimeT0 = 0L
 
@@ -1082,14 +1099,14 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     var watchCell = config["RB_WATCH"]?.toIntOrNull() ?: -1
         set(v) { field = v; if (v >= 0) dbgStages = true }
 
-    val watchStage = DoubleArray(12)
+    val watchStage = FloatArray(12)
 
     val watchNames = arrayOf("связи", "площади", "изгиб", "кость", "предел",
         "контакт", "подготовка", "контакт2", "прочее", "лоскуты", "обход", "пересборка")
 
-    var dbgSnapVx = DoubleArray(0)
+    var dbgSnapVx = FloatArray(0)
 
-    var dbgSnapVy = DoubleArray(0)
+    var dbgSnapVy = FloatArray(0)
 
     /**
      * СНЯТИЕ ИМПУЛЬСА И МОМЕНТА ВНУТРЕННИХ СТАДИЙ — см. InternalMomentum, там и замеры.
@@ -1102,7 +1119,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
         get() {
             val t = tickMomentumState
             if (t != null && t.n == n) return t
-            return TickMomentum(n).also { tickMomentumState = it }
+            return TickMomentum(n, SPIN_MIN_ARM * linkScale).also { tickMomentumState = it }
         }
 
     /** Включено ли снятие. Переменной, а не константой, — ради A/B на журнале игрока. */
@@ -1130,31 +1147,23 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     var dbgDragOff = false
 
     /** Во сколько раз крепче на разрыв связь мышцы с костью. См. TENDON_TEAR_FACTOR. */
-    var tendonTear = config["RB_TENDON"]?.toDoubleOrNull() ?: TENDON_TEAR_FACTOR
+    var tendonTear = config["RB_TENDON"]?.toFloatOrNull() ?: TENDON_TEAR_FACTOR
 
     /** Запас до разрыва сверх предела длины, в долях покоя. См. LINK_TEAR_STRAIN. */
-    var linkTearStrain = config["RB_TEAR"]?.toDoubleOrNull() ?: LINK_TEAR_STRAIN
+    var linkTearStrain = config["RB_TEAR"]?.toFloatOrNull() ?: LINK_TEAR_STRAIN
 
     /** Доля касательного трения от нормального. См. TANGENT_DRAG. */
-    var tangentDrag = config["RB_TANGENT"]?.toDoubleOrNull() ?: TANGENT_DRAG
+    var tangentDrag = config["RB_TANGENT"]?.toFloatOrNull() ?: TANGENT_DRAG
 
     /**
      * Изотропное сопротивление среды. Нормировано на h, поэтому от числа подшагов
      * не зависит. Тягу не создаёт — см. комментарий у MEDIUM_DRAG.
      */
     /** Давление контактов на клетку за текущий тик, мировые единицы смещения. Обнуляется в начале тика. */
-    var contactPressure = DoubleArray(0)
+    var contactPressure = FloatArray(0)
 
     /** Сколько толчков контакта получила клетка за тик. Пара к contactPressure. */
     var contactPressureN = IntArray(0)
-
-    /**
-     * ПАМЯТЬ УДАРА клетки: наибольшая скорость сближения, которую видели её касания, связей за тик;
-     * затухает каждый подшаг (ImpactWedge). Ноль или больше IMPACT_FROM. Живёт несколько тиков, поэтому
-     * это состояние мира: пишется в снимок, переезжает при уплотнении, обнуляется у освобождённого слота.
-     * 8 байт на частицу; читается только у клеток касания с ударом и у клеток их клиньев.
-     */
-    var impactSpeed = DoubleArray(0)
 
     /** Разбор: зовётся в конце каждого подшага с его номером. */
     var dbgSubstepHook: ((Int) -> Unit)? = null
@@ -1171,7 +1180,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     /** Опыт: стадия площадей. Выключается RB_AREAS=0. См. место вызова. */
     var areasOn = config["RB_AREAS"] != "0"
 
-    var pressureBurst = config["RB_BURST"]?.toDoubleOrNull() ?: PRESSURE_BURST_LINKS
+    var pressureBurst = config["RB_BURST"]?.toFloatOrNull() ?: PRESSURE_BURST_LINKS
 
     var pressureBurstCount = 0
 
@@ -1189,7 +1198,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     /** Длина, при которой щель контура становится проходимой. См. membranePassTear. */
     var membraneTearCount = 0
 
-    var membraneTearStrain = config["RB_MEMBRANE"]?.toDoubleOrNull() ?: MEMBRANE_TEAR_STRAIN
+    var membraneTearStrain = config["RB_MEMBRANE"]?.toFloatOrNull() ?: MEMBRANE_TEAR_STRAIN
 
     var crushBurstOn = CRUSH_BURST && config["RB_CRUSH_OFF"] == null
 

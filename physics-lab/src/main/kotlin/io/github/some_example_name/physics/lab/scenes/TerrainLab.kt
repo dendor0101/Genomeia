@@ -125,7 +125,7 @@ private fun buildTerrain(world: PhysicsWorld, map: Array<BooleanArray>, grip: Fl
         for ((k, c) in cells.withIndex()) {
             val i = first + k
             world.setContactGroup(i, 1)
-            world.setHome(i, px[c[1]][c[0]], py[c[1]][c[0]], HOME_COMPLIANCE)
+            world.setHome(i, px[c[1]][c[0]].toFloat(), py[c[1]][c[0]].toFloat(), HOME_COMPLIANCE.toFloat())
             world.setGrip(i, grip)
             world.setSoftness(i, SOFTNESS)
         }
@@ -140,7 +140,7 @@ private fun buildTerrain(world: PhysicsWorld, map: Array<BooleanArray>, grip: Fl
             if (xx !in 0 until w || yy !in 0 until h || !map[yy][xx] || piece[yy][xx] == piece[y][x]) continue
             val a = firstOf[piece[y][x]] + slot[y][x]; val b = firstOf[piece[yy][xx]] + slot[yy][xx]
             val rest = hypot(px[y][x] - px[yy][xx], py[y][x] - py[yy][xx])
-            joints.add(world.addJoint(a, b, rest, SOFT_COMPLIANCE * SOFTNESS, WAKE_STRAIN))
+            joints.add(world.addJoint(a, b, rest.toFloat(), SOFT_COMPLIANCE * SOFTNESS, WAKE_STRAIN.toFloat()))
         }
     }
     return Terrain(world, firstOf, particles, joints.toIntArray())
@@ -162,10 +162,10 @@ private fun median(a: DoubleArray): Double { val s = a.sorted(); return if (s.is
 
 private fun run(map: Array<BooleanArray>, worldCells: Int, grip: Float, workers: Int) {
     val world = PhysicsWorld(PhysicsConfig(), workers = if (workers > 0) PhysicsWorkers.shared(workers) else null,
-        scale = WorldScale(meanLinkLength = (0.6 * PHYS).toFloat(), meanCellArea = R * R)).apply { state.quiet = true }
+        scale = WorldScale(meanLinkLength = (0.6 * PHYS).toFloat(), meanCellArea = (R * R).toFloat())).apply { state.quiet = true }
     world.sleepOn = true
     val size = map[0].size * CELL
-    world.setBounds(0.0, 0.0, size, map.size * CELL)
+    world.setBounds(0.0f, 0.0f, size.toFloat(), (map.size * CELL).toFloat())
     val t0 = System.nanoTime()
     val t = buildTerrain(world, map, grip)
     val buildMs = (System.nanoTime() - t0) / 1e6
@@ -191,13 +191,13 @@ private fun run(map: Array<BooleanArray>, worldCells: Int, grip: Float, workers:
     for (k in 0 until shots) {
         val a = 2 * Math.PI * k / shots
         val speed = 6.0 * 0.6 * PHYS * 30        // 6 связей за тик — почти потолок скорости
-        bullets[k] = world.freeParticle(world.addFree(cx, cy, R, kotlin.math.cos(a) * speed, kotlin.math.sin(a) * speed))
+        bullets[k] = world.freeParticle(world.addFree(cx.toFloat(), cy.toFloat(), R.toFloat(), (kotlin.math.cos(a) * speed).toFloat(), (kotlin.math.sin(a) * speed).toFloat()))
         repeat(30) {
             val s = System.nanoTime(); world.step(); times.add((System.nanoTime() - s) / 1e6)
             maxAwake = maxOf(maxAwake, awakeTiles(t)); bulletTicks++
         }
     }
-    for (b in bullets) if (!world.state.cellDead[b] && inBulk(map, world.x[b], world.y[b])) penetrated++
+    for (b in bullets) if (!world.state.cellDead[b] && inBulk(map, world.x[b].toDouble(), world.y[b].toDouble())) penetrated++
     val tornJoints = t.joints.count { !world.isJointLive(it) }
     println("  обстрел $shots пулями: проснулось плиток до $maxAwake из ${t.tiles.size}; пуль в толще $penetrated; " +
         "швов порвано $tornJoints; тик %.3f мс (медиана)".format(median(times.toDoubleArray())))
@@ -218,20 +218,20 @@ private fun run(map: Array<BooleanArray>, worldCells: Int, grip: Float, workers:
     times.clear()
     val tornBefore = world.state.tornTotal
     for (tick in 0 until 240) {
-        if (tick < 60) for (i in first until first + count) world.setVelocity(i, 3.0 * 0.6 * PHYS * 30, 0.0)
+        if (tick < 60) for (i in first until first + count) world.setVelocity(i, (3.0 * 0.6 * PHYS * 30).toFloat(), 0.0f)
         val s = System.nanoTime(); world.step(); times.add((System.nanoTime() - s) / 1e6)
         maxAwake = maxOf(maxAwake, awakeTiles(t))
     }
     var bulk = 0
-    for (i in first until first + count) if (!world.state.cellDead[i] && inBulk(map, world.x[i], world.y[i])) bulk++
+    for (i in first until first + count) if (!world.state.cellDead[i] && inBulk(map, world.x[i].toDouble(), world.y[i].toDouble())) bulk++
     val tornAll = t.joints.count { !world.isJointLive(it) }
     println("  таран кирпичом ($count клеток, 3 связи/тик 60 тиков): проснулось плиток до $maxAwake; клеток кирпича в толще " +
         "$bulk; швов порвано всего $tornAll; разрывов в мире ${world.state.tornTotal - tornBefore}; тик %.3f мс (медиана)"
             .format(median(times.toDoubleArray())))
     var hash = 1125899906842597L
     for (i in 0 until world.particleCount) {
-        hash = (hash xor world.x[i].toRawBits()) * -7046029254386353131L
-        hash = (hash xor world.y[i].toRawBits()) * -7046029254386353131L
+        hash = (hash xor world.x[i].toRawBits().toLong()) * -7046029254386353131L
+        hash = (hash xor world.y[i].toRawBits().toLong()) * -7046029254386353131L
     }
     println("  хэш мира %016x".format(hash))
 }

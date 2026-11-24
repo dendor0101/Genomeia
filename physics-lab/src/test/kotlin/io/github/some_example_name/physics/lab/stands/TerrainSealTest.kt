@@ -27,7 +27,7 @@ class TerrainSealTest {
         val w = StandWorld()
         w.rock(0.0, 0.0); w.rock(5.0, 0.0)
         w.ball(2.5, 3.0)
-        for (r in solverRadii(w)) assertEquals(TERRAIN_RADIUS * ShapeSpec.LONE_CONTACT_SCALE, r, 1e-9)
+        for (r in solverRadii(w)) assertEquals(TERRAIN_RADIUS * ShapeSpec.LONE_CONTACT_SCALE, r, 1e-6)   // радиус мира физики во float
     }
 
     /** Наименьшее расстояние от точки до края ближайшего круга касания: отрицательное — точка накрыта. */

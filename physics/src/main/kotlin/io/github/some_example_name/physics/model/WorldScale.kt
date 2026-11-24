@@ -13,13 +13,13 @@ package io.github.some_example_name.physics
  * мира и дальше не меняются: из первой загрузки ([of] — та же арифметика, что была) или
  * явно (игра: размер клетки известен заранее).
  */
-class WorldScale(val meanLinkLength: Float, val meanCellArea: Double) {
+class WorldScale(val meanLinkLength: Float, val meanCellArea: Float) {
     companion object {
         /** Средние по набору тел — ровно как считались раньше (BodyDefinition, buildMasses). */
         fun of(definition: BodyDefinition): WorldScale {
-            var meanArea = 0.0
+            var meanArea = 0.0f
             for (i in 0 until definition.count) {
-                val r = definition.radius[i].toDouble()
+                val r = definition.radius[i].toFloat()
                 meanArea += r * r
             }
             meanArea /= definition.count

@@ -256,17 +256,19 @@ class WorldPhysics(
 
     /**
      * Часть хэша состояния мира (StateHash): позиции и скорости всех частиц мира физики,
-     * побитово. Остальное его состояние (prev, контакты, сон) расходится вслед за ними за тик.
+     * побитово, и начало его координат. Остальное его состояние (prev, контакты, сон) расходится
+     * вслед за ними за тик.
      */
     fun hash(h: Long): Long {
         val world = bridge.world
         val n = world.particleCount
         var x = Fnv.word(h, n)
         if (n == 0) return x            // пустой мир своих массивов ещё не завёл
+        x = Fnv.word(x, bridge.originX.toRawBits()); x = Fnv.word(x, bridge.originY.toRawBits())
         val px = world.x; val py = world.y; val vx = world.vx; val vy = world.vy
         for (i in 0 until n) {
-            x = Fnv.long(x, px[i].toRawBits()); x = Fnv.long(x, py[i].toRawBits())
-            x = Fnv.long(x, vx[i].toRawBits()); x = Fnv.long(x, vy[i].toRawBits())
+            x = Fnv.long(x, px[i].toRawBits().toLong()); x = Fnv.long(x, py[i].toRawBits().toLong())
+            x = Fnv.long(x, vx[i].toRawBits().toLong()); x = Fnv.long(x, vy[i].toRawBits().toLong())
         }
         return sticks.hash(x)
     }
@@ -285,12 +287,19 @@ class WorldPhysics(
     private fun mapWallParticles() {
         val pe = particleEntity
         val list = pe.nonCellList
+        publish()   // место стенки читается из мира физики: его массивы могли вырасти или появиться только что
         for (k in 0 until list.size) {
             val p = list.getInt(k)
             val mark = pe.terrainCell[p]
             if (mark > -2) continue
             val w = StaticTerrain.wallIndexOf(mark)
-            if (w < wallIds.size) pe.physicsIndex[p] = bridge.substanceParticle(wallIds.getInt(w))
+            if (w < wallIds.size) {
+                pe.physicsIndex[p] = bridge.substanceParticle(wallIds.getInt(w))
+                // Как у террейна (buildTerrain): перевод единиц туда и обратно сдвигает место на шаг float, и
+                // стенка на целой клетке (x = 2, 4, …) уходит в соседнюю — с началом координат в центре мира это
+                // до 10⁻⁵ клетки. Стенка не движется, и в updateGrid ей места нет: клетка сетки — здесь.
+                updateCell(p)
+            }
         }
     }
 
@@ -309,7 +318,7 @@ class WorldPhysics(
     }
 
     fun pullBone(p: Int, x: Float, y: Float) =
-        bridge.world.pullToward(particleEntity.physicsIndex[p], x * PHYSICS_PER_GAME, y * PHYSICS_PER_GAME)
+        bridge.world.pullToward(particleEntity.physicsIndex[p], bridge.toPhysicsX(x), bridge.toPhysicsY(y))
 
     /** Убивает ли глубокое проникновение частиц (галочка отладки, SimulationData.debugNoDeepKill). */
     var deepKillOn: Boolean
@@ -318,7 +327,7 @@ class WorldPhysics(
 
     /** Однопоточная перестановка частицы в точку игры (ParticleEntity.place). */
     fun place(i: Int, x: Float, y: Float) {
-        bridge.world.place(i, x * PHYSICS_PER_GAME, y * PHYSICS_PER_GAME)
+        bridge.world.place(i, bridge.toPhysicsX(x), bridge.toPhysicsY(y))
         bridge.world.wake(i)
     }
 
@@ -558,7 +567,7 @@ class WorldPhysics(
         val drag = if (pe.isCell[p] && cellEntity.cellType[pe.holderEntityIndex[p]].toInt() == suctionCupType) DEFAULT_VISCOSITY
         else pe.dragCoefficient[p]
         val scale = if (bridge.world.liveDegree(i) == 0) PhysicsBridge.dragScaleOf(drag)
-        else drag.toDouble() / DEFAULT_VISCOSITY.toDouble()
+        else drag / DEFAULT_VISCOSITY
         bridge.setDrag(i, scale)
     }
 
@@ -752,10 +761,14 @@ class WorldPhysics(
 
     // --- 5. сетка и номера частиц -------------------------------------------------------
 
-    /** Ссылки ParticleEntity на массивы мира физики: он заводит их заново при росте и уплотнении. */
+    /**
+     * Ссылки ParticleEntity на массивы мира физики (он заводит их заново при росте и уплотнении)
+     * и начало его координат.
+     */
     private fun publish() {
         val world = bridge.world
         val pe = particleEntity
+        pe.physicsOriginX = bridge.originX; pe.physicsOriginY = bridge.originY
         if (world.particleCount == 0) {
             // Пустой мир (до первой подсадки) своих массивов ещё не завёл.
             pe.physicsX = EMPTY; pe.physicsY = EMPTY; pe.physicsVx = EMPTY; pe.physicsVy = EMPTY
@@ -887,6 +900,6 @@ class WorldPhysics(
          */
         const val FAT_SOFTNESS = 5f
 
-        val EMPTY = DoubleArray(0)
+        val EMPTY = FloatArray(0)
     }
 }

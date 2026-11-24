@@ -12,12 +12,12 @@ internal fun BodyState.initialize(definition: BodyDefinition) {
     linkScale = scale.meanLinkLength
     cellDead = BooleanArray(n)
     cellUnborn = BooleanArray(n)
-    conGrowTarget = DoubleArray(0); conGrowAge = ByteArray(0); triGrowTarget = FloatArray(0); growEdgeN = 0; growTriN = 0
+    conGrowTarget = FloatArray(0); conGrowAge = ByteArray(0); triGrowTarget = FloatArray(0); growEdgeN = 0; growTriN = 0
 
-    px = DoubleArray(n); py = DoubleArray(n)
-    prevX = DoubleArray(n); prevY = DoubleArray(n)
-    vx = DoubleArray(n); vy = DoubleArray(n)
-    invMass = DoubleArray(n); matchWeight = DoubleArray(n)
+    px = FloatArray(n); py = FloatArray(n)
+    prevX = FloatArray(n); prevY = FloatArray(n)
+    vx = FloatArray(n); vy = FloatArray(n)
+    invMass = FloatArray(n); matchWeight = FloatArray(n)
     inContact = BooleanArray(n)
 
     boneOf = IntArray(n) { -1 }
@@ -34,9 +34,9 @@ internal fun BodyState.initialize(definition: BodyDefinition) {
 
     body.muscleClusters.forEachIndexed { m, ids -> for (i in ids) muscleOf[i] = m }
     growMuscles()
-    muscleActivation = DoubleArray(body.muscleClusters.size)
-    muscleScaleOf = DoubleArray(body.muscleClusters.size) { 1.0 }
-    muscleTarget = DoubleArray(body.muscleClusters.size)
+    muscleActivation = FloatArray(body.muscleClusters.size)
+    muscleScaleOf = FloatArray(body.muscleClusters.size) { 1.0f }
+    muscleTarget = FloatArray(body.muscleClusters.size)
 
     // Свои копии топологии: дальше они живут отдельно от выгрузки и меняются
     // при разрывах. См. объявления выше.
@@ -53,7 +53,7 @@ internal fun BodyState.initialize(definition: BodyDefinition) {
     // --- связи: внутрикостные не создаются, их держит проекция ---
 
     conA = IntArray(lnkCount); conB = IntArray(lnkCount)
-    conRest = DoubleArray(lnkCount); conMuscle = IntArray(lnkCount)
+    conRest = FloatArray(lnkCount); conMuscle = IntArray(lnkCount)
     conEdge = IntArray(lnkCount)
     conCount = fillConstraints()
 
@@ -61,14 +61,14 @@ internal fun BodyState.initialize(definition: BodyDefinition) {
     triInverted = BooleanArray(triCount)
     cellScale = FloatArray(n) { 1f }
     cellScaleTarget = FloatArray(n) { 1f }
-    dragScale = DoubleArray(n) { 1.0 }
+    dragScale = FloatArray(n) { 1.0f }
     conCellScale = FloatArray(conA.size) { 1f }; triCellScale = FloatArray(triA.size) { 1f }
     cellSoftness = FloatArray(n) { 1f }
     cellFiberX = FloatArray(n); cellFiberY = FloatArray(n) // волокна задаёт клиент (PhysicsWorld.setCellFiber)
     cellNoContact = BooleanArray(n)
     cellGroup = IntArray(n)
     cellGrip = FloatArray(n); gripsDirty = true
-    cellHomeCompliance = DoubleArray(n); cellHomeX = DoubleArray(n); cellHomeY = DoubleArray(n)
+    cellHomeCompliance = FloatArray(n); cellHomeX = FloatArray(n); cellHomeY = FloatArray(n)
     conSoftness = FloatArray(conA.size) { 1f }; triSoftness = FloatArray(triA.size) { 1f }
 
     buildBoundary()
@@ -87,14 +87,14 @@ internal fun BodyState.resetState() {
     // Ткань могла порваться — топология возвращается к целой вместе с позами.
     restoreTopology()
     for (i in 0 until n) {
-        px[i] = body.x[i].toDouble(); py[i] = body.y[i].toDouble()
-        vx[i] = 0.0; vy[i] = 0.0
+        px[i] = body.x[i].toFloat(); py[i] = body.y[i].toFloat()
+        vx[i] = 0.0f; vy[i] = 0.0f
         invMass[i] = restInvMass[i]; matchWeight[i] = restMatchWeight(i)
     }
-    trapTicks.fill(0); foldTicks.fill(0); impactSpeed.fill(0.0)
-    flowVX.fill(0.0); flowVY.fill(0.0)
-    muscleActivation.fill(0.0)
-    muscleTarget.fill(0.0)
+    trapTicks.fill(0); foldTicks.fill(0)
+    flowVX.fill(0.0f); flowVY.fill(0.0f)
+    muscleActivation.fill(0.0f)
+    muscleTarget.fill(0.0f)
     dragId = -1
     invertedPeak = 0
     boneCapHits = 0

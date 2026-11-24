@@ -89,9 +89,9 @@ fun crossingBlockers(x: FloatArray, y: FloatArray, linkA: IntArray, linkB: IntAr
 /** Сетка клеток и связей тела для [crossingBlockers]: только ускоряет поиск — что найдено, от её шага не зависит. */
 private class CrossingGrid(private val x: FloatArray, private val y: FloatArray, private val linkA: IntArray, private val linkB: IntArray) {
     private val n = x.size
-    private var minX = 0.0
-    private var minY = 0.0
-    private var h = 1.0
+    private var minX = 0.0f
+    private var minY = 0.0f
+    private var h = 1.0f
     private var cols = 1
     private var rows = 1
     private var pointStart = IntArray(0)
@@ -113,33 +113,33 @@ private class CrossingGrid(private val x: FloatArray, private val y: FloatArray,
 
     /** Рамка и шаг: по средней длине связи, у очень вытянутого тела крупнее — ячеек порядка клеток и связей. */
     private fun measure() {
-        var sum = 0.0
+        var sum = 0.0f
         for (k in linkA.indices) {
-            val dx = (x[linkA[k]] - x[linkB[k]]).toDouble(); val dy = (y[linkA[k]] - y[linkB[k]]).toDouble()
-            sum += Math.sqrt(dx * dx + dy * dy)
+            val dx = (x[linkA[k]] - x[linkB[k]]).toFloat(); val dy = (y[linkA[k]] - y[linkB[k]]).toFloat()
+            sum += kotlin.math.sqrt(dx * dx + dy * dy)
         }
-        minX = Double.MAX_VALUE; minY = Double.MAX_VALUE
-        var maxX = -Double.MAX_VALUE; var maxY = -Double.MAX_VALUE
+        minX = Float.MAX_VALUE; minY = Float.MAX_VALUE
+        var maxX = -Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
         for (i in 0 until n) {
-            val px = x[i].toDouble(); val py = y[i].toDouble()
+            val px = x[i].toFloat(); val py = y[i].toFloat()
             if (px < minX) minX = px
             if (px > maxX) maxX = px
             if (py < minY) minY = py
             if (py > maxY) maxY = py
         }
-        h = if (linkA.isEmpty()) 1.0 else Math.max(sum / linkA.size, 1e-9)
-        val limit = 4.0 * (n + linkA.size) + 64
+        h = if (linkA.isEmpty()) 1.0f else maxOf(sum / linkA.size, 1e-9f)
+        val limit = 4.0f * (n + linkA.size) + 64
         while (((maxX - minX) / h + 1) * ((maxY - minY) / h + 1) > limit) h *= 2
         cols = ((maxX - minX) / h).toInt() + 1
         rows = ((maxY - minY) / h).toInt() + 1
     }
 
-    private fun col(v: Double): Int {
+    private fun col(v: Float): Int {
         val c = ((v - minX) / h).toInt()
         return if (c < 0) 0 else if (c >= cols) cols - 1 else c
     }
 
-    private fun row(v: Double): Int {
+    private fun row(v: Float): Int {
         val r = ((v - minY) / h).toInt()
         return if (r < 0) 0 else if (r >= rows) rows - 1 else r
     }
@@ -147,11 +147,11 @@ private class CrossingGrid(private val x: FloatArray, private val y: FloatArray,
     private fun binPoints() {
         val cells = cols * rows
         pointStart = IntArray(cells + 1)
-        for (i in 0 until n) pointStart[row(y[i].toDouble()) * cols + col(x[i].toDouble()) + 1]++
+        for (i in 0 until n) pointStart[row(y[i].toFloat()) * cols + col(x[i].toFloat()) + 1]++
         for (g in 0 until cells) pointStart[g + 1] += pointStart[g]
         points = IntArray(n)
         val fill = pointStart.copyOf()
-        for (i in 0 until n) points[fill[row(y[i].toDouble()) * cols + col(x[i].toDouble())]++] = i
+        for (i in 0 until n) points[fill[row(y[i].toFloat()) * cols + col(x[i].toFloat())]++] = i
     }
 
     /** Связь — во все ячейки своей рамки: два прохода, счёт и запись. */
@@ -167,15 +167,15 @@ private class CrossingGrid(private val x: FloatArray, private val y: FloatArray,
 
     private fun countLink(k: Int) {
         val a = linkA[k]; val b = linkB[k]
-        val c0 = col(Math.min(x[a], x[b]).toDouble()); val c1 = col(Math.max(x[a], x[b]).toDouble())
-        val r0 = row(Math.min(y[a], y[b]).toDouble()); val r1 = row(Math.max(y[a], y[b]).toDouble())
+        val c0 = col(minOf(x[a], x[b]).toFloat()); val c1 = col(maxOf(x[a], x[b]).toFloat())
+        val r0 = row(minOf(y[a], y[b]).toFloat()); val r1 = row(maxOf(y[a], y[b]).toFloat())
         for (r in r0..r1) for (c in c0..c1) linkStart[r * cols + c + 1]++
     }
 
     private fun putLink(k: Int, fill: IntArray) {
         val a = linkA[k]; val b = linkB[k]
-        val c0 = col(Math.min(x[a], x[b]).toDouble()); val c1 = col(Math.max(x[a], x[b]).toDouble())
-        val r0 = row(Math.min(y[a], y[b]).toDouble()); val r1 = row(Math.max(y[a], y[b]).toDouble())
+        val c0 = col(minOf(x[a], x[b]).toFloat()); val c1 = col(maxOf(x[a], x[b]).toFloat())
+        val r0 = row(minOf(y[a], y[b]).toFloat()); val r1 = row(maxOf(y[a], y[b]).toFloat())
         for (r in r0..r1) for (c in c0..c1) links[fill[r * cols + c]++] = k
     }
 
@@ -183,13 +183,13 @@ private class CrossingGrid(private val x: FloatArray, private val y: FloatArray,
     fun blockers(q: Int, k: Int): IntArray {
         foundN = 0
         val a = linkA[k]; val b = linkB[k]
-        val ax = x[a].toDouble(); val ay = y[a].toDouble()
+        val ax = x[a].toFloat(); val ay = y[a].toFloat()
         val dx = x[b] - ax; val dy = y[b] - ay
         val len2 = dx * dx + dy * dy
-        if (len2 < 1e-24) return IntArray(0)
-        val pad = Math.sqrt(len2 / 16.0)
-        val c0 = col(Math.min(ax, ax + dx) - pad); val c1 = col(Math.max(ax, ax + dx) + pad)
-        val r0 = row(Math.min(ay, ay + dy) - pad); val r1 = row(Math.max(ay, ay + dy) + pad)
+        if (len2 < 1e-24f) return IntArray(0)
+        val pad = kotlin.math.sqrt(len2 / 16.0f)
+        val c0 = col(minOf(ax, ax + dx) - pad); val c1 = col(maxOf(ax, ax + dx) + pad)
+        val r0 = row(minOf(ay, ay + dy) - pad); val r1 = row(maxOf(ay, ay + dy) + pad)
         for (r in r0..r1) for (c in c0..c1) {
             scanPoints(r * cols + c, q, a, b, ax, ay, dx, dy, len2)
             scanLinks(r * cols + c, q, k, a, b)
@@ -198,15 +198,15 @@ private class CrossingGrid(private val x: FloatArray, private val y: FloatArray,
     }
 
     /** Клетки ячейки [g], лежащие на отрезке: проекция между 10% и 90% длины, до отрезка — меньше четверти длины. */
-    private fun scanPoints(g: Int, q: Int, a: Int, b: Int, ax: Double, ay: Double, dx: Double, dy: Double, len2: Double) {
-        val near2 = len2 / 16.0
+    private fun scanPoints(g: Int, q: Int, a: Int, b: Int, ax: Float, ay: Float, dx: Float, dy: Float, len2: Float) {
+        val near2 = len2 / 16.0f
         for (s in pointStart[g] until pointStart[g + 1]) {
             val o = points[s]
             if (o == a || o == b || seenCell[o] == q) continue
             seenCell[o] = q
             val ox = x[o] - ax; val oy = y[o] - ay
             val u = (ox * dx + oy * dy) / len2
-            if (u < 0.1 || u > 0.9) continue
+            if (u < 0.1f || u > 0.9f) continue
             val px = ox - u * dx; val py = oy - u * dy
             if (px * px + py * py < near2) add(o, -1)
         }
@@ -220,18 +220,18 @@ private class CrossingGrid(private val x: FloatArray, private val y: FloatArray,
             seenLink[j] = q
             val u = linkA[j]; val v = linkB[j]
             if (u == a || u == b || v == a || v == b) continue
-            if (properCross(a, b, u, v)) add(Math.min(u, v), Math.max(u, v))
+            if (properCross(a, b, u, v)) add(minOf(u, v), maxOf(u, v))
         }
     }
 
-    private fun orient(p: Int, q: Int, r: Int): Double =
-        (x[q] - x[p]).toDouble() * (y[r] - y[p]).toDouble() - (y[q] - y[p]).toDouble() * (x[r] - x[p]).toDouble()
+    private fun orient(p: Int, q: Int, r: Int): Float =
+        (x[q] - x[p]).toFloat() * (y[r] - y[p]).toFloat() - (y[q] - y[p]).toFloat() * (x[r] - x[p]).toFloat()
 
     private fun properCross(a: Int, b: Int, u: Int, v: Int): Boolean {
         val o1 = orient(a, b, u); val o2 = orient(a, b, v)
-        if (!((o1 > 0.0 && o2 < 0.0) || (o1 < 0.0 && o2 > 0.0))) return false
+        if (!((o1 > 0.0f && o2 < 0.0f) || (o1 < 0.0f && o2 > 0.0f))) return false
         val o3 = orient(u, v, a); val o4 = orient(u, v, b)
-        return (o3 > 0.0 && o4 < 0.0) || (o3 < 0.0 && o4 > 0.0)
+        return (o3 > 0.0f && o4 < 0.0f) || (o3 < 0.0f && o4 > 0.0f)
     }
 
     private fun add(c: Int, p: Int) {

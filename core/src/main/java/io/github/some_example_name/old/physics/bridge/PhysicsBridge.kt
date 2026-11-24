@@ -40,6 +40,30 @@ class PhysicsBridge(
     /** Организм игры → номер тела мира, -1 — тела нет. */
     private var bodyOfOrgan = IntArray(64) { -1 }
 
+    // --- начало координат ----------------------------------------------------------------
+
+    /*
+     * НАЧАЛО КООРДИНАТ ФИЗИКИ — ЦЕНТР МИРА (решение 21.11, физика во float). Шаг float растёт
+     * вдвое с каждым удвоением координаты, и вдали от нуля вращающееся тело теряет момент
+     * импульса (docs/physics/reference.md, находка 35). Игра считает мир от 0 до W, физика — от
+     * −W/2 до W/2: самая дальняя точка вдвое ближе к нулю. Мир 1024 с центром в нуле по шагу
+     * float не хуже угла мира 384 с началом в углу: обе координаты физики (24.6 и 18.4) лежат
+     * между 16 и 32, где шаг один и тот же.
+     *
+     * Начало ставит [setBounds], пока мир физики пуст, и дальше оно не двигается: сдвиг начала
+     * пришлось бы переносить на все частицы. Оно лежит в снимке ([write]) и хэше (WorldPhysics.hash).
+     */
+
+    /** Точка игры, где у мира физики ноль: центр мира, единицы игры. */
+    var originX = 0f
+        private set
+    var originY = 0f
+        private set
+
+    /** Координата игры → координата мира физики. */
+    fun toPhysicsX(x: Float): Float = (x - originX) * PHYSICS_PER_GAME
+    fun toPhysicsY(y: Float): Float = (y - originY) * PHYSICS_PER_GAME
+
     // --- организмы ---------------------------------------------------------------------
 
     fun hasBody(organ: Int): Boolean = organ in bodyOfOrgan.indices && bodyOfOrgan[organ] != -1
@@ -52,7 +76,7 @@ class PhysicsBridge(
      */
     fun spawnOrganism(organ: Int, layout: BakedLayout, zygoteSlot: Int, x: Float, y: Float) {
         require(!hasBody(organ)) { "у организма $organ уже есть тело" }
-        val definition = bodyDefinitionOf(layout, zygoteSlot, x, y)
+        val definition = bodyDefinitionOf(layout, zygoteSlot, x - originX, y - originY)
         val born = BooleanArray(definition.count)
         born[zygoteSlot] = true
         registerBody(organ, layout, definition.count, world.addBody(definition, born, boneOn = BooleanArray(definition.count)))
@@ -61,7 +85,7 @@ class PhysicsBridge(
     /** Готовое тело макета: все частицы и кости активны сразу в позе покоя. */
     fun spawnPlacedBody(organ: Int, layout: BakedLayout, firstX: Float, firstY: Float) {
         require(!hasBody(organ)) { "у организма $organ уже есть тело" }
-        val definition = bodyDefinitionOf(layout, 0, firstX, firstY)
+        val definition = bodyDefinitionOf(layout, 0, firstX - originX, firstY - originY)
         registerBody(organ, layout, definition.count, world.addBody(definition))
     }
 
@@ -118,9 +142,9 @@ class PhysicsBridge(
      * множителем сопротивления среды [drag] (1 — среда мира, см. [dragScaleOf]). Возвращает
      * номер свободной частицы.
      */
-    fun addSubstance(x: Float, y: Float, radius: Float, vx: Float = 0f, vy: Float = 0f, drag: Double = 1.0): Int =
+    fun addSubstance(x: Float, y: Float, radius: Float, vx: Float = 0f, vy: Float = 0f, drag: Float = 1f): Int =
         world.addFree(
-            x * PHYSICS_PER_GAME, y * PHYSICS_PER_GAME, radius * PHYSICS_PER_GAME,
+            toPhysicsX(x), toPhysicsY(y), radius * PHYSICS_PER_GAME,
             vx * PHYSICS_VELOCITY_PER_GAME, vy * PHYSICS_VELOCITY_PER_GAME,
             drag = drag
         )
@@ -129,7 +153,7 @@ class PhysicsBridge(
 
     /** Неподвижная бессмертная частица стенки в точке ([x], [y]) игры радиусом [radius]; номер — как у субстанции. */
     fun addWall(x: Float, y: Float, radius: Float): Int =
-        world.addFixed(x * PHYSICS_PER_GAME, y * PHYSICS_PER_GAME, radius * PHYSICS_PER_GAME)
+        world.addFixed(toPhysicsX(x), toPhysicsY(y), radius * PHYSICS_PER_GAME)
 
     fun substanceParticle(id: Int): Int = world.freeParticle(id)
 
@@ -148,19 +172,24 @@ class PhysicsBridge(
     }
 
     /** Множитель сопротивления среды частицы: 1 — среда мира. */
-    fun setDrag(particle: Int, scale: Double) = world.setDrag(particle, scale)
+    fun setDrag(particle: Int, scale: Float) = world.setDrag(particle, scale)
 
-    /** Рамка мира — сетка игры [width] × [height] клеток. */
-    fun setBounds(width: Float, height: Float) =
-        world.setBounds(0.0, 0.0, width * PHYSICS_PER_GAME, height * PHYSICS_PER_GAME)
+    /**
+     * Рамка мира — сетка игры [width] × [height] клеток. Пока мир физики пуст, ставит его начало
+     * координат в центр рамки ([originX]); у мира с частицами начало остаётся прежним.
+     */
+    fun setBounds(width: Float, height: Float) {
+        if (world.particleCount == 0) { originX = width * 0.5f; originY = height * 0.5f }
+        world.setBounds(toPhysicsX(0f), toPhysicsY(0f), toPhysicsX(width), toPhysicsY(height))
+    }
 
     /** Захват мышью: частица тянется к точке игры, пока не отпущена. */
     fun grab(particle: Int, x: Float, y: Float) {
-        world.dragTo(x * PHYSICS_PER_GAME, y * PHYSICS_PER_GAME)
+        world.dragTo(toPhysicsX(x), toPhysicsY(y))
         world.grab(particle)
     }
 
-    fun dragTo(x: Float, y: Float) = world.dragTo(x * PHYSICS_PER_GAME, y * PHYSICS_PER_GAME)
+    fun dragTo(x: Float, y: Float) = world.dragTo(toPhysicsX(x), toPhysicsY(y))
 
     fun release() = world.release()
 
@@ -170,33 +199,35 @@ class PhysicsBridge(
     // --- снимок (сохранение мира, этап B3) ----------------------------------------------
 
     /**
-     * Снимок мира и соответствия «организм → тело». Мир при записи уплотняется
+     * Снимок мира, соответствия «организм → тело» и начала координат. Мир при записи уплотняется
      * (PhysicsWorld.write): номера частиц сдвигаются, номера тел и свободных частиц — нет.
      */
     fun write(out: java.io.DataOutput) {
         world.write(out)
         out.writeInt(bodyOfOrgan.size)
         for (body in bodyOfOrgan) out.writeInt(body)
+        out.writeFloat(originX); out.writeFloat(originY)
     }
 
     /** Прочитать снимок [write] в этот мост — новый, с тем же материалом. */
     fun read(input: java.io.DataInput) {
         world.read(input)
         bodyOfOrgan = IntArray(input.readInt()) { input.readInt() }
+        originX = input.readFloat(); originY = input.readFloat()
     }
 
     // --- чтение в единицах игры --------------------------------------------------------
 
-    fun x(particle: Int): Float = (world.x[particle] * GAME_PER_PHYSICS).toFloat()
-    fun y(particle: Int): Float = (world.y[particle] * GAME_PER_PHYSICS).toFloat()
-    fun vx(particle: Int): Float = (world.vx[particle] / PHYSICS_VELOCITY_PER_GAME).toFloat()
-    fun vy(particle: Int): Float = (world.vy[particle] / PHYSICS_VELOCITY_PER_GAME).toFloat()
+    fun x(particle: Int): Float = world.x[particle] * GAME_PER_PHYSICS + originX
+    fun y(particle: Int): Float = world.y[particle] * GAME_PER_PHYSICS + originY
+    fun vx(particle: Int): Float = world.vx[particle] / PHYSICS_VELOCITY_PER_GAME
+    fun vy(particle: Int): Float = world.vy[particle] / PHYSICS_VELOCITY_PER_GAME
 
     companion object {
         /**
          * Сопротивление игры (доля скорости за тик, клетка — 0.003) → множитель изотропного
          * сопротивления библиотеки (1 — среда мира: MEDIUM_DRAG · DT = 0.00307 за шаг).
          */
-        fun dragScaleOf(dragCoefficient: Float): Double = dragCoefficient / (MEDIUM_DRAG * DT)
+        fun dragScaleOf(dragCoefficient: Float): Float = dragCoefficient / (MEDIUM_DRAG * DT)
     }
 }

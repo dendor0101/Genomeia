@@ -41,7 +41,7 @@ fun main(args: Array<String>) {
         for (i in 0 until grid.count) w.setCellScale(i, command)
         repeat(150) { w.step() }
         val cx = grid.x.average(); val cy = grid.y.average()
-        for (i in 0 until grid.count) w.setVelocity(i, grid.x[i] - cx, grid.y[i] - cy)
+        for (i in 0 until grid.count) w.setVelocity(i, (grid.x[i] - cx).toFloat(), (grid.y[i] - cy).toFloat())
         w.step()
         return meanLinkRatio(w)
     }
@@ -73,15 +73,15 @@ fun main(args: Array<String>) {
         val w = world(config, scale, null); w.addBody(grid)
         val r = 0.5 * w.meanLinkLength
         val y0 = (0 until w.particleCount).minOf { w.y[it] } - 20 * r
-        val heavy = w.freeParticle(w.addFree(0.0, y0, r, 0.6, 0.0, drag = 0.0))
-        val light = w.freeParticle(w.addFree(10 * r, y0, r, -0.6, 0.0, drag = 0.0))
-        w.setMass(heavy, 4.0 / w.state.restInvMass[light])
+        val heavy = w.freeParticle(w.addFree(0.0f, y0.toFloat(), r.toFloat(), 0.6f, 0.0f, drag = 0.0f))
+        val light = w.freeParticle(w.addFree((10 * r).toFloat(), y0.toFloat(), r.toFloat(), -0.6f, 0.0f, drag = 0.0f))
+        w.setMass(heavy, (4.0 / w.state.restInvMass[light]).toFloat())
         var ratio = Double.NaN
         repeat(80) {
             val hv = w.vx[heavy]; val lv = w.vx[light]
             w.step()
             val dh = w.vx[heavy] - hv; val dl = w.vx[light] - lv
-            if (ratio.isNaN() && dl > 0.05) ratio = -dl / dh
+            if (ratio.isNaN() && dl > 0.05) ratio = (-dl / dh).toDouble()
         }
         report("масса", Math.abs(ratio - 4.0) < 0.2, "в тик удара Δv лёгкой / Δv тяжёлой = %.3f (масса 4)".format(ratio))
     }
@@ -91,11 +91,11 @@ fun main(args: Array<String>) {
         val w = world(config, scale, null); w.addBody(grid)
         val r = 0.5 * w.meanLinkLength
         val y0 = (0 until w.particleCount).minOf { w.y[it] } - 40 * r
-        val ids = doubleArrayOf(0.0, 1.0, 2.0).mapIndexed { k, d -> w.freeParticle(w.addFree(k * 30 * r, y0, r, 0.0, 0.3, drag = d)) }
+        val ids = doubleArrayOf(0.0, 1.0, 2.0).mapIndexed { k, d -> w.freeParticle(w.addFree((k * 30 * r).toFloat(), y0.toFloat(), r.toFloat(), 0.0f, 0.3f, drag = d.toFloat())) }
         repeat(30) { w.step() }
         // Без изотропной среды частицу тормозит только запас среды; множитель d добавляет
         // (1 − MEDIUM_DRAG·DT·d) за тик.
-        val v = ids.map { Math.hypot(w.vx[it], w.vy[it]) }
+        val v = ids.map { Math.hypot(w.vx[it].toDouble(), w.vy[it].toDouble()) }
         val keep = 1.0 - io.github.some_example_name.physics.MEDIUM_DRAG * io.github.some_example_name.physics.DT
         val e1 = Math.pow(keep, 30.0); val e2 = Math.pow(1.0 - 2 * (1.0 - keep), 30.0)
         report("сопротивление", Math.abs(v[1] / v[0] / e1 - 1) < 2e-3 && Math.abs(v[2] / v[0] / e2 - 1) < 2e-3,
@@ -108,10 +108,10 @@ fun main(args: Array<String>) {
         val r = 0.5 * w.meanLinkLength
         val cx = (0 until w.particleCount).map { w.x[it] }.average(); val cy = (0 until w.particleCount).map { w.y[it] }.average()
         val half = 3.0
-        w.setBounds(cx - half, cy - half, cx + half, cy + half)
+        w.setBounds((cx - half).toFloat(), (cy - half).toFloat(), (cx + half).toFloat(), (cy + half).toFloat())
         val shots = (0 until 16).map { k ->
             val a = 2 * Math.PI * k / 16
-            w.freeParticle(w.addFree(cx + 2.0 * Math.cos(a), cy + 2.0 * Math.sin(a), r, 3 * Math.cos(a), 3 * Math.sin(a), drag = 0.0))
+            w.freeParticle(w.addFree((cx + 2.0 * Math.cos(a)).toFloat(), (cy + 2.0 * Math.sin(a)).toFloat(), r.toFloat(), (3 * Math.cos(a)).toFloat(), (3 * Math.sin(a)).toFloat(), drag = 0.0f))
         }
         var worst = 0.0
         repeat(120) {
@@ -135,7 +135,7 @@ fun main(args: Array<String>) {
         val b = w.state.baked
         var liveEdges = 0
         for (s in b.vertStart[v] until b.vertStart[v + 1]) if (!b.edgeDead[b.vertEdge[s]]) liveEdges++
-        report("гибель клетки", w.state.cellDead[v] && liveEdges == 0 && w.state.invMass[v] == 0.0,
+        report("гибель клетки", w.state.cellDead[v] && liveEdges == 0 && w.state.invMass[v] == 0.0f,
             "клетка мертва ${w.state.cellDead[v]}, живых рёбер $liveEdges")
     }
     // 6. Удар по спящему. Спящий организм заморожен (обратная масса 0); налетевшая частица
@@ -150,15 +150,15 @@ fun main(args: Array<String>) {
             val y0 = (0 until w.particleCount).minOf { w.y[it] } - 30 * r
             val x0 = (0 until w.particleCount).map { w.x[it] }.average()
             // Цель — свободная частица под телом или само тело; пуля — снизу или слева.
-            val still = if (target == "частицу") w.freeParticle(w.addFree(x0, y0, r, drag = 0.0)) else -1
+            val still = if (target == "частицу") w.freeParticle(w.addFree(x0.toFloat(), y0.toFloat(), r.toFloat(), drag = 0.0f)) else -1
             repeat(120) { w.step() }
             val asleep = if (still >= 0) w.state.sleep.isAsleep(w.state.organismOf[still]) else w.state.sleep.isAsleep(w.state.organismOf[0])
             if (sleep && !asleep) { report("удар по спящему: $target", false, "цель не уснула за 120 тиков"); continue }
-            val bullet = if (still >= 0) w.freeParticle(w.addFree(x0 - 12 * r, y0, r, 0.6, 0.0, drag = 0.0))
-                else w.freeParticle(w.addFree(x0, y0, r, 0.0, 0.6, drag = 0.0))
+            val bullet = if (still >= 0) w.freeParticle(w.addFree((x0 - 12 * r).toFloat(), y0.toFloat(), r.toFloat(), 0.6f, 0.0f, drag = 0.0f))
+                else w.freeParticle(w.addFree(x0.toFloat(), y0.toFloat(), r.toFloat(), 0.0f, 0.6f, drag = 0.0f))
             repeat(40) { w.step() }
-            got[k] = if (still >= 0) Math.hypot(w.vx[still], w.vy[still])
-                else (0 until grid.count).map { Math.hypot(w.vx[it], w.vy[it]) }.average() * grid.count
+            got[k] = if (still >= 0) Math.hypot(w.vx[still].toDouble(), w.vy[still].toDouble())
+                else (0 until grid.count).map { Math.hypot(w.vx[it].toDouble(), w.vy[it].toDouble()) }.average() * grid.count
             if (bullet < 0) got[k] = Double.NaN
         }
         val ratio = got[1] / got[0]
@@ -177,7 +177,7 @@ private fun meanLinkRatio(w: PhysicsWorld): Double {
     for (c in 0 until st.conCount) {
         if (st.conDead[c]) continue
         val a = st.conA[c]; val b = st.conB[c]
-        sum += Math.hypot(st.px[a] - st.px[b], st.py[a] - st.py[b]) / st.conRest[c]; k++
+        sum += Math.hypot((st.px[a] - st.px[b]).toDouble(), (st.py[a] - st.py[b]).toDouble()) / st.conRest[c]; k++
     }
     return sum / k
 }
@@ -185,6 +185,6 @@ private fun meanLinkRatio(w: PhysicsWorld): Double {
 private fun hashOf(w: PhysicsWorld): Long {
     var h = 1125899906842597L
     fun mix(v: Long) { h = (h xor v) * -7046029254386353131L }
-    for (i in 0 until w.particleCount) { mix(w.x[i].toRawBits()); mix(w.y[i].toRawBits()); mix(w.vx[i].toRawBits()); mix(w.vy[i].toRawBits()) }
+    for (i in 0 until w.particleCount) { mix(w.x[i].toRawBits().toLong()); mix(w.y[i].toRawBits().toLong()); mix(w.vx[i].toRawBits().toLong()); mix(w.vy[i].toRawBits().toLong()) }
     return h
 }

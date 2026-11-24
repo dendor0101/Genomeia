@@ -57,19 +57,19 @@ fun main(args: Array<String>) {
     fun run(label: String, contacts: Boolean, drag: Boolean, stages: Boolean) {
         P.resetState()
         P.applyLabDamage()
-        for (i in 0 until P.n) { P.vx[i] = 0.0; P.vy[i] = 0.0; P.prevX[i] = P.px[i]; P.prevY[i] = P.py[i] }
+        for (i in 0 until P.n) { P.vx[i] = 0.0f; P.vy[i] = 0.0f; P.prevX[i] = P.px[i]; P.prevY[i] = P.py[i] }
         P.resetFlow(); P.resetCounters()
         P.setContacts(contacts); P.setDragOff(!drag)
         if (stages) {
             P.setStageProbe(true)
-            java.util.Arrays.fill(P.stageL(), 0.0)
-            java.util.Arrays.fill(P.stagePx(), 0.0)
-            java.util.Arrays.fill(P.stagePy(), 0.0)
+            java.util.Arrays.fill(P.stageL(), 0f)
+            java.util.Arrays.fill(P.stagePx(), 0f)
+            java.util.Arrays.fill(P.stagePy(), 0f)
         }
         val a0 = momentum()
         val marks = intArrayOf(50, 150, 300, 600, 1200)
         val trail = StringBuilder()
-        P.contactsObj()?.let { it.dbgCcdTotal = 0; it.dbgCcdWorst = 0.0 }
+        P.contactsObj()?.let { it.dbgCcdTotal = 0; it.dbgCcdWorst = 0.0f }
         var firstCcd = -1
         for (fr in 1..1200) {
             P.frame(dt, sub, contract = false)

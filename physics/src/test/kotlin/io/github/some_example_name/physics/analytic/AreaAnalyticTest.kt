@@ -23,7 +23,7 @@ class AreaAnalyticTest {
     private fun triangle(): Pair<PhysicsWorld, IntArray> {
         val w = gameWorld().vacuum()
         val l = T_LINK.toFloat()
-        val h = (T_LINK * sqrt(3.0) / 2).toFloat()
+        val h = (T_LINK * sqrt(3.0f) / 2).toFloat()
         val x = floatArrayOf(1f, 1f + l, 1f + l / 2); val y = floatArrayOf(1f, 1f, 1f + h)
         val area2 = (x[1] - x[0]) * (y[2] - y[0]) - (y[1] - y[0]) * (x[2] - x[0])
         val def = BodyDefinition(x, y, FloatArray(3) { T_RADIUS.toFloat() }, BooleanArray(3), BooleanArray(3),
@@ -33,17 +33,22 @@ class AreaAnalyticTest {
         return w to intArrayOf(first, first + 1, first + 2)
     }
 
-    private fun area2(x: DoubleArray, y: DoubleArray): Double = (x[1] - x[0]) * (y[2] - y[0]) - (y[1] - y[0]) * (x[2] - x[0])
+    private fun area2(x: FloatArray, y: FloatArray): Float = (x[1] - x[0]) * (y[2] - y[0]) - (y[1] - y[0]) * (x[2] - x[0])
 
-    private fun read(w: PhysicsWorld, ids: IntArray): Pair<DoubleArray, DoubleArray> =
-        DoubleArray(3) { w.state.px[ids[it]] } to DoubleArray(3) { w.state.py[ids[it]] }
+    private fun read(w: PhysicsWorld, ids: IntArray): Pair<FloatArray, FloatArray> =
+        FloatArray(3) { w.state.px[ids[it]] } to FloatArray(3) { w.state.py[ids[it]] }
 
-    /** Градиент удвоенной площади по координатам вершины [v] — центральной разностью. */
-    private fun gradient(x: DoubleArray, y: DoubleArray, v: Int): DoubleArray {
+    /**
+     * Градиент удвоенной площади по координатам вершины [v] — центральной разностью, в double: шаг 1e-7
+     * около x = 1 во float меньше шага самого float (1.2e-7), и разность была бы шумом.
+     */
+    private fun gradient(x: FloatArray, y: FloatArray, v: Int): FloatArray {
         val e = 1e-7
-        val xp = x.copyOf(); val xm = x.copyOf(); xp[v] += e; xm[v] -= e
-        val yp = y.copyOf(); val ym = y.copyOf(); yp[v] += e; ym[v] -= e
-        return doubleArrayOf((area2(xp, y) - area2(xm, y)) / (2 * e), (area2(x, yp) - area2(x, ym)) / (2 * e))
+        fun a2(x: DoubleArray, y: DoubleArray) = (x[1] - x[0]) * (y[2] - y[0]) - (y[1] - y[0]) * (x[2] - x[0])
+        val xd = DoubleArray(3) { x[it].toDouble() }; val yd = DoubleArray(3) { y[it].toDouble() }
+        val xp = xd.copyOf(); val xm = xd.copyOf(); xp[v] += e; xm[v] -= e
+        val yp = yd.copyOf(); val ym = yd.copyOf(); yp[v] += e; ym[v] -= e
+        return floatArrayOf(((a2(xp, yd) - a2(xm, yd)) / (2 * e)).toFloat(), ((a2(xd, yp) - a2(xd, ym)) / (2 * e)).toFloat())
     }
 
     @Test fun `треугольник в позе покоя площадь не трогает`() = bothKernels { kernel ->
@@ -52,57 +57,58 @@ class AreaAnalyticTest {
         kernel.run(w.state, DT / SUBSTEPS)
         val (x1, y1) = read(w, ids)
         // Площадь покоя хранится во float, координаты — в double: остаток порядка 1e-12 единицы мира.
-        for (k in 0 until 3) { assertEquals(x0[k], x1[k], 1e-9); assertEquals(y0[k], y1[k], 1e-9) }
+        for (k in 0 until 3) { assertEquals(x0[k], x1[k], F_VEL); assertEquals(y0[k], y1[k], F_VEL) }
     }
 
     @Test fun `поправка каждой вершины идёт вдоль градиента площади - сверка с конечными разностями`() = bothKernels { kernel ->
         val (w, ids) = triangle()
         val st = w.state
         // Раздули треугольник: вершину 2 увели вверх и вбок.
-        st.px[ids[2]] += 0.02 * T_LINK; st.py[ids[2]] += 0.04 * T_LINK
+        st.px[ids[2]] += 0.02f * T_LINK; st.py[ids[2]] += 0.04f * T_LINK
         val (x0, y0) = read(w, ids)
         kernel.run(st, DT / SUBSTEPS)
         val (x1, y1) = read(w, ids)
-        var lambda = Double.NaN
+        var lambda = Float.NaN
         for (v in 0 until 3) {
             val g = gradient(x0, y0, v)
             val dx = x1[v] - x0[v]; val dy = y1[v] - y0[v]
             // Вдоль градиента: векторное произведение поправки и градиента — ноль.
-            assertEquals("вершина $v: поправка не вдоль градиента", 0.0, (dx * g[1] - dy * g[0]) / (hypot(dx, dy) * hypot(g[0], g[1])), 1e-6)
+            // Поправка — разность позиций около 1: во float её направление известно с точностью F_POS / |поправки|.
+            assertEquals("вершина $v: поправка не вдоль градиента", 0.0f, (dx * g[1] - dy * g[0]) / (hypot(dx, dy) * hypot(g[0], g[1])), F_POS / hypot(dx, dy))
             // Один множитель на все вершины (обратные массы равны): Δp = λ·w·g.
             val l = (dx * g[0] + dy * g[1]) / (g[0] * g[0] + g[1] * g[1]) / st.invMass[ids[v]]
-            if (lambda.isNaN()) lambda = l else assertEquals("вершина $v: множитель другой", lambda, l, 1e-6 * abs(lambda))
+            if (lambda.isNaN()) lambda = l else assertEquals("вершина $v: множитель другой", lambda, l, F_POS / hypot(dx, dy) * abs(lambda))
         }
-        assertTrue("раздутый треугольник сжимается: множитель отрицательный ($lambda)", lambda < 0.0)
+        assertTrue("раздутый треугольник сжимается: множитель отрицательный ($lambda)", lambda < 0.0f)
     }
 
     @Test fun `за проход убирается доля отклонения площади по формуле XPBD`() = bothKernels { kernel ->
         val (w, ids) = triangle()
         val st = w.state
         val h = DT / SUBSTEPS
-        st.px[ids[2]] += 0.01 * T_LINK; st.py[ids[2]] += 0.01 * T_LINK
+        st.px[ids[2]] += 0.01f * T_LINK; st.py[ids[2]] += 0.01f * T_LINK
         val (x0, y0) = read(w, ids)
-        val rest = st.triRestArea2[0].toDouble()
+        val rest = st.triRestArea2[0].toFloat()
         val c0 = area2(x0, y0) - rest
-        var denom = 0.0
+        var denom = 0.0f
         for (v in 0 until 3) { val g = gradient(x0, y0, v); denom += st.invMass[ids[v]] * (g[0] * g[0] + g[1] * g[1]) }
         val alpha = AREA_COMPLIANCE / (h * h)
         kernel.run(st, h)
         val (x1, y1) = read(w, ids)
         val c1 = area2(x1, y1) - rest
         // Линейная оценка: C₁ ≈ C₀ · α̃ / (Σ w|g|² + α̃). Площадь квадратична по координатам — допуск на вторую степень.
-        assertEquals(c0 * alpha / (denom + alpha), c1, 0.02 * abs(c0))
+        assertEquals(c0 * alpha / (denom + alpha), c1, 0.02f * abs(c0))
         assertTrue("отклонение площади уменьшилось", abs(c1) < abs(c0))
     }
 
     @Test fun `закреплённая вершина не двигается, остальные берут поправку на себя`() = bothKernels { kernel ->
         val (w, ids) = triangle()
         val st = w.state
-        st.invMass[ids[0]] = 0.0
-        st.py[ids[2]] += 0.05 * T_LINK
+        st.invMass[ids[0]] = 0.0f
+        st.py[ids[2]] += 0.05f * T_LINK
         val (x0, y0) = read(w, ids)
         kernel.run(st, DT / SUBSTEPS)
-        assertEquals(x0[0], st.px[ids[0]], 0.0); assertEquals(y0[0], st.py[ids[0]], 0.0)
+        assertEquals(x0[0], st.px[ids[0]], 0.0f); assertEquals(y0[0], st.py[ids[0]], 0.0f)
         assertTrue(st.py[ids[2]] < y0[2])
     }
 
@@ -110,35 +116,35 @@ class AreaAnalyticTest {
         val (w, ids) = triangle()
         val st = w.state
         // Вершину 2 перенесли через основание: площадь стала отрицательной.
-        st.py[ids[2]] -= 1.2 * T_LINK * sqrt(3.0) / 2
+        st.py[ids[2]] -= 1.2f * T_LINK * sqrt(3.0f) / 2
         val (x0, y0) = read(w, ids)
-        assertTrue(area2(x0, y0) < 0.0)
+        assertTrue(area2(x0, y0) < 0.0f)
         repeat(40) { kernel.run(st, DT / SUBSTEPS) }
         val (x1, y1) = read(w, ids)
-        assertTrue("после сорока проходов площадь снова положительна: ${area2(x1, y1)}", area2(x1, y1) > 0.0)
+        assertTrue("после сорока проходов площадь снова положительна: ${area2(x1, y1)}", area2(x1, y1) > 0.0f)
     }
 
     @Test fun `длина поправки площади за проход не больше потолка`() = bothKernels { kernel ->
         val (w, ids) = triangle()
         val st = w.state
-        st.px[ids[2]] += 6.0 * T_LINK; st.py[ids[2]] += 9.0 * T_LINK
+        st.px[ids[2]] += 6.0f * T_LINK; st.py[ids[2]] += 9.0f * T_LINK
         val (x0, y0) = read(w, ids)
         kernel.run(st, DT / SUBSTEPS)
         val (x1, y1) = read(w, ids)
         // Потолок — на длину всей поправки в метрике обратных масс: √(Σ |Δp|² / w).
-        var sum = 0.0
+        var sum = 0.0f
         for (v in 0 until 3) sum += ((x1[v] - x0[v]) * (x1[v] - x0[v]) + (y1[v] - y0[v]) * (y1[v] - y0[v])) / st.invMass[ids[v]]
-        assertEquals(AREA_MAX_STEP * T_LINK, sqrt(sum), 1e-6 * T_LINK)
+        assertEquals(AREA_MAX_STEP * T_LINK, sqrt(sum), F_POS)
     }
 
     @Test fun `погибший треугольник площадь не держит`() = bothKernels { kernel ->
         val (w, ids) = triangle()
         val st = w.state
         w.kill(ids[0])
-        st.py[ids[2]] += 0.05 * T_LINK
+        st.py[ids[2]] += 0.05f * T_LINK
         val (x0, y0) = read(w, ids)
         kernel.run(st, DT / SUBSTEPS)
         val (x1, y1) = read(w, ids)
-        for (k in 0 until 3) { assertEquals(x0[k], x1[k], 0.0); assertEquals(y0[k], y1[k], 0.0) }
+        for (k in 0 until 3) { assertEquals(x0[k], x1[k], 0.0f); assertEquals(y0[k], y1[k], 0.0f) }
     }
 }

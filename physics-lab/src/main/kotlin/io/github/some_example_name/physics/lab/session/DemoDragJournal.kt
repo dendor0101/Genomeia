@@ -46,7 +46,7 @@ internal fun DemoSession.recordMuscles() { with(state) {
     val log = dragLog ?: return
     val sb = StringBuilder()
     for (m in muscleTarget.indices) {
-        if (muscleTarget[m] == 0.0) continue
+        if (muscleTarget[m] == 0.0f) continue
         if (sb.isNotEmpty()) sb.append(',')
         sb.append(m).append(':').append(muscleTarget[m])
     }
@@ -63,7 +63,7 @@ internal fun DemoSession.recordDrag() { with(state) {
         if (id < 0) log.append("U ").append(logTick).append('\n')
         else log.append("D ").append(logTick).append(' ').append(id)
             .append(' ').append(mouseX).append(' ').append(mouseY).append('\n')
-        logLastId = id; logLastX = mouseX; logLastY = mouseY
+        logLastId = id; logLastX = mouseX.toDouble(); logLastY = mouseY.toDouble()
         return
     }
     if (id < 0) return
@@ -73,6 +73,6 @@ internal fun DemoSession.recordDrag() { with(state) {
     if (abs(mouseX - logLastX) > eps || abs(mouseY - logLastY) > eps) {
         log.append("D ").append(logTick).append(' ').append(id)
             .append(' ').append(mouseX).append(' ').append(mouseY).append('\n')
-        logLastX = mouseX; logLastY = mouseY
+        logLastX = mouseX.toDouble(); logLastY = mouseY.toDouble()
     }
 } }

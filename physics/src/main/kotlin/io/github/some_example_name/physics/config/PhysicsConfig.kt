@@ -18,12 +18,12 @@ class PhysicsConfig(parameters: Map<String, String> = emptyMap()) {
         val EXECUTION_KEYS = setOf("RB_WORKERS", "RB_PARALLEL_MIN")
     }
     val contacts = ContactConfig(values)
-    val CONTACT_MAX_STEP = this["RB_MAXSTEP"]?.toDoubleOrNull()
-        ?: (2.0 * MAX_SPEED_CELLS_PER_TICK / SUBSTEPS)
-    val LINK_MAX_STEP = this["RB_LINKSTEP"]?.toDoubleOrNull() ?: 0.25
+    val CONTACT_MAX_STEP = this["RB_MAXSTEP"]?.toFloatOrNull()
+        ?: (2.0f * MAX_SPEED_CELLS_PER_TICK / SUBSTEPS)
+    val LINK_MAX_STEP = this["RB_LINKSTEP"]?.toFloatOrNull() ?: 0.25f
     val MAXLEN_EARLY = this["RB_MAXLEN_EARLY"]?.let { it != "0" } ?: true
-    val DRAG_ACCEL = this["RB_DRAG_ACCEL"]?.toDoubleOrNull() ?: 128.0
-    val DRAG_SPEED_LIMIT = this["RB_DRAG_SPEED"]?.toDoubleOrNull() ?: 1.0
+    val DRAG_ACCEL = this["RB_DRAG_ACCEL"]?.toFloatOrNull() ?: 128.0f
+    val DRAG_SPEED_LIMIT = this["RB_DRAG_SPEED"]?.toFloatOrNull() ?: 1.0f
     val KILL_ON_DEEP_OVERLAP = this["RB_KILLDEEP"] != "0"
     /** Воркеров физики. На результат не влияет (побитово), только на скорость. */
     val WORKERS = this["RB_WORKERS"]?.toIntOrNull()?.coerceAtLeast(1) ?: 1

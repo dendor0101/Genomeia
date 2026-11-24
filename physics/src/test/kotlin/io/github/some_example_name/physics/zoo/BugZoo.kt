@@ -39,27 +39,27 @@ val BUG_ZOO: List<ZooBug> = listOf(
         "            if (positions) { cx[b] += tx; cy[b] += ty }\n",
         "",
         "16.11.2026. Отскок считал плечи клеток от центра кости, снятого до контактной поправки того же подшага: " +
-            "вращательная часть отскока давала линейный импульс из ничего (1.9e-4 импульса пары за подшаг касания)."),
+            "вращательная часть отскока давала линейный импульс из ничего (1.9e-4f импульса пары за подшаг касания)."),
     ZooBug("отскок: нормаль по нынешним положениям", "$SOLVER/contacts/BoundaryContacts.kt",
         "            var nx = px[i] - px[j]; var ny = py[i] - py[j]\n" +
             "            val nl = sqrt(nx * nx + ny * ny)\n" +
-            "            if (nl > 1e-12 && nx * cNx[c] + ny * cNy[c] > 0.5 * nl) { nx /= nl; ny /= nl } else { nx = cNx[c]; ny = cNy[c] }\n",
+            "            if (nl > 1e-12f && nx * cNx[c] + ny * cNy[c] > 0.5f * nl) { nx /= nl; ny /= nl } else { nx = cNx[c]; ny = cNy[c] }\n",
         "            val nx = cNx[c]; val ny = cNy[c]\n",
         "16.11.2026. Толчок отскока шёл вдоль нормали, запомненной до позиционной поправки, а прикладывался к " +
-            "нынешним центрам: пара получала момент импульса из ничего (частица в торец кости — 3.1e-3 P·связь)."),
+            "нынешним центрам: пара получала момент импульса из ничего (частица в торец кости — 3.1e-3f P·связь)."),
     ZooBug("кость делится вместе с телом", "$SOLVER/topology/BoneSplit.kt",
         "    if (boneDirtyN == 0) return\n    // Новые кости в очередь не попадают",
         "    boneDirtyN = 0\n    if (boneDirtyN == 0) return\n    // Новые кости в очередь не попадают",
         "16.11.2026. Состав кости не пересматривался: половины разрезанной кости оставались одним твёрдым телом, " +
             "погибшая клетка — в кости с полным весом."),
     ZooBug("погибшая клетка замораживается", "$SOLVER/damage/DamageModel.kt",
-        "    killIncidentEdges(v)\n    vx[v] = 0.0; vy[v] = 0.0; invMass[v] = 0.0\n    contacts?.dropFromContacts(v)\n    refreshSurface()\n",
-        "    killIncidentEdges(v)\n    vx[v] = 0.0; vy[v] = 0.0\n    contacts?.dropFromContacts(v)\n    refreshSurface()\n",
+        "    killIncidentEdges(v)\n    vx[v] = 0.0f; vy[v] = 0.0f; invMass[v] = 0.0f\n    contacts?.dropFromContacts(v)\n    refreshSurface()\n",
+        "    killIncidentEdges(v)\n    vx[v] = 0.0f; vy[v] = 0.0f\n    contacts?.dropFromContacts(v)\n    refreshSurface()\n",
         "Обнулить скорость мало: следующий тик снова приложит к мёртвой клетке поток и тягу, и она полетит по сцене " +
             "без контактного радиуса — сквозь всё."),
     ZooBug("кость поворачивается конечным поворотом, а не по касательной", "$SOLVER/contacts/RigidContactBatch.kt",
-        "            val sin = if (positions) StrictMath.sin(angle) else angle\n            val cosMinusOne = if (positions) StrictMath.cos(angle) - 1.0 else 0.0\n",
-        "            val sin = angle\n            val cosMinusOne = 0.0\n",
+        "            val sin = if (positions) StrictMath.sin((angle).toDouble()).toFloat() else angle\n            val cosMinusOne = if (positions) StrictMath.cos((angle).toDouble()).toFloat() - 1.0f else 0.0f\n",
+        "            val sin = angle\n            val cosMinusOne = 0.0f\n",
         "Эйлеровское r + angle × r растягивало кость при каждом касании."),
     ZooBug("проекция кости: сумма поправок обнуляется явно", "$SOLVER/solver/BoneSolver.kt",
         "        px[i] += (boneDx[k] - mdx) * scale\n        py[i] += (boneDy[k] - mdy) * scale\n",
@@ -67,9 +67,9 @@ val BUG_ZOO: List<ZooBug> = listOf(
         "Проекция кости сдвигала центр масс на остаток суммы w·q каждый подшаг: «мышца дёрнулась пару раз, а тело " +
             "потом само куда-то уплывает» (утечка в 1170 раз больше обеих стадий связей и площади)."),
     ZooBug("отскок от кости считает массу всего кластера", "$SOLVER/contacts/BoundaryContacts.kt",
-        "            val wi = effInvMassSplit(i, j, nx, ny, px, py, invMass)\n            val wj = effInvMassSplit(j, i, nx, ny, px, py, invMass)\n            val w = wi + wj\n            if (w <= 0.0) continue\n",
-        "            val wi = invMass[i]\n            val wj = invMass[j]\n            val w = wi + wj\n            if (w <= 0.0) continue\n",
-        "Частица в кость отскакивала на 0.00–0.04 вместо 0.10, то есть прилипала: проход считал кость одной клеткой."),
+        "            val wi = effInvMassSplit(i, j, nx, ny, px, py, invMass)\n            val wj = effInvMassSplit(j, i, nx, ny, px, py, invMass)\n            val w = wi + wj\n            if (w <= 0.0f) continue\n",
+        "            val wi = invMass[i]\n            val wj = invMass[j]\n            val w = wi + wj\n            if (w <= 0.0f) continue\n",
+        "Частица в кость отскакивала на 0.00f–0.04f вместо 0.10f, то есть прилипала: проход считал кость одной клеткой."),
     ZooBug("потолок поправки предела длины", "$SOLVER/solver/ConstraintSolver.kt",
         "    if (dL < -capL) dL = -capL\n",
         "",
@@ -79,8 +79,8 @@ val BUG_ZOO: List<ZooBug> = listOf(
         "",
         "Вывернутый треугольник выстреливал вершиной: жёсткая поправка площади без потолка (AREA_MAX_STEP)."),
     ZooBug("перепонка односторонняя", "$SOLVER/solver/BlockConstraintKernels.kt",
-        "        if (len >= rest || len < 1e-12) continue\n",
-        "        if (len < 1e-12) continue\n",
+        "        if (len >= rest || len < 1e-12f) continue\n",
+        "        if (len < 1e-12f) continue\n",
         "Перепонка — страховка от схлопывания: она не должна стягивать разошедшиеся клетки."),
     ZooBug("удар будит спящего до решения контакта", "$SOLVER/solver/BodySimulation.kt",
         "            if (noteSleepContacts(finalContacts)) {\n                applyWakeRequests()\n                finalContacts.prepare(px, py, prevX, prevY, vx, vy, invMass, continuing = false)\n            }\n",
@@ -92,24 +92,24 @@ val BUG_ZOO: List<ZooBug> = listOf(
         "            momentumCancel()\n",
         "Коррекция импульса сама меняет скорости и могла вернуть частице скорость выше потолка."),
     ZooBug("запас среды — у каждого организма свой", "$SOLVER/solver/MediumSolver.kt",
-        "    val vmx = (vx[i] + vx[j]) * 0.5 - flowVX[o]\n    val vmy = (vy[i] + vy[j]) * 0.5 - flowVY[o]\n",
-        "    val vmx = (vx[i] + vx[j]) * 0.5 - flowVX[0]\n    val vmy = (vy[i] + vy[j]) * 0.5 - flowVY[0]\n",
+        "    val vmx = (vx[i] + vx[j]) * 0.5f - flowVX[o]\n    val vmy = (vy[i] + vy[j]) * 0.5f - flowVY[o]\n",
+        "    val vmx = (vx[i] + vx[j]) * 0.5f - flowVX[0]\n    val vmy = (vy[i] + vy[j]) * 0.5f - flowVY[0]\n",
         "Два тела делили один запас среды: движение одного толкало другое на любом расстоянии."),
     ZooBug("предел длины не двигает костный конец связи", "$SOLVER/solver/ConstraintSolver.kt",
-        "        if (boneI && !boneJ && wj > 0.0) wi = 0.0 else if (boneJ && !boneI && wi > 0.0) wj = 0.0\n    }\n    val w = wi + wj\n",
+        "        if (boneI && !boneJ && wj > 0.0f) wi = 0.0f else if (boneJ && !boneI && wi > 0.0f) wj = 0.0f\n    }\n    val w = wi + wj\n",
         "    }\n    val w = wi + wj\n",
         "16.11.2026. Предел длины мягкой связи стоит после проекции кости и вытягивал клетку кости из позы: " +
-            "кость с мягким суставом при ударе 2 связи за тик искажалась на 0.18 связи."),
+            "кость с мягким суставом при ударе 2 связи за тик искажалась на 0.18f связи."),
     ZooBug("ориентация контура не двигает клетку кости", "$SOLVER/solver/BoundaryOrientation.kt",
-        "            if (ba) wa = 0.0; if (bb) wb = 0.0; if (bc) wc = 0.0\n",
+        "            if (ba) wa = 0.0f; if (bb) wb = 0.0f; if (bc) wc = 0.0f\n",
         "",
         "16.11.2026. Вывернутый треугольник на стыке кости и ткани расправлялся за счёт костных вершин: " +
-            "кость оставалась смятой на 0.07 связи до следующего подшага."),
+            "кость оставалась смятой на 0.07f связи до следующего подшага."),
     ZooBug("масса кости делится между её касаниями", "$SOLVER/contacts/BoundaryContacts.kt",
-        "        return if (z > 1) (1.0 / boneM[b] + rot) * z else 1.0 / boneM[b] + rot\n",
-        "        return if (z > 1e9) (1.0 / boneM[b] + rot) * z else 1.0 / boneM[b] + rot\n",
-        "16.11.2026 (и раньше, в силовой ветке контакта: «рывок за кость разгонялся до 10.7 связей/с при вложенных 3.1»). " +
-            "Каждое из многих касаний кости разводило её целиком само: энергия пары костей с торцом в 8 клеток росла в 3.65 раза."),
+        "        return if (z > 1) (1.0f / boneM[b] + rot) * z else 1.0f / boneM[b] + rot\n",
+        "        return if (z > 1e9f) (1.0f / boneM[b] + rot) * z else 1.0f / boneM[b] + rot\n",
+        "16.11.2026 (и раньше, в силовой ветке контакта: «рывок за кость разгонялся до 10.7f связей/с при вложенных 3.1f»). " +
+            "Каждое из многих касаний кости разводило её целиком само: энергия пары костей с торцом в 8 клеток росла в 3.65f раза."),
     ZooBug("обрезка по времени удара откатывает кость целиком", "$SOLVER/contacts/BoundaryContacts.kt",
         "        val bonesHit = if (bo != null && boneIds.isNotEmpty()) gatherCcdBones(bo) else 0\n",
         "        val bonesHit = if (bo != null && boneIds.isEmpty()) gatherCcdBones(bo) else 0\n",
@@ -118,10 +118,10 @@ val BUG_ZOO: List<ZooBug> = listOf(
     ZooBug("отскок костей не зависит от порядка касаний", "$SOLVER/contacts/BoundaryContacts.kt",
         "            val vn = (vx[i] - vx[j]) * nx + (vy[i] - vy[j]) * ny\n            // Положенная скорость расхождения: доля отскока, если пара сближалась, и прежняя, если расходилась.\n",
         "            val zi = boneIdx(i); val zj = boneIdx(j)\n" +
-            "            val vn = (vx[i] + (if (zi >= 0) rigidBatch.velocityX(zi, py[i] - boneCy[zi], boneM[zi], boneI[zi]) else 0.0) -\n" +
-            "                vx[j] - (if (zj >= 0) rigidBatch.velocityX(zj, py[j] - boneCy[zj], boneM[zj], boneI[zj]) else 0.0)) * nx +\n" +
-            "                (vy[i] + (if (zi >= 0) rigidBatch.velocityY(zi, px[i] - boneCx[zi], boneM[zi], boneI[zi]) else 0.0) -\n" +
-            "                vy[j] - (if (zj >= 0) rigidBatch.velocityY(zj, px[j] - boneCx[zj], boneM[zj], boneI[zj]) else 0.0)) * ny\n" +
+            "            val vn = (vx[i] + (if (zi >= 0) rigidBatch.velocityX(zi, py[i] - boneCy[zi], boneM[zi], boneI[zi]) else 0.0f) -\n" +
+            "                vx[j] - (if (zj >= 0) rigidBatch.velocityX(zj, py[j] - boneCy[zj], boneM[zj], boneI[zj]) else 0.0f)) * nx +\n" +
+            "                (vy[i] + (if (zi >= 0) rigidBatch.velocityY(zi, px[i] - boneCx[zi], boneM[zi], boneI[zi]) else 0.0f) -\n" +
+            "                vy[j] - (if (zj >= 0) rigidBatch.velocityY(zj, px[j] - boneCx[zj], boneM[zj], boneI[zj]) else 0.0f)) * ny\n" +
             "            // Положенная скорость расхождения: доля отскока, если пара сближалась, и прежняя, если расходилась.\n",
         "16.11.2026. Отскок шёл по касаниям кости по очереди: первое брало весь удар, и лобовой удар двух одинаковых " +
             "костей закручивал их в сторону, которую решал порядок клеток в памяти (нашла проверка симметрии стендов)."),
@@ -131,15 +131,15 @@ val BUG_ZOO: List<ZooBug> = listOf(
         "17.11.2026. Учёт импульса за тик не считал рамку мира опорой и возвращал телу импульс, отнятый стенкой: " +
             "лоскут 8×7, влетевший в рамку на 2 связи за тик, терял 22 клетки из 56."),
     ZooBug("упор в неподвижное — жёсткий", "$SOLVER/contacts/BoundaryContacts.kt",
-        "        if (w[i] <= 0.0 || w[j] <= 0.0) return KIND_FIXED\n",
+        "        if (w[i] <= 0.0f || w[j] <= 0.0f) return KIND_FIXED\n",
         "",
         "17.11.2026. Мягкое касание не успевало остановить передний ряд тела о стенку из неподвижных частиц: " +
             "лоскут 8×7 на 2 связи за тик терял 29 клеток из 56, клетки входили в рельеф."),
     ZooBug("рельеф не выстреливает", "$SOLVER/contacts/BoundaryContacts.kt",
-        "            if (dLam > 0.0) { if (fixed) cFixed[c] = KIND_PUSHED else if (kind == KIND_OWN) cFixed[c] = KIND_OWN_PUSHED }\n",
-        "            if (dLam > 0.0 && kind == KIND_OWN) cFixed[c] = KIND_OWN_PUSHED\n",
+        "            if (dLam > 0.0f) { if (fixed) cFixed[c] = KIND_PUSHED else if (kind == KIND_OWN) cFixed[c] = KIND_OWN_PUSHED }\n",
+        "            if (dLam > 0.0f && kind == KIND_OWN) cFixed[c] = KIND_OWN_PUSHED\n",
         "17.11.2026. Перекрытие, снятое упором разом, становилось скоростью «перекрытие / подшаг»: частица внахлёст " +
-            "с неподвижной улетала на 0.5–1.9 связи за тик, лоскут о стенку терял 22 клетки."),
+            "с неподвижной улетала на 0.5f–1.9f связи за тик, лоскут о стенку терял 22 клетки."),
     ZooBug("масса клетки делится между её упорами", "$SOLVER/contacts/BoundaryContacts.kt",
         "            // Масса мягкой клетки делится между её упорами; у кости деление своё (effInvMassSplit).\n" +
             "            if (boneIdx(i) < 0) wi *= zOf(i)\n            if (boneIdx(j) < 0) wj *= zOf(j)\n",
@@ -151,7 +151,7 @@ val BUG_ZOO: List<ZooBug> = listOf(
             "                if (boneIdx(i) < 0) wi *= zOf(i)\n                if (boneIdx(j) < 0) wj *= zOf(j)\n",
         "                var wj = effInvMassSplit(j, i, nx, ny, px, py, invMass)\n",
         "17.11.2026. Скорость после упора правилась по упорам по очереди: частица между двумя неподвижными в зеркальной " +
-            "сцене уходила вбок на 0.24 связи за тик."),
+            "сцене уходила вбок на 0.24f связи за тик."),
     ZooBug("клетка с дорастающей связью упирается по-старому", "$SOLVER/contacts/BoundaryContacts.kt",
         "        if (killImmune(i, j)) return KIND_SOFT\n",
         "",
@@ -164,24 +164,24 @@ val BUG_ZOO: List<ZooBug> = listOf(
             "разбрасывало, она разбалтывалась и входила в себя глубже. Мышечный червь 20×4, шесть раз сжатый и растянутый, " +
             "терял 21 клетку из 80."),
     ZooBug("своему касанию лишняя скорость снимается, а не только добавляется", "$SOLVER/contacts/BoundaryContacts.kt",
-        "            if (if (own) dvn == 0.0 else dvn <= 0.0) continue\n",
-        "            if (dvn <= 0.0) continue\n",
+        "            if (if (own) dvn == 0.0f else dvn <= 0.0f) continue\n",
+        "            if (dvn <= 0.0f) continue\n",
         "17.11.2026. Проход отскока умел только добавлять скорость расхождения до доли отскока. Скорость, которую пара " +
-            "клеток одного тела получила от снятого перекрытия, он не трогал: пара внахлёст расходилась на 0.9 связи за тик."),
+            "клеток одного тела получила от снятого перекрытия, он не трогал: пара внахлёст расходилась на 0.9f связи за тик."),
     ZooBug("потолок тяги мышцы: связь", "$SOLVER/solver/ConstraintSolver.kt",
-        "        if (scale < 1.0 && over > MUSCLE_MAX_PULL * rest) over = MUSCLE_MAX_PULL * rest\n",
+        "        if (scale < 1.0f && over > MUSCLE_MAX_PULL * rest) over = MUSCLE_MAX_PULL * rest\n",
         "",
         "17.11.2026. Связь, отставшая от команды мышцы, тянула тем сильнее, чем больше отстала: половины червя 30×4 " +
             "набирали ход и сминали середину — гибло 35 клеток из 120, ни одна связь при этом не рвалась."),
     ZooBug("потолок тяги мышцы: площадь", "$SOLVER/solver/BlockConstraintKernels.kt",
-        "        if (active < 1.0) { val cap = 2.0 * MUSCLE_MAX_PULL * rest2[t]; if (excess > cap) excess = cap }\n",
+        "        if (active < 1.0f) { val cap = 2.0f * MUSCLE_MAX_PULL * rest2[t]; if (excess > cap) excess = cap }\n",
         "",
         "17.11.2026. Площадь треугольника мышцы жёстче связей вдесятеро: без потолка она тянула отстающую ткань одна, " +
             "и потолок на связях ничего не давал."),
     ZooBug("учёт импульса: погибшая клетка не выключает организм", "$SOLVER/solver/TickMomentum.kt",
         "                if (o >= 0 && (outside == null || !outside[i])) { if (first[o] < 0) first[o] = i else union(first[o], i) }\n",
         "                if (o >= 0) { if (first[o] < 0) first[o] = i else union(first[o], i) }\n",
-        "Первая же погибшая клетка навсегда выключала учёт импульса всему организму (BirthKickProbe 03.11)."),
+        "Первая же погибшая клетка навсегда выключала учёт импульса всему организму (BirthKickProbe 03.11f)."),
 )
 
 /** Сколько упавших тестов собрать на запись: хватит, чтобы назвать сторожей. */

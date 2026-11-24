@@ -57,6 +57,8 @@ class ReferenceTest {
         // Тело пролетело десятки связей, а решатели разошлись на доли связи (замер 16.11.2026: 0.42 связи на
         // мелком шаге — мышца при 64 подшагах сжимает тело чуть иначе, и среда уводит его чуть в сторону).
         assertTrue("тело летело", control.base.travel.last()[0] > 20.0)
+        println("сверка с эталоном, спокойная сцена: путь %.1f связи, расхождение на шаге игры %.3f связи, на мелком %.3f".format(
+            control.base.travel.last()[0], result.same.deviation!!.score, result.fine!!.deviation!!.score))
         assertTrue("расхождение ${result.fine!!.deviation!!.score} связи", result.fine!!.deviation!!.score < 1.0)
         assertTrue("на шаге игры — ближе: ${result.same.deviation!!.score} связи", result.same.deviation!!.score <= result.fine!!.deviation!!.score)
     }
@@ -137,7 +139,7 @@ class ReferenceTest {
         val w = run.w.world
         fun reach(): Double {
             var far = 0.0
-            for (i in 0 until w.particleCount) far = maxOf(far, abs(w.x[i]), abs(w.y[i]))
+            for (i in 0 until w.particleCount) far = maxOf(far, abs(w.x[i]).toDouble(), abs(w.y[i]).toDouble())
             return far
         }
         val start = reach()
@@ -165,11 +167,17 @@ class ReferenceTest {
 
     @Test
     fun `удар быстрее шага эталона не сверяется`() {
-        // Две частицы навстречу, каждая на 6 связях за тик. На шаге игры эталон (без обрезки по времени удара)
+        // Две частицы навстречу, каждая на связь за подшаг игры. На шаге игры эталон (без обрезки по времени удара)
         // пропускает их друг сквозь друга: такой прогон быстрому решателю не судья, и сверка это говорит.
-        // На 64 подшагах удар эталону по силам.
-        val s = scene(20) { noMedium(); ball(-1.2, 0.0, 6.0, 0.0); ball(1.2, 0.0, -6.0, 0.0) }
-        val result = checkReference(s, REFERENCE_SUBSTEPS, Control(s), particles = 2)
+        // На шаге вдесятеро мельче удар эталону по силам.
+        // При шести подшагах это были 6 связей за тик и 64 подшага эталона. При шестнадцати (24.11) «связь за
+        // подшаг» — 16 связей за тик, вдвое выше потолка скорости, поэтому потолок в сцене снят: законный удар шаг
+        // из 16 подшагов уже не проскакивает (на прежних 6 связях за тик сцена выходила просто «хаотичной»), а
+        // проверяется здесь то, что сверка узнаёт удар быстрее шага.
+        val each = SUBSTEPS.toDouble()
+        val fine = maxOf(REFERENCE_SUBSTEPS, 10 * SUBSTEPS)
+        val s = scene(20) { noMedium(); world.state.dbgNoClamp = true; ball(-1.2, 0.0, each, 0.0); ball(1.2, 0.0, -each, 0.0) }
+        val result = checkReference(s, fine, Control(s), particles = 2)
         assertEquals(ReferenceVerdict.SKIPPED, result.same.verdict)
         assertTrue(result.same.reason, "быстрее шага" in result.same.reason)
         assertEquals("по такому прогону не считается и то, кто нарушил правила", null, result.same.deviation)

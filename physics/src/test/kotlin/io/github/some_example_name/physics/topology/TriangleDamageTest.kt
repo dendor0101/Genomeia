@@ -39,7 +39,7 @@ class TriangleDamageTest {
 
     @Test fun removesOnEleventhConsecutiveTickAndOnlyRemovesTheTriangle() {
         val s = square()
-        s.py[0] = 2.0
+        s.py[0] = 2.0f
         val x = s.px.copyOf(); val y = s.py.copyOf()
         val vx = s.vx.copyOf(); val vy = s.vy.copyOf()
         repeat(10) { s.removePersistentInversions() }
@@ -60,19 +60,19 @@ class TriangleDamageTest {
         assertEquals(0, s.deadCount)
         assertEquals(0, s.tornTotal)
         assertFalse(s.baked.edgeDead.any { it })
-        assertArrayEquals(x, s.px, 0.0); assertArrayEquals(y, s.py, 0.0)
-        assertArrayEquals(vx, s.vx, 0.0); assertArrayEquals(vy, s.vy, 0.0)
+        assertArrayEquals(x, s.px, 0.0f); assertArrayEquals(y, s.py, 0.0f)
+        assertArrayEquals(vx, s.vx, 0.0f); assertArrayEquals(vy, s.vy, 0.0f)
         assertTopology(s)
     }
 
     @Test fun recoveryAndDisabledTearingRestartTheConsecutiveTimer() {
         val s = square()
-        s.py[0] = 2.0
+        s.py[0] = 2.0f
         repeat(8) { s.removePersistentInversions() }
-        s.py[0] = 1.0 // Нулевая площадь уже не отрицательная: серия прерывается.
+        s.py[0] = 1.0f // Нулевая площадь уже не отрицательная: серия прерывается.
         s.removePersistentInversions()
         assertEquals(0, s.baked.invertedTicks[0].toInt())
-        s.py[0] = 2.0
+        s.py[0] = 2.0f
         repeat(10) { s.removePersistentInversions() }
         assertTrue(s.baked.triAlive[0])
         s.tearingOn = false
@@ -88,9 +88,9 @@ class TriangleDamageTest {
 
     @Test fun compactionKeepsOtherTimersAndResetRestoresEverything() {
         val s = square()
-        s.py[0] = 2.0
+        s.py[0] = 2.0f
         repeat(4) { s.removePersistentInversions() }
-        s.px[3] = -1.0
+        s.px[3] = -1.0f
         repeat(7) { s.removePersistentInversions() }
         s.rebuildAfterTear()
         assertArrayEquals(intArrayOf(1), s.triId.copyOf(s.triCount))

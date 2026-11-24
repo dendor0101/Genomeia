@@ -23,10 +23,10 @@ class TopologyRegressionTest {
         val file = Files.createTempFile("shared-edge-", ".txt").toFile()
         try {
             file.writeText("""
-                P 0 0 0 0.5 0 0 0
-                P 1 1 0 0.5 0 0 0
-                P 2 1 1 0.5 0 0 0
-                P 3 0 1 0.5 0 0 0
+                P 0 0 0 0.5f 0 0 0
+                P 1 1 0 0.5f 0 0 0
+                P 2 1 1 0.5f 0 0 0
+                P 3 0 1 0.5f 0 0 0
                 L 0 1
                 L 1 2
                 L 2 0
@@ -60,13 +60,13 @@ class TopologyRegressionTest {
         val file = Files.createTempFile("local-topology-", ".txt").toFile()
         try {
             file.writeText("""
-                P 0 0 0 0.5 0 0 0
-                P 1 1 0 0.5 0 0 0
-                P 2 0.5 0.8660254 0.5 0 0 0
-                P 3 -0.5 0.8660254 0.5 0 0 0
-                P 4 -1 0 0.5 0 0 0
-                P 5 -0.5 -0.8660254 0.5 0 0 0
-                P 6 0.5 -0.8660254 0.5 0 0 0
+                P 0 0 0 0.5f 0 0 0
+                P 1 1 0 0.5f 0 0 0
+                P 2 0.5f 0.8660254f 0.5f 0 0 0
+                P 3 -0.5f 0.8660254f 0.5f 0 0 0
+                P 4 -1 0 0.5f 0 0 0
+                P 5 -0.5f -0.8660254f 0.5f 0 0 0
+                P 6 0.5f -0.8660254f 0.5f 0 0 0
                 L 0 1
                 L 0 2
                 L 0 3
@@ -88,7 +88,7 @@ class TopologyRegressionTest {
         val body = body(); val topology = BakedTopology(body)
         assertEquals(6, body.triCount)
         val surface = LocalSurface(body, topology, IntArray(7) { -1 }, BooleanArray(7),
-            DoubleArray(7) { body.radius[it].toDouble() }, 1.0, 1.05, 1e-5, BooleanArray(7), BooleanArray(7))
+            FloatArray(7) { body.radius[it].toFloat() }, 1.0f, 1.05f, 1e-5f, BooleanArray(7), BooleanArray(7))
         val constraints = LocalBoundaryConstraints(body, topology, IntArray(7) { -1 })
         for (v in 0..6) { surface.update(v); constraints.updateVertex(v) }
         assertFalse(surface.active[0])
@@ -100,7 +100,7 @@ class TopologyRegressionTest {
             val v = topology.dirtyVertices[k]; surface.update(v); constraints.updateVertex(v)
         }
         assertTrue(surface.active[0])
-        assertTrue(surface.radius[0] > 0.0)
+        assertTrue(surface.radius[0] > 0.0f)
         assertEquals(8, constraints.count)
         assertEquals(4, topology.triAlive.count { it })
         assertEquals(2, topology.bareEdges)
@@ -115,10 +115,10 @@ class TopologyRegressionTest {
     @Test fun localComponentsMatchIndependentFloodFillAfterEveryCut() {
         val body = body(); val topology = BakedTopology(body)
         val of = IntArray(7); val sizes = IntArray(7); sizes[0] = 7
-        val masses = DoubleArray(7); masses[0] = 7.0
-        val flow = DoubleArray(7); flow[0] = 0.3
-        val parts = LocalComponents(topology, of, sizes, masses, DoubleArray(7) { 1.0 },
-            BooleanArray(7), flow, DoubleArray(7), 1, BodySleep(on = false))
+        val masses = FloatArray(7); masses[0] = 7.0f
+        val flow = FloatArray(7); flow[0] = 0.3f
+        val parts = LocalComponents(topology, of, sizes, masses, FloatArray(7) { 1.0f },
+            BooleanArray(7), flow, FloatArray(7), 1, BodySleep(on = false))
         for (edge in 0 until topology.edgeCount) {
             topology.kill(edge); parts.split(edge)
             val expected = IntArray(7) { -1 }; var count = 0
@@ -139,8 +139,8 @@ class TopologyRegressionTest {
             for (i in 0..6) for (j in 0..6) assertEquals(expected[i] == expected[j], of[i] == of[j])
             for (o in 0 until parts.count) {
                 assertEquals(of.count { it == o }, sizes[o])
-                assertEquals(sizes[o].toDouble(), masses[o], 0.0)
-                assertEquals(0.3, flow[o], 0.0)
+                assertEquals(sizes[o].toFloat(), masses[o], 0.0f)
+                assertEquals(0.3f, flow[o], 0.0f)
             }
         }
     }
@@ -159,19 +159,19 @@ class TopologyRegressionTest {
     @Test fun resetAfterLocalTearRestoresContactExclusions() {
         val body = body(); val topology = BakedTopology(body)
         val bones = IntArray(7) { -1 }; val dead = BooleanArray(7)
-        val surface = LocalSurface(body, topology, bones, dead, DoubleArray(7) { body.radius[it].toDouble() },
-            1.0, 1.05, 1e-5, BooleanArray(7), BooleanArray(7))
+        val surface = LocalSurface(body, topology, bones, dead, FloatArray(7) { body.radius[it].toFloat() },
+            1.0f, 1.05f, 1e-5f, BooleanArray(7), BooleanArray(7))
         val boundary = LocalBoundaryConstraints(body, topology, bones)
         for (v in 0..6) { surface.update(v); boundary.updateVertex(v) }
         val a = boundary.a.copyOf(); val b = boundary.b.copyOf(); val opp = boundary.opposite.copyOf()
         val count = boundary.count
-        val radius = DoubleArray(7) { body.radius[it].toDouble() }
+        val radius = FloatArray(7) { body.radius[it].toFloat() }
         val ever = BoundaryContacts.linkedPairs(body.linkA, body.linkB, body.linkCount)
         val rest = BoundaryContacts.bakeRestPairs(7, BoundaryContacts.maxContactRadius(7,
-            body.linkA, body.linkB, body.linkCount, radius, 1.0, body.x, body.y), body.x, body.y, ever)
+            body.linkA, body.linkB, body.linkCount, radius, 1.0f, body.x, body.y), body.x, body.y, ever)
         val contacts = BoundaryContacts.build(7, body.linkA, body.linkB, body.linkCount,
-            a, b, count, opp, radius, 1.0, 0.4, 0.1, 0.0, body.x, body.y,
-            body.meanLinkLength.toDouble(), 0.2, surface.probe, ever, dead, rest)
+            a, b, count, opp, radius, 1.0f, 0.4f, 0.1f, 0.0f, body.x, body.y,
+            body.meanLinkLength.toFloat(), 0.2f, surface.probe, ever, dead, rest)
         contacts.attachSurface(surface)
         val original = contacts.contactDistanceOf(1, 2)
         topology.kill(topology.edgeOf(1, 2))
@@ -184,6 +184,6 @@ class TopologyRegressionTest {
         contacts.reconfigure(body.linkA, body.linkB, body.linkCount, a, b, count, opp,
             body.x, body.y, surface.probe, dead, rest, ever)
         assertTrue(contacts.isBonded(1, 2))
-        assertEquals(original, contacts.contactDistanceOf(1, 2), 0.0)
+        assertEquals(original, contacts.contactDistanceOf(1, 2), 0.0f)
     }
 }

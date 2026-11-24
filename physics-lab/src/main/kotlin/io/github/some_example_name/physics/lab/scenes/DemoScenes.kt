@@ -54,10 +54,10 @@ internal fun DemoSession.sceneCtx() = with(state) { SceneCtx(
     organismCount = { organismCount },
     isFreeOf = { i -> isFree[i] },
     invMass = invMass,
-    contactRadiusOf = { i -> contacts?.contactRadiusOf(i) ?: (radius[i] * CONTACT_SCALE) },
+    contactRadiusOf = { i -> (contacts?.contactRadiusOf(i) ?: (radius[i] * CONTACT_SCALE)).toDouble() },
     meanLink = body.meanLinkLength.toDouble(),
-    dt = DT,
-    vmax = MAX_SPEED_CELLS_PER_TICK,
+    dt = DT.toDouble(),
+    vmax = MAX_SPEED_CELLS_PER_TICK.toDouble(),
     shatter = { o ->
         for (c in 0 until conCount) if (organismOf[conA[c]] == o) { conDead[c] = true; killEdgeNow(conEdge[c]) }
         tearsPending = true
@@ -114,8 +114,8 @@ internal fun DemoSession.slamOrganisms() { with(state) {
     val speed = BULLET_SPEED_FRACTION * MAX_SPEED_CELLS_PER_TICK * body.meanLinkLength / DT
     for (i in 0 until n) {
         when (organismOf[i]) {
-            a -> world.setVelocity(i, dx * speed, dy * speed)
-            b -> world.setVelocity(i, -dx * speed, -dy * speed)
+            a -> world.setVelocity(i, (dx * speed).toFloat(), (dy * speed).toFloat())
+            b -> world.setVelocity(i, (-dx * speed).toFloat(), (-dy * speed).toFloat())
         }
     }
     // Скорость задана мимо решателя: спящие тела надо разбудить, иначе её обнулят.
@@ -140,13 +140,13 @@ internal fun DemoSession.fireBullet() { with(state) {
     var sumY = 0.0; var cnt = 0
     for (k in 0 until n) {
         if (isFree[k]) continue
-        if (px[k] > maxX) maxX = px[k]
+        if (px[k] > maxX) maxX = px[k].toDouble()
         sumY += py[k]; cnt++
     }
     if (cnt == 0) return
     val speed = BULLET_SPEED_FRACTION * MAX_SPEED_CELLS_PER_TICK * body.meanLinkLength / DT
-    world.place(i, maxX + body.meanLinkLength * 8.0, sumY / cnt)
-    world.setVelocity(i, -speed, 0.0)
+    world.place(i, (maxX + body.meanLinkLength * 8.0).toFloat(), (sumY / cnt).toFloat())
+    world.setVelocity(i, (-speed).toFloat(), 0.0f)
     // Пуля — свободная частица, она тоже могла уснуть.
     world.wake(i)
     println("[DemoSession] пуля: клетка #$i, скорость " +

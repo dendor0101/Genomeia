@@ -50,52 +50,52 @@ class ContactRegressionTest {
 
     private fun pair(): BoundaryContacts = BoundaryContacts.build(
         2, IntArray(0), IntArray(0), 0, IntArray(0), IntArray(0), 0, IntArray(0),
-        doubleArrayOf(0.5, 0.5), 1.0, 0.4, 0.1, 0.0,
-        floatArrayOf(-2f, 2f), floatArrayOf(0f, 0f), 1.0, 0.2,
+        floatArrayOf(0.5f, 0.5f), 1.0f, 0.4f, 0.1f, 0.0f,
+        floatArrayOf(-2f, 2f), floatArrayOf(0f, 0f), 1.0f, 0.2f,
         booleanArrayOf(true, true),
     )
 
     @Test fun ccdStopsCrossingEvenWhenTravelIsLessThanContactDiameter() {
         val ct = pair()
-        val px = doubleArrayOf(0.2, -0.2); val py = DoubleArray(2)
-        ct.prepare(px, py, doubleArrayOf(-0.25, 0.25), py.copyOf(),
-            doubleArrayOf(1.0, -1.0), DoubleArray(2), doubleArrayOf(1.0, 1.0))
+        val px = floatArrayOf(0.2f, -0.2f); val py = FloatArray(2)
+        ct.prepare(px, py, floatArrayOf(-0.25f, 0.25f), py.copyOf(),
+            floatArrayOf(1.0f, -1.0f), FloatArray(2), floatArrayOf(1.0f, 1.0f))
         assertTrue("Центры поменялись местами", px[0] < px[1])
-        assertEquals(0.0, px[0] + px[1], 1e-14)
+        assertEquals(0.0f, px[0] + px[1], F_POS)
     }
 
     @Test fun ccdWorkArraysResetAfterPassesWithoutCrossings() {
         val ct = pair()
-        val y = DoubleArray(2); val v = DoubleArray(2); val mass = doubleArrayOf(1.0, 1.0)
-        fun crossing(): DoubleArray {
-            val x = doubleArrayOf(0.2, -0.2)
-            ct.prepare(x, y, doubleArrayOf(-0.25, 0.25), y, v, v, mass)
+        val y = FloatArray(2); val v = FloatArray(2); val mass = floatArrayOf(1.0f, 1.0f)
+        fun crossing(): FloatArray {
+            val x = floatArrayOf(0.2f, -0.2f)
+            ct.prepare(x, y, floatArrayOf(-0.25f, 0.25f), y, v, v, mass)
             assertTrue(x[0] < x[1])
             return x
         }
         val first = crossing()
         repeat(3) {
-            val x = doubleArrayOf(-0.5, 0.5)
+            val x = floatArrayOf(-0.5f, 0.5f)
             ct.prepare(x, y, x.copyOf(), y, v, v, mass)
-            assertArrayEquals(doubleArrayOf(-0.5, 0.5), x, 0.0)
+            assertArrayEquals(floatArrayOf(-0.5f, 0.5f), x, 0.0f)
         }
-        assertArrayEquals(first, crossing(), 0.0)
+        assertArrayEquals(first, crossing(), 0.0f)
     }
 
     @Test fun refreshFindsNewContactAndPreservesExistingMultiplier() {
         val ct = pair()
-        val px = doubleArrayOf(-0.6, 0.6); val py = DoubleArray(2)
-        val vx = DoubleArray(2); val vy = DoubleArray(2); val mass = doubleArrayOf(1.0, 1.0)
+        val px = floatArrayOf(-0.6f, 0.6f); val py = FloatArray(2)
+        val vx = FloatArray(2); val vy = FloatArray(2); val mass = floatArrayOf(1.0f, 1.0f)
         ct.prepare(px, py, px.copyOf(), py.copyOf(), vx, vy, mass)
         assertEquals(0, ct.contactCount)
-        px[0] = -0.4; px[1] = 0.4
+        px[0] = -0.4f; px[1] = 0.4f
         ct.prepare(px, py, px.copyOf(), py.copyOf(), vx, vy, mass, continuing = true)
         assertEquals(1, ct.contactCount)
-        ct.solveContacts(px, py, vx, vy, mass, 0.01)
+        ct.solveContacts(px, py, vx, vy, mass, 0.01f)
         val lambda = ct.lambdaOf(0, 1)
         assertTrue(lambda > 0)
         ct.prepare(px, py, px.copyOf(), py.copyOf(), vx, vy, mass, continuing = true)
-        assertEquals(lambda, ct.lambdaOf(0, 1), 0.0)
+        assertEquals(lambda, ct.lambdaOf(0, 1), 0.0f)
     }
 
     @Test fun restPairCacheFollowsReconfigurationAndLegacyMode() {
@@ -104,11 +104,11 @@ class ContactRegressionTest {
         val isolated = BooleanArray(3) { true }
         val ever = BoundaryContacts.linkedPairs(intArrayOf(0, 0), intArrayOf(1, 2), 2)
         val ct = BoundaryContacts.build(3, empty, empty, 0, empty, empty, 0, empty,
-            DoubleArray(3) { 0.5 }, 1.0, 0.4, 0.1, 0.0,
-            restX, restY, 1.0, 0.2, isolated, ever)
+            FloatArray(3) { 0.5f }, 1.0f, 0.4f, 0.1f, 0.0f,
+            restX, restY, 1.0f, 0.2f, isolated, ever)
         fun prepare(): Int {
-            val x = doubleArrayOf(-0.45, 0.45, 3.0); val y = DoubleArray(3)
-            ct.prepare(x, y, x.copyOf(), y, DoubleArray(3), DoubleArray(3), DoubleArray(3) { 1.0 })
+            val x = floatArrayOf(-0.45f, 0.45f, 3.0f); val y = FloatArray(3)
+            ct.prepare(x, y, x.copyOf(), y, FloatArray(3), FloatArray(3), FloatArray(3) { 1.0f })
             return ct.contactCount
         }
         // Бывшие соседи 0–1 упираются на 0.8, хотя сумма радиусов равна 1.
@@ -130,25 +130,25 @@ class ContactRegressionTest {
     }
 
     @Test fun rigidContactBatchPreservesShapeAndLinearImpulse() {
-        val batch = RigidContactBatch()
-        val x = doubleArrayOf(-1.0, 1.0); val y = DoubleArray(2)
+        val batch = RigidContactBatch(SPIN_MIN_ARM * T_LINK)
+        val x = floatArrayOf(-1.0f, 1.0f); val y = FloatArray(2)
         batch.begin(1)
-        batch.add(0, -1.0, 0.0, 0.02, -0.1)
-        batch.add(0, 1.0, 0.0, 0.04, 0.1)
-        batch.apply(arrayOf(intArrayOf(0, 1)), doubleArrayOf(2.0), doubleArrayOf(2.0),
-            doubleArrayOf(0.0), doubleArrayOf(0.0), x, y, doubleArrayOf(1.0, 1.0), x, y, true)
+        batch.add(0, -1.0f, 0.0f, 0.02f, -0.1f)
+        batch.add(0, 1.0f, 0.0f, 0.04f, 0.1f)
+        batch.apply(arrayOf(intArrayOf(0, 1)), floatArrayOf(2.0f), floatArrayOf(2.0f),
+            floatArrayOf(0.0f), floatArrayOf(0.0f), x, y, floatArrayOf(1.0f, 1.0f), x, y, true)
         val dx = x[1] - x[0]; val dy = y[1] - y[0]
-        assertEquals(2.0, sqrt(dx * dx + dy * dy), 1e-14)
-        assertEquals(0.06, x.sum(), 1e-14)
-        assertEquals(0.0, y.sum(), 1e-14)
+        assertEquals(2.0f, sqrt(dx * dx + dy * dy), F_POS)
+        assertEquals(0.06f, x.sum(), F_POS)
+        assertEquals(0.0f, y.sum(), F_POS)
     }
 
     @Test fun cappedCorrectionStoresOnlyActuallyAppliedLambda() {
         val ct = pair()
-        val x = doubleArrayOf(-0.1, 0.1); val y = DoubleArray(2)
-        val vx = DoubleArray(2); val vy = DoubleArray(2); val mass = doubleArrayOf(1.0, 1.0)
+        val x = floatArrayOf(-0.1f, 0.1f); val y = FloatArray(2)
+        val vx = FloatArray(2); val vy = FloatArray(2); val mass = floatArrayOf(1.0f, 1.0f)
         ct.prepare(x, y, x.copyOf(), y.copyOf(), vx, vy, mass)
-        ct.solveContacts(x, y, vx, vy, mass, 0.01)
-        assertEquals((x[1] - x[0] - 0.2) / 2.0, ct.lambdaOf(0, 1), 1e-14)
+        ct.solveContacts(x, y, vx, vy, mass, 0.01f)
+        assertEquals((x[1] - x[0] - 0.2f) / 2.0f, ct.lambdaOf(0, 1), F_POS)
     }
 }

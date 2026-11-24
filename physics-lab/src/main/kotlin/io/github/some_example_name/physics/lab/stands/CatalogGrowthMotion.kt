@@ -49,7 +49,7 @@ private fun StandWorld.motionOf(b: StandBody): Motion? {
     var m = 0.0; var cx = 0.0; var cy = 0.0; var px = 0.0; var py = 0.0
     for (k in 0 until b.count) {
         val p = first + k
-        if (st.cellDead[p] || st.cellUnborn[p] || st.restInvMass[p] == 0.0) continue
+        if (st.cellDead[p] || st.cellUnborn[p] || st.restInvMass[p] == 0.0f) continue
         val w = 1.0 / st.restInvMass[p]
         m += w; cx += w * st.px[p]; cy += w * st.py[p]; px += w * st.vx[p]; py += w * st.vy[p]
     }
@@ -59,7 +59,7 @@ private fun StandWorld.motionOf(b: StandBody): Motion? {
     var lz = 0.0; var inertia = 0.0
     for (k in 0 until b.count) {
         val p = first + k
-        if (st.cellDead[p] || st.cellUnborn[p] || st.restInvMass[p] == 0.0) continue
+        if (st.cellDead[p] || st.cellUnborn[p] || st.restInvMass[p] == 0.0f) continue
         val w = 1.0 / st.restInvMass[p]
         val rx = st.px[p] - cx; val ry = st.py[p] - cy
         lz += w * (rx * (st.vy[p] - uy) - ry * (st.vx[p] - ux))
@@ -90,13 +90,13 @@ internal fun StandWorld.drive(b: StandBody, vx: Double, vy: Double, spin: Double
     var before = 0.0; var after = 0.0
     for (k in 0 until b.count) {
         val p = first + k
-        if (st.cellDead[p] || st.cellUnborn[p] || st.restInvMass[p] == 0.0) continue
+        if (st.cellDead[p] || st.cellUnborn[p] || st.restInvMass[p] == 0.0f) continue
         val w = 1.0 / st.restInvMass[p]
         val ox = st.vx[p]; val oy = st.vy[p]
         val nx = ox + dvx - dw * (st.py[p] - mo.cy)
         val ny = oy + dvy + dw * (st.px[p] - mo.cx)
         before += 0.5 * w * (ox * ox + oy * oy); after += 0.5 * w * (nx * nx + ny * ny)
-        world.setVelocity(p, nx, ny)
+        world.setVelocity(p, nx.toFloat(), ny.toFloat())
     }
     world.wake(first)
     addEnergy(after - before)

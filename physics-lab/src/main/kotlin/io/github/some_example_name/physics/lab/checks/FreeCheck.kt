@@ -42,12 +42,12 @@ private fun oracle(bodies: List<BodyDefinition>, config: PhysicsConfig, scale: W
     for (b in bodies) inDef.addBody(b)
     for (b in bodies.dropLast(1)) viaApi.addBody(b)
     val free = bodies.last()
-    val ids = IntArray(free.count) { viaApi.addFree(free.x[it].toDouble(), free.y[it].toDouble(), free.radius[it].toDouble()) }
+    val ids = IntArray(free.count) { viaApi.addFree(free.x[it].toDouble().toFloat(), free.y[it].toDouble().toFloat(), free.radius[it].toDouble().toFloat()) }
     val common = inDef.particleCount
     if (viaApi.freeParticle(ids[0]) != common - free.count) { println("FREE oracle: слоты пула не на месте свободных клеток"); return false }
     for (tick in 1..300) {
         val on = if (tick % 40 < 20) 1.0 else 0.0
-        for (w in listOf(inDef, viaApi)) { w.setAllMuscleTargets(on); w.step() }
+        for (w in listOf(inDef, viaApi)) { w.setAllMuscleTargets(on.toFloat()); w.step() }
         if (hashOf(inDef, common) != hashOf(viaApi, common)) { println("FREE oracle: разошлись на тике $tick"); return false }
     }
     println("FREE oracle: ${free.count} свободных клеток через addFree ≡ клетки в описании, 300 тиков побитово")
@@ -57,7 +57,7 @@ private fun oracle(bodies: List<BodyDefinition>, config: PhysicsConfig, scale: W
 private fun hashOf(w: PhysicsWorld, count: Int): Long {
     var h = 1125899906842597L
     fun mix(v: Long) { h = (h xor v) * -7046029254386353131L }
-    for (i in 0 until count) { mix(w.x[i].toRawBits()); mix(w.y[i].toRawBits()); mix(w.vx[i].toRawBits()); mix(w.vy[i].toRawBits()) }
+    for (i in 0 until count) { mix(w.x[i].toRawBits().toLong()); mix(w.y[i].toRawBits().toLong()); mix(w.vx[i].toRawBits().toLong()); mix(w.vy[i].toRawBits().toLong()) }
     return h
 }
 
@@ -70,7 +70,7 @@ private fun stream(bodies: List<BodyDefinition>, config: PhysicsConfig, scale: W
     for (k in bodies.indices) for (w in worlds) ids[k] = w.addBody(bodies[k])
     var minX = Double.MAX_VALUE; var maxX = -Double.MAX_VALUE; var minY = Double.MAX_VALUE; var maxY = -Double.MAX_VALUE
     for (i in 0 until serial.particleCount) {
-        minX = minOf(minX, serial.x[i]); maxX = maxOf(maxX, serial.x[i]); minY = minOf(minY, serial.y[i]); maxY = maxOf(maxY, serial.y[i])
+        minX = minOf(minX, serial.x[i].toDouble()); maxX = maxOf(maxX, serial.x[i].toDouble()); minY = minOf(minY, serial.y[i].toDouble()); maxY = maxOf(maxY, serial.y[i].toDouble())
     }
     val r0 = 0.5 * serial.meanLinkLength
     val rnd = java.util.Random(20261026L)
@@ -87,7 +87,7 @@ private fun stream(bodies: List<BodyDefinition>, config: PhysicsConfig, scale: W
             val r = r0 * (0.6 + 0.8 * rnd.nextDouble())
             val vx = (rnd.nextDouble() - 0.5) * 0.2; val vy = (rnd.nextDouble() - 0.5) * 0.2
             var id = -1
-            for (w in worlds) id = w.addFree(x, y, r, vx, vy)
+            for (w in worlds) id = w.addFree(x.toFloat(), y.toFloat(), r.toFloat(), vx.toFloat(), vy.toFloat())
             alive.add(id); added++
         }
         var k = 0
@@ -102,7 +102,7 @@ private fun stream(bodies: List<BodyDefinition>, config: PhysicsConfig, scale: W
             compacted = true
         }
         val on = if (tick % 40 < 20) 1.0 else 0.0
-        for (w in worlds) { w.setAllMuscleTargets(on); w.step() }
+        for (w in worlds) { w.setAllMuscleTargets(on.toFloat()); w.step() }
         if (hashOf(serial, serial.particleCount) != hashOf(parallel, parallel.particleCount)) {
             println("FREE stream: разошлись на тике $tick (живых ${alive.size})"); return false
         }

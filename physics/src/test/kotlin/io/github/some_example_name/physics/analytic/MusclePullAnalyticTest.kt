@@ -12,7 +12,7 @@ import org.junit.Test
  * 35 клеток из 120 гибли по правилу «центр в чужом радиусе», ни одна связь при этом не рвалась.
  */
 class MusclePullAnalyticTest {
-    private class Squeeze(val dead: Int, val torn: Int, val shortest: Double)
+    private class Squeeze(val dead: Int, val torn: Int, val shortest: Float)
 
     private fun squeeze(cols: Int, rows: Int): Squeeze {
         val w = gameWorld().also { it.sleepOn = false }
@@ -23,7 +23,7 @@ class MusclePullAnalyticTest {
         val rest = w.distance(left, right)
         repeat(5) { w.step() }
         for (i in first until first + def.count) w.setCellScale(i, 0.5f)
-        var torn = 0; var shortest = 1.0
+        var torn = 0; var shortest = 1.0f
         repeat(130) {
             w.step()
             torn += w.edgeDeathCount
@@ -37,7 +37,7 @@ class MusclePullAnalyticTest {
         assertEquals("погибло клеток", 0, s.dead)
         assertEquals("порвано связей", 0, s.torn)
         // Мышца при этом работает: тело сократилось хотя бы на треть (команда — вдвое).
-        assertTrue("длина тела к исходной: ${s.shortest}", s.shortest < 0.67)
+        assertTrue("длина тела к исходной: ${s.shortest}", s.shortest < 0.67f)
     }
 
     @Test fun `короткий червь сжимается так же, как до потолка тяги`() {
@@ -45,6 +45,6 @@ class MusclePullAnalyticTest {
         val s = squeeze(12, 3)
         assertEquals("погибло клеток", 0, s.dead)
         assertEquals("порвано связей", 0, s.torn)
-        assertTrue("длина тела к исходной: ${s.shortest}", s.shortest < 0.6)
+        assertTrue("длина тела к исходной: ${s.shortest}", s.shortest < 0.6f)
     }
 }

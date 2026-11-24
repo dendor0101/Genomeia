@@ -44,9 +44,9 @@ private val SUBSTEPS = DemoConst.SUBSTEPS
  * Складывает тело зеркалом относительно вертикали, проходящей через долю [at] его
  * ширины. Всё, что правее, отражается влево — ткань ложится сама на себя.
  */
-private fun fold(s: SwimSolver, topo: Topology, at: Double) {
-    var minX = Double.MAX_VALUE
-    var maxX = -Double.MAX_VALUE
+private fun fold(s: SwimSolver, topo: Topology, at: Float) {
+    var minX = Float.MAX_VALUE
+    var maxX = -Float.MAX_VALUE
     for (i in 0 until topo.n) {
         if (s.px[i] < minX) minX = s.px[i]
         if (s.px[i] > maxX) maxX = s.px[i]
@@ -54,7 +54,7 @@ private fun fold(s: SwimSolver, topo: Topology, at: Double) {
     val line = minX + (maxX - minX) * at
     for (i in 0 until topo.n) {
         if (s.px[i] > line) s.px[i] = line - (s.px[i] - line)
-        s.vx[i] = 0.0; s.vy[i] = 0.0
+        s.vx[i] = 0.0f; s.vy[i] = 0.0f
     }
 }
 
@@ -62,7 +62,7 @@ private fun run(
     topo: Topology,
     label: String,
     params: SwimParams,
-    foldAt: Double,
+    foldAt: Float,
     frames: Int,
 ): IntArray {
     val s = SwimSolver(topo, params)
@@ -135,20 +135,20 @@ fun main(args: Array<String>) {
     println("складка делается зеркалом, мышцы не активны, считаются вывернутые треугольники")
     println()
 
-    for (foldAt in listOf(0.75, 0.5, 0.25)) {
+    for (foldAt in listOf(0.75f, 0.5f, 0.25f)) {
         println("--- складываем ${((1 - foldAt) * 100).toInt()}% тела " +
             "(зеркало на ${(foldAt * 100).toInt()}% ширины)")
         println(String.format(Locale.ROOT, "%-40s | %6s | %6s | %6s | %6s | %6s",
-            "вариант", "сразу", "0.4 c", "2 c", "8 c", "35 c"))
+            "вариант", "сразу", "0.4f c", "2 c", "8 c", "35 c"))
         // Каждый вариант задаётся ЯВНО, а не «умолчаниями плюс правка». Умолчания
         // SwimParams следуют за DemoSession и меняются вместе с ним — если опереться
         // на них, подписи строк однажды разойдутся с тем, что реально считается.
         // Ровно это здесь и случилось, когда раздельная податливость стала умолчанием.
         val old = SwimParams(
-            areaComplianceInverted = -1.0, areaMaxStep = 0.0, areaSmoothRamp = false)
-        run(topo, "старое: площадь 1e-6 всем", old, foldAt, 5040)
-        run(topo, "жёстко всем (площадь 0)", old.copy(areaCompliance = 0.0), foldAt, 5040)
-        run(topo, "раздельно, без сглаживаний", old.copy(areaComplianceInverted = 0.0),
+            areaComplianceInverted = -1.0f, areaMaxStep = 0.0f, areaSmoothRamp = false)
+        run(topo, "старое: площадь 1e-6f всем", old, foldAt, 5040)
+        run(topo, "жёстко всем (площадь 0)", old.copy(areaCompliance = 0.0f), foldAt, 5040)
+        run(topo, "раздельно, без сглаживаний", old.copy(areaComplianceInverted = 0.0f),
             foldAt, 5040)
         run(topo, "как сейчас (раздельно+плавно+потолок)", SwimParams(), foldAt, 5040)
         println()
@@ -173,10 +173,10 @@ fun main(args: Array<String>) {
     println(String.format(Locale.ROOT, "%-14s | %8s | %8s | %11s | %11s",
         "", "50% 8c", "75% 8c", "600 кадров", ""))
 
-    for (aInv in listOf(-1.0, 0.0, 1e-9, 1e-8, 1e-7, 3e-7)) {
+    for (aInv in listOf(-1.0f, 0.0f, 1e-9f, 1e-8f, 1e-7f, 3e-7f)) {
         val p = SwimParams(areaComplianceInverted = aInv)
 
-        fun foldLeft(at: Double): Int {
+        fun foldLeft(at: Float): Int {
             val s = SwimSolver(topo, p)
             s.reset(); fold(s, topo, at)
             for (fr in 1..1200) s.frameHoldMuscle0(DT, SUBSTEPS, hold = false)
@@ -193,7 +193,7 @@ fun main(args: Array<String>) {
 
         println(String.format(Locale.ROOT, "%-14s | %8d | %8d | %11.3e | %11.3e",
             if (aInv < 0) "как обычной" else String.format(Locale.ROOT, "%.0e", aInv),
-            foldLeft(0.5), foldLeft(0.25), kotlin.math.abs(l), om))
+            foldLeft(0.5f), foldLeft(0.25f), kotlin.math.abs(l), om))
     }
     println()
     println("«как обычной» — прежнее поведение, вывернутым та же 1e-6.")
@@ -221,9 +221,9 @@ fun main(args: Array<String>) {
     fun jerk(label: String, p: SwimParams) {
         val s = SwimSolver(topo, p)
         s.reset()
-        fold(s, topo, 0.5)
-        var peakV = 0.0
-        var peakKE = 0.0
+        fold(s, topo, 0.5f)
+        var peakV = 0.0f
+        var peakKE = 0.0f
         var flips = 0
         var framesToZero = -1
         var prevInv = s.countInverted()
@@ -245,17 +245,17 @@ fun main(args: Array<String>) {
             if (framesToZero < 0) "не дошло" else framesToZero.toString()))
     }
 
-    val cur = SwimParams(areaMaxStep = 0.0, areaSmoothRamp = false)
+    val cur = SwimParams(areaMaxStep = 0.0f, areaSmoothRamp = false)
     jerk("ступенька, без потолка (было)", cur)
     jerk("+ плавный переход", cur.copy(areaSmoothRamp = true))
-    jerk("+ потолок 0.5 связи", cur.copy(areaMaxStep = 0.5))
-    jerk("+ потолок 0.2 связи", cur.copy(areaMaxStep = 0.2))
-    jerk("+ потолок 0.05 связи", cur.copy(areaMaxStep = 0.05))
-    jerk("плавный + потолок 0.2 (стоит сейчас)", cur.copy(areaSmoothRamp = true, areaMaxStep = 0.2))
-    jerk("плавный + потолок 0.05", cur.copy(areaSmoothRamp = true, areaMaxStep = 0.05))
+    jerk("+ потолок 0.5f связи", cur.copy(areaMaxStep = 0.5f))
+    jerk("+ потолок 0.2f связи", cur.copy(areaMaxStep = 0.2f))
+    jerk("+ потолок 0.05f связи", cur.copy(areaMaxStep = 0.05f))
+    jerk("плавный + потолок 0.2f (стоит сейчас)", cur.copy(areaSmoothRamp = true, areaMaxStep = 0.2f))
+    jerk("плавный + потолок 0.05f", cur.copy(areaSmoothRamp = true, areaMaxStep = 0.05f))
     println()
     println("Для сравнения, СТАРОЕ поведение (мягко всем, застревало):")
-    jerk("площадь 1e-6 всем", cur.copy(areaComplianceInverted = -1.0))
+    jerk("площадь 1e-6f всем", cur.copy(areaComplianceInverted = -1.0f))
 
     // ------------------------------------------------------------------
     //  ЗАВОРОТ БЕЗ ЕДИНОГО ВЫВЕРНУТОГО ТРЕУГОЛЬНИКА.
@@ -279,20 +279,20 @@ fun main(args: Array<String>) {
     println(String.format(Locale.ROOT, "%-24s | %10s | %10s | %10s | %10s",
         "податливость изгиба", "искажение", "верн. за 2с", "тяга/цикл", "ост. |P|"))
 
-    fun bendTest(label: String, bendC: Double) {
+    fun bendTest(label: String, bendC: Float) {
         val p = SwimParams(bendCompliance = bendC)
 
         // 1. Скручиваем контур и смотрим, как далеко форма уходит и возвращается ли.
         val s = SwimSolver(topo, p)
         s.reset()
-        val rx = DoubleArray(topo.n) { s.px[it] }
-        val ry = DoubleArray(topo.n) { s.py[it] }
+        val rx = FloatArray(topo.n) { s.px[it] }
+        val ry = FloatArray(topo.n) { s.py[it] }
         for (e in 0 until topo.boundCount) {
             val i = topo.boundA[e]
-            s.px[i] += kotlin.math.sin(s.py[i] * 9.0) * topo.meanLinkLength * 3.0
+            s.px[i] += kotlin.math.sin(s.py[i] * 9.0f) * topo.meanLinkLength * 3.0f
         }
-        fun distortion(): Double {
-            var m = 0.0
+        fun distortion(): Float {
+            var m = 0.0f
             for (i in 0 until topo.n) {
                 val dx = s.px[i] - rx[i]; val dy = s.py[i] - ry[i]
                 m += dx * dx + dy * dy
@@ -317,11 +317,11 @@ fun main(args: Array<String>) {
             label, peak, left, thrust, t.momentum()))
     }
 
-    bendTest("выключено", -1.0)
-    bendTest("1e-3 (очень мягко)", 1e-3)
-    bendTest("1e-4", 1e-4)
-    bendTest("1e-5", 1e-5)
-    bendTest("1e-6", 1e-6)
+    bendTest("выключено", -1.0f)
+    bendTest("1e-3f (очень мягко)", 1e-3f)
+    bendTest("1e-4f", 1e-4f)
+    bendTest("1e-5f", 1e-5f)
+    bendTest("1e-6f", 1e-6f)
     println()
     println("«искажение» — насколько форма ушла сразу после скручивания, в клетках;")
     println("«верн. за 2с» — сколько осталось через 2 секунды. Меньше значит лучше держит.")

@@ -21,10 +21,10 @@ class SwimLimitRegressionTest {
             state.tearingOn = false
             val topology = Topology.load(file.path)
             // Контактный потолок специально отличается от потолка длины связи.
-            val swim = SwimSolver(topology, SwimParams(contactMaxStep = 2.0))
+            val swim = SwimSolver(topology, SwimParams(contactMaxStep = 2.0f))
             swim.reset()
             val i = state.conA[0]; val j = state.conB[0]
-            state.px[j] = state.px[i] + 10.0 * state.conRest[0]
+            state.px[j] = (state.px[i] + 10.0 * state.conRest[0]).toFloat()
             state.px.copyInto(swim.px); state.py.copyInto(swim.py)
             state.solveLinkMaxLength()
             SwimSolver::class.java.getDeclaredMethod("solveLinkMaxLength")

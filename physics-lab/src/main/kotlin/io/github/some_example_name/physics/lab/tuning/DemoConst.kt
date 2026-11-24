@@ -53,8 +53,8 @@ import kotlin.math.sqrt
  * Теперь источник один: DemoSession. Здесь только чтение.
  */
 internal object DemoConst {
-    private fun d(name: String): Double =
-        (DemoInspector.constant(name) as Number).toDouble()
+    private fun d(name: String): Float =
+        (DemoInspector.constant(name) as Number).toFloat()
 
     private fun i(name: String): Int =
         (DemoInspector.constant(name) as Number).toInt()

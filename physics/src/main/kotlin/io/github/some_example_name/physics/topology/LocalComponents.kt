@@ -5,11 +5,11 @@ class LocalComponents(
     private val topology: BakedTopology,
     private val of: IntArray,
     private val size: IntArray,
-    private val mass: DoubleArray,
-    private val restInvMass: DoubleArray,
+    private val mass: FloatArray,
+    private val restInvMass: FloatArray,
     private val dead: BooleanArray,
-    private val flowX: DoubleArray,
-    private val flowY: DoubleArray,
+    private val flowX: FloatArray,
+    private val flowY: FloatArray,
     var count: Int,
     private val sleep: BodySleep,
 ) {
@@ -22,13 +22,13 @@ class LocalComponents(
     fun addCell(v: Int) {
         val o = of[v]
         size[o]++
-        if (restInvMass[v] > 0.0) mass[o] += 1.0 / restInvMass[v]
+        if (restInvMass[v] > 0.0f) mass[o] += 1.0f / restInvMass[v]
     }
 
     fun removeCell(v: Int) {
         val o = of[v]
         size[o]--
-        if (restInvMass[v] > 0.0) mass[o] -= 1.0 / restInvMass[v]
+        if (restInvMass[v] > 0.0f) mass[o] -= 1.0f / restInvMass[v]
     }
 
     /** Вызывать сразу после удаления edge, пока следующее ребро ещё живо:
@@ -61,14 +61,14 @@ class LocalComponents(
         val queue = if (ah == at) frontA else frontB
         val length = if (ah == at) at else bt
         val old = of[queue[0]]; val fresh = count++
-        size[fresh] = 0; mass[fresh] = 0.0
+        size[fresh] = 0; mass[fresh] = 0.0f
         flowX[fresh] = flowX[old]; flowY[fresh] = flowY[old]
         for (k in 0 until length) {
             val w = queue[k]
             of[w] = fresh
             if (dead[w]) continue
             size[fresh]++
-            if (restInvMass[w] > 0.0) mass[fresh] += 1.0 / restInvMass[w]
+            if (restInvMass[w] > 0.0f) mass[fresh] += 1.0f / restInvMass[w]
         }
         size[old] -= size[fresh]; mass[old] -= mass[fresh]
         sleep.inheritSplit(fresh, old, queue, length)

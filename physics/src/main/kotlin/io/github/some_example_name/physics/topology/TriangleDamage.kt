@@ -26,28 +26,30 @@ internal fun BodyState.removePersistentInversions() {
     val w = activeWorkers
     if (w != null && w.count > 1 && layout != null) { parallelPhysics(w).scanInversions(layout); return }
     if (sleep.asleepCount == 0 || layout == null) {
-        for (t in 0 until triCount) checkInversion(t)
+        checkInversionsRange(0, triCount)
         return
     }
     val areas = layout.areas
     for (block in 0 until layout.buckets) {
         if (block < layout.seam && layout.awake[block] == 0) continue
-        for (slot in areas.start[block] until areas.start[block] + areas.count[block]) {
-            val t = areas.items[slot]
-            if (t >= 0) checkInversion(t)
-        }
+        checkInversionsOf(areas.items, areas.start[block], areas.start[block] + areas.count[block])
     }
 }
 
-/** Счётчик инверсии треугольника [t] воркером; true — пора убить (делает один поток, killTriangleNow). */
-internal fun BodyState.inversionExpired(t: Int): Boolean {
-    val ages = baked.invertedTicks
+/**
+ * Счётчик инверсии треугольника [t]: true — пора убить (делает один поток, killTriangleNow). Единственная запись
+ * этой арифметики для одного потока и воркеров; `inline` с массивами в параметрах — циклы держат их в локальных
+ * переменных (см. lengthsBeforeLoop).
+ */
+@Suppress("NOTHING_TO_INLINE")
+internal inline fun inversionExpiredAt(t: Int, ages: ByteArray, triAlive: BooleanArray, triId: IntArray,
+                                       triA: IntArray, triB: IntArray, triC: IntArray, px: FloatArray, py: FloatArray): Boolean {
     val id = triId[t]
-    if (!baked.triAlive[id]) return false
+    if (!triAlive[id]) return false
     val a = triA[t]; val b = triB[t]; val c = triC[t]
     val area2 = (px[b] - px[a]) * (py[c] - py[a]) -
         (py[b] - py[a]) * (px[c] - px[a])
-    if (area2 < 0.0) {
+    if (area2 < 0.0f) {
         val age = ages[id].toInt() + 1
         if (age > INVERTED_TRIANGLE_HOLD_TICKS) return true
         ages[id] = age.toByte()
@@ -57,19 +59,23 @@ internal fun BodyState.inversionExpired(t: Int): Boolean {
     return false
 }
 
-private fun BodyState.checkInversion(t: Int) {
-    val ages = baked.invertedTicks
-    val id = triId[t]
-    if (!baked.triAlive[id]) return
-    val a = triA[t]; val b = triB[t]; val c = triC[t]
-    val area2 = (px[b] - px[a]) * (py[c] - py[a]) -
-        (py[b] - py[a]) * (px[c] - px[a])
-    if (area2 < 0.0) {
-        val age = ages[id].toInt() + 1
-        if (age > INVERTED_TRIANGLE_HOLD_TICKS) killTriangleNow(id)
-        else ages[id] = age.toByte()
-    } else {
-        ages[id] = 0
+/** Треугольники [t0, t1) по номерам: без сна. Гибель — сразу, как раньше: массивы от неё не пересоздаются. */
+private fun BodyState.checkInversionsRange(t0: Int, t1: Int) {
+    val ages = baked.invertedTicks; val alive = baked.triAlive; val triId = triId
+    val triA = triA; val triB = triB; val triC = triC; val px = px; val py = py
+    lengthsBeforeLoop(ages.size or alive.size or triId.size or triA.size or triB.size or triC.size or px.size or py.size)
+    for (t in t0 until t1) if (inversionExpiredAt(t, ages, alive, triId, triA, triB, triC, px, py)) killTriangleNow(triId[t])
+}
+
+/** Треугольники списка [items] на местах [from, to); отрицательный номер — пустое место списка. */
+private fun BodyState.checkInversionsOf(items: IntArray, from: Int, to: Int) {
+    val ages = baked.invertedTicks; val alive = baked.triAlive; val triId = triId
+    val triA = triA; val triB = triB; val triC = triC; val px = px; val py = py
+    lengthsBeforeLoop(ages.size or alive.size or triId.size or triA.size or triB.size or triC.size or px.size or py.size or
+        items.size)
+    for (slot in from until to) {
+        val t = items[slot]
+        if (t >= 0 && inversionExpiredAt(t, ages, alive, triId, triA, triB, triC, px, py)) killTriangleNow(triId[t])
     }
 }
 

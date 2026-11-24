@@ -39,17 +39,17 @@ internal object Probe {
     lateinit var body: BodyDefinition
 
     var n = 0
-    lateinit var px: DoubleArray
-    lateinit var py: DoubleArray
-    lateinit var vx: DoubleArray
-    lateinit var vy: DoubleArray
-    lateinit var prevX: DoubleArray
-    lateinit var prevY: DoubleArray
-    lateinit var invMass: DoubleArray
-    lateinit var restInvMass: DoubleArray
-    lateinit var matchWeight: DoubleArray
-    lateinit var muscleActivation: DoubleArray
-    lateinit var muscleTarget: DoubleArray
+    lateinit var px: FloatArray
+    lateinit var py: FloatArray
+    lateinit var vx: FloatArray
+    lateinit var vy: FloatArray
+    lateinit var prevX: FloatArray
+    lateinit var prevY: FloatArray
+    lateinit var invMass: FloatArray
+    lateinit var restInvMass: FloatArray
+    lateinit var matchWeight: FloatArray
+    lateinit var muscleActivation: FloatArray
+    lateinit var muscleTarget: FloatArray
     lateinit var rigidBones: Array<IntArray>
     lateinit var organismOf: IntArray
     lateinit var boundA: IntArray
@@ -61,7 +61,7 @@ internal object Probe {
     val boundCount: Int get() = field("boundCount")
     val conCount: Int get() = field("conCount")
     lateinit var conA: IntArray
-    lateinit var conRest: DoubleArray
+    lateinit var conRest: FloatArray
     lateinit var triA: IntArray
     lateinit var triMuscle: IntArray
     lateinit var triB: IntArray
@@ -93,7 +93,7 @@ internal object Probe {
 
     /** Текущая податливость изгиба контура в демо: это состояние, а не константа. */
     fun bendCompliance(): Double =
-        demo.state.bendCompliance()
+        demo.state.bendCompliance().toDouble()
 
     fun constBool(name: String): Boolean {
 
@@ -162,31 +162,31 @@ internal object Probe {
         demo.state.restoreTopology()
         refresh()
         for (i in 0 until n) {
-            px[i] = body.x[i].toDouble(); py[i] = body.y[i].toDouble()
-            vx[i] = 0.0; vy[i] = 0.0
+            px[i] = body.x[i].toDouble().toFloat(); py[i] = body.y[i].toDouble().toFloat()
+            vx[i] = 0.0f; vy[i] = 0.0f
             // Массу берём ТУ ЖЕ, что считает демо, а не зашитую единицу. Раньше здесь
             // стояло 1.0, и когда демо начало считать её из радиуса, разошлось на
             // один ulp — этого хватило, чтобы за 200 кадров траектории разъехались.
-            invMass[i] = restInvMass[i]; matchWeight[i] = 1.0
+            invMass[i] = restInvMass[i]; matchWeight[i] = 1.0f
             prevX[i] = px[i]; prevY[i] = py[i]
         }
-        muscleActivation.fill(0.0)
-        muscleTarget.fill(0.0)
+        muscleActivation.fill(0.0f)
+        muscleTarget.fill(0.0f)
         resetFlow()
     }
 
     // --- стадии решателя ---
-    fun integrate(h: Double) { demo.state.integrate(h) }
-    fun solveConstraints(h: Double) { demo.state.solveConstraints(h) }
-    fun solveAreas(h: Double) { demo.state.solveAreas(h) }
+    fun integrate(h: Double) { demo.state.integrate(h.toFloat()) }
+    fun solveConstraints(h: Double) { demo.state.solveConstraints(h.toFloat()) }
+    fun solveAreas(h: Double) { demo.state.solveAreas(h.toFloat()) }
     fun projectBones() { for (b in rigidBones.indices) demo.state.projectBone(b) }
-    fun updateVelocities(h: Double) { demo.state.updateVelocities(h) }
-    fun applyDragVelocity(h: Double) { demo.state.applyDragVelocity(h) }
-    fun applyViscosity(h: Double) { demo.state.applyViscosity(h) }
-    fun applyNormalDrag(h: Double) { demo.state.applyNormalDrag(h) }
+    fun updateVelocities(h: Double) { demo.state.updateVelocities(h.toFloat()) }
+    fun applyDragVelocity(h: Double) { demo.state.applyDragVelocity(h.toFloat()) }
+    fun applyViscosity(h: Double) { demo.state.applyViscosity(h.toFloat()) }
+    fun applyNormalDrag(h: Double) { demo.state.applyNormalDrag(h.toFloat()) }
     fun applyRestitution() { demo.state.applyRestitution() }
-    fun applyMediumDrag(h: Double) { demo.state.applyMediumDrag(h) }
-    fun updateMuscles(dt: Double) { demo.state.updateMuscles(dt) }
+    fun applyMediumDrag(h: Double) { demo.state.applyMediumDrag(h.toFloat()) }
+    fun updateMuscles(dt: Double) { demo.state.updateMuscles(dt.toFloat()) }
 
     /**
      * Переворачивает направление обхода связей — то же, что делает simulate() каждый
@@ -222,8 +222,8 @@ internal object Probe {
      * показывало совсем другую картину, чем видел человек.
      */
     fun frameWithMuscles(dt: Double, targets: DoubleArray) {
-        demo.world.setAllMuscleTargets(0.0)
-        for (m in targets.indices) if (m < demo.world.muscleCount) demo.world.setMuscleTarget(m, targets[m])
+        demo.world.setAllMuscleTargets(0.0f)
+        for (m in targets.indices) if (m < demo.world.muscleCount) demo.world.setMuscleTarget(m, targets[m].toFloat())
         tick(dt)
     }
 
@@ -236,8 +236,8 @@ internal object Probe {
      */
     /** Одна мышца держится сокращённой — как при наведении мышью в окне. */
     fun frameHold(dt: Double, muscle: Int) {
-        demo.world.setAllMuscleTargets(0.0)
-        if (muscle in 0 until demo.world.muscleCount) demo.world.setMuscleTarget(muscle, 1.0)
+        demo.world.setAllMuscleTargets(0.0f)
+        if (muscle in 0 until demo.world.muscleCount) demo.world.setMuscleTarget(muscle, 1.0f)
         tick(dt)
     }
 
@@ -246,13 +246,13 @@ internal object Probe {
         // замера, см. RB_PERIOD в DemoSession.
         val period = demo.state.gaitPeriod
         val duty = (period * demo.state.gaitDuty).toInt().coerceAtLeast(1)
-        demo.world.setAllMuscleTargets(if (frame % period < duty) 1.0 else 0.0)
+        demo.world.setAllMuscleTargets((if (frame % period < duty) 1.0 else 0.0).toFloat())
         tick(dt)
     }
 
     fun frame(dt: Double, sub: Int, contract: Boolean, hydro: Boolean = true) {
-        demo.world.setAllMuscleTargets(0.0)
-        if (contract && demo.world.muscleCount > 0) demo.world.setMuscleTarget(0, 1.0)
+        demo.world.setAllMuscleTargets(0.0f)
+        if (contract && demo.world.muscleCount > 0) demo.world.setMuscleTarget(0, 1.0f)
         if (hydro) { tick(dt); return }
         updateMuscles(dt)
         val h = dt / sub
@@ -298,8 +298,8 @@ internal object Probe {
         // воспроизведение шло с СОВЕРШЕННО другой физикой кости: две записанные
         // сессии выглядели исправными, хотя руками тело шло вразнос.
         val prev = field<Int>("dragId")
-        if (prev >= 0 && prev != id) matchWeight[prev] = 1.0
-        matchWeight[id] = const("DRAG_MATCH_WEIGHT")
+        if (prev >= 0 && prev != id) matchWeight[prev] = 1.0f
+        matchWeight[id] = const("DRAG_MATCH_WEIGHT").toFloat()
         setField("dragId", id)
         setField("mouseX", x)
         setField("mouseY", y)
@@ -307,7 +307,7 @@ internal object Probe {
 
     fun dragRelease() {
         val prev = field<Int>("dragId")
-        if (prev >= 0) matchWeight[prev] = 1.0
+        if (prev >= 0) matchWeight[prev] = 1.0f
         setField("dragId", -1)
     }
 
@@ -374,11 +374,11 @@ internal object Probe {
     }
 
     /** Наибольшая скорость, внесённая стадией, и число сдвинутых ею клеток. */
-    fun stageMove(): DoubleArray = field("dbgStageMove")
+    fun stageMove(): FloatArray = field("dbgStageMove")
     fun stageHits(): IntArray = field("dbgStageHits")
-    fun stageL(): DoubleArray = field("dbgStageL")
-    fun stagePx(): DoubleArray = field("dbgStagePx")
-    fun stagePy(): DoubleArray = field("dbgStagePy")
+    fun stageL(): FloatArray = field("dbgStageL")
+    fun stagePx(): FloatArray = field("dbgStagePx")
+    fun stagePy(): FloatArray = field("dbgStagePy")
 
     /** Стенд решётки: убить долю связей тем же путём, что разрыв в игре. */
     fun applyLabDamage() { demo.applyLabDamage() }
@@ -534,7 +534,7 @@ internal object Probe {
 
     fun snapshotPos(): DoubleArray {
         val out = DoubleArray(2 * n)
-        for (i in 0 until n) { out[2 * i] = px[i]; out[2 * i + 1] = py[i] }
+        for (i in 0 until n) { out[2 * i] = px[i].toDouble(); out[2 * i + 1] = py[i].toDouble() }
         return out
     }
 
@@ -576,25 +576,25 @@ internal object Probe {
     /** Скорость увлечённой среды. Теперь ОДИН вектор на организм, а не массив по рёбрам. */
     /** Наибольший запас среди организмов: теперь их несколько. */
     fun flowPeak(): Double {
-        val fx = demo.state.flowVX as DoubleArray
-        val fy = demo.state.flowVY as DoubleArray
+        val fx = demo.state.flowVX as FloatArray
+        val fy = demo.state.flowVY as FloatArray
         var mx = 0.0
-        for (o in fx.indices) mx = maxOf(mx, sqrt(fx[o] * fx[o] + fy[o] * fy[o]))
+        for (o in fx.indices) mx = maxOf(mx, sqrt(fx[o] * fx[o] + fy[o] * fy[o]).toDouble())
         return mx
     }
 
     /** Запас среды одного организма. */
     fun flowOf(o: Int): Double {
-        val fx = demo.state.flowVX as DoubleArray
-        val fy = demo.state.flowVY as DoubleArray
+        val fx = demo.state.flowVX as FloatArray
+        val fy = demo.state.flowVY as FloatArray
         if (o < 0 || o >= fx.size) return 0.0
-        return sqrt(fx[o] * fx[o] + fy[o] * fy[o])
+        return sqrt(fx[o] * fx[o] + fy[o] * fy[o]).toDouble()
     }
 
 
     /** Запас среды теперь МАССИВ — по одному на организм, а не один на мир. */
     fun resetFlow() {
-        (demo.state.flowVX as DoubleArray).fill(0.0)
-        (demo.state.flowVY as DoubleArray).fill(0.0)
+        (demo.state.flowVX as FloatArray).fill(0f)
+        (demo.state.flowVY as FloatArray).fill(0f)
     }
 }

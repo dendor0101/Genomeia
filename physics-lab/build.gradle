@@ -35,6 +35,10 @@ tasks.withType(JavaExec).configureEach {
     jvmArgs '-XstartOnFirstThread'
   }
 }
+// Число подшагов физики в тестах стендов — тем же свойством, что у :physics: gradlew :physics-lab:test -Psubsteps=20.
+tasks.withType(Test).configureEach {
+  if (project.hasProperty('substeps')) systemProperty 'genomeia.substeps', project.property('substeps')
+}
 // Толпа тел без мышц и сна — цель 100k клеток в 30 UPS. См. CrowdBench.kt.
 //   gradlew :physics-lab:crowdBench -Pcells=100000 -Pworkers=8 -Pwarm=150 -Pmeasure=150
 tasks.register('crowdBench', JavaExec) {
@@ -43,12 +47,55 @@ tasks.register('crowdBench', JavaExec) {
   classpath = sourceSets.main.runtimeClasspath
   mainClass = 'io.github.some_example_name.physics.lab.bench.CrowdBenchKt'
   workingDir = rootProject.projectDir
+  // -Pgame=1 — режим «как в игре» (мышцы вперемешку), -Ppatches=1 — мышцы сплошными участками.
   args = [project.findProperty('cells') ?: '100000', project.findProperty('workers') ?: '8',
           project.findProperty('warm') ?: '150', project.findProperty('measure') ?: '150',
-          project.findProperty('push') ?: '1']
+          project.findProperty('push') ?: '1',
+          project.hasProperty('patches') ? 'patches' : (project.hasProperty('game') ? 'game' : 'crowd')]
   jvmArgs '-Xmx3g', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
   if (project.hasProperty('jfr')) jvmArgs "-XX:StartFlightRecording=filename=${project.property('jfr')},settings=profile"
 }
+// Опыт «острова»: та же толпа одним миром (-Pmode=one) и по миру на тело (-Pmode=split). См. IslandBench.kt.
+//   gradlew :physics-lab:islandBench -Pcells=20000 -Pworkers=8 -Pmode=split -Ppatches=1 -Psubsteps=32 -Pworld=1024
+tasks.register('islandBench', JavaExec) {
+  group = 'verification'
+  description = 'Оценка тика «по островам»: каждое тело считает все подшаги подряд в своём потоке'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.bench.IslandBenchKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('cells') ?: '20000', project.findProperty('workers') ?: '8',
+          project.findProperty('warm') ?: '100', project.findProperty('measure') ?: '200',
+          project.findProperty('push') ?: '1', project.findProperty('mode') ?: 'split',
+          project.hasProperty('patches') ? 'patches' : (project.hasProperty('game') ? 'game' : 'crowd'),
+          project.findProperty('world') ?: '1024', project.hasProperty('bodies') ? 'bodies' : '-']
+  jvmArgs '-Xmx3g', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+// Мир из настоящих геномов (тела стендов): цена тика одним миром (-Pmode=one) и по миру на тело (-Pmode=split). См. GenomeBench.kt.
+//   gradlew :physics-lab:genomeBench -Pcells=20000 -Pworkers=8 -Pmode=one -Psubsteps=32      (-PmaxBody=6000, -Ponly=earthworm)
+tasks.register('genomeBench', JavaExec) {
+  group = 'verification'
+  description = 'Толпа настоящих геномов с работающими мышцами: мс на тик, стадии, сумма мира'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.bench.GenomeBenchKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('cells') ?: '20000', project.findProperty('workers') ?: '8',
+          project.findProperty('warm') ?: '60', project.findProperty('measure') ?: '120',
+          project.findProperty('mode') ?: 'one', project.findProperty('maxBody') ?: '6000',
+          project.findProperty('minBody') ?: '20', project.findProperty('only') ?: '-']
+  jvmArgs '-Xmx3g', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+// Как лежат связи и мышцы у настоящих геномов (без единого тика). См. GenomeLayoutReport.kt.
+tasks.register('genomeLayoutReport', JavaExec) {
+  group = 'verification'
+  description = 'Разбор тел геномов: цепочки связей, волны, доля мышц и костей'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.bench.GenomeLayoutReportKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('minCells') ?: '100']
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+// Цена закона физики на ПК и на телефоне (lawCostBench, lawCostBenchAndroid) — отдельным файлом.
+apply from: 'android-bench.gradle'
 
 // Стенд честности физики RealBodyDemo: gradlew :physics-lab:physicsAudit
 // Считает сохранение импульса и момента по стадиям решателя и печатает таблицы.

@@ -17,7 +17,7 @@ import kotlin.math.sqrt
  * Результат побитово прежний: те же операции над теми же числами.
  * Тот же порядок держат updateVelocities и TickMomentum.afterExternal.
  */
-fun BodyState.integrate(h: Double) {
+fun BodyState.integrate(h: Float) {
     prepareAwakeSpans()
     val s = sleep
     // Только бодрствующие частицы: у спящей prevX = px и скорость ноль. См. BodySleep.
@@ -29,10 +29,18 @@ fun BodyState.integrate(h: Double) {
  * ограничениями блока (см. solveBlockedIteration): частицы блока остаются в кэше.
  * Спящая частица (invMass = 0) здесь — пустая работа: prevX и так равен px.
  */
-internal fun BodyState.integrateRange(from: Int, to: Int, h: Double, hitBones: BoneWallHits = wallHits) {
+internal fun BodyState.integrateRange(from: Int, to: Int, h: Float, hitBones: BoneWallHits = wallHits) {
+    // Массивы — в локальные, длины — до цикла: см. lengthsBeforeLoop (на телефоне проход 8.6 → 3.8 мс).
+    // Рамка мира за проход не меняется — тоже в локальные.
+    val px = px; val py = py; val vx = vx; val vy = vy; val prevX = prevX; val prevY = prevY
+    val invMass = invMass; val inContact = inContact; val radius = radius
+    val boundsOn = boundsOn
+    val boundsMinX = boundsMinX; val boundsMaxX = boundsMaxX; val boundsMinY = boundsMinY; val boundsMaxY = boundsMaxY
+    lengthsBeforeLoop(px.size or py.size or vx.size or vy.size or prevX.size or prevY.size or invMass.size or
+        inContact.size or radius.size)
     for (i in from until to) {
         val x = px[i]; val y = py[i]
-        if (invMass[i] == 0.0) { prevX[i] = x; prevY[i] = y; inContact[i] = false; continue }
+        if (invMass[i] == 0.0f) { prevX[i] = x; prevY[i] = y; inContact[i] = false; continue }
         val nvy = vy[i] + GRAVITY * h
         var nx = x + vx[i] * h
         var ny = y + nvy * h
@@ -63,11 +71,11 @@ internal fun BodyState.integrateRange(from: Int, to: Int, h: Double, hitBones: B
 }
 
 /** Порядок «сначала чтения» — см. integrate. Худшая раскладка 100k: 13.7 мс против 7.8. */
-fun BodyState.updateVelocities(h: Double) {
+fun BodyState.updateVelocities(h: Float) {
     prepareAwakeSpans()
     val s = sleep
     for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
-        if (invMass[i] == 0.0) { vx[i] = 0.0; vy[i] = 0.0; continue }
+        if (invMass[i] == 0.0f) { vx[i] = 0.0f; vy[i] = 0.0f; continue }
         val nvx = (px[i] - prevX[i]) / h
         val nvy = (py[i] - prevY[i]) / h
         vx[i] = nvx; vy[i] = nvy
@@ -75,9 +83,9 @@ fun BodyState.updateVelocities(h: Double) {
 }
 
 /** Продольная вязкость: гасит скорость деформации, жёсткое движение не трогает. */
-fun BodyState.applyViscosity(h: Double) {
+fun BodyState.applyViscosity(h: Float) {
     var k = VISCOSITY * h
-    if (k > 0.5) k = 0.5
+    if (k > 0.5f) k = 0.5f
     // Со спящими — только блоки с бодрствующими частицами и шов; у спящих связей вес
     // ноль, и они всё равно пропускаются. Без сна — прежний порядок. См. BodySleep.
     val layout = constraintBlocks
@@ -85,29 +93,49 @@ fun BodyState.applyViscosity(h: Double) {
     if (w != null && organismCount > 1) { parallelPhysics(w).viscosity(k, layout); return }
     // Без воркеров — тот же порядок, что у них: по блокам, затем швы.
     if (layout == null) {
-        for (c in 0 until conCount) viscousLink(c, k)
+        viscousLinksRange(0, conCount, k)
         return
     }
     val links = layout.links
     for (block in 0 until layout.buckets) {
         if (block < layout.seam && layout.awake[block] == 0) continue
-        for (slot in links.start[block] until links.start[block] + links.count[block]) {
-            val c = links.items[slot]
-            if (c >= 0) viscousLink(c, k)
-        }
+        viscousLinksOf(links.items, links.start[block], links.start[block] + links.count[block], k)
     }
 }
 
-internal fun BodyState.viscousLink(c: Int, k: Double) {
+/** Вязкость одной связи: для проверок поштучно. Циклы стадии идут через viscousLinksRange и viscousLinksOf. */
+internal fun BodyState.viscousLink(c: Int, k: Float) = viscousLinkAt(c, k, conDead, conA, conB, invMass, px, py, vx, vy)
+
+/** Вязкость связей [c0, c1) по номерам. Массивы — в локальные, длины — до цикла: см. lengthsBeforeLoop. */
+internal fun BodyState.viscousLinksRange(c0: Int, c1: Int, k: Float) {
+    val dead = conDead; val a = conA; val b = conB; val w = invMass; val px = px; val py = py; val vx = vx; val vy = vy
+    lengthsBeforeLoop(dead.size or a.size or b.size or w.size or px.size or py.size or vx.size or vy.size)
+    for (c in c0 until c1) viscousLinkAt(c, k, dead, a, b, w, px, py, vx, vy)
+}
+
+/** Вязкость связей списка [items] на местах [from, to); отрицательный номер — пустое место списка. */
+internal fun BodyState.viscousLinksOf(items: IntArray, from: Int, to: Int, k: Float) {
+    val dead = conDead; val a = conA; val b = conB; val w = invMass; val px = px; val py = py; val vx = vx; val vy = vy
+    lengthsBeforeLoop(dead.size or a.size or b.size or w.size or px.size or py.size or vx.size or vy.size or items.size)
+    for (slot in from until to) {
+        val c = items[slot]
+        if (c >= 0) viscousLinkAt(c, k, dead, a, b, w, px, py, vx, vy)
+    }
+}
+
+/** Ядро вязкости связи — единственная запись арифметики; `inline` с массивами в параметрах (см. lengthsBeforeLoop). */
+@Suppress("NOTHING_TO_INLINE")
+internal inline fun viscousLinkAt(c: Int, k: Float, conDead: BooleanArray, conA: IntArray, conB: IntArray, invMass: FloatArray,
+                                  px: FloatArray, py: FloatArray, vx: FloatArray, vy: FloatArray) {
     if (conDead[c]) return
     val i = conA[c]; val j = conB[c]
     val wi = invMass[i]; val wj = invMass[j]
     val w = wi + wj
-    if (w == 0.0) return
+    if (w == 0.0f) return
     var nx = px[j] - px[i]
     var ny = py[j] - py[i]
     val len = sqrt(nx * nx + ny * ny)
-    if (len < 1e-12) return
+    if (len < 1e-12f) return
     nx /= len; ny /= len
     val dv = (vx[j] - vx[i]) * nx + (vy[j] - vy[i]) * ny
     val si = k * wi / w; val sj = k * wj / w
@@ -115,17 +143,17 @@ internal fun BodyState.viscousLink(c: Int, k: Double) {
     vx[j] -= dv * nx * sj; vy[j] -= dv * ny * sj
 }
 
-fun BodyState.applyNormalDrag(h: Double) {
+fun BodyState.applyNormalDrag(h: Float) {
     if (dbgDragOff) return
     var kd = FLOW_DECAY * h
-    if (kd > 1.0) kd = 1.0
+    if (kd > 1.0f) kd = 1.0f
 
     // --- ЗАПАС СРЕДЫ. Догоняет скорость ЦЕНТРА МАСС, см. flowVX. ---
     //
     // Считается ДО цикла по рёбрам и ровно один раз: это одна степень свободы на
     // организм, а не на ребро. Вращение сюда не попадает — у чистого вращения
     // скорость центра масс равна нулю.
-    if (FLOW_ENTRAIN > 0.0 && FLOW_MASS > 0.0) {
+    if (FLOW_ENTRAIN > 0.0f && FLOW_MASS > 0.0f) {
         // Скорость центра масс КАЖДОГО организма по отдельности.
         //
         // Раньше здесь было одно среднее по всем частицам мира, и это была прямая
@@ -145,7 +173,7 @@ fun BodyState.applyNormalDrag(h: Double) {
         // умноженному на N и на разность геометрического центра и центра масс, —
         // то есть НЕ ноль. Вращение начинает заряжать запас, среда толкает тело,
         // толчок снова крутит. Движение из ничего.
-        for (o in 0 until organismCount) { comAccX[o] = 0.0; comAccY[o] = 0.0 }
+        for (o in 0 until organismCount) { comAccX[o] = 0.0f; comAccY[o] = 0.0f }
         // Спящие: скорость ноль, масса ноль, запас среды ноль — проходы по ним пусты.
         prepareAwakeSpans()
         val s = sleep
@@ -154,9 +182,9 @@ fun BodyState.applyNormalDrag(h: Double) {
         if (cw != null) parallelPhysics(cw).comSums()
         else if (constraintBlocks != null) comSumsSerial()
         else for (q in 0 until s.spanCount) for (i in s.spanStart[q] until s.spanEnd[q]) {
-            if (invMass[i] <= 0.0) continue
+            if (invMass[i] <= 0.0f) continue
             val o = organismOf[i]
-            val m = 1.0 / invMass[i]
+            val m = 1.0f / invMass[i]
             comAccX[o] += m * vx[i]; comAccY[o] += m * vy[i]
         }
 
@@ -165,12 +193,12 @@ fun BodyState.applyNormalDrag(h: Double) {
         // раскачка, поэтому коэффициент здесь и ограничивается. С этим ограничением
         // модель устойчива при ЛЮБОЙ массе среды, и подбирать её можно свободно.
         var kf = FLOW_ENTRAIN * h
-        val limit = 0.9 / (1.0 + FLOW_MASS)
+        val limit = 0.9f / (1.0f + FLOW_MASS)
         if (kf > limit) kf = limit
 
         for (o in 0 until organismCount) {
             val mo = organismMass[o]
-            if (mo <= 0.0) continue
+            if (mo <= 0.0f) continue
             val comVX = comAccX[o] / mo
             val comVY = comAccY[o] / mo
             val dfx = (comVX - flowVX[o]) * kf
@@ -199,11 +227,14 @@ fun BodyState.applyNormalDrag(h: Double) {
     if (w != null) { parallelPhysics(w).normalDrag(h); return }
     val layout = constraintBlocks
     if (layout != null) { edgesByBlocksSerial(layout, 1, h); return }
-    for (e in 0 until boundCount) normalDragEdge(e, h)
+    normalDragEdgesRange(0, boundCount, h)
 }
 
 /** Плата частиц [from, to) за разгон запаса среды. Кусок параллельного прохода. */
 internal fun BodyState.flowPaymentRange(from: Int, to: Int) {
+    // Массивы — в локальные, длины — до цикла: см. lengthsBeforeLoop.
+    val vx = vx; val vy = vy; val organismOf = organismOf; val comAccX = comAccX; val comAccY = comAccY
+    lengthsBeforeLoop(vx.size or vy.size or organismOf.size or comAccX.size or comAccY.size)
     for (i in from until to) {
         val o = organismOf[i]
         vx[i] -= FLOW_MASS * comAccX[o]
@@ -211,13 +242,37 @@ internal fun BodyState.flowPaymentRange(from: Int, to: Int) {
     }
 }
 
-/** Сопротивление среды одному ребру контура. */
-internal fun BodyState.normalDragEdge(e: Int, h: Double) {
+/** Сопротивление среды одному ребру контура: для проверок поштучно. Циклы стадии идут через normalDragEdgesOf. */
+internal fun BodyState.normalDragEdge(e: Int, h: Float) =
+    normalDragEdgeAt(e, h, boundA, boundB, px, py, vx, vy, organismOf, flowVX, flowVY, tangentDrag)
+
+/** Сопротивление среды рёбрам списка [items] на местах [from, to). Массивы — в локальные: см. lengthsBeforeLoop. */
+internal fun BodyState.normalDragEdgesOf(items: IntArray, from: Int, to: Int, h: Float) {
+    val a = boundA; val b = boundB; val px = px; val py = py; val vx = vx; val vy = vy
+    val org = organismOf; val flowVX = flowVX; val flowVY = flowVY; val tangent = tangentDrag
+    lengthsBeforeLoop(a.size or b.size or px.size or py.size or vx.size or vy.size or org.size or flowVX.size or
+        flowVY.size or items.size)
+    for (x in from until to) normalDragEdgeAt(items[x], h, a, b, px, py, vx, vy, org, flowVX, flowVY, tangent)
+}
+
+/** Сопротивление среды рёбрам [from, to) по номерам. */
+internal fun BodyState.normalDragEdgesRange(from: Int, to: Int, h: Float) {
+    val a = boundA; val b = boundB; val px = px; val py = py; val vx = vx; val vy = vy
+    val org = organismOf; val flowVX = flowVX; val flowVY = flowVY; val tangent = tangentDrag
+    lengthsBeforeLoop(a.size or b.size or px.size or py.size or vx.size or vy.size or org.size or flowVX.size or flowVY.size)
+    for (e in from until to) normalDragEdgeAt(e, h, a, b, px, py, vx, vy, org, flowVX, flowVY, tangent)
+}
+
+/** Ядро сопротивления ребра — единственная запись арифметики; `inline` с массивами в параметрах (см. lengthsBeforeLoop). */
+@Suppress("NOTHING_TO_INLINE")
+internal inline fun normalDragEdgeAt(e: Int, h: Float, boundA: IntArray, boundB: IntArray, px: FloatArray, py: FloatArray,
+                                     vx: FloatArray, vy: FloatArray, organismOf: IntArray, flowVX: FloatArray,
+                                     flowVY: FloatArray, tangentDrag: Float) {
     val i = boundA[e]; val j = boundB[e]
     val ex = px[j] - px[i]
     val ey = py[j] - py[i]
     val len = sqrt(ex * ex + ey * ey)
-    if (len < 1e-12) return
+    if (len < 1e-12f) return
 
     val nx = -ey / len
     val ny = ex / len
@@ -228,25 +283,25 @@ internal fun BodyState.normalDragEdge(e: Int, h: Double) {
     // локальные взмахи плавника по-прежнему гребут в полную силу.
     // Запас берётся СВОЕГО организма: у каждого тела он свой, см. flowVX.
     val o = organismOf[i]
-    val vmx = (vx[i] + vx[j]) * 0.5 - flowVX[o]
-    val vmy = (vy[i] + vy[j]) * 0.5 - flowVY[o]
+    val vmx = (vx[i] + vx[j]) * 0.5f - flowVX[o]
+    val vmy = (vy[i] + vy[j]) * 0.5f - flowVY[o]
     val vn = vmx * nx + vmy * ny
 
     // Линейная плюс квадратичная. Квадратичная сила равна NORMAL_DRAG_Q * vn*|vn|,
     // поэтому в коэффициенте (он делится на vn) остаётся |vn|.
     var k = (NORMAL_DRAG + NORMAL_DRAG_QUADRATIC * abs(vn)) * len * h
-    if (k > 0.5) k = 0.5      // выше — переброс скорости через ноль, то есть раскачка
+    if (k > 0.5f) k = 0.5f      // выше — переброс скорости через ноль, то есть раскачка
 
     val dv = -vn * k
     vx[i] += dv * nx; vy[i] += dv * ny
     vx[j] += dv * nx; vy[j] += dv * ny
 
     // Трение ВДОЛЬ ребра. См. TANGENT_DRAG.
-    if (tangentDrag > 0.0) {
+    if (tangentDrag > 0.0f) {
         val tx = ex / len; val ty = ey / len
         val vt = vmx * tx + vmy * ty
         var kt = tangentDrag * NORMAL_DRAG * len * h
-        if (kt > 0.5) kt = 0.5
+        if (kt > 0.5f) kt = 0.5f
         val dvt = -vt * kt
         vx[i] += dvt * tx; vy[i] += dvt * ty
         vx[j] += dvt * tx; vy[j] += dvt * ty
@@ -264,19 +319,19 @@ fun BodyState.applyRestitution() {
     prepareAwakeSpans()
     val s = sleep
     for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
-        if (inContact[i] && vy[i] > 0.0) vy[i] *= GROUND_RESTITUTION
+        if (inContact[i] && vy[i] > 0.0f) vy[i] *= GROUND_RESTITUTION
     }
 }
 
-fun BodyState.applyMediumDrag(h: Double) {
+fun BodyState.applyMediumDrag(h: Float) {
     if (dbgIsoDragOff) return
-    var keep = 1.0 - MEDIUM_DRAG * h
-    if (keep < 0.0) keep = 0.0
+    var keep = 1.0f - MEDIUM_DRAG * h
+    if (keep < 0.0f) keep = 0.0f
     prepareAwakeSpans()
     val s = sleep
     for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
         val d = dragScale[i]
-        val kp = if (d == 1.0) keep else mediumKeep(h, d)
+        val kp = if (d == 1.0f) keep else mediumKeep(h, d)
         vx[i] *= kp; vy[i] *= kp
     }
 }
@@ -310,17 +365,17 @@ fun BodyState.applyMediumDrag(h: Double) {
  * лёгкую клетку, и тяжёлую, иначе мелкие клетки улетали бы от курсора. Деление
  * тяги по массе всё равно происходит, но уровнем ниже — в кости и в связях.
  */
-fun BodyState.applyDragVelocity(h: Double) {
+fun BodyState.applyDragVelocity(h: Float) {
     val i = dragId
     if (i >= 0) pullToward(i, mouseX, mouseY, h)
 }
 
-internal fun BodyState.pullToward(i: Int, targetX: Double, targetY: Double, h: Double) {
-    if (invMass[i] == 0.0) return
+internal fun BodyState.pullToward(i: Int, targetX: Float, targetY: Float, h: Float) {
+    if (invMass[i] == 0.0f) return
     val dx = targetX - px[i]
     val dy = targetY - py[i]
     val d = sqrt(dx * dx + dy * dy)
-    if (d < 1e-12) return
+    if (d < 1e-12f) return
 
     // РУКА ДАЁТ ПОСТОЯННУЮ СИЛУ, а не постоянное ускорение. Это и есть причина
     // несоразмерности тяги за кость.
@@ -340,16 +395,16 @@ internal fun BodyState.pullToward(i: Int, targetX: Double, targetY: Double, h: D
     // неё не нужно.
     val b = if (bonesRigid) boneOf[i] else -1
 
-    var mTotal = 0.0
-    var cx = 0.0; var cy = 0.0
+    var mTotal = 0.0f
+    var cx = 0.0f; var cy = 0.0f
     val ids = if (b >= 0) rigidBones[b] else null
     if (ids != null) {
         for (k in ids) {
-            if (boneOf[k] != b || invMass[k] <= 0.0) continue
-            val m = 1.0 / invMass[k]
+            if (boneOf[k] != b || invMass[k] <= 0.0f) continue
+            val m = 1.0f / invMass[k]
             mTotal += m; cx += m * px[k]; cy += m * py[k]
         }
-        if (mTotal <= 0.0) return
+        if (mTotal <= 0.0f) return
         cx /= mTotal; cy /= mTotal
     }
 
@@ -412,9 +467,9 @@ internal fun BodyState.pullToward(i: Int, targetX: Double, targetY: Double, h: D
     // ускорение, что получила бы одиночная клетка. Значит тяжёлую кость тянуть
     // так же отзывчиво, как лёгкую, а вот тело вокруг неё сопротивляется по
     // своей массе — что и требуется.
-    var inertia = 0.0
+    var inertia = 0.0f
     for (k in ids) {
-        if (boneOf[k] != b || invMass[k] <= 0.0) continue
+        if (boneOf[k] != b || invMass[k] <= 0.0f) continue
         val rx = px[k] - cx; val ry = py[k] - cy
         val r2 = rx * rx + ry * ry
         inertia += r2 / invMass[k]
@@ -447,13 +502,13 @@ internal fun BodyState.pullToward(i: Int, targetX: Double, targetY: Double, h: D
     // Она положительно определена, обращается в две строки, и найденный J даёт
     // точке РОВНО заданное изменение скорости. Перелёту взяться неоткуда.
     val rgx = px[i] - cx; val rgy = py[i] - cy
-    val invI = if (inertia > 1e-18) 1.0 / inertia else 0.0
-    val invM = 1.0 / mTotal
+    val invI = if (inertia > mTotal * (SPIN_MIN_ARM * linkScale) * (SPIN_MIN_ARM * linkScale)) 1.0f / inertia else 0.0f   // см. SPIN_MIN_ARM
+    val invM = 1.0f / mTotal
     val a11 = invM + rgy * rgy * invI
     val a12 = -rgx * rgy * invI
     val a22 = invM + rgx * rgx * invI
     val det = a11 * a22 - a12 * a12
-    if (det < 1e-24) return
+    if (det < 1e-24f) return
     var jx = (a22 * wantX - a12 * wantY) / det
     var jy = (a11 * wantY - a12 * wantX) / det
 
@@ -472,9 +527,9 @@ internal fun BodyState.pullToward(i: Int, targetX: Double, targetY: Double, h: D
     // сохранение импульса, ради которого весь этот кусок и написан.
     val dvx = jx / mTotal
     val dvy = jy / mTotal
-    var worst2 = 0.0
+    var worst2 = 0.0f
     for (k in ids) {
-        if (boneOf[k] != b || invMass[k] <= 0.0) continue
+        if (boneOf[k] != b || invMass[k] <= 0.0f) continue
         val rx = px[k] - cx; val ry = py[k] - cy
         val nvx = vx[k] + dvx - dOmega * ry
         val nvy = vy[k] + dvy + dOmega * rx
@@ -482,11 +537,11 @@ internal fun BodyState.pullToward(i: Int, targetX: Double, targetY: Double, h: D
         if (v2 > worst2) worst2 = v2
     }
     val worst = sqrt(worst2)
-    var sc = 1.0
-    if (worst > vLimit && worst > 1e-18) sc = vLimit / worst
+    var sc = 1.0f
+    if (worst > vLimit && worst > 1e-18f) sc = vLimit / worst
 
     for (k in ids) {
-        if (boneOf[k] != b || invMass[k] <= 0.0) continue
+        if (boneOf[k] != b || invMass[k] <= 0.0f) continue
         val rx = px[k] - cx; val ry = py[k] - cy
         vx[k] += sc * (dvx - dOmega * ry)
         vy[k] += sc * (dvy + dOmega * rx)
@@ -515,9 +570,9 @@ fun BodyState.clampSpeed() {
     }
 }
 
-fun BodyState.comX(): Double { var s = 0.0; for (i in 0 until n) s += px[i]; return s / n }
+fun BodyState.comX(): Float { var s = 0.0f; for (i in 0 until n) s += px[i]; return s / n }
 
-fun BodyState.comY(): Double { var s = 0.0; for (i in 0 until n) s += py[i]; return s / n }
+fun BodyState.comY(): Float { var s = 0.0f; for (i in 0 until n) s += py[i]; return s / n }
 
 /**
  * Конец шага: все частицы — внутрь рамки мира (с отступом в радиус). Интегрирование держит
@@ -539,10 +594,10 @@ internal fun BodyState.clampToBounds() {
         if (x >= boundsMinX + r && x <= boundsMaxX - r && y >= boundsMinY + r && y <= boundsMaxY - r) continue
         val bone = if (bonesRigid) boneOf[i] else -1
         if (bone >= 0 && !cellDead[i] && !cellUnborn[i] && !isFixed(i)) { wallHits.add(bone); continue }
-        if (x < boundsMinX + r) { px[i] = boundsMinX + r; if (vx[i] < 0.0) vx[i] = 0.0 }
-        else if (x > boundsMaxX - r) { px[i] = boundsMaxX - r; if (vx[i] > 0.0) vx[i] = 0.0 }
-        if (y < boundsMinY + r) { py[i] = boundsMinY + r; if (vy[i] < 0.0) vy[i] = 0.0 }
-        else if (y > boundsMaxY - r) { py[i] = boundsMaxY - r; if (vy[i] > 0.0) vy[i] = 0.0 }
+        if (x < boundsMinX + r) { px[i] = boundsMinX + r; if (vx[i] < 0.0f) vx[i] = 0.0f }
+        else if (x > boundsMaxX - r) { px[i] = boundsMaxX - r; if (vx[i] > 0.0f) vx[i] = 0.0f }
+        if (y < boundsMinY + r) { py[i] = boundsMinY + r; if (vy[i] < 0.0f) vy[i] = 0.0f }
+        else if (y > boundsMaxY - r) { py[i] = boundsMaxY - r; if (vy[i] > 0.0f) vy[i] = 0.0f }
     }
     if (wallHits.size != 0) resolveBoneBounds(finalPass = true)
 }

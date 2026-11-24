@@ -21,24 +21,30 @@ import kotlin.math.sqrt
  * старт по доле возраста (как у касаний) ломал рост цепочек — у Earthworm (стадия за тик) голая цепочка складывалась
  * сама в себя, и гибло 968 клеток из 2967. Без новорождённых ядро идёт прежним путём побитово (ramp = null).
  */
-internal fun BodyState.solveBlockFlaps(h: Double, block: Int, layout: ConstraintBlocks) {
+internal fun BodyState.solveBlockFlaps(h: Float, block: Int, layout: ConstraintBlocks) {
     if (flapCount == 0) return
     val alpha = FLAP_COMPLIANCE / (h * h)
     val list = layout.flaps
-    val ramp = if (rampN > 0) contactRamp else null
+    // Массивы — в локальные, длины — до цикла; мягкий старт новорождённых — массив и признак, а не null
+    // (см. lengthsBeforeLoop).
+    val rampOn = rampN > 0; val ramp = contactRamp
+    val px = px; val py = py; val invMass = invMass
+    val flapA = flapA; val flapB = flapB; val flapRest = flapRest; val flapV = flapV; val next = list.next
+    lengthsBeforeLoop(px.size or py.size or invMass.size or flapA.size or flapB.size or flapRest.size or flapV.size or
+        ramp.size or next.size)
     var cursor = list.head[block]
     while (cursor >= 0) {
-        val c = cursor; cursor = list.next[cursor]
+        val c = cursor; cursor = next[cursor]
         val i = flapA[c]; val j = flapB[c]
         val wi = invMass[i]; val wj = invMass[j]
         val w = wi + wj
-        if (w == 0.0) continue
+        if (w == 0.0f) continue
         var dx = px[i] - px[j]
         var dy = py[i] - py[j]
         val len = sqrt(dx * dx + dy * dy)
         var rest = flapRest[c]
-        if (ramp != null && (ramp[i] < 1f || ramp[j] < 1f || ramp[flapV[c]] < 1f)) rest = minOf(rest, flapAngleRest(flapV[c], i, j))
-        if (len >= rest || len < 1e-12) continue
+        if (rampOn && (ramp[i] < 1f || ramp[j] < 1f || ramp[flapV[c]] < 1f)) rest = minOf(rest, flapAngleRest(flapV[c], i, j))
+        if (len >= rest || len < 1e-12f) continue
         dx /= len; dy /= len
         val dL = -(len - rest) / (w + alpha)
         px[i] += dx * dL * wi; py[i] += dy * dL * wi
@@ -46,22 +52,26 @@ internal fun BodyState.solveBlockFlaps(h: Double, block: Int, layout: Constraint
     }
 }
 
-internal fun BodyState.solveBlockBend(h: Double, block: Int, layout: ConstraintBlocks) {
+internal fun BodyState.solveBlockBend(h: Float, block: Int, layout: ConstraintBlocks) {
     val compliance = bendCompliance()
-    if (compliance < 0.0) return
+    if (compliance < 0.0f) return
     val alpha = compliance / (h * h)
     val list = layout.bends
+    // Массивы — в локальные, длины — до цикла: см. lengthsBeforeLoop.
+    val px = px; val py = py; val invMass = invMass
+    val bendA = bendA; val bendB = bendB; val bendRest = bendRest; val next = list.next
+    lengthsBeforeLoop(px.size or py.size or invMass.size or bendA.size or bendB.size or bendRest.size or next.size)
     var cursor = list.head[block]
     while (cursor >= 0) {
-        val c = cursor; cursor = list.next[cursor]
+        val c = cursor; cursor = next[cursor]
         val i = bendA[c]; val j = bendB[c]
         val wi = invMass[i]; val wj = invMass[j]
         val w = wi + wj
-        if (w == 0.0) continue
+        if (w == 0.0f) continue
         var dx = px[i] - px[j]
         var dy = py[i] - py[j]
         val len = sqrt(dx * dx + dy * dy)
-        if (len < 1e-12) continue
+        if (len < 1e-12f) continue
         dx /= len; dy /= len
         val dL = -(len - bendRest[c]) / (w + alpha)
         px[i] += dx * dL * wi; py[i] += dy * dL * wi
@@ -69,7 +79,7 @@ internal fun BodyState.solveBlockBend(h: Double, block: Int, layout: ConstraintB
     }
 }
 
-internal fun BodyState.solveBlockAreas(h: Double, block: Int, layout: ConstraintBlocks) {
+internal fun BodyState.solveBlockAreas(h: Float, block: Int, layout: ConstraintBlocks) {
     val alpha = AREA_COMPLIANCE / (h * h)
     // Вывернутым треугольникам своя, нулевая — см. AREA_COMPLIANCE_INVERTED.
     val alphaInverted = AREA_COMPLIANCE_INVERTED / (h * h)
@@ -77,13 +87,19 @@ internal fun BodyState.solveBlockAreas(h: Double, block: Int, layout: Constraint
     // Всё в локальные: стадия идёт 32 раза за тик по трём тысячам треугольников.
     val px = px; val py = py; val invMass = invMass
     val ta = triA; val tb = triB; val tc = triC
-    val rest2 = triRestArea2; val tm = triMuscle; val ms = muscleScaleOf; val ts = if (cellScalesOn) triCellScale else null
-    val ks = if (softnessOn) triSoftness else null
+    // Множители клеток и мягкость — массив и признак, а не null: проверка на null в цикле возвращает чтение длины
+    // массива в цикл. Длины — до цикла. См. lengthsBeforeLoop.
+    val rest2 = triRestArea2; val tm = triMuscle; val ms = muscleScaleOf; val tsOn = cellScalesOn; val ts = triCellScale
+    val ksOn = softnessOn; val ks = triSoftness
     val alive = baked.triAlive; val tid = triId; val fib = triFiberById
     val fibersOn = fibersOn; val fiberK = fiberThicken // волокно мышцы (MuscleFiber.kt)
     val list = layout.areas
-    for (slot in list.start[block] until list.start[block] + list.count[block]) {
-        val t = list.items[slot]
+    val from = list.start[block]; val to = from + list.count[block]
+    val items = list.items
+    lengthsBeforeLoop(px.size or py.size or invMass.size or ta.size or tb.size or tc.size or rest2.size or tm.size or
+        ms.size or ts.size or ks.size or alive.size or tid.size or fib.size or items.size)
+    for (slot in from until to) {
+        val t = items[slot]
         if (t < 0) continue
         // Треугольник умирает вместе с любым своим ребром И СРАЗУ, ещё до пересборки:
         // держать площадь ткани, которой уже нет, он не должен. См. tearQueue.
@@ -101,32 +117,32 @@ internal fun BodyState.solveBlockAreas(h: Double, block: Int, layout: Constraint
         val denom = w0 * (g0x * g0x + g0y * g0y) +
             w1 * (g1x * g1x + g1y * g1y) +
             w2 * (g2x * g2x + g2y * g2y)
-        if (denom < 1e-18) continue
+        if (denom < 1e-18f) continue
 
         // Площадь покоя едет вместе с длинами: иначе мышца тянет треугольник вниз,
         // а несжимаемая площадь держит его на месте, и ткань запирает.
         val m = tm[t]
-        val s0 = if (m < 0) 1.0 else ms[m]
-        val s = if (ts == null) s0 else s0 * ts[t]
-        val active = minOf(1.0, s)
+        val s0 = if (m < 0) 1.0f else ms[m]
+        val s = if (!tsOn) s0 else s0 * ts[t]
+        val active = minOf(1.0f, s)
         // Мышца с волокном (MuscleFiber.kt): площадь × s^(1−k).
-        val fiberArea = s < 1.0 && fibersOn && tid[t] < fib.size && fib[tid[t]]
-        val restArea2 = if (fiberArea) rest2[t].toDouble() * fiberAreaFactor(s, fiberK) else rest2[t].toDouble() * active * active
+        val fiberArea = s < 1.0f && fibersOn && tid[t] < fib.size && fib[tid[t]]
+        val restArea2 = if (fiberArea) rest2[t].toFloat() * fiberAreaFactor(s, fiberK) else rest2[t].toFloat() * active * active
         val area2 = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0)
         // Мягкость ткани (BodyState.cellSoftness) — множитель податливости; вывернутым своя, нулевая.
-        val material = if (ks == null) alpha else alpha * ks[t]
-        val alphaT = if (s > 1.0 && area2 > restArea2) tensileCompliance(material, s) else material
+        val material = if (!ksOn) alpha else alpha * ks[t]
+        val alphaT = if (s > 1.0f && area2 > restArea2) tensileCompliance(material, s) else material
         // Плавный переход вместо ступеньки — см. AREA_SMOOTH_RAMP.
         val a = if (AREA_SMOOTH_RAMP) {
-            val q = (area2 / restArea2).coerceIn(0.0, 1.0)
+            val q = (area2 / restArea2).coerceIn(0.0f, 1.0f)
             alphaInverted + (alphaT - alphaInverted) * q * q
-        } else if (area2 < 0.0) alphaInverted else alphaT
+        } else if (area2 < 0.0f) alphaInverted else alphaT
         var excess = area2 - restArea2
         // Площадь мышцы тянет не сильнее удвоенной доли площади покоя — см. MUSCLE_MAX_PULL.
-        if (if (fiberArea) fiberAreaFactor(s, fiberK) < 1.0 else active < 1.0) { val cap = 2.0 * MUSCLE_MAX_PULL * rest2[t]; if (excess > cap) excess = cap }
+        if (if (fiberArea) fiberAreaFactor(s, fiberK) < 1.0f else active < 1.0f) { val cap = 2.0f * MUSCLE_MAX_PULL * rest2[t]; if (excess > cap) excess = cap }
         var dL = -excess / (denom + a)
         // Потолок на длину поправки — см. AREA_MAX_STEP.
-        if (maxStep > 0.0) {
+        if (maxStep > 0.0f) {
             val corr = abs(dL) * sqrt(denom)
             if (corr > maxStep) dL *= maxStep / corr
         }
@@ -141,7 +157,8 @@ internal fun BodyState.solveBlockLimits(block: Int, layout: ConstraintBlocks, fr
     // Локальный проход контура. Общая проверка после швов вызывается отдельно.
     val px = px; val py = py; val invMass = invMass
     val conA = conA; val conB = conB; val conRest = conRest; val conMuscle = conMuscle
-    val conDead = conDead; val ms = muscleScaleOf; val cs = if (cellScalesOn) conCellScale else null
+    // Множители клеток — массив и признак, а не null; длины — до цикла (см. lengthsBeforeLoop).
+    val conDead = conDead; val ms = muscleScaleOf; val csOn = cellScalesOn; val cs = conCellScale
     // Список дополняется killEdgeNow прямо в этом проходе. Внутренние связи
     // по-прежнему участвуют в solveConstraints, но здесь их координаты не читаем.
     val limits = layout
@@ -149,6 +166,8 @@ internal fun BodyState.solveBlockLimits(block: Int, layout: ConstraintBlocks, fr
     // Список у порога собирается заново; доработка после остановки воркера его продолжает.
     // Критерий записан так же, как у воркера (solveBlockLimitsParallel). См. ConstraintBlocks.nearItems.
     if (from == 0) layout.nearCount[block] = 0
+    lengthsBeforeLoop(px.size or py.size or invMass.size or conA.size or conB.size or conRest.size or conMuscle.size or
+        conDead.size or ms.size or cs.size)
     var cursor = from
     while (cursor < limits.limitCount()) {
         val c = limits.limitAt(cursor++)
@@ -166,8 +185,8 @@ internal fun BodyState.solveBlockLimits(block: Int, layout: ConstraintBlocks, fr
         // длины сравниваются их квадраты — ровно то же самое, без корня.
         val len2 = dx * dx + dy * dy
         val mus = conMuscle[c]
-        val base = if (mus < 0) 1.0 else ms[mus]
-        val scale = if (cs == null) base else base * cs[c]
+        val base = if (mus < 0) 1.0f else ms[mus]
+        val scale = if (!csOn) base else base * cs[c]
         val rest = conRest[c]
         val restScale = rest * limitShrink(c, scale)
         val crushLim = LINK_CRUSH_RATIO * restScale
@@ -182,7 +201,7 @@ internal fun BodyState.solveBlockLimits(block: Int, layout: ConstraintBlocks, fr
         // Запас до порогов копится В КВАДРАТАХ, корень берётся один раз при чтении:
         // сравнение «ближе ли этот запас прежнего» от возведения в квадрат не меняется.
         if (DEBUG_CHECKS && dbgLinkExtremaOn) {
-            if (invMass[i] + invMass[j] == 0.0) continue
+            if (invMass[i] + invMass[j] == 0.0f) continue
             val cr2 = len2 / (restScale * restScale)
             if (cr2 < dbgWorstCrush2) dbgWorstCrush2 = cr2
             val st2 = len2 / (rest * rest)
@@ -191,7 +210,7 @@ internal fun BodyState.solveBlockLimits(block: Int, layout: ConstraintBlocks, fr
         if (!crushed && !over) continue
         // Массы нужны только если есть нарушение. Пустой проход не читает
         // ещё два значения по индексам концов; порядок поправок остаётся прежним.
-        if (invMass[i] + invMass[j] == 0.0) continue
+        if (invMass[i] + invMass[j] == 0.0f) continue
         solveLinkLimitViolation(c, len2, crushed, scale)
     }
     limits.endLimits()
@@ -210,15 +229,15 @@ internal fun BodyState.solveBlockNearLimits(block: Int, layout: ConstraintBlocks
  * Длина створки с вершиной [v] и концами [i], [j] по взрослому углу при вершине (поза покоя тела) и нынешним
  * расстояниям от вершины до концов: d1² + d2² − 2·d1·d2·cos θ. См. solveBlockFlaps.
  */
-internal fun BodyState.flapAngleRest(v: Int, i: Int, j: Int): Double {
-    val ax = (body.x[i] - body.x[v]).toDouble(); val ay = (body.y[i] - body.y[v]).toDouble()
-    val bx = (body.x[j] - body.x[v]).toDouble(); val by = (body.y[j] - body.y[v]).toDouble()
+internal fun BodyState.flapAngleRest(v: Int, i: Int, j: Int): Float {
+    val ax = (body.x[i] - body.x[v]).toFloat(); val ay = (body.y[i] - body.y[v]).toFloat()
+    val bx = (body.x[j] - body.x[v]).toFloat(); val by = (body.y[j] - body.y[v]).toFloat()
     val la = sqrt(ax * ax + ay * ay); val lb = sqrt(bx * bx + by * by)
-    if (la < 1e-12 || lb < 1e-12) return 0.0
+    if (la < 1e-12f || lb < 1e-12f) return 0.0f
     val cos = (ax * bx + ay * by) / (la * lb)
     val dix = px[i] - px[v]; val diy = py[i] - py[v]
     val djx = px[j] - px[v]; val djy = py[j] - py[v]
     val d1 = sqrt(dix * dix + diy * diy); val d2 = sqrt(djx * djx + djy * djy)
-    val r2 = d1 * d1 + d2 * d2 - 2.0 * d1 * d2 * cos
-    return if (r2 > 0.0) sqrt(r2) else 0.0
+    val r2 = d1 * d1 + d2 * d2 - 2.0f * d1 * d2 * cos
+    return if (r2 > 0.0f) sqrt(r2) else 0.0f
 }

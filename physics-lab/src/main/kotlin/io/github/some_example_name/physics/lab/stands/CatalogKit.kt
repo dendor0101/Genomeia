@@ -152,7 +152,7 @@ internal fun StandWorld.expectReached(b: StandBody, until: Int) {
     probe("до рельефа") {
         val st = world.state
         val r = rocks ?: DoubleArray(2 * fixed.size).also { a ->
-            for (k in fixed.indices) { val p = world.freeParticle(fixed[k]); a[2 * k] = st.px[p]; a[2 * k + 1] = st.py[p] }
+            for (k in fixed.indices) { val p = world.freeParticle(fixed[k]); a[2 * k] = st.px[p].toDouble(); a[2 * k + 1] = st.py[p].toDouble() }
             rocks = a
         }
         var best = Double.MAX_VALUE
@@ -232,7 +232,7 @@ internal fun StandWorld.expectStill(name: String, b: StandBody, cells: IntArray,
         else {
             val st = world.state
             val h = home ?: DoubleArray(2 * cells.size).also { a ->
-                for (i in cells.indices) { val p = b.particle(cells[i]); a[2 * i] = st.px[p]; a[2 * i + 1] = st.py[p] }
+                for (i in cells.indices) { val p = b.particle(cells[i]); a[2 * i] = st.px[p].toDouble(); a[2 * i + 1] = st.py[p].toDouble() }
                 home = a
             }
             var worst = 0.0
@@ -305,7 +305,7 @@ internal fun StandWorld.expectAllInside(minX: Double, minY: Double, maxX: Double
         val st = world.state
         var out = 0
         for (i in 0 until st.n) {
-            if (st.cellDead[i] || st.cellUnborn[i] || st.restInvMass[i] == 0.0) continue
+            if (st.cellDead[i] || st.cellUnborn[i] || st.restInvMass[i] == 0.0f) continue
             val x = gameX(i); val y = gameY(i)
             if (x < minX || x > maxX || y < minY || y > maxY) out++
         }

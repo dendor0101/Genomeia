@@ -43,7 +43,7 @@ fun main(args: Array<String>) {
         repeat(count) {
             if (!ok) return
             val on = if (gait && tick % 40 < 20) 1.0 else 0.0
-            for (w in worlds) { w.setAllMuscleTargets(on); w.step() }
+            for (w in worlds) { w.setAllMuscleTargets(on.toFloat()); w.step() }
             tick++
             val h = worlds.map { PlayerLog.stateHash(it.particleCount, it.x, it.y, it.vx, it.vy) }
             if (h[0] != h[1]) { println("RUNTIME diverged at tick $tick (particles ${serial.particleCount})"); ok = false }
@@ -65,8 +65,8 @@ fun main(args: Array<String>) {
             val speed = 0.8 * MAX_SPEED_CELLS_PER_TICK * w.meanLinkLength / DT
             var ca = -1; var cb = -1
             for (i in 0 until st.n) when (st.organismOf[i]) {
-                a -> { w.setVelocity(i, dx * speed, dy * speed); if (ca < 0) ca = i }
-                b -> { w.setVelocity(i, -dx * speed, -dy * speed); if (cb < 0) cb = i }
+                a -> { w.setVelocity(i, (dx * speed).toFloat(), (dy * speed).toFloat()); if (ca < 0) ca = i }
+                b -> { w.setVelocity(i, (-dx * speed).toFloat(), (-dy * speed).toFloat()); if (cb < 0) cb = i }
             }
             w.wake(ca); w.wake(cb)
         }

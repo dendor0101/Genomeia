@@ -22,7 +22,7 @@ class Topology private constructor(
     val restR: FloatArray,
     val conA: IntArray,
     val conB: IntArray,
-    val conRest: DoubleArray,
+    val conRest: FloatArray,
     val conMuscle: IntArray,
     /** Связи контура в порядке ядра; SwimSolver не разрушает топологию. */
     val boundaryConstraints: IntArray,
@@ -39,8 +39,8 @@ class Topology private constructor(
     val rigidBones: Array<IntArray>,
     /** Номер жёсткой кости у клетки, -1 если не в кости. */
     val boneOf: IntArray,
-    val boneRestQx: Array<DoubleArray>,
-    val boneRestQy: Array<DoubleArray>,
+    val boneRestQx: Array<FloatArray>,
+    val boneRestQy: Array<FloatArray>,
     val muscleCount: Int,
     val meanLinkLength: Float,
 
@@ -77,7 +77,7 @@ class Topology private constructor(
      */
     val bendA: IntArray,
     val bendB: IntArray,
-    val bendRest: DoubleArray,
+    val bendRest: FloatArray,
 ) {
     val bendCount: Int get() = bendA.size
     val conCount: Int get() = conA.size
@@ -118,13 +118,13 @@ class Topology private constructor(
                     deg[u]++
                 }
             }
-            val ba = ArrayList<Int>(); val bb = ArrayList<Int>(); val br = ArrayList<Double>()
+            val ba = ArrayList<Int>(); val bb = ArrayList<Int>(); val br = ArrayList<Float>()
             for (v in 0 until body.count) {
                 if (deg[v] != 2) continue
                 val i = nb0[v]; val j = nb1[v]
                 if (i < 0 || j < 0 || i == j) continue
-                val dx = (body.x[i] - body.x[j]).toDouble()
-                val dy = (body.y[i] - body.y[j]).toDouble()
+                val dx = (body.x[i] - body.x[j]).toFloat()
+                val dy = (body.y[i] - body.y[j]).toFloat()
                 ba.add(i); bb.add(j); br.add(sqrt(dx * dx + dy * dy))
             }
 
@@ -133,7 +133,7 @@ class Topology private constructor(
                 restX = body.x, restY = body.y, restR = body.radius,
                 // Списки живут в массивах постоянной ёмкости, длина берётся из счётчиков.
                 conA = f<IntArray>("conA").copyOf(f("conCount")), conB = f<IntArray>("conB").copyOf(f("conCount")),
-                conRest = f<DoubleArray>("conRest").copyOf(f("conCount")),
+                conRest = f<FloatArray>("conRest").copyOf(f("conCount")),
                 conMuscle = f<IntArray>("conMuscle").copyOf(f("conCount")),
                 boundaryConstraints = (0 until f<Int>("conCount"))
                     .filter { f<BooleanArray>("conBoundary")[it] }.toIntArray(),
@@ -154,7 +154,7 @@ class Topology private constructor(
                 organismCount = f("organismCount"),
                 organismSize = f("organismSize"),
                 bendA = ba.toIntArray(), bendB = bb.toIntArray(),
-                bendRest = br.toDoubleArray(),
+                bendRest = br.toFloatArray(),
             )
         }
     }

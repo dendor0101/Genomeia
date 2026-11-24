@@ -12,7 +12,7 @@ import org.junit.Test
  * скорости), до стенки три связи. Ту же сцену эталонный решатель проходит в ReferenceSolverTest.
  */
 class WorldFrameAnalyticTest {
-    private class Ram(val dead: Int, val back: Double)
+    private class Ram(val dead: Int, val back: Float)
 
     /** [momentum] — включён ли учёт импульса за тик (TickMomentum). Итог — после 12 тиков. */
     private fun ram(momentum: Boolean): Ram {
@@ -21,12 +21,12 @@ class WorldFrameAnalyticTest {
         val first = w.bodyFirst(w.addBody(def))
         val st = w.state
         st.cancelSpinOn = momentum
-        w.setBounds(0.5, 0.5, 1.0 + 11 * T_LINK, 2.0)
-        for (i in first until first + def.count) w.setVelocity(i, linksPerTick(2.0), 0.0)
+        w.setBounds(0.5f, 0.5f, 1.0f + 11 * T_LINK, 2.0f)
+        for (i in first until first + def.count) w.setVelocity(i, linksPerTick(2.0f), 0.0f)
         repeat(12) { w.step() }
-        var vx = 0.0
+        var vx = 0.0f
         for (i in first until first + def.count) vx += st.vx[i]
-        return Ram(st.deadCount, vx / def.count / linksPerTick(1.0))
+        return Ram(st.deadCount, vx / def.count / linksPerTick(1.0f))
     }
 
     // ПОЧИНЕНО 17.11.2026 (TickMomentum.block). До починки учёт импульса за тик не считал рамку опорой
@@ -36,7 +36,7 @@ class WorldFrameAnalyticTest {
     @Test fun `тело отскакивает от рамки мира целым`() {
         val r = ram(momentum = true)
         assertEquals("погибло клеток", 0, r.dead)
-        assertTrue("тело отскочило от стенки, связей за тик: ${r.back}", r.back < -0.5 && r.back > -2.0)
+        assertTrue("тело отскочило от стенки, связей за тик: ${r.back}", r.back < -0.5f && r.back > -2.0f)
     }
 
     @Test fun `без учёта импульса тело отскакивает от рамки мира целым`() {
@@ -44,6 +44,6 @@ class WorldFrameAnalyticTest {
         val r = ram(momentum = false)
         assertEquals("погибло клеток", 0, r.dead)
         // Замер 16.11.2026: −1.04 связи за тик при ударе на 2.
-        assertTrue("тело отскочило от стенки, связей за тик: ${r.back}", r.back < -0.5 && r.back > -2.0)
+        assertTrue("тело отскочило от стенки, связей за тик: ${r.back}", r.back < -0.5f && r.back > -2.0f)
     }
 }

@@ -25,7 +25,7 @@ const val CONTACTS_ON = true
  * отрезки контура между ними, иначе граница проскочит сквозь себя между
  * частицами.
  */
-const val CONTACT_SCALE = 0.6
+const val CONTACT_SCALE = 0.6f
 
 /**
  * «Ядро» для CCD: глубже этой доли суммы радиусов проникать нельзя.
@@ -73,15 +73,15 @@ const val CONTACT_SCALE = 0.6
  *
  * Стадию предела длины пришлось отвязать: см. LINK_MAX_STEP.
  */
-val CONTACT_MAX_STEP = (2.0 * MAX_SPEED_CELLS_PER_TICK / SUBSTEPS)
+val CONTACT_MAX_STEP = (2.0f * MAX_SPEED_CELLS_PER_TICK / SUBSTEPS)
 
-const val CCD_CORE = 0.4
+const val CCD_CORE = 0.4f
 
 /** Отскок. Меньше единицы — энергия не растёт никогда. */
-const val CONTACT_RESTITUTION = 0.1
+const val CONTACT_RESTITUTION = 0.1f
 
 /** Трение в контакте, ограничено накопленным нормальным импульсом. */
-const val CONTACT_FRICTION = 0.3
+const val CONTACT_FRICTION = 0.3f
 
 /**
  * ПОТОЛОК НА СКОРОСТЬ, в средних длинах связи ЗА ТИК.
@@ -115,7 +115,7 @@ const val CONTACT_FRICTION = 0.3
  * на полном ходу пара десятых не хватит, и там сработает обрезка CCD — ровно
  * тот редкий случай, ради которого она и оставлена.
  */
-const val MAX_SPEED_CELLS_PER_TICK = 8.0
+const val MAX_SPEED_CELLS_PER_TICK = 8.0f
 
 /** Прикладывать контакт к скорости до интегрирования. См. toVelocity. */
 const val CONTACT_BEFORE_INTEGRATE = false

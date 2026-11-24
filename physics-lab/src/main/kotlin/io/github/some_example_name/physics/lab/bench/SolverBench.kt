@@ -102,7 +102,7 @@ private class Bench(topo: Topology, val copies: Int) {
                 val q = c * topo.conCount + k
                 conA[q] = topo.conA[k] + off
                 conB[q] = topo.conB[k] + off
-                dconRest[q] = topo.conRest[k]
+                dconRest[q] = topo.conRest[k].toDouble()
                 fconRest[q] = topo.conRest[k].toFloat()
             }
             for (k in 0 until topo.triCount) {

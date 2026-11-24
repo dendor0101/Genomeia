@@ -7,6 +7,29 @@ import java.util.concurrent.locks.LockSupport
 /** Меньше частиц — все стадии в одном потоке (BodyState.activeWorkers). */
 const val PARALLEL_MIN_PARTICLES = 4000
 
+/**
+ * Подсказка процессору «это спин-петля» — Thread.onSpinWait там, где он есть. В Android он появился только с API 33:
+ * на телефоне с Android 10 пул падал с NoSuchMethodError на первом же ожидании (22.11.2026, lawCostBench с воркерами
+ * на Galaxy A21s; игра этого не видела — у неё свой исполнитель, GamePhysicsWorkers). Вызов вынесен в отдельный метод:
+ * верификатор ART, встретив неразрешимый метод, исключает из компиляции весь метод, где он стоит, — спин-петли ушли бы
+ * в интерпретатор. Проба прямым вызовом, а не рефлексией, и пустое тело на старых API — как в SpinHint.kt игры (там и
+ * разбор); чтение static final поля JIT сворачивает в константу, в петле проверка ничего не стоит.
+ */
+private val SPIN_WAIT_SUPPORTED: Boolean = try {
+    onSpinWaitIntrinsic()
+    true
+} catch (_: Throwable) {
+    false
+}
+
+private fun spinPause() {
+    if (SPIN_WAIT_SUPPORTED) onSpinWaitIntrinsic()
+}
+
+private fun onSpinWaitIntrinsic() {
+    Thread.onSpinWait()
+}
+
 /** Работа стадии: [chunk] — номер куска, [worker] — номер воркера (0 — вызывающий поток). */
 fun interface PhysicsJob {
     fun run(chunk: Int, worker: Int)
@@ -67,7 +90,7 @@ class SpinPhysicsWorkers(override val count: Int,
     }
 
     init {
-        while (control.get(READY) < count - 1) Thread.onSpinWait()
+        while (control.get(READY) < count - 1) spinPause()
     }
 
     /**
@@ -105,7 +128,7 @@ class SpinPhysicsWorkers(override val count: Int,
         }
         var spins = 0
         while (control.get(PENDING) != 0) {
-            Thread.onSpinWait()
+            spinPause()
             if (++spins >= spinLimit) { Thread.yield(); spins = 0 }
         }
         val f = failure
@@ -128,7 +151,7 @@ class SpinPhysicsWorkers(override val count: Int,
             var park = 50_000L
             while (epoch == seen) {
                 if (!running) return
-                if (spins < spinLimit) { Thread.onSpinWait(); spins++; continue }
+                if (spins < spinLimit) { spinPause(); spins++; continue }
                 // Флаг до повторной проверки: иначе главный мог опубликовать задание
                 // между проверкой и парковкой и не разбудить нас.
                 control.set(parkSlot(worker), 1)

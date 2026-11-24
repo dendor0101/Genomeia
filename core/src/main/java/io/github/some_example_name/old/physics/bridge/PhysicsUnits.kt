@@ -17,15 +17,15 @@ import io.github.some_example_name.physics.WorldScale
  * большей стороне). Тогда физика организма зависела бы от его размера: мелкое тело
  * растягивалось бы в крупное и вязло в среде иначе.
  */
-const val PHYSICS_PER_GAME = 0.048
-const val GAME_PER_PHYSICS = 1.0 / PHYSICS_PER_GAME
+const val PHYSICS_PER_GAME = 0.048f
+const val GAME_PER_PHYSICS = 1.0f / PHYSICS_PER_GAME
 
 /**
  * Скорость игры — смещение за тик в долях прежнего MovementManager.SIM_STEP (x += vx · 7.5),
  * под которое подобраны жгутик и плавник; скорость библиотеки — единиц её мира в секунду
  * при шаге DT. Один тик игры = один шаг мира.
  */
-private const val GAME_SIM_STEP = 7.5
+private const val GAME_SIM_STEP = 7.5f
 const val PHYSICS_VELOCITY_PER_GAME = GAME_SIM_STEP * PHYSICS_PER_GAME / DT
 
 /**
@@ -33,8 +33,8 @@ const val PHYSICS_VELOCITY_PER_GAME = GAME_SIM_STEP * PHYSICS_PER_GAME / DT
  * выводятся из первых тел, а заданы по клетке по умолчанию (радиус 0.5, связь 0.6 =
  * CellPlacement.CENTER_MIN от суммы радиусов). Клетка радиуса 0.5 — масса 1.
  */
-private const val GAME_LINK_LENGTH = 0.6
-private const val GAME_CELL_RADIUS = 0.5
+private const val GAME_LINK_LENGTH = 0.6f
+private const val GAME_CELL_RADIUS = 0.5f
 val GAME_WORLD_SCALE = WorldScale(
     meanLinkLength = (GAME_LINK_LENGTH * PHYSICS_PER_GAME).toFloat(),
     meanCellArea = (GAME_CELL_RADIUS * PHYSICS_PER_GAME) * (GAME_CELL_RADIUS * PHYSICS_PER_GAME)

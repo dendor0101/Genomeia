@@ -13,7 +13,7 @@ class BoundaryLinkLimitsTest {
             intArrayOf(0, 1, 2, 1), intArrayOf(1, 2, 3, 3),
             intArrayOf(1), intArrayOf(2), intArrayOf(3), floatArrayOf(1f),
             arrayOf(intArrayOf(1, 2, 3)), emptyArray(), 1f)
-        val w = PhysicsWorld(scale = WorldScale(1f, 0.0625))
+        val w = PhysicsWorld(scale = WorldScale(1f, 0.0625f))
         val s = w.state
         val first = w.bodyFirst(w.addBody(body, BooleanArray(4) { true }, BooleanArray(4)))
         for (v in 1..3) assertTrue(w.setBone(first + v))
@@ -106,18 +106,18 @@ class BoundaryLinkLimitsTest {
     }
 
     @Test fun interiorStillHasElasticityButNoHardLengthOrCrushLimit() {
-        for (restScale in doubleArrayOf(0.25, 4.0)) {
+        for (restScale in floatArrayOf(0.25f, 4.0f)) {
             val s = grid()
             val inner = (0 until s.conCount).first { !s.conBoundary[it] }
             s.conRest[inner] *= restScale
             s.tearingOn = true
             val beforeX = s.px.copyOf(); val beforeY = s.py.copyOf()
             s.solveLinkMaxLength()
-            assertArrayEquals(beforeX, s.px, 0.0)
-            assertArrayEquals(beforeY, s.py, 0.0)
+            assertArrayEquals(beforeX, s.px, 0.0f)
+            assertArrayEquals(beforeY, s.py, 0.0f)
             assertFalse(s.conDead.any { it })
             assertFalse(s.crushedCell.any { it })
-            s.solveConstraints(1.0 / 480.0)
+            s.solveConstraints(1.0f / 480.0f)
             assertFalse(beforeX.contentEquals(s.px) && beforeY.contentEquals(s.py))
         }
     }
@@ -125,7 +125,7 @@ class BoundaryLinkLimitsTest {
     @Test fun tearsExposeAndCheckNewBoundaryWithinTheSamePass() {
         val s = grid(duplicate = true)
         s.tearingOn = true
-        s.px.fill(0.0); s.py.fill(0.0)
+        s.px.fill(0.0f); s.py.fill(0.0f)
         s.solveLinkMaxLength()
         assertTrue((0 until s.conCount).all { s.conDead[it] })
         assertEquals(0, s.boundaryLinkLimits.count)

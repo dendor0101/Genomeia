@@ -72,7 +72,8 @@ private val SNAPSHOT = System.getProperty("perf.snapshot")
 private val WARM = System.getProperty("perf.warm")?.toIntOrNull() ?: 100
 /** Режим отрисовки (-Prender=tissue_map|debug|nostalgic): настройка игрока на замер не влияет. В отладочном идут наклейки и нейросвязи. */
 private val RENDER = io.github.some_example_name.render.RenderMode.valueOf((System.getProperty("perf.render") ?: "tissue_map").uppercase())
-private const val WORLD = 256
+/** Сторона мира в клетках (-Pworld=1024): цена большого мира — рельеф, память, тик. */
+private val WORLD = System.getProperty("perf.world")?.toIntOrNull() ?: 256
 private const val STEP_LOADED = 10
 private const val STEP_SAVE = 20
 private const val STEP_SAVED = 21
@@ -143,6 +144,14 @@ private class PerfRun(private val game: MyGame) : ApplicationListener by game {
                     }
                 }
                 val world = WorldSpec(WorldSpec.mapCells(WORLD), WorldSpec.mapCells(WORLD), "31415926", 9, 0, edits)
+                // Сколько строится карта по рецепту — то же делает редактор мира на каждое движение ползунка.
+                val editorDefaults = WorldSpec(world.gridWidth, world.gridHeight, "31415926", 15, 12)   // ползунки редактора по умолчанию
+                editorDefaults.buildMap()   // прогрев JIT: второй раз — как у ползунка, который двигают
+                val edit0 = System.nanoTime(); editorDefaults.buildMap()
+                val editMs = (System.nanoTime() - edit0) / 1e6
+                val map0 = System.nanoTime(); world.buildMap()
+                println("PERFMAP мир ${WORLD}×$WORLD, карта ${world.gridWidth}×${world.gridHeight}: строится за %.0f мс (день-ночь 9, сглаживание 0), с настройками редактора по умолчанию — %.0f мс"
+                    .format((System.nanoTime() - map0) / 1e6, editMs))
                 spec = world
                 DIGameGlobalContainer.navigationCommandsManager.performCommand(GoSimulation(world, null))
                 waitUntilFrame = frames + 5
@@ -217,10 +226,11 @@ private class PerfRun(private val game: MyGame) : ApplicationListener by game {
                 // Время процессора по потокам за замер — доля стенного времени (1.00 = поток занят весь замер).
                 val now = threadCpu()
                 val busy = now.entries.map { (name, t) -> name to (t - (threadCpu0[name] ?: 0L)) / 1e9 / wall }.filter { it.second > 0.01 }.sortedByDescending { it.second }
-                run { val w = DISimulationContainer.worldPhysics.bridge.world; val st = w.state; var awake = 0; var awakeT = 0; for (i in 0 until st.n) { if (st.cellDead[i] || st.invMass[i] == 0.0) continue; awake++; if (st.cellGroup[i] != 0) awakeT++ }; println("PERFAWAKE не спят частиц мира физики $awake из ${st.n}, из них террейна $awakeT") }
+                run { val w = DISimulationContainer.worldPhysics.bridge.world; val st = w.state; var awake = 0; var awakeT = 0; for (i in 0 until st.n) { if (st.cellDead[i] || st.invMass[i] == 0.0f) continue; awake++; if (st.cellGroup[i] != 0) awakeT++ }; println("PERFAWAKE не спят частиц мира физики $awake из ${st.n}, из них террейна $awakeT") }
                 println("PERFTHREADS " + busy.joinToString(" ") { "${it.first}=%.2f".format(it.second) })
                 println("PERFBLOCKS " + with(DISimulationContainer.worldPhysics.bridge.world.state) { describeBlocks() })
                 if (hashTick >= 0) println("PERFHASH тик $hashTick хэш ${c.simulationSystem.hashWatchReport} буфер %016x".format(c.renderBufferManager.instanceHashValue))
+                run { val rt = Runtime.getRuntime(); System.gc(); println("PERFMEMORY куча занята %d МБ после сборки мусора, мир физики частиц ${DISimulationContainer.worldPhysics.bridge.world.particleCount}".format((rt.totalMemory() - rt.freeMemory()) / 1024 / 1024)) }
                 if (STAGES) { val ns = DISimulationContainer.worldPhysics.bridge.world.state.dbgTimeNs; println("PERFSTAGES " + ns.indices.filter { ns[it] > 0 }.joinToString(" ") { "$it:%.2f".format(ns[it] / 1e6 / ticks) }) }
                 exitCode = 0
                 Gdx.app.exit()

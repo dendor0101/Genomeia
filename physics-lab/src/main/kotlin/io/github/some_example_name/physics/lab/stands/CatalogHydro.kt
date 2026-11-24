@@ -289,7 +289,7 @@ internal fun hydroFamily(): List<Scenario> {
             probe("наибольшая скорость клетки") {
                 val st = world.state
                 var best = 0.0
-                for (k in 0 until b.count) { val p = b.particle(k); best = maxOf(best, hypot(st.vx[p], st.vy[p])) }
+                for (k in 0 until b.count) { val p = b.particle(k); best = maxOf(best, hypot(st.vx[p], st.vy[p]).toDouble()) }
                 toLinksPerTick(best)
             }
             expectMaxAtMost("клетки не разлетаются", "наибольшая скорость клетки", cutAt, cutAt + 900, 0.5)
