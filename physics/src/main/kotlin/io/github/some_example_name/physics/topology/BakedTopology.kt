@@ -65,7 +65,7 @@ class BakedTopology(private var body: BodyDefinition, build: Boolean = true) {
     /** Углы граней у вершины: номер угла равен 3 * треугольник + локальная вершина. */
     var vertexTriangles = IntArray(0); private set
     var vertexTriStart = IntArray(1); private set
-    private var restAngles = DoubleArray(0)
+    private var restAngles = FloatArray(0)
 
     internal fun touch(v: Int) {
         if (dirty[v]) return
@@ -77,8 +77,8 @@ class BakedTopology(private var body: BodyDefinition, build: Boolean = true) {
         dirtyCount = 0
     }
 
-    fun surfaceAngle(v: Int): Double {
-        var angle = 0.0
+    fun surfaceAngle(v: Int): Float {
+        var angle = 0.0f
         for (s in vertexTriStart[v] until vertexTriStart[v + 1]) {
             val corner = vertexTriangles[s]
             if (triAlive[corner / 3]) angle += restAngles[corner]
@@ -165,7 +165,7 @@ class BakedTopology(private var body: BodyDefinition, build: Boolean = true) {
         }
         for (v in 0 until n) vertexTriStart[v + 1] += vertexTriStart[v]
         vertexTriangles = IntArray(tc * 3)
-        restAngles = DoubleArray(tc * 3)
+        restAngles = FloatArray(tc * 3)
         val fillTri = vertexTriStart.copyOf()
         for (t in 0 until tc) {
             val a = body.triA[t]; val b = body.triB[t]; val c = body.triC[t]
@@ -311,7 +311,7 @@ class BakedTopology(private var body: BodyDefinition, build: Boolean = true) {
         }
         linkEdge = IntArray(body.linkCount)
         run { var l = 0; for (o in linkKept.indices) if (linkKept[o]) linkEdge[l++] = eNew[old.linkEdge[o]] }
-        triEdge = IntArray(tc * 3); restAngles = DoubleArray(tc * 3)
+        triEdge = IntArray(tc * 3); restAngles = FloatArray(tc * 3)
         triAlive = BooleanArray(tc); invertedTicks = ByteArray(tc)
         triUnborn = BooleanArray(if (old.triUnborn.size >= old.body.triCount) tc else 0)
         for (t in 0 until old.body.triCount) {
@@ -491,12 +491,12 @@ class BakedTopology(private var body: BodyDefinition, build: Boolean = true) {
         return -1
     }
 
-    private fun angle(v: Int, p: Int, q: Int): Double {
-        val ax = (body.x[p] - body.x[v]).toDouble(); val ay = (body.y[p] - body.y[v]).toDouble()
-        val bx = (body.x[q] - body.x[v]).toDouble(); val by = (body.y[q] - body.y[v]).toDouble()
+    private fun angle(v: Int, p: Int, q: Int): Float {
+        val ax = (body.x[p] - body.x[v]).toFloat(); val ay = (body.y[p] - body.y[v]).toFloat()
+        val bx = (body.x[q] - body.x[v]).toFloat(); val by = (body.y[q] - body.y[v]).toFloat()
         val na = kotlin.math.sqrt(ax * ax + ay * ay); val nb = kotlin.math.sqrt(bx * bx + by * by)
-        if (na < 1e-12 || nb < 1e-12) return 0.0
-        return StrictMath.acos(((ax * bx + ay * by) / (na * nb)).coerceIn(-1.0, 1.0))
+        if (na < 1e-12f || nb < 1e-12f) return 0.0f
+        return StrictMath.acos(((ax * bx + ay * by) / (na * nb)).coerceIn(-1.0f, 1.0f).toDouble()).toFloat()
     }
 
     private companion object {

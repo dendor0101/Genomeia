@@ -1,0 +1,120 @@
+// Стенд «цена закона» (LawCostBench.kt) на ПК и на телефоне по adb. Подключается из build.gradle (apply from).
+//
+//   gradlew :physics-lab:lawCostBench -Pcells=20000 -Pworkers=8                      — ПК
+//   gradlew :physics-lab:lawCostBenchAndroid -Pcells=5000 -Pworkers=1                — телефон
+//   общие ключи: -Pwarm=150 -Pmeasure=180 -Pblock=10 -Ppush=1 -Pworld=256 -Pstages=0
+//                -Pvariants=base+soft:CT_SOFT=1e-7   (по умолчанию — один мир без ключей)
+//                -Pgame=1 — режим «как в игре»: мышцы множителями клеток, мягкость, волокна (CrowdScene.gameLike)
+//
+// ТЕЛЕФОН. Физика и стенд переводятся d8 из build-tools в dex под minSdk игры (21), dex ложится в
+// /data/local/tmp/genomeia и запускается app_process — тем же ART с JIT, что у приложений (свойства
+// dalvik.vm.*). Телефон — в режиме отладки по USB; несколько телефонов — -Pdevice=<серийный номер из adb devices>.
+// Нужен Android SDK (sdk.dir в local.properties): build-tools, platforms, platform-tools.
+//
+// Такие же задачи (androidBenchClasses / androidBenchDex / androidBenchPush) есть в ветке
+// alpha-0.2.4-rust-physics в build.gradle — для rustSpeedBenchAndroid. При слиянии Gradle остановится на
+// повторе имён: свести в один набор здесь.
+def lawCostArgs = { ->
+  [project.findProperty('cells') ?: '5000', project.findProperty('workers') ?: '1',
+   project.findProperty('warm') ?: '150', project.findProperty('measure') ?: '180',
+   project.findProperty('block') ?: '10', project.findProperty('push') ?: '1',
+   project.findProperty('world') ?: '256', project.findProperty('stages') ?: '0',
+   project.findProperty('variants') ?: 'base',
+   project.hasProperty('game') ? 'game' : 'crowd']*.toString()
+}
+
+tasks.register('lawCostBench', JavaExec) {
+  group = 'verification'
+  description = 'Цена закона физики: миры одной толпы с разными настройками шаг в шаг'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.bench.LawCostBenchKt'
+  workingDir = rootProject.projectDir
+  args = lawCostArgs()
+  jvmArgs '-Xmx3g', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
+
+def androidSdkDir = { ->
+  def props = new Properties()
+  def local = rootProject.file('local.properties')
+  if (local.isFile()) local.withInputStream { props.load(it) }
+  def sdk = props.getProperty('sdk.dir') ?: System.getenv('ANDROID_HOME') ?: System.getenv('ANDROID_SDK_ROOT')
+  return sdk ? new File(sdk) : null
+}
+// Файл [need] в самой новой подпапке [dir], где он есть (build-tools/36.0.0, platforms/android-36).
+def newestWith = { File dir, String need ->
+  def key = { File f -> (f.name =~ /\d+/).collect { it.toInteger() } }
+  def best = dir?.listFiles()?.findAll { new File(it, need).isFile() }?.max { a, b ->
+    def x = key(a), y = key(b)
+    for (int i = 0; i < Math.min(x.size(), y.size()); i++) if (x[i] != y[i]) return x[i] <=> y[i]
+    return x.size() <=> y.size()
+  }
+  return best ? new File(best, need) : null
+}
+def onWindows = System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('win')
+def adbFile = { -> def sdk = androidSdkDir(); sdk ? new File(sdk, 'platform-tools/adb' + (onWindows ? '.exe' : '')) : null }
+def adbCommand = { -> [adbFile()?.absolutePath ?: 'adb'] + (project.hasProperty('device') ? ['-s', project.property('device').toString()] : []) }
+def androidBenchDir = layout.buildDirectory.dir('android-bench')
+def deviceBenchDir = '/data/local/tmp/genomeia'
+
+tasks.register('androidBenchClasses', Jar) {
+  archiveFileName = 'bench-classes.jar'
+  destinationDirectory = androidBenchDir
+  // Только стенды без окна и файлов ПК: остальной :physics-lab тянет LWJGL и libGDX.
+  from(sourceSets.main.output) {
+    include 'io/github/some_example_name/physics/lab/bench/CrowdScene*.class'
+    include 'io/github/some_example_name/physics/lab/bench/CrowdBench*.class'
+    include 'io/github/some_example_name/physics/lab/bench/LawCostBench*.class'
+    include 'io/github/some_example_name/physics/lab/bench/LawVariant*.class'
+    include 'io/github/some_example_name/physics/lab/bench/LawWorld*.class'
+    include 'io/github/some_example_name/physics/lab/bench/LawLockstep*.class'
+  }
+}
+
+tasks.register('androidBenchDex', Exec) {
+  description = 'dex стендов для телефона: физика, стенд и kotlin-stdlib'
+  dependsOn 'androidBenchClasses', ':physics:jar'
+  def physicsJar = project(':physics').tasks.named('jar').flatMap { it.archiveFile }
+  def classesJar = tasks.named('androidBenchClasses').flatMap { it.archiveFile }
+  def stdlib = configurations.runtimeClasspath.filter { it.name ==~ /kotlin-stdlib-[0-9.]+\.jar/ }
+  def out = androidBenchDir.map { it.file('bench.jar') }
+  def sdk = androidSdkDir()
+  def d8 = newestWith(sdk ? new File(sdk, 'build-tools') : null, onWindows ? 'd8.bat' : 'd8')
+  def androidJar = newestWith(sdk ? new File(sdk, 'platforms') : null, 'android.jar')
+  inputs.files(physicsJar, classesJar, stdlib)
+  outputs.file(out)
+  executable(d8?.absolutePath ?: 'd8')
+  args '--release', '--min-api', '21', '--lib', androidJar?.absolutePath ?: 'android.jar', '--output', out.get().asFile.absolutePath
+  argumentProviders.add({ [classesJar.get().asFile.absolutePath, physicsJar.get().asFile.absolutePath] + stdlib.files*.absolutePath } as CommandLineArgumentProvider)
+  // d8 из build-tools знает метаданные Kotlin только до 2.2 и на каждый класс Kotlin 2.4 пишет безвредное
+  // предупреждение (метаданные нужны лишь рефлексии) — сотни строк. Вывод — в d8.log, на экран только при ошибке.
+  def log = new ByteArrayOutputStream()
+  standardOutput = log
+  errorOutput = log
+  ignoreExitValue = true
+  doFirst {
+    if (d8 == null || androidJar == null) throw new GradleException('нет d8 или android.jar: нужен Android SDK (sdk.dir в local.properties)')
+  }
+  doLast {
+    def logFile = new File(out.get().asFile.parentFile, 'd8.log')
+    logFile.bytes = log.toByteArray()
+    if (executionResult.get().exitValue != 0) throw new GradleException("d8 не собрал dex, вывод — $logFile:\n" + log.toString('UTF-8').take(4000))
+  }
+}
+
+tasks.register('androidBenchPush', Exec) {
+  description = 'Кладёт dex стендов на телефон (adb push)'
+  dependsOn 'androidBenchDex'
+  commandLine(adbCommand() + ['push', androidBenchDir.get().file('bench.jar').asFile.absolutePath, deviceBenchDir + '/bench.jar'])
+  doFirst { if (adbFile() == null) throw new GradleException('нет adb: нужен Android SDK (sdk.dir в local.properties)') }
+}
+
+tasks.register('lawCostBenchAndroid', Exec) {
+  group = 'verification'
+  description = 'lawCostBench на телефоне по adb: Kotlin под ART'
+  dependsOn 'androidBenchPush'
+  // Первая строка вывода — что за телефон: по ней потом отличают замеры разных устройств. Латиницей и без
+  // кавычек: строка идёт через командную строку Windows и adb.
+  commandLine(adbCommand() + ['shell', 'echo LAWCOST device $(getprop ro.product.model), Android $(getprop ro.build.version.release), ' +
+    'SoC $(getprop ro.board.platform); ' + "cd $deviceBenchDir && CLASSPATH=$deviceBenchDir/bench.jar app_process $deviceBenchDir " +
+    'io.github.some_example_name.physics.lab.bench.LawCostBenchKt ' + lawCostArgs().join(' ')])
+}

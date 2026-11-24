@@ -34,16 +34,16 @@ class DistanceSweepOrderTest {
         val random = Random(129047L)
         repeat(250) { tick ->
             for (i in 0 until a.n) {
-                val x = random.nextDouble() * 4.0; val y = random.nextDouble() * 4.0
+                val x = random.nextDouble().toFloat() * 4.0f; val y = random.nextDouble().toFloat() * 4.0f
                 a.px[i] = x; b.px[i] = x; a.py[i] = y; b.py[i] = y
-                val w = if (random.nextInt(4) == 0) 0.0 else random.nextDouble() + 0.1
+                val w = if (random.nextInt(4) == 0) 0.0f else random.nextDouble().toFloat() + 0.1f
                 a.invMass[i] = w; b.invMass[i] = w
             }
             if (tick % 3 == 0) {
                 a.px[0] = a.px[1]; b.px[0] = b.px[1]
                 a.py[0] = a.py[1]; b.py[0] = b.py[1]
             }
-            val scale = random.nextDouble() * 0.7 + 0.3
+            val scale = random.nextDouble().toFloat() * 0.7f + 0.3f
             a.muscleScaleOf.fill(scale); b.muscleScaleOf.fill(scale)
             repeat(4) { pass ->
                 a.sweepBackwards = pass % 2 == 0; b.sweepBackwards = a.sweepBackwards
@@ -64,7 +64,7 @@ class DistanceSweepOrderTest {
             }
             repeat(6) { pass ->
                 if (pass == 2) { a.rebuildAfterTear(); b.rebuildAfterTear() }
-                a.px[12] += 0.02; b.px[12] += 0.02
+                a.px[12] += 0.02f; b.px[12] += 0.02f
                 a.sweepBackwards = pass % 2 == 0; b.sweepBackwards = a.sweepBackwards
                 a.solveConstraints(DT / SUBSTEPS); b.solveConstraints(DT / SUBSTEPS); same(a, b)
             }

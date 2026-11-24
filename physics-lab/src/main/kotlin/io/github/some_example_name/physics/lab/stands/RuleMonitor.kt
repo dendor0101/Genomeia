@@ -226,7 +226,7 @@ class RuleMonitor(private val w: StandWorld, val limits: Limits, private val tic
             val first = body.first
             for (k in a.indices) {
                 val i = first + a[k]; val j = first + b[k]
-                rest[k] = Math.hypot(st.px[i] - st.px[j], st.py[i] - st.py[j])
+                rest[k] = Math.hypot((st.px[i] - st.px[j]).toDouble(), (st.py[i] - st.py[j]).toDouble())
             }
         }
     }
@@ -250,7 +250,7 @@ class RuleMonitor(private val w: StandWorld, val limits: Limits, private val tic
         torn0 = st.tornTotal; cap0 = st.speedCapHits
         grow(st.n)
         for (i in 0 until st.n) {
-            prevDead[i] = st.cellDead[i]; prevX[i] = st.px[i]; prevY[i] = st.py[i]
+            prevDead[i] = st.cellDead[i]; prevX[i] = st.px[i].toDouble(); prevY[i] = st.py[i].toDouble()
             prevAsleep[i] = !st.cellDead[i] && asleep(st, i)
         }
         for (b in w.bodies) { addBones(b); addShape(b) }
@@ -393,11 +393,11 @@ class RuleMonitor(private val w: StandWorld, val limits: Limits, private val tic
                 died++
                 if (marks.size < 400) marks.add(Mark(Rule.DEATHS, prevX[i] / PHYSICS_PER_GAME, prevY[i] / PHYSICS_PER_GAME))
             }
-            if (!dead && st.restInvMass[i] != 0.0) {
+            if (!dead && st.restInvMass[i] != 0.0f) {
                 val m = 1.0 / st.restInvMass[i]
                 val v2 = vx * vx + vy * vy
                 ke += 0.5 * m * v2; mass += m
-                if (v2 > maxV2) maxV2 = v2
+                if (v2 > maxV2) maxV2 = v2.toDouble()
                 val sleeping = asleep(st, i)
                 if (!sleeping) awakeNow++
                 if (!prevDead[i]) {
@@ -422,7 +422,7 @@ class RuleMonitor(private val w: StandWorld, val limits: Limits, private val tic
                 } else { jitBits[i] = 0; jitRun[i] = 0; jitDX[i] = 0.0; jitDY[i] = 0.0 }
                 prevAsleep[i] = sleeping
             } else prevAsleep[i] = false
-            prevDead[i] = dead; prevX[i] = x; prevY[i] = y
+            prevDead[i] = dead; prevX[i] = x.toDouble(); prevY[i] = y.toDouble()
         }
         if (badNumber >= 0) fail(Rule.NUMBERS, tick, "не число у частицы $badNumber")
         if (jitterNow > 0) fail(Rule.JITTER, tick, "частиц дрожит дольше $JITTER_TICKS тиков: $jitterNow", jitterNow)
@@ -539,8 +539,8 @@ class RuleMonitor(private val w: StandWorld, val limits: Limits, private val tic
             val a = body.triA[t]; val b = body.triB[t]; val c = body.triC[t]
             val lx = minOf(st.px[a], st.px[b], st.px[c]); val hx = maxOf(st.px[a], st.px[b], st.px[c])
             val ly = minOf(st.py[a], st.py[b], st.py[c]); val hy = maxOf(st.py[a], st.py[b], st.py[c])
-            if (lx < x0) x0 = lx; if (hx > x1) x1 = hx
-            if (ly < y0) y0 = ly; if (hy > y1) y1 = hy
+            if (lx < x0) x0 = lx.toDouble(); if (hx > x1) x1 = hx.toDouble()
+            if (ly < y0) y0 = ly.toDouble(); if (hy > y1) y1 = hy.toDouble()
         }
         if (x0 > x1 || !(x0.isFinite() && x1.isFinite() && y0.isFinite() && y1.isFinite())) return
         var size = 2.5 * PHYSICS_LINK
@@ -561,8 +561,8 @@ class RuleMonitor(private val w: StandWorld, val limits: Limits, private val tic
             for (t in 0 until tc) {
                 if (!alive[t]) continue
                 val a = body.triA[t]; val b = body.triB[t]; val c = body.triC[t]
-                val cx0 = cellX(minOf(st.px[a], st.px[b], st.px[c])); val cx1 = cellX(maxOf(st.px[a], st.px[b], st.px[c]))
-                val cy0 = cellY(minOf(st.py[a], st.py[b], st.py[c])); val cy1 = cellY(maxOf(st.py[a], st.py[b], st.py[c]))
+                val cx0 = cellX(minOf(st.px[a], st.px[b], st.px[c]).toDouble()); val cx1 = cellX(maxOf(st.px[a], st.px[b], st.px[c]).toDouble())
+                val cy0 = cellY(minOf(st.py[a], st.py[b], st.py[c]).toDouble()); val cy1 = cellY(maxOf(st.py[a], st.py[b], st.py[c]).toDouble())
                 for (gy in cy0..cy1) for (gx in cx0..cx1) {
                     val k = gy * cols + gx
                     if (pass == 0) gridStart[k + 1]++ else gridItems[gridFill[k]++] = t
@@ -573,10 +573,10 @@ class RuleMonitor(private val w: StandWorld, val limits: Limits, private val tic
         for (i in 0 until n) {
             if (st.cellDead[i]) { foreignRun[i] = 0; selfRun[i] = 0; continue }
             val px = st.px[i]; val py = st.py[i]
-            val rock = st.restInvMass[i] == 0.0
+            val rock = st.restInvMass[i] == 0.0f
             var foreign = false; var self = false
             if (px >= x0 && px <= x1 && py >= y0 && py <= y1) {
-                val k = cellY(py) * cols + cellX(px)
+                val k = cellY(py.toDouble()) * cols + cellX(px.toDouble())
                 for (s in gridStart[k] until gridStart[k + 1]) {
                     val t = gridItems[s]
                     val a = body.triA[t]; val b = body.triB[t]; val c = body.triC[t]
@@ -584,8 +584,8 @@ class RuleMonitor(private val w: StandWorld, val limits: Limits, private val tic
                     val same = bodyOf[i] >= 0 && bodyOf[i] == bodyOf[a]
                     if (same) {
                         if (self || linked(st, i, a) || linked(st, i, b) || linked(st, i, c)) continue
-                        if (inside(st, px, py, a, b, c)) self = true
-                    } else if (!foreign && inside(st, px, py, a, b, c)) foreign = true
+                        if (inside(st, px.toDouble(), py.toDouble(), a, b, c)) self = true
+                    } else if (!foreign && inside(st, px.toDouble(), py.toDouble(), a, b, c)) foreign = true
                 }
             }
             if (rock) {
@@ -630,8 +630,8 @@ class RuleMonitor(private val w: StandWorld, val limits: Limits, private val tic
                 if (j <= i || baked.edgeDead[baked.vertEdge[q]] || st.cellDead[j] || prevDead[j]) continue
                 if (m == linkA.size) { val cap = maxOf(256, m * 2); linkA = linkA.copyOf(cap); linkB = linkB.copyOf(cap) }
                 linkA[m] = i; linkB[m] = j; m++
-                val lx = minOf(minOf(st.px[i], st.px[j]), minOf(prevX[i], prevX[j])); val hx = maxOf(maxOf(st.px[i], st.px[j]), maxOf(prevX[i], prevX[j]))
-                val ly = minOf(minOf(st.py[i], st.py[j]), minOf(prevY[i], prevY[j])); val hy = maxOf(maxOf(st.py[i], st.py[j]), maxOf(prevY[i], prevY[j]))
+                val lx = minOf(minOf(st.px[i].toDouble(), st.px[j].toDouble()), minOf(prevX[i], prevX[j])); val hx = maxOf(maxOf(st.px[i].toDouble(), st.px[j].toDouble()), maxOf(prevX[i], prevX[j]))
+                val ly = minOf(minOf(st.py[i].toDouble(), st.py[j].toDouble()), minOf(prevY[i], prevY[j])); val hy = maxOf(maxOf(st.py[i].toDouble(), st.py[j].toDouble()), maxOf(prevY[i], prevY[j]))
                 if (lx < x0) x0 = lx; if (hx > x1) x1 = hx
                 if (ly < y0) y0 = ly; if (hy > y1) y1 = hy
             }
@@ -653,8 +653,8 @@ class RuleMonitor(private val w: StandWorld, val limits: Limits, private val tic
             }
             for (e in 0 until m) {
                 val i = linkA[e]; val j = linkB[e]
-                val cx0 = cellX(minOf(minOf(st.px[i], st.px[j]), minOf(prevX[i], prevX[j]))); val cx1 = cellX(maxOf(maxOf(st.px[i], st.px[j]), maxOf(prevX[i], prevX[j])))
-                val cy0 = cellY(minOf(minOf(st.py[i], st.py[j]), minOf(prevY[i], prevY[j]))); val cy1 = cellY(maxOf(maxOf(st.py[i], st.py[j]), maxOf(prevY[i], prevY[j])))
+                val cx0 = cellX(minOf(minOf(st.px[i].toDouble(), st.px[j].toDouble()), minOf(prevX[i], prevX[j]))); val cx1 = cellX(maxOf(maxOf(st.px[i].toDouble(), st.px[j].toDouble()), maxOf(prevX[i], prevX[j])))
+                val cy0 = cellY(minOf(minOf(st.py[i].toDouble(), st.py[j].toDouble()), minOf(prevY[i], prevY[j]))); val cy1 = cellY(maxOf(maxOf(st.py[i].toDouble(), st.py[j].toDouble()), maxOf(prevY[i], prevY[j])))
                 for (gy in cy0..cy1) for (gx in cx0..cx1) {
                     val k = gy * cols + gx
                     if (pass == 0) linkStart[k + 1]++ else linkItems[linkFill[k]++] = e
@@ -666,7 +666,7 @@ class RuleMonitor(private val w: StandWorld, val limits: Limits, private val tic
             // Неподвижная частица рельефа — тоже в счёт: нить или тонкая лента, протащенная через неё, прошла сквозь
             // рельеф, и правило «частица рельефа внутри ткани» этого не видит (у нити треугольников нет).
             if (st.cellDead[i] || prevDead[i]) continue
-            val px = st.px[i]; val py = st.py[i]; val qx = prevX[i]; val qy = prevY[i]
+            val px = st.px[i].toDouble(); val py = st.py[i].toDouble(); val qx = prevX[i]; val qy = prevY[i]
             val lx = minOf(px, qx); val hx = maxOf(px, qx); val ly = minOf(py, qy); val hy = maxOf(py, qy)
             if (hx < x0 || lx > x1 || hy < y0 || ly > y1) continue
             val mine = bodyOf[i]
@@ -728,7 +728,7 @@ class RuleMonitor(private val w: StandWorld, val limits: Limits, private val tic
         for (k in 0 until m) {
             val p = w.world.freeParticle(w.fixed[k])
             fixedParticle[k] = p
-            fixedX[k] = st.px[p]; fixedY[k] = st.py[p]; fixedR[k] = st.radius[p]
+            fixedX[k] = st.px[p].toDouble(); fixedY[k] = st.py[p].toDouble(); fixedR[k] = st.radius[p].toDouble()
             lists.getOrPut(cellKey(Math.floor(fixedX[k] / PHYSICS_PER_GAME).toInt(), Math.floor(fixedY[k] / PHYSICS_PER_GAME).toInt())) { ArrayList() }.add(k)
         }
         fixedCells.clear()
@@ -741,7 +741,7 @@ class RuleMonitor(private val w: StandWorld, val limits: Limits, private val tic
         if (fixedIndexed != w.fixed.size) indexFixed(st)
         var now = 0
         for (i in 0 until n) {
-            if (st.cellDead[i] || st.restInvMass[i] == 0.0) continue
+            if (st.cellDead[i] || st.restInvMass[i] == 0.0f) continue
             val x = st.px[i]; val y = st.py[i]
             val gx = x / PHYSICS_PER_GAME; val gy = y / PHYSICS_PER_GAME
             var hit = false

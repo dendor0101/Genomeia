@@ -83,10 +83,10 @@ internal class TouchProbe(private val w: StandWorld) {
     private val rockGrid = Grid()
 
     // Положения и скорости на начало тика — для признака «по инерции сошлись бы» (единицы мира физики).
-    private var startX = DoubleArray(0)
-    private var startY = DoubleArray(0)
-    private var startVx = DoubleArray(0)
-    private var startVy = DoubleArray(0)
+    private var startX = FloatArray(0)
+    private var startY = FloatArray(0)
+    private var startVx = FloatArray(0)
+    private var startVy = FloatArray(0)
     private var startDead = BooleanArray(0)
     private var startN = 0
 
@@ -94,7 +94,7 @@ internal class TouchProbe(private val w: StandWorld) {
     fun beforeStep() {
         val st = w.world.state
         val n = st.n
-        if (startX.size < n) { startX = DoubleArray(n); startY = DoubleArray(n); startVx = DoubleArray(n); startVy = DoubleArray(n); startDead = BooleanArray(n) }
+        if (startX.size < n) { startX = FloatArray(n); startY = FloatArray(n); startVx = FloatArray(n); startVy = FloatArray(n); startDead = BooleanArray(n) }
         System.arraycopy(st.cellDead, 0, startDead, 0, n)
         System.arraycopy(st.px, 0, startX, 0, n); System.arraycopy(st.py, 0, startY, 0, n)
         System.arraycopy(st.vx, 0, startVx, 0, n); System.arraycopy(st.vy, 0, startVy, 0, n)

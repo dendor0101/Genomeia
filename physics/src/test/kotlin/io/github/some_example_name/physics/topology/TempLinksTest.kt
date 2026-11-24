@@ -14,8 +14,8 @@ import kotlin.math.sqrt
 /** Временные связи роста (topology/TempLinks.kt, находка 32). */
 class TempLinksTest {
     /** Масштаб мира игры: связь 0.6 и радиус 0.5 клетки игры при 0.048 единицы физики на клетку. */
-    private val link = 0.0288
-    private val r = 0.024
+    private val link = 0.0288f
+    private val r = 0.024f
     private fun world() = PhysicsWorld(PhysicsConfig(emptyMap()), workers = null,
         scale = WorldScale(meanLinkLength = link.toFloat(), meanCellArea = r * r)).apply { state.quiet = true }
 
@@ -33,7 +33,7 @@ class TempLinksTest {
         return if (temp) def.withTempLinks(intArrayOf(0), intArrayOf(2)) else def
     }
 
-    private fun dist(w: PhysicsWorld, a: Int, b: Int): Double {
+    private fun dist(w: PhysicsWorld, a: Int, b: Int): Float {
         val st = w.state
         val dx = st.px[a] - st.px[b]; val dy = st.py[a] - st.py[b]
         return sqrt(dx * dx + dy * dy)
@@ -95,21 +95,21 @@ class TempLinksTest {
     /** Перебор: каждая клетка и каждая связь против связи [k] — по тем же правилам, что crossingBlockers. */
     private fun bruteBlockers(x: FloatArray, y: FloatArray, la: IntArray, lb: IntArray, k: Int): IntArray {
         val a = la[k]; val b = lb[k]
-        val ax = x[a].toDouble(); val ay = y[a].toDouble()
+        val ax = x[a].toFloat(); val ay = y[a].toFloat()
         val dx = x[b] - ax; val dy = y[b] - ay
         val len2 = dx * dx + dy * dy
-        if (len2 < 1e-24) return IntArray(0)
+        if (len2 < 1e-24f) return IntArray(0)
         val pairs = sortedSetOf<Long>()
         val n = x.size
         for (o in 0 until n) {
             if (o == a || o == b) continue
             val ox = x[o] - ax; val oy = y[o] - ay
             val u = (ox * dx + oy * dy) / len2
-            if (u < 0.1 || u > 0.9) continue
+            if (u < 0.1f || u > 0.9f) continue
             val px = ox - u * dx; val py = oy - u * dy
-            if (px * px + py * py < len2 / 16.0) pairs.add(o.toLong() * (n + 1))
+            if (px * px + py * py < len2 / 16.0f) pairs.add(o.toLong() * (n + 1))
         }
-        fun orient(p: Int, q: Int, r: Int) = (x[q] - x[p]).toDouble() * (y[r] - y[p]).toDouble() - (y[q] - y[p]).toDouble() * (x[r] - x[p]).toDouble()
+        fun orient(p: Int, q: Int, r: Int) = (x[q] - x[p]).toFloat() * (y[r] - y[p]).toFloat() - (y[q] - y[p]).toFloat() * (x[r] - x[p]).toFloat()
         for (j in la.indices) {
             if (j == k) continue
             val u = la[j]; val v = lb[j]
@@ -138,17 +138,17 @@ class TempLinksTest {
         val a = world(); a.addBody(row(temp = true))
         val b = world(); b.addBody(row(temp = false))
         assertFalse("у взрослого тела временных связей нет", a.state.body.hasTempLinks)
-        for (w in listOf(a, b)) w.setVelocity(2, 0.4, 0.1)
+        for (w in listOf(a, b)) w.setVelocity(2, 0.4f, 0.1f)
         repeat(60) { a.step(); b.step() }
-        assertArrayEquals(b.state.px, a.state.px, 0.0)
-        assertArrayEquals(b.state.py, a.state.py, 0.0)
+        assertArrayEquals(b.state.px, a.state.px, 0.0f)
+        assertArrayEquals(b.state.py, a.state.py, 0.0f)
     }
 
     @Test fun tempLinkHoldsEndsUntilTheCellOnItIsBornAndThenGoesQuietly() {
         fun grown(temp: Boolean): Pair<PhysicsWorld, Int> {
             val w = world()
             val first = w.bodyFirst(w.addBody(row(temp), booleanArrayOf(true, false, true)))
-            w.setVelocity(first + 2, 0.3, 0.0)
+            w.setVelocity(first + 2, 0.3f, 0.0f)
             repeat(40) { w.step() }
             return w to first
         }
@@ -156,8 +156,8 @@ class TempLinksTest {
         val (loose, f2) = grown(temp = false)
         val start = 2 * link
         println("концы через 40 тиков: с временной связью ${"%.3f".format(dist(held, f1, f1 + 2) / start)}, без неё ${"%.3f".format(dist(loose, f2, f2 + 2) / start)} длины покоя")
-        assertTrue("временная связь держит концы", dist(held, f1, f1 + 2) < 1.2 * start)
-        assertTrue("без неё концы расходятся", dist(loose, f2, f2 + 2) > 1.5 * start)
+        assertTrue("временная связь держит концы", dist(held, f1, f1 + 2) < 1.2f * start)
+        assertTrue("без неё концы расходятся", dist(loose, f2, f2 + 2) > 1.5f * start)
 
         // Рождается клетка, которая ложится на связь: связь снята — не разрыв и не событие для клиента.
         val st = held.state
@@ -193,8 +193,8 @@ class TempLinksTest {
      */
     @Test fun bridgeWaitsForDetourAndThenGoes() {
         val def = BodyDefinition(
-            floatArrayOf(1f, (1 + 2 * link).toFloat(), (1 + link).toFloat(), (1 + 0.5 * link).toFloat()),
-            floatArrayOf(1f, 1f, (1 + 0.01 * link).toFloat(), (1 + 0.8 * link).toFloat()),
+            floatArrayOf(1f, (1 + 2 * link).toFloat(), (1 + link).toFloat(), (1 + 0.5f * link).toFloat()),
+            floatArrayOf(1f, 1f, (1 + 0.01f * link).toFloat(), (1 + 0.8f * link).toFloat()),
             FloatArray(4) { r.toFloat() }, BooleanArray(4), BooleanArray(4),
             intArrayOf(1, 0, 3), intArrayOf(2, 3, 2), IntArray(0), IntArray(0), IntArray(0), FloatArray(0),
             emptyArray(), emptyArray(), 1f,
@@ -217,18 +217,18 @@ class TempLinksTest {
     @Test fun snapshotMidGrowthContinuesBitwise() {
         val a = world()
         val first = a.bodyFirst(a.addBody(row(temp = true), booleanArrayOf(true, false, true)))
-        a.setVelocity(first + 2, 0.3, 0.05)
+        a.setVelocity(first + 2, 0.3f, 0.05f)
         repeat(20) { a.step() }
         val bytes = ByteArrayOutputStream().also { a.write(DataOutputStream(it)) }.toByteArray()
         val b = world()
         b.read(DataInputStream(ByteArrayInputStream(bytes)))
         assertTrue(b.state.body.hasTempLinks)
         repeat(20) { a.step(); b.step() }
-        assertArrayEquals("x из снимка", a.state.px, b.state.px, 0.0)
+        assertArrayEquals("x из снимка", a.state.px, b.state.px, 0.0f)
         a.activate(first + 1); b.activate(first + 1)
         repeat(20) { a.step(); b.step() }
-        assertArrayEquals("x после снятия", a.state.px, b.state.px, 0.0)
-        assertArrayEquals("y после снятия", a.state.py, b.state.py, 0.0)
+        assertArrayEquals("x после снятия", a.state.px, b.state.px, 0.0f)
+        assertArrayEquals("y после снятия", a.state.py, b.state.py, 0.0f)
         assertEquals(a.state.tornTotal, b.state.tornTotal)
     }
 }

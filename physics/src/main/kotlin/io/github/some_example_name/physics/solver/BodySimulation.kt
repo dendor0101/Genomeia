@@ -14,7 +14,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     // Сейчас поверхность обновляется локально сразу после повреждения, иначе
     // контакт пропустит вновь открывшийся контур. Полное уплотнение рабочих
     // списков остаётся в конце тика: рвётся обычно пучок связей за один удар.
-    java.util.Arrays.fill(contactPressure, 0.0)
+    java.util.Arrays.fill(contactPressure, 0.0f)
     java.util.Arrays.fill(contactPressureN, 0)
     java.util.Arrays.fill(crushedCell, false)
     if (tearsPending) refreshSurface()
@@ -27,19 +27,18 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     wakeByInput()
     // Положения в начале тика: средняя скорость за тик нужна сопротивлению среды. См. TickMotion.
     beginTickMotion()
-    // Клин читает память удара клеток и положения начала тика (они же — в tickJitter до конца последнего подшага).
-    if (impactSpeed.size != n) impactSpeed = impactSpeed.copyOf(n)
-    contacts?.bindImpact(impactSpeed, tickJitterX, tickJitterY)
     if (cancelSpinOn) { tick0(); prepareAwakeSpans(); momentumBegin(); tick1(16) }
     if (cancelSpinOn) noteJointsMomentum()
     for (step in 0 until SUBSTEPS) {
-        // Площади и изгиб — на чётных подшагах, с шагом в два подшага: см. MaterialParameters.
-        slowConstraintsNow = (step and 1) == 0
+        // Площади и изгиб — раз в SLOW_CONSTRAINT_PERIOD подшагов, с шагом во столько же: см. MaterialParameters.
+        slowConstraintsNow = step % SLOW_CONSTRAINT_PERIOD == 0
         // Длина покоя мышцы доезжает до своего значения за тик, а не прыгает в первом
         // же подшаге — см. muscleScaleOf.
-        updateMuscleScale((step + 1).toDouble() / SUBSTEPS)
+        updateMuscleScale((step + 1).toFloat() / SUBSTEPS)
         // Мышцы клеток — так же, по подшагам: см. MuscleDriver.applyCellScaleLerp.
-        applyCellScaleLerp(step, SUBSTEPS)
+        tick0(); applyCellScaleLerp(step, SUBSTEPS); tick1(22)
+        // Дорастание молодой ткани — тоже по подшагам: см. BodyGrowth.applyGrowthLerp.
+        applyGrowthLerp(step, SUBSTEPS)
         // Удар или разрыв прошлого подшага будит спящих: см. BodySleep.
         applyWakeRequests()
         // КОНТАКТ ПРИКЛАДЫВАЕТСЯ К СКОРОСТИ ДО ИНТЕГРИРОВАНИЯ, как гравитация.
@@ -49,12 +48,12 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
             contacts!!.prepare(px, py, prevX, prevY, vx, vy, invMass)
             contacts!!.updateBones(px, py, invMass,
                 if (bonesRigid) boneOf else null, rigidBones)
-            contacts!!.solveContacts(px, py, vx, vy, invMass, h, 1.0, toVelocity = true)
+            contacts!!.solveContacts(px, py, vx, vy, invMass, h, 1.0f, toVelocity = true)
         }
         // Скобка вокруг ВНУТРЕННИХ стадий: центр масс до и после. Внешние силы
         // (среда, пол, вязкость) идут ниже по скоростям и в скобку не попадают.
-        var beforeX = 0.0
-        var beforeY = 0.0
+        var beforeX = 0.0f
+        var beforeY = 0.0f
         // Только когда тело не держат: при активной тяге посылка «центр масс не
         // должен двигаться» неверна, и поправка даёт растяжение (см. константу).
         val cancel = CANCEL_INTERNAL_DRIFT && dragId < 0
@@ -64,7 +63,7 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         if (cancel) { tick0(); integrate(h); tick1(15) }
         if (cancel) {
             for (i in 0 until n) { beforeX += px[i]; beforeY += py[i] }
-            dragShiftX = 0.0; dragShiftY = 0.0
+            dragShiftX = 0.0f; dragShiftY = 0.0f
         }
 
         // Обход связей меняет направление КАЖДЫЙ подшаг — см. sweepBackwards.

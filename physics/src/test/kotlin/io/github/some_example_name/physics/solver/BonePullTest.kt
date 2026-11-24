@@ -12,14 +12,14 @@ class BonePullTest {
             IntArray(0), IntArray(0), IntArray(0), FloatArray(0),
             arrayOf(intArrayOf(0, 1, 2, 3)), emptyArray(), 1f,
         )
-        val world = PhysicsWorld(scale = WorldScale(1f, 0.25))
+        val world = PhysicsWorld(scale = WorldScale(1f, 0.25f))
         val id = world.addBody(body, BooleanArray(4) { true }, booleanArrayOf(true, true, true, false))
         val first = world.bodyFirst(id)
-        world.pullToward(first + 2, world.x[first + 2], 20.0)
+        world.pullToward(first + 2, world.x[first + 2], 20.0f)
         val vy = world.state.vy
-        assertTrue(vy[first + 1] > 0.0)
+        assertTrue(vy[first + 1] > 0.0f)
         assertTrue(vy[first + 2] > vy[first + 1])
-        assertEquals(vy[first + 1] - vy[first], vy[first + 2] - vy[first + 1], 1e-12)
-        assertEquals(0.0, vy[first + 3], 0.0)
+        assertEquals(vy[first + 1] - vy[first], vy[first + 2] - vy[first + 1], 1e-12f)
+        assertEquals(0.0f, vy[first + 3], 0.0f)
     }
 }

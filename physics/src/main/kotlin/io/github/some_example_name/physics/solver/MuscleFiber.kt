@@ -38,24 +38,24 @@ import kotlin.math.sqrt
 
 /** Квадрат множителя поперёк волокна, s^−2k. */
 @Suppress("NOTHING_TO_INLINE")
-internal inline fun fiberAcross2(s: Double, k: Double): Double =
-    if (k == 0.0) 1.0 else if (k == 1.0) 1.0 / (s * s) else if (k == 0.5) 1.0 / s else StrictMath.pow(s, -2.0 * k)
+internal inline fun fiberAcross2(s: Float, k: Float): Float =
+    if (k == 0.0f) 1.0f else if (k == 1.0f) 1.0f / (s * s) else if (k == 0.5f) 1.0f / s else StrictMath.pow((s).toDouble(), (-2.0f * k).toDouble()).toFloat()
 
 /** Множитель длины связи под командой s < 1: |F·u|, F = s вдоль волокна и s^−k поперёк; [c2] — cos²θ. */
 @Suppress("NOTHING_TO_INLINE")
-internal inline fun fiberLinkFactor(s: Double, c2: Double, k: Double): Double =
-    sqrt(s * s * c2 + fiberAcross2(s, k) * (1.0 - c2))
+internal inline fun fiberLinkFactor(s: Float, c2: Float, k: Float): Float =
+    sqrt(s * s * c2 + fiberAcross2(s, k) * (1.0f - c2))
 
 /** Множитель площади треугольника по волокну под командой s < 1: det F = s^(1−k). */
-internal fun fiberAreaFactor(s: Double, k: Double): Double =
-    if (k == 0.0) s else if (k == 1.0) 1.0 else if (k == 0.5) sqrt(s) else StrictMath.pow(s, 1.0 - k)
+internal fun fiberAreaFactor(s: Float, k: Float): Float =
+    if (k == 0.0f) s else if (k == 1.0f) 1.0f else if (k == 0.5f) sqrt(s) else StrictMath.pow((s).toDouble(), (1.0f - k).toDouble()).toFloat()
 
 /**
  * Поправка связи мышцы с волокном под командой s < 1 (связь не вдоль волокна: cos²θ < 1). Как прежде, мышца тянет
  * отстающую ткань не сильнее потолка (MUSCLE_MAX_PULL); связь поперёк волокна, которую мышца удлиняет (k > 0), она
  * толкает тоже не сильнее потолка, а сжатие ниже длины покоя держит обычная ткань.
  */
-internal fun fiberLinkCorrection(len: Double, rest: Double, s: Double, w: Double, alpha: Double, c2: Double, k: Double): Double {
+internal fun fiberLinkCorrection(len: Float, rest: Float, s: Float, w: Float, alpha: Float, c2: Float, k: Float): Float {
     val target = rest * fiberLinkFactor(s, c2, k)
     val cap = MUSCLE_MAX_PULL * rest
     var over = len - target
@@ -64,8 +64,8 @@ internal fun fiberLinkCorrection(len: Double, rest: Double, s: Double, w: Double
         // обычная ткань, без потолка.
         over = if (target < rest) cappedPull(len, rest, target) else if (MX_SPLIT >= 1) over else cap
     }
-    else if (over < 0.0 && target > rest) {
-        val tissue = if (len < rest) len - rest else 0.0
+    else if (over < 0.0f && target > rest) {
+        val tissue = if (len < rest) len - rest else 0.0f
         val muscle = maxOf(len, rest) - target
         over = tissue + (if (muscle < -cap) -cap else muscle)
     }
@@ -74,17 +74,17 @@ internal fun fiberLinkCorrection(len: Double, rest: Double, s: Double, w: Double
 
 /** Связь [c] сокращается по волокну: волокна заданы, команда — сжатие, и связь к волокну под углом. */
 @Suppress("NOTHING_TO_INLINE")
-private inline fun BodyState.linkAlongFiber(c: Int, scale: Double): Boolean =
-    fibersOn && scale < 1.0 && c < conFiberC2.size && conFiberC2[c] < 1f
+private inline fun BodyState.linkAlongFiber(c: Int, scale: Float): Boolean =
+    fibersOn && scale < 1.0f && c < conFiberC2.size && conFiberC2[c] < 1f
 
 /** Доля длины покоя связи [c] для предела раздавливания: min(1, множитель длины). Без волокна — min(1, s). */
-internal fun BodyState.limitShrink(c: Int, scale: Double): Double =
-    if (linkAlongFiber(c, scale)) minOf(1.0, fiberLinkFactor(scale, conFiberC2[c].toDouble(), fiberThicken))
-    else minOf(1.0, scale)
+internal fun BodyState.limitShrink(c: Int, scale: Float): Float =
+    if (linkAlongFiber(c, scale)) minOf(1.0f, fiberLinkFactor(scale, conFiberC2[c].toFloat(), fiberThicken))
+    else minOf(1.0f, scale)
 
 /** Длина покоя связи [c] для предела растяжения и разрыва: удлинённая поперёк волокна. Без волокна — [rest]. */
-internal fun BodyState.limitRest(c: Int, rest: Double, scale: Double): Double =
-    if (linkAlongFiber(c, scale)) rest * maxOf(1.0, fiberLinkFactor(scale, conFiberC2[c].toDouble(), fiberThicken))
+internal fun BodyState.limitRest(c: Int, rest: Float, scale: Float): Float =
+    if (linkAlongFiber(c, scale)) rest * maxOf(1.0f, fiberLinkFactor(scale, conFiberC2[c].toFloat(), fiberThicken))
     else rest
 
 /** Волокно клетки, задающей множитель клетке [v] (cellScaleSrc): x и y; оба 0 — волокна нет. */
@@ -110,9 +110,9 @@ private fun BodyState.linkFiberC2(c: Int): Float {
     if (f < 0) return 1f
     val fx = cellFiberX[f]; val fy = cellFiberY[f]
     if (fx == 0f && fy == 0f) return 1f
-    val dx = (body.x[j] - body.x[i]).toDouble(); val dy = (body.y[j] - body.y[i]).toDouble()
+    val dx = (body.x[j] - body.x[i]).toFloat(); val dy = (body.y[j] - body.y[i]).toFloat()
     val l2 = dx * dx + dy * dy
-    if (l2 < 1e-24) return 1f
+    if (l2 < 1e-24f) return 1f
     val a = fx * dx + fy * dy
     return (a * a / l2).toFloat()
 }
@@ -162,21 +162,21 @@ internal fun BodyState.refreshLinkFiber(c: Int) {
 }
 
 /** Рост (BodyGrowth): множитель длины связи [c] под мышцей — по волокну |F·u|, без волокна min(1, s). */
-internal fun BodyState.muscleLengthFactor(c: Int, scale: Double): Double {
-    if (!fibersOn || scale >= 1.0) return minOf(1.0, scale)
+internal fun BodyState.muscleLengthFactor(c: Int, scale: Float): Float {
+    if (!fibersOn || scale >= 1.0f) return minOf(1.0f, scale)
     refreshLinkFiber(c)
     val c2 = conFiberC2[c]
-    if (c2 >= 1f) return minOf(1.0, scale)
-    return fiberLinkFactor(scale, c2.toDouble(), fiberThicken)
+    if (c2 >= 1f) return minOf(1.0f, scale)
+    return fiberLinkFactor(scale, c2.toFloat(), fiberThicken)
 }
 
 /** Рост: множитель удвоенной площади треугольника [w] под мышцей — по волокну det F, без волокна s². */
-internal fun BodyState.triangleAreaFactor(w: Int, scale: Double): Double {
-    if (fibersOn && scale < 1.0) {
+internal fun BodyState.triangleAreaFactor(w: Int, scale: Float): Float {
+    if (fibersOn && scale < 1.0f) {
         refreshTriangleFiber(w)
         if (triFiberById[triId[w]]) return fiberAreaFactor(scale, fiberThicken)
     }
-    val a = minOf(1.0, scale)
+    val a = minOf(1.0f, scale)
     return a * a
 }
 
@@ -186,4 +186,4 @@ internal fun BodyState.triangleAreaFactor(w: Int, scale: Double): Double {
  * ткань). Это только мягкость (ConstraintSolver.tensileCompliance): предел длины и разрыва — по s у всей мышцы.
  */
 @Suppress("NOTHING_TO_INLINE")
-internal inline fun fiberRelaxedSoftness(s: Double, c2: Double): Double = sqrt(1.0 + (s * s - 1.0) * c2)
+internal inline fun fiberRelaxedSoftness(s: Float, c2: Float): Float = sqrt(1.0f + (s * s - 1.0f) * c2)

@@ -26,4 +26,4 @@ package io.github.some_example_name.physics
  * Настройка мира FIBER_THICKEN = k — для опытов (стенды: -Pconfig=FIBER_THICKEN=0.5; ключ опытов MX_FIBER=0 — стенды не
  * задают волокон). Игра настроек мира не задаёт: её записи и сохранения идут по закону по умолчанию.
  */
-const val FIBER_THICKEN = 0.0
+const val FIBER_THICKEN = 0.0f

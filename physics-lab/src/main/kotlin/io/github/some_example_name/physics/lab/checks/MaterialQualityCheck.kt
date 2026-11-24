@@ -51,7 +51,7 @@ fun main(args: Array<String>) {
                 val i = state.conA[c]; val j = state.conB[c]
                 val dx = state.px[i] - state.px[j]; val dy = state.py[i] - state.py[j]
                 val m = state.conMuscle[c]
-                val rest = state.conRest[c] * if (m < 0) 1.0 else state.muscleScaleOf[m]
+                val rest = state.conRest[c] * if (m < 0) 1.0f else state.muscleScaleOf[m]
                 val error = sqrt(dx * dx + dy * dy) - rest
                 residual2 += error * error
             }

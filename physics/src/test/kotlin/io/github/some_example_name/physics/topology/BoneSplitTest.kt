@@ -17,7 +17,7 @@ import kotlin.math.abs
  * Убитый столбец режет брусок на две половины, между которыми не остаётся ни одной живой связи.
  */
 class BoneSplitTest {
-    private val v = linksPerTick(1.0)
+    private val v = linksPerTick(1.0f)
 
     private class Bar(val w: PhysicsWorld, val first: Int, val cols: Int, val rows: Int) {
         val st: BodyState get() = w.state
@@ -33,10 +33,10 @@ class BoneSplitTest {
         return Bar(w, w.bodyFirst(w.addBody(patch(cols, rows, bone = bone))), cols, rows)
     }
 
-    private fun distances(w: PhysicsWorld, ids: IntArray) = Array(ids.size) { a -> DoubleArray(ids.size) { b -> w.distance(ids[a], ids[b]) } }
+    private fun distances(w: PhysicsWorld, ids: IntArray) = Array(ids.size) { a -> FloatArray(ids.size) { b -> w.distance(ids[a], ids[b]) } }
 
-    private fun shapeError(w: PhysicsWorld, ids: IntArray, rest: Array<DoubleArray>): Double {
-        var worst = 0.0
+    private fun shapeError(w: PhysicsWorld, ids: IntArray, rest: Array<FloatArray>): Float {
+        var worst = 0.0f
         for (a in ids.indices) for (b in a + 1 until ids.size) worst = maxOf(worst, abs(w.distance(ids[a], ids[b]) - rest[a][b]))
         return worst
     }
@@ -69,7 +69,7 @@ class BoneSplitTest {
         assertTrue(boneLeft >= 0 && boneRight >= 0 && boneLeft != boneRight)
         for (i in left) assertEquals(boneLeft, st.boneOf[i])
         for (i in right) assertEquals(boneRight, st.boneOf[i])
-        for (i in b.column(3)) { assertFalse(b.w.isBone(i)); assertEquals("вес погибшей клетки в кости", 0.0, st.matchWeight[i], 0.0) }
+        for (i in b.column(3)) { assertFalse(b.w.isBone(i)); assertEquals("вес погибшей клетки в кости", 0.0f, st.matchWeight[i], 0.0f) }
         b.w.step()
         assertTrue("половины — разные организмы", st.organismOf[left[0]] != st.organismOf[right[0]])
     }
@@ -79,20 +79,20 @@ class BoneSplitTest {
         val left = b.columns(0..2); val right = b.columns(4..6)
         val restLeft = distances(b.w, left); val restRight = distances(b.w, right)
         for (i in b.column(3)) b.w.kill(i)
-        val x = DoubleArray(right.size) { b.w.x[right[it]] }; val y = DoubleArray(right.size) { b.w.y[right[it]] }
+        val x = FloatArray(right.size) { b.w.x[right[it]] }; val y = FloatArray(right.size) { b.w.y[right[it]] }
         // Левую половину толкнули прочь и закрутили: правая обязана стоять, где стояла.
-        for (i in left) b.w.setVelocity(i, -2 * v, 0.5 * v * (b.w.y[i] - 1.0) / T_LINK)
+        for (i in left) b.w.setVelocity(i, -2 * v, 0.5f * v * (b.w.y[i] - 1.0f) / T_LINK)
         b.w.wake(left[0])
         repeat(60) {
             b.w.step()
-            assertEquals("левая половина твёрдая", 0.0, shapeError(b.w, left, restLeft), 1e-4 * T_LINK)
+            assertEquals("левая половина твёрдая", 0.0f, shapeError(b.w, left, restLeft), 1e-4f * T_LINK)
         }
-        assertTrue("левая половина уехала: ${(b.w.x[left[0]] - 1.0) / T_LINK} связи", b.w.x[left[0]] < 1.0 - 20 * T_LINK)
+        assertTrue("левая половина уехала: ${(b.w.x[left[0]] - 1.0f) / T_LINK} связи", b.w.x[left[0]] < 1.0f - 20 * T_LINK)
         for (k in right.indices) {
-            assertEquals("правая половина не сдвинулась (x), клетка $k", x[k], b.w.x[right[k]], 1e-9 * T_LINK)
-            assertEquals("правая половина не сдвинулась (y), клетка $k", y[k], b.w.y[right[k]], 1e-9 * T_LINK)
+            assertEquals("правая половина не сдвинулась (x), клетка $k", x[k], b.w.x[right[k]], F_VEL * T_LINK)
+            assertEquals("правая половина не сдвинулась (y), клетка $k", y[k], b.w.y[right[k]], F_VEL * T_LINK)
         }
-        assertEquals("правая половина твёрдая", 0.0, shapeError(b.w, right, restRight), 1e-4 * T_LINK)
+        assertEquals("правая половина твёрдая", 0.0f, shapeError(b.w, right, restRight), 1e-4f * T_LINK)
     }
 
     @Test fun `гибель клетки с краю не делит кость и не дёргает её`() {
@@ -100,21 +100,21 @@ class BoneSplitTest {
         val st = b.st
         val alive = b.all.filter { it != b.cell(0, 0) }.toIntArray()
         val rest = distances(b.w, alive)
-        val x = DoubleArray(alive.size) { b.w.x[alive[it]] }
+        val x = FloatArray(alive.size) { b.w.x[alive[it]] }
         b.w.kill(b.cell(0, 0))
         assertEquals(1, liveBones(st)); assertConsistent(st)
         assertEquals(alive.size, st.rigidBones[st.boneOf[alive[0]]].size)
         repeat(30) { b.w.step() }
-        assertEquals("кость твёрдая", 0.0, shapeError(b.w, alive, rest), 1e-6 * T_LINK)
-        for (k in alive.indices) assertEquals("кость не сдвинулась", x[k], b.w.x[alive[k]], 1e-6 * T_LINK)
+        assertEquals("кость твёрдая", 0.0f, shapeError(b.w, alive, rest), F_POS)
+        for (k in alive.indices) assertEquals("кость не сдвинулась", x[k], b.w.x[alive[k]], F_POS)
         // Погибшая клетка заморожена на месте: кость её за собой больше не таскает.
         val deadX = b.w.x[b.cell(0, 0)]
-        b.w.push(alive.first()..alive.first(), 0.0, 0.0)
-        for (i in alive) b.w.setVelocity(i, 3 * v, 0.0)
+        b.w.push(alive.first()..alive.first(), 0.0f, 0.0f)
+        for (i in alive) b.w.setVelocity(i, 3 * v, 0.0f)
         repeat(20) { b.w.step() }
-        assertEquals("погибшая клетка стоит", deadX, b.w.x[b.cell(0, 0)], 0.0)
+        assertEquals("погибшая клетка стоит", deadX, b.w.x[b.cell(0, 0)], 0.0f)
         assertTrue("кость уехала", b.w.x[alive[0]] > x[0] + 10 * T_LINK)
-        assertEquals(0.0, shapeError(b.w, alive, rest), 1e-4 * T_LINK)
+        assertEquals(0.0f, shapeError(b.w, alive, rest), 1e-4f * T_LINK)
     }
 
     @Test fun `одиночная клетка костью быть перестаёт, а кусок из двух клеток остаётся жёстким стержнем`() {
@@ -131,15 +131,15 @@ class BoneSplitTest {
         // Стержень из двух клеток держит длину, хотя связи между ними в решателе нет.
         val rod = w(b).distance(b.cell(0, 0), b.cell(1, 0))
         b.w.setVelocity(b.cell(0, 0), -2 * v, v); b.w.wake(b.cell(0, 0))
-        repeat(40) { b.w.step(); assertEquals("стержень держит длину", rod, b.w.distance(b.cell(0, 0), b.cell(1, 0)), 1e-4 * T_LINK) }
-        assertTrue("стержень уехал целиком", b.w.x[b.cell(1, 0)] < 1.0 + T_LINK)
+        repeat(40) { b.w.step(); assertEquals("стержень держит длину", rod, b.w.distance(b.cell(0, 0), b.cell(1, 0)), 1e-4f * T_LINK) }
+        assertTrue("стержень уехал целиком", b.w.x[b.cell(1, 0)] < 1.0f + T_LINK)
     }
     private fun w(b: Bar) = b.w
 
     @Test fun `кость, у которой погибли все клетки, пустеет, мир шагает и уплотняется`() {
         val b = bar(3, 2)
         val st = b.st
-        val soft = b.w.bodyFirst(b.w.addBody(patch(3, 2, x0 = 1.0 + 8 * T_LINK)))
+        val soft = b.w.bodyFirst(b.w.addBody(patch(3, 2, x0 = 1.0f + 8 * T_LINK)))
         for (i in b.all) b.w.kill(i)
         assertEquals(0, liveBones(st)); assertConsistent(st)
         repeat(10) { b.w.step() }
@@ -175,18 +175,18 @@ class BoneSplitTest {
         val pivotX = b.w.x[b.cell(3, 1)]; val pivotY = b.w.y[b.cell(3, 1)]
         for (i in b.columns(4..6)) {
             val rx = st.px[i] - pivotX; val ry = st.py[i] - pivotY
-            st.px[i] = pivotX + rx * 0.8 - ry * 0.6; st.py[i] = pivotY + rx * 0.6 + ry * 0.8
+            st.px[i] = pivotX + rx * 0.8f - ry * 0.6f; st.py[i] = pivotY + rx * 0.6f + ry * 0.8f
             st.prevX[i] = st.px[i]; st.prevY[i] = st.py[i]
         }
         val ids = st.rigidBones[0]
-        val cx = ids.sumOf { st.px[it] } / ids.size; val cy = ids.sumOf { st.py[it] } / ids.size
+        val cx = ids.sumOf { st.px[it].toDouble() }.toFloat() / ids.size; val cy = ids.sumOf { st.py[it].toDouble() }.toFloat() / ids.size
         for (k in ids.indices) { st.boneRestQx[0][k] = st.px[ids[k]] - cx; st.boneRestQy[0][k] = st.py[ids[k]] - cy }
         val right = b.columns(4..6); val left = b.columns(0..2)
         val restRight = distances(b.w, right); val restLeft = distances(b.w, left)
         for (i in b.column(3)) b.w.kill(i)
         repeat(30) { b.w.step() }
-        assertEquals("правая часть сохранила свою форму", 0.0, shapeError(b.w, right, restRight), 1e-6 * T_LINK)
-        assertEquals("левая часть сохранила свою форму", 0.0, shapeError(b.w, left, restLeft), 1e-6 * T_LINK)
+        assertEquals("правая часть сохранила свою форму", 0.0f, shapeError(b.w, right, restRight), F_POS)
+        assertEquals("левая часть сохранила свою форму", 0.0f, shapeError(b.w, left, restLeft), F_POS)
     }
 
     @Test fun `сон куска не выключает кость соседнего куска`() {
@@ -201,7 +201,7 @@ class BoneSplitTest {
         assertTrue("левая половина уснула", w.isAsleep(cell(0, 0)))
         // Правую половину будим ударом по одной клетке: кость обязана остаться твёрдой.
         w.setVelocity(right[0], 3 * v, 2 * v); w.wake(right[0])
-        repeat(20) { w.step(); assertEquals("кость бодрствующего куска твёрдая", 0.0, shapeError(w, right, rest), 1e-3 * T_LINK) }
+        repeat(20) { w.step(); assertEquals("кость бодрствующего куска твёрдая", 0.0f, shapeError(w, right, rest), 1e-3f * T_LINK) }
         assertTrue("левая половина всё ещё спит", w.isAsleep(cell(0, 0)))
     }
 
@@ -209,13 +209,13 @@ class BoneSplitTest {
         val b = bar()
         for (i in b.column(3)) b.w.kill(i)
         val live = b.columns(0..2) + b.columns(4..6)
-        val x = DoubleArray(live.size) { b.w.x[live[it]] }; val y = DoubleArray(live.size) { b.w.y[live[it]] }
+        val x = FloatArray(live.size) { b.w.x[live[it]] }; val y = FloatArray(live.size) { b.w.y[live[it]] }
         repeat(60) { b.w.step() }
         for (k in live.indices) {
-            assertEquals("клетка $k не сдвинулась (x)", x[k], b.w.x[live[k]], 1e-6 * T_LINK)
-            assertEquals("клетка $k не сдвинулась (y)", y[k], b.w.y[live[k]], 1e-6 * T_LINK)
+            assertEquals("клетка $k не сдвинулась (x)", x[k], b.w.x[live[k]], F_POS)
+            assertEquals("клетка $k не сдвинулась (y)", y[k], b.w.y[live[k]], F_POS)
         }
-        assertEquals(0.0, b.w.kinetic(), 1e-12 * v * v)
+        assertEquals(0.0f, b.w.kinetic(), F_VEL * v * v)
     }
 
     @Test fun `не включённая клетка кластера после разреза входит в кость своего куска`() {
@@ -242,7 +242,7 @@ class BoneSplitTest {
     @Test fun `снимок мира с разделённой костью читается и продолжается бит в бит`() {
         val b = bar(vacuum = false)
         for (i in b.column(3)) b.w.kill(i)
-        for (i in b.columns(0..2)) b.w.setVelocity(i, -v, 0.3 * v)
+        for (i in b.columns(0..2)) b.w.setVelocity(i, -v, 0.3f * v)
         b.w.wake(b.cell(0, 0))
         repeat(5) { b.w.step() }
         val bytes = ByteArrayOutputStream()
@@ -256,8 +256,8 @@ class BoneSplitTest {
         assertTrue(a.boneClusterOf.copyOf(a.n).contentEquals(c.boneClusterOf.copyOf(c.n)))
         repeat(40) { b.w.step(); copy.step() }
         for (i in 0 until a.n) {
-            assertEquals("x частицы $i", java.lang.Double.doubleToRawLongBits(a.px[i]), java.lang.Double.doubleToRawLongBits(c.px[i]))
-            assertEquals("y частицы $i", java.lang.Double.doubleToRawLongBits(a.py[i]), java.lang.Double.doubleToRawLongBits(c.py[i]))
+            assertEquals("x частицы $i", a.px[i].toRawBits(), c.px[i].toRawBits())
+            assertEquals("y частицы $i", a.py[i].toRawBits(), c.py[i].toRawBits())
         }
     }
 
@@ -271,6 +271,6 @@ class BoneSplitTest {
         for (i in b.all) { assertTrue(b.w.isBone(i)); assertFalse(b.st.cellDead[i]) }
         val rest = distances(b.w, b.all)
         repeat(10) { b.w.step() }
-        assertEquals(0.0, shapeError(b.w, b.all, rest), 1e-6 * T_LINK)
+        assertEquals(0.0f, shapeError(b.w, b.all, rest), F_POS)
     }
 }

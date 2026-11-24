@@ -27,7 +27,7 @@ fun main() {
     for (k in 0 until n) if (!st.cellUnborn[pOf[k]]) bornAt[k] = 0
     val dx0 = b.def.x; val dy0 = b.def.y
     fun design(k: Int, q: Int): Double { val x = (dx0[k] - dx0[q]).toDouble(); val y = (dy0[k] - dy0[q]).toDouble(); return sqrt(x * x + y * y) }
-    fun dist(p: Int, q: Int): Double { val x = st.px[p] - st.px[q]; val y = st.py[p] - st.py[q]; return sqrt(x * x + y * y) }
+    fun dist(p: Int, q: Int): Double { val x = (st.px[p] - st.px[q]).toDouble(); val y = (st.py[p] - st.py[q]).toDouble(); return sqrt(x * x + y * y) }
     val link = run.w.world.meanLinkLength
     val adj = b.shape
     println("сцена $id: клеток $n, стадий ${order.depth.max()}, длина связи $link")

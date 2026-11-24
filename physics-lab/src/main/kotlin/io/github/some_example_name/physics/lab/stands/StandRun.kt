@@ -12,7 +12,7 @@ import io.github.some_example_name.physics.PhysicsWorkers
  * Падение решателя (исключение в шаге мира) — тоже итог: прогон останавливается, сцена
  * считается проваленной, текст исключения остаётся в [crash].
  */
-class StandRun(val scenario: Scenario, workers: PhysicsWorkers? = null, forceParallel: Boolean = false, frame: Frame = Frame.SCENE,
+class StandRun(val scenario: Scenario, workers: PhysicsWorkers? = null, forceParallel: Boolean = false, frame: Frame = STAND_FRAME,
                /** Число подшагов эталонного решателя; 0 — быстрый (StandWorld.reference). */
                reference: Int = 0,
                /** Остановить прогон на этом тике: эталон идёт ровно столько, сколько шёл быстрый (тот мог уснуть раньше срока). */

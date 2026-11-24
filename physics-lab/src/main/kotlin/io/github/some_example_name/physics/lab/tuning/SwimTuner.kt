@@ -98,18 +98,18 @@ import kotlin.random.Random
  */
 private class Gene(
     val name: String,
-    val lo: Double,
-    val hi: Double,
+    val lo: Float,
+    val hi: Float,
     val log: Boolean = true,
     val integer: Boolean = false,
 ) {
-    fun decode(g: Double): Double {
-        val t = g.coerceIn(0.0, 1.0)
+    fun decode(g: Float): Float {
+        val t = g.coerceIn(0.0f, 1.0f)
         val v = if (log) exp(ln(lo) + t * (ln(hi) - ln(lo))) else lo + t * (hi - lo)
-        return if (integer) v.roundToInt().toDouble() else v
+        return if (integer) v.roundToInt().toFloat() else v
     }
 
-    fun encode(v: Double): Double {
+    fun encode(v: Float): Float {
         val c = v.coerceIn(lo, hi)
         return if (log) (ln(c) - ln(lo)) / (ln(hi) - ln(lo)) else (c - lo) / (hi - lo)
     }
@@ -127,7 +127,7 @@ private var SEARCH_FLOW_MODEL = FlowModel.GLOBAL_TRACKING
  * Объявлены ВЫШЕ списка генов намеренно: свойства верхнего уровня в Kotlin считаются
  * по порядку в файле, а от DT зависит потолок скоростей мышц.
  */
-private val DT: Double = DemoConst.DT
+private val DT: Float = DemoConst.DT
 private val SUBSTEPS: Int = DemoConst.SUBSTEPS
 
 /**
@@ -146,7 +146,7 @@ private val SUBSTEPS: Int = DemoConst.SUBSTEPS
  * Ровно на этом ломался прежний набор: MUSCLE_RATE_RELAX = 35.3 при 30 UPS давало
  * rate*dt = 1.18, то есть чистую ступеньку, и выбег подскакивал с 0.43 до 2.50.
  */
-private val MUSCLE_RATE_MAX: Double = 0.5 / DT
+private val MUSCLE_RATE_MAX: Float = 0.5f / DT
 
 /**
  * ЧТО ИМЕННО ПОДБИРАЕМ.
@@ -164,27 +164,27 @@ private val MUSCLE_GENES = setOf("muscleContraction", "muscleRateContract", "mus
 private var SEARCH_ALL = false
 
 private val GENES = listOf(
-    Gene("normalDrag", 1.0, 400.0),
-    Gene("normalDragQuadratic", 0.2, 30000.0),
-    Gene("mediumDrag", 0.0002, 3.0),
-    Gene("viscosity", 5.0, 1500.0),
-    Gene("flowMass", 0.02, 30.0),
+    Gene("normalDrag", 1.0f, 400.0f),
+    Gene("normalDragQuadratic", 0.2f, 30000.0f),
+    Gene("mediumDrag", 0.0002f, 3.0f),
+    Gene("viscosity", 5.0f, 1500.0f),
+    Gene("flowMass", 0.02f, 30.0f),
     // Нижняя граница НЕ физическая, а методическая: 0.2 это постоянная времени наката
     // 5 секунд, и она обязана помещаться в окно замера. Прошлый прогон при свободной
     // границе выбрал 0.029, то есть накат длиной 34 секунды, — и «скорость в устойчивом
     // режиме» мерилась на разгоне, потому что устойчивого режима за 10 секунд не
     // наступало. Метрика переставала значить то, что написано в её названии.
-    Gene("flowDecay", 0.2, 30.0),
-    Gene("muscleContraction", 0.15, 0.92, log = false),
-    Gene("muscleRateContract", 1.0, min(120.0, MUSCLE_RATE_MAX)),
-    Gene("muscleRateRelax", 0.2, min(60.0, MUSCLE_RATE_MAX)),
-    Gene("gaitPeriod", 8.0, 900.0, integer = true),
-    Gene("gaitDuty", 0.05, 0.85, log = false),
-    Gene("flowEntrain", 0.03, 60.0),
+    Gene("flowDecay", 0.2f, 30.0f),
+    Gene("muscleContraction", 0.15f, 0.92f, log = false),
+    Gene("muscleRateContract", 1.0f, min(120.0f, MUSCLE_RATE_MAX)),
+    Gene("muscleRateRelax", 0.2f, min(60.0f, MUSCLE_RATE_MAX)),
+    Gene("gaitPeriod", 8.0f, 900.0f, integer = true),
+    Gene("gaitDuty", 0.05f, 0.85f, log = false),
+    Gene("flowEntrain", 0.03f, 60.0f),
     // Изгиб границы. Диапазон широкий и включает «почти выключено»: стенд FoldRecovery
     // показал, что жёсткий изгиб съедает до 73% тяги, так что поиску нужна свобода
     // отказаться от него, если он не окупается.
-    Gene("bendCompliance", 1e-6, 1e-1),
+    Gene("bendCompliance", 1e-6f, 1e-1f),
 )
 
 /**
@@ -199,7 +199,7 @@ private val GENES = listOf(
 /** Ищется ли этот ген сейчас. Замороженные держат значение демо, см. MUSCLE_GENES. */
 private fun searchable(k: Int): Boolean = SEARCH_ALL || GENES[k].name in MUSCLE_GENES
 
-private fun decode(g: DoubleArray): SwimParams {
+private fun decode(g: FloatArray): SwimParams {
     fun v(i: Int) = GENES[i].decode(g[i])
     return SwimParams(
         normalDrag = v(0),
@@ -219,7 +219,7 @@ private fun decode(g: DoubleArray): SwimParams {
     )
 }
 
-private fun encode(p: SwimParams): DoubleArray = doubleArrayOf(
+private fun encode(p: SwimParams): FloatArray = floatArrayOf(
     GENES[0].encode(p.normalDrag),
     GENES[1].encode(p.normalDragQuadratic),
     GENES[2].encode(p.mediumDrag),
@@ -229,10 +229,10 @@ private fun encode(p: SwimParams): DoubleArray = doubleArrayOf(
     GENES[6].encode(p.muscleContraction),
     GENES[7].encode(p.muscleRateContract),
     GENES[8].encode(p.muscleRateRelax),
-    GENES[9].encode(p.gaitPeriod.toDouble()),
+    GENES[9].encode(p.gaitPeriod.toFloat()),
     GENES[10].encode(p.gaitDuty),
     GENES[11].encode(p.flowEntrain),
-    GENES[12].encode(if (p.bendCompliance > 0) p.bendCompliance else 1e-1),
+    GENES[12].encode(if (p.bendCompliance > 0) p.bendCompliance else 1e-1f),
 )
 
 // =====================================================================
@@ -240,48 +240,48 @@ private fun encode(p: SwimParams): DoubleArray = doubleArrayOf(
 // =====================================================================
 
 private class Metrics(
-    val speed: Double,
-    val glide: Double,
-    val residualP: Double,
+    val speed: Float,
+    val glide: Float,
+    val residualP: Float,
     /** Он же на 25 секундах: пара к позднему, по ней видно, затухает или стоит. */
-    val residualP25: Double,
-    val restDrift: Double,
-    val rotKick: Double,
+    val residualP25: Float,
+    val restDrift: Float,
+    val rotKick: Float,
     /** Размах активации мышцы в замерном окне: 0 — гребка нет, поза зажата. */
-    val swing: Double,
+    val swing: Float,
     /** Доля ВЫВЕРНУТЫХ треугольников на пике. Порча формы, назад не выворачивается. */
-    val inverted: Double,
+    val inverted: Float,
     /** Самая смятая связь за прогон, в долях своей нынешней длины покоя. См. worstCrush. */
-    val crush: Double,
+    val crush: Float,
     /** Самая растянутая связь, в долях длины покоя без поправки на мышцу. */
-    val stretch: Double,
+    val stretch: Float,
     val valid: Boolean,
 ) {
-    fun score(w: Weights): Double {
-        if (!valid) return 0.0
+    fun score(w: Weights): Float {
+        if (!valid) return 0.0f
         // ТКАНЬ, КОТОРУЮ ПОРВЁТ, НЕ СЧИТАЕТСЯ РЕШЕНИЕМ ВОВСЕ. Пороги — те же, при которых
         // рвёт настоящий движок: сжатие ниже LINK_CRUSH_RATIO и растяжение выше
         // LINK_MAX_STRETCH + LINK_TEAR_STRAIN. Зеркало рвать не умеет, поэтому смотрит
         // на напряжение.
-        if (crush < DemoConst.LINK_CRUSH_RATIO || stretch > DemoConst.LINK_TEAR_TOTAL) return 0.0
-        val bonus = 1.0 + w.glide * min(glide, 1.5)
+        if (crush < DemoConst.LINK_CRUSH_RATIO || stretch > DemoConst.LINK_TEAR_TOTAL) return 0.0f
+        val bonus = 1.0f + w.glide * min(glide, 1.5f)
         // Запас до разрыва: у самой границы оценка падает, и поиск отходит от неё сам.
-        val margin = max(0.0, 0.45 - crush) / 0.10 + max(0.0, stretch - 1.22) / 0.08
-        val penalty = 1.0 + w.residual * residualP + w.rest * restDrift + w.rot * rotKick +
+        val margin = max(0.0f, 0.45f - crush) / 0.10f + max(0.0f, stretch - 1.22f) / 0.08f
+        val penalty = 1.0f + w.residual * residualP + w.rest * restDrift + w.rot * rotKick +
             w.inverted * inverted + w.stress * margin
         return speed * bonus / penalty
     }
 }
 
 private class Weights(
-    val glide: Double = 0.5,
-    val residual: Double = 3.0,
-    val rest: Double = 10.0,
-    val rot: Double = 1.0,
+    val glide: Float = 0.5f,
+    val residual: Float = 3.0f,
+    val rest: Float = 10.0f,
+    val rot: Float = 1.0f,
     /** Вес вывернутых треугольников. Большой намеренно: это порча формы, а не шум. */
-    val inverted: Double = 50.0,
+    val inverted: Float = 50.0f,
     /** Вес запаса до разрыва ткани. См. score. */
-    val stress: Double = 20.0,
+    val stress: Float = 20.0f,
 )
 
 
@@ -306,8 +306,8 @@ private class Evaluator(val topo: Topology) {
         val period = p.gaitPeriod
         // 12 секунд разгона: вдвое больше самой медленной динамики, которую поиску
         // разрешено выбрать (постоянная времени наката ограничена пятью секундами).
-        val warmupFrames = ((12.0 / DT / period).toInt().coerceAtLeast(1)) * period
-        val measureCycles = (10.0 / (period * DT)).roundToInt().coerceAtLeast(1)
+        val warmupFrames = ((12.0f / DT / period).toInt().coerceAtLeast(1)) * period
+        val measureCycles = (10.0f / (period * DT)).roundToInt().coerceAtLeast(1)
         val measureFrames = measureCycles * period
 
         s.reset()
@@ -321,7 +321,7 @@ private class Evaluator(val topo: Topology) {
 
         val sx = s.comX(); val sy = s.comY()
         // Размах активации — диагностика того, что гребок ЕСТЬ, а не поза зажата.
-        var actMin = 1.0; var actMax = 0.0
+        var actMin = 1.0f; var actMax = 0.0f
         // Вывернутые треугольники: доля от общего числа, пик за замерное окно.
         var invPeak = 0
         for (fr in 1..measureFrames) {
@@ -338,17 +338,17 @@ private class Evaluator(val topo: Topology) {
         val swimDx = s.comX() - sx; val swimDy = s.comY() - sy
         val speed = sqrt(swimDx * swimDx + swimDy * swimDy) / (measureFrames * DT)
         val swing = actMax - actMin
-        val inverted = invPeak.toDouble() / topo.triCount
+        val inverted = invPeak.toFloat() / topo.triCount
 
         // --- 2. НАКАТ. Гребки прекращены, 3 секунды. ---
-        val coastFrames = (3.0 / DT).toInt()
+        val coastFrames = (3.0f / DT).toInt()
         val cx = s.comX(); val cy = s.comY()
         for (fr in 1..coastFrames) s.frame(DT, SUBSTEPS, gait = false)
         if (s.checkDiverged()) return invalid()
         val coastDx = s.comX() - cx; val coastDy = s.comY() - cy
         val coastDist = sqrt(coastDx * coastDx + coastDy * coastDy)
         // Доля сохранённой скорости. Если тело почти не плыло, доля не определена.
-        val glide = if (speed > 1e-6) coastDist / (speed * (coastFrames * DT)) else 0.0
+        val glide = if (speed > 1e-6f) coastDist / (speed * (coastFrames * DT)) else 0.0f
 
         // --- 3. ОСТАНОВКА. Импульс обязан уйти в ноль. ---
         //
@@ -356,7 +356,7 @@ private class Evaluator(val topo: Topology) {
         // законно катится очень долго, и один замер не отличает «медленно затухает»
         // от «вышло на полку» — а это ровно та разница, которую мы и ловим.
         // В штраф идёт ПОЗДНИЙ замер: к 50 секундам законный накат уже кончился.
-        val settleFrames = (25.0 / DT).toInt()
+        val settleFrames = (25.0f / DT).toInt()
         for (fr in 1..settleFrames) s.frame(DT, SUBSTEPS, gait = false)
         if (s.checkDiverged()) return invalid()
         val residualP25 = s.momentum()
@@ -367,7 +367,7 @@ private class Evaluator(val topo: Topology) {
         // --- 4. ПОКОЙ. Мышцы не трогали ни разу. ---
         s.reset()
         val rx = s.comX(); val ry = s.comY()
-        val restFrames = (20.0 / DT).toInt()
+        val restFrames = (20.0f / DT).toInt()
         for (fr in 1..restFrames) s.frame(DT, SUBSTEPS, gait = false)
         if (s.checkDiverged()) return invalid()
         val rdx = s.comX() - rx; val rdy = s.comY() - ry
@@ -375,11 +375,11 @@ private class Evaluator(val topo: Topology) {
 
         // --- 5. ЖЁСТКОЕ ВРАЩЕНИЕ. Только среда, решателя нет. ---
         val revFrames = 452
-        val omega = 2.0 * Math.PI / (revFrames * DT)
+        val omega = 2.0f * kotlin.math.PI.toFloat() / (revFrames * DT)
         s.reset()
         val ccx = s.comX(); val ccy = s.comY()
-        var ang = 0.0
-        var impX = 0.0; var impY = 0.0
+        var ang = 0.0f
+        var impX = 0.0f; var impY = 0.0f
         val h = DT / SUBSTEPS
         for (fr in 1..(revFrames * 2)) {
             ang += omega * DT
@@ -398,7 +398,7 @@ private class Evaluator(val topo: Topology) {
             crush, stretch, valid = true)
     }
 
-    private fun invalid() = Metrics(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, valid = false)
+    private fun invalid() = Metrics(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, valid = false)
 }
 
 // =====================================================================
@@ -409,7 +409,7 @@ private class Evaluator(val topo: Topology) {
  * Копия конвейера обязана совпасть с DemoSession ПОБИТОВО при значениях констант
  * демо и flowModel = PER_EDGE. Иначе подбор оптимизирует не то, что потом поедет.
  */
-private fun verifyAgainstDemo(topo: Topology, path: String): Double {
+private fun verifyAgainstDemo(topo: Topology, path: String): Float {
     val P = Probe
     P.boot(path)
     // РАЗРЫВ НА ВРЕМЯ СВЕРКИ ВЫКЛЮЧЕН. Зеркало топологию не меняет вовсе, поэтому рвущееся
@@ -420,46 +420,46 @@ private fun verifyAgainstDemo(topo: Topology, path: String): Double {
     P.resetState()
 
     val ref = SwimParams(
-        normalDrag = P.const("NORMAL_DRAG"),
-        normalDragQuadratic = P.const("NORMAL_DRAG_QUADRATIC"),
-        mediumDrag = P.const("MEDIUM_DRAG"),
-        viscosity = P.const("VISCOSITY"),
-        flowDecay = P.const("FLOW_DECAY"),
-        flowEntrain = P.const("FLOW_ENTRAIN"),
-        flowMass = P.const("FLOW_MASS"),
-        muscleContraction = P.const("MUSCLE_CONTRACTION"),
-        muscleRateContract = P.const("MUSCLE_RATE_CONTRACT"),
-        muscleRateRelax = P.const("MUSCLE_RATE_RELAX"),
-        softCompliance = P.const("SOFT_COMPLIANCE"),
-        areaCompliance = P.const("AREA_COMPLIANCE"),
-        areaComplianceInverted = P.const("AREA_COMPLIANCE_INVERTED"),
-        areaMaxStep = P.const("AREA_MAX_STEP"),
+        normalDrag = P.const("NORMAL_DRAG").toFloat(),
+        normalDragQuadratic = P.const("NORMAL_DRAG_QUADRATIC").toFloat(),
+        mediumDrag = P.const("MEDIUM_DRAG").toFloat(),
+        viscosity = P.const("VISCOSITY").toFloat(),
+        flowDecay = P.const("FLOW_DECAY").toFloat(),
+        flowEntrain = P.const("FLOW_ENTRAIN").toFloat(),
+        flowMass = P.const("FLOW_MASS").toFloat(),
+        muscleContraction = P.const("MUSCLE_CONTRACTION").toFloat(),
+        muscleRateContract = P.const("MUSCLE_RATE_CONTRACT").toFloat(),
+        muscleRateRelax = P.const("MUSCLE_RATE_RELAX").toFloat(),
+        softCompliance = P.const("SOFT_COMPLIANCE").toFloat(),
+        areaCompliance = P.const("AREA_COMPLIANCE").toFloat(),
+        areaComplianceInverted = P.const("AREA_COMPLIANCE_INVERTED").toFloat(),
+        areaMaxStep = P.const("AREA_MAX_STEP").toFloat(),
         areaSmoothRamp = P.constBool("AREA_SMOOTH_RAMP"),
         // Изгиб контура в демо переключается клавишей, то есть это состояние, а не
         // константа. Читаем ТЕКУЩЕЕ значение, иначе сверка проверяла бы не тот режим.
-        bendCompliance = P.bendCompliance(),
+        bendCompliance = P.bendCompliance().toFloat(),
         flowModel = FlowModel.GLOBAL_TRACKING,
     )
     val s = SwimSolver(topo, ref)
     s.reset()
 
-    var maxDiff = 0.0
+    var maxDiff = 0.0f
     var firstBad = -1
-    var firstBadDiff = 0.0
+    var firstBadDiff = 0.0f
     for (fr in 1..400) {
-        P.frame(DT, SUBSTEPS, contract = true)
+        P.frame(DT.toDouble(), SUBSTEPS, contract = true)
         s.frameHoldMuscle0(DT, SUBSTEPS, hold = true)
-        var frameDiff = 0.0
+        var frameDiff = 0.0f
         for (i in 0 until P.n) {
-            frameDiff = maxOf(frameDiff, abs(P.px[i] - s.px[i]).toDouble())
-            frameDiff = maxOf(frameDiff, abs(P.py[i] - s.py[i]).toDouble())
-            frameDiff = maxOf(frameDiff, abs(P.vx[i] - s.vx[i]).toDouble())
-            frameDiff = maxOf(frameDiff, abs(P.vy[i] - s.vy[i]).toDouble())
+            frameDiff = maxOf(frameDiff, abs(P.px[i] - s.px[i]).toFloat())
+            frameDiff = maxOf(frameDiff, abs(P.py[i] - s.py[i]).toFloat())
+            frameDiff = maxOf(frameDiff, abs(P.vx[i] - s.vx[i]).toFloat())
+            frameDiff = maxOf(frameDiff, abs(P.vy[i] - s.vy[i]).toFloat())
         }
         // Первый кадр с расхождением — самая полезная улика. Разошлись на первом же
         // кадре и крупно — стадии РАЗНЫЕ. Совпадали сотню кадров и поехали потихоньку —
         // отличается один литерал или порядок операций, а раздула это уже сама система.
-        if (firstBad < 0 && frameDiff > 0.0) { firstBad = fr; firstBadDiff = frameDiff }
+        if (firstBad < 0 && frameDiff > 0.0f) { firstBad = fr; firstBadDiff = frameDiff }
         maxDiff = maxOf(maxDiff, frameDiff)
     }
     if (firstBad > 0) println("  впервые разошлись на кадре $firstBad, расхождение там ${sci(firstBadDiff)}")
@@ -470,19 +470,19 @@ private fun verifyAgainstDemo(topo: Topology, path: String): Double {
 //  ЭВОЛЮЦИЯ
 // =====================================================================
 
-private class Individual(val g: DoubleArray) {
+private class Individual(val g: FloatArray) {
     var m: Metrics? = null
-    var score = 0.0
+    var score = 0.0f
 }
 
-private fun fmt(v: Double, d: Int = 4) = String.format(Locale.ROOT, "%.${d}f", v)
-private fun sci(v: Double) = String.format(Locale.ROOT, "%.3e", v)
+private fun fmt(v: Float, d: Int = 4) = String.format(Locale.ROOT, "%.${d}f", v)
+private fun sci(v: Float) = String.format(Locale.ROOT, "%.3e", v)
 
-private fun reportRow(tag: String, m: Metrics, score: Double): String = String.format(
+private fun reportRow(tag: String, m: Metrics, score: Float): String = String.format(
     Locale.ROOT,
     "%-26s | %8.5f | %6.3f | %9.3e | %9.3e | %9.3e | %9.3e | %5.3f | %5.1f%% | %5.3f | %5.3f | %9.5f",
     tag, m.speed, m.glide, m.residualP25, m.residualP, m.restDrift, m.rotKick, m.swing,
-    m.inverted * 100.0, m.crush, m.stretch, score
+    m.inverted * 100.0f, m.crush, m.stretch, score
 )
 
 private const val HEADER =
@@ -494,20 +494,20 @@ fun main(args: Array<String>) {
     var gens = 40
     var seed = 12345L
     val w = run {
-        var glide = 0.5; var residual = 3.0; var rest = 10.0; var rot = 1.0; var inverted = 50.0
-        var stress = 20.0
+        var glide = 0.5f; var residual = 3.0f; var rest = 10.0f; var rot = 1.0f; var inverted = 50.0f
+        var stress = 20.0f
         var i = 0
         while (i < args.size) {
             when (args[i]) {
                 "--pop" -> pop = args[++i].toInt()
                 "--gen" -> gens = args[++i].toInt()
                 "--seed" -> seed = args[++i].toLong()
-                "--w-glide" -> glide = args[++i].toDouble()
-                "--w-residual" -> residual = args[++i].toDouble()
-                "--w-rest" -> rest = args[++i].toDouble()
-                "--w-rot" -> rot = args[++i].toDouble()
-                "--w-inverted" -> inverted = args[++i].toDouble()
-                "--w-stress" -> stress = args[++i].toDouble()
+                "--w-glide" -> glide = args[++i].toFloat()
+                "--w-residual" -> residual = args[++i].toFloat()
+                "--w-rest" -> rest = args[++i].toFloat()
+                "--w-rot" -> rot = args[++i].toFloat()
+                "--w-inverted" -> inverted = args[++i].toFloat()
+                "--w-stress" -> stress = args[++i].toFloat()
                 "--flow" -> SEARCH_FLOW_MODEL = FlowModel.valueOf(args[++i].uppercase())
                 "--all" -> SEARCH_ALL = true
                 else -> if (!args[i].startsWith("--")) path = args[i]
@@ -523,10 +523,10 @@ fun main(args: Array<String>) {
     println("тело: n=${topo.n} links=${topo.conCount} tris=${topo.triCount} " +
         "boundary=${topo.boundCount} bones=${topo.rigidBones.size} muscles=${topo.muscleCount}")
     println("популяция $pop, поколений $gens, seed $seed, модель среды $SEARCH_FLOW_MODEL")
-    println("режим времени взят из демо: UPS = ${Math.round(1.0 / DT)}, подшагов $SUBSTEPS, " +
+    println("режим времени взят из демо: UPS = ${Math.round(1.0f / DT)}, подшагов $SUBSTEPS, " +
         "итого ${Math.round(SUBSTEPS / DT)} подшагов/с")
     println(String.format(Locale.ROOT,
-        "потолок скоростей мышц %.1f 1/с (rate*dt <= 0.5, иначе гребок вырождается в ступеньку)",
+        "потолок скоростей мышц %.1f 1/с (rate*dt <= 0.5f, иначе гребок вырождается в ступеньку)",
         MUSCLE_RATE_MAX))
     println("веса: накат ${w.glide}, ост.импульс ${w.residual}, покой ${w.rest}, " +
         "поворот ${w.rot}, вывернутые ${w.inverted}")
@@ -536,8 +536,8 @@ fun main(args: Array<String>) {
     println()
     println("сверка копии конвейера с DemoSession (400 кадров, GLOBAL_TRACKING): " +
         "max расхождение = ${sci(diff)}" +
-        if (diff == 0.0) "  ПОБИТОВО СОВПАЛО" else "  ВНИМАНИЕ: копия расходится с демо")
-    if (diff != 0.0) {
+        if (diff == 0.0f) "  ПОБИТОВО СОВПАЛО" else "  ВНИМАНИЕ: копия расходится с демо")
+    if (diff != 0.0f) {
         println("подбор остановлен: оптимизировать копию, которая ведёт себя иначе, бессмысленно")
         return
     }
@@ -567,24 +567,24 @@ fun main(args: Array<String>) {
     // а любой найденный кандидат выглядел рядом с ней «быстрее в десятки раз».
     // Сравнивать надо с тем, что стоит в демо СЕЙЧАС, иначе множители — самообман.
     val demoParams = SwimParams(
-        normalDrag = Probe.const("NORMAL_DRAG"),
-        normalDragQuadratic = Probe.const("NORMAL_DRAG_QUADRATIC"),
-        mediumDrag = Probe.const("MEDIUM_DRAG"),
-        viscosity = Probe.const("VISCOSITY"),
-        flowMass = Probe.const("FLOW_MASS"),
-        flowEntrain = Probe.const("FLOW_ENTRAIN"),
-        flowDecay = Probe.const("FLOW_DECAY"),
-        muscleContraction = Probe.const("MUSCLE_CONTRACTION"),
-        muscleRateContract = Probe.const("MUSCLE_RATE_CONTRACT"),
-        muscleRateRelax = Probe.const("MUSCLE_RATE_RELAX"),
+        normalDrag = Probe.const("NORMAL_DRAG").toFloat(),
+        normalDragQuadratic = Probe.const("NORMAL_DRAG_QUADRATIC").toFloat(),
+        mediumDrag = Probe.const("MEDIUM_DRAG").toFloat(),
+        viscosity = Probe.const("VISCOSITY").toFloat(),
+        flowMass = Probe.const("FLOW_MASS").toFloat(),
+        flowEntrain = Probe.const("FLOW_ENTRAIN").toFloat(),
+        flowDecay = Probe.const("FLOW_DECAY").toFloat(),
+        muscleContraction = Probe.const("MUSCLE_CONTRACTION").toFloat(),
+        muscleRateContract = Probe.const("MUSCLE_RATE_CONTRACT").toFloat(),
+        muscleRateRelax = Probe.const("MUSCLE_RATE_RELAX").toFloat(),
         gaitPeriod = Probe.constInt("GAIT_PERIOD"),
-        gaitDuty = Probe.const("GAIT_DUTY"),
+        gaitDuty = Probe.const("GAIT_DUTY").toFloat(),
         flowModel = FlowModel.GLOBAL_TRACKING,
     )
     val mDemo = ev.measure(demoParams)
     val mDemoNoFlow = ev.measure(demoParams.copy(flowModel = FlowModel.NONE))
-    val mDemoGlobal = ev.measure(demoParams.copy(flowModel = FlowModel.GLOBAL_RESERVOIR, flowMass = 1.0))
-    val mDemoTrack = ev.measure(demoParams.copy(flowMass = 1.0))
+    val mDemoGlobal = ev.measure(demoParams.copy(flowModel = FlowModel.GLOBAL_RESERVOIR, flowMass = 1.0f))
+    val mDemoTrack = ev.measure(demoParams.copy(flowMass = 1.0f))
 
     println()
     println("=== ОПОРНЫЕ ТОЧКИ (параметры демо, меняется ТОЛЬКО модель памяти среды) ===")
@@ -592,7 +592,7 @@ fun main(args: Array<String>) {
     println(reportRow("константы демо как есть", mDemo, mDemo.score(w)))
     println(reportRow("памяти нет вовсе", mDemoNoFlow, mDemoNoFlow.score(w)))
     println(reportRow("общий запас (от рёбер)", mDemoGlobal, mDemoGlobal.score(w)))
-    println(reportRow("то же, но масса среды 1.0", mDemoTrack, mDemoTrack.score(w)))
+    println(reportRow("то же, но масса среды 1.0f", mDemoTrack, mDemoTrack.score(w)))
 
     // --- эволюция ---
     val rnd = Random(seed)
@@ -604,7 +604,7 @@ fun main(args: Array<String>) {
     while (population.size < pop) {
         // Замороженные гены берутся у демо: случайное значение там было бы тихой правкой
         // физики, которую никто не просил.
-        population.add(Individual(DoubleArray(GENES.size) { k -> if (searchable(k)) rnd.nextDouble() else demoGenes[k] }))
+        population.add(Individual(FloatArray(GENES.size) { k -> if (searchable(k)) rnd.nextDouble().toFloat() else demoGenes[k] }))
     }
     evaluateAll(population)
 
@@ -631,17 +631,17 @@ fun main(args: Array<String>) {
         }
         while (next.size < pop) {
             val p1 = tournament(); val p2 = tournament()
-            val child = DoubleArray(GENES.size)
+            val child = FloatArray(GENES.size)
             for (k in child.indices) {
                 if (!searchable(k)) { child[k] = demoGenes[k]; continue }
                 // BLX-0.5: потомок берётся из интервала родителей, расширенного наружу.
                 val lo = minOf(p1.g[k], p2.g[k]); val hi = maxOf(p1.g[k], p2.g[k])
                 val d = hi - lo
-                child[k] = (lo - 0.5 * d + rnd.nextDouble() * (d * 2.0)).coerceIn(0.0, 1.0)
-                if (rnd.nextDouble() < 0.30) {
+                child[k] = ((lo - 0.5f * d + rnd.nextDouble() * (d * 2.0f)).coerceIn(0.0, 1.0)).toFloat()
+                if (rnd.nextDouble() < 0.30f) {
                     // Мутация гауссова по НОРМИРОВАННОМУ гену, поэтому для
                     // логарифмических параметров это множитель, а не добавка.
-                    child[k] = (child[k] + rnd.nextDouble(-1.0, 1.0) * 0.12).coerceIn(0.0, 1.0)
+                    child[k] = ((child[k] + rnd.nextDouble(-1.0, 1.0) * 0.12f).coerceIn(0.0, 1.0)).toFloat()
                 }
             }
             next.add(Individual(child))
@@ -671,21 +671,21 @@ fun main(args: Array<String>) {
     println(reportRow("константы демо как есть", mDemo, mDemo.score(w)))
     println(reportRow("памяти нет вовсе", mDemoNoFlow, mDemoNoFlow.score(w)))
     println(reportRow("общий запас (от рёбер)", mDemoGlobal, mDemoGlobal.score(w)))
-    println(reportRow("то же, но масса среды 1.0", mDemoTrack, mDemoTrack.score(w)))
+    println(reportRow("то же, но масса среды 1.0f", mDemoTrack, mDemoTrack.score(w)))
     println(reportRow("НАЙДЕНО", bm, best.score))
     println()
     // Остаточный импульс НЕЛЬЗЯ сравнивать в лоб: у быстрого пловца его просто больше,
     // потому что он больше набрал. Честный показатель — во сколько раз он падает с 25-й
     // секунды к 50-й. У утечки этот множитель около единицы (стоит на полке), у честного
     // наката он большой.
-    fun decay(m: Metrics) = if (m.residualP > 1e-12) m.residualP25 / m.residualP else Double.NaN
+    fun decay(m: Metrics) = if (m.residualP > 1e-12f) m.residualP25 / m.residualP else Float.NaN
     println(String.format(Locale.ROOT,
         "скорость в %.2f раза выше текущего демо, накат в %.1f раза длиннее, " +
             "дрейф в покое в %.0f раз меньше, толчок на повороте в %.0f раз меньше",
-        if (mDemo.speed > 0) bm.speed / mDemo.speed else 0.0,
-        if (mDemo.glide > 0) bm.glide / mDemo.glide else 0.0,
-        if (bm.restDrift > 0) mDemo.restDrift / bm.restDrift else Double.POSITIVE_INFINITY,
-        if (bm.rotKick > 0) mDemo.rotKick / bm.rotKick else Double.POSITIVE_INFINITY))
+        if (mDemo.speed > 0) bm.speed / mDemo.speed else 0.0f,
+        if (mDemo.glide > 0) bm.glide / mDemo.glide else 0.0f,
+        if (bm.restDrift > 0) mDemo.restDrift / bm.restDrift else Float.POSITIVE_INFINITY,
+        if (bm.rotKick > 0) mDemo.rotKick / bm.rotKick else Float.POSITIVE_INFINITY))
     println(String.format(Locale.ROOT,
         "затухание импульса с 25-й по 50-ю секунду: было в %.2f раза, стало в %.2f раза " +
             "(чем больше, тем честнее — единица означает полку)",
@@ -693,17 +693,17 @@ fun main(args: Array<String>) {
 
     println()
     println("=== НАЙДЕННЫЕ ЗНАЧЕНИЯ (готово к переносу в DemoSession) ===")
-    println("        private const val NORMAL_DRAG = ${fmt(bp.normalDrag.toDouble(), 2)}f")
-    println("        private const val NORMAL_DRAG_QUADRATIC = ${fmt(bp.normalDragQuadratic.toDouble(), 1)}f")
-    println("        private const val MEDIUM_DRAG = ${fmt(bp.mediumDrag.toDouble(), 4)}f")
-    println("        private const val VISCOSITY = ${fmt(bp.viscosity.toDouble(), 1)}f")
-    println("        private const val FLOW_MASS = ${fmt(bp.flowMass.toDouble(), 3)}f")
-    println("        private const val FLOW_ENTRAIN = ${fmt(bp.flowEntrain.toDouble(), 3)}f")
-    println("        private const val FLOW_DECAY = ${fmt(bp.flowDecay.toDouble(), 3)}f")
-    println("        private const val MUSCLE_CONTRACTION = ${fmt(bp.muscleContraction.toDouble(), 3)}f")
-    println("        private const val MUSCLE_RATE_CONTRACT = ${fmt(bp.muscleRateContract.toDouble(), 2)}f")
-    println("        private const val MUSCLE_RATE_RELAX = ${fmt(bp.muscleRateRelax.toDouble(), 3)}f")
+    println("        private const val NORMAL_DRAG = ${fmt(bp.normalDrag.toFloat(), 2)}f")
+    println("        private const val NORMAL_DRAG_QUADRATIC = ${fmt(bp.normalDragQuadratic.toFloat(), 1)}f")
+    println("        private const val MEDIUM_DRAG = ${fmt(bp.mediumDrag.toFloat(), 4)}f")
+    println("        private const val VISCOSITY = ${fmt(bp.viscosity.toFloat(), 1)}f")
+    println("        private const val FLOW_MASS = ${fmt(bp.flowMass.toFloat(), 3)}f")
+    println("        private const val FLOW_ENTRAIN = ${fmt(bp.flowEntrain.toFloat(), 3)}f")
+    println("        private const val FLOW_DECAY = ${fmt(bp.flowDecay.toFloat(), 3)}f")
+    println("        private const val MUSCLE_CONTRACTION = ${fmt(bp.muscleContraction.toFloat(), 3)}f")
+    println("        private const val MUSCLE_RATE_CONTRACT = ${fmt(bp.muscleRateContract.toFloat(), 2)}f")
+    println("        private const val MUSCLE_RATE_RELAX = ${fmt(bp.muscleRateRelax.toFloat(), 3)}f")
     println("        private const val GAIT_PERIOD = ${bp.gaitPeriod}")
-    println("        private const val GAIT_DUTY = ${fmt(bp.gaitDuty.toDouble(), 3)}f")
+    println("        private const val GAIT_DUTY = ${fmt(bp.gaitDuty.toFloat(), 3)}f")
     println()
 }

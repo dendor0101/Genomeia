@@ -38,7 +38,7 @@ internal fun BodyState.prepareJoints() {
         if (cellDead[a] || cellDead[b]) { freeJoint(k); continue }
         // АКТИВНЫЕ — у которых хоть один конец движется: подшаги и учёт импульса обходят только их.
         // Швов террейна тысячи, и почти все — между спящими плитками.
-        if (invMass[a] > 0.0 || invMass[b] > 0.0) jointActive[jointActiveN++] = k
+        if (invMass[a] > 0.0f || invMass[b] > 0.0f) jointActive[jointActiveN++] = k
         // Спящая частица заморожена (обратная масса 0): связь тянула бы бодрствующий конец как к
         // стенке. Неподвижная (isFixed) не спит по смыслу и не будится.
         val sa = sleep.isAsleep(organismOf[a]) && !isFixed(a)
@@ -48,9 +48,9 @@ internal fun BodyState.prepareJoints() {
         // сжат сверх порога; до того спящий сосед — неподвижная опора. Иначе одно касание будило бы
         // по швам весь террейн цепочкой. Липучка (порог 0) будит всегда.
         val ws = jointWakeStrain[k]
-        if (ws > 0.0) {
+        if (ws > 0.0f) {
             val dx = px[a] - px[b]; val dy = py[a] - py[b]
-            if (kotlin.math.abs(sqrt(dx * dx + dy * dy) / jointRest[k] - 1.0) <= ws) continue
+            if (kotlin.math.abs(sqrt(dx * dx + dy * dy) / jointRest[k] - 1.0f) <= ws) continue
         }
         sleep.requestWake(if (sa) a else b)
     }
@@ -61,10 +61,10 @@ internal fun BodyState.prepareJoints() {
  * Связь, конец которой проснулся посреди тика, ждёт следующего тика: до него плитку держат её
  * пружины к месту и свои связи.
  */
-internal fun BodyState.solveJoints(h: Double) {
+internal fun BodyState.solveJoints(h: Float) {
     if (jointActiveN == 0) return
     val px = px; val py = py; val invMass = invMass
-    val inv = 1.0 / (h * h)
+    val inv = 1.0f / (h * h)
     // Рвётся, как связь тела: растянутая сверх предела длины и запаса до разрыва. Мягче
     // (податливость больше) — то же растяжение набирается меньшей силой.
     val tear = LINK_MAX_STRETCH + linkTearStrain
@@ -74,11 +74,11 @@ internal fun BodyState.solveJoints(h: Double) {
         val i = jointA[k]; val j = jointB[k]
         val wi = invMass[i]; val wj = invMass[j]
         val w = wi + wj
-        if (w == 0.0) continue
+        if (w == 0.0f) continue
         var dx = px[i] - px[j]; var dy = py[i] - py[j]
         val len = sqrt(dx * dx + dy * dy)
         if (len > tear * jointRest[k]) { freeJoint(k); continue }
-        if (len < 1e-12) continue
+        if (len < 1e-12f) continue
         dx /= len; dy /= len
         val dL = -(len - jointRest[k]) / (w + jointCompliance[k] * inv)
         px[i] += dx * dL * wi; py[i] += dy * dL * wi
@@ -94,7 +94,7 @@ internal fun BodyState.noteJointsMomentum() {
     }
 }
 
-internal fun BodyState.allocJoint(a: Int, b: Int, rest: Double, compliance: Double, wakeStrain: Double = 0.0): Int {
+internal fun BodyState.allocJoint(a: Int, b: Int, rest: Float, compliance: Float, wakeStrain: Float = 0.0f): Int {
     val k = if (jointFreeN > 0) jointFree[--jointFreeN] else {
         if (jointSlots == jointA.size) {
             val cap = maxOf(8, jointSlots * 2)

@@ -68,7 +68,7 @@ fun BodyState.growMuscles(fromTri: Int = 0) {
     muscleOf = grown
 }
 
-fun BodyState.muscleScale(m: Int) = if (m < 0) 1.0 else muscleScaleOf[m]
+fun BodyState.muscleScale(m: Int) = if (m < 0) 1.0f else muscleScaleOf[m]
 
 /** Сильнейшая мышца из двух: множитель дальше от 1, при равном удалении — меньший. */
 internal fun strongerScale(a: Float, b: Float): Float {
@@ -146,23 +146,134 @@ internal fun BodyState.recomputeCellScales() {
  * действующие множители её самой и соседей по треугольнику, у изменившихся — связи и
  * треугольники. Порядок клеток на результат не влияет: значения выбираются, а не считаются.
  */
-internal fun BodyState.refreshCellScaleRing(v: Int, out: CellScaleLerpBuffer? = null) {
+internal fun BodyState.refreshCellScaleRing(v: Int) {
     // Мягкость ведётся тем же кольцом (см. BodyState.cellSoftness).
     if (!cellScalesOn && !softnessOn) return
     if (cellScaleEff.size != n || cellScaleSrc.size != n || constraintBlocks == null) { cellScalesDirty = true; return }
     val b = baked
-    refreshEffective(v, always = true, out)
-    for (q in b.vertStart[v] until b.vertStart[v + 1]) refreshEffective(b.vertOther[q], always = false, out)
+    refreshEffective(v, always = true)
+    for (q in b.vertStart[v] until b.vertStart[v + 1]) refreshEffective(b.vertOther[q], always = false)
 }
 
-private fun BodyState.refreshEffective(u: Int, always: Boolean, out: CellScaleLerpBuffer?) {
+private fun BodyState.refreshEffective(u: Int, always: Boolean) {
     val src = effectiveSource(u)
     val e = cellScale[src]
     // Источник важен только с волокнами: множитель тот же, а волокно — другой мышцы (MuscleFiber.kt).
     if (e == cellScaleEff[u] && (!fibersOn || src == cellScaleSrc[u]) && !always) return
     cellScaleEff[u] = e
     cellScaleSrc[u] = src
-    refreshCellScaleAround(u, out)
+    refreshCellScaleAround(u)
+}
+
+/*
+ * ШАГ МЫШЦ: КОЛЬЦА ВСЕХ СДВИНУВШИХСЯ КЛЕТОК — В ДВА ПРОХОДА, КАЖДОЕ МЕСТО ОДИН РАЗ (24.11, reference.md, находка 40).
+ *
+ * Прежде шаг мышц звал refreshCellScaleRing на каждую сдвинувшуюся клетку. У мышцы сдвигаются все клетки разом, и
+ * одно и то же считалось по многу раз: источник множителя клетки — из её кольца и из кольца каждого соседа (7 раз),
+ * связь — с обоих концов и ещё раз при повторе (до 4 раз), треугольник — с трёх вершин по двум рёбрам каждой (до 12).
+ * На настоящих геномах игроков (половина клеток — мышцы, все в движении) это было 21–25% тика на S24 Ultra и
+ * 31–43% на A21s при 16 подшагах, хотя работа эта — раз в тик, а не раз в подшаг.
+ *
+ * Теперь два прохода по всему шагу. Первый — действующие множители: сдвинувшимся клеткам всегда, их соседям — если
+ * множитель (с волокнами — и источник) сменился; каждая клетка считается один раз (метка lerpCellStamp; сдвинувшимся
+ * её ставит сам шаг множителей, поэтому как соседей их никто не трогает). Второй — связи и треугольники вокруг
+ * изменившихся клеток, каждое ребро и каждый треугольник один раз (метки плавности они же). Второй проход идёт
+ * только после ВСЕГО первого: значение связи — выбор из действующих множителей её концов, и считать его можно, когда
+ * оба уже окончательные. Прежний путь считал сразу и пересчитывал, когда доходил до второго конца.
+ *
+ * Биты те же: действующий множитель клетки — функция множителей её кольца (они к этому времени окончательные), значение
+ * связи и треугольника — функция действующих множителей; захват «было» — до первой записи в шаге, как и раньше.
+ * Меняется только порядок записей в списках плавности, а записи друг от друга не зависят (каждая про своё ребро
+ * или треугольник). Сверено суммой мира на настоящих геномах и отпечатками каталога стендов.
+ */
+
+/** Первый проход: действующие множители сдвинувшихся клеток [from]..[to] и их соседей; изменившиеся — в [changed]. */
+private inline fun BodyState.refreshEffectiveOf(moved: IntArray, from: Int, to: Int, changed: (Int) -> Unit) {
+    val b = baked
+    val stamp = lerpCellStamp; val now = lerpStampNow
+    val eff = cellScaleEff; val srcOf = cellScaleSrc; val scale = cellScale
+    val fibers = fibersOn
+    // Сдвинувшиеся — всегда, как refreshEffective(always = true): связи вокруг пересчитываются, даже если действующий
+    // множитель остался прежним.
+    for (q in from until to) {
+        val v = moved[q]
+        val src = effectiveSource(v)
+        eff[v] = scale[src]; srcOf[v] = src
+        changed(v)
+    }
+    for (q in from until to) {
+        val v = moved[q]
+        for (r in b.vertStart[v] until b.vertStart[v + 1]) {
+            val u = b.vertOther[r]
+            if (stamp[u] == now) continue
+            stamp[u] = now
+            val src = effectiveSource(u)
+            val e = scale[src]
+            // Источник важен только с волокнами: множитель тот же, а волокно — другой мышцы (MuscleFiber.kt).
+            if (e == eff[u] && (!fibers || src == srcOf[u])) continue
+            eff[u] = e; srcOf[u] = src
+            changed(u)
+        }
+    }
+}
+
+/** Первый проход одного куска воркера (ParallelMuscles): изменившиеся клетки — в его буфер. */
+internal fun BodyState.refreshEffectiveChunk(moved: IntArray, from: Int, to: Int, out: CellScaleLerpBuffer) {
+    out.changedN = 0
+    refreshEffectiveOf(moved, from, to) { u -> out.addChanged(u) }
+}
+
+/**
+ * Второй проход: связи и треугольники вокруг изменившихся клеток — множитель, волокно, мягкость и захват «было»
+ * для плавности ([out] — буфер куска воркера, null — общие списки). Ребро и треугольник — по одному разу на шаг.
+ */
+internal fun BodyState.refreshAroundChanged(changed: IntArray, count: Int, out: CellScaleLerpBuffer?) {
+    val b = baked
+    val slot = constraintBlocks!!.triangleSlot
+    val now = lerpStampNow
+    val edgeStamp = lerpEdgeStamp; val triStamp = lerpTriStamp
+    val vertStart = b.vertStart; val vertEdge = b.vertEdge
+    val edgeTriStart = b.edgeTriStart; val edgeTris = b.edgeTris
+    val soft = softnessOn
+    for (k in 0 until count) {
+        val v = changed[k]
+        for (q in vertStart[v] until vertStart[v + 1]) {
+            val e = vertEdge[q]
+            if (edgeStamp[e] == now) continue // ребро уже пересчитано с другого конца
+            edgeStamp[e] = now
+            var c = conOfEdge[e]
+            if (c >= 0) {
+                noteEdgeLerp(e, conCellScale[c], out)
+                while (c >= 0) {
+                    conCellScale[c] = linkCellScale(c)
+                    refreshLinkFiber(c) // волокно мышцы (MuscleFiber.kt)
+                    if (soft) conSoftness[c] = linkSoftness(c)
+                    c = conNextForEdge[c]
+                }
+            }
+            for (r in edgeTriStart[e] until edgeTriStart[e + 1]) {
+                val id = edgeTris[r]
+                if (triStamp[id] == now) continue // треугольник уже пересчитан с другого ребра
+                val w = slot[id]
+                if (w !in 0 until triCount) continue
+                triStamp[id] = now
+                noteTriLerp(id, triCellScale[w], out)
+                triCellScale[w] = triangleCellScale(w)
+                refreshTriangleFiber(w) // волокно мышцы (MuscleFiber.kt)
+                if (soft) triSoftness[w] = triangleSoftness(w)
+            }
+        }
+    }
+}
+
+/** Оба прохода в одном потоке — сдвинувшиеся клетки [moved] (первые [count]). */
+internal fun BodyState.refreshMovedRings(moved: IntArray, count: Int) {
+    var changedN = 0
+    refreshEffectiveOf(moved, 0, count) { u ->
+        if (changedN == cellScaleChanged.size) cellScaleChanged = cellScaleChanged.copyOf(changedN * 2)
+        cellScaleChanged[changedN++] = u
+    }
+    refreshAroundChanged(cellScaleChanged, changedN, null)
 }
 
 /**
@@ -174,8 +285,8 @@ internal fun BodyState.refreshCellFiberRing(v: Int) {
     if (!cellScalesOn && !softnessOn) return
     if (cellScaleEff.size != n || cellScaleSrc.size != n || constraintBlocks == null) { cellScalesDirty = true; return }
     val b = baked
-    refreshCellScaleAround(v, null)
-    for (q in b.vertStart[v] until b.vertStart[v + 1]) refreshCellScaleAround(b.vertOther[q], null)
+    refreshCellScaleAround(v)
+    for (q in b.vertStart[v] until b.vertStart[v + 1]) refreshCellScaleAround(b.vertOther[q])
 }
 
 /**
@@ -186,7 +297,7 @@ internal fun BodyState.refreshCellFiberRing(v: Int) {
  * Значение связи — один из множителей клеток, без арифметики: порядок клеток в проходе на
  * результат не влияет.
  */
-internal fun BodyState.advanceCellScales(dt: Double) {
+internal fun BodyState.advanceCellScales(dt: Float) {
     ensureFiberSize() // волокно мышцы (MuscleFiber.kt): массивы — до пересчёта колец на воркерах
     val s = cellScale; val target = cellScaleTarget
     val byEdges = constraintBlocks != null && !cellScalesDirty && cellScaleEff.size == n
@@ -204,20 +315,23 @@ internal fun BodyState.advanceCellScales(dt: Double) {
         val t = target[v]; val cur = s[v]
         if (cur == t) continue
         val away = kotlin.math.abs(t - 1f) > kotlin.math.abs(cur - 1f)
-        val k = minOf(1.0, (if (away) muscleRateContract else muscleRateRelax) * dt)
+        val k = minOf(1.0f, (if (away) muscleRateContract else muscleRateRelax) * dt)
         var next = openingRateLimit(cur, (cur + (t - cur) * k).toFloat()) // ВРЕМЕННО (MX_OPEN = 2, MuscleExperiment.kt)
         if (kotlin.math.abs(t - next) < CELL_SCALE_SNAP) next = t else moving = true
         s[v] = next
         sleep.requestWake(v)
+        if (!byEdges) continue
+        // Метка «сдвинулась»: действующий множитель ей считает её же кусок, а не тот, кому она соседка (refreshEffectiveOf).
+        lerpCellStamp[v] = lerpStampNow
         if (muscles != null) muscles.note(v)
-        else if (byEdges) {
+        else {
             if (movedN == cellScaleMoved.size) cellScaleMoved = cellScaleMoved.copyOf(movedN * 2)
             cellScaleMoved[movedN++] = v
         }
     }
     cellScalesMoving = moving
     if (byEdges) {
-        if (muscles != null) muscles.refreshRings(w!!) else for (q in 0 until movedN) refreshCellScaleRing(cellScaleMoved[q])
+        if (muscles != null) muscles.refreshRings(w!!) else refreshMovedRings(cellScaleMoved, movedN)
         endCellScaleLerp()
         return
     }
@@ -243,13 +357,15 @@ private fun BodyState.captureAllForLerp(): Boolean {
     return true
 }
 
-/** Множители связей и треугольников у клетки [v] — по её рёбрам. */
-private fun BodyState.refreshCellScaleAround(v: Int, out: CellScaleLerpBuffer?) {
+/**
+ * Множители связей и треугольников у клетки [v] — по её рёбрам. Одиночный путь (рождение, гибель ребра, мягкость,
+ * волокно): без захвата для плавности — она только у шага мышц, а тот идёт своим путём (refreshAroundChanged).
+ */
+private fun BodyState.refreshCellScaleAround(v: Int) {
     val b = baked
     val slot = constraintBlocks!!.triangleSlot
     for (q in b.vertStart[v] until b.vertStart[v + 1]) {
         val e = b.vertEdge[q]
-        if (lerpCapturing) captureEdgeLerp(e, out)
         var c = conOfEdge[e]
         while (c >= 0) {
             conCellScale[c] = linkCellScale(c)
@@ -261,7 +377,6 @@ private fun BodyState.refreshCellScaleAround(v: Int, out: CellScaleLerpBuffer?) 
             val id = b.edgeTris[r]
             val w = slot[id]
             if (w in 0 until triCount) {
-                if (lerpCapturing) captureTriLerp(id, w, out)
                 triCellScale[w] = triangleCellScale(w)
                 refreshTriangleFiber(w) // волокно мышцы (MuscleFiber.kt)
                 if (softnessOn) triSoftness[w] = triangleSoftness(w)
@@ -282,40 +397,49 @@ private fun BodyState.refreshCellScaleAround(v: Int, out: CellScaleLerpBuffer?) 
 // решателя лишних чтений нет.
 
 private fun BodyState.beginCellScaleLerp() {
-    lerpCapturing = true
     lerpEdgeN = 0; lerpTriN = 0
     lerpStampNow++
     if (lerpEdgeStamp.size < baked.edgeCount) lerpEdgeStamp = IntArray(baked.edgeCount)
     if (lerpTriStamp.size < body.triCount) lerpTriStamp = IntArray(body.triCount)
+    if (lerpCellStamp.size < n) lerpCellStamp = IntArray(n)
 }
 
-private fun BodyState.captureEdgeLerp(e: Int, out: CellScaleLerpBuffer? = null) {
+/** Захват «было» ребра [e] при полном пересчёте (captureAllForLerp): ребро без связи не ведётся. */
+private fun BodyState.captureEdgeLerp(e: Int) {
     if (lerpEdgeStamp[e] == lerpStampNow) return
     val c = conOfEdge[e]
     if (c < 0) return
     lerpEdgeStamp[e] = lerpStampNow
-    if (out != null) { out.addEdge(e, conCellScale[c]); return }
+    noteEdgeLerp(e, conCellScale[c], null)
+}
+
+private fun BodyState.captureTriLerp(id: Int, w: Int) {
+    if (lerpTriStamp[id] == lerpStampNow) return
+    lerpTriStamp[id] = lerpStampNow
+    noteTriLerp(id, triCellScale[w], null)
+}
+
+/** Запись плавности ребра [e] со значением «было» [from]: в буфер куска воркера [out] или в общие списки. */
+private fun BodyState.noteEdgeLerp(e: Int, from: Float, out: CellScaleLerpBuffer?) {
+    if (out != null) { out.addEdge(e, from); return }
     if (lerpEdgeN == lerpEdgeIds.size) {
         lerpEdgeIds = lerpEdgeIds.copyOf(lerpEdgeN * 2)
         lerpEdgeFrom = lerpEdgeFrom.copyOf(lerpEdgeN * 2); lerpEdgeTo = lerpEdgeTo.copyOf(lerpEdgeN * 2)
     }
-    lerpEdgeIds[lerpEdgeN] = e; lerpEdgeFrom[lerpEdgeN] = conCellScale[c]; lerpEdgeN++
+    lerpEdgeIds[lerpEdgeN] = e; lerpEdgeFrom[lerpEdgeN] = from; lerpEdgeN++
 }
 
-private fun BodyState.captureTriLerp(id: Int, w: Int, out: CellScaleLerpBuffer? = null) {
-    if (lerpTriStamp[id] == lerpStampNow) return
-    lerpTriStamp[id] = lerpStampNow
-    if (out != null) { out.addTri(id, triCellScale[w]); return }
+private fun BodyState.noteTriLerp(id: Int, from: Float, out: CellScaleLerpBuffer?) {
+    if (out != null) { out.addTri(id, from); return }
     if (lerpTriN == lerpTriIds.size) {
         lerpTriIds = lerpTriIds.copyOf(lerpTriN * 2)
         lerpTriFrom = lerpTriFrom.copyOf(lerpTriN * 2); lerpTriTo = lerpTriTo.copyOf(lerpTriN * 2)
     }
-    lerpTriIds[lerpTriN] = id; lerpTriFrom[lerpTriN] = triCellScale[w]; lerpTriN++
+    lerpTriIds[lerpTriN] = id; lerpTriFrom[lerpTriN] = from; lerpTriN++
 }
 
 /** Конец сбора: «станет» — нынешнее значение, а действующее возвращается к «было». */
 private fun BodyState.endCellScaleLerp() {
-    lerpCapturing = false
     for (k in 0 until lerpEdgeN) {
         val e = lerpEdgeIds[k]
         lerpEdgeTo[k] = conCellScale[conOfEdge[e]]
@@ -357,19 +481,29 @@ internal fun BodyState.applyCellScaleLerp(step: Int, count: Int) {
 private const val LERP_PARALLEL_MIN = 4096
 
 internal fun BodyState.lerpEdgeRange(fromK: Int, toK: Int, f: Float, last: Boolean) {
+    // Проход идёт каждый подшаг по связям движущихся мышц: массивы — в локальные, длины — до цикла, запись
+    // множителя (setEdgeCellScale) — прямо в цикле, а не вызовом на каждое ребро. См. lengthsBeforeLoop.
+    val ids = lerpEdgeIds; val lerpFrom = lerpEdgeFrom; val lerpTo = lerpEdgeTo
+    val conOfEdge = conOfEdge; val cs = conCellScale; val nextCon = conNextForEdge
+    lengthsBeforeLoop(ids.size or lerpFrom.size or lerpTo.size or conOfEdge.size or cs.size or nextCon.size)
     for (k in fromK until toK) {
-        val from = lerpEdgeFrom[k]; val to = lerpEdgeTo[k]
-        setEdgeCellScale(lerpEdgeIds[k], if (last) to else from + (to - from) * f)
+        val from = lerpFrom[k]; val to = lerpTo[k]
+        val value = if (last) to else from + (to - from) * f
+        var c = conOfEdge[ids[k]]
+        while (c >= 0) { cs[c] = value; c = nextCon[c] }
     }
 }
 
 internal fun BodyState.lerpTriRange(fromK: Int, toK: Int, f: Float, last: Boolean) {
     val slot = constraintBlocks?.triangleSlot ?: return
+    val ids = lerpTriIds; val lerpFrom = lerpTriFrom; val lerpTo = lerpTriTo; val ts = triCellScale
+    val triCount = triCount
+    lengthsBeforeLoop(slot.size or ids.size or lerpFrom.size or lerpTo.size or ts.size)
     for (k in fromK until toK) {
-        val w = slot[lerpTriIds[k]]
+        val w = slot[ids[k]]
         if (w !in 0 until triCount) continue
-        val from = lerpTriFrom[k]; val to = lerpTriTo[k]
-        triCellScale[w] = if (last) to else from + (to - from) * f
+        val from = lerpFrom[k]; val to = lerpTo[k]
+        ts[w] = if (last) to else from + (to - from) * f
     }
 }
 
@@ -396,24 +530,24 @@ internal fun BodyState.appendCellScaleLerp(part: CellScaleLerpBuffer) {
 /** Ближе этого к цели множитель клетки встаёт точно на неё: путь кончается за конечное число тиков. */
 private const val CELL_SCALE_SNAP = 1e-4f
 
-fun BodyState.updateMuscleScale(f: Double) {
-    if (muscleScaleOf.size != muscleActivation.size) muscleScaleOf = DoubleArray(muscleActivation.size)
-    if (muscleActivationPrev.size != muscleActivation.size) muscleActivationPrev = DoubleArray(muscleActivation.size)
+fun BodyState.updateMuscleScale(f: Float) {
+    if (muscleScaleOf.size != muscleActivation.size) muscleScaleOf = FloatArray(muscleActivation.size)
+    if (muscleActivationPrev.size != muscleActivation.size) muscleActivationPrev = FloatArray(muscleActivation.size)
     for (m in muscleActivation.indices) {
         val a = muscleActivationPrev[m] + (muscleActivation[m] - muscleActivationPrev[m]) * f
-        muscleScaleOf[m] = 1.0 - a * (1.0 - muscleContraction)
+        muscleScaleOf[m] = 1.0f - a * (1.0f - muscleContraction)
     }
 }
 
-fun BodyState.updateMuscles(dt: Double) {
-    if (muscleActivationPrev.size != muscleActivation.size) muscleActivationPrev = DoubleArray(muscleActivation.size)
+fun BodyState.updateMuscles(dt: Float) {
+    if (muscleActivationPrev.size != muscleActivation.size) muscleActivationPrev = FloatArray(muscleActivation.size)
     System.arraycopy(muscleActivation, 0, muscleActivationPrev, 0, muscleActivation.size)
     for (m in muscleActivation.indices) {
         val target = muscleTarget[m]
         // Сокращение и распрямление идут с РАЗНОЙ скоростью — см. константы.
         val rate = if (target > muscleActivation[m]) muscleRateContract else muscleRateRelax
         var k = rate * dt
-        if (k > 1.0) k = 1.0
+        if (k > 1.0f) k = 1.0f
         muscleActivation[m] += (target - muscleActivation[m]) * k
     }
 }

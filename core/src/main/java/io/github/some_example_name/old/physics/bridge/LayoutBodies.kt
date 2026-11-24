@@ -10,8 +10,9 @@ import io.github.some_example_name.physics.withTempLinks
  * гибель) адресуются слотами без поиска.
  *
  * Поза покоя — BakedLayout.restX/restY/restRadius в единицах мира физики (PHYSICS_PER_GAME),
- * сдвинутая так, что клетка [anchorSlot] стоит в ([anchorX], [anchorY]) единиц игры: тело
- * растёт из зиготы в точке подсадки, рождённые клетки встают по позе вокруг неё.
+ * сдвинутая так, что клетка [anchorSlot] стоит в ([anchorX], [anchorY]) единиц игры от начала
+ * координат физики (PhysicsBridge.originX — центр мира): тело растёт из зиготы в точке подсадки,
+ * рождённые клетки встают по позе вокруг неё.
  *
  * Треугольники — тройки слотов раскладки; удвоенная площадь считается заново по позе в
  * единицах физики (а не BakedLayout.triangleRestArea2 · K²), чтобы точно совпасть с длинами
@@ -31,9 +32,9 @@ fun bodyDefinitionOf(layout: BakedLayout, anchorSlot: Int, anchorX: Float, ancho
     val k = PHYSICS_PER_GAME
     val ox = anchorX - layout.restX[anchorSlot]
     val oy = anchorY - layout.restY[anchorSlot]
-    val x = FloatArray(n) { ((layout.restX[it] + ox) * k).toFloat() }
-    val y = FloatArray(n) { ((layout.restY[it] + oy) * k).toFloat() }
-    val r = FloatArray(n) { (layout.restRadius[it] * k).toFloat() }
+    val x = FloatArray(n) { (layout.restX[it] + ox) * k }
+    val y = FloatArray(n) { (layout.restY[it] + oy) * k }
+    val r = FloatArray(n) { layout.restRadius[it] * k }
     val bone = BooleanArray(n) { layout.restBone[it] }
 
     val links = layout.linksInLayout

@@ -29,7 +29,7 @@ class ParallelContactsMusclesTest {
         return all
     }
 
-    private class Run(val state: DoubleArray, val maxContacts: Int)
+    private class Run(val state: FloatArray, val maxContacts: Int)
 
     private fun run(workers: Int): Run {
         val world = PhysicsWorld(PhysicsConfig(), workers = if (workers > 1) PhysicsWorkers.shared(workers) else null)
@@ -38,8 +38,8 @@ class ParallelContactsMusclesTest {
         world.reset()
         val st = world.state
         // Все летят к центру: край каждого квадрата упирается в соседей.
-        val c = SIDE * STEP / 2.0
-        for (i in 0 until st.n) { st.vx[i] = 1.5 * (c - st.px[i]); st.vy[i] = 1.5 * (c - st.py[i]) }
+        val c = SIDE * STEP / 2.0f
+        for (i in 0 until st.n) { st.vx[i] = 1.5f * (c - st.px[i]); st.vy[i] = 1.5f * (c - st.py[i]) }
         // Мышцы: каждая третья клетка сжимается — сотни сдвинувшихся клеток на тик.
         for (i in 0 until st.n step 3) world.setCellScale(i, 0.7f)
         var maxContacts = 0
@@ -48,7 +48,7 @@ class ParallelContactsMusclesTest {
             maxContacts = maxOf(maxContacts, st.contacts!!.contactCount)
         }
         return Run(st.px.copyOf(st.n) + st.py.copyOf(st.n) + st.vx.copyOf(st.n) + st.vy.copyOf(st.n) +
-            st.conCellScale.copyOf(st.conCount).map { it.toDouble() }, maxContacts)
+            st.conCellScale.copyOf(st.conCount).map { it.toFloat() }, maxContacts)
     }
 
     @Test fun contactsAndMusclesMatchBitForBitOnAnyWorkerCount() {
@@ -56,7 +56,7 @@ class ParallelContactsMusclesTest {
         assertTrue("контактов мало, параллельная ветка не проверена: ${serial.maxContacts}", serial.maxContacts >= 2048)
         for (workers in intArrayOf(2, 4, 7)) {
             val parallel = run(workers)
-            assertArrayEquals("воркеров $workers", serial.state, parallel.state, 0.0)
+            assertArrayEquals("воркеров $workers", serial.state, parallel.state, 0.0f)
         }
     }
 

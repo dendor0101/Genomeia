@@ -163,7 +163,7 @@ internal class SceneView {
             val o = st.organismOf[i]
             dim[i] = o >= 0 && st.sleep.isAsleep(o)
             // Касания заводятся на первом шаге мира и растут вместе с ним: частицы, которой у них ещё нет, касается только её радиус.
-            val touch = if (contacts == null) 0.0 else try { contacts.contactRadiusOf(i) } catch (e: IndexOutOfBoundsException) { 0.0 }
+            val touch = if (contacts == null) 0.0 else try { contacts.contactRadiusOf(i).toDouble() } catch (e: IndexOutOfBoundsException) { 0.0 }
             size[i] = (maxOf(st.radius[i] * LONE_SCALE, touch) / k * zoom).toFloat()
         }
         for (b in w.bodies) {

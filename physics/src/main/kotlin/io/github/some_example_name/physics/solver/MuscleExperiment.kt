@@ -19,7 +19,7 @@ package io.github.some_example_name.physics
  */
 
 /** Вариант 1: доля глубины сокращения команды (1 — как было). */
-@JvmField var MX_STRENGTH = 1.0
+@JvmField var MX_STRENGTH = 1.0f
 
 /**
  * Вариант 3: потолок тяги — только на работу мышцы. 1 — растяжение связи сверх длины покоя держит ткань целиком,
@@ -28,23 +28,38 @@ package io.github.some_example_name.physics
 @JvmField var MX_SPLIT = 0
 
 /** Недобор связи длиной [len] под мышцей с целью [target] < [rest], уже больше потолка. */
-internal fun cappedPull(len: Double, rest: Double, target: Double): Double {
+internal fun cappedPull(len: Float, rest: Float, target: Float): Float {
     val cap = MUSCLE_MAX_PULL * rest
     if (MX_SPLIT < 1 || len <= rest) return cap
     val muscle = rest - target
     return (len - rest) + (if (muscle < cap) muscle else cap)
 }
 
+/**
+ * Ключи физики для игры: её мир собирается с пустыми настройками, поэтому — запасной путь через свойство процесса, для
+ * сравнений на глаз (`gradlew --no-daemon :lwjgl3:run "-Dgenomeia.physics=MX_OPEN=1"`; лаунчер прокидывает в игру все
+ * genomeia.*, как genomeia.substeps). В отчёт .bug эти ключи не попадают: отчёт, снятый с ними, без них не повторится.
+ * До 24.11 тем же путём шли ключи гашения QD_* — гашение убрано вместе с клином (находка 40).
+ */
+private val GAME_KEYS: Map<String, String> = System.getProperty("genomeia.physics").orEmpty().split(',')
+    .mapNotNull { val kv = it.split('='); if (kv.size == 2 && kv[0].isNotBlank()) kv[0].trim() to kv[1].trim() else null }.toMap()
+private var gameKeysAnnounced = false
+
 /** Ключи опыта — из настроек мира. Все миры процесса стенда собраны с одними настройками. */
 internal fun configureMuscleExperiment(c: PhysicsConfig) {
-    MX_STRENGTH = c["MX_STRENGTH"]?.toDoubleOrNull() ?: 1.0
-    MUSCLE_MAX_PULL = c["MX_PULL"]?.toDoubleOrNull() ?: 0.1
+    if (GAME_KEYS.isNotEmpty() && !gameKeysAnnounced) {
+        gameKeysAnnounced = true
+        println("Ключи физики из genomeia.physics (не закон мира, только для сравнения): $GAME_KEYS")
+    }
+    MX_STRENGTH = c["MX_STRENGTH"]?.toFloatOrNull() ?: 1.0f
+    MUSCLE_MAX_PULL = c["MX_PULL"]?.toFloatOrNull() ?: 0.1f
     MX_SPLIT = c["MX_SPLIT"]?.toIntOrNull() ?: 0
+    MX_OPEN = (c["MX_OPEN"] ?: GAME_KEYS["MX_OPEN"])?.toIntOrNull() ?: 0 // потолок разжатия мышцы: ключ и для игры
 }
 
 /** Вариант 1: команда клетки после ослабления. */
 internal fun weakenedCommand(scale: Float): Float =
-    if (MX_STRENGTH == 1.0 || scale >= 1f) scale else (1.0 - MX_STRENGTH * (1.0 - scale)).toFloat()
+    if (MX_STRENGTH == 1.0f || scale >= 1f) scale else (1.0f - MX_STRENGTH * (1.0f - scale)).toFloat()
 
 /**
  * ВРЕМЕННО, опыт 20.11.2026 (MX_OPEN = 1). Автор: «Давай потолок на разжатие также как и с сжатием».

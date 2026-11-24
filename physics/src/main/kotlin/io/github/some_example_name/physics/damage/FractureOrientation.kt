@@ -17,7 +17,7 @@ internal class FractureOrientation(private val body: BodyDefinition, private val
     private val words = LongArray((body.triCount + 63) ushr 6)
     private val occupied = IntArray(words.size)
 
-    fun solve(cells: IntArray, count: Int, x: DoubleArray, y: DoubleArray, w: DoubleArray) {
+    fun solve(cells: IntArray, count: Int, x: FloatArray, y: FloatArray, w: FloatArray) {
         var used = 0
         for (k in 0 until count) {
             val v = cells[k]
@@ -30,7 +30,7 @@ internal class FractureOrientation(private val body: BodyDefinition, private val
     }
 
     fun solvePierced(ct: BoundaryContacts, conOfEdge: IntArray, conDead: BooleanArray,
-                     conCount: Int, x: DoubleArray, y: DoubleArray, w: DoubleArray) {
+                     conCount: Int, x: FloatArray, y: FloatArray, w: FloatArray) {
         var used = 0
         // Собираем весь пакет ДО первого удаления: два пробоя могут удалить
         // обе стороны одного треугольника, как у клетки 949 в записи 22.10.
@@ -55,7 +55,7 @@ internal class FractureOrientation(private val body: BodyDefinition, private val
         return if (fresh) used + 1 else used
     }
 
-    private fun project(used: Int, x: DoubleArray, y: DoubleArray, w: DoubleArray) {
+    private fun project(used: Int, x: FloatArray, y: FloatArray, w: FloatArray) {
         java.util.Arrays.sort(occupied, 0, used)
         for (k in 0 until used) {
             val word = occupied[k]
@@ -66,7 +66,7 @@ internal class FractureOrientation(private val body: BodyDefinition, private val
                 bits = bits and (bits - 1)
                 val a = body.triA[t]; val b = body.triB[t]; val c = body.triC[t]
                 val area = (x[b] - x[a]) * (y[c] - y[a]) - (y[b] - y[a]) * (x[c] - x[a])
-                if (area < 0.0) projectBoundaryOrientation(a, b, c, area, x, y, w)
+                if (area < 0.0f) projectBoundaryOrientation(a, b, c, area, x, y, w)
             }
         }
     }

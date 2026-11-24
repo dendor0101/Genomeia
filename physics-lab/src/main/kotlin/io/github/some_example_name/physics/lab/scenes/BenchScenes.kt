@@ -25,9 +25,9 @@ import kotlin.math.sqrt
  */
 class SceneCtx(
     val n: Int,
-    val px: DoubleArray, val py: DoubleArray,
-    val prevX: DoubleArray, val prevY: DoubleArray,
-    val vx: DoubleArray, val vy: DoubleArray,
+    val px: FloatArray, val py: FloatArray,
+    val prevX: FloatArray, val prevY: FloatArray,
+    val vx: FloatArray, val vy: FloatArray,
     /**
      * Тело клетки берётся ФУНКЦИЕЙ, а не массивом. После shatter топология
      * пересобирается и organismOf становится НОВЫМ массивом — ссылка, снятая заранее,
@@ -43,7 +43,7 @@ class SceneCtx(
     val organismCount: () -> Int,
     val isFreeOf: (Int) -> Boolean,
     /** Обратная масса: ноль делает клетку неподвижной стенкой. */
-    val invMass: DoubleArray,
+    val invMass: FloatArray,
     /** Контактный радиус клетки — по нему считается шаг стенки. */
     val contactRadiusOf: (Int) -> Double,
     val meanLink: Double,
@@ -116,8 +116,8 @@ object BenchScenes {
         for (i in 0 until c.n) {
             if (c.organismOfCell(i) != o) continue
             val x = c.px[i] - ctr[0]; val y = c.py[i] - ctr[1]
-            c.px[i] = ctr[0] + x * cs - y * sn + perpX * offCells * c.meanLink
-            c.py[i] = ctr[1] + x * sn + y * cs + perpY * offCells * c.meanLink
+            c.px[i] = (ctr[0] + x * cs - y * sn + perpX * offCells * c.meanLink).toFloat()
+            c.py[i] = (ctr[1] + x * sn + y * cs + perpY * offCells * c.meanLink).toFloat()
             c.prevX[i] = c.px[i]; c.prevY[i] = c.py[i]
         }
     }
@@ -125,7 +125,7 @@ object BenchScenes {
     fun launch(c: SceneCtx, o: Int, dx: Double, dy: Double, cellsPerTick: Double) {
         val sp = cellsPerTick * c.meanLink / c.dt
         for (i in 0 until c.n) if (c.organismOfCell(i) == o) {
-            c.vx[i] = dx * sp; c.vy[i] = dy * sp
+            c.vx[i] = (dx * sp).toFloat(); c.vy[i] = (dy * sp).toFloat()
         }
     }
 
@@ -141,18 +141,18 @@ object BenchScenes {
         val ids = cells.filter { c.isFreeOf(it) }
         for (k in cells) {
             if (c.isFreeOf(k)) continue
-            c.px[k] += 900.0 * c.meanLink
+            c.px[k] += (900.0 * c.meanLink).toFloat()
             c.prevX[k] = c.px[k]; c.prevY[k] = c.py[k]
-            c.vx[k] = 0.0; c.vy[k] = 0.0
+            c.vx[k] = 0.0f; c.vy[k] = 0.0f
         }
         if (ids.isEmpty()) return
         val side = Math.ceil(sqrt(ids.size.toDouble())).toInt().coerceAtLeast(1)
         val st = stepCells * c.meanLink
         for ((k, i) in ids.withIndex()) {
-            c.px[i] = cx + (k % side - side / 2.0) * st
-            c.py[i] = cy + (k / side - side / 2.0) * st
+            c.px[i] = (cx + (k % side - side / 2.0) * st).toFloat()
+            c.py[i] = (cy + (k / side - side / 2.0) * st).toFloat()
             c.prevX[i] = c.px[i]; c.prevY[i] = c.py[i]
-            c.vx[i] = 0.0; c.vy[i] = 0.0
+            c.vx[i] = 0.0f; c.vy[i] = 0.0f
         }
     }
 
@@ -215,9 +215,9 @@ object BenchScenes {
         // решётку, мы сломали бы её жёсткую позу, и projectBone разнёс бы сцену.
         for (k in cells) {
             if (c.isFreeOf(k)) continue
-            c.px[k] += 900.0 * c.meanLink
+            c.px[k] += (900.0 * c.meanLink).toFloat()
             c.prevX[k] = c.px[k]; c.prevY[k] = c.py[k]
-            c.vx[k] = 0.0; c.vy[k] = 0.0
+            c.vx[k] = 0.0f; c.vy[k] = 0.0f
         }
 
         // Под стенку резервируется столько, сколько ей реально нужно, а не половина всех
@@ -294,11 +294,11 @@ object BenchScenes {
         for (w in 0 until wallCount) {
             val k = rest[w]
             val a = 2.0 * Math.PI * w / wallCount
-            c.px[k] = cx + radius * cos(a)
-            c.py[k] = cy + radius * sin(a)
+            c.px[k] = (cx + radius * cos(a)).toFloat()
+            c.py[k] = (cy + radius * sin(a)).toFloat()
             c.prevX[k] = c.px[k]; c.prevY[k] = c.py[k]
-            c.vx[k] = 0.0; c.vy[k] = 0.0
-            c.invMass[k] = 0.0                 // стенка неподвижна
+            c.vx[k] = 0.0f; c.vy[k] = 0.0f
+            c.invMass[k] = 0.0f                 // стенка неподвижна
         }
         // ЛИШНИЕ КЛЕТКИ РАСКЛАДЫВАЮТСЯ РЕДКОЙ РЕШЁТКОЙ, а не сдвигаются на месте.
         // Сдвиг сохранял исходную форму тела, где соседи стоят ближе порога контакта:
@@ -319,10 +319,10 @@ object BenchScenes {
             val k = rest[w]
             val idx = w - wallCount
             val row = idx / 40
-            c.px[k] = cx + 60.0 * c.meanLink + (idx % 40) * parkStep
-            c.py[k] = cy + row * parkStep
+            c.px[k] = (cx + 60.0 * c.meanLink + (idx % 40) * parkStep).toFloat()
+            c.py[k] = (cy + row * parkStep).toFloat()
             c.prevX[k] = c.px[k]; c.prevY[k] = c.py[k]
-            c.vx[k] = 0.0; c.vy[k] = 0.0
+            c.vx[k] = 0.0f; c.vy[k] = 0.0f
         }
 
         // Обход узлов шестиугольной решётки внутри круга, от центра наружу по рядам.
@@ -350,18 +350,18 @@ object BenchScenes {
         val placed = minOf(inside.size, sites.size)
         for (idx in 0 until placed) {
             val k = inside[idx]
-            c.px[k] = cx + sites[idx][0]
-            c.py[k] = cy + sites[idx][1]
+            c.px[k] = (cx + sites[idx][0]).toFloat()
+            c.py[k] = (cy + sites[idx][1]).toFloat()
             c.prevX[k] = c.px[k]; c.prevY[k] = c.py[k]
-            c.vx[k] = 0.0; c.vy[k] = 0.0
+            c.vx[k] = 0.0f; c.vy[k] = 0.0f
         }
         // Клетки, которым узлов не хватило, — в парк, к прочим лишним.
         for (idx in placed until inside.size) {
             val k = inside[idx]
-            c.px[k] = cx + 60.0 * c.meanLink + (idx % 40) * parkStep
-            c.py[k] = cy - 20.0 * parkStep - (idx / 40) * parkStep
+            c.px[k] = (cx + 60.0 * c.meanLink + (idx % 40) * parkStep).toFloat()
+            c.py[k] = (cy - 20.0 * parkStep - (idx / 40) * parkStep).toFloat()
             c.prevX[k] = c.px[k]; c.prevY[k] = c.py[k]
-            c.vx[k] = 0.0; c.vy[k] = 0.0
+            c.vx[k] = 0.0f; c.vy[k] = 0.0f
         }
     }
 
@@ -493,13 +493,13 @@ object BenchScenes {
             var fx = 0.0; var fy = 0.0; var fc = 0
             for (i in 0 until c.n) {
                 if (mine[i]) {
-                    c.vx[i] = 0.0; c.vy[i] = 0.0; c.prevX[i] = c.px[i]; c.prevY[i] = c.py[i]
+                    c.vx[i] = 0.0f; c.vy[i] = 0.0f; c.prevX[i] = c.px[i]; c.prevY[i] = c.py[i]
                     fx += c.px[i]; fy += c.py[i]; fc++
                     continue
                 }
-                c.px[i] += 600.0 * c.meanLink
+                c.px[i] += (600.0 * c.meanLink).toFloat()
                 c.prevX[i] = c.px[i]; c.prevY[i] = c.py[i]
-                c.vx[i] = 0.0; c.vy[i] = 0.0
+                c.vx[i] = 0.0f; c.vy[i] = 0.0f
             }
             if (fc > 0) c.focus(fx / fc, fy / fc)
         },

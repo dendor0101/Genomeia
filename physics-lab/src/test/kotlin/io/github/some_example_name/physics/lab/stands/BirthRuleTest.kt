@@ -22,7 +22,7 @@ class BirthRuleTest {
         w.at(0) {
             val st = w.world.state
             val z = g.particle(seed)
-            w.world.activate(g.particle(k), st.px[z] + 10 * GAME_LINK * PHYSICS_PER_GAME, st.py[z])
+            w.world.activate(g.particle(k), (st.px[z] + 10 * GAME_LINK * PHYSICS_PER_GAME).toFloat(), st.py[z])
             w.births.note(w, g, k)
         }
         repeat(3) { w.step(); m.afterTick() }

@@ -34,7 +34,7 @@ package io.github.some_example_name.physics
  * можно на живом окне переменной RB_TEAR, не пересобирая.
  */
 // Для обычной связи: предел коррекции 1.05 + запас до разрыва 0.45 = 1.50 длины покоя.
-const val LINK_TEAR_STRAIN = 0.45
+const val LINK_TEAR_STRAIN = 0.45f
 
 /**
  * РАЗРЫВ НА СЖАТИИ: связь, сжатая короче этой доли своей цели, рвётся.
@@ -69,7 +69,7 @@ const val LINK_TEAR_STRAIN = 0.45
  * docs/physics/reference.md, находка 16.
  */
 // Сжатие рвёт только текущие граничные/голые связи, включая новые края после разрыва.
-const val LINK_CRUSH_RATIO = 0.35
+const val LINK_CRUSH_RATIO = 0.35f
 
 /**
  * ПЕРЕСБОРКА ТОПОЛОГИИ СРАЗУ ПОСЛЕ РАЗРЫВА, внутри подшага, до контактов.
@@ -112,7 +112,7 @@ const val TEAR_IMMEDIATE = true
  * тело. А ёмкость чинится не выключением правила, а тем, чтобы засыпка не
  * начиналась СЖАТОЙ: шаг сцены «битком» поднят с 0.85 до 1.0, см. BenchScenes.
  */
-const val PRESSURE_BURST_LINKS = 12.0
+const val PRESSURE_BURST_LINKS = 12.0f
 
 /**
  * Клетка, оставшаяся без связей после разрыва на сжатии, лопается. См. burstByPressure.
@@ -152,7 +152,7 @@ const val TRAP_KILL_TICKS = -1
 /** Считать поверхностью и клетки, вокруг которых углы треугольников не сходятся в 2pi. */
 const val PROBE_UNCOVERED = true
 /** Допуск на сумму углов: меньше 2pi на столько — уже поверхность. */
-const val PROBE_ANGLE_EPS = 0.05
+const val PROBE_ANGLE_EPS = 0.05f
 /** Рвать связь контура, когда щель стала проходимой. См. membranePassTear. */
 const val MEMBRANE_PASS_TEAR = false
 
@@ -179,7 +179,7 @@ const val MEMBRANE_PASS_TEAR = false
  * ×2.0 — то же самое. Тяга не меняется вовсе: сухожилие не тянет, оно только держит.
  * Альтернатива «ослабить сокращение до 0.50» стоила бы трети пути: 308 вместо 436.
  */
-const val TENDON_TEAR_FACTOR = 1.5
+const val TENDON_TEAR_FACTOR = 1.5f
 
 /**
  * СКЛАДКА СВОЕЙ ТКАНИ ТОЖЕ ЛОПАЕТСЯ: клетка столько же тиков в своём треугольнике, где
@@ -209,7 +209,7 @@ const val TRAP_KILL_FOLDS = true
  * ненадёжно): 0.10 против выкл — бассейн 34/30, куча плотнее 20/18, куча в теле 19/1,
  * оторванный кусок 29/3. Меньше застревания только ценой крошева.
  */
-const val MEMBRANE_TEAR_STRAIN = -1.0
+const val MEMBRANE_TEAR_STRAIN = -1.0f
 
 /**
  * ПЛАСТИЧНОСТЬ ТКАНИ: длина покоя и площадь покоя МЕДЛЕННО ТЕКУТ за формой.
@@ -241,8 +241,8 @@ const val MEMBRANE_TEAR_STRAIN = -1.0
  * ЦЕНА: один проход по связям и треугольникам РАЗ В ТИК, не за подшаг. Против
  * 16 подшагов решателя это меньше процента.
  */
-const val PLASTIC_RATE = 1.0
-const val PLASTIC_YIELD = 0.15
+const val PLASTIC_RATE = 1.0f
+const val PLASTIC_YIELD = 0.15f
 
 /**
  * СКОЛЬКО ТИКОВ ДЕФОРМАЦИЯ ДОЛЖНА ДЕРЖАТЬСЯ, ЧТОБЫ ТКАНЬ ПОТЕКЛА.
@@ -283,7 +283,7 @@ const val INVERTED_TRIANGLE_HOLD_TICKS = 10
  * умирать будут только совсем провалившиеся, больше — начнут гибнуть просто
  * при сильном сжатии.
  */
-const val KILL_DEPTH = 1.0
+const val KILL_DEPTH = 1.0f
 
 /**
  * ГЛАВНЫЙ ВЫКЛЮЧАТЕЛЬ СМЕРТИ ОТ ПРОНИКНОВЕНИЯ. false — не умирает никто нигде,

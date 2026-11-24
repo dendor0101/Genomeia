@@ -14,16 +14,16 @@ class LocalComponentsTest {
 
     @Test fun severalCutsBeforeSurfaceRefreshSeparateEveryFragment() {
         val s = star()
-        s.flowVX[0] = 0.25; s.flowVY[0] = -0.5
+        s.flowVX[0] = 0.25f; s.flowVY[0] = -0.5f
         for (v in 1..3) s.killEdgeNow(s.baked.edgeOf(0, v))
         s.refreshSurface()
         assertEquals(4, s.organismOf.toSet().size)
         for (v in 0..3) {
             val o = s.organismOf[v]
             assertEquals(1, s.organismSize[o])
-            assertEquals(1.0 / s.restInvMass[v], s.organismMass[o], 0.0)
-            assertEquals(0.25, s.flowVX[o], 0.0)
-            assertEquals(-0.5, s.flowVY[o], 0.0)
+            assertEquals(1.0f / s.restInvMass[v], s.organismMass[o], 0.0f)
+            assertEquals(0.25f, s.flowVX[o], 0.0f)
+            assertEquals(-0.5f, s.flowVY[o], 0.0f)
         }
         val before = s.organismOf.copyOf()
         s.rebuildAfterTear()
@@ -36,13 +36,13 @@ class LocalComponentsTest {
         val s = star()
         for (v in 1..3) s.killEdgeNow(s.baked.edgeOf(0, v))
         s.refreshSurface()
-        s.vx[1] = 1.0
+        s.vx[1] = 1.0f
         s.applyNormalDrag(DT / SUBSTEPS)
-        assertTrue(s.flowVX[s.organismOf[1]] > 0.0)
+        assertTrue(s.flowVX[s.organismOf[1]] > 0.0f)
         for (v in intArrayOf(0, 2, 3)) {
-            assertEquals(0.0, s.vx[v], 0.0)
-            assertEquals(0.0, s.vy[v], 0.0)
-            assertEquals(0.0, s.flowVX[s.organismOf[v]], 0.0)
+            assertEquals(0.0f, s.vx[v], 0.0f)
+            assertEquals(0.0f, s.vy[v], 0.0f)
+            assertEquals(0.0f, s.flowVX[s.organismOf[v]], 0.0f)
         }
     }
 
@@ -53,10 +53,10 @@ class LocalComponentsTest {
         s.refreshSurface()
         assertEquals(4, s.organismOf.toSet().size)
         assertEquals(0, s.organismSize[s.organismOf[0]])
-        assertEquals(0.0, s.organismMass[s.organismOf[0]], 0.0)
+        assertEquals(0.0f, s.organismMass[s.organismOf[0]], 0.0f)
         for (v in 1..3) {
             assertEquals(1, s.organismSize[s.organismOf[v]])
-            assertEquals(1.0 / s.restInvMass[v], s.organismMass[s.organismOf[v]], 0.0)
+            assertEquals(1.0f / s.restInvMass[v], s.organismMass[s.organismOf[v]], 0.0f)
         }
     }
 }

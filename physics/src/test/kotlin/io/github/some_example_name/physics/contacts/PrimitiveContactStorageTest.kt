@@ -7,20 +7,20 @@ import java.util.Random
 class PrimitiveContactStorageTest {
     @Test fun lambdaCacheMatchesMapThroughGrowthRemovalAndClear() {
         val cache = ContactLambdaCache()
-        val reference = HashMap<Long, Double>()
+        val reference = HashMap<Long, Float>()
         val random = Random(741)
         val keys = LongArray(4000) { if (it == 0) 0L else random.nextLong() }
         repeat(8) { round ->
             for (i in keys.indices) {
-                val value = random.nextDouble() * (round + 1)
+                val value = (random.nextDouble().toFloat() * (round + 1)).toFloat()
                 cache[keys[i]] = value; reference[keys[i]] = value
             }
             for (i in keys.indices step 3) { cache.remove(keys[i]); reference.remove(keys[i]) }
-            for (i in keys.indices step 7) { cache[keys[i]] = -0.0; reference[keys[i]] = -0.0 }
-            for (key in keys) assertEquals(reference.getOrDefault(key, -1.0).toRawBits(),
-                cache.getOrDefault(key, -1.0).toRawBits())
+            for (i in keys.indices step 7) { cache[keys[i]] = -0.0f; reference[keys[i]] = -0.0f }
+            for (key in keys) assertEquals(reference.getOrDefault(key, -1.0f).toRawBits(),
+                cache.getOrDefault(key, -1.0f).toRawBits())
             cache.clear(); reference.clear()
-            for (key in keys) assertEquals(-1.0, cache.getOrDefault(key, -1.0), 0.0)
+            for (key in keys) assertEquals(-1.0f, cache.getOrDefault(key, -1.0f), 0.0f)
         }
     }
 

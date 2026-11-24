@@ -20,7 +20,7 @@ import kotlin.math.sqrt
  */
 fun solveBoundaryOrientation(
     count: Int, a: IntArray, b: IntArray, opposite: IntArray, orientation: ByteArray,
-    px: DoubleArray, py: DoubleArray, invMass: DoubleArray, bone: IntArray? = null,
+    px: FloatArray, py: FloatArray, invMass: FloatArray, bone: IntArray? = null,
 ) {
     for (k in 0 until count) orientEdge(k, a, b, opposite, orientation, px, py, invMass, bone)
 }
@@ -31,7 +31,7 @@ internal fun BodyState.solveBoundaryOrientationStage() {
     if (w != null && organismCount > 1) { parallelPhysics(w).orientation(); return }
     // Без воркеров — тот же порядок, что у них: по блокам, затем швы.
     val layout = constraintBlocks
-    if (layout != null && organismCount > 1) { edgesByBlocksSerial(layout, 0, 0.0); return }
+    if (layout != null && organismCount > 1) { edgesByBlocksSerial(layout, 0, 0.0f); return }
     if (sleep.asleepCount == 0) solveBoundaryOrientation(boundCount, boundA, boundB, boundOpp,
         localBoundary.orientation, px, py, invMass, orientationBones())
     else solveBoundaryOrientationAwake()
@@ -42,13 +42,13 @@ internal fun BodyState.orientationBones(): IntArray? = if (bonesRigid) boneOf el
 
 internal fun orientEdge(
     k: Int, a: IntArray, b: IntArray, opposite: IntArray, orientation: ByteArray,
-    px: DoubleArray, py: DoubleArray, invMass: DoubleArray, bone: IntArray? = null,
+    px: FloatArray, py: FloatArray, invMass: FloatArray, bone: IntArray? = null,
 ) {
     val c = opposite[k]
     if (c < 0) return
     val i = a[k]; val j = b[k]
     val area = (px[j] - px[i]) * (py[c] - py[i]) - (py[j] - py[i]) * (px[c] - px[i])
-    if (area * orientation[k] >= 0.0) return
+    if (area * orientation[k] >= 0.0f) return
     projectBoundaryOrientation(i, j, c, area, px, py, invMass, bone)
 }
 
@@ -79,8 +79,8 @@ internal fun BodyState.solveBoundaryOrientationAwake() {
  * сумма r×grad равны нулю. При разных массах поправка распределяется по invMass.
  */
 internal fun projectBoundaryOrientation(
-    a: Int, b: Int, c: Int, area: Double,
-    x: DoubleArray, y: DoubleArray, w: DoubleArray, bone: IntArray? = null,
+    a: Int, b: Int, c: Int, area: Float,
+    x: FloatArray, y: FloatArray, w: FloatArray, bone: IntArray? = null,
 ) {
     val gax = y[b] - y[c]; val gay = x[c] - x[b]
     val gbx = y[c] - y[a]; val gby = x[a] - x[c]
@@ -94,19 +94,19 @@ internal fun projectBoundaryOrientation(
     // Вывернулась мягкая клетка — ей и возвращаться. Отдачу кости за тик возвращает учёт импульса.
     if (bone != null) {
         val ba = bone[a] >= 0; val bb = bone[b] >= 0; val bc = bone[c] >= 0
-        if ((ba || bb || bc) && ((!ba && wa > 0.0) || (!bb && wb > 0.0) || (!bc && wc > 0.0))) {
-            if (ba) wa = 0.0; if (bb) wb = 0.0; if (bc) wc = 0.0
+        if ((ba || bb || bc) && ((!ba && wa > 0.0f) || (!bb && wb > 0.0f) || (!bc && wc > 0.0f))) {
+            if (ba) wa = 0.0f; if (bb) wb = 0.0f; if (bc) wc = 0.0f
         }
     }
     val den = wa * (gax * gax + gay * gay) + wb * (gbx * gbx + gby * gby) +
         wc * (gcx * gcx + gcy * gcy)
-    if (den < 1e-18) return
+    if (den < 1e-18f) return
     // Площадь вдоль взвешенного градиента — квадратичная функция λ.
     // Линейный шаг -A/den оставляет отрицательный остаток. Берём ближайший
     // корень A + den*λ + q*λ² = 0 в форме без вычитания близких чисел.
     val q = (wa * wb + wb * wc + wc * wa) * area
-    val discriminant = (den * den - 4.0 * q * area).coerceAtLeast(0.0)
-    val lambda = -2.0 * area / (den + sqrt(discriminant))
+    val discriminant = (den * den - 4.0f * q * area).coerceAtLeast(0.0f)
+    val lambda = -2.0f * area / (den + sqrt(discriminant))
     x[a] += wa * lambda * gax; y[a] += wa * lambda * gay
     x[b] += wb * lambda * gbx; y[b] += wb * lambda * gby
     x[c] += wc * lambda * gcx; y[c] += wc * lambda * gcy

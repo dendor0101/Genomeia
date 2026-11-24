@@ -38,10 +38,17 @@ class ParticleEntity(
      * Массивы мира физики — только чтение, единицы мира физики. Мир физики заводит их заново
      * при росте и уплотнении; ссылки обновляет WorldPhysics после каждой своей фазы.
      */
-    @JvmField var physicsX = DoubleArray(0)
-    @JvmField var physicsY = DoubleArray(0)
-    @JvmField var physicsVx = DoubleArray(0)
-    @JvmField var physicsVy = DoubleArray(0)
+    @JvmField var physicsX = FloatArray(0)
+    @JvmField var physicsY = FloatArray(0)
+    @JvmField var physicsVx = FloatArray(0)
+    @JvmField var physicsVy = FloatArray(0)
+
+    /**
+     * Точка игры, где у мира физики ноль (PhysicsBridge.originX — центр мира). Копия для чтения,
+     * ставит её WorldPhysics вместе со ссылками на массивы; в сохранение не входит.
+     */
+    @JvmField var physicsOriginX = 0f
+    @JvmField var physicsOriginY = 0f
 
     /**
      * Приращения скорости из параллельных стадий (жгутик, плавник, липучка, присоска): каждая
@@ -56,22 +63,22 @@ class ParticleEntity(
 
     fun x(p: Int): Float {
         val i = physicsIndex[p]
-        return if (i >= 0) (physicsX[i] * GAME_PER_PHYSICS).toFloat() else localX[p]
+        return if (i >= 0) physicsX[i] * GAME_PER_PHYSICS + physicsOriginX else localX[p]
     }
 
     fun y(p: Int): Float {
         val i = physicsIndex[p]
-        return if (i >= 0) (physicsY[i] * GAME_PER_PHYSICS).toFloat() else localY[p]
+        return if (i >= 0) physicsY[i] * GAME_PER_PHYSICS + physicsOriginY else localY[p]
     }
 
     fun vx(p: Int): Float {
         val i = physicsIndex[p]
-        return if (i >= 0) (physicsVx[i] / PHYSICS_VELOCITY_PER_GAME).toFloat() else localVx[p]
+        return if (i >= 0) physicsVx[i] / PHYSICS_VELOCITY_PER_GAME else localVx[p]
     }
 
     fun vy(p: Int): Float {
         val i = physicsIndex[p]
-        return if (i >= 0) (physicsVy[i] / PHYSICS_VELOCITY_PER_GAME).toFloat() else localVy[p]
+        return if (i >= 0) physicsVy[i] / PHYSICS_VELOCITY_PER_GAME else localVy[p]
     }
 
     /** Поставить частицу в точку. Однопоточно (команды, редактор). */

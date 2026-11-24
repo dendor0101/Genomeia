@@ -41,7 +41,7 @@ internal class DemoInterpolation(private val state: BodyState) : StepObserver {
 
     private fun snapshot(slot: Int) {
         val x = historyX[slot]; val y = historyY[slot]
-        for (i in 0 until state.n) { x[i] = state.px[i]; y[i] = state.py[i] }
+        for (i in 0 until state.n) { x[i] = state.px[i].toDouble(); y[i] = state.py[i].toDouble() }
     }
 
     fun invalidate() { count = 0; lo = -1 }

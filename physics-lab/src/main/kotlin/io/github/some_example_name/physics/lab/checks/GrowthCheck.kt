@@ -50,7 +50,7 @@ private fun bornOracle(config: PhysicsConfig, scale: WorldScale, bodies: List<Bo
     }
     for (tick in 1..120) {
         val on = if (tick % 40 < 20) 1.0 else 0.0
-        for (w in listOf(plain, allBorn)) { w.setAllMuscleTargets(on); w.step() }
+        for (w in listOf(plain, allBorn)) { w.setAllMuscleTargets(on.toFloat()); w.step() }
         val a = PlayerLog.stateHash(plain.particleCount, plain.x, plain.y, plain.vx, plain.vy)
         val b = PlayerLog.stateHash(allBorn.particleCount, allBorn.x, allBorn.y, allBorn.vx, allBorn.vy)
         if (a != b) { println("GROWTH oracle: born=все разошёлся с телом без born на тике $tick"); return false }
@@ -124,7 +124,7 @@ private fun growth(config: PhysicsConfig, scale: WorldScale, bodies: List<BodyDe
                 }
             }
             val on = if (tick % 40 < 20) 1.0 else 0.0
-            for (w in worlds) { w.setAllMuscleTargets(on); w.step() }
+            for (w in worlds) { w.setAllMuscleTargets(on.toFloat()); w.step() }
             tick++
             val h = worlds.map { PlayerLog.stateHash(it.particleCount, it.x, it.y, it.vx, it.vy) }
             if (h[0] != h[1]) { println("GROWTH diverged at tick $tick (рождено $births)"); return false }

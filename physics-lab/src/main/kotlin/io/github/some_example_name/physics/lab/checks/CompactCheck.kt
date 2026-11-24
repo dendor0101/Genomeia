@@ -85,7 +85,7 @@ private fun variant(label: String, bodies: List<BodyDefinition>, b: Int, before:
         val speed = 0.8 * io.github.some_example_name.physics.MAX_SPEED_CELLS_PER_TICK * w.meanLinkLength / io.github.some_example_name.physics.DT
         for ((k, sgn) in listOf(0 to 1.0, ram to -1.0)) {
             val f = w.bodyFirst(ids[k])
-            for (i in f until f + w.bodyCount(ids[k])) w.setVelocity(i, sgn * dx * speed, sgn * dy * speed)
+            for (i in f until f + w.bodyCount(ids[k])) w.setVelocity(i, (sgn * dx * speed).toFloat(), (sgn * dy * speed).toFloat())
             w.wake(f)
         }
     }
@@ -95,7 +95,7 @@ private fun variant(label: String, bodies: List<BodyDefinition>, b: Int, before:
             x.activate(x.bodyFirst(idsX[grow]) + order[next]); y.activate(y.bodyFirst(idsY[grow]) + order[next]); next++
         }
         val on = if (tick % 40 < 20) 1.0 else 0.0
-        for (w in ws) { w.setAllMuscleTargets(on); w.step() }
+        for (w in ws) { w.setAllMuscleTargets(on.toFloat()); w.step() }
         tick++
     }
     repeat(before) {
@@ -138,7 +138,7 @@ private fun hashExcept(w: PhysicsWorld, skipFirst: Int, skipCount: Int): Long {
     fun mix(v: Long) { h = (h xor v) * -7046029254386353131L }
     for (i in 0 until w.particleCount) {
         if (i >= skipFirst && i < skipFirst + skipCount) continue
-        mix(w.x[i].toRawBits()); mix(w.y[i].toRawBits()); mix(w.vx[i].toRawBits()); mix(w.vy[i].toRawBits())
+        mix(w.x[i].toRawBits().toLong()); mix(w.y[i].toRawBits().toLong()); mix(w.vx[i].toRawBits().toLong()); mix(w.vy[i].toRawBits().toLong())
     }
     return h
 }
@@ -198,6 +198,7 @@ private fun filtersMatchRebuild(w: PhysicsWorld, label: String): Boolean {
     fun same(a: Any, b: Any): Boolean = when (a) {
         is IntArray -> a.contentEquals(b as IntArray)
         is LongArray -> a.contentEquals(b as LongArray)
+        is FloatArray -> a.contentEquals(b as FloatArray)
         is DoubleArray -> a.contentEquals(b as DoubleArray)
         is BooleanArray -> a.contentEquals(b as BooleanArray)
         else -> a == b

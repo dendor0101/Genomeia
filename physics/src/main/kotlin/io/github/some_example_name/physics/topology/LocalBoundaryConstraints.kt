@@ -24,7 +24,7 @@ class VertexPairs(n: Int, private val vertexInBlock: Boolean = false) {
     private var prev = IntArray(owner.size)
     var a = IntArray(owner.size); private set
     var b = IntArray(owner.size); private set
-    var rest = DoubleArray(owner.size); private set
+    var rest = FloatArray(owner.size); private set
     var count = 0; private set
 
     fun clear(v: Int) {
@@ -54,7 +54,7 @@ class VertexPairs(n: Int, private val vertexInBlock: Boolean = false) {
             a = a.copyOf(cap); b = b.copyOf(cap); rest = rest.copyOf(cap)
             owner = owner.copyOf(cap); next = next.copyOf(cap); prev = prev.copyOf(cap)
         }
-        val dx = (body.x[i] - body.x[j]).toDouble(); val dy = (body.y[i] - body.y[j]).toDouble()
+        val dx = (body.x[i] - body.x[j]).toFloat(); val dy = (body.y[i] - body.y[j]).toFloat()
         a[count] = i; b[count] = j; rest[count] = sqrt(dx * dx + dy * dy)
         owner[count] = v; prev[count] = -1; next[count] = head[v]
         if (head[v] >= 0) prev[head[v]] = count
@@ -126,9 +126,9 @@ class LocalBoundaryConstraints(
             opposite[dst] = topology.opposite(e); edgeAt[dst] = e; slotOf[e] = dst
             val i = a[dst]; val j = b[dst]; val c = opposite[dst]
             orientation[dst] = if (c < 0) 0 else {
-                val area = (body.x[j] - body.x[i]).toDouble() * (body.y[c] - body.y[i]) -
-                    (body.y[j] - body.y[i]).toDouble() * (body.x[c] - body.x[i])
-                if (area > 0.0) 1 else if (area < 0.0) -1 else 0
+                val area = (body.x[j] - body.x[i]).toFloat() * (body.y[c] - body.y[i]) -
+                    (body.y[j] - body.y[i]).toFloat() * (body.x[c] - body.x[i])
+                if (area > 0.0f) 1 else if (area < 0.0f) -1 else 0
             }
             val layout = blockLayout
             if (layout != null) { blockIndex!!.remove(dst); blockIndex!!.add(dst, blockOfSlot(dst, layout)) }

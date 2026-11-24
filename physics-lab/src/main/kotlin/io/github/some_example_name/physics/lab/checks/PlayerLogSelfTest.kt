@@ -53,9 +53,9 @@ fun main(args: Array<String>) {
     fun a(op: Char, v: Int = 0) { live.act(op, v) }
     fun steps(k: Int) { repeat(k) { live.stepOnce() } }
 
-    val px: DoubleArray = get("px"); val py: DoubleArray = get("py")
+    val px: FloatArray = get("px"); val py: FloatArray = get("py")
     val isFree: BooleanArray = get("isFree")
-    val muscles = (get<DoubleArray>("muscleTarget")).size
+    val muscles = (get<FloatArray>("muscleTarget")).size
     val grab = (0 until px.size).first { !isFree[it] }
     val scenes: List<BenchScene> = get("scenes")
     val fragment = scenes.indexOfFirst { it.name == "оторванный кусок" }.coerceAtLeast(0)

@@ -94,8 +94,8 @@ internal class DemoSession(internal val bodyPath: String,
         hoveredMuscle = -1
         onReset?.invoke()
         simTime = 0.0
-        startCx = comX()
-        startCy = comY()
+        startCx = comX().toDouble()
+        startCy = comY().toDouble()
         applyLabDamage()
     } }
 
@@ -160,7 +160,7 @@ internal class DemoSession(internal val bodyPath: String,
         // Номер тика нужен разбору пробоя по одной клетке (CT_WATCH), иначе строки
         // трассы нельзя привязать к событию из журнала игрока.
         contacts?.tickNo = playTick
-        tick(DT)
+        tick(DT.toDouble())
         simTime += DT
         logTick++
         playTick++
@@ -188,7 +188,7 @@ internal class DemoSession(internal val bodyPath: String,
     // ================================================================
     internal var plog: java.io.BufferedWriter? = null
 
-    internal var plogMuscles = DoubleArray(0)
+    internal var plogMuscles = FloatArray(0)
 
     internal var plogCurX = Double.NaN
 
@@ -286,26 +286,26 @@ internal class DemoSession(internal val bodyPath: String,
      * наведение мышью, удержание цифровой клавиши и автоматический гребок.
      */
     internal fun updateMuscleTargets() { with(state) {
-        world.setAllMuscleTargets(0.0)
+        world.setAllMuscleTargets(0.0f)
 
         // Проверка верхней границы не лишняя: тело может не иметь мышц вовсе
         // (у текущей выгрузки muscle = 0), и тогда массив пуст.
-        if (hoveredMuscle in 0 until world.muscleCount) world.setMuscleTarget(hoveredMuscle, 1.0)
+        if (hoveredMuscle in 0 until world.muscleCount) world.setMuscleTarget(hoveredMuscle, 1.0f)
 
         // Цифры 1..9 — держать соответствующую мышцу сокращённой.
         val keys = minOf(9, world.muscleCount)
         for (m in 0 until keys) {
-            if (pressedMuscleMask and (1 shl m) != 0) world.setMuscleTarget(m, 1.0)
+            if (pressedMuscleMask and (1 shl m) != 0) world.setMuscleTarget(m, 1.0f)
         }
         // 0 — все сразу.
-        if (pressedMuscleMask and (1 shl 9) != 0) world.setAllMuscleTargets(1.0)
+        if (pressedMuscleMask and (1 shl 9) != 0) world.setAllMuscleTargets(1.0f)
 
         // Автоматический гребок. Доля рабочей фазы — GAIT_DUTY, минимум один кадр:
         // при коротком периоде округление вниз может дать ноль, и гребка не будет вовсе.
         if (gait) {
             gaitFrame++
             val duty = (gaitPeriod * gaitDuty).toInt().coerceAtLeast(1)
-            if (gaitFrame % gaitPeriod < duty) world.setAllMuscleTargets(1.0)
+            if (gaitFrame % gaitPeriod < duty) world.setAllMuscleTargets(1.0f)
         }
     } }
 
@@ -332,6 +332,6 @@ internal class DemoSession(internal val bodyPath: String,
     } }
 
     /** Тик мира: мышцы за [dt] и решатель; затем разбор застрявших, если включён. */
-    internal fun tick(dt: Double) { world.step(dt); if (state.trapCrash > 0) trapCrashScan() }
+    internal fun tick(dt: Double) { world.step(dt.toFloat()); if (state.trapCrash > 0) trapCrashScan() }
 
 }

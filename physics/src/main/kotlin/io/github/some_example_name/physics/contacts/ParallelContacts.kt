@@ -178,10 +178,10 @@ internal open class OrderedChunks(workers: Int) {
 
 /** Кластеры костей по кускам: у каждого свои масса, центр и момент инерции. */
 internal class ParallelBones(private val ct: BoundaryContacts, workers: Int) : OrderedChunks(workers) {
-    private var px = DoubleArray(0); private var py = DoubleArray(0); private var invMass = DoubleArray(0)
+    private var px = FloatArray(0); private var py = FloatArray(0); private var invMass = FloatArray(0)
     private val job = PhysicsJob { k, _ -> for (b in from[k] until from[k + 1]) ct.updateBone(b, px, py, invMass) }
 
-    fun run(w: PhysicsWorkers, bones: Int, px: DoubleArray, py: DoubleArray, invMass: DoubleArray) {
+    fun run(w: PhysicsWorkers, bones: Int, px: FloatArray, py: FloatArray, invMass: FloatArray) {
         this.px = px; this.py = py; this.invMass = invMass
         split(bones)
         w.run(parts, job)
@@ -190,11 +190,11 @@ internal class ParallelBones(private val ct: BoundaryContacts, workers: Int) : O
 
 /** Уехавшие вершины: счёт по кускам, потом запись со своего смещения. */
 internal class ParallelMoved(private val ct: BoundaryContacts, workers: Int) : OrderedChunks(workers) {
-    private var px = DoubleArray(0); private var py = DoubleArray(0)
+    private var px = FloatArray(0); private var py = FloatArray(0)
     private val countJob = PhysicsJob { k, _ -> count[k] = ct.countMoved(from[k], from[k + 1], px, py) }
     private val writeJob = PhysicsJob { k, _ -> ct.writeMoved(from[k], from[k + 1], at[k], px, py) }
 
-    fun find(w: PhysicsWorkers, movers: Int, px: DoubleArray, py: DoubleArray): Int {
+    fun find(w: PhysicsWorkers, movers: Int, px: FloatArray, py: FloatArray): Int {
         this.px = px; this.py = py
         split(movers)
         w.run(parts, countJob)
@@ -211,8 +211,8 @@ internal class ParallelMoved(private val ct: BoundaryContacts, workers: Int) : O
  * пишут одно и то же значение в одно и то же место.
  */
 internal class ParallelBuild(private val ct: BoundaryContacts, workers: Int) : OrderedChunks(workers) {
-    private var px = DoubleArray(0); private var py = DoubleArray(0)
-    private var vx = DoubleArray(0); private var vy = DoubleArray(0)
+    private var px = FloatArray(0); private var py = FloatArray(0)
+    private var vx = FloatArray(0); private var vy = FloatArray(0)
     private val lists = Array(parts) { IntArray(64) }
     private val countJob = PhysicsJob { k, _ ->
         var list = lists[k]
@@ -228,7 +228,7 @@ internal class ParallelBuild(private val ct: BoundaryContacts, workers: Int) : O
         for (x in 0 until count[k]) ct.writeContact(list[x], at[k] + x, px, py, vx, vy)
     }
 
-    fun build(w: PhysicsWorkers, near: Int, px: DoubleArray, py: DoubleArray, vx: DoubleArray, vy: DoubleArray): Int {
+    fun build(w: PhysicsWorkers, near: Int, px: FloatArray, py: FloatArray, vx: FloatArray, vy: FloatArray): Int {
         this.px = px; this.py = py; this.vx = vx; this.vy = vy
         split(near)
         w.run(parts, countJob)
@@ -254,9 +254,9 @@ internal class ParallelBuild(private val ct: BoundaryContacts, workers: Int) : O
  */
 internal class ParallelCcd(private val ct: BoundaryContacts, workers: Int) : OrderedChunks(workers) {
     private var lists = Array(parts) { IntArray(64) }
-    private var px = DoubleArray(0); private var py = DoubleArray(0)
-    private var qx = DoubleArray(0); private var qy = DoubleArray(0)
-    private var invMass = DoubleArray(0)
+    private var px = FloatArray(0); private var py = FloatArray(0)
+    private var qx = FloatArray(0); private var qy = FloatArray(0)
+    private var invMass = FloatArray(0)
     val chunks get() = parts
     private val scanJob = PhysicsJob { k, _ ->
         var list = lists[k]
@@ -272,8 +272,8 @@ internal class ParallelCcd(private val ct: BoundaryContacts, workers: Int) : Ord
     fun found(k: Int): IntArray = lists[k]
     fun foundCount(k: Int): Int = count[k]
 
-    fun scan(w: PhysicsWorkers, near: Int, px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray,
-             invMass: DoubleArray) {
+    fun scan(w: PhysicsWorkers, near: Int, px: FloatArray, py: FloatArray, qx: FloatArray, qy: FloatArray,
+             invMass: FloatArray) {
         this.px = px; this.py = py; this.qx = qx; this.qy = qy; this.invMass = invMass
         split(near)
         w.run(parts, scanJob)
@@ -296,8 +296,8 @@ internal class ParallelReinsert(private val ct: BoundaryContacts, private val wo
     private val cellEnd = Array(parts) { IntArray(64) }
     private val ddaX = Array(workers) { IntArray(BoundaryContacts.DDA_MAX) }
     private val ddaY = Array(workers) { IntArray(BoundaryContacts.DDA_MAX) }
-    private var px = DoubleArray(0); private var py = DoubleArray(0)
-    private var qx = DoubleArray(0); private var qy = DoubleArray(0)
+    private var px = FloatArray(0); private var py = FloatArray(0)
+    private var qx = FloatArray(0); private var qy = FloatArray(0)
 
     private val footJob = PhysicsJob { k, worker ->
         val moved = ct.moved
@@ -332,7 +332,7 @@ internal class ParallelReinsert(private val ct: BoundaryContacts, private val wo
         }
     }
 
-    fun run(w: PhysicsWorkers, px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray) {
+    fun run(w: PhysicsWorkers, px: FloatArray, py: FloatArray, qx: FloatArray, qy: FloatArray) {
         this.px = px; this.py = py; this.qx = qx; this.qy = qy
         split(ct.movedCount)
         w.run(parts, footJob)
@@ -366,16 +366,19 @@ internal class ParallelCandidates(private val ct: BoundaryContacts, workers: Int
     /** Концы отсортированных прогонов нижних ключей после склейки кусков (ParallelPairs). */
     val lowRunEnd = IntArray(16 * workers)
     var chunks = 0; private set
-    private var px = DoubleArray(0); private var py = DoubleArray(0)
-    private var qx = DoubleArray(0); private var qy = DoubleArray(0)
+    private var px = FloatArray(0); private var py = FloatArray(0)
+    private var qx = FloatArray(0); private var qy = FloatArray(0)
     private val job = PhysicsJob { k, worker -> query(k, worker) }
 
     fun buffer(k: Int): PairKeyBuffer = buffers[k]
 
-    fun run(w: PhysicsWorkers, px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray) {
+    fun run(w: PhysicsWorkers, px: FloatArray, py: FloatArray, qx: FloatArray, qy: FloatArray) {
         this.px = px; this.py = py; this.qx = qx; this.qy = qy
         val count = ct.movedCount
-        val k = minOf(buffers.size, maxOf(1, count / 64))
+        // По 16 вершин на кусок, а не по 64 (24.11.2026, находка 41): при меньше 128 сдвинувшихся вершин поиск шёл одним
+        // куском, то есть в одном потоке, — 0.7 мс за тик на ПК (6% тика) и 3.1 мс на Galaxy A21s; стало 1.5 мс на
+        // A21s при загрузке 66%. Список пар от нарезки не зависит (склейка буферов по порядку кусков).
+        val k = minOf(buffers.size, maxOf(1, count / 16))
         for (c in 0 until k) { from[c] = (count.toLong() * c / k).toInt(); to[c] = (count.toLong() * (c + 1) / k).toInt() }
         chunks = k
         w.run(k, job)
@@ -420,8 +423,8 @@ internal class PierceBuffer {
 internal class ParallelPierce(private val ct: BoundaryContacts, workers: Int) {
     private val buffers = Array(16 * workers) { PierceBuffer() }
     private val from = IntArray(16 * workers + 1)
-    private var px = DoubleArray(0); private var py = DoubleArray(0)
-    private var qx = DoubleArray(0); private var qy = DoubleArray(0)
+    private var px = FloatArray(0); private var py = FloatArray(0)
+    private var qx = FloatArray(0); private var qy = FloatArray(0)
     private var org = IntArray(0)
     private val job = PhysicsJob { k, _ ->
         val out = buffers[k]
@@ -434,7 +437,7 @@ internal class ParallelPierce(private val ct: BoundaryContacts, workers: Int) {
         ct.pierceBoundsRange((verts.toLong() * k / boundChunks).toInt(), (verts.toLong() * (k + 1) / boundChunks).toInt(), px, py, qx, qy)
     }
 
-    fun run(w: PhysicsWorkers, px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray, org: IntArray) {
+    fun run(w: PhysicsWorkers, px: FloatArray, py: FloatArray, qx: FloatArray, qy: FloatArray, org: IntArray) {
         this.px = px; this.py = py; this.qx = qx; this.qy = qy; this.org = org
         if (!ct.boundsStale) w.run(boundChunks, boundsJob)
         val pairs = ct.candidatePairCount
@@ -463,10 +466,10 @@ internal class ParallelPrepare(private val ct: BoundaryContacts, workers: Int) {
     private val touchLists = Array(maxChunks) { IntArray(64) }
     private val touchN = IntArray(maxChunks)
     private val at = IntArray(maxChunks + 1)
-    private var px = DoubleArray(0); private var py = DoubleArray(0)
-    private var qx = DoubleArray(0); private var qy = DoubleArray(0)
-    private var vx = DoubleArray(0); private var vy = DoubleArray(0)
-    private var invMass = DoubleArray(0)
+    private var px = FloatArray(0); private var py = FloatArray(0)
+    private var qx = FloatArray(0); private var qy = FloatArray(0)
+    private var vx = FloatArray(0); private var vy = FloatArray(0)
+    private var invMass = FloatArray(0)
     private var org = IntArray(0)
     private val boundChunks = 4 * workers
     private val boundsJob = PhysicsJob { k, _ ->
@@ -502,8 +505,8 @@ internal class ParallelPrepare(private val ct: BoundaryContacts, workers: Int) {
     }
 
     /** Границы отсева пробоя (раз в два подшага, как у ParallelPierce), затем три прохода одной задачей. */
-    fun scan(w: PhysicsWorkers, px: DoubleArray, py: DoubleArray, qx: DoubleArray, qy: DoubleArray,
-             vx: DoubleArray, vy: DoubleArray, invMass: DoubleArray, org: IntArray) {
+    fun scan(w: PhysicsWorkers, px: FloatArray, py: FloatArray, qx: FloatArray, qy: FloatArray,
+             vx: FloatArray, vy: FloatArray, invMass: FloatArray, org: IntArray) {
         this.px = px; this.py = py; this.qx = qx; this.qy = qy; this.vx = vx; this.vy = vy
         this.invMass = invMass; this.org = org
         if (!ct.boundsStale) w.run(boundChunks, boundsJob)

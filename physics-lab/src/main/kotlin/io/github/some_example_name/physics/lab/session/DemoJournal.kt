@@ -108,7 +108,7 @@ internal fun DemoSession.act(op: Char, a: Int = 0) { with(state) {
             dragCapBase = speedCapHits
             // Пик именно ОБНУЛЯЕТСЯ, а не запоминается: это максимум, и
             // вычитать из максимума базу бессмысленно.
-            peakSpeed2 = 0.0
+            peakSpeed2 = 0.0f
         }
         'U' -> world.release()
     }
@@ -129,7 +129,7 @@ internal fun DemoSession.recordTickInputs() { with(state) {
         val sb = StringBuilder().append(playTick).append(" M ")
         var any = false
         for (m in muscleTarget.indices) {
-            if (muscleTarget[m] == 0.0) continue
+            if (muscleTarget[m] == 0.0f) continue
             if (any) sb.append(',')
             sb.append(m).append(':').append(muscleTarget[m])
             any = true
@@ -137,8 +137,8 @@ internal fun DemoSession.recordTickInputs() { with(state) {
         if (!any) sb.append('-')
         plogWrite(sb.toString(), flush = false)
     }
-    if (dragId >= 0 && (mouseX != plogCurX || mouseY != plogCurY)) {
-        plogCurX = mouseX; plogCurY = mouseY
+    if (dragId >= 0 && (mouseX.toDouble() != plogCurX || mouseY.toDouble() != plogCurY)) {
+        plogCurX = mouseX.toDouble(); plogCurY = mouseY.toDouble()
         plogWrite("$playTick C $mouseX $mouseY", flush = false)
     }
 } }
@@ -268,11 +268,11 @@ internal fun DemoSession.replayTickInputs() { with(state) {
                 if (m < replayMuscle.size) replayMuscle[m] = part.substring(k + 1).toDouble()
             }
         } else if (ln.op == "C") {
-            world.dragTo(ln.args[0].toDouble(), ln.args[1].toDouble())
+            world.dragTo(ln.args[0].toDouble().toFloat(), ln.args[1].toDouble().toFloat())
         } else break
         replayAt++
     }
-    for (m in 0 until world.muscleCount) world.setMuscleTarget(m, replayMuscle[m])
+    for (m in 0 until world.muscleCount) world.setMuscleTarget(m, replayMuscle[m].toFloat())
 } }
 
 internal fun DemoSession.replayCheckHash(ln: PlayerLog.Line) { with(state) {

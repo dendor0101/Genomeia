@@ -38,13 +38,13 @@ internal fun BodyState.resolveBoneBounds(finalPass: Boolean) {
 
 private fun BodyState.fitBoneToBounds(bone: Int, finalPass: Boolean) {
     val ids = rigidBones[bone]
-    var lowX = Double.NEGATIVE_INFINITY
-    var lowY = Double.NEGATIVE_INFINITY
-    var highX = Double.POSITIVE_INFINITY
-    var highY = Double.POSITIVE_INFINITY
-    var mass = 0.0
-    var momentumX = 0.0
-    var momentumY = 0.0
+    var lowX = Float.NEGATIVE_INFINITY
+    var lowY = Float.NEGATIVE_INFINITY
+    var highX = Float.POSITIVE_INFINITY
+    var highY = Float.POSITIVE_INFINITY
+    var mass = 0.0f
+    var momentumX = 0.0f
+    var momentumY = 0.0f
     for (i in ids) {
         if (!movableBoneMember(i, bone)) continue
         val r = radius[i]
@@ -53,7 +53,7 @@ private fun BodyState.fitBoneToBounds(bone: Int, finalPass: Boolean) {
         lowY = maxOf(lowY, boundsMinY + r - py[i])
         highY = minOf(highY, boundsMaxY - r - py[i])
         if (finalPass) {
-            val m = 1.0 / restInvMass[i]
+            val m = 1.0f / restInvMass[i]
             mass += m
             momentumX += m * vx[i]
             momentumY += m * vy[i]
@@ -61,11 +61,11 @@ private fun BodyState.fitBoneToBounds(bone: Int, finalPass: Boolean) {
     }
     val dx = wallShift(lowX, highX)
     val dy = wallShift(lowY, highY)
-    if (dx == 0.0 && dy == 0.0 && lowX <= highX && lowY <= highY) return
+    if (dx == 0.0f && dy == 0.0f && lowX <= highX && lowY <= highY) return
     // На подшаге восстановление скоростей учитывает сдвиг. После последнего
     // подшага гасим поступательную скорость в стену, сохраняя вращение.
-    val stopX = if (finalPass && mass > 0 && dx * momentumX < 0) momentumX / mass else 0.0
-    val stopY = if (finalPass && mass > 0 && dy * momentumY < 0) momentumY / mass else 0.0
+    val stopX = if (finalPass && mass > 0 && dx * momentumX < 0) momentumX / mass else 0.0f
+    val stopY = if (finalPass && mass > 0 && dy * momentumY < 0) momentumY / mass else 0.0f
     // Рамка — опора и для кости: её группа в этом тике из учёта импульса выходит (TickMomentum.block).
     val tm = if (cancelSpinOn) tickMomentum else null
     for (i in ids) {
@@ -77,7 +77,7 @@ private fun BodyState.fitBoneToBounds(bone: Int, finalPass: Boolean) {
         if (finalPass) {
             vx[i] -= stopX
             vy[i] -= stopY
-            if (invMass[i] == 0.0) { prevX[i] = px[i]; prevY[i] = py[i] }
+            if (invMass[i] == 0.0f) { prevX[i] = px[i]; prevY[i] = py[i] }
         }
     }
 }
@@ -87,8 +87,8 @@ private fun BodyState.movableBoneMember(i: Int, bone: Int): Boolean =
 
 // Если кость шире рамки, жёсткого переноса по этой оси не существует.
 // Центрируем избыток поровну и ограничиваем только выступающие координаты.
-private fun wallShift(low: Double, high: Double): Double =
-    if (low > high) (low + high) * 0.5 else 0.0.coerceIn(low, high)
+private fun wallShift(low: Float, high: Float): Float =
+    if (low > high) (low + high) * 0.5f else 0.0f.coerceIn(low, high)
 
-private fun wallCoordinate(x: Double, min: Double, max: Double, r: Double): Double =
-    if (min + r > max - r) (min + max) * 0.5 else x.coerceIn(min + r, max - r)
+private fun wallCoordinate(x: Float, min: Float, max: Float, r: Float): Float =
+    if (min + r > max - r) (min + max) * 0.5f else x.coerceIn(min + r, max - r)

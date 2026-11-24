@@ -80,7 +80,7 @@ fun main(args: Array<String>) {
     val game = gameWorld(def, GAME_WORLD_SCALE, sleep = null, bounds = true)
     val c0 = listOf(stand, game).map { com(it.first, it.second, def.count) }
     for (t in 0 until 600) {
-        stand.first.setAllMuscleTargets(if (gaitOn(t)) 1.0 else 0.0)
+        stand.first.setAllMuscleTargets((if (gaitOn(t)) 1.0 else 0.0).toFloat())
         gaitCells(game.first, game.second, muscle, t)
         for (w in listOf(stand, game)) w.first.step()
     }
@@ -125,7 +125,7 @@ private fun growthSection(genome: Genome, layout: BakedLayout, def: BodyDefiniti
     for (g in conditions) {
         val w = PhysicsWorld(PhysicsConfig(), workers = null, scale = GAME_WORLD_SCALE)
         w.state.quiet = true
-        w.setBounds(0.0, 0.0, 128 * 0.048, 128 * 0.048)
+        w.setBounds(0.0f, 0.0f, (128 * 0.048).toFloat(), (128 * 0.048).toFloat())
         val body = w.addBody(def, BooleanArray(def.count) { it == zygote },
             boneOn = if (g.bonesAtBirth) null else BooleanArray(def.count))
         val first = w.bodyFirst(body)
@@ -149,7 +149,7 @@ private fun growthSection(genome: Genome, layout: BakedLayout, def: BodyDefiniti
                 if (g.muscles) gaitCells(w, first, muscle, tick)
                 if (g.kicks && tick % 40 == 0) {
                     val v = (if ((tick / 40) % 2 == 0) 1.0 else -1.0) * w.meanLinkLength / DT
-                    for (s in 0 until def.count) if (!w.isUnborn(first + s)) { w.setVelocity(first + s, v, 0.5 * v); w.wake(first + s) }
+                    for (s in 0 until def.count) if (!w.isUnborn(first + s)) { w.setVelocity(first + s, v.toFloat(), (0.5 * v).toFloat()); w.wake(first + s) }
                 }
                 w.step(); tick++
                 tears.count(w, first, def, muscle, bornAt, tick)
@@ -257,7 +257,7 @@ private fun afterGrowth(wf: Pair<PhysicsWorld, Int>, def: BodyDefinition, muscle
     }
     val c0 = com(w, first, def.count)
     val v = 2.0 * w.meanLinkLength / DT
-    for (s in 0 until def.count) if (!w.state.cellDead[first + s]) { w.setVelocity(first + s, v, 0.0); w.wake(first + s) }
+    for (s in 0 until def.count) if (!w.state.cellDead[first + s]) { w.setVelocity(first + s, v.toFloat(), 0.0f); w.wake(first + s) }
     repeat(120) { w.step() }
     val c1 = com(w, first, def.count)
     for (t in 0 until 240) { gaitCells(w, first, muscle, t); w.step() }
@@ -277,12 +277,12 @@ private class Variant(val name: String, val build: () -> Pair<PhysicsWorld, Int>
         val c0 = com(w, first, n)
         if (scenario == Scenario.KICK) {
             val v = 2.0 * w.meanLinkLength / DT
-            for (s in 0 until n) { w.setVelocity(first + s, v, 0.0); w.wake(first + s) }
+            for (s in 0 until n) { w.setVelocity(first + s, v.toFloat(), 0.0f); w.wake(first + s) }
         }
         for (t in 0 until ticks) {
             if (scenario == Scenario.GAIT) gaitCells(w, first, muscle, t)
             w.step()
-            for (s in 0 until n) { trace[t][2 * s] = w.x[first + s].toRawBits(); trace[t][2 * s + 1] = w.y[first + s].toRawBits() }
+            for (s in 0 until n) { trace[t][2 * s] = w.x[first + s].toRawBits().toLong(); trace[t][2 * s + 1] = w.y[first + s].toRawBits().toLong() }
         }
         val c1 = com(w, first, n)
         return Run(name, trace, hypot(c1[0] - c0[0], c1[1] - c0[1]), w.state.tornTotal, w.state.deadCount)
@@ -310,7 +310,7 @@ private fun gameWorld(def: BodyDefinition, scale: WorldScale, sleep: Boolean?, b
     val w = PhysicsWorld(PhysicsConfig(), workers = null, scale = scale)
     w.state.quiet = true
     if (sleep != null) w.sleepOn = sleep
-    if (bounds) w.setBounds(0.0, 0.0, 128 * 0.048, 128 * 0.048)
+    if (bounds) w.setBounds(0.0f, 0.0f, (128 * 0.048).toFloat(), (128 * 0.048).toFloat())
     val body = w.addBody(def, BooleanArray(def.count) { true })
     return w to w.bodyFirst(body)
 }

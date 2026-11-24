@@ -42,7 +42,7 @@ fun main(args: Array<String>) {
     fun world() = PhysicsWorld(config, workers = null, scale = scale).apply { state.quiet = true; sleepOn = false; addBody(seed) }
     fun gait(vararg worlds: PhysicsWorld) = repeat(ticks) { tick ->
         val on = if (tick % 40 < 20) 1.0 else 0.0
-        for (w in worlds) { w.setAllMuscleTargets(on); w.step() }
+        for (w in worlds) { w.setAllMuscleTargets(on.toFloat()); w.step() }
     }
     var ok = true
     fun intact(label: String, w: PhysicsWorld, first: Int, count: Int): String {
@@ -65,7 +65,7 @@ fun main(args: Array<String>) {
 
     val static = world(); val grown = world()
     val first = static.bodyFirst(static.addBody(target, mask(k1))); grown.addBody(target, mask(k0))
-    for (j in k0 until k1) { val c = order[j]; grown.activate(first + c, target.x[c].toDouble(), target.y[c].toDouble()) }
+    for (j in k0 until k1) { val c = order[j]; grown.activate(first + c, target.x[c].toDouble().toFloat(), target.y[c].toDouble().toFloat()) }
     val a = stateSnapshot(static.state); val b = stateSnapshot(grown.state)
     val diff = (a.keys + b.keys).filter { a[it] != b[it] && it !in growing && orderOnly.none { r -> r.containsMatchIn(it) } }.sorted()
     if (diff.isNotEmpty()) { ok = false; println("PARTIAL рождение на месте покоя разошлось с маской: $diff") }

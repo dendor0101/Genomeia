@@ -23,7 +23,7 @@ import kotlin.math.sqrt
 internal fun DemoWindow.handleInput() { with(session) { with(state) {
     tmp.set(Gdx.input.x.toFloat(), Gdx.input.y.toFloat(), 0f)
     viewport.unproject(tmp)
-    world.dragTo(tmp.x.toDouble(), tmp.y.toDouble())
+    world.dragTo(tmp.x.toDouble().toFloat(), tmp.y.toDouble().toFloat())
 
     // Диалог забирает мышь ПЕРВЫМ. Иначе клик по ползунку, который висит поверх
     // тела, одновременно хватал бы вершину под ним.
@@ -148,7 +148,7 @@ internal fun DemoWindow.nearestParticle(): Int { with(session) { with(state) {
         if (cellDead[i]) continue
         val dx = fx(i) - mouseX; val dy = fy(i) - mouseY
         val d2 = dx * dx + dy * dy
-        if (d2 < bestD2) { bestD2 = d2; best = i }
+        if (d2 < bestD2) { bestD2 = d2.toDouble(); best = i }
     }
     return best
 } } }
@@ -164,11 +164,11 @@ internal fun DemoWindow.muscleUnderMouse(): Int { with(session) { with(state) {
         val xi = fx(i); val yi = fy(i)
         val ex = fx(j) - xi; val ey = fy(j) - yi
         val len2 = ex * ex + ey * ey
-        var t = if (len2 < 1e-18) 0.0 else ((mouseX - xi) * ex + (mouseY - yi) * ey) / len2
-        if (t < 0.0) t = 0.0 else if (t > 1.0) t = 1.0
+        var t = if (len2 < 1e-18f) 0.0f else ((mouseX - xi) * ex + (mouseY - yi) * ey) / len2
+        if (t < 0f) t = 0f else if (t > 1f) t = 1f
         val dx = mouseX - (xi + ex * t); val dy = mouseY - (yi + ey * t)
         val d2 = dx * dx + dy * dy
-        if (d2 < bestD2) { bestD2 = d2; best = m }
+        if (d2 < bestD2) { bestD2 = d2.toDouble(); best = m }
     }
     return best
 } } }

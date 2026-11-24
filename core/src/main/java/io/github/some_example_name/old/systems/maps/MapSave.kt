@@ -425,7 +425,11 @@ class MapSave(
          * 4 — террейн — неподвижные частицы мира физики, а не тело из плиток (StaticTerrain): другие
          * снимок моста и мир физики. Формат 3 не читается: мягкий террейн в новом мире не продолжить.
          */
-        private const val FORMAT_VERSION = 4
+        /**
+         * 5 — физика во float, начало её координат в центре мира (PhysicsBridge.originX): в снимке
+         * моста есть начало координат. Формат 4 не читается: его мир физики стоит от 0 до W.
+         */
+        private const val FORMAT_VERSION = 5
 
         private const val PREVIEW = "preview.png"
         private const val META = "meta.bin"

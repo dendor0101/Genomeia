@@ -101,7 +101,7 @@ fun main(args: Array<String>) {
                 // быстрая клетка, в длинах связи за тик (засыпание меряется местом, см. SLEEP_DRIFT_CELLS).
                 with(p.demo.state) {
                     var top2 = 0.0
-                    for (i in 0 until n) if (!cellDead[i]) top2 = maxOf(top2, vx[i] * vx[i] + vy[i] * vy[i])
+                    for (i in 0 until n) if (!cellDead[i]) top2 = maxOf(top2, (vx[i] * vx[i] + vy[i] * vy[i]).toDouble())
                     println("SLEEP on=${sleep.on} asleep=${sleep.asleepCount}/$organismCount" +
                         " max_speed_cells_tick=%.2e".format(kotlin.math.sqrt(top2) * dt / body.meanLinkLength))
                 }

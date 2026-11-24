@@ -22,7 +22,7 @@ package io.github.some_example_name.physics
  * обходах (спящие и мёртвые решатель пропускает). Четверть: мир растёт не больше чем на
  * треть сверх живого.
  */
-const val COMPACT_DEAD_SHARE = 0.25
+const val COMPACT_DEAD_SHARE = 0.25f
 
 /**
  * Наименьший блок пула свободных частиц (PhysicsWorld.addFree). Следующий блок — размером со
@@ -70,8 +70,14 @@ class PhysicsWorld(
 
     /** Загрузить набор тел целиком — одно тело с номером 0. Прежнее содержимое мира пропадает. */
     fun load(definition: BodyDefinition) {
-        // Тела загружаются целыми: временных связей роста у них нет (TempLinks.kt).
-        simulation.load(definition.forBorn(null))
+        // Тела загружаются целыми: временных связей роста у них нет (TempLinks.kt). Связи и треугольники — «волнами»
+        // (WaveOrder.kt): соседние в памяти не делят частиц, биты те же.
+        loadOrdered(definition.forBorn(null).inWaveOrder())
+    }
+
+    /** Загрузка описания, уже приведённого к порядку мира (forBorn, inWaveOrder). */
+    private fun loadOrdered(definition: BodyDefinition) {
+        simulation.load(definition)
         bodyIds = 0; removedParticles = 0
         java.util.Arrays.fill(bodyStateOf, 0)
         record(0, definition.count, 0, definition.muscleClusters.size)
@@ -100,9 +106,10 @@ class PhysicsWorld(
      */
     fun addBody(body: BodyDefinition, born: BooleanArray? = null, boneOn: BooleanArray? = null): Int {
         // Временные связи роста, которые рождённые клетки уже сняли бы, в мир не идут: взрослое тело — без них (TempLinks.kt).
-        val definition = body.forBorn(born)
+        // Связи и треугольники — «волнами» (WaveOrder.kt).
+        val definition = body.forBorn(born).inWaveOrder()
         if (state.n == 0) {
-            if (born == null && boneOn == null) { load(definition); reset(); return 0 }
+            if (born == null && boneOn == null) { loadOrdered(definition); reset(); return 0 }
             // Растущее тело дописывается в непустой мир (загрузка строит тело целиком). Клиент-
             // игра начинает с пустого мира и зиготы: первым телом встаёт пул свободных частиц
             // (ему нужен WorldScale) — он игре всё равно нужен под субстанции.
@@ -176,14 +183,14 @@ class PhysicsWorld(
      * Родить клетку растущего тела (addBody с born): частица оживает в точке ([x], [y]) со
      * скоростью ([vx], [vy]) вместе с рёбрами к рождённым соседям и треугольниками.
      */
-    fun activate(cell: Int, x: Double, y: Double, vx: Double = 0.0, vy: Double = 0.0) =
+    fun activate(cell: Int, x: Float, y: Float, vx: Float = 0.0f, vy: Float = 0.0f) =
         state.activateCell(cell, x, y, vx, vy)
 
     /**
      * Где родиться клетке [cell] в нынешней позе рождённых соседей (поворот и масштаб позы
      * покоя): x, y, vx, vy в [out]. См. BodyState.birthPlacement.
      */
-    fun birthPlacement(cell: Int, out: DoubleArray = DoubleArray(4)): DoubleArray {
+    fun birthPlacement(cell: Int, out: FloatArray = FloatArray(4)): FloatArray {
         state.birthPlacement(cell, out); return out
     }
 
@@ -198,7 +205,7 @@ class PhysicsWorld(
      * выталкивают дорастающие связи (BodyState.divisionPlacement, DIVISION_START_FRACTION).
      */
     fun activateFromParent(cell: Int, parent: Int) {
-        val p = DoubleArray(4)
+        val p = FloatArray(4)
         state.divisionPlacement(cell, parent, p)
         state.activateCell(cell, p[0], p[1], p[2], p[3])
     }
@@ -300,8 +307,8 @@ class PhysicsWorld(
      * среды [drag] (1 — как среда мира). Возвращает номер
      * частицы. Цена — по соседям, кроме редкого роста пула (дописывание тела-пула).
      */
-    fun addFree(x: Double, y: Double, radius: Double, vx: Double = 0.0, vy: Double = 0.0, mass: Double = Double.NaN,
-                drag: Double = 1.0): Int {
+    fun addFree(x: Float, y: Float, radius: Float, vx: Float = 0.0f, vy: Float = 0.0f, mass: Float = Float.NaN,
+                drag: Float = 1.0f): Int {
         if (freeStackN == 0) growFreePool()
         val id = freeStack[--freeStackN]
         state.activateFree(freeParticle(id), x, y, vx, vy, radius, mass, drag)
@@ -318,7 +325,7 @@ class PhysicsWorld(
      * неподвижной сетке, поштучные проходы пропускают её по нулю обратной массы, а при
      * включённом сне через SLEEP_TICKS она засыпает насовсем.
      */
-    fun addFixed(x: Double, y: Double, radius: Double): Int = addFree(x, y, radius, mass = Double.POSITIVE_INFINITY)
+    fun addFixed(x: Float, y: Float, radius: Float): Int = addFree(x, y, radius, mass = Float.POSITIVE_INFINITY)
 
     /** Убрать свободную частицу [id] (живую или убитую физикой): её слот снова ждёт рождения. */
     fun removeFree(id: Int) {
@@ -358,7 +365,7 @@ class PhysicsWorld(
         val k = maxOf(FREE_POOL_BLOCK, freeSlots)
         // Радиус слота — масштаба мира: по наибольшему радиусу считается ячейка сетки контактов.
         val r0 = 0.5f * (if (state.n > 0) state.linkScale else state.worldScale!!.meanLinkLength)
-        val side = kotlin.math.ceil(kotlin.math.sqrt(k.toDouble())).toInt()
+        val side = kotlin.math.ceil(kotlin.math.sqrt(k.toFloat())).toInt()
         val step = 8f * r0
         val def = BodyDefinition(
             x = FloatArray(k) { (it % side) * step }, y = FloatArray(k) { (it / side) * step },
@@ -403,7 +410,7 @@ class PhysicsWorld(
         out.writeUTF(materialKey())
         val scale = state.worldScale!!
         out.writeInt(java.lang.Float.floatToRawIntBits(scale.meanLinkLength))
-        out.writeLong(java.lang.Double.doubleToRawLongBits(scale.meanCellArea))
+        out.writeLong(java.lang.Double.doubleToRawLongBits(scale.meanCellArea.toDouble()))
         out.writeDefinition(state.body)
         out.writeInt(bodyIds)
         out.writeInts(bodyFirstOf, bodyIds); out.writeInts(bodyCountOf, bodyIds)
@@ -430,7 +437,7 @@ class PhysicsWorld(
         val material = input.readUTF()
         require(material == materialKey()) { "снимок записан с другим материалом мира" }
         state.worldScale = WorldScale(java.lang.Float.intBitsToFloat(input.readInt()),
-            java.lang.Double.longBitsToDouble(input.readLong()))
+            java.lang.Double.longBitsToDouble(input.readLong()).toFloat())
         simulation.load(input.readDefinition(version))
         bodyIds = input.readInt()
         bodyFirstOf = input.readInts(8); bodyCountOf = input.readInts(8)
@@ -453,11 +460,13 @@ class PhysicsWorld(
      * длинам покоя, затем шаг решателя (внутри — SUBSTEPS подшагов). [dt] другой, чем DT, — только у стендов с ускоренными мышцами.
      * Пустой мир (клиент-игра до первой подсадки) не шагает: решатель ещё не заведён.
      */
-    fun step(dt: Double = DT) {
+    fun step(dt: Float = DT) {
         if (state.n == 0) return
         state.clearDeathLogs()
         state.updateMuscles(dt)
+        state.tick0()
         if (state.cellScalesMoving) state.advanceCellScales(dt)
+        state.tick1(21)
         state.easeNewborn()
         state.prepareJoints()
         if (state.cellScalesDirty) state.recomputeCellScales()
@@ -497,9 +506,9 @@ class PhysicsWorld(
     val muscleCount: Int get() = state.muscleTarget.size
 
     /** Цель сокращения мышцы [m]: 0 — расслаблена, 1 — сокращена полностью. */
-    fun setMuscleTarget(m: Int, value: Double) { state.muscleTarget[m] = value }
-    fun muscleTarget(m: Int): Double = state.muscleTarget[m]
-    fun setAllMuscleTargets(value: Double) { state.muscleTarget.fill(value) }
+    fun setMuscleTarget(m: Int, value: Float) { state.muscleTarget[m] = value }
+    fun muscleTarget(m: Int): Float = state.muscleTarget[m]
+    fun setAllMuscleTargets(value: Float) { state.muscleTarget.fill(value) }
 
     /**
      * Команда мышцы клетки [cell]: 0.5 — сократить длину покоя вдвое, 1 — покой,
@@ -599,8 +608,8 @@ class PhysicsWorld(
      * ограничение к неподвижному месту, решается вместе с хваткой (Grip.kt). Террейн: точка на
      * карте, плитка проминается и возвращается в форму. Внешняя сила, как пол.
      */
-    fun setHome(cell: Int, x: Double, y: Double, compliance: Double) {
-        require(compliance >= 0.0) { "податливость не меньше нуля" }
+    fun setHome(cell: Int, x: Float, y: Float, compliance: Float) {
+        require(compliance >= 0.0f) { "податливость не меньше нуля" }
         val st = state
         st.cellHomeX[cell] = x; st.cellHomeY[cell] = y
         if (st.cellHomeCompliance[cell] != compliance) { st.cellHomeCompliance[cell] = compliance; st.gripsDirty = true }
@@ -630,10 +639,10 @@ class PhysicsWorld(
      * порога (шов террейна, Joints.prepareJoints). [wake] = false — концы не будить: связь заведена
      * в покое (шов террейна при сборке мира, который тут же усыпляется — PhysicsWorld.sleepNow).
      */
-    fun addJoint(a: Int, b: Int, rest: Double, compliance: Double, wakeStrain: Double = 0.0, wake: Boolean = true): Int {
+    fun addJoint(a: Int, b: Int, rest: Float, compliance: Float, wakeStrain: Float = 0.0f, wake: Boolean = true): Int {
         val st = state
         require(a != b && !st.cellDead[a] && !st.cellDead[b]) { "связь — между двумя живыми частицами" }
-        require(rest >= 0.0 && compliance >= 0.0) { "длина покоя и податливость не меньше нуля" }
+        require(rest >= 0.0f && compliance >= 0.0f) { "длина покоя и податливость не меньше нуля" }
         if (wake && !st.isFixed(a)) st.sleep.requestWake(a)
         if (wake && !st.isFixed(b)) st.sleep.requestWake(b)
         return st.allocJoint(a, b, rest, compliance, wakeStrain)
@@ -644,15 +653,15 @@ class PhysicsWorld(
     /** Связь [id] жива: заведена и не снята — ни клиентом, ни гибелью конца. */
     fun isJointLive(id: Int): Boolean = id in 0 until state.jointSlots && state.jointLive[id]
 
-    fun setJointCompliance(id: Int, compliance: Double) { state.jointCompliance[id] = compliance }
+    fun setJointCompliance(id: Int, compliance: Float) { state.jointCompliance[id] = compliance }
 
     /** Концы связи — номера частиц мира (уплотнение их перенумеровывает). */
     fun jointA(id: Int): Int = state.jointA[id]
     fun jointB(id: Int): Int = state.jointB[id]
-    fun jointRest(id: Int): Double = state.jointRest[id]
+    fun jointRest(id: Int): Float = state.jointRest[id]
 
     /** Нынешняя длина связи в единицах физики. */
-    fun jointLength(id: Int): Double {
+    fun jointLength(id: Int): Float {
         val a = state.jointA[id]; val b = state.jointB[id]
         return kotlin.math.hypot(x[a] - x[b], y[a] - y[b])
     }
@@ -703,18 +712,18 @@ class PhysicsWorld(
      * Масса клетки [cell] (по умолчанию — по радиусу, как у всех клеток мира). У живой клетки
      * масса её организма пересчитывается сразу; у нерождённой — вступит при рождении.
      */
-    fun setMass(cell: Int, mass: Double) {
-        require(mass > 0.0) { "масса должна быть больше нуля" }
+    fun setMass(cell: Int, mass: Float) {
+        require(mass > 0.0f) { "масса должна быть больше нуля" }
         val st = state
         val alive = !st.cellDead[cell]
         if (alive) st.localComponents.removeCell(cell)
-        st.restInvMass[cell] = 1.0 / mass
+        st.restInvMass[cell] = 1.0f / mass
         if (alive) { st.invMass[cell] = st.restInvMass[cell]; st.localComponents.addCell(cell) }
     }
 
     /** Множитель изотропного сопротивления среды частицы [cell]: 1 — как среда мира. */
-    fun setDrag(cell: Int, scale: Double) {
-        require(scale >= 0.0) { "множитель сопротивления не может быть меньше нуля" }
+    fun setDrag(cell: Int, scale: Float) {
+        require(scale >= 0.0f) { "множитель сопротивления не может быть меньше нуля" }
         state.dragScale[cell] = scale
     }
 
@@ -753,8 +762,8 @@ class PhysicsWorld(
      *
      * Сменилась гравитация — спящие просыпаются: их покой держался без неё ([wakeAll]).
      */
-    fun setEnvironment(gravityY: Double, mediumScale: Double, edgeDragScale: Double, softness: Double, frictionScale: Double) {
-        require(mediumScale >= 0.0 && edgeDragScale >= 0.0 && softness > 0.0 && frictionScale >= 0.0) { "среда мира вне допустимого" }
+    fun setEnvironment(gravityY: Float, mediumScale: Float, edgeDragScale: Float, softness: Float, frictionScale: Float) {
+        require(mediumScale >= 0.0f && edgeDragScale >= 0.0f && softness > 0.0f && frictionScale >= 0.0f) { "среда мира вне допустимого" }
         val env = state.environment
         if (env.gravityY != gravityY) { env.gravityY = gravityY; wakeAll() }
         env.mediumDrag = MEDIUM_DRAG * mediumScale
@@ -782,14 +791,14 @@ class PhysicsWorld(
             if (!s.asleep[o]) continue
             for (i in s.first[o]..s.last[o]) {
                 if (st.organismOf[i] != o) continue
-                if (st.restInvMass[i] > 0.0) s.requestWake(i)
+                if (st.restInvMass[i] > 0.0f) s.requestWake(i)
                 break
             }
         }
     }
 
     /** Рамка мира: частицы не выходят за прямоугольник (игра — границы сетки). */
-    fun setBounds(minX: Double, minY: Double, maxX: Double, maxY: Double) {
+    fun setBounds(minX: Float, minY: Float, maxX: Float, maxY: Float) {
         require(maxX > minX && maxY > minY) { "пустая рамка мира" }
         val st = state
         st.boundsOn = true; st.boundsMinX = minX; st.boundsMinY = minY; st.boundsMaxX = maxX; st.boundsMaxY = maxY
@@ -813,7 +822,7 @@ class PhysicsWorld(
     }
 
     /** Куда тянуть схваченную клетку. */
-    fun dragTo(x: Double, y: Double) { state.mouseX = x; state.mouseY = y }
+    fun dragTo(x: Float, y: Float) { state.mouseX = x; state.mouseY = y }
 
     /** Отпустить схваченную клетку. */
     fun release() {
@@ -827,16 +836,16 @@ class PhysicsWorld(
      * Назначить скорость частице мимо решателя (удар, выстрел). Спящий организм такую
      * скорость обнулит — разбудить его [wake] (одного вызова на организм достаточно).
      */
-    fun setVelocity(i: Int, vx: Double, vy: Double) { state.vx[i] = vx; state.vy[i] = vy }
+    fun setVelocity(i: Int, vx: Float, vy: Float) { state.vx[i] = vx; state.vy[i] = vy }
 
     /** Разовая тяга за точку тела. Кость получает общий импульс и момент в точке приложения. */
-    fun pullToward(i: Int, x: Double, y: Double) {
+    fun pullToward(i: Int, x: Float, y: Float) {
         wake(i)
         state.pullToward(i, x, y, DT)
     }
 
     /** Переставить частицу в точку без скорости от переноса (prev там же). */
-    fun place(i: Int, x: Double, y: Double) {
+    fun place(i: Int, x: Float, y: Float) {
         state.px[i] = x; state.py[i] = y
         state.prevX[i] = x; state.prevY[i] = y
     }
@@ -858,10 +867,10 @@ class PhysicsWorld(
     // --- выходы ---
 
     val particleCount: Int get() = state.n
-    val x: DoubleArray get() = state.px
-    val y: DoubleArray get() = state.py
-    val vx: DoubleArray get() = state.vx
-    val vy: DoubleArray get() = state.vy
+    val x: FloatArray get() = state.px
+    val y: FloatArray get() = state.py
+    val vx: FloatArray get() = state.vx
+    val vy: FloatArray get() = state.vy
     val organismOf: IntArray get() = state.organismOf
     val organismCount: Int get() = state.organismCount
     val meanLinkLength: Float get() = state.linkScale

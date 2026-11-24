@@ -71,7 +71,7 @@ const val TERRAIN_GROUP = 1
 /** Постоянные мира игры (PhysicsUnits.GAME_WORLD_SCALE): клетка радиуса 0.5 — масса 1. */
 val STAND_WORLD_SCALE = WorldScale(
     meanLinkLength = (GAME_LINK * PHYSICS_PER_GAME).toFloat(),
-    meanCellArea = (GAME_RADIUS * PHYSICS_PER_GAME) * (GAME_RADIUS * PHYSICS_PER_GAME),
+    meanCellArea = ((GAME_RADIUS * PHYSICS_PER_GAME) * (GAME_RADIUS * PHYSICS_PER_GAME)).toFloat(),
 )
 
 /** Скорость игры (доля прежнего шага 7.5 за тик) → единицы мира физики в секунду, как у моста. */
@@ -88,4 +88,4 @@ fun linksPerTick(v: Double): Double = v * PHYSICS_LINK / DT
 fun toLinksPerTick(v: Double): Double = v * DT / PHYSICS_LINK
 
 /** Потолок скорости решателя в связях за тик. */
-const val SPEED_CAP: Double = MAX_SPEED_CELLS_PER_TICK
+const val SPEED_CAP: Double = MAX_SPEED_CELLS_PER_TICK.toDouble()

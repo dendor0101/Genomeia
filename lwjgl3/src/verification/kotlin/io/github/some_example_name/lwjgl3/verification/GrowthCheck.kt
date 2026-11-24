@@ -44,7 +44,7 @@ private fun grow(def: BodyDefinition, stages: List<Stage>, zygote: Int, ticksPer
     println("\n== $ticksPerStage тиков на стадию")
     val w = PhysicsWorld(PhysicsConfig(), workers = null, scale = GAME_WORLD_SCALE)
     w.state.quiet = true
-    w.setBounds(0.0, 0.0, 128 * PHYSICS_PER_GAME, 128 * PHYSICS_PER_GAME)
+    w.setBounds(0.0f, 0.0f, 128 * PHYSICS_PER_GAME, 128 * PHYSICS_PER_GAME)
     val body = w.addBody(def, BooleanArray(def.count) { it == zygote }, boneOn = BooleanArray(def.count))
     val first = w.bodyFirst(body)
     val bornAt = IntArray(def.count) { -1 }

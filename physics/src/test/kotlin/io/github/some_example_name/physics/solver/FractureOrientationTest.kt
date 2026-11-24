@@ -21,43 +21,43 @@ class FractureOrientationTest {
         val body = triangles(130)
         val topology = BakedTopology(body)
         val solve = FractureOrientation(body, topology)
-        val x = DoubleArray(body.count) { body.x[it].toDouble() }
-        val y = DoubleArray(body.count) { -body.y[it].toDouble() }
+        val x = FloatArray(body.count) { body.x[it].toFloat() }
+        val y = FloatArray(body.count) { -body.y[it].toFloat() }
         val originalX = x.copyOf(); val originalY = y.copyOf()
-        val w = DoubleArray(body.count) { if (it % 3 == 2) 1.0 else 0.0 }
+        val w = FloatArray(body.count) { if (it % 3 == 2) 1.0f else 0.0f }
         // Дубликат треугольника, обратный порядок заявок, биты 63/64, уже мёртвый t=65.
         topology.kill(topology.edgeOf(195, 196))
         val ids = intArrayOf(387, 193, 189, 192, 195)
         solve.solve(ids, ids.size, x, y, w)
         for (t in 0 until body.triCount) {
-            if (t == 63 || t == 64 || t == 129) assertEquals(0.0, y[3 * t + 2], 1e-15)
-            else assertEquals(originalY[3 * t + 2], y[3 * t + 2], 0.0)
+            if (t == 63 || t == 64 || t == 129) assertEquals(0.0f, y[3 * t + 2], F_POS)
+            else assertEquals(originalY[3 * t + 2], y[3 * t + 2], 0.0f)
         }
-        assertArrayEquals(originalX, x, 0.0)
+        assertArrayEquals(originalX, x, 0.0f)
         // Буферы не сохраняют заявки: новый проход не должен трогать старые треугольники.
         originalY.copyInto(y)
         solve.solve(intArrayOf(0), 1, x, y, w)
-        assertEquals(0.0, y[2], 1e-15)
-        for (t in 1 until body.triCount) assertEquals(originalY[3 * t + 2], y[3 * t + 2], 0.0)
+        assertEquals(0.0f, y[2], F_POS)
+        for (t in 1 until body.triCount) assertEquals(originalY[3 * t + 2], y[3 * t + 2], 0.0f)
     }
 
     @Test fun incidentTrianglesAreResolvedBeforeTheirEdgesDisappear() {
         val body = triangles(1)
         val topology = BakedTopology(body)
         val solve = FractureOrientation(body, topology)
-        val x = doubleArrayOf(0.0, 1.0, 0.2)
-        val y = doubleArrayOf(0.0, 0.0, -0.4)
-        val w = doubleArrayOf(1.0, 0.25, 2.0)
+        val x = floatArrayOf(0.0f, 1.0f, 0.2f)
+        val y = floatArrayOf(0.0f, 0.0f, -0.4f)
+        val w = floatArrayOf(1.0f, 0.25f, 2.0f)
         val oldX = x.copyOf(); val oldY = y.copyOf()
         solve.solve(intArrayOf(0, 1), 2, x, y, w)
         val area = (x[1] - x[0]) * (y[2] - y[0]) - (y[1] - y[0]) * (x[2] - x[0])
-        assertEquals(0.0, area, 1e-15)
-        var dx = 0.0; var dy = 0.0; var torque = 0.0
+        assertEquals(0.0f, area, F_POS)
+        var dx = 0.0f; var dy = 0.0f; var torque = 0.0f
         for (i in x.indices) {
             val ix = (x[i] - oldX[i]) / w[i]; val iy = (y[i] - oldY[i]) / w[i]
             dx += ix; dy += iy; torque += oldX[i] * iy - oldY[i] * ix
         }
-        assertEquals(0.0, dx, 1e-15); assertEquals(0.0, dy, 1e-15); assertEquals(0.0, torque, 1e-15)
+        assertEquals(0.0f, dx, F_POS); assertEquals(0.0f, dy, F_POS); assertEquals(0.0f, torque, F_POS)
         topology.kill(topology.edgeOf(0, 1))
         assertFalse(topology.triAlive[0])
     }
@@ -65,11 +65,11 @@ class FractureOrientationTest {
     @Test fun validTrianglesAndEmptyRequestsAreBitwiseUntouched() {
         val body = triangles(1); val topology = BakedTopology(body)
         val solve = FractureOrientation(body, topology)
-        val x = doubleArrayOf(0.0, 1.0, 0.2); val y = doubleArrayOf(0.0, 0.0, 0.4)
+        val x = floatArrayOf(0.0f, 1.0f, 0.2f); val y = floatArrayOf(0.0f, 0.0f, 0.4f)
         val oldX = x.copyOf(); val oldY = y.copyOf()
-        solve.solve(intArrayOf(0), 1, x, y, DoubleArray(3) { 1.0 })
-        solve.solve(intArrayOf(2), 0, x, y, DoubleArray(3) { 1.0 })
-        assertArrayEquals(oldX, x, 0.0); assertArrayEquals(oldY, y, 0.0)
+        solve.solve(intArrayOf(0), 1, x, y, FloatArray(3) { 1.0f })
+        solve.solve(intArrayOf(2), 0, x, y, FloatArray(3) { 1.0f })
+        assertArrayEquals(oldX, x, 0.0f); assertArrayEquals(oldY, y, 0.0f)
     }
 
     @Test fun sparseSelectionMatchesCanonicalOrderOnSharedVertices() {
@@ -87,10 +87,10 @@ class FractureOrientationTest {
         val topology = BakedTopology(body)
         topology.triAlive[64] = false
         val solve = FractureOrientation(body, topology)
-        val x = DoubleArray(count) { body.x[it].toDouble() }
-        val y = DoubleArray(count) { -body.y[it].toDouble() }
+        val x = FloatArray(count) { body.x[it].toFloat() }
+        val y = FloatArray(count) { -body.y[it].toFloat() }
         val expectedX = x.copyOf(); val expectedY = y.copyOf()
-        val w = DoubleArray(count) { 1.0 / (1 + it % 3) }
+        val w = FloatArray(count) { 1.0f / (1 + it % 3) }
         for (ids in arrayOf(intArrayOf(128, 66, 65, 0, 65), intArrayOf(1, 63, 129))) {
             val touched = BooleanArray(count)
             for (v in ids) touched[v] = true
@@ -100,10 +100,10 @@ class FractureOrientationTest {
                 if (!touched[a] && !touched[b] && !touched[c]) continue
                 val area = (expectedX[b] - expectedX[a]) * (expectedY[c] - expectedY[a]) -
                     (expectedY[b] - expectedY[a]) * (expectedX[c] - expectedX[a])
-                if (area < 0.0) projectBoundaryOrientation(a, b, c, area, expectedX, expectedY, w)
+                if (area < 0.0f) projectBoundaryOrientation(a, b, c, area, expectedX, expectedY, w)
             }
             solve.solve(ids, ids.size, x, y, w)
-            assertArrayEquals(expectedX, x, 0.0); assertArrayEquals(expectedY, y, 0.0)
+            assertArrayEquals(expectedX, x, 0.0f); assertArrayEquals(expectedY, y, 0.0f)
         }
     }
 }

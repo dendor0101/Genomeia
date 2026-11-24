@@ -36,7 +36,7 @@ internal fun DemoWindow.drawBody() { with(session) { with(state) {
         for (t in 0 until triCount) {
             val i0 = triA[t]; val i1 = triB[t]; val i2 = triC[t]
             val m = triMuscle[t]
-            val act = if (m >= 0) muscleActivation[m] else 0.0
+            val act = if (m >= 0) muscleActivation[m] else 0f
             // ТРЕУГОЛЬНИК НА КРАЮ МЫШЦЫ КРАСИТСЯ ЧАСТИЧНО — по доле мышечных вершин.
             //
             // Площадь сокращает только тот, у которого все три вершины в одном кластере и
@@ -58,7 +58,7 @@ internal fun DemoWindow.drawBody() { with(session) { with(state) {
                 sleep.isAsleep(organismOf[i0]) -> SLEEP_FILL
                 boneOf[i0] != -1 && boneOf[i0] == boneOf[i1] && boneOf[i0] == boneOf[i2] ->
                     if (bonesRigid) BONE_FILL else BONE_FILL_OFF
-                m >= 0 -> if (act > 0.002) tmpColor.set(MUSCLE_IDLE).lerp(MUSCLE_FILL, act.toFloat()) else MUSCLE_IDLE
+                m >= 0 -> if (act > 0.002f) tmpColor.set(MUSCLE_IDLE).lerp(MUSCLE_FILL, act) else MUSCLE_IDLE
                 mv >= 0 -> {
                     val a2 = muscleActivation[mv]
                     var share = 0

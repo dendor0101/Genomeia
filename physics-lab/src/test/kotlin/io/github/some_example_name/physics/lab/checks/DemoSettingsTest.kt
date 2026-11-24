@@ -24,7 +24,7 @@ class DemoSettingsTest {
         val parameters = mutableMapOf("CT_LEGACY" to "", "RB_WATCH" to "1 2\n3", "RB_MAXSTEP" to "0.4")
         val config = PhysicsConfig(parameters)
         parameters["RB_MAXSTEP"] = "9"
-        assertEquals(0.4, config.CONTACT_MAX_STEP, 0.0)
+        assertEquals(0.4f, config.CONTACT_MAX_STEP, 0.0f)
         val out = StringWriter()
         DemoSettings.writeHeader(out, config)
         val log = files.newFile().apply { writeText(out.toString()) }
@@ -65,8 +65,8 @@ class DemoSettingsTest {
         contacts.abLegacy = true
         assertFalse(other.state.contacts!!.abLegacy)
         contacts.abLegacy = false
-        assertEquals(1.5, contacts.omegaPair, 0.0)
-        assertEquals(2.0, other.state.contacts!!.omegaPair, 0.0)
+        assertEquals(1.5f, contacts.omegaPair, 0.0f)
+        assertEquals(2.0f, other.state.contacts!!.omegaPair, 0.0f)
         assertFalse(contacts.killOnDeep)
 
         val logFile = files.newFile()
@@ -75,8 +75,8 @@ class DemoSettingsTest {
         repeat(30) { live.stepOnce() }
         live.act('R')
         live.act('D', 0)
-        live.state.mouseX = live.state.px[0] + 0.02
-        live.state.mouseY = live.state.py[0] + 0.01
+        live.state.mouseX = (live.state.px[0] + 0.02).toFloat()
+        live.state.mouseY = (live.state.py[0] + 0.01).toFloat()
         repeat(30) { live.stepOnce() }
         live.act('U')
         live.closePlayerLog()

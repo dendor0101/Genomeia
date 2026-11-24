@@ -25,6 +25,19 @@ val STAND_CONFIG: Map<String, String> = System.getProperty("stands.config").orEm
 val STAND_FIBERS: Boolean = STAND_CONFIG["MX_FIBER"]?.toDoubleOrNull() != 0.0
 
 /**
+ * Система отсчёта всего прогона: -Pframe=shift — сцены стоят в (1000, 700) клетках от начала координат, как в дальнем углу
+ * большой карты (Frame.NAMED). Опыт 21.11 «float вместо double»: шаг float в координатах там в 2^9 раз крупнее, чем у
+ * начала. По умолчанию — сцена как написана.
+ */
+val STAND_FRAME: Frame = System.getProperty("stands.frame")?.takeIf { it.isNotBlank() }?.let { id ->
+    // shift:X,Y — свой сдвиг в клетках: в каком удалении от начала координат хватает точности float (находка 35).
+    if (id.startsWith("shift:")) {
+        val (sx, sy) = id.removePrefix("shift:").split(',').map { it.trim().toDouble() }
+        Frame("shift", "сдвиг на ($sx, $sy) клеток", shiftX = sx, shiftY = sy)
+    } else Frame.byId(id) ?: error("нет системы отсчёта $id: ${Frame.NAMED.joinToString { it.id }}")
+} ?: Frame.SCENE
+
+/**
  * Настройки мира стендов: закон волокна — тот же, что у игры (по умолчанию, находка 34); MX_FIBER=k — показатель
  * утолщения k для опыта; поверх — переключатели прогона (STAND_CONFIG).
  */
@@ -113,7 +126,7 @@ class Expectation(val text: String, val probe: String, val from: Int, val to: In
  */
 class StandWorld(workers: PhysicsWorkers? = null, forceParallel: Boolean = false,
                  /** Система отсчёта сцены в мире физики — проверка симметрии. По умолчанию сцена стоит как написана. */
-                 val frame: Frame = Frame.SCENE,
+                 val frame: Frame = STAND_FRAME,
                  /**
                   * Число подшагов ЭТАЛОННОГО решателя; 0 — мир шагает быстрым, как в игре. С эталоном сцена
                   * собирается и ведётся теми же вызовами, меняется только шаг мира (PhysicsWorld.stepReference),
@@ -131,7 +144,7 @@ class StandWorld(workers: PhysicsWorkers? = null, forceParallel: Boolean = false
         // сдвигаются, а свободные частицы сцены лягут в начало мира, а не после тел.
         if (frame.pad) {
             val k = PHYSICS_PER_GAME
-            world.removeFree(world.addFree(frame.x(0.0, 0.0) * k, frame.y(0.0, 0.0) * k, TERRAIN_RADIUS * k))
+            world.removeFree(world.addFree((frame.x(0.0, 0.0) * k).toFloat(), (frame.y(0.0, 0.0) * k).toFloat(), (TERRAIN_RADIUS * k).toFloat()))
         }
     }
 
@@ -282,7 +295,7 @@ class StandWorld(workers: PhysicsWorkers? = null, forceParallel: Boolean = false
         val st = world.state
         var mx = 0.0; var my = 0.0; var l = 0.0; var mass = 0.0
         for (i in 0 until st.n) {
-            if (st.cellDead[i] || st.restInvMass[i] == 0.0) continue
+            if (st.cellDead[i] || st.restInvMass[i] == 0.0f) continue
             val m = 1.0 / st.restInvMass[i]
             val vx = toLinksPerTick(sceneVx(i)); val vy = toLinksPerTick(sceneVy(i))
             mx += m * vx; my += m * vy; l += m * (gameX(i) * vy - gameY(i) * vx); mass += m
@@ -367,8 +380,8 @@ class StandWorld(workers: PhysicsWorkers? = null, forceParallel: Boolean = false
     fun ball(x0: Double, y0: Double, vx: Double = 0.0, vy: Double = 0.0, radius: Double = Variation.current.ballRadius(balls.size)): Int {
         val k = PHYSICS_PER_GAME
         val x = x0 + frame.jiggle(balls.size + 1); val y = y0 + frame.jiggle(balls.size + 4)
-        val id = if (frame.still) world.addFree(x * k, y * k, radius * k, linksPerTick(vx), linksPerTick(vy))
-        else world.addFree(frame.x(x, y) * k, frame.y(x, y) * k, radius * k, linksPerTick(frame.dx(vx, vy)), linksPerTick(frame.dy(vx, vy)))
+        val id = if (frame.still) world.addFree((x * k).toFloat(), (y * k).toFloat(), (radius * k).toFloat(), linksPerTick(vx).toFloat(), linksPerTick(vy).toFloat())
+        else world.addFree((frame.x(x, y) * k).toFloat(), (frame.y(x, y) * k).toFloat(), (radius * k).toFloat(), linksPerTick(frame.dx(vx, vy)).toFloat(), linksPerTick(frame.dy(vx, vy)).toFloat())
         balls.add(id)
         val p = world.freeParticle(id)
         val inv = world.state.restInvMass[p]
@@ -379,7 +392,7 @@ class StandWorld(workers: PhysicsWorkers? = null, forceParallel: Boolean = false
     /** Неподвижная частица рельефа или стенки: бесконечная масса, общая группа касаний, спит сразу. */
     fun rock(x: Double, y: Double, radius: Double = TERRAIN_RADIUS): Int {
         val k = PHYSICS_PER_GAME
-        val id = if (frame.still) world.addFixed(x * k, y * k, radius * k) else world.addFixed(frame.x(x, y) * k, frame.y(x, y) * k, radius * k)
+        val id = if (frame.still) world.addFixed((x * k).toFloat(), (y * k).toFloat(), (radius * k).toFloat()) else world.addFixed((frame.x(x, y) * k).toFloat(), (frame.y(x, y) * k).toFloat(), (radius * k).toFloat())
         val p = world.freeParticle(id)
         world.setContactGroup(p, TERRAIN_GROUP)
         world.sleepNow(p)
@@ -414,13 +427,13 @@ class StandWorld(workers: PhysicsWorkers? = null, forceParallel: Boolean = false
     /** Рамка мира [width] × [height] клеток игры со стенкой из неподвижных частиц вдоль неё — как в игре. */
     fun arena(width: Int, height: Int) {
         val k = PHYSICS_PER_GAME
-        if (frame.still) world.setBounds(0.0, 0.0, width * k, height * k)
+        if (frame.still) world.setBounds(0.0f, 0.0f, (width * k).toFloat(), (height * k).toFloat())
         else {
             // Рамка мира — прямоугольник по осям: повернуть её можно только на четверть оборота.
             if (!frame.square) throw FrameUnfit("рамку мира нельзя повернуть на угол, не кратный четверти оборота")
             val ax = frame.x(0.0, 0.0); val ay = frame.y(0.0, 0.0)
             val bx = frame.x(width.toDouble(), height.toDouble()); val by = frame.y(width.toDouble(), height.toDouble())
-            world.setBounds(minOf(ax, bx) * k, minOf(ay, by) * k, maxOf(ax, bx) * k, maxOf(ay, by) * k)
+            world.setBounds((minOf(ax, bx) * k).toFloat(), (minOf(ay, by) * k).toFloat(), (maxOf(ax, bx) * k).toFloat(), (maxOf(ay, by) * k).toFloat())
         }
         // Та же раскладка, что WorldTerrainManager.forEachWallParticle: шаг 1/1.5 вплотную к рамке.
         for (i in 1 until width / 2 * 3) rock(i / 1.5, 0.5)
@@ -471,7 +484,7 @@ class StandWorld(workers: PhysicsWorkers? = null, forceParallel: Boolean = false
             before += 0.5 * m * (world.vx[p] * world.vx[p] + world.vy[p] * world.vy[p])
             val nx = lx - omega * (world.y[p] - cy)
             val ny = ly + omega * (world.x[p] - cx)
-            world.setVelocity(p, nx, ny)
+            world.setVelocity(p, nx.toFloat(), ny.toFloat())
             after += 0.5 * m * (nx * nx + ny * ny)
         }
         world.wake(first)
@@ -532,8 +545,8 @@ class StandWorld(workers: PhysicsWorkers? = null, forceParallel: Boolean = false
                 val rx = homeX[i] - cx; val ry = homeY[i] - cy
                 val tx = cx + rx * cs - ry * sn + dx; val ty = cy + rx * sn + ry * cs + dy
                 clampTravel = maxOf(clampTravel, Math.hypot(tx - homeX[i], ty - homeY[i]))
-                if (frame.still) world.place(p, tx * k, ty * k) else world.place(p, frame.x(tx, ty) * k, frame.y(tx, ty) * k)
-                world.setVelocity(p, 0.0, 0.0)
+                if (frame.still) world.place(p, (tx * k).toFloat(), (ty * k).toFloat()) else world.place(p, (frame.x(tx, ty) * k).toFloat(), (frame.y(tx, ty) * k).toFloat())
+                world.setVelocity(p, 0.0f, 0.0f)
                 // Будится кусок КАЖДОЙ клетки зажима, а не только первой: тело под зажимом могло
                 // порваться, и тогда клетки зажима лежат в разных кусках. 15.11 зажим двигал клетки
                 // спящего куска, и правило «спящее не двигается» ловило сам стенд, а не физику.
@@ -643,7 +656,7 @@ class StandWorld(workers: PhysicsWorkers? = null, forceParallel: Boolean = false
         val mouseY = if (frame.still) mouseY else frame.y(this.mouseX, this.mouseY)
         if (st.bonesRigid && world.isBone(p)) {
             // Кость тянется целиком, раз в тик (WorldPhysics.pullBone).
-            world.pullToward(p, mouseX * k, mouseY * k)
+            world.pullToward(p, (mouseX * k).toFloat(), (mouseY * k).toFloat())
             return
         }
         // UserCommandManager.dragParticle: половина прежней скорости плюс доля расстояния до курсора,
@@ -651,7 +664,7 @@ class StandWorld(workers: PhysicsWorkers? = null, forceParallel: Boolean = false
         val vg = PHYSICS_VELOCITY_PER_GAME
         val vx = (world.vx[p] / vg).toFloat() * 0.5f + (mouseX - world.x[p] / k).toFloat() * 0.02f
         val vy = (world.vy[p] / vg).toFloat() * 0.5f + (mouseY - world.y[p] / k).toFloat() * 0.02f
-        world.setVelocity(p, vx * vg, vy * vg)
+        world.setVelocity(p, (vx * vg).toFloat(), (vy * vg).toFloat())
         world.wake(p)
     }
 
@@ -824,7 +837,7 @@ class StandWorld(workers: PhysicsWorkers? = null, forceParallel: Boolean = false
         val st = world.state
         var e = 0.0
         for (i in 0 until st.n) {
-            if (st.cellDead[i] || st.restInvMass[i] == 0.0) continue
+            if (st.cellDead[i] || st.restInvMass[i] == 0.0f) continue
             e += 0.5 * (st.vx[i] * st.vx[i] + st.vy[i] * st.vy[i]) / st.restInvMass[i]
         }
         return e
@@ -842,12 +855,12 @@ class StandWorld(workers: PhysicsWorkers? = null, forceParallel: Boolean = false
     fun gameY(p: Int): Double = if (frame.still) world.y[p] / PHYSICS_PER_GAME else frame.sceneY(world.x[p] / PHYSICS_PER_GAME, world.y[p] / PHYSICS_PER_GAME)
 
     /** Скорость частицы в единицах мира физики, в осях сцены. */
-    fun sceneVx(p: Int): Double = if (frame.still) world.vx[p] else frame.sceneDx(world.vx[p], world.vy[p])
-    fun sceneVy(p: Int): Double = if (frame.still) world.vy[p] else frame.sceneDy(world.vx[p], world.vy[p])
+    fun sceneVx(p: Int): Double = if (frame.still) world.vx[p].toDouble() else frame.sceneDx(world.vx[p].toDouble(), world.vy[p].toDouble())
+    fun sceneVy(p: Int): Double = if (frame.still) world.vy[p].toDouble() else frame.sceneDy(world.vx[p].toDouble(), world.vy[p].toDouble())
 
     /** Задать частице скорость ([vx], [vy]) в единицах мира физики, в осях сцены. */
     fun setSceneVelocity(p: Int, vx: Double, vy: Double) {
-        if (frame.still) world.setVelocity(p, vx, vy) else world.setVelocity(p, frame.dx(vx, vy), frame.dy(vx, vy))
+        if (frame.still) world.setVelocity(p, vx.toFloat(), vy.toFloat()) else world.setVelocity(p, frame.dx(vx, vy).toFloat(), frame.dy(vx, vy).toFloat())
     }
 
     /** Рамка содержимого сцены в единицах игры: minX, minY, maxX, maxY по живым частицам. */

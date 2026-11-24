@@ -137,19 +137,19 @@ private fun BodyState.splitBone(b: Int): Boolean {
     if (extra > 0) {
         val b0 = rigidBones.size
         rigidBones = Array(b0 + extra) { if (it < b0) rigidBones[it] else IntArray(0) }
-        boneRestQx = Array(b0 + extra) { if (it < b0) boneRestQx[it] else DoubleArray(0) }
-        boneRestQy = Array(b0 + extra) { if (it < b0) boneRestQy[it] else DoubleArray(0) }
+        boneRestQx = Array(b0 + extra) { if (it < b0) boneRestQx[it] else FloatArray(0) }
+        boneRestQy = Array(b0 + extra) { if (it < b0) boneRestQy[it] else FloatArray(0) }
     }
     val wasMember = BooleanArray(ids.size) { boneOf[ids[it]] == b }
     val fill = IntArray(pieces)
     for (p in 0 until pieces) {
         val to = boneOfPiece[p]
         if (to < 0) continue
-        rigidBones[to] = IntArray(sizes[p]); boneRestQx[to] = DoubleArray(sizes[p]); boneRestQy[to] = DoubleArray(sizes[p])
+        rigidBones[to] = IntArray(sizes[p]); boneRestQx[to] = FloatArray(sizes[p]); boneRestQy[to] = FloatArray(sizes[p])
     }
     // Кость b без большого куска (все куски — одиночки или клеток не осталось) — пустая запись:
     // номера остальных костей не сдвигаются, уплотнение мира её выбросит.
-    if (largest < 0 || boneOfPiece[largest] < 0) { rigidBones[b] = IntArray(0); boneRestQx[b] = DoubleArray(0); boneRestQy[b] = DoubleArray(0) }
+    if (largest < 0 || boneOfPiece[largest] < 0) { rigidBones[b] = IntArray(0); boneRestQx[b] = FloatArray(0); boneRestQy[b] = FloatArray(0) }
     for (k in ids.indices) {
         val p = piece[k]
         if (p < 0) continue
@@ -178,7 +178,7 @@ private fun BodyState.splitBone(b: Int): Boolean {
 /** Клетка [i] перестаёт быть костью: погибшая — без веса, одиночная живая — обычная ткань. */
 private fun BodyState.leaveBone(i: Int, dead: Boolean) {
     boneOf[i] = -1; boneClusterOf[i] = -1
-    if (dead) matchWeight[i] = 0.0 else if (dragId != i) matchWeight[i] = 1.0
+    if (dead) matchWeight[i] = 0.0f else if (dragId != i) matchWeight[i] = 1.0f
     // Треугольник с костной вершиной у мышцы клетки не сокращается — кольцо заново.
     if (!dead) refreshCellScaleRing(i)
 }
@@ -194,26 +194,37 @@ private fun BodyState.recentreBonePose(b: Int) {
     var posed = 0
     for (k in ids.indices) {
         val i = ids[k]
-        if (boneOf[i] == b && !cellUnborn[i]) posed++ else { qx[k] = 0.0; qy[k] = 0.0 }
+        if (boneOf[i] == b && !cellUnborn[i]) posed++ else { qx[k] = 0.0f; qy[k] = 0.0f }
     }
     if (posed == 0) return
     for (pass in 0 until 3) {
-        var sx = 0.0; var sy = 0.0
+        var sx = 0.0f; var sy = 0.0f
         for (k in ids.indices) { sx += qx[k]; sy += qy[k] }
-        if (sx == 0.0 && sy == 0.0) break
+        if (sx == 0.0f && sy == 0.0f) break
         val dx = sx / posed; val dy = sy / posed
         for (k in ids.indices) { val i = ids[k]; if (boneOf[i] == b && !cellUnborn[i]) { qx[k] -= dx; qy[k] -= dy } }
     }
 }
 
-/** Место кости [b] в блоках решателя — тем же правилом, что initializeConstraintBlocks. */
+/**
+ * Место кости [b] в блоках решателя — тем же правилом, что initializeConstraintBlocks.
+ *
+ * КОСТЬ У ШВА — ТОЖЕ В ШОВ (24.11.2026, находка 41). Кость держит форму проекцией в конце стадий своего блока, а
+ * шов решается после обеих чётностей. Если до частицы кости достаёт ограничение шва (связь, площадь, створка или
+ * изгиб к частице соседнего блока), шов тянет её уже после проекции, и до следующего подшага кость остаётся
+ * искажённой; искажение уходит в скорость (px − prevX) / h, кость и ткань у шва дёргают друг друга, и тело не
+ * засыпает. Замер на блоках по 500 (каталог, 20 подшагов): у 57 сцен с костью, целых при блоках по 1000, кость
+ * искажалась на 6–16%, например gen-land/700788/wall-hit — 0 → 14.7%, и тело не уснуло. Поэтому кость, до которой
+ * достаёт шов, проецируется в наборе швов — после всех ограничений шва, как кость поперёк границы блока.
+ * «Достаёт» — по запечённому графу (все рёбра, и порванные, и нерождённые) на две связи: створка и изгиб соединяют
+ * частицы через одну общую, а запечённый граф не зависит от разрывов, так что место кости не устаревает от событий.
+ * Правило — ConstraintBlocks.boneBucket (одно на решатель игры и зеркало SwimSolver).
+ */
 internal fun BodyState.placeBoneInBlocks(b: Int, layout: ConstraintBlocks) {
     val ids = rigidBones[b]
     if (ids.isEmpty()) return
-    var block = layout.particleBlock[ids[0]]
-    for (i in ids) if (layout.particleBlock[i] != block) { block = layout.seamBucket[layout.particleBlock[ids[0]]]; break }
     layout.bones.remove(b)
-    layout.bones.add(b, block)
+    layout.bones.add(b, layout.boneBucket(ids, baked.vertStart, baked.vertOther))
 }
 
 /**

@@ -30,8 +30,8 @@ fun main(args: Array<String>) {
     val ta = p.triA.copyOf(); val tb = p.triB.copyOf(); val tc = p.triC.copyOf()
     val h = p.const("DT") / p.constInt("SUBSTEPS")
     for (i in 0 until n) {
-        sourceX[i] += ((i * 17 % 13) - 6) * p.body.meanLinkLength * 0.001
-        sourceY[i] += ((i * 23 % 11) - 5) * p.body.meanLinkLength * 0.001
+        sourceX[i] += (((i * 17 % 13) - 6) * p.body.meanLinkLength * 0.001).toFloat()
+        sourceY[i] += (((i * 23 % 11) - 5) * p.body.meanLinkLength * 0.001).toFloat()
     }
     val original = IntArray(n) { it }
     val rcm = reverseCuthillMcKee(n, p.body.linkA, p.body.linkB)
@@ -45,14 +45,14 @@ fun main(args: Array<String>) {
     val blocks = 9
     val repeats = 32
     data class Layout(val oldToNew: IntArray,
-        val x: DoubleArray, val y: DoubleArray, val mass: DoubleArray,
+        val x: FloatArray, val y: FloatArray, val mass: FloatArray,
         val a: IntArray, val b: IntArray, val ta: IntArray, val tb: IntArray, val tc: IntArray)
     val layouts = orders.map { order ->
         val oldToNew = IntArray(n)
         for (i in order.indices) oldToNew[order[i]] = i
         fun mapped(src: IntArray) = IntArray(src.size) { oldToNew[src[it]] }
-        Layout(oldToNew, DoubleArray(n) { sourceX[order[it]] },
-            DoubleArray(n) { sourceY[order[it]] }, DoubleArray(n) { mass[order[it]] },
+        Layout(oldToNew, FloatArray(n) { sourceX[order[it]] },
+            FloatArray(n) { sourceY[order[it]] }, FloatArray(n) { mass[order[it]] },
             mapped(a), mapped(b), mapped(ta), mapped(tb), mapped(tc))
     }
     fun install(layout: Layout) {

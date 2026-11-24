@@ -34,11 +34,11 @@ internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = nul
     val meanArea = worldScale!!.meanCellArea
     for (i in n0 until n) {
         // prev не трогаем, как сброс мира: интегрирование ставит его до первого чтения.
-        px[i] = body.x[i].toDouble(); py[i] = body.y[i].toDouble()
-        val r = body.radius[i].toDouble()
-        val m = if (meanArea > 0.0) (r * r) / meanArea else 1.0
-        restInvMass[i] = if (m > 1e-12) 1.0 / m else 1.0
-        invMass[i] = restInvMass[i]; matchWeight[i] = 1.0
+        px[i] = body.x[i].toFloat(); py[i] = body.y[i].toFloat()
+        val r = body.radius[i].toFloat()
+        val m = if (meanArea > 0.0f) (r * r) / meanArea else 1.0f
+        restInvMass[i] = if (m > 1e-12f) 1.0f / m else 1.0f
+        invMass[i] = restInvMass[i]; matchWeight[i] = 1.0f
         radius[i] = r
         boneOf[i] = -1; boneClusterOf[i] = -1; muscleOf[i] = -1
     }
@@ -48,7 +48,7 @@ internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = nul
         for (k in born.indices) if (!born[k]) {
             val v = n0 + k
             cellDead[v] = true; cellUnborn[v] = true
-            invMass[v] = 0.0; matchWeight[v] = 0.0
+            invMass[v] = 0.0f; matchWeight[v] = 0.0f
             prevX[v] = px[v]; prevY[v] = py[v]
         }
     }
@@ -61,8 +61,8 @@ internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = nul
     }
     val b0 = rigidBones.size
     rigidBones = Array(b0 + newBones.size) { if (it < b0) rigidBones[it] else newBones[it - b0] }
-    boneRestQx = Array(rigidBones.size) { if (it < b0) boneRestQx[it] else DoubleArray(rigidBones[it].size) }
-    boneRestQy = Array(rigidBones.size) { if (it < b0) boneRestQy[it] else DoubleArray(rigidBones[it].size) }
+    boneRestQx = Array(rigidBones.size) { if (it < b0) boneRestQx[it] else FloatArray(rigidBones[it].size) }
+    boneRestQy = Array(rigidBones.size) { if (it < b0) boneRestQy[it] else FloatArray(rigidBones[it].size) }
     var maxBone = boneDx.size
     for (b in b0 until rigidBones.size) {
         val ids = rigidBones[b]
@@ -72,10 +72,10 @@ internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = nul
     // Кости, которые клиент включит позже (setBone): пока — мягкая ткань без веса в кости.
     if (boneOn != null) {
         require(boneOn.size == n - n0) { "boneOn — по клетке нового тела" }
-        for (k in boneOn.indices) if (!boneOn[k] && boneOf[n0 + k] >= 0) { boneOf[n0 + k] = -1; matchWeight[n0 + k] = 0.0 }
+        for (k in boneOn.indices) if (!boneOn[k] && boneOf[n0 + k] >= 0) { boneOf[n0 + k] = -1; matchWeight[n0 + k] = 0.0f }
     }
     for (b in b0 until rigidBones.size) restPoseOfBornBone(b)
-    if (maxBone > boneDx.size) { boneDx = DoubleArray(maxBone); boneDy = DoubleArray(maxBone) }
+    if (maxBone > boneDx.size) { boneDx = FloatArray(maxBone); boneDy = FloatArray(maxBone) }
 
     // --- мышцы ---
     val m0 = muscles0
@@ -83,7 +83,7 @@ internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = nul
     growMuscles(t0)
     val mc = body.muscleClusters.size
     muscleActivation = muscleActivation.copyOf(mc)
-    muscleScaleOf = muscleScaleOf.copyOf(mc).also { java.util.Arrays.fill(it, m0, mc, 1.0) }
+    muscleScaleOf = muscleScaleOf.copyOf(mc).also { java.util.Arrays.fill(it, m0, mc, 1.0f) }
     muscleTarget = muscleTarget.copyOf(mc)
     if (muscleActivationPrev.size == m0) muscleActivationPrev = muscleActivationPrev.copyOf(mc)
 
@@ -132,7 +132,7 @@ internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = nul
         if (boneOf[i] != -1 && boneOf[i] == boneOf[j]) continue
         val dx = body.x[i] - body.x[j]; val dy = body.y[i] - body.y[j]
         conA[c] = i; conB[c] = j
-        conRest[c] = sqrt((dx * dx + dy * dy).toDouble())
+        conRest[c] = sqrt((dx * dx + dy * dy).toFloat())
         conEdge[c] = lnkEdge[k]
         conMuscle[c] = muscleOfPair(i, j)
         c++
@@ -168,7 +168,7 @@ internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = nul
     // --- свободные клетки и зонды, как buildContacts/buildProbes ---
     for (i in n0 until n) isFree[i] = true
     for (k in lnk0 until lnkCount) { isFree[lnkA[k]] = false; isFree[lnkB[k]] = false }
-    val full = 2.0 * Math.PI - PROBE_ANGLE_EPS
+    val full = 2.0f * Math.PI - PROBE_ANGLE_EPS
     for (t in tri0 until triCount) {
         val a = triA[t]; val b = triB[t]; val cc = triC[t]
         probeAngle[a] += angleAt(a, b, cc); probeAngle[b] += angleAt(b, a, cc); probeAngle[cc] += angleAt(cc, a, b)
@@ -184,7 +184,7 @@ internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = nul
     val localA = IntArray(permanent); val localB = IntArray(permanent)
     run { var m = 0; for (k in 0 until addLinks) if (!body.isTempLink(l0 + k)) { localA[m] = body.linkA[l0 + k] - n0; localB[m] = body.linkB[l0 + k] - n0; m++ } }
     val localX = FloatArray(addN) { body.x[n0 + it] }; val localY = FloatArray(addN) { body.y[n0 + it] }
-    val localR = DoubleArray(addN) { radius[n0 + it] }
+    val localR = FloatArray(addN) { radius[n0 + it] }
     var lcount = 0
     val localConA = IntArray(conCount - con0); val localConB = IntArray(conCount - con0)
     for (k in con0 until conCount) {
@@ -220,11 +220,11 @@ internal fun BodyState.appendBody(def: BodyDefinition, born: BooleanArray? = nul
     ct.group = cellGroup
     ct.updateSurface(localSurface, fresh, addN)
     ct.organismOf = organismOf
-    if (contactPressure.size != n) contactPressure = DoubleArray(n)
+    if (contactPressure.size != n) contactPressure = FloatArray(n)
     if (contactPressureN.size != n) contactPressureN = IntArray(n)
     ct.pressure = contactPressure; ct.pressureN = contactPressureN
     dbgSealMinR = ct.minContactRadius
-    internalMom = InternalMomentum(n)
+    internalMom = InternalMomentum(n, SPIN_MIN_ARM * linkScale)
 
     // --- решатель: план связей и блоки по всему миру (дёшево), см. заголовок ---
     distanceSweepOrder = DistanceSweepOrder.create(this)
@@ -246,7 +246,7 @@ private fun BodyState.growParticleArrays(n0: Int) {
     cellGroup = cellGroup.copyOf(n)
     cellGrip = cellGrip.copyOf(n)
     cellHomeCompliance = cellHomeCompliance.copyOf(n); cellHomeX = cellHomeX.copyOf(n); cellHomeY = cellHomeY.copyOf(n)
-    dragScale = dragScale.copyOf(n).also { java.util.Arrays.fill(it, n0, n, 1.0) }
+    dragScale = dragScale.copyOf(n).also { java.util.Arrays.fill(it, n0, n, 1.0f) }
     px = px.copyOf(n); py = py.copyOf(n); prevX = prevX.copyOf(n); prevY = prevY.copyOf(n)
     vx = vx.copyOf(n); vy = vy.copyOf(n)
     invMass = invMass.copyOf(n); restInvMass = restInvMass.copyOf(n); matchWeight = matchWeight.copyOf(n)
@@ -275,7 +275,7 @@ private fun BodyState.growParticleArrays(n0: Int) {
 internal fun BodyState.restPoseOfBone(b: Int) {
     val ids = rigidBones[b]
     val qx = boneRestQx[b]; val qy = boneRestQy[b]
-    var cx = 0.0; var cy = 0.0
+    var cx = 0.0f; var cy = 0.0f
     for (i in ids) { cx += body.x[i]; cy += body.y[i] }
     cx /= ids.size; cy /= ids.size
     for (k in ids.indices) {
@@ -283,9 +283,9 @@ internal fun BodyState.restPoseOfBone(b: Int) {
         qy[k] = body.y[ids[k]] - cy
     }
     for (pass in 0 until 3) {
-        var sx = 0.0; var sy = 0.0
+        var sx = 0.0f; var sy = 0.0f
         for (k in ids.indices) { sx += qx[k]; sy += qy[k] }
-        if (sx == 0.0 && sy == 0.0) break
+        if (sx == 0.0f && sy == 0.0f) break
         val dx = sx / ids.size; val dy = sy / ids.size
         for (k in ids.indices) { qx[k] -= dx; qy[k] -= dy }
     }
@@ -314,12 +314,12 @@ private fun BodyState.appendOrganisms(n0: Int) {
                 if (organismOf[u] == -1) { organismOf[u] = comp; queue[tail++] = u }
             }
         }
-        organismSize[comp] = 0; organismMass[comp] = 0.0
-        flowVX[comp] = 0.0; flowVY[comp] = 0.0; comAccX[comp] = 0.0; comAccY[comp] = 0.0
+        organismSize[comp] = 0; organismMass[comp] = 0.0f
+        flowVX[comp] = 0.0f; flowVY[comp] = 0.0f; comAccX[comp] = 0.0f; comAccY[comp] = 0.0f
         comp++
     }
     for (i in n0 until n) if (!cellDead[i]) organismSize[organismOf[i]]++
-    for (i in n0 until n) if (!cellDead[i] && restInvMass[i] > 0.0) organismMass[organismOf[i]] += 1.0 / restInvMass[i]
+    for (i in n0 until n) if (!cellDead[i] && restInvMass[i] > 0.0f) organismMass[organismOf[i]] += 1.0f / restInvMass[i]
     organismCount = comp
 }
 
@@ -333,11 +333,11 @@ private fun BodyState.appendOrganisms(n0: Int) {
  */
 internal fun BodyState.removeBody(first: Int, count: Int) {
     val end = first + count
-    if (dragId in first until end) { matchWeight[dragId] = 1.0; dragId = -1 }
+    if (dragId in first until end) { matchWeight[dragId] = 1.0f; dragId = -1 }
     for (v in first until end) {
         if (cellDead[v]) continue
         cellDead[v] = true; deadCount++
-        vx[v] = 0.0; vy[v] = 0.0; invMass[v] = 0.0
+        vx[v] = 0.0f; vy[v] = 0.0f; invMass[v] = 0.0f
         localComponents.removeCell(v)
     }
     for (v in first until end) {

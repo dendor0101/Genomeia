@@ -79,7 +79,7 @@ private fun StandWorld.probeShift(name: String, b: StandBody, cells: IntArray, f
         else {
             val st = world.state
             val h = home ?: DoubleArray(2 * cells.size).also { a ->
-                for (i in cells.indices) { val p = b.particle(cells[i]); a[2 * i] = st.px[p]; a[2 * i + 1] = st.py[p] }
+                for (i in cells.indices) { val p = b.particle(cells[i]); a[2 * i] = st.px[p].toDouble(); a[2 * i + 1] = st.py[p].toDouble() }
                 home = a
             }
             var worst = 0.0
@@ -103,7 +103,7 @@ private fun StandWorld.probeTopSpeed(name: String, b: StandBody) {
         for (k in 0 until b.count) {
             val p = b.particle(k)
             if (st.cellDead[p]) continue
-            best = maxOf(best, hypot(st.vx[p], st.vy[p]))
+            best = maxOf(best, hypot(st.vx[p], st.vy[p]).toDouble())
         }
         toLinksPerTick(best)
     }

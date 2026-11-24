@@ -129,8 +129,8 @@ fun main(args: Array<String>) {
         for (i in 0 until P.n) {
             if (P.organismOf[i] != o) continue
             val x = P.px[i] - c[0]; val y = P.py[i] - c[1]
-            P.px[i] = c[0] + x * cs - y * sn + perpX * offCells * meanLink
-            P.py[i] = c[1] + x * sn + y * cs + perpY * offCells * meanLink
+            P.px[i] = (c[0] + x * cs - y * sn + perpX * offCells * meanLink).toFloat()
+            P.py[i] = (c[1] + x * sn + y * cs + perpY * offCells * meanLink).toFloat()
             P.prevX[i] = P.px[i]; P.prevY[i] = P.py[i]
         }
     }
@@ -138,7 +138,7 @@ fun main(args: Array<String>) {
     fun launch(o: Int, dirX: Double, dirY: Double, cellsPerTick: Double) {
         val sp = cellsPerTick * meanLink / dt
         for (i in 0 until P.n) if (P.organismOf[i] == o) {
-            P.vx[i] = dirX * sp; P.vy[i] = dirY * sp
+            P.vx[i] = (dirX * sp).toFloat(); P.vy[i] = (dirY * sp).toFloat()
         }
     }
 
@@ -165,10 +165,10 @@ fun main(args: Array<String>) {
         val side = Math.ceil(sqrt(ids.size.toDouble())).toInt().coerceAtLeast(1)
         val step = stepCells * meanLink
         for ((k, i) in ids.withIndex()) {
-            P.px[i] = cx + (k % side - side / 2.0) * step
-            P.py[i] = cy + (k / side - side / 2.0) * step
+            P.px[i] = (cx + (k % side - side / 2.0) * step).toFloat()
+            P.py[i] = (cy + (k / side - side / 2.0) * step).toFloat()
             P.prevX[i] = P.px[i]; P.prevY[i] = P.py[i]
-            P.vx[i] = 0.0; P.vy[i] = 0.0
+            P.vx[i] = 0.0f; P.vy[i] = 0.0f
         }
     }
 
@@ -214,9 +214,9 @@ fun main(args: Array<String>) {
                 val r = ring * meanLink
                 val x = c[0] + r * cos(ang); val y = c[1] + r * sin(ang)
                 if (insideOf(dst, x, y, ba, bb)) {
-                    P.px[i] = x; P.py[i] = y
-                    P.prevX[i] = x; P.prevY[i] = y
-                    P.vx[i] = 0.0; P.vy[i] = 0.0
+                    P.px[i] = x.toFloat(); P.py[i] = y.toFloat()
+                    P.prevX[i] = x.toFloat(); P.prevY[i] = y.toFloat()
+                    P.vx[i] = 0.0f; P.vy[i] = 0.0f
                     ok = true
                 }
                 ring += 0.35
@@ -276,17 +276,17 @@ fun main(args: Array<String>) {
             var minY = Double.MAX_VALUE; var maxY = -Double.MAX_VALUE
             for (e in ba.indices) {
                 for (v in intArrayOf(ba[e], bb[e])) {
-                    if (P.px[v] < minX) minX = P.px[v]
-                    if (P.px[v] > maxX) maxX = P.px[v]
-                    if (P.py[v] < minY) minY = P.py[v]
-                    if (P.py[v] > maxY) maxY = P.py[v]
+                    if (P.px[v] < minX) minX = P.px[v].toDouble()
+                    if (P.px[v] > maxX) maxX = P.px[v].toDouble()
+                    if (P.py[v] < minY) minY = P.py[v].toDouble()
+                    if (P.py[v] > maxY) maxY = P.py[v].toDouble()
                 }
             }
             for (i in 0 until P.n) {
                 if (P.organismOf[i] == o || dead[i]) continue
                 val x = P.px[i]; val y = P.py[i]
                 if (x < minX || x > maxX || y < minY || y > maxY) continue
-                if (!insideOf(o, x, y, ba, bb)) continue
+                if (!insideOf(o, x.toDouble(), y.toDouble(), ba, bb)) continue
                 total++
                 // «Внутри кости» — если ближайшая ГРАНИЧНАЯ клетка чужого тела костная.
                 var best = Double.MAX_VALUE; var bestJ = -1
@@ -294,7 +294,7 @@ fun main(args: Array<String>) {
                     val j = ba[e]
                     val dx = x - P.px[j]; val dy = y - P.py[j]
                     val d = dx * dx + dy * dy
-                    if (d < best) { best = d; bestJ = j }
+                    if (d < best) { best = d.toDouble(); bestJ = j }
                 }
                 if (bestJ >= 0 && boneOf[bestJ] >= 0) inBone++
             }
@@ -315,7 +315,7 @@ fun main(args: Array<String>) {
         organismCount = { P.organismCountNow() },
         isFreeOf = { i -> P.isFree(i) },
         invMass = P.invMass,
-        contactRadiusOf = { i -> P.contactsObj()?.contactRadiusOf(i) ?: 0.3 * meanLink },
+        contactRadiusOf = { i -> P.contactsObj()?.contactRadiusOf(i)?.toDouble() ?: 0.3 * meanLink },
         meanLink = meanLink, dt = dt, vmax = vmax,
         shatter = { o -> shatter(o) },
         step = { P.frame(dt, sub, contract = false) },
@@ -444,7 +444,7 @@ fun main(args: Array<String>) {
 
             // Спокойная фаза: вот тут любая работа контактов — патология.
             val ct = P.contactsObj()!!
-            ct.impulseAccum = 0.0
+            ct.impulseAccum = 0.0f
             val dead0 = demoField("deadCount") as Int
             var flail = 0.0
             for (fr in 1..(6.0 / dt).toInt()) {
@@ -466,20 +466,20 @@ fun main(args: Array<String>) {
             ch.add(P.contactsObj()!!.impulseAccum / meanLink)
             fl.add(flail)
             tr.add(t[0]); bn.add(t[1])
-            pn.add(P.contactsObj()!!.maxPenetration(P.px, P.py))
+            pn.add(P.contactsObj()!!.maxPenetration(P.px, P.py).toDouble())
             pp.add(sqrt(P.pX() * P.pX() + P.pY() * P.pY()))
             dd.add(((demoField("deadCount") as Int) - dead0).toDouble())
             if (System.getenv("CB_DIAG") != null) {
                 val c2 = P.contactsObj()!!
                 val wi = c2.worstI; val wj = c2.worstJ
                 val dm = demoField("cellDead") as BooleanArray
-                val im = demoField("invMass") as DoubleArray
+                val im = demoField("invMass") as FloatArray
                 println("    [%s угол %.0f сдвиг %.0f] умерло всего %d (давл %d разд %d застр %d), проник %.3f: #%d орг %d m=%s своб %s  #%d орг %d m=%s своб %s, d=%.3f св".format(
                     s.name, angle, off, demoField("deadCount") as Int,
                     demoField("pressureBurstCount") as Int, demoField("crushBurstCount") as Int, demoField("trapKillCount") as Int,
-                    pn.last(), wi, if (wi >= 0) P.organismOf[wi] else -1, if (wi >= 0) (if (im[wi] == 0.0) "0" else "1") else "-", if (wi >= 0) P.isFree(wi) else false,
-                    wj, if (wj >= 0) P.organismOf[wj] else -1, if (wj >= 0) (if (im[wj] == 0.0) "0" else "1") else "-", if (wj >= 0) P.isFree(wj) else false,
-                    if (wi >= 0) Math.hypot(P.px[wi] - P.px[wj], P.py[wi] - P.py[wj]) / meanLink else 0.0))
+                    pn.last(), wi, if (wi >= 0) P.organismOf[wi] else -1, if (wi >= 0) (if (im[wi] == 0.0f) "0" else "1") else "-", if (wi >= 0) P.isFree(wi) else false,
+                    wj, if (wj >= 0) P.organismOf[wj] else -1, if (wj >= 0) (if (im[wj] == 0.0f) "0" else "1") else "-", if (wj >= 0) P.isFree(wj) else false,
+                    if (wi >= 0) Math.hypot((P.px[wi] - P.px[wj]).toDouble(), (P.py[wi] - P.py[wj]).toDouble()) / meanLink else 0.0))
             }
         }
         fun med(v: List<Double>) = if (v.isEmpty()) 0.0 else v.sorted()[v.size / 2]
@@ -514,15 +514,15 @@ fun main(args: Array<String>) {
                 P.resetState(); P.resetCounters()
                 // Уводим всех прочих далеко, чтобы в кадре была ровно одна пара.
                 for (k in 0 until P.n) if (k != i && k != j) {
-                    P.px[k] = 1e4 + k * 0.5; P.py[k] = 1e4
+                    P.px[k] = (1e4 + k * 0.5).toFloat(); P.py[k] = 1e4f
                     P.prevX[k] = P.px[k]; P.prevY[k] = P.py[k]
-                    P.vx[k] = 0.0; P.vy[k] = 0.0
+                    P.vx[k] = 0.0f; P.vy[k] = 0.0f
                 }
                 val ct0 = P.contactsObj()!!
                 val gap = (ct0.contactRadiusOf(i) + ct0.contactRadiusOf(j)) * 3.0
                 val sp = v * meanLink / dt
-                P.px[i] = -gap; P.py[i] = 0.0; P.vx[i] = sp; P.vy[i] = 0.0
-                P.px[j] = gap; P.py[j] = 0.0; P.vx[j] = -sp; P.vy[j] = 0.0
+                P.px[i] = (-gap).toFloat(); P.py[i] = 0.0f; P.vx[i] = sp.toFloat(); P.vy[i] = 0.0f
+                P.px[j] = gap.toFloat(); P.py[j] = 0.0f; P.vx[j] = (-sp).toFloat(); P.vy[j] = 0.0f
                 P.prevX[i] = P.px[i]; P.prevY[i] = P.py[i]
                 P.prevX[j] = P.px[j]; P.prevY[j] = P.py[j]
 
@@ -578,9 +578,9 @@ fun main(args: Array<String>) {
                 val ct0 = P.contactsObj()!!
                 val gap = (ct0.contactRadiusOf(i) + ct0.contactRadiusOf(tgt)) * 3.0
                 val sp = v * meanLink / dt
-                P.px[i] = P.px[tgt] + ox * gap; P.py[i] = P.py[tgt] + oy * gap
+                P.px[i] = (P.px[tgt] + ox * gap).toFloat(); P.py[i] = (P.py[tgt] + oy * gap).toFloat()
                 P.prevX[i] = P.px[i]; P.prevY[i] = P.py[i]
-                P.vx[i] = -ox * sp; P.vy[i] = -oy * sp
+                P.vx[i] = (-ox * sp).toFloat(); P.vy[i] = (-oy * sp).toFloat()
                 var worst = 0.0
                 for (fr in 1..90) {
                     P.frame(dt, sub, contract = false)
@@ -616,15 +616,15 @@ fun main(args: Array<String>) {
                 val i = free[0]
                 // Прочие свободные клетки — подальше, чтобы не мешали.
                 for (k in free.drop(1)) {
-                    P.px[k] = 1e4 + k; P.py[k] = 1e4
+                    P.px[k] = (1e4 + k).toFloat(); P.py[k] = 1e4f
                     P.prevX[k] = P.px[k]; P.prevY[k] = P.py[k]
-                    P.vx[k] = 0.0; P.vy[k] = 0.0
+                    P.vx[k] = 0.0f; P.vy[k] = 0.0f
                 }
                 // Сажаем на заданную глубину от центра тела вдоль оси.
                 val c = com(oa)
-                P.px[i] = c[0] + depth * meanLink; P.py[i] = c[1]
+                P.px[i] = (c[0] + depth * meanLink).toFloat(); P.py[i] = c[1].toFloat()
                 P.prevX[i] = P.px[i]; P.prevY[i] = P.py[i]
-                P.vx[i] = 0.0; P.vy[i] = 0.0
+                P.vx[i] = 0.0f; P.vy[i] = 0.0f
 
                 val (ba, bb) = boundaryOf(oa)
                 var peak = 0.0
@@ -633,7 +633,7 @@ fun main(args: Array<String>) {
                     P.frame(dt, sub, contract = false)
                     val s = sqrt(P.vx[i] * P.vx[i] + P.vy[i] * P.vy[i]) * dt / meanLink
                     if (s > peak) peak = s
-                    if (outAt < 0 && ba.size >= 3 && !insideOf(oa, P.px[i], P.py[i], ba, bb)) outAt = fr
+                    if (outAt < 0 && ba.size >= 3 && !insideOf(oa, P.px[i].toDouble(), P.py[i].toDouble(), ba, bb)) outAt = fr
                 }
                 println("  %15.1f | %20.2f | %s".format(
                     depth, peak, if (outAt >= 0) outAt.toString() else "не вышла"))
@@ -663,18 +663,18 @@ fun main(args: Array<String>) {
                 P.setTearing(false)
                 P.resetState(); P.resetCounters()
                 for (k in free.drop(1)) {
-                    P.px[k] = 1e4 + k; P.py[k] = 1e4
+                    P.px[k] = (1e4 + k).toFloat(); P.py[k] = 1e4f
                     P.prevX[k] = P.px[k]; P.prevY[k] = P.py[k]
-                    P.vx[k] = 0.0; P.vy[k] = 0.0
+                    P.vx[k] = 0.0f; P.vy[k] = 0.0f
                 }
                 // Стартуем слева от тела, летим строго в его центр.
                 val c = com(oa)
                 var minX = Double.MAX_VALUE
-                for (k in 0 until P.n) if (P.organismOf[k] == oa && P.px[k] < minX) minX = P.px[k]
-                P.px[i] = minX - 6.0 * meanLink; P.py[i] = c[1]
+                for (k in 0 until P.n) if (P.organismOf[k] == oa && P.px[k] < minX) minX = P.px[k].toDouble()
+                P.px[i] = (minX - 6.0 * meanLink).toFloat(); P.py[i] = c[1].toFloat()
                 P.prevX[i] = P.px[i]; P.prevY[i] = P.py[i]
                 val sp = v * meanLink / dt
-                P.vx[i] = sp; P.vy[i] = 0.0
+                P.vx[i] = sp.toFloat(); P.vy[i] = 0.0f
 
                 // ОДНОЗНАЧНАЯ МЕТРИКА вместо лучевого теста: ближайший подход к
                 // мембране в долях порога контакта. 1.0 — коснулась, 0.0 — центры
@@ -693,12 +693,12 @@ fun main(args: Array<String>) {
                         val rr = ct0.contactRadiusOf(i) + ct0.contactRadiusOf(b)
                         if (rr <= 0.0) continue
                         val r = sqrt(dx * dx + dy * dy) / rr
-                        if (r < closest) closest = r
+                        if (r < closest) closest = r.toDouble()
                     }
                 }
                 // Прошла ли насквозь: оказалась заметно правее самой правой клетки тела.
                 var maxBx = -Double.MAX_VALUE
-                for (k in 0 until P.n) if (P.organismOf[k] == oa && P.px[k] > maxBx) maxBx = P.px[k]
+                for (k in 0 until P.n) if (P.organismOf[k] == oa && P.px[k] > maxBx) maxBx = P.px[k].toDouble()
                 val through = P.px[i] > maxBx
                 println("  %16.1f | %14.2f | %7.3f | %12s | %d".format(
                     v, v / sub, closest, if (through) "НАСКВОЗЬ" else "нет", ccd))
@@ -730,9 +730,9 @@ fun main(args: Array<String>) {
             shatter(ob)
             // Уводим целое тело далеко: меряем ТОЛЬКО кучу, без чужой мембраны.
             for (k in 0 until P.n) if (P.organismOf[k] == oa) {
-                P.px[k] += 500.0 * meanLink
+                P.px[k] += (500.0 * meanLink).toFloat()
                 P.prevX[k] = P.px[k]; P.prevY[k] = P.py[k]
-                P.vx[k] = 0.0; P.vy[k] = 0.0
+                P.vx[k] = 0.0f; P.vy[k] = 0.0f
             }
             // В КУЧУ КЛАДЁМ ТОЛЬКО ПО-НАСТОЯЩЕМУ СВОБОДНЫЕ КЛЕТКИ.
             //
@@ -744,18 +744,18 @@ fun main(args: Array<String>) {
             val ids = (0 until P.n).filter { P.organismOf[it] == ob && P.isFree(it) }
             val bones = (0 until P.n).filter { P.organismOf[it] == ob && !P.isFree(it) }
             for (k in bones) {
-                P.px[k] += 900.0 * meanLink
+                P.px[k] += (900.0 * meanLink).toFloat()
                 P.prevX[k] = P.px[k]; P.prevY[k] = P.py[k]
-                P.vx[k] = 0.0; P.vy[k] = 0.0
+                P.vx[k] = 0.0f; P.vy[k] = 0.0f
             }
             run {
                 val side = Math.ceil(sqrt(ids.size.toDouble())).toInt().coerceAtLeast(1)
                 val st = step * meanLink
                 for ((k, i) in ids.withIndex()) {
-                    P.px[i] = (k % side - side / 2.0) * st
-                    P.py[i] = (k / side - side / 2.0) * st
+                    P.px[i] = ((k % side - side / 2.0) * st).toFloat()
+                    P.py[i] = ((k / side - side / 2.0) * st).toFloat()
                     P.prevX[i] = P.px[i]; P.prevY[i] = P.py[i]
-                    P.vx[i] = 0.0; P.vy[i] = 0.0
+                    P.vx[i] = 0.0f; P.vy[i] = 0.0f
                 }
             }
 
@@ -763,7 +763,7 @@ fun main(args: Array<String>) {
             // Перекрытие пары соседей по решётке в долях порога: 1 — касание, меньше —
             // старт уже внутри друг друга.
             val rr = if (ids.size >= 2)
-                ct0.contactRadiusOf(ids[0]) + ct0.contactRadiusOf(ids[1]) else 1.0
+                (ct0.contactRadiusOf(ids[0]) + ct0.contactRadiusOf(ids[1])).toDouble() else 1.0
             val overlap = step * meanLink / rr
 
             /** Среднеквадратичный радиус кучи в связях: во что она расплылась. */
@@ -781,7 +781,7 @@ fun main(args: Array<String>) {
             val spread0 = spread()
 
             P.frame(dt, sub, contract = false)
-            P.contactsObj()!!.impulseAccum = 0.0
+            P.contactsObj()!!.impulseAccum = 0.0f
             var peak = 0.0
             var tail = 0.0
             val total = (5.0 / dt).toInt()
@@ -818,7 +818,7 @@ fun main(args: Array<String>) {
             val ct = P.contactsObj()!!
             val free = (0 until P.n).filter { P.isFree(it) }
             val moving = free.filter { P.invMass[it] > 0.0 }
-            val pinned = free.filter { P.invMass[it] == 0.0 }
+            val pinned = free.filter { P.invMass[it] == 0.0f }
             println()
             println("=== ёмкость: геометрия старта ===")
             println("  подвижных частиц %d, закреплённых в стенке %d".format(moving.size, pinned.size))
@@ -833,7 +833,7 @@ fun main(args: Array<String>) {
                 val i = moving[a]; val j = moving[b]
                 val dx = P.px[i] - P.px[j]; val dy = P.py[i] - P.py[j]
                 val d = sqrt(dx * dx + dy * dy)
-                if (d < closest) closest = d
+                if (d < closest) closest = d.toDouble()
             }
             // Насколько плотно набита ёмкость. Радиус кольца берётся из самих
             // закреплённых клеток, поэтому проверка не зависит от того, как сцена его
@@ -853,7 +853,7 @@ fun main(args: Array<String>) {
                     val dx = P.px[k] - wx; val dy = P.py[k] - wy
                     if (sqrt(dx * dx + dy * dy) <= ring) insideRing++
                 }
-                val r0 = if (moving.isNotEmpty()) ct.contactRadiusOf(moving[0]) else 0.0
+                val r0 = if (moving.isNotEmpty()) ct.contactRadiusOf(moving[0]).toDouble() else 0.0
                 // Сколько частиц влезло бы в круг при шестиугольной укладке вплотную.
                 val capacity = (Math.PI * ring * ring) / (2.0 * r0 * (2.0 * r0) * sqrt(3.0) / 2.0)
                 println("  кольцо радиусом %.1f связи, внутри %d частиц (вместимость вплотную ~%.0f, заполнено %.0f%%)"
@@ -1000,7 +1000,7 @@ fun main(args: Array<String>) {
                 pairs++
                 if (wasLinked.contains(key)) wereNeighbours++
                 val over = (rr - d) / rr
-                if (over > worst) worst = over
+                if (over > worst) worst = over.toDouble()
             }
             // Через сколько связей пара расходится по сетке. Прямые соседи от контакта
             // освобождены, а вот соседи ЧЕРЕЗ ОДНУ клетку — уже нет, и на целом теле
@@ -1084,7 +1084,7 @@ fun main(args: Array<String>) {
                     pairs++
                     if (wasLinked.contains(key)) wereNeighbours++
                     val over = (rr - d) / rr
-                    if (over > worst) worst = over
+                    if (over > worst) worst = over.toDouble()
                 }
                 println("  ЧЕРЕЗ РАЗРЫВ: перекрытых несвязанных пар %d, из них бывших соседей %d"
                     .format(pairs, wereNeighbours))
@@ -1132,15 +1132,15 @@ fun main(args: Array<String>) {
                 for (i in 0 until P.n) {
                     P.px[i] = snapX[i]; P.py[i] = snapY[i]
                     P.vx[i] = snapVX[i]; P.vy[i] = snapVY[i]
-                    P.prevX[i] = P.px[i] - P.vx[i] * dt / sub
-                    P.prevY[i] = P.py[i] - P.vy[i] * dt / sub
+                    P.prevX[i] = (P.px[i] - P.vx[i] * dt / sub).toFloat()
+                    P.prevY[i] = (P.py[i] - P.vy[i] * dt / sub).toFloat()
                 }
                 P.resetFlow()
             }
             fun restore() {
                 for (i in 0 until P.n) {
                     P.px[i] = snapX[i]; P.py[i] = snapY[i]
-                    P.vx[i] = 0.0; P.vy[i] = 0.0; P.prevX[i] = P.px[i]; P.prevY[i] = P.py[i]
+                    P.vx[i] = 0.0f; P.vy[i] = 0.0f; P.prevX[i] = P.px[i]; P.prevY[i] = P.py[i]
                 }
                 P.resetFlow()
             }
@@ -1264,8 +1264,8 @@ fun main(args: Array<String>) {
                 fun spin(label: String, rigid: Boolean) {
                     restoreLive()
                     for (i in 0 until P.n) if (!mine[i]) {
-                        P.px[i] += 600.0 * meanLink; P.prevX[i] = P.px[i]
-                        P.vx[i] = 0.0; P.vy[i] = 0.0
+                        P.px[i] += (600.0 * meanLink).toFloat(); P.prevX[i] = P.px[i]
+                        P.vx[i] = 0.0f; P.vy[i] = 0.0f
                     }
                     P.setContacts(false); P.setDragOff(true); P.setBonesRigid(rigid)
                     fun angular(): DoubleArray {
@@ -1306,8 +1306,8 @@ fun main(args: Array<String>) {
                 run {
                     restoreLive()
                     for (i in 0 until P.n) if (!mine[i]) {
-                        P.px[i] += 600.0 * meanLink; P.prevX[i] = P.px[i]
-                        P.vx[i] = 0.0; P.vy[i] = 0.0
+                        P.px[i] += (600.0 * meanLink).toFloat(); P.prevX[i] = P.px[i]
+                        P.vx[i] = 0.0f; P.vy[i] = 0.0f
                     }
                     P.setContacts(false); P.setDragOff(true); P.setBonesRigid(true)
                     P.resetCounters()
@@ -1342,7 +1342,7 @@ fun main(args: Array<String>) {
                     val i = cells[a]; val j = cells[b]
                     val dx = P.px[i] - P.px[j]; val dy = P.py[i] - P.py[j]
                     val d = sqrt(dx * dx + dy * dy)
-                    if (d < wd) { wd = d; wi = i; wj = j }
+                    if (d < wd) { wd = d.toDouble(); wi = i; wj = j }
                 }
                 println("  БЛИЖАЙШАЯ ПАРА куска: #%d и #%d на %.4f связи".format(wi, wj, wd / meanLink))
                 // Длины покоя: если пластика их источила, схлопывание объясняется ею.
@@ -1352,13 +1352,13 @@ fun main(args: Array<String>) {
                     val i = P.conA[c]; val j = P.conB[c]
                     if (!mine[i] || !mine[j]) continue
                     val r = P.conRest[c]
-                    if (r < minRest) minRest = r
-                    if (r > maxRest) maxRest = r
+                    if (r < minRest) minRest = r.toDouble()
+                    if (r > maxRest) maxRest = r.toDouble()
                     sum += r; cnt++
                     val dx = P.px[i] - P.px[j]; val dy = P.py[i] - P.py[j]
                     val len = sqrt(dx * dx + dy * dy)
                     val s = (len - r) / r
-                    if (s < minStrain) minStrain = s
+                    if (s < minStrain) minStrain = s.toDouble()
                 }
                 if (cnt > 0) println("  ДЛИНЫ ПОКОЯ куска, в средних связях: мин %.4f, сред %.4f, макс %.4f"
                     .format(minRest / meanLink, sum / cnt / meanLink, maxRest / meanLink))
@@ -1409,15 +1409,15 @@ fun main(args: Array<String>) {
                 // значит всё, что тут появится, сделали внутренние стадии.
                 restoreLive()
                 for (i in 0 until P.n) if (!mine[i]) {
-                    P.px[i] += 600.0 * meanLink; P.prevX[i] = P.px[i]
-                    P.vx[i] = 0.0; P.vy[i] = 0.0
+                    P.px[i] += (600.0 * meanLink).toFloat(); P.prevX[i] = P.px[i]
+                    P.vx[i] = 0.0f; P.vy[i] = 0.0f
                 }
                 P.setContacts(false); P.setDragOff(true)
                 P.setStageProbe(true)
                 P.setStageMask(mine)
-                java.util.Arrays.fill(P.stageMove(), 0.0)
+                java.util.Arrays.fill(P.stageMove(), 0f)
                 java.util.Arrays.fill(P.stageHits(), 0)
-                java.util.Arrays.fill(P.stageL(), 0.0)
+                java.util.Arrays.fill(P.stageL(), 0f)
                 for (fr in 0 until 300) P.frameGait(dt, fr)
                 P.setStageProbe(false)
                 P.setStageMask(null)
@@ -1432,7 +1432,7 @@ fun main(args: Array<String>) {
             }
             restore()
             for (i in 0 until P.n) if (!mine[i]) {
-                P.px[i] += 600.0 * meanLink; P.prevX[i] = P.px[i]
+                P.px[i] += (600.0 * meanLink).toFloat(); P.prevX[i] = P.px[i]
             }
             // ГЛАВНОЕ ЧИСЛО. Кусок стоит один, вокруг пусто. Каждый живой контакт
             // здесь — это пара его СОБСТВЕННЫХ клеток, которые давят друг на друга
@@ -1443,7 +1443,7 @@ fun main(args: Array<String>) {
             // первой фазой — это ровно вклад среды.
             for (i in 0 until P.n) { P.px[i] = snapX[i]; P.py[i] = snapY[i] }
             for (i in 0 until P.n) {
-                P.vx[i] = 0.0; P.vy[i] = 0.0; P.prevX[i] = P.px[i]; P.prevY[i] = P.py[i]
+                P.vx[i] = 0.0f; P.vy[i] = 0.0f; P.prevX[i] = P.px[i]; P.prevY[i] = P.py[i]
             }
             watch("НА МЕСТЕ, запас среды КАК ЕСТЬ:")
             // И контрольный: то же самое, но КОНТАКТОВ НЕТ ВОВСЕ. Если кусок улетает

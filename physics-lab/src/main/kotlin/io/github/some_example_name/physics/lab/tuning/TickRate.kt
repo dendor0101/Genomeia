@@ -36,29 +36,29 @@ import kotlin.math.sqrt
  * существ, а не разные настройки решателя. Здесь период держится в СЕКУНДАХ и
  * пересчитывается в кадры под каждый UPS.
  */
-private const val GAIT_SECONDS = 104.0 / 144.0   // период гребка демо в секундах
+private const val GAIT_SECONDS = 104.0f / 144.0f   // период гребка демо в секундах
 private const val BODY_PERIODS = 14              // сколько циклов мерить тягу
 
 private class Result(
     val ups: Int,
     val sub: Int,
-    val residual: Double,
-    val angular: Double,
-    val thrust: Double,
-    val coastP: Double,
+    val residual: Float,
+    val angular: Float,
+    val thrust: Float,
+    val coastP: Float,
     val invPeak: Int,
-    val nanos: Double,
+    val nanos: Float,
 )
 
 private fun measure(topo: Topology, ups: Int, sub: Int): Result {
-    val dt = 1.0 / ups
+    val dt = 1.0f / ups
     val period = (GAIT_SECONDS * ups).roundToInt().coerceAtLeast(2)
     val p = SwimParams(gaitPeriod = period)
     val s = SwimSolver(topo, p)
 
     // --- СХОДИМОСТЬ и УГЛОВАЯ УТЕЧКА: мышца держится сокращённой ---
     s.reset()
-    val holdFrames = (4.0 * ups).roundToInt()
+    val holdFrames = (4.0f * ups).roundToInt()
     var invPeak = 0
     for (fr in 1..holdFrames) {
         s.frameHoldMuscle0(dt, sub, hold = true)
@@ -84,11 +84,11 @@ private fun measure(topo: Topology, ups: Int, sub: Int): Result {
     val t = SwimSolver(topo, p)
     t.reset()
     for (fr in 1..(2 * ups)) t.frame(dt, sub, gait = true)   // прогрев
-    var best = Double.MAX_VALUE
+    var best = Float.MAX_VALUE
     for (a in 0 until 3) {
         val t0 = System.nanoTime()
         for (fr in 1..(3 * ups)) t.frame(dt, sub, gait = true)
-        val el = (System.nanoTime() - t0) / 3.0
+        val el = (System.nanoTime() - t0) / 3.0f
         if (el < best) best = el
     }
 
@@ -103,8 +103,8 @@ private fun header() {
 private fun row(r: Result, mark: String = "") {
     println(String.format(Locale.ROOT,
         "%5d | %4d | %9d | %9.4f%% | %9.3e | %9.5f | %9.3e | %4d | %9.0f %s",
-        r.ups, r.sub, r.ups * r.sub, r.residual * 100.0, r.angular,
-        r.thrust, r.coastP, r.invPeak, r.nanos / 1000.0, mark))
+        r.ups, r.sub, r.ups * r.sub, r.residual * 100.0f, r.angular,
+        r.thrust, r.coastP, r.invPeak, r.nanos / 1000.0f, mark))
 }
 
 fun main(args: Array<String>) {
@@ -176,29 +176,29 @@ fun main(args: Array<String>) {
     println()
     println("=== ЗВОН ТКАНИ ПРИ РЫВКЕ (одна вершина смещена на 2 связи и отпущена) ===")
     println(String.format(Locale.ROOT, "%-12s | %10s | %10s | %10s | %10s",
-        "VISCOSITY", "k за подшаг", "пик KE", "KE 0.5 c", "KE 2 c"))
+        "VISCOSITY", "k за подшаг", "пик KE", "KE 0.5f c", "KE 2 c"))
 
-    val ups = Math.round(1.0 / DemoConst.DT).toInt()
+    val ups = Math.round(1.0f / DemoConst.DT).toInt()
     val sub = DemoConst.SUBSTEPS
     val h = DemoConst.DT / sub
-    for (visc in listOf(10.0, 50.0, 200.0, 850.5)) {
+    for (visc in listOf(10.0f, 50.0f, 200.0f, 850.5f)) {
         val s = SwimSolver(topo, SwimParams(viscosity = visc))
         s.reset()
         // Дёргаем вершину с самым дальним от центра положением — там отклик заметнее.
         var far = 0
-        var best = -1.0
+        var best = -1.0f
         for (i in 0 until topo.n) {
             val dx = s.px[i] - s.comX(); val dy = s.py[i] - s.comY()
             val d = dx * dx + dy * dy
             if (d > best) { best = d; far = i }
         }
-        s.px[far] += 2.0 * topo.meanLinkLength
+        s.px[far] += 2.0f * topo.meanLinkLength
 
-        var peak = 0.0
-        var ke05 = 0.0
-        var ke2 = 0.0
-        val f05 = (0.5 * ups).toInt()
-        val f2 = (2.0 * ups).toInt()
+        var peak = 0.0f
+        var ke05 = 0.0f
+        var ke2 = 0.0f
+        val f05 = (0.5f * ups).toInt()
+        val f2 = (2.0f * ups).toInt()
         for (fr in 1..f2) {
             s.frameHoldMuscle0(DemoConst.DT, sub, hold = false)
             val ke = s.kinetic()
@@ -207,7 +207,7 @@ fun main(args: Array<String>) {
         }
         ke2 = s.kinetic()
         println(String.format(Locale.ROOT, "%-12.1f | %10.4f | %10.3e | %10.3e | %10.3e",
-            visc, kotlin.math.min(visc * h, 0.5), peak, ke05, ke2))
+            visc, kotlin.math.min(visc * h, 0.5f), peak, ke05, ke2))
     }
     println()
     println("k за подшаг — это доля скорости деформации, снимаемая за подшаг, потолок 0.5.")

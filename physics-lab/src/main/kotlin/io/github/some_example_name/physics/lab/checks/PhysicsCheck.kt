@@ -74,6 +74,24 @@ private class Check(val name: String, val why: String) {
     }
 }
 
+/**
+ * Пол шума записи позиций за подшаг (пункт 5): среднеквадратичная сумма m·ε по телу, если каждая частица
+ * округляется к сетке своего типа с ошибкой, равномерной в ±ulp/2 по каждой оси. ulp берётся у самих позиций,
+ * поэтому пол тот же по смыслу и во float, и в double.
+ */
+private fun roundingFloor(): Double {
+    val P = Probe
+    var f2 = 0.0
+    for (i in 0 until P.n) {
+        val w = P.invMass[i]
+        if (w <= 0.0f) continue
+        val m = 1.0 / w
+        val ux = Math.ulp(P.px[i]).toDouble(); val uy = Math.ulp(P.py[i]).toDouble()
+        f2 += m * m * (ux * ux + uy * uy) / 12.0
+    }
+    return sqrt(f2)
+}
+
 private val checks = ArrayList<Check>()
 
 private fun check(name: String, why: String, body: Check.() -> Unit) {
@@ -83,6 +101,21 @@ private fun check(name: String, why: String, body: Check.() -> Unit) {
     println(String.format(Locale.ROOT, "  %-4s %-34s %s",
         if (c.ok) "OK" else "FAIL", name, c.detail))
     if (!c.ok) println("       ^ $why")
+}
+
+/**
+ * Центр масс подвижных частиц, в единицах мира. Суммы — в double: по пути центра масс проверки судят, едет ли тело
+ * (скорости из массива во float для этого не годятся — см. «тело останавливается за 30..90 с»).
+ */
+private fun centreOfMass(n: Int, px: FloatArray, py: FloatArray, invMass: FloatArray): DoubleArray {
+    var x = 0.0; var y = 0.0; var m = 0.0
+    for (i in 0 until n) {
+        val w = invMass[i]
+        if (w <= 0.0f) continue
+        val mi = 1.0 / w
+        x += mi * px[i]; y += mi * py[i]; m += mi
+    }
+    return doubleArrayOf(x / m, y / m)
 }
 
 fun main(args: Array<String>) {
@@ -129,14 +162,14 @@ fun main(args: Array<String>) {
             val r = P.body.radius[i].toDouble() / topo.meanLinkLength
             if (r < rMin) rMin = r
             if (r > rMax) rMax = r
-            val c = (ct?.contactRadiusOf(i) ?: 0.0) / topo.meanLinkLength
+            val c = (ct?.contactRadiusOf(i)?.toDouble() ?: 0.0) / topo.meanLinkLength
             if (c > 0.0) { if (c < cMin) cMin = c; if (c > cMax) cMax = c }
         }
         var linkMin = Double.MAX_VALUE; var linkMax = 0.0
         for (c in 0 until topo.conCount) {
             val l = topo.conRest[c] / topo.meanLinkLength
-            if (l < linkMin) linkMin = l
-            if (l > linkMax) linkMax = l
+            if (l < linkMin) linkMin = l.toDouble()
+            if (l > linkMax) linkMax = l.toDouble()
         }
         // У тела целиком из кости conCount равен нулю: внутрикостных связей в
         // conA/conB намеренно нет, и печатать их длину нечего.
@@ -161,10 +194,10 @@ fun main(args: Array<String>) {
         var maxDiff = 0.0
         for (fr in 1..200) {
             P.frame(dt, sub, contract = true)
-            s.frameHoldMuscle0(dt, sub, hold = true)
+            s.frameHoldMuscle0(dt.toFloat(), sub, hold = true)
             for (i in 0 until P.n) {
-                maxDiff = maxOf(maxDiff, abs(P.px[i] - s.px[i]))
-                maxDiff = maxOf(maxDiff, abs(P.vx[i] - s.vx[i]))
+                maxDiff = maxOf(maxDiff, abs(P.px[i] - s.px[i]).toDouble())
+                maxDiff = maxOf(maxDiff, abs(P.vx[i] - s.vx[i]).toDouble())
             }
         }
         check("SwimSolver == DemoSession",
@@ -190,8 +223,8 @@ fun main(args: Array<String>) {
             for (k in P.body.linkA.indices) { deg[P.body.linkA[k]]++; deg[P.body.linkB[k]]++ }
             for (q in 0 until P.n) {
                 val v = sqrt(P.vx[q]*P.vx[q] + P.vy[q]*P.vy[q])
-                if (deg[q] == 0) { nFree++; if (v > vFree) vFree = v }
-                else if (v > vBody) { vBody = v; worstId = q }
+                if (deg[q] == 0) { nFree++; if (v > vFree) vFree = v.toDouble() }
+                else if (v > vBody) { vBody = v.toDouble(); worstId = q }
             }
             if (worstId >= 0) {
                 var isBone = false
@@ -253,8 +286,10 @@ fun main(args: Array<String>) {
         for (fr in 1..(3.0 / dt).toInt()) P.frame(dt, sub, contract = true)
         for (fr in 1..(30.0 / dt).toInt()) P.frame(dt, sub, contract = false)
         val p30 = sqrt(P.pX() * P.pX() + P.pY() * P.pY())
+        val c30 = centreOfMass(P.n, P.px, P.py, P.invMass)
         for (fr in 1..(60.0 / dt).toInt()) P.frame(dt, sub, contract = false)
         val p90 = sqrt(P.pX() * P.pX() + P.pY() * P.pY())
+        val c90 = centreOfMass(P.n, P.px, P.py, P.invMass)
         // Проверка составная, и обе половины нужны.
         //
         // ЗАТУХАНИЕ, а не модуль: у быстрого пловца импульса просто больше, и порог по
@@ -296,13 +331,20 @@ fun main(args: Array<String>) {
         // Замер после них: базовое тело 2.75e-10, кирпич 3.10e-14, медуза 4.88e-11.
         // Порог 1e-04 оставляет запас в сотни тысяч раз и снова способен ловить
         // настоящую полку импульса, ради которой проверка и заводилась.
-        val negligible = comV < 1e-4
+        //
+        // СКОРОСТЬ — ПО ПУТИ ЦЕНТРА МАСС, А НЕ ПО МАССИВУ СКОРОСТЕЙ (24.11.2026). Числа выше мерены в double. Во float
+        // скорость частицы — смещение за подшаг, делённое на подшаг, и у покоящегося тела она не ноль: положения
+        // дрожат на последний знак float, а он, делённый на подшаг из шестнадцати, — уже 2·10⁻³ связи в секунду. На
+        // медузе при 16 подшагах средняя по телу «скорость» из массива — 2.1·10⁻⁴ связи в секунду и не затухает, а
+        // центр масс за те же 60 секунд идёт на 5·10⁻⁶ связи в секунду. Порог прежний; меряется им путь тела.
+        val travel = Math.hypot(c90[0] - c30[0], c90[1] - c30[1]) / topo.meanLinkLength / 60.0
+        val negligible = travel < 1e-4
         check("тело останавливается за 30..90 с",
             "импульс вышел на полку — что-то подкачивает тело из ничего") {
             ok = decayed || negligible
             detail = String.format(Locale.ROOT,
-                "затухание %.1fx, скорость центра масс %.2e связей/с (нужно >20x ИЛИ <1e-4)",
-                if (p90 > 0) p30 / p90 else Double.POSITIVE_INFINITY, comV)
+                "затухание %.1fx, центр масс едет на %.2e связей/с (нужно >20x ИЛИ <1e-4; по скоростям частиц — %.2e)",
+                if (p90 > 0) p30 / p90 else Double.POSITIVE_INFINITY, travel, comV)
         }
         // НОРМИРУЕМ НА МОМЕНТ ИНЕРЦИИ, то есть меряем угловую СКОРОСТЬ.
         //
@@ -349,10 +391,10 @@ fun main(args: Array<String>) {
                 val o = P.organismOf[i]
                 val rx = cx[o]; val ry = cy[o]
                 val qx = P.body.x[i] - rx; val qy = P.body.y[i] - ry
-                P.px[i] = rx + cs * qx - sn * qy
-                P.py[i] = ry + sn * qx + cs * qy
-                P.vx[i] = -omega * (P.py[i] - ry)
-                P.vy[i] = omega * (P.px[i] - rx)
+                P.px[i] = (rx + cs * qx - sn * qy).toFloat()
+                P.py[i] = (ry + sn * qx + cs * qy).toFloat()
+                P.vx[i] = (-omega * (P.py[i] - ry)).toFloat()
+                P.vy[i] = (omega * (P.px[i] - rx)).toFloat()
             }
             val b0 = P.pX(); val b1 = P.pY()
             for (s in 0 until sub) P.applyNormalDrag(h)
@@ -370,15 +412,32 @@ fun main(args: Array<String>) {
 
     // ------------------------------------------------------------------
     //  5. Утечка внутренних стадий. Все три обязаны сохранять центр масс.
+    //
+    //  ПОРОГ — В ПОЛАХ ШУМА ЗАПИСИ ПОЗИЦИЙ (22.11.2026, физика во float, находка 36).
+    //  Поправки стадий парные и в точной арифметике центр масс не двигают. Остаток —
+    //  запись позиции: сдвинутая частица округляется к сетке своего типа (float или
+    //  double), и сумма m·Δx по телу не ноль. Пол — среднеквадратичная сумма m·ε при ε,
+    //  равномерном в ±ulp/2 по каждой оси (roundingFloor), сложенная по подшагам, как и
+    //  утечка. Замер (сумма модулей за 10 с, в полах): кирпич — кость 2.5, площади 0,
+    //  мягких связей нет; медуза — связи 0.09, площади 0, кость 0.13. В double кость
+    //  даёт те же 2–2.4 пола (кирпич 7.8e-12, медуза 1.9e-11), только пол там в 5·10⁸ раз
+    //  ниже: прежний порог 1e-6 мерил точность double, а не стадию, и во float падал на
+    //  шуме записи. У кирпича остаток — блуждание (сумма со знаком — 0.006 суммы модулей,
+    //  у шума ~1/√N = 0.024), у медузы он идёт в одну сторону (0.8 и 0.6) — вероятно
+    //  (не проверено), поправку меньше полшага float одна частица пары теряет, а другая,
+    //  с шагом float мельче, — нет; в игре этот сдвиг снимает учёт импульса за тик. Поправка без пары (ошибка в
+    //  коде стадии) — порядка самой поправки, а она на порядки больше шага float.
+    //  Порог 7.5 пола — втрое выше худшего замера.
     // ------------------------------------------------------------------
     println("--- утечка стадий (внешних сил нет)")
     run {
         P.resetState()
         val acc = DoubleArray(3)
+        var floor = 0.0
         val names = arrayOf("solveConstraints", "solveAreas", "projectBone")
         for (fr in 0 until (10.0 / dt).toInt()) {
-            P.muscleTarget.fill(0.0)
-            if (P.muscleTarget.isNotEmpty()) P.muscleTarget[0] = 1.0
+            P.muscleTarget.fill(0.0f)
+            if (P.muscleTarget.isNotEmpty()) P.muscleTarget[0] = 1.0f
             P.updateMuscles(dt)
             for (s in 0 until sub) {
                 P.integrate(h)
@@ -389,12 +448,13 @@ fun main(args: Array<String>) {
                 acc[1] += sqrt(P.positionalImpulse(b).let { it[0] * it[0] + it[1] * it[1] })
                 b = P.snapshotPos(); P.projectBones()
                 acc[2] += sqrt(P.positionalImpulse(b).let { it[0] * it[0] + it[1] * it[1] })
+                floor += roundingFloor()
                 P.updateVelocities(h)
             }
         }
         for (k in 0..2) {
             check(names[k], "стадия двигает центр масс — нарушено сохранение импульса") {
-                expectBelow(acc[k], 1e-6)
+                expectBelow(acc[k], 7.5 * floor, String.format(Locale.ROOT, " (7.5 пола шума записи %.2e)", floor))
             }
         }
     }
@@ -415,9 +475,9 @@ fun main(args: Array<String>) {
         s.reset()
         var worst = 0.0
         for (fr in 1..(20.0 / dt).toInt()) {
-            s.frame(dt, sub, gait = true)
+            s.frame(dt.toFloat(), sub, gait = true)
             val pen = s.contacts.maxPenetration(s.px, s.py)
-            if (pen > worst) worst = pen
+            if (pen > worst) worst = pen.toDouble()
         }
         check("проникновение границы за 20 с",
             "несвязанные граничные клетки сходятся вплотную — контакты не держат") {
@@ -444,15 +504,15 @@ fun main(args: Array<String>) {
         s.reset()
         var minX = Double.MAX_VALUE; var maxX = -Double.MAX_VALUE
         for (i in 0 until topo.n) {
-            if (s.px[i] < minX) minX = s.px[i]
-            if (s.px[i] > maxX) maxX = s.px[i]
+            if (s.px[i] < minX) minX = s.px[i].toDouble()
+            if (s.px[i] > maxX) maxX = s.px[i].toDouble()
         }
         val line = minX + (maxX - minX) * at
         for (i in 0 until topo.n) {
-            if (s.px[i] > line) s.px[i] = line - (s.px[i] - line)
-            s.vx[i] = 0.0; s.vy[i] = 0.0
+            if (s.px[i] > line) s.px[i] = (line - (s.px[i] - line)).toFloat()
+            s.vx[i] = 0.0f; s.vy[i] = 0.0f
         }
-        for (fr in 1..(8.0 / dt).toInt()) s.frameHoldMuscle0(dt, sub, hold = false)
+        for (fr in 1..(8.0 / dt).toInt()) s.frameHoldMuscle0(dt.toFloat(), sub, hold = false)
         check("складка ${((1 - at) * 100).toInt()}% расходится за 8 с",
             "ткань застряла сама в себе и не распрямляется") {
             expectAtMost(s.countInverted(), 0)
@@ -501,12 +561,12 @@ fun main(args: Array<String>) {
         // перетаскивании мышью нет. Первый вариант теста именно так и врал:
         // выброс скорости шёл от самого теста, а не от физики.
         val keepW = P.invMass[g]
-        P.invMass[g] = 0.0
+        P.invMass[g] = 0.0f
         for (fr in 1..hold) {
             val u = fr.toDouble() / hold
-            P.px[g] = sx + (tx - sx) * u
-            P.py[g] = sy + (ty - sy) * u
-            P.vx[g] = 0.0; P.vy[g] = 0.0
+            P.px[g] = (sx + (tx - sx) * u).toFloat()
+            P.py[g] = (sy + (ty - sy) * u).toFloat()
+            P.vx[g] = 0.0f; P.vy[g] = 0.0f
             P.frame(dt, sub, contract = false)
             clamps += P.toiClamps()
             for (i in 0 until P.n) {
@@ -519,17 +579,26 @@ fun main(args: Array<String>) {
 
         for (fr in 1..(30.0 / dt).toInt()) P.frame(dt, sub, contract = false)
         val p30 = sqrt(P.pX() * P.pX() + P.pY() * P.pY())
+        val c30 = centreOfMass(P.n, P.px, P.py, P.invMass)
         for (fr in 1..(60.0 / dt).toInt()) P.frame(dt, sub, contract = false)
         val p90 = sqrt(P.pX() * P.pX() + P.pY() * P.pY())
+        val c90 = centreOfMass(P.n, P.px, P.py, P.invMass)
 
+        // ЕДЕТ ЛИ ТЕЛО — ПО ПУТИ ЦЕНТРА МАСС, А НЕ ПО МАССИВУ СКОРОСТЕЙ (24.11.2026). Скорость частицы решатель выводит
+        // из смещения за подшаг (v = Δx / h), и у покоящегося тела она не ноль: положения дрожат на последний знак
+        // float, а этот знак, делённый на подшаг, — уже 2·10⁻³ связи в секунду при 16 подшагах (при шести — втрое
+        // меньше). На кирпиче при 16 подшагах 364 частицы из 370 имели такую «скорость», средняя по телу выходила
+        // 3.9·10⁻⁴ связи в секунду и не затухала — а центр масс за те же 60 секунд сдвинулся на 10⁻¹⁰ связи в
+        // секунду. Порог прежний (10⁻⁴ связи в секунду); меряется им теперь то, о чём проверка: путь тела.
         val comV = P.comSpeed()
+        val travel = Math.hypot(c90[0] - c30[0], c90[1] - c30[1]) / topo.meanLinkLength / 60.0
         val decayed = p90 <= 0.0 || p30 / p90 > 20.0
         check("после загиба тело останавливается",
             "загнутое тело продолжает ехать — аварийный тракт качает импульс") {
-            ok = decayed || comV < 1e-4
+            ok = decayed || travel < 1e-4
             detail = String.format(Locale.ROOT,
-                "затухание %.1fx, скорость центра масс %.2e связей/с",
-                if (p90 > 0) p30 / p90 else Double.POSITIVE_INFINITY, comV)
+                "затухание %.1fx, центр масс едет на %.2e связей/с (по скоростям частиц — %.2e)",
+                if (p90 > 0) p30 / p90 else Double.POSITIVE_INFINITY, travel, comV)
         }
 
         // Сами аварийные механизмы. Порог — НОЛЬ, и это не придирка: пока путь за
@@ -577,7 +646,7 @@ fun main(args: Array<String>) {
         for (e in 0 until P.boundCount) {
             val a = P.boundA[e]; val b = P.boundB[e]
             val d = sqrt((P.px[a]-P.px[b])*(P.px[a]-P.px[b]) + (P.py[a]-P.py[b])*(P.py[a]-P.py[b]))
-            if (d > longest) longest = d
+            if (d > longest) longest = d.toDouble()
         }
         val bonded = HashSet<Long>()
         for (k in P.body.linkA.indices) {
@@ -590,7 +659,7 @@ fun main(args: Array<String>) {
             val a = bset[ai]; val b = bset[bi]
             if (bonded.contains(minOf(a,b).toLong() * 1000003L + maxOf(a,b).toLong())) continue
             val d = sqrt((P.px[a]-P.px[b])*(P.px[a]-P.px[b]) + (P.py[a]-P.py[b])*(P.py[a]-P.py[b]))
-            if (d < nearest) nearest = d
+            if (d < nearest) nearest = d.toDouble()
         }
         println(String.format(Locale.ROOT,
             "       мембрана: граничных %d, длиннейшее ребро %.4f, ближайшая несвязанная пара %.4f, запас %.2fx",
@@ -632,7 +701,7 @@ fun main(args: Array<String>) {
                 P.dragTo(g, sx + (c1x - sx) * u, sy + (c1y - sy) * u)
                 P.frame(dt, sub, contract = false)
                 val pen = ct.maxPenetration(P.px, P.py)
-                if (pen > worstPen) worstPen = pen
+                if (pen > worstPen) worstPen = pen.toDouble()
                 worstInside = maxOf(worstInside, foreignTissue())
                 val miss = ct.missedOverlaps(P.px, P.py)
                 if (miss > worstMissed) worstMissed = miss
@@ -774,13 +843,13 @@ fun main(args: Array<String>) {
         } else {
             val hold = (2.0 / dt).toInt()
             P.resetState(); P.resetCounters()
-            P.dragTo(g, P.px[g], P.py[g])
+            P.dragTo(g, P.px[g].toDouble(), P.py[g].toDouble())
             for (fr in 1..hold) P.frame(dt, sub, contract = false)
             val vFull = P.comSpeed(); val peakFull = P.peakSpeedCellsPerTick()
             P.dragRelease()
 
             P.resetState(); P.resetCounters()
-            P.dragTo(g, P.px[g], P.py[g])
+            P.dragTo(g, P.px[g].toDouble(), P.py[g].toDouble())
             for (fr in 1..hold) P.frame(dt, sub, contract = false, hydro = false)
             val vNoHydro = P.comSpeed()
             P.dragRelease()
@@ -1068,15 +1137,15 @@ fun main(args: Array<String>) {
             var sumY = 0.0; var cnt = 0
             for (k in 0 until P.n) {
                 if (P.isFree(k)) continue
-                if (P.px[k] > maxX) maxX = P.px[k]
-                if (P.px[k] < minX) minX = P.px[k]
+                if (P.px[k] > maxX) maxX = P.px[k].toDouble()
+                if (P.px[k] < minX) minX = P.px[k].toDouble()
                 sumY += P.py[k]; cnt++
             }
             val speed = P.const("MAX_SPEED_CELLS_PER_TICK") * topo.meanLinkLength / dt
-            P.px[bullet] = maxX + topo.meanLinkLength * 8.0
-            P.py[bullet] = sumY / cnt
+            P.px[bullet] = (maxX + topo.meanLinkLength * 8.0).toFloat()
+            P.py[bullet] = (sumY / cnt).toFloat()
             P.prevX[bullet] = P.px[bullet]; P.prevY[bullet] = P.py[bullet]
-            P.vx[bullet] = -speed * P.const("BULLET_SPEED_FRACTION"); P.vy[bullet] = 0.0
+            P.vx[bullet] = (-speed * P.const("BULLET_SPEED_FRACTION")).toFloat(); P.vy[bullet] = 0.0f
 
             var deepest = 0.0
             for (fr in 1..(3.0 / dt).toInt()) {
@@ -1161,7 +1230,7 @@ fun main(args: Array<String>) {
             var rMin = Double.MAX_VALUE
             for (i in 0 until P.n) {
                 val r = ct.contactRadiusOf(i) / ml
-                if (r > 0.0 && r < rMin) rMin = r
+                if (r > 0.0 && r < rMin) rMin = r.toDouble()
             }
             var openEdges = 0; var passable = 0
             var worstGap = -Double.MAX_VALUE; var worstEdge = -1
@@ -1172,7 +1241,7 @@ fun main(args: Array<String>) {
                     (ct.contactRadiusOf(a) + ct.contactRadiusOf(b))) / ml
                 if (gap > 0.0) openEdges++
                 if (gap > 2.0 * rMin) passable++
-                if (gap > worstGap) { worstGap = gap; worstEdge = e }
+                if (gap > worstGap) { worstGap = gap.toDouble(); worstEdge = e }
             }
             println(String.format(Locale.ROOT,
                 "       наименьший радиус в сцене %.3f связи, не перекрыто %d рёбер из %d, " +
@@ -1246,15 +1315,15 @@ fun main(args: Array<String>) {
                     val speed = P.const("BULLET_SPEED_FRACTION") * P.const("MAX_SPEED_CELLS_PER_TICK") * topo.meanLinkLength / dt
                     for (i in 0 until P.n) {
                         when (originalOrg[i]) {
-                            oa -> { P.vx[i] = dx * speed; P.vy[i] = dy * speed }
-                            ob -> { P.vx[i] = -dx * speed; P.vy[i] = -dy * speed }
+                            oa -> { P.vx[i] = (dx * speed).toFloat(); P.vy[i] = (dy * speed).toFloat() }
+                            ob -> { P.vx[i] = (-dx * speed).toFloat(); P.vy[i] = (-dy * speed).toFloat() }
                         }
                     }
                     for (fr in 1..(2.0 / dt).toInt()) {
                         P.frame(dt, sub, contract = false)
                         if (rigid) worstInside = maxOf(worstInside, foreignTissue())
                         val p = ct0.maxPenetration(P.px, P.py)
-                        if (p > worstPen) worstPen = p
+                        if (p > worstPen) worstPen = p.toDouble()
                         val na = com2(oa); val nb = com2(ob)
                         val sep = (nb[0] - na[0]) * axX + (nb[1] - na[1]) * axY
                         val through = -sep / topo.meanLinkLength
@@ -1313,8 +1382,8 @@ fun main(args: Array<String>) {
                     val speed = P.const("BULLET_SPEED_FRACTION") * P.const("MAX_SPEED_CELLS_PER_TICK") * topo.meanLinkLength / dt
             for (i in 0 until P.n) {
                 when (P.organismOf[i]) {
-                    oa -> { P.vx[i] = dx * speed; P.vy[i] = dy * speed }
-                    ob -> { P.vx[i] = -dx * speed; P.vy[i] = -dy * speed }
+                    oa -> { P.vx[i] = (dx * speed).toFloat(); P.vy[i] = (dy * speed).toFloat() }
+                    ob -> { P.vx[i] = (-dx * speed).toFloat(); P.vy[i] = (-dy * speed).toFloat() }
                 }
             }
             var worstOverlap = 0.0
@@ -1331,7 +1400,7 @@ fun main(args: Array<String>) {
                 if (through > worstOverlap) worstOverlap = through
                 if (ct != null) {
                     val p = ct.maxPenetration(P.px, P.py)
-                    if (p > worstPen) worstPen = p
+                    if (p > worstPen) worstPen = p.toDouble()
                 }
             }
             val killed = P.killedLinks()

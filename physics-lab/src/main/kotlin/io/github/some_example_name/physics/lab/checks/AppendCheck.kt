@@ -55,7 +55,7 @@ fun main(args: Array<String>) {
     for (tick in 0 until ticks) {
         if (!ok) break
         val on = if (tick % period < duty) 1.0 else 0.0
-        whole.setAllMuscleTargets(on); parts.setAllMuscleTargets(on)
+        whole.setAllMuscleTargets(on.toFloat()); parts.setAllMuscleTargets(on.toFloat())
         whole.step(); parts.step()
         val ha = PlayerLog.stateHash(whole.particleCount, whole.x, whole.y, whole.vx, whole.vy)
         val hb = PlayerLog.stateHash(parts.particleCount, parts.x, parts.y, parts.vx, parts.vy)
@@ -112,7 +112,7 @@ internal fun stateSnapshot(state: BodyState): Map<String, Long> {
             val v = f.get(value) ?: continue
             val key = "$prefix.${f.name}"
             if (v is Number || v is Boolean || v.javaClass.isArray) {
-                if (v is Array<*> && v.isNotEmpty() && v[0] !is DoubleArray && v[0] !is IntArray) continue
+                if (v is Array<*> && v.isNotEmpty() && v[0] !is DoubleArray && v[0] !is FloatArray && v[0] !is IntArray) continue
                 result[key] = digestLive(v, state)
             } else if (v.javaClass.packageName.startsWith("io.github.some_example_name") && v !is BodyDefinition) {
                 nested(key, v, depth + 1)

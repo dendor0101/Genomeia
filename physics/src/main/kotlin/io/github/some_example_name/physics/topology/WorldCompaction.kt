@@ -69,7 +69,6 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
     lap(1)
 
     // --- частицы ---
-    fun p(a: DoubleArray) = if (a.size < nOld) a else pick(a, pNew, nOld, nNew)
     fun p(a: FloatArray) = if (a.size < nOld) a else pick(a, pNew, nOld, nNew)
     fun p(a: BooleanArray) = if (a.size < nOld) a else pick(a, pNew, nOld, nNew)
     fun p(a: IntArray, values: IntArray? = null) = if (a.size < nOld) a else pick(a, pNew, nOld, nNew, values)
@@ -87,10 +86,9 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
     sleepAnchorX = p(sleepAnchorX); sleepAnchorY = p(sleepAnchorY)
     tickJitterX = p(tickJitterX); tickJitterY = p(tickJitterY)
     contactPressure = p(contactPressure); contactPressureN = p(contactPressureN)
-    impactSpeed = p(impactSpeed)
     dbgOnly = dbgOnly?.let { p(it) }
     // Снимки разбора берутся заново в начале тика; сетка ловушек — черновик.
-    dbgSnapX = DoubleArray(0); dbgSnapY = DoubleArray(0); dbgSnapVx = DoubleArray(0); dbgSnapVy = DoubleArray(0)
+    dbgSnapX = FloatArray(0); dbgSnapY = FloatArray(0); dbgSnapVx = FloatArray(0); dbgSnapVy = FloatArray(0)
     orgQueue = IntArray(nNew)
     if (dragId >= 0) dragId = pNew[dragId]
     remapJoints(pNew)
@@ -98,17 +96,17 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
     trapCrashCell = -1; trapCrashTri = -1
 
     // --- организмы: ёмкость по числу частиц, как при загрузке ---
-    fun o(a: DoubleArray) = pick(a, oNew, orgCount, nNew)
+    fun o(a: FloatArray) = pick(a, oNew, orgCount, nNew)
     organismSize = pick(organismSize, oNew, orgCount, nNew); organismMass = o(organismMass)
     flowVX = o(flowVX); flowVY = o(flowVY)
     if (orgSleepDrift2.size >= orgCount) orgSleepDrift2 = o(orgSleepDrift2)
-    comAccX = DoubleArray(nNew); comAccY = DoubleArray(nNew)
+    comAccX = FloatArray(nNew); comAccY = FloatArray(nNew)
     if (orgPrev.isNotEmpty()) { orgPrev = IntArray(nNew); orgSeed = IntArray(nNew) }
-    if (orgFlowX.isNotEmpty()) { orgFlowX = DoubleArray(nNew); orgFlowY = DoubleArray(nNew) }
+    if (orgFlowX.isNotEmpty()) { orgFlowX = FloatArray(nNew); orgFlowY = FloatArray(nNew) }
     organismCount = orgNewCount
 
     // --- кости и мышцы ---
-    val bones = ArrayList<IntArray>(); val qx = ArrayList<DoubleArray>(); val qy = ArrayList<DoubleArray>()
+    val bones = ArrayList<IntArray>(); val qx = ArrayList<FloatArray>(); val qy = ArrayList<FloatArray>()
     for (b in rigidBones.indices) if (boneKept[b]) {
         bones.add(IntArray(rigidBones[b].size) { pNew[rigidBones[b][it]] }); qx.add(boneRestQx[b]); qy.add(boneRestQy[b])
     }
@@ -118,7 +116,7 @@ internal fun BodyState.compactWorld(removed: BooleanArray) {
     val mcNew = def.muscleClusters.size
     muscleActivation = pick(muscleActivation, mNew, mc, mcNew)
     muscleTarget = pick(muscleTarget, mNew, mc, mcNew)
-    muscleScaleOf = pick(muscleScaleOf, mNew, mc, mcNew).also { if (muscleScaleOf.size < mc) it.fill(1.0) }
+    muscleScaleOf = pick(muscleScaleOf, mNew, mc, mcNew).also { if (muscleScaleOf.size < mc) it.fill(1.0f) }
     if (muscleActivationPrev.size >= mc) muscleActivationPrev = pick(muscleActivationPrev, mNew, mc, mcNew)
 
     // --- рабочие списки: ёмкость по полному описанию, как при загрузке, хвост пуст ---
@@ -222,7 +220,7 @@ internal fun BodyState.rebuildDerived(oldSurface: LocalSurface?, pNew: IntArray?
     conCellScale = FloatArray(conA.size) { 1f }; triCellScale = FloatArray(triA.size) { 1f }
     conSoftness = FloatArray(conA.size) { 1f }; triSoftness = FloatArray(triA.size) { 1f }
     recomputeCellScales()
-    internalMom = InternalMomentum(n)
+    internalMom = InternalMomentum(n, SPIN_MIN_ARM * linkScale)
     distanceSweepOrder = DistanceSweepOrder.create(this)
     constraintBlocks = null
     initializeConstraintBlocks()
@@ -236,12 +234,6 @@ internal fun BodyState.rebuildDerived(oldSurface: LocalSurface?, pNew: IntArray?
 private fun numbering(kept: BooleanArray): IntArray {
     var k = 0
     return IntArray(kept.size) { if (kept[it]) k++ else -1 }
-}
-
-private fun pick(a: DoubleArray, map: IntArray, count: Int, cap: Int): DoubleArray {
-    val r = DoubleArray(cap)
-    for (i in 0 until minOf(count, a.size)) { val j = map[i]; if (j >= 0) r[j] = a[i] }
-    return r
 }
 
 private fun pick(a: FloatArray, map: IntArray, count: Int, cap: Int): FloatArray {
@@ -282,11 +274,11 @@ private fun BodyState.compactLinks(pNew: IntArray, eNew: IntArray, cap: Int) {
 
 /** Связи решателя оставшихся тел: длина покоя, пластика, смерть и дорастание едут с ними. */
 private fun BodyState.compactConstraints(pNew: IntArray, eNew: IntArray, mNew: IntArray, cap: Int) {
-    val a = IntArray(cap); val b = IntArray(cap); val rest = DoubleArray(cap)
+    val a = IntArray(cap); val b = IntArray(cap); val rest = FloatArray(cap)
     val mus = IntArray(cap); val edge = IntArray(cap)
     val dead = BooleanArray(cap); val torn = BooleanArray(cap)
     val hold = if (conHold.isNotEmpty()) ByteArray(cap) else conHold
-    val grow = if (conGrowTarget.isNotEmpty()) DoubleArray(cap) else conGrowTarget
+    val grow = if (conGrowTarget.isNotEmpty()) FloatArray(cap) else conGrowTarget
     val growAge = if (conGrowAge.isNotEmpty()) ByteArray(cap) else conGrowAge
     var m = 0
     for (c in 0 until conCount) {
@@ -402,7 +394,7 @@ private fun RestPairs.keep(pNew: IntArray, nNew: Int): RestPairs {
         st[j + 1] = total
     }
     val o = IntArray(total); val mi = IntArray(total)
-    val dd = DoubleArray(total); val di = DoubleArray(total); val ev = BooleanArray(total)
+    val dd = FloatArray(total); val di = FloatArray(total); val ev = BooleanArray(total)
     for (s in other.indices) {
         val k = sNew[s]
         if (k < 0) continue

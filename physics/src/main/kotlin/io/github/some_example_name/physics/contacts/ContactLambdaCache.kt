@@ -7,14 +7,14 @@ package io.github.some_example_name.physics
  */
 internal class ContactLambdaCache {
     private var keys = LongArray(16)
-    private var values = DoubleArray(16)
+    private var values = FloatArray(16)
     private var used = BooleanArray(16)
     private var mask = 15
     private var size = 0
 
     private fun home(key: Long): Int = ((key * -7046029254386353131L) ushr 32).toInt() and mask
 
-    fun getOrDefault(key: Long, fallback: Double): Double {
+    fun getOrDefault(key: Long, fallback: Float): Float {
         var s = home(key)
         while (used[s]) {
             if (keys[s] == key) return values[s]
@@ -23,9 +23,9 @@ internal class ContactLambdaCache {
         return fallback
     }
 
-    operator fun set(key: Long, value: Double) { put(key, value) }
+    operator fun set(key: Long, value: Float) { put(key, value) }
 
-    fun put(key: Long, value: Double) {
+    fun put(key: Long, value: Float) {
         var s = home(key)
         while (used[s]) {
             if (keys[s] == key) { values[s] = value; return }
@@ -64,7 +64,7 @@ internal class ContactLambdaCache {
 
     private fun grow() {
         val oldKeys = keys; val oldValues = values; val oldUsed = used
-        keys = LongArray(keys.size * 2); values = DoubleArray(keys.size)
+        keys = LongArray(keys.size * 2); values = FloatArray(keys.size)
         used = BooleanArray(keys.size); mask = keys.lastIndex; size = 0
         for (i in oldKeys.indices) if (oldUsed[i]) put(oldKeys[i], oldValues[i])
     }

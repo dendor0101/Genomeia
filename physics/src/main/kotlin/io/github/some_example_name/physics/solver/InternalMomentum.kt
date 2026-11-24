@@ -42,10 +42,15 @@ package io.github.some_example_name.physics
  * считается; поворот снимается вокруг того же центра, и снятие гасит приращение ровно.
  *
  * Группа с закреплённой клеткой не трогается — у неё есть внешняя опора.
+ *
+ * ПОВОРОТ — ТОЛЬКО У ГРУППЫ С РАДИУСОМ ИНЕРЦИИ БОЛЬШЕ [minSpinArm] (SPIN_MIN_ARM в единицах мира): у одиночной
+ * частицы инерция — квадрат ошибки округления центра масс, и поворот по ней — шум, делённый на шум (22.11,
+ * физика во float). Суммы по группам — в double: их мало, а частица от этого дороже не становится.
  */
-class InternalMomentum(val n: Int) {
-    private val snapX = DoubleArray(n)
-    private val snapY = DoubleArray(n)
+class InternalMomentum(val n: Int, minSpinArm: Float) {
+    private val minArm2 = minSpinArm.toDouble() * minSpinArm
+    private val snapX = FloatArray(n)
+    private val snapY = FloatArray(n)
     /** Организм каждой клетки на начало подшага и первая клетка каждого такого организма. */
     private val startOrg = IntArray(n)
     private var startFirst = IntArray(0)
@@ -69,7 +74,7 @@ class InternalMomentum(val n: Int) {
     var dbgLint = 0.0
 
     /** Начало подшага, сразу после интегрирования. */
-    fun mark(px: DoubleArray, py: DoubleArray, organismOf: IntArray, organismCount: Int) {
+    fun mark(px: FloatArray, py: FloatArray, organismOf: IntArray, organismCount: Int) {
         System.arraycopy(px, 0, snapX, 0, n)
         System.arraycopy(py, 0, snapY, 0, n)
         System.arraycopy(organismOf, 0, startOrg, 0, n)
@@ -104,14 +109,14 @@ class InternalMomentum(val n: Int) {
 
     /** Конец позиционного цикла, до updateVelocities. */
     fun cancel(organismOf: IntArray, organismCount: Int,
-               px: DoubleArray, py: DoubleArray, prevX: DoubleArray, prevY: DoubleArray,
-               invMass: DoubleArray, unborn: BooleanArray? = null) {
+               px: FloatArray, py: FloatArray, prevX: FloatArray, prevY: FloatArray,
+               invMass: FloatArray, unborn: BooleanArray? = null) {
         val c = organismCount
         if (c <= 0) return
         if (parent.size < c) {
             // Разрушение добавляет компоненты по одной: точный размер выделял заново
             // все девять массивов. Ёмкость растёт вдвое, живой диапазон по-прежнему c.
-            // 61 байт на слот: 256 слотов ~15 КБ (L1), 2048 ~122 КБ (L2).
+            // 61 байт на слот: 256 слотов ~15 КБ (L1), 2048 ~122 КБ (L2); с суммами в double — 89 байт.
             val capacity = maxOf(c, parent.size * 2, 16)
             parent = IntArray(capacity)
             gM = DoubleArray(capacity); gCx = DoubleArray(capacity); gCy = DoubleArray(capacity)
@@ -151,14 +156,14 @@ class InternalMomentum(val n: Int) {
             if (o !in 0 until c) continue
             val g = parent[o]
             // Нерождённая клетка (рост тела) не закрепляет организм: см. BodyState.cellUnborn.
-            if (invMass[i] <= 0.0) { if (unborn == null || !unborn[i]) gPinned[g] = true; continue }
+            if (invMass[i] <= 0.0f) { if (unborn == null || !unborn[i]) gPinned[g] = true; continue }
             val m = 1.0 / invMass[i]
             gM[g] += m; gCx[g] += m * prevX[i]; gCy[g] += m * prevY[i]
         }
         for (g in 0 until c) if (gM[g] > 0.0) { gCx[g] /= gM[g]; gCy[g] /= gM[g] }
         for (i in 0 until n) {
             val o = organismOf[i]
-            if (o !in 0 until c || invMass[i] <= 0.0) continue
+            if (o !in 0 until c || invMass[i] <= 0.0f) continue
             val g = parent[o]
             if (gPinned[g]) continue
             val m = 1.0 / invMass[i]
@@ -175,18 +180,18 @@ class InternalMomentum(val n: Int) {
         for (g in 0 until c) {
             if (gPinned[g] || gM[g] <= 0.0) continue
             gDx[g] /= gM[g]; gDy[g] /= gM[g]
-            gL[g] = if (gI[g] > 1e-18) gL[g] / gI[g] else 0.0
+            gL[g] = if (gI[g] > gM[g] * minArm2) gL[g] / gI[g] else 0.0
         }
         for (i in 0 until n) {
             val o = organismOf[i]
-            if (o !in 0 until c || invMass[i] <= 0.0) continue
+            if (o !in 0 until c || invMass[i] <= 0.0f) continue
             val g = parent[o]
             if (gPinned[g] || gM[g] <= 0.0) continue
             val tx = gDx[g]; val ty = gDy[g]
             val w = gL[g]
             val rx = prevX[i] - gCx[g]; val ry = prevY[i] - gCy[g]
-            px[i] -= tx - w * ry
-            py[i] -= ty + w * rx
+            px[i] = (px[i] - (tx - w * ry)).toFloat()
+            py[i] = (py[i] - (ty + w * rx)).toFloat()
         }
     }
 }

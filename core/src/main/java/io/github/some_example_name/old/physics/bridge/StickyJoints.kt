@@ -142,6 +142,6 @@ internal class StickyJoints(
          * мягче связи (не бесконечно: деление на ноль и рывок при включении). Рвётся связь в мире
          * физики, как связь тела (Joints.kt), — при той же доле растяжения, то есть вдвое меньшей силой.
          */
-        fun complianceOf(impulse: Float): Double = 2.0 * SOFT_COMPLIANCE / impulse.coerceIn(0.05f, 1f)
+        fun complianceOf(impulse: Float): Float = 2f * SOFT_COMPLIANCE / impulse.coerceIn(0.05f, 1f)
     }
 }

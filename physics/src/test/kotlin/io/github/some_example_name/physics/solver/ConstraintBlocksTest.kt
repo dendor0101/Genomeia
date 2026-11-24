@@ -145,12 +145,12 @@ class ConstraintBlocksTest {
         val width = 64; val n = width * width
         val shuffled = (0 until n).toMutableList().also { it.shuffle(Random(4242)) }.toIntArray()
         val bodies = gridBody(width, 0f, null).concat(gridBody(width, 2f * width, shuffled))
-        fun run(workers: Int): Pair<DoubleArray, BodyState> {
+        fun run(workers: Int): Pair<FloatArray, BodyState> {
             val state = BodyState().also {
                 it.quiet = true; it.initialize(bodies); it.resetState()
                 it.workers = if (workers > 1) PhysicsWorkers.shared(workers) else null
             }
-            for (i in 0 until state.n) { state.vx[i] = 0.3 * (i % 7 - 3); state.vy[i] = 0.2 * (i % 5 - 2) }
+            for (i in 0 until state.n) { state.vx[i] = 0.3f * (i % 7 - 3); state.vy[i] = 0.2f * (i % 5 - 2) }
             val simulation = BodySimulation(state)
             repeat(12) { simulation.step() }
             return (state.px + state.py + state.vx + state.vy) to state
@@ -161,7 +161,7 @@ class ConstraintBlocksTest {
         assertTrue("первое тело — по воркерам", layout.serialBlocks < layout.blockCount)
         assertFalse(layout.serialBlock[0])
         val (four, _) = run(4)
-        assertArrayEquals(one, four, 0.0)
+        assertArrayEquals(one, four, 0.0f)
     }
 
     @Test fun crossingConstraintsAreSeamsAndFreshContourJoinsCurrentPass() {
