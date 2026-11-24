@@ -206,14 +206,25 @@ private fun BodyState.recentreBonePose(b: Int) {
     }
 }
 
-/** Место кости [b] в блоках решателя — тем же правилом, что initializeConstraintBlocks. */
+/**
+ * Место кости [b] в блоках решателя — тем же правилом, что initializeConstraintBlocks.
+ *
+ * КОСТЬ У ШВА — ТОЖЕ В ШОВ (24.11.2026, находка 41). Кость держит форму проекцией в конце стадий своего блока, а
+ * шов решается после обеих чётностей. Если до частицы кости достаёт ограничение шва (связь, площадь, створка или
+ * изгиб к частице соседнего блока), шов тянет её уже после проекции, и до следующего подшага кость остаётся
+ * искажённой; искажение уходит в скорость (px − prevX) / h, кость и ткань у шва дёргают друг друга, и тело не
+ * засыпает. Замер на блоках по 500 (каталог, 20 подшагов): у 57 сцен с костью, целых при блоках по 1000, кость
+ * искажалась на 6–16%, например gen-land/700788/wall-hit — 0 → 14.7%, и тело не уснуло. Поэтому кость, до которой
+ * достаёт шов, проецируется в наборе швов — после всех ограничений шва, как кость поперёк границы блока.
+ * «Достаёт» — по запечённому графу (все рёбра, и порванные, и нерождённые) на две связи: створка и изгиб соединяют
+ * частицы через одну общую, а запечённый граф не зависит от разрывов, так что место кости не устаревает от событий.
+ * Правило — ConstraintBlocks.boneBucket (одно на решатель игры и зеркало SwimSolver).
+ */
 internal fun BodyState.placeBoneInBlocks(b: Int, layout: ConstraintBlocks) {
     val ids = rigidBones[b]
     if (ids.isEmpty()) return
-    var block = layout.particleBlock[ids[0]]
-    for (i in ids) if (layout.particleBlock[i] != block) { block = layout.seamBucket[layout.particleBlock[ids[0]]]; break }
     layout.bones.remove(b)
-    layout.bones.add(b, block)
+    layout.bones.add(b, layout.boneBucket(ids, baked.vertStart, baked.vertOther))
 }
 
 /**

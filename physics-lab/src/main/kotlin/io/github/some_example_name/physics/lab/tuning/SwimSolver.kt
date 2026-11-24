@@ -159,12 +159,8 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         layout.links.finishBuild(); layout.areas.finishBuild()
         for (c in 0 until topo.bendCount) layout.bends.add(c, layout.blockOf(topo.bendA[c], topo.bendB[c]))
         for (c in flapA.indices) layout.flaps.add(c, layout.blockOf(flapA[c], flapB[c]))
-        for (b in topo.rigidBones.indices) {
-            val ids = topo.rigidBones[b]
-            var block = layout.particleBlock[ids[0]]
-            for (i in ids) if (layout.particleBlock[i] != block) { block = layout.seamBucket[layout.particleBlock[ids[0]]]; break }
-            layout.bones.add(b, block)
-        }
+        // Кость у шва — в набор швов, тем же правилом, что решатель игры (находка 41).
+        for (b in topo.rigidBones.indices) layout.bones.add(b, layout.boneBucket(topo.rigidBones[b], topo.vertStart, topo.vertOther))
     }
 
     private fun solveBlockedIteration(h: Float) {
@@ -402,7 +398,8 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             var dy = py[i] - py[j]
             val len = sqrt(dx * dx + dy * dy)
             if (len < 1e-9f) continue
-            dx /= len; dy /= len
+            val inv = 1.0f / len // одно деление, как в решателе игры (находка 41)
+            dx *= inv; dy *= inv
             val scale = muscleScale(topo.conMuscle[c])
             var over = len - conRest[c] * scale
             // Потолок тяги мышцы — как в решателе игры, см. MUSCLE_MAX_PULL.
@@ -433,7 +430,8 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             var dy = py[i] - py[j]
             val len = sqrt(dx * dx + dy * dy)
             if (len < 1e-12f) continue
-            dx /= len; dy /= len
+            val inv = 1.0f / len // одно деление, как в решателе игры (находка 41)
+            dx *= inv; dy *= inv
             val dL = -(len - topo.bendRest[c]) / (w + alpha)
             px[i] += dx * dL * wi; py[i] += dy * dL * wi
             px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
@@ -475,11 +473,9 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             var excess = area2 - restArea2
             if (s < 1.0f) { val cap = 2.0f * MUSCLE_MAX_PULL * triRestArea2[t]; if (excess > cap) excess = cap }
             var dL = -excess / (denom + a)
-            // Потолок на норму поправки: |dL| * sqrt(denom) и есть её длина.
-            if (maxStep > 0.0f) {
-                val corr = abs(dL) * sqrt(denom)
-                if (corr > maxStep) dL *= maxStep / corr
-            }
+            // Потолок на норму поправки: |dL| * sqrt(denom) и есть её длина. Корень — только за потолком,
+            // как capAreaStep решателя игры (находка 41).
+            if (maxStep > 0.0f && dL * dL * denom > maxStep * maxStep) dL *= maxStep / (abs(dL) * sqrt(denom))
 
             px[i0] += w0 * dL * g0x; py[i0] += w0 * dL * g0y
             px[i1] += w1 * dL * g1x; py[i1] += w1 * dL * g1y
@@ -545,10 +541,11 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     }
 
     private fun updateVelocities(h: Float) {
+        val invH = 1.0f / h // как в решателе игры (находка 41)
         for (i in 0 until n) {
             if (invMass[i] == 0.0f) { vx[i] = 0.0f; vy[i] = 0.0f; continue }
-            vx[i] = (px[i] - prevX[i]) / h
-            vy[i] = (py[i] - prevY[i]) / h
+            vx[i] = (px[i] - prevX[i]) * invH
+            vy[i] = (py[i] - prevY[i]) * invH
         }
     }
 
@@ -560,15 +557,15 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             val wi = invMass[i]; val wj = invMass[j]
             val w = wi + wj
             if (w == 0.0f) continue
-            var nx = px[j] - px[i]
-            var ny = py[j] - py[i]
-            val len = sqrt(nx * nx + ny * ny)
-            if (len < 1e-9f) continue
-            nx /= len; ny /= len
-            val dv = (vx[j] - vx[i]) * nx + (vy[j] - vy[i]) * ny
-            val si = k * wi / w; val sj = k * wj / w
-            vx[i] += dv * nx * si; vy[i] += dv * ny * si
-            vx[j] -= dv * nx * sj; vy[j] -= dv * ny * sj
+            val dx = px[j] - px[i]
+            val dy = py[j] - py[i]
+            val len2 = dx * dx + dy * dy
+            if (len2 < 1e-18f) continue
+            // Без корня, как viscousLinkAt решателя игры (находка 41).
+            val q = ((vx[j] - vx[i]) * dx + (vy[j] - vy[i]) * dy) * k / (w * len2)
+            val qi = q * wi; val qj = q * wj
+            vx[i] += dx * qi; vy[i] += dy * qi
+            vx[j] -= dx * qj; vy[j] -= dy * qj
         }
     }
 
@@ -643,8 +640,9 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
             val len = sqrt(ex * ex + ey * ey)
             if (len < 1e-9f) continue
 
-            val nx = -ey / len
-            val ny = ex / len
+            val invLen = 1.0f / len // как normalDragEdgeAt решателя игры (находка 41)
+            val nx = -ey * invLen
+            val ny = ex * invLen
 
             val vmx = (vx[i] + vx[j]) * 0.5f
             val vmy = (vy[i] + vy[j]) * 0.5f
@@ -674,7 +672,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
 
             // Трение ВДОЛЬ ребра. См. TANGENT_DRAG в DemoSession.
             if (p.tangentDrag > 0.0f) {
-                val tx = ex / len; val ty = ey / len
+                val tx = ex * invLen; val ty = ey * invLen
                 val vt = (vmx - flowVX[topo.organismOf[i]]) * tx + (vmy - flowVY[topo.organismOf[i]]) * ty
                 var kt = p.tangentDrag * p.normalDrag * len * h
                 if (kt > 0.5f) kt = 0.5f

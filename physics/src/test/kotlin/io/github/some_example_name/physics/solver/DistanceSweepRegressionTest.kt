@@ -51,7 +51,8 @@ class DistanceSweepRegressionTest {
     }
 
     // Поштучная схема aed2e1b без группировки. Эталон порядка записей: особенно
-    // важен общий конец двух соседних связей и смена направления обхода.
+    // важен общий конец двух соседних связей и смена направления обхода. Арифметика — как у ядра
+    // (с 24.11 направление через 1/len, находка 41); проверяется порядок, а не формула.
     private fun scalarReference(s: BodyState, h: Float) {
         val alpha = SOFT_COMPLIANCE / (h * h)
         val order = if (s.sweepBackwards) s.conCount - 1 downTo 0 else 0 until s.conCount
@@ -63,7 +64,8 @@ class DistanceSweepRegressionTest {
             var dx = s.px[i] - s.px[j]; var dy = s.py[i] - s.py[j]
             val len = sqrt(dx * dx + dy * dy)
             if (len < 1e-12f) continue
-            dx /= len; dy /= len
+            val inv = 1.0f / len
+            dx *= inv; dy *= inv
             val m = s.conMuscle[c]
             val scale = if (m < 0) 1.0f else s.muscleScaleOf[m]
             var over = len - s.conRest[c] * scale

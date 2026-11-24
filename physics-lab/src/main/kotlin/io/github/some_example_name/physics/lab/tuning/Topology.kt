@@ -78,6 +78,9 @@ class Topology private constructor(
     val bendA: IntArray,
     val bendB: IntArray,
     val bendRest: FloatArray,
+    /** Запечённый граф тела (все рёбра, и внутрикостные): место кости у шва — ConstraintBlocks.boneBucket. */
+    val vertStart: IntArray,
+    val vertOther: IntArray,
 ) {
     val bendCount: Int get() = bendA.size
     val conCount: Int get() = conA.size
@@ -155,6 +158,7 @@ class Topology private constructor(
                 organismSize = f("organismSize"),
                 bendA = ba.toIntArray(), bendB = bb.toIntArray(),
                 bendRest = br.toFloatArray(),
+                vertStart = demo.state.baked.vertStart.copyOf(), vertOther = demo.state.baked.vertOther.copyOf(),
             )
         }
     }

@@ -204,6 +204,28 @@ class ConstraintBlocks(n: Int, bodyOf: IntArray, blockSize: Int,
         return false
     }
 
+    /**
+     * Набор, в котором проецируется кость из частиц [ids]: её блок, а набор швов тела — если кость лежит в нескольких
+     * блоках или до её частицы достаёт шов (почему — BoneSplit.placeBoneInBlocks). «Достаёт» — по графу [vertStart],
+     * [vertOther] (запечённый граф тела: все рёбра, и порванные, и нерождённые) на две связи. Одно правило для решателя
+     * игры и зеркала SwimSolver.
+     */
+    fun boneBucket(ids: IntArray, vertStart: IntArray, vertOther: IntArray): Int {
+        val home = particleBlock[ids[0]]
+        for (i in ids) if (particleBlock[i] != home || nearOtherBlock(i, home, vertStart, vertOther)) return seamBucket[home]
+        return home
+    }
+
+    /** Есть ли в двух связях графа от частицы [i] частица не из блока [block]. */
+    private fun nearOtherBlock(i: Int, block: Int, start: IntArray, other: IntArray): Boolean {
+        for (k in start[i] until start[i + 1]) {
+            val u = other[k]
+            if (particleBlock[u] != block) return true
+            for (q in start[u] until start[u + 1]) if (particleBlock[other[q]] != block) return true
+        }
+        return false
+    }
+
     fun blockOf(a: Int, b: Int): Int =
         if (particleBlock[a] == particleBlock[b]) particleBlock[a] else seamBucket[particleBlock[a]]
 

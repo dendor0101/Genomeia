@@ -72,7 +72,8 @@ internal fun BodyState.solveBlockBend(h: Float, block: Int, layout: ConstraintBl
         var dy = py[i] - py[j]
         val len = sqrt(dx * dx + dy * dy)
         if (len < 1e-12f) continue
-        dx /= len; dy /= len
+        val inv = 1.0f / len // одно деление, см. solveDistanceConstraint
+        dx *= inv; dy *= inv
         val dL = -(len - bendRest[c]) / (w + alpha)
         px[i] += dx * dL * wi; py[i] += dy * dL * wi
         px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
@@ -141,11 +142,8 @@ internal fun BodyState.solveBlockAreas(h: Float, block: Int, layout: ConstraintB
         // Площадь мышцы тянет не сильнее удвоенной доли площади покоя — см. MUSCLE_MAX_PULL.
         if (if (fiberArea) fiberAreaFactor(s, fiberK) < 1.0f else active < 1.0f) { val cap = 2.0f * MUSCLE_MAX_PULL * rest2[t]; if (excess > cap) excess = cap }
         var dL = -excess / (denom + a)
-        // Потолок на длину поправки — см. AREA_MAX_STEP.
-        if (maxStep > 0.0f) {
-            val corr = abs(dL) * sqrt(denom)
-            if (corr > maxStep) dL *= maxStep / corr
-        }
+        // Потолок на длину поправки — см. AREA_MAX_STEP; корень — только за потолком (capAreaStep).
+        if (maxStep > 0.0f) dL = capAreaStep(dL, denom, maxStep)
 
         px[i0] += w0 * dL * g0x; py[i0] += w0 * dL * g0y
         px[i1] += w1 * dL * g1x; py[i1] += w1 * dL * g1y

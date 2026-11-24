@@ -375,7 +375,10 @@ internal class ParallelCandidates(private val ct: BoundaryContacts, workers: Int
     fun run(w: PhysicsWorkers, px: FloatArray, py: FloatArray, qx: FloatArray, qy: FloatArray) {
         this.px = px; this.py = py; this.qx = qx; this.qy = qy
         val count = ct.movedCount
-        val k = minOf(buffers.size, maxOf(1, count / 64))
+        // По 16 вершин на кусок, а не по 64 (24.11.2026, находка 41): при меньше 128 сдвинувшихся вершин поиск шёл одним
+        // куском, то есть в одном потоке, — 0.7 мс за тик на ПК (6% тика) и 3.1 мс на Galaxy A21s; стало 1.5 мс на
+        // A21s при загрузке 66%. Список пар от нарезки не зависит (склейка буферов по порядку кусков).
+        val k = minOf(buffers.size, maxOf(1, count / 16))
         for (c in 0 until k) { from[c] = (count.toLong() * c / k).toInt(); to[c] = (count.toLong() * (c + 1) / k).toInt() }
         chunks = k
         w.run(k, job)

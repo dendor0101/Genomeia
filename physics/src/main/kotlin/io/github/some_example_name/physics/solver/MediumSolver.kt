@@ -74,10 +74,11 @@ internal fun BodyState.integrateRange(from: Int, to: Int, h: Float, hitBones: Bo
 fun BodyState.updateVelocities(h: Float) {
     prepareAwakeSpans()
     val s = sleep
+    val invH = 1.0f / h // как velocityBeforeRange: умножение вместо деления (находка 41)
     for (k in 0 until s.spanCount) for (i in s.spanStart[k] until s.spanEnd[k]) {
         if (invMass[i] == 0.0f) { vx[i] = 0.0f; vy[i] = 0.0f; continue }
-        val nvx = (px[i] - prevX[i]) / h
-        val nvy = (py[i] - prevY[i]) / h
+        val nvx = (px[i] - prevX[i]) * invH
+        val nvy = (py[i] - prevY[i]) * invH
         vx[i] = nvx; vy[i] = nvy
     }
 }
@@ -132,15 +133,16 @@ internal inline fun viscousLinkAt(c: Int, k: Float, conDead: BooleanArray, conA:
     val wi = invMass[i]; val wj = invMass[j]
     val w = wi + wj
     if (w == 0.0f) return
-    var nx = px[j] - px[i]
-    var ny = py[j] - py[i]
-    val len = sqrt(nx * nx + ny * ny)
-    if (len < 1e-12f) return
-    nx /= len; ny /= len
-    val dv = (vx[j] - vx[i]) * nx + (vy[j] - vy[i]) * ny
-    val si = k * wi / w; val sj = k * wj / w
-    vx[i] += dv * nx * si; vy[i] += dv * ny * si
-    vx[j] -= dv * nx * sj; vy[j] -= dv * ny * sj
+    val dx = px[j] - px[i]
+    val dy = py[j] - py[i]
+    val len2 = dx * dx + dy * dy
+    if (len2 < 1e-24f) return
+    // БЕЗ КОРНЯ (24.11.2026, находка 41): поправка (Δv·n)·n с единичным n = d/|d| равна (Δv·d)·d / |d|², и длина
+    // не нужна вовсе. Было: корень и четыре деления на связь (n и k·w/w), стало одно деление. Закон тот же, биты другие.
+    val q = ((vx[j] - vx[i]) * dx + (vy[j] - vy[i]) * dy) * k / (w * len2)
+    val qi = q * wi; val qj = q * wj
+    vx[i] += dx * qi; vy[i] += dy * qi
+    vx[j] -= dx * qj; vy[j] -= dy * qj
 }
 
 fun BodyState.applyNormalDrag(h: Float) {
@@ -274,8 +276,10 @@ internal inline fun normalDragEdgeAt(e: Int, h: Float, boundA: IntArray, boundB:
     val len = sqrt(ex * ex + ey * ey)
     if (len < 1e-12f) return
 
-    val nx = -ey / len
-    val ny = ex / len
+    // Одно деление вместо двух-четырёх (находка 41): закон тот же, биты другие.
+    val invLen = 1.0f / len
+    val nx = -ey * invLen
+    val ny = ex * invLen
 
     // Скорость середины ребра ОТНОСИТЕЛЬНО увлечённой среды: гребёт ребро целиком,
     // а не каждый конец отдельно. Вычитание общего вектора и даёт длинный накат —
@@ -298,7 +302,7 @@ internal inline fun normalDragEdgeAt(e: Int, h: Float, boundA: IntArray, boundB:
 
     // Трение ВДОЛЬ ребра. См. TANGENT_DRAG.
     if (tangentDrag > 0.0f) {
-        val tx = ex / len; val ty = ey / len
+        val tx = ex * invLen; val ty = ey * invLen
         val vt = vmx * tx + vmy * ty
         var kt = tangentDrag * NORMAL_DRAG * len * h
         if (kt > 0.5f) kt = 0.5f

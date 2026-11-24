@@ -77,7 +77,11 @@ internal inline fun solveDistanceConstraint(
     var dy = py[i] - py[j]
     val len = sqrt(dx * dx + dy * dy)
     if (len < 1e-12f) return
-    dx /= len; dy /= len
+    // ОДНО ДЕЛЕНИЕ НА СВЯЗЬ ВМЕСТО ДВУХ (24.11.2026, находка 41): 1/len и два умножения, а не dx /= len; dy /= len.
+    // Закон тот же, биты другие. Так же во всех ядрах связей и изгибов. Деление, в отличие от умножения, у процессора
+    // не конвейерное, а на телефоне (Galaxy A21s, ядра без внеочередного исполнения) ещё и стоит на пути каждой связи.
+    val inv = 1.0f / len
+    dx *= inv; dy *= inv
     val m = conMuscle[c]
     val rest = conRest[c]
     val scale = if (m < 0) 1.0f else ms[m]
@@ -110,7 +114,8 @@ internal fun solveDistanceConstraintScaled(
     var dy = py[i] - py[j]
     val len = sqrt(dx * dx + dy * dy)
     if (len < 1e-12f) return
-    dx /= len; dy /= len
+    val inv = 1.0f / len // одно деление, см. solveDistanceConstraint
+    dx *= inv; dy *= inv
     val m = conMuscle[c]
     val scale = (if (m < 0) 1.0f else ms[m]) * cs[c]
     val dL = muscleLinkCorrection(len, conRest[c], scale, w, alpha, boundary, c, fiber, fiberK)
@@ -140,7 +145,8 @@ internal fun solveDistanceConstraintSoft(
     var dy = py[i] - py[j]
     val len = sqrt(dx * dx + dy * dy)
     if (len < 1e-12f) return
-    dx /= len; dy /= len
+    val inv = 1.0f / len // одно деление, см. solveDistanceConstraint
+    dx *= inv; dy *= inv
     val m = conMuscle[c]
     val scale = (if (m < 0) 1.0f else ms[m]) * cs[c]
     val dL = muscleLinkCorrection(len, conRest[c], scale, w, alpha * soft[c], boundary, c, fiber, fiberK)
@@ -165,7 +171,8 @@ internal inline fun solveDistanceConstraintCells(
     var dy = py[i] - py[j]
     val len = sqrt(dx * dx + dy * dy)
     if (len < 1e-12f) return
-    dx /= len; dy /= len
+    val inv = 1.0f / len // одно деление, см. solveDistanceConstraint
+    dx *= inv; dy *= inv
     val dL = muscleLinkCorrection(len, conRest[c], cs[c].toFloat(), w, alpha, boundary, c, fiber, fiberK)
     px[i] += dx * dL * wi; py[i] += dy * dL * wi
     px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
@@ -188,7 +195,8 @@ internal inline fun solveDistanceConstraintSoftCells(
     var dy = py[i] - py[j]
     val len = sqrt(dx * dx + dy * dy)
     if (len < 1e-12f) return
-    dx /= len; dy /= len
+    val inv = 1.0f / len // одно деление, см. solveDistanceConstraint
+    dx *= inv; dy *= inv
     val dL = muscleLinkCorrection(len, conRest[c], cs[c].toFloat(), w, alpha * soft[c], boundary, c, fiber, fiberK)
     px[i] += dx * dL * wi; py[i] += dy * dL * wi
     px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
@@ -487,7 +495,8 @@ fun BodyState.solveBend(h: Float) {
         var dy = py[i] - py[j]
         val len = sqrt(dx * dx + dy * dy)
         if (len < 1e-12f) continue
-        dx /= len; dy /= len
+        val inv = 1.0f / len // одно деление, см. solveDistanceConstraint
+        dx *= inv; dy *= inv
         val dL = -(len - bendRest[c]) / (w + alpha)
         px[i] += dx * dL * wi; py[i] += dy * dL * wi
         px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
@@ -548,13 +557,24 @@ fun BodyState.solveAreas(h: Float) {
         if (if (fiberArea) fiberAreaFactor(s, fiberK) < 1.0f else active < 1.0f) { val cap = 2.0f * MUSCLE_MAX_PULL * rest2[t]; if (excess > cap) excess = cap }
         var dL = -excess / (denom + a)
         // Потолок на длину поправки — см. AREA_MAX_STEP.
-        if (maxStep > 0.0f) {
-            val corr = abs(dL) * sqrt(denom)
-            if (corr > maxStep) dL *= maxStep / corr
-        }
+        if (maxStep > 0.0f) dL = capAreaStep(dL, denom, maxStep)
 
         px[i0] += w0 * dL * g0x; py[i0] += w0 * dL * g0y
         px[i1] += w1 * dL * g1x; py[i1] += w1 * dL * g1y
         px[i2] += w2 * dL * g2x; py[i2] += w2 * dL * g2y
     }
+}
+
+/**
+ * Потолок на длину поправки площади (AREA_MAX_STEP): длина поправки — |dL| · sqrt(denom).
+ *
+ * КОРЕНЬ — ТОЛЬКО ЗА ПОТОЛКОМ (24.11.2026, находка 41). Раньше корень брали у каждого треугольника на каждом подшаге,
+ * хотя потолок срабатывает лишь при сильном сжатии. Сравнение квадратов решает то же без корня; срезанная поправка
+ * считается прежней формулой. Биты те же, кроме самой границы, где округление квадратов может решить иначе — тогда
+ * поправка отличается множителем, равным единице до последнего знака.
+ */
+@Suppress("NOTHING_TO_INLINE")
+internal inline fun capAreaStep(dL: Float, denom: Float, maxStep: Float): Float {
+    if (dL * dL * denom <= maxStep * maxStep) return dL
+    return dL * (maxStep / (abs(dL) * sqrt(denom)))
 }

@@ -35,12 +35,14 @@ internal fun BodyState.velocityBeforeRange(from: Int, to: Int, h: Float) {
     val beforeX = tm?.beforeX ?: NO_FLOATS; val beforeY = tm?.beforeY ?: NO_FLOATS
     lengthsBeforeLoop(px.size or py.size or vx.size or vy.size or prevX.size or prevY.size or invMass.size or
         beforeX.size or beforeY.size)
+    // Умножение на 1/h вместо двух делений на частицу (находка 41): закон тот же, биты другие. См. solveDistanceConstraint.
+    val invH = 1.0f / h
     for (i in from until to) {
         if (invMass[i] == 0.0f) {
             vx[i] = 0.0f; vy[i] = 0.0f
         } else {
-            val nvx = (px[i] - prevX[i]) / h
-            val nvy = (py[i] - prevY[i]) / h
+            val nvx = (px[i] - prevX[i]) * invH
+            val nvy = (py[i] - prevY[i]) * invH
             vx[i] = nvx; vy[i] = nvy
         }
         if (tmOn) { beforeX[i] = vx[i]; beforeY[i] = vy[i] }
@@ -152,12 +154,13 @@ internal fun BodyState.velocityFastRange(from: Int, to: Int, h: Float, acc: Work
     lengthsBeforeLoop(px.size or py.size or vx.size or vy.size or prevX.size or prevY.size or invMass.size or
         inContact.size or stamp.size or beforeX.size or beforeY.size or targetX.size or targetY.size or targetL.size or
         blocked.size)
+    val invH = 1.0f / h // см. velocityBeforeRange
     for (i in from until to) {
         if (invMass[i] == 0.0f) {
             vx[i] = 0.0f; vy[i] = 0.0f
         } else {
-            vx[i] = (px[i] - prevX[i]) / h
-            vy[i] = (py[i] - prevY[i]) / h
+            vx[i] = (px[i] - prevX[i]) * invH
+            vy[i] = (py[i] - prevY[i]) * invH
         }
         if (stamp[i] == pass) { if (tmOn) { beforeX[i] = vx[i]; beforeY[i] = vy[i] }; continue }
         if (inContact[i]) {
