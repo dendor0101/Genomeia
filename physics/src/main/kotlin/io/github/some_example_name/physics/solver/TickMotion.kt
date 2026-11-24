@@ -114,5 +114,5 @@ internal fun BodyState.momentumCancel() {
     prepareAwakeSpans()
     val w = activeWorkers
     if (w != null && w.count > 1) parallelPhysics(w).momentumCancel()
-    else tickMomentum.cancel(px, py, vx, vy, invMass, sleep)
+    else tickMomentum.cancel(px, py, vx, vy, invMass, sleep, passChunks())
 }

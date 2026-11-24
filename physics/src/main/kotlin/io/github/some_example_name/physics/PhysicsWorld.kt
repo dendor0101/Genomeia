@@ -519,7 +519,7 @@ class PhysicsWorld(
      */
     fun setCellScale(cell: Int, command: Float) {
         require(command > 0f) { "множитель клетки должен быть больше нуля" }
-        val scale = weakenedCommand(command) // ВРЕМЕННО (опыт 19.11.2026, MX_STRENGTH)
+        val scale = command
         if (state.cellScaleTarget[cell] != scale) {
             state.cellScaleTarget[cell] = scale
             state.cellScalesOn = true

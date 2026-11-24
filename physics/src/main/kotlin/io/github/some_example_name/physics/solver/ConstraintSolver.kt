@@ -205,19 +205,25 @@ internal inline fun solveDistanceConstraintSoftCells(
 fun BodyState.solveLinkMaxLength() {
     if (tearingOn) SealStats.tearingOnTicks++ else SealStats.tearingOffTicks++
     val w = activeWorkers
-    if (w != null && organismCount > 1 && !dbgSealOn && !(DEBUG_CHECKS && dbgLinkExtremaOn)) {
+    val blocksLayout = constraintBlocks
+    // ПОРЯДОК ПО БЛОКАМ — ПРИ ЛЮБОМ ЧИСЛЕ ОРГАНИЗМОВ (25.11, находка 42): раньше при одном организме проход шёл общим
+    // списком контура, при нескольких — по блокам, и тело из двух блоков в стенде (одно тело) и в игре (тело и пул
+    // свободных частиц) правилось в разном порядке — гребок рыбы A-11 расходился с 16-го подшага первого тика.
+    if (w != null && (organismCount > 1 || blocksLayout != null) && !dbgSealOn && !(DEBUG_CHECKS && dbgLinkExtremaOn)) {
         // По организмам: связи контура разных организмов не делят частиц. См. ParallelLimits.
         parallelPhysics(w).solveGlobalLimits()
         return
     }
-    // Без воркеров — тот же порядок, что у них: по блокам, затем швы (ParallelPhysics.globalLimitsByBlocks).
-    val blocksLayout = constraintBlocks
-    if (blocksLayout != null && organismCount > 1 && !dbgSealOn && !(DEBUG_CHECKS && dbgLinkExtremaOn)) {
+    // Без воркеров — тот же порядок, что у них: по блокам, затем швы, затем хвост прохода
+    // (ParallelPhysics.globalLimitsByBlocks).
+    if (blocksLayout != null && !dbgSealOn && !(DEBUG_CHECKS && dbgLinkExtremaOn)) {
+        blocksLayout.beginLimitPass()
         for (bucket in 0 until blocksLayout.buckets) {
             if (bucket < blocksLayout.seam && blocksLayout.awake[bucket] == 0) continue
-            val items = blocksLayout.limits.dense(bucket).copyOf(blocksLayout.limits.denseCount[bucket])
-            for (c in items) solveLimitItemSerial(c)
+            solveLimitBucketSerial(blocksLayout, bucket, -1)
         }
+        solveLimitPassTail(blocksLayout)
+        blocksLayout.endLimitPass()
         return
     }
     // Всё в локальные: при MAXLEN_EARLY стадия идёт 144 раза за тик.
@@ -298,6 +304,30 @@ internal fun BodyState.solveLimitItemSerial(c: Int) {
     solveLinkLimitViolation(c, len2, crushed, scale)
 }
 
+/**
+ * Набор [bucket] общего прохода пределов в одном потоке со связи [from] (-1 — с начала): обход без воркеров и
+ * доработка набора, остановленного воркером перед событием. Края, открытые разрывами этого прохода, пропускаются —
+ * их проверит хвост прохода (solveLimitPassTail). Плотный список набора читается без копии: он пересобирается
+ * только вызовом dense, а события лишь дописывают связный список и помечают его. Связь остановки жива и стоит на
+ * своём месте: событие другого набора трогает только свой набор и швы, а в начале списка — только удаляет мёртвые.
+ */
+internal fun BodyState.solveLimitBucketSerial(layout: ConstraintBlocks, bucket: Int, from: Int) {
+    val items = layout.limits.dense(bucket); val n = layout.limits.denseCount[bucket]
+    var x = 0
+    if (from >= 0) { while (x < n && items[x] != from) x++; if (x == n) x = 0 }
+    while (x < n) {
+        val c = items[x++]
+        if (layout.passAddedN > 0 && layout.addedInPass(c)) continue
+        solveLimitItemSerial(c)
+    }
+}
+
+/** Хвост общего прохода пределов: края, открытые его разрывами, в порядке событий; дописанные по пути — тоже. */
+internal fun BodyState.solveLimitPassTail(layout: ConstraintBlocks) {
+    var k = 0
+    while (k < layout.passAddedN) solveLimitItemSerial(layout.passAdded[k++])
+}
+
 /** Старый формат сигнала клетки 0.5..1.5 остаётся совместим с геномами и снимками. */
 private fun relaxation(scale: Float): Float = ((scale - 1.0f) * 2.0f).coerceAtMost(1.0f)
 
@@ -321,7 +351,7 @@ internal inline fun muscleLinkCorrection(len: Float, rest: Float, scale: Float, 
         if (scale < 1.0f && c < fiber.size && fiber[c] < 1f) return fiberLinkCorrection(len, rest, scale, w, alpha, fiber[c].toFloat(), fiberK)
         var over = len - rest * scale
         // Мышца тянет отстающую ткань не сильнее связи, растянутой на MUSCLE_MAX_PULL — см. там.
-        if (scale < 1.0f && over > MUSCLE_MAX_PULL * rest) over = cappedPull(len, rest, rest * scale) // ВРЕМЕННО: cappedPull (MX_SPLIT)
+        if (scale < 1.0f && over > MUSCLE_MAX_PULL * rest) over = MUSCLE_MAX_PULL * rest
         return -over / (w + alpha)
     }
     // Расслабленная мышца с волокном мягче только вдоль волокна, а предел длины и разрыва — у всей мышцы (MuscleFiber.kt).
@@ -355,7 +385,7 @@ fun BodyState.solveLinkLimitViolation(c: Int, len2: Float, crushed: Boolean, sca
     if (isGrowingLink(c)) return
     val i = conA[c]; val j = conB[c]
     val mus = conMuscle[c]
-    val restL = limitRest(c, conRest[c], scale) // ВРЕМЕННО (MX_FIBER): удлинённая поперёк волокна
+    val restL = limitRest(c, conRest[c], scale) // удлинённая поперёк волокна (MuscleFiber.kt)
     val max = linkMaxLength(restL, scale)
     val len = sqrt(len2)
     // РАЗДАВЛЕННАЯ СВЯЗЬ РВЁТСЯ ТАК ЖЕ, КАК ПЕРЕРАСТЯНУТАЯ. См. LINK_CRUSH_RATIO.
@@ -448,7 +478,7 @@ internal fun BodyState.limitViolationIsEvent(c: Int, len2: Float, crushed: Boole
         len > (contacts?.contactRadiusOf(i) ?: 0.0f) +
             (contacts?.contactRadiusOf(j) ?: 0.0f) + 2.0f * dbgSealMinR) return true
     if (len < 1e-12f) return false
-    val restL = limitRest(c, conRest[c], scale) // ВРЕМЕННО (MX_FIBER): удлинённая поперёк волокна
+    val restL = limitRest(c, conRest[c], scale) // удлинённая поперёк волокна (MuscleFiber.kt)
     val max = linkMaxLength(restL, scale)
     val tear = if (conTendon[c]) linkTearStrain * tendonTear else linkTearStrain
     if (len - LINK_MAX_STRETCH * restL > tear * restL) return true

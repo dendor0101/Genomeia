@@ -296,22 +296,12 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         st.activeWorkers!!.run(db.tasks, dragJob)
     }
 
-    /** Диапазоны бодрствующих частиц, порезанные на куски не длиннее PASS_CHUNK. */
+    /** Диапазоны бодрствующих частиц, порезанные на куски не длиннее PASS_CHUNK по организмам: см. PassChunks. */
     private fun spanChunks(): Int {
-        val sl = state.sleep
-        var count = 0
-        for (k in 0 until sl.spanCount) {
-            var from = sl.spanStart[k]
-            val end = sl.spanEnd[k]
-            while (from < end) {
-                if (count == spanFrom.size) { spanFrom = spanFrom.copyOf(count * 2); spanTo = spanTo.copyOf(count * 2) }
-                val to = minOf(end, from + PASS_CHUNK)
-                spanFrom[count] = from; spanTo[count] = to; count++
-                from = to
-            }
-        }
-        spanChunks = count
-        return count
+        val pc = state.passChunks()
+        spanFrom = pc.from; spanTo = pc.to
+        spanChunks = pc.count
+        return pc.count
     }
 
     // --- общий проход предела длины (solveLinkMaxLength) по организмам ---
@@ -375,29 +365,36 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         if (bucket >= layout.seam || layout.awake[bucket] != 0) {
             val items = layout.limits.dense(bucket); val n = layout.limits.denseCount[bucket]
             val s = scratch[worker]
-            for (x in 0 until n) if (state.limitItemParallel(items[x], s)) { limitStopItem[bucket] = items[x]; break }
+            // Края, открытые разрывами этого прохода (у швов — доработкой блоков), ждут его хвоста: см. ConstraintBlocks.
+            val skip = layout.passAddedN > 0
+            for (x in 0 until n) {
+                val c = items[x]
+                if (skip && layout.addedInPass(c)) continue
+                if (state.limitItemParallel(c, s)) { limitStopItem[bucket] = c; break }
+            }
         }
     }
 
-    /** Общий проход пределов по блокам, затем по швам; остановленные перед событием — дорабатываются здесь. */
+    /**
+     * Общий проход пределов по блокам, затем по швам; остановленные перед событием — дорабатываются здесь,
+     * края, открытые разрывами прохода, — его хвостом (ConstraintBlocks.beginLimitPass).
+     */
     private fun globalLimitsByBlocks(layout: ConstraintBlocks) {
         val w = state.activeWorkers!!
         if (limitStopItem.size < layout.buckets) limitStopItem = IntArray(layout.buckets)
         java.util.Arrays.fill(limitStopItem, 0, layout.buckets, -1)
         limitLayout = layout
+        layout.beginLimitPass()
         limitFrom = 0; w.run(layout.seam, blockLimitsJob); mergeCounters(); reworkLimits(layout, 0, layout.seam)
         limitFrom = layout.seam; w.run(layout.buckets - layout.seam, blockLimitsJob); mergeCounters(); reworkLimits(layout, layout.seam, layout.buckets)
+        state.solveLimitPassTail(layout)
+        layout.endLimitPass()
     }
 
     private fun reworkLimits(layout: ConstraintBlocks, from: Int, to: Int) {
         for (bucket in from until to) {
             val stop = limitStopItem[bucket]
-            if (stop < 0) continue
-            // Список блока мог поменяться от событий раньше по порядку: продолжаем с той же связи.
-            val items = layout.limits.dense(bucket).copyOf(layout.limits.denseCount[bucket])
-            var x = items.indexOf(stop)
-            if (x < 0) x = 0
-            while (x < items.size) { state.solveLimitItemSerial(items[x]); x++ }
+            if (stop >= 0) state.solveLimitBucketSerial(layout, bucket, stop)
         }
     }
 
@@ -625,20 +622,6 @@ internal class WorkerScratch(state: BodyState) {
     @Suppress("unused") private val padAfter = LongArray(16)
 }
 
-/**
- * Кусок поштучного прохода: 4096 частиц — ~200 КБ шести массивов double, порядка L2.
- * Мельче — больше кусков на воркер и ровнее нагрузка, но дороже раздача.
- *
- * 1024 ВМЕСТО 4096 (24.11.2026, находка 41). На мире в 6.5 тысячи клеток кусков было два на семь воркеров: проходы по
- * скоростям на Galaxy A21s шли с загрузкой 24% (6.3 мс за тик), учёт импульса — 9–25%. С куском в 1024 частицы
- * (24 КБ шести массивов float) их семь, загрузка лёгкого прохода по скоростям 88% (1.8 мс за тик). Размер куска входит
- * в результат (суммы импульса по организмам копятся кусками — comSums, TickMomentum.chunks), поэтому он постоянный и
- * от числа воркеров не зависит. Но куски режутся от начала диапазона бодрствующих частиц, и тело, перед которым в мире
- * лежат другие частицы, складывает свою сумму иначе, чем то же тело в стенде: побитовое «стенд = игра»
- * (`standParityCheck`) с куском 1024 потеряно. Вернуть — резать куски по организмам (`TODO.md`, находка 41).
- */
-internal const val PASS_CHUNK = 1024
-
 /** Рёбра контура по блокам, затем швы, в одном потоке — тот же порядок, что у ParallelPhysics.runEdges. */
 internal fun BodyState.edgesByBlocksSerial(layout: ConstraintBlocks, mode: Int, h: Float) {
     for (bucket in 0 until layout.buckets) {
@@ -654,23 +637,17 @@ internal fun BodyState.edgesByBlocksSerial(layout: ConstraintBlocks, mode: Int, 
 /** Импульс организмов для запаса среды кусками в одном потоке — те же куски, что у ParallelPhysics.comSums. */
 internal fun BodyState.comSumsSerial() {
     val sums = TickMomentum.GroupSums()
-    val sl = sleep
-    for (q in 0 until sl.spanCount) {
-        var from = sl.spanStart[q]
-        val end = sl.spanEnd[q]
-        while (from < end) {
-            val to = minOf(end, from + PASS_CHUNK)
-            sums.clear()
-            for (i in from until to) {
-                if (invMass[i] <= 0.0f) continue
-                val m = 1.0f / invMass[i]
-                val at = sums.at(organismOf[i]); val v = sums.data
-                v[at] += m * vx[i]; v[at + 1] += m * vy[i]
-            }
-            val v = sums.data
-            for (x in 0 until sums.count) { val o = sums.keyAt(x); val at = sums.offsetAt(x); comAccX[o] += v[at].toFloat(); comAccY[o] += v[at + 1].toFloat() }
-            from = to
+    val pc = passChunks()
+    for (c in 0 until pc.count) {
+        sums.clear()
+        for (i in pc.from[c] until pc.to[c]) {
+            if (invMass[i] <= 0.0f) continue
+            val m = 1.0f / invMass[i]
+            val at = sums.at(organismOf[i]); val v = sums.data
+            v[at] += m * vx[i]; v[at + 1] += m * vy[i]
         }
+        val v = sums.data
+        for (x in 0 until sums.count) { val o = sums.keyAt(x); val at = sums.offsetAt(x); comAccX[o] += v[at].toFloat(); comAccY[o] += v[at + 1].toFloat() }
     }
 }
 

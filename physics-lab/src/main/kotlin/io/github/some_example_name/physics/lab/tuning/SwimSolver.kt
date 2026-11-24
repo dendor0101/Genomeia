@@ -163,6 +163,21 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         for (b in topo.rigidBones.indices) layout.bones.add(b, layout.boneBucket(topo.rigidBones[b], topo.vertStart, topo.vertOther))
     }
 
+    // Ориентация контура — по наборам блоков, затем швы, как ядро при раскладке блоков (находка 42; ребро — в наборе
+    // своего треугольника, LocalBoundaryConstraints.blockOfSlot). Топология зеркала не меняется: рёбра переставлены
+    // один раз, внутри набора — в прежнем порядке.
+    private val orientOrder: IntArray = run {
+        val bucketOf = IntArray(topo.boundCount) { k ->
+            val c = topo.boundOpp[k]
+            if (c < 0) blocks.blockOf(topo.boundA[k], topo.boundB[k]) else blocks.blockOf(topo.boundA[k], topo.boundB[k], c)
+        }
+        (0 until topo.boundCount).sortedBy { bucketOf[it] }.toIntArray()
+    }
+    private val orientA = IntArray(topo.boundCount) { topo.boundA[orientOrder[it]] }
+    private val orientB = IntArray(topo.boundCount) { topo.boundB[orientOrder[it]] }
+    private val orientOpp = IntArray(topo.boundCount) { topo.boundOpp[orientOrder[it]] }
+    private val orientSign = ByteArray(topo.boundCount) { topo.boundaryOrientation[orientOrder[it]] }
+
     private fun solveBlockedIteration(h: Float) {
         for (parity in 0..1) {
             var block = parity
@@ -218,7 +233,9 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
         }
     }
 
-    private fun solveLinkMaxLength() = solveLinkMaxLength(-1)
+    // Общий проход — по наборам блоков, затем швы, как ядро при раскладке блоков (находка 42). Разрывов здесь нет,
+    // поэтому хвост прохода (края, открытые разрывом) зеркалу не нужен.
+    private fun solveLinkMaxLength() { for (bucket in 0 until blocks.buckets) solveLinkMaxLength(bucket) }
 
     private fun solveLinkMaxLength(block: Int) {
         val list = blocks.limits
@@ -894,8 +911,7 @@ class SwimSolver(private val topo: Topology, var p: SwimParams) {
     private fun solveContactsAndBoundary(h: Float) {
         contacts.solveContacts(px, py, vx, vy, invMass, h)
         // Клетки кости ориентация не двигает — как стадия ядра (projectBoundaryOrientation).
-        solveBoundaryOrientation(topo.boundCount, topo.boundA, topo.boundB, topo.boundOpp,
-            topo.boundaryOrientation, px, py, invMass, topo.boneOf)
+        solveBoundaryOrientation(topo.boundCount, orientA, orientB, orientOpp, orientSign, px, py, invMass, topo.boneOf)
     }
 
     /** Активация первой мышцы. Нужна замеру, чтобы отличить гребок от зажатой позы. */

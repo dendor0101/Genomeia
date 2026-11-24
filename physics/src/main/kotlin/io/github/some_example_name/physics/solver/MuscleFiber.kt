@@ -59,11 +59,7 @@ internal fun fiberLinkCorrection(len: Float, rest: Float, s: Float, w: Float, al
     val target = rest * fiberLinkFactor(s, c2, k)
     val cap = MUSCLE_MAX_PULL * rest
     var over = len - target
-    if (over > cap) {
-        // MX_SPLIT (временный ключ, MuscleExperiment.kt): связь, удлинённая волокном (цель длиннее покоя), сверх цели —
-        // обычная ткань, без потолка.
-        over = if (target < rest) cappedPull(len, rest, target) else if (MX_SPLIT >= 1) over else cap
-    }
+    if (over > cap) over = cap
     else if (over < 0.0f && target > rest) {
         val tissue = if (len < rest) len - rest else 0.0f
         val muscle = maxOf(len, rest) - target

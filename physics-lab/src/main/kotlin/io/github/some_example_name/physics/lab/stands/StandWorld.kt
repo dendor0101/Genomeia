@@ -18,13 +18,6 @@ val STAND_CONFIG: Map<String, String> = System.getProperty("stands.config").orEm
     .mapNotNull { val kv = it.split('='); if (kv.size == 2 && kv[0].isNotBlank()) kv[0].trim() to kv[1].trim() else null }.toMap()
 
 /**
- * Ключ опытов MX_FIBER (находки 25, 29): MX_FIBER=0 — стенды не задают волокон (мышцы сокращаются по площади),
- * MX_FIBER=k — показатель утолщения k. Сама физика ключа не читает: её настройка — FIBER_THICKEN
- * (config/FiberParameters.kt).
- */
-val STAND_FIBERS: Boolean = STAND_CONFIG["MX_FIBER"]?.toDoubleOrNull() != 0.0
-
-/**
  * Система отсчёта всего прогона: -Pframe=shift — сцены стоят в (1000, 700) клетках от начала координат, как в дальнем углу
  * большой карты (Frame.NAMED). Опыт 21.11 «float вместо double»: шаг float в координатах там в 2^9 раз крупнее, чем у
  * начала. По умолчанию — сцена как написана.
@@ -38,11 +31,11 @@ val STAND_FRAME: Frame = System.getProperty("stands.frame")?.takeIf { it.isNotBl
 } ?: Frame.SCENE
 
 /**
- * Настройки мира стендов: закон волокна — тот же, что у игры (по умолчанию, находка 34); MX_FIBER=k — показатель
- * утолщения k для опыта; поверх — переключатели прогона (STAND_CONFIG).
+ * Настройки мира стендов: закон волокна — тот же, что у игры (по умолчанию, находка 34); поверх — переключатели
+ * прогона (STAND_CONFIG; показатель утолщения для опыта — FIBER_THICKEN=k). Ключ опытов MX_FIBER (стенды без волокон
+ * или со своим показателем) убран 25.11 вместе с остальными MX_* (находка 42).
  */
-val STAND_WORLD_CONFIG: Map<String, String> =
-    (STAND_CONFIG["MX_FIBER"]?.takeIf { STAND_FIBERS }?.let { mapOf("FIBER_THICKEN" to it) } ?: emptyMap()) + STAND_CONFIG
+val STAND_WORLD_CONFIG: Map<String, String> = STAND_CONFIG
 
 /**
  * Тело сцены: фигура, её описание в мире физики и номер тела. Частица клетки фигуры — [particle]:
@@ -226,7 +219,6 @@ class StandWorld(workers: PhysicsWorkers? = null, forceParallel: Boolean = false
      * вдоль, а мышца целиком — вдоль тела). Кусок из одной клетки — без волокна: сокращается по площади.
      */
     private fun assignMuscleFibers(b: StandBody) {
-        if (!STAND_FIBERS) return
         val sh = b.shape
         val count = sh.count
         val seen = BooleanArray(count)

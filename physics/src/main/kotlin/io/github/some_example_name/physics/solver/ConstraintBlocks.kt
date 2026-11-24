@@ -271,10 +271,40 @@ class ConstraintBlocks(n: Int, bodyOf: IntArray, blockSize: Int,
         items[n] = c; nearCount[bucket] = n + 1
     }
 
+    // --- ОБЩИЙ ПРОХОД ПРЕДЕЛОВ ПО НАБОРАМ: НОВЫЕ КРАЯ — В ХВОСТ ПРОХОДА (25.11.2026, находка 42) ---
+    // Разрыв открывает новые края контура, и они, скорее всего, натянуты. Сплошной список (BoundaryLinkLimits)
+    // проверяет их в том же проходе: они дописаны в его конец. По наборам было непоследовательно: блок не видел
+    // краёв, открытых своими же разрывами (его список снят до них), а шов видел края, открытые разрывами блоков, —
+    // он обходится после их доработки. Стенд с одним телом шёл сплошным списком, игра — по наборам, и тест
+    // «края, открытые разрывом, проверяются в том же проходе» (BoundaryLinkLimitsTest) обхода по наборам не видел.
+    // Теперь правило одно: наборы обходят края начала прохода, открытые в проходе ждут его хвоста и идут после всех
+    // наборов в порядке событий (solveLimitPassTail). Событие набора трогает только свой набор и швы, поэтому так же
+    // выходит в одном потоке и с воркерами. Пометка — номер прохода у связи: сбрасывать нечего. События идут в
+    // одном потоке (параллельный обход перед событием стоит).
+    private var limitPassOn = false
+    private var limitPassId = 0
+    private var limitPassMark = IntArray(0)
+    var passAdded = IntArray(16); private set
+    var passAddedN = 0; private set
+
+    fun beginLimitPass() { limitPassOn = true; limitPassId++; passAddedN = 0 }
+    fun endLimitPass() { limitPassOn = false }
+
+    /** Край [c] открыт разрывом этого прохода: наборы его пропускают, его проверит хвост прохода. */
+    fun addedInPass(c: Int): Boolean = c < limitPassMark.size && limitPassMark[c] == limitPassId
+
+    private fun notePassAdded(c: Int) {
+        if (c >= limitPassMark.size) limitPassMark = limitPassMark.copyOf(maxOf(c + 1, limitPassMark.size * 2, 64))
+        limitPassMark[c] = limitPassId
+        if (passAddedN == passAdded.size) passAdded = passAdded.copyOf(passAddedN * 2)
+        passAdded[passAddedN++] = c
+    }
+
     fun addLimit(c: Int, a: Int, b: Int) {
         if (limits.owner[c] >= 0) return
         val block = blockOf(a, b)
         limits.add(c, block)
+        if (limitPassOn) notePassAdded(c)
         // Новый край контура открыт разрывом и, скорее всего, натянут. Ранний проход своего блока проверит его
         // из очереди; поздний (очереди у него нет) — из списка у порога. Запись в список другого блока лишняя,
         // но безвредна: этот список либо соберёт заново его ранний проход, либо до следующего подшага не читают.
