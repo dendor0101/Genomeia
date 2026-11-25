@@ -144,19 +144,30 @@ class ConstraintBlocks(n: Int, bodyOf: IntArray, blockSize: Int,
         firstParticle = IntArray(blockCount + 1)
         for (i in n - 1 downTo 0) firstParticle[particleBlock[i]] = i
         firstParticle[blockCount] = n
-        // Швы — свой набор у каждого тела из нескольких блоков: тела не делят частицы,
+        // Швы — свой набор у каждого тела из нескольких блоков: тела не делят частиц,
         // поэтому их швы считаются параллельно, а порядок внутри тела прежний.
+        //
+        // НАБОР — НА ТЕЛО, А НЕ НА ПРОГОН ПОДРЯД ИДУЩИХ БЛОКОВ (25.11.2026, находка 42). Тело здесь — связный кусок
+        // запечённого графа (bakedBodies), и его частицы не обязаны идти подряд: у генома из нескольких несвязанных
+        // кусков (такие есть среди геномов игроков в библиотеке тел) куски лежат вперемешку — 301, 302, 301, 302… —
+        // а блок начинается на каждой смене тела. Пока набор выдавался на прогон подряд идущих блоков, у такого тела
+        // их было несколько: двухблочный прогон получал свой набор, одноблочные — общий первый. Связи через границы
+        // его блоков ложились в разные наборы, наборы швов идут по воркерам параллельно, и одни и те же частицы
+        // правили два потока: сумма мира менялась от прогона к прогону (genomeBench, мир тел до 1000 клеток,
+        // 8 воркеров — 74 общие частицы двух наборов). При блоках по 1000 все прогоны этого тела были одноблочными и
+        // попадали в общий набор — детерминизм держался случаем. Прогон (bodyRunOf, для computeSerialBlocks) — тоже
+        // на тело. У тела, лежащего подряд, наборы и их номера прежние: биты те же. Частицы без тела (-1) — в общем.
         seamBucket = IntArray(blockCount)
         bodyRunOf = IntArray(blockCount)
-        var seams = 0; var runs = 0; var b = 0
-        while (b < blockCount) {
-            val o = bodyOf[firstParticle[b]]
-            var e = b + 1
-            while (e < blockCount && bodyOf[firstParticle[e]] == o) e++
-            val bucket = if (e - b > 1) seam + seams++ else seam
-            for (k in b until e) { seamBucket[k] = bucket; bodyRunOf[k] = runs }
-            runs++
-            b = e
+        val orgBlocks = IntArray(maxBody + 2)
+        for (b in 0 until blockCount) orgBlocks[bodyOf[firstParticle[b]] + 1]++
+        val orgSeam = IntArray(maxBody + 2) { -1 }
+        val orgRun = IntArray(maxBody + 2) { -1 }
+        var seams = 0; var runs = 0
+        for (b in 0 until blockCount) {
+            val o = bodyOf[firstParticle[b]] + 1
+            if (orgRun[o] < 0) { orgRun[o] = runs++; orgSeam[o] = if (o > 0 && orgBlocks[o] > 1) seam + seams++ else seam }
+            seamBucket[b] = orgSeam[o]; bodyRunOf[b] = orgRun[o]
         }
         bodyRuns = runs
         serialBlock = BooleanArray(blockCount)

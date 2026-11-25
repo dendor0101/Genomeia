@@ -28,7 +28,13 @@ import kotlin.math.sqrt
  * ДВА СПОСОБА, как у islandBench: `one` — один мир с воркерами физики; `split` — мир на тело, миры шагают по воркерам
  * (оценка тика «по островам»).
  *
- * Запуск: genomeBench клеток воркеров прогрев замер one|split [наибольшее тело=6000] [наименьшее=20] [одно тело: имя]
+ * ТРЕТИЙ — `hybrid` (25.11.2026, находка 42): смешанная раздача «островов». На A21s `split` проигрывал 16–22% (находка 40):
+ * тело в половину мира шло одним потоком, пока остальные простаивали. Здесь тела крупнее порога — в одном общем мире с
+ * воркерами по блокам (как сейчас), остальные — каждое в своём мире, миры шагают по воркерам; за тик сначала мелкие, потом
+ * общий. Порог — `hybridN` клеток, у `hybrid` без числа — клеток мира на воркера. Это оценка сверху для островов в решателе:
+ * у мира на тело своя сетка касаний и свой учёт импульса, а тела не встречаются.
+ *
+ * Запуск: genomeBench клеток воркеров прогрев замер one|split|hybrid[N] [наибольшее тело=6000] [наименьшее=20] [одно тело: имя]
  */
 fun main(args: Array<String>) {
     Locale.setDefault(Locale.ROOT)
@@ -36,7 +42,9 @@ fun main(args: Array<String>) {
     val workers = args.getOrNull(1)?.toIntOrNull() ?: 8
     val warm = args.getOrNull(2)?.toIntOrNull() ?: 60
     val measure = (args.getOrNull(3)?.toIntOrNull() ?: 120).coerceAtLeast(1)
-    val split = args.getOrNull(4) == "split"
+    val modeArg = args.getOrNull(4) ?: "one"
+    val split = modeArg == "split"
+    val hybrid = modeArg.startsWith("hybrid")
     val maxBody = args.getOrNull(5)?.toIntOrNull() ?: 6000
     val minBody = args.getOrNull(6)?.toIntOrNull() ?: 20
     val only = args.getOrNull(7)?.takeIf { it.isNotBlank() && it != "-" }
@@ -63,11 +71,20 @@ fun main(args: Array<String>) {
         for (k in shapes.indices) { x[k] -= mx; y[k] -= my }
     }
 
+    val total = shapes.sumOf { it.count }
+    val bigLimit = if (hybrid) modeArg.removePrefix("hybrid").toIntOrNull() ?: (total / maxOf(1, workers)) else Int.MAX_VALUE
     val worlds = ArrayList<StandWorld>()
     val bodies = ArrayList<StandBody>()
     val worldOf = IntArray(shapes.size)
-    if (split) {
+    // У hybrid — общий мир для тел крупнее порога (с воркерами), у split — его нет.
+    var shared: StandWorld? = null
+    if (split || hybrid) {
         for (k in shapes.indices) {
+            if (shapes[k].count > bigLimit) {
+                val w = shared ?: StandWorld(pool).also { it.noSleep(); shared = it; worlds.add(it) }
+                bodies.add(w.body(shapes[k], x[k], y[k])); worldOf[k] = worlds.indexOf(w)
+                continue
+            }
             val w = StandWorld(null).also { it.noSleep() }
             bodies.add(w.body(shapes[k], x[k], y[k])); worldOf[k] = worlds.size; worlds.add(w)
         }
@@ -76,11 +93,13 @@ fun main(args: Array<String>) {
         for (k in shapes.indices) bodies.add(w.body(shapes[k], x[k], y[k]))
         worlds.add(w)
     }
-    // Раздача миров — от тяжёлых к лёгким: последний кусок у барьера — самый короткий.
-    val order = shapes.indices.sortedByDescending { shapes[it].count }.toIntArray()
+    val sharedWorld = shared
+    // Раздача миров — от тяжёлых к лёгким: последний кусок у барьера — самый короткий. Общий мир идёт отдельно.
+    val order = shapes.indices.sortedByDescending { shapes[it].count }
+        .filter { sharedWorld == null || worlds[worldOf[it]] !== sharedWorld }.toIntArray()
     val stepJob = PhysicsJob { k, _ -> worlds[worldOf[order[k]]].step() }
+    val timesSmall = DoubleArray(measure)
 
-    val total = shapes.sumOf { it.count }
     val times = DoubleArray(measure)
     var hash = CrowdScene.HASH_SEED
     val state0 = worlds[0].world.state
@@ -91,11 +110,14 @@ fun main(args: Array<String>) {
             val phase = 2 * Math.PI * tick / BREATH_TICKS + 0.7 * k
             worlds[worldOf[k]].muscles(bodies[k], (0.925 + 0.075 * StrictMath.cos(phase)).toFloat())
         }
-        if (tick == warm && !split) { state0.dbgTimeOn = true; state0.dbgTimeNs.fill(0) }
+        if (tick == warm && !split && !hybrid) { state0.dbgTimeOn = true; state0.dbgTimeNs.fill(0) }
         val start = System.nanoTime()
-        if (!split) worlds[0].step()
-        else if (pool != null) pool.run(shapes.size, stepJob)
-        else for (k in order) worlds[worldOf[k]].step()
+        if (!split && !hybrid) worlds[0].step()
+        else {
+            if (pool != null) pool.run(order.size, stepJob) else for (k in order) worlds[worldOf[k]].step()
+            if (tick >= warm) timesSmall[tick - warm] = (System.nanoTime() - start) / 1e6
+            sharedWorld?.step()
+        }
         if (tick >= warm) times[tick - warm] = (System.nanoTime() - start) / 1e6
         if (tick % 10 == 9) for (w in worlds) { val s = w.world.state; hash = CrowdScene.hash(hash, s.n, s.px, s.py, s.vx, s.vy) }
     }
@@ -104,7 +126,13 @@ fun main(args: Array<String>) {
     var live = 0; var dead = 0; var links = 0
     for (w in worlds) { val s = w.world.state; for (i in 0 until s.n) if (s.cellDead[i]) dead++ else live++; links += s.conCount }
     val mean = times.average(); val sorted = times.sorted()
-    println("GENOME способ=${if (split) "split" else "one"} тел=${shapes.size} клеток=$total мышечных=${shapes.sumOf { it.muscleCount }} " +
+    if (hybrid) {
+        val inShared = shapes.indices.filter { sharedWorld != null && worlds[worldOf[it]] === sharedWorld }
+        val small = timesSmall.average()
+        println("GENOME_HYBRID порог=$bigLimit тел_в_общем=${inShared.size} клеток_в_общем=${inShared.sumOf { shapes[it].count }} " +
+            "миров_мелких=${order.size} мелкие_мс=%.2f общий_мс=%.2f".format(small, times.average() - small))
+    }
+    println("GENOME способ=$modeArg тел=${shapes.size} клеток=$total мышечных=${shapes.sumOf { it.muscleCount }} " +
         "костных=${shapes.sumOf { it.boneCount }} самое_большое=${shapes.maxOf { it.count }} подшагов=$SUBSTEPS воркеров=$workers прогрев=$warm замер=$measure")
     println("GENOME мс/тик=%.2f медиана=%.2f p95=%.2f мин=%.2f UPS=%.1f мкс_на_клетку=%.2f".format(
         mean, sorted[measure / 2], sorted[((measure - 1) * 0.95).toInt()], sorted[0], 1000 / mean, mean * 1000 / total))
@@ -112,7 +140,7 @@ fun main(args: Array<String>) {
     // Гибель видна по «живых клеток» против «клеток» в первой строке.
     println("GENOME живых_клеток=$live неживых_мест=$dead связей_решателя=$links")
     println("GENOME_HASH %016x".format(hash))
-    if (!split) {
+    if (!split && !hybrid) {
         var accounted = 0.0
         for (k in state0.dbgTimeNs.indices) if (state0.dbgTimeNs[k] != 0L) {
             val ms = state0.dbgTimeNs[k] / 1e6 / measure
