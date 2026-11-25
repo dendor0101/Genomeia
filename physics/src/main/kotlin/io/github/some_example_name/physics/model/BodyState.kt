@@ -19,8 +19,6 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     val DRAG_SPEED_LIMIT = config.DRAG_SPEED_LIMIT
     val KILL_ON_DEEP_OVERLAP = config.KILL_ON_DEEP_OVERLAP
 
-    init { configureMuscleExperiment(config) } // ВРЕМЕННО (опыт 19.11.2026, solver/MuscleExperiment.kt)
-
     /**
      * Воркеры параллельных стадий; null — всё в вызывающем потоке. Результат от их
      * числа не зависит побитово (см. ParallelBlocks). Игра может подставить свой пул.
@@ -43,6 +41,9 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     /** Параллельные стадии и число воркеров, под которое они собраны. См. ParallelBlocks. */
     internal var parallelPhysicsState: ParallelPhysics? = null
     internal var parallelPhysicsWorkers = 0
+
+    /** Куски поштучных проходов, общие для воркеров и одного потока: см. PassChunks, passChunks(). */
+    internal val passChunkCache = PassChunks()
 
     lateinit var body: BodyDefinition
 

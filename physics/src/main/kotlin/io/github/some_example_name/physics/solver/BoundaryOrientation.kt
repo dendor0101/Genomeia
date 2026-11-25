@@ -28,10 +28,14 @@ fun solveBoundaryOrientation(
 /** Ориентация контура: по организмам, если есть воркеры (ParallelPhysics), иначе подряд. */
 internal fun BodyState.solveBoundaryOrientationStage() {
     val w = activeWorkers
-    if (w != null && organismCount > 1) { parallelPhysics(w).orientation(); return }
-    // Без воркеров — тот же порядок, что у них: по блокам, затем швы.
     val layout = constraintBlocks
-    if (layout != null && organismCount > 1) { edgesByBlocksSerial(layout, 0, 0.0f); return }
+    // ПОРЯДОК ПО БЛОКАМ — ПРИ ЛЮБОМ ЧИСЛЕ ОРГАНИЗМОВ (25.11, находка 42). Раньше при одном организме контур шёл своим
+    // списком, а при нескольких — по блокам: стенд (одно тело) и игра (тело и пул свободных частиц) обходили контур
+    // тела из двух блоков в разном порядке, и гребок рыбы A-11 расходился (standParityCheck). Порядок не должен
+    // зависеть от того, что ещё лежит в мире.
+    if (w != null && (organismCount > 1 || layout != null)) { parallelPhysics(w).orientation(); return }
+    // Без воркеров — тот же порядок, что у них: по блокам, затем швы.
+    if (layout != null) { edgesByBlocksSerial(layout, 0, 0.0f); return }
     if (sleep.asleepCount == 0) solveBoundaryOrientation(boundCount, boundA, boundB, boundOpp,
         localBoundary.orientation, px, py, invMass, orientationBones())
     else solveBoundaryOrientationAwake()

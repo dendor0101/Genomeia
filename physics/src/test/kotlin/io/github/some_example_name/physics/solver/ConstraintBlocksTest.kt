@@ -164,6 +164,27 @@ class ConstraintBlocksTest {
         assertArrayEquals(one, four, 0.0f)
     }
 
+    @Test fun organismInterleavedWithAnotherGetsOneSeamSetOfItsOwn() {
+        // Находка 42 (25.11.2026). Частицы тела (связного куска запечённого графа) вперемешку с чужими — геном из
+        // нескольких несвязанных кусков. Набор швов выдавался на прогон подряд идущих блоков: у тела 1 двухблочный
+        // прогон получал свой набор, одноблочные — общий первый, то есть набор тела 0. Наборы швов идут по воркерам
+        // параллельно — одни частицы правили два потока, суммы мира гуляли от прогона к прогону.
+        // Блоки при размере 3: [0 0 0][0 0][1 1 1][1 1 1][2 2][1 1 1][2 2][1 1 1].
+        val bodyOf = intArrayOf(0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 2, 2, 1, 1, 1)
+        val blocks = ConstraintBlocks(bodyOf.size, bodyOf, 3, 64, 16, 0)
+        assertEquals(8, blocks.blockCount)
+        val setOf = IntArray(3)
+        for (o in 0..2) {
+            val sets = (0 until blocks.blockCount).filter { bodyOf[blocks.firstParticle[it]] == o }.map { blocks.seamBucket[it] }.toSet()
+            assertEquals("тело $o — один набор швов", 1, sets.size)
+            setOf[o] = sets.first()
+            // Любая связь тела через границу его блоков — в этом наборе.
+            val own = bodyOf.indices.filter { bodyOf[it] == o }
+            for (a in own) for (b in own) if (blocks.particleBlock[a] != blocks.particleBlock[b]) assertEquals(setOf[o], blocks.blockOf(a, b))
+        }
+        assertEquals("у каждого многоблочного тела свой набор", 3, setOf.toSet().size)
+    }
+
     @Test fun crossingConstraintsAreSeamsAndFreshContourJoinsCurrentPass() {
         val blocks=ConstraintBlocks(9,intArrayOf(0,0,0,0,0,1,1,1,1),3,20,5,0)
         assertArrayEquals(intArrayOf(0,0,0,1,1,2,2,2,3),blocks.particleBlock)

@@ -316,7 +316,7 @@ internal fun BodyState.advanceCellScales(dt: Float) {
         if (cur == t) continue
         val away = kotlin.math.abs(t - 1f) > kotlin.math.abs(cur - 1f)
         val k = minOf(1.0f, (if (away) muscleRateContract else muscleRateRelax) * dt)
-        var next = openingRateLimit(cur, (cur + (t - cur) * k).toFloat()) // ВРЕМЕННО (MX_OPEN = 2, MuscleExperiment.kt)
+        var next = (cur + (t - cur) * k).toFloat()
         if (kotlin.math.abs(t - next) < CELL_SCALE_SNAP) next = t else moving = true
         s[v] = next
         sleep.requestWake(v)

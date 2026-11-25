@@ -204,16 +204,14 @@ class TickMomentum(internal val n: Int, minSpinArm: Float) {
             else unionParticles(i, j)
         }
     }
-    /** Куски по PASS_CHUNK внутри диапазонов — та же нарезка, что у параллельного прохода (ParallelPhysics.spanChunks). */
-    private inline fun chunks(sleep: BodySleep?, body: (Int, Int) -> Unit) {
-        spans(sleep) { from0, to0 ->
-            var from = from0
-            while (from < to0) {
-                val to = minOf(to0, from + PASS_CHUNK)
-                body(from, to)
-                from = to
-            }
-        }
+    /** Куски без сна (зеркало SwimSolver, тесты) — та же нарезка по организмам, что у мира: см. PassChunks. */
+    private val ownChunks = PassChunks()
+    private var ownLast = IntArray(0)
+
+    private fun ownChunks(): PassChunks {
+        if (ownLast.size != n) ownLast = IntArray(n)
+        ownChunks.buildWhole(n, orgOf, ownLast)
+        return ownChunks
     }
 
     /**
@@ -249,15 +247,21 @@ class TickMomentum(internal val n: Int, minSpinArm: Float) {
                    invMass: FloatArray, floor: BooleanArray?) {
         momentumExternalAt(i, x, y, vx, vy, invMass, floor != null && floor[i], beforeX, beforeY, targetX, targetY, targetL, blocked)
     }
-    fun cancel(x: FloatArray, y: FloatArray, vx: FloatArray, vy: FloatArray,
-               invMass: FloatArray, sleep: BodySleep? = null) {
+    /** Без сна (зеркало SwimSolver, тесты): куски режутся здесь же по организмам последнего [begin]. */
+    fun cancel(x: FloatArray, y: FloatArray, vx: FloatArray, vy: FloatArray, invMass: FloatArray) =
+        cancel(x, y, vx, vy, invMass, null, ownChunks())
+
+    /** Мир: [chunks] — его куски (BodyState.passChunks), те же, что у воркеров. */
+    internal fun cancel(x: FloatArray, y: FloatArray, vx: FloatArray, vy: FloatArray,
+                        invMass: FloatArray, sleep: BodySleep?, chunks: PassChunks) {
         spans(sleep) { from, to -> clearRange(from, to) }
         flattenGroups(sleep)
         // Те же куски, что у воркеров: порядок сложения не зависит от их числа.
+        val pc = chunks
         val sums = GroupSums()
-        chunks(sleep) { from, to -> momentumRange(from, to, x, y, vx, vy, invMass, sums); mergeMomentum(sums) }
+        for (c in 0 until pc.count) { momentumRange(pc.from[c], pc.to[c], x, y, vx, vy, invMass, sums); mergeMomentum(sums) }
         spans(sleep) { from, to -> centreRange(from, to) }
-        chunks(sleep) { from, to -> inertiaRange(from, to, x, y, invMass, sums); mergeInertia(sums) }
+        for (c in 0 until pc.count) { inertiaRange(pc.from[c], pc.to[c], x, y, invMass, sums); mergeInertia(sums) }
         spans(sleep) { from, to -> spinRange(from, to) }
         spans(sleep) { from, to -> applyRange(from, to, x, y, vx, vy, invMass) }
     }

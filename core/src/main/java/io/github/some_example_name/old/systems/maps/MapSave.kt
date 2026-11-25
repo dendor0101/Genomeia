@@ -81,10 +81,25 @@ class MapSave(
      * симуляция стоит ровно столько, сколько занимает копирование массивов.
      */
     fun save(slot: String?, world: WorldSpec?, preview: Pixmap?): String {
+        val target = slot ?: nextSlot()
+        val entries = snapshot(target, world, preview)
+        writeArchive(target, entries)
+        SessionAttachments.markMapWritten(target)
+        return target
+    }
+
+    /**
+     * Снять мир для записи в слот [target] — между тиками, с тиком сохранения в журнале; файл не пишется.
+     *
+     * Снимок МЕНЯЕТ мир физики: PhysicsWorld.write уплотняет его и пересобирает производное (контур, широкую фазу
+     * касаний, блоки решателя). Поэтому повтор сохранения, которое у игрока не записалось в файл (SaveWorldFailed),
+     * мир всё равно снимает: раньше повтор только отмечал тик и шёл без пересборки (25.11.2026, находка 42: тяжёлый
+     * bugReplayCheck, шаг с занятым временным файлом после 3000 тиков роста, — «разошлись PhysicsWorld» на тике после
+     * сохранения; та же запись со снимком сходится целиком). Какая часть пересборки меняет биты, не разобрано.
+     */
+    fun snapshot(target: String, world: WorldSpec?, preview: Pixmap?): Map<String, ByteArray> {
         val entries = LinkedHashMap<String, ByteArray>()
         preview?.let { entries[PREVIEW] = encodePng(it) }
-        val target = slot ?: nextSlot()
-
         simulationSystem.betweenTicks {
             // Точный тик сохранения — в журнал: при повторе мир будет ждать на нём.
             simulationSystem.onWorldSaved(target)
@@ -100,10 +115,7 @@ class MapSave(
             entries[PHYSICS] = writeBytes { worldPhysics.encodeState(it) }
             entries[RULES] = writeBytes { worldRules.encode(it) }
         }
-
-        writeArchive(target, entries)
-        SessionAttachments.markMapWritten(target)
-        return target
+        return entries
     }
 
     /**

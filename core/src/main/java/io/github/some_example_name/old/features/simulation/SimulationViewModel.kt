@@ -684,8 +684,10 @@ class SimulationViewModel(
         if (recorded != null && recorded.tick == null && !BugReplay.replayingCrash) return
         renderSystem.requestPreview(MapSave.PREVIEW_SIZE) { preview ->
             if (recorded?.failed == true) {
-                // Не трогаем прежний файл. Сообщение игроку покажет записанная SaveWorldFailed.
-                if (recorded.tick != null) simulationSystem.betweenTicks { simulationSystem.onWorldSaved(slot) }
+                // Не трогаем прежний файл. Сообщение игроку покажет записанная SaveWorldFailed. Мир — снять, как при
+                // записи (тик сохранения в журнале был, значит, снимок был): снимок уплотняет мир физики, и без него
+                // повтор расходится с записью. См. MapSave.snapshot.
+                if (recorded.tick != null) DISimulationContainer.mapSave.snapshot(slot, worldSpec, null)
                 return@requestPreview
             }
             try {
