@@ -92,6 +92,20 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) : Cloneable {
     internal var islandTick = 0L
     /** Таблица сумм кусков запаса среды в одном потоке (comSumsSerial): одна на состояние, у тени острова — своя. */
     internal var comSumsScratch: TickMomentum.GroupSums? = null
+    /**
+     * Запасы широкой фазы островов между тиками (contacts/IslandBroadphase.kt): по первой частице острова; ключи тика и
+     * прошлого тика; пул запасов ушедших островов; места вершин в списках островов (сетки с местными номерами);
+     * номер тика физики (каждый тик, с островами и без: годность запаса — «остров был и в прошлом тике»).
+     */
+    internal var islandBp = arrayOfNulls<IslandBroadphase>(0)
+    internal var islandBpKeys = IslandKeyList()
+    internal var islandBpKeysNext = IslandKeyList()
+    internal val islandBpPool = ArrayDeque<IslandBroadphase>()
+    internal var islandVertexSlot = IntArray(0)
+    internal var islandPhysTick = 0L
+    /** Островов с запасом широкой фазы с прошлого тика и собранных заново, за всё время — для проверок и стендов. */
+    var islandBpReuses = 0L; internal set
+    var islandBpRebuilds = 0L; internal set
 
     /** Мелкая копия: все поля — те же ссылки. Только для тени острова (IslandKit.beginTick). */
     internal fun shallowCopy(): BodyState = clone() as BodyState

@@ -38,7 +38,7 @@ class IslandsTest {
         return all
     }
 
-    private class Run(val state: FloatArray, val islandTicks: Int, val aborts: Long)
+    private class Run(val state: FloatArray, val islandTicks: Int, val aborts: Long, val bpReuses: Long)
 
     private fun run(islands: Boolean, workers: Int, tear: Boolean, rollbackAll: Boolean = false, flip: Boolean = false): Run {
         val cfg = HashMap<String, String>()
@@ -71,7 +71,7 @@ class IslandsTest {
         val n = st.n
         val dead = FloatArray(st.conCount) { if (st.conDead[it]) 1f else 0f }
         return Run(st.px.copyOf(n) + st.py.copyOf(n) + st.vx.copyOf(n) + st.vy.copyOf(n) +
-            st.conCellScale.copyOf(st.conCount) + dead, islandTicks, st.islandAborts)
+            st.conCellScale.copyOf(st.conCount) + dead, islandTicks, st.islandAborts, st.islandBpReuses)
     }
 
     @Test fun islandsGiveTheSameWorldBitForBit() {
@@ -79,6 +79,8 @@ class IslandsTest {
         for (workers in intArrayOf(1, 4)) {
             val on = run(islands = true, workers = workers, tear = false)
             assertTrue("островов почти нет (${on.islandTicks} тиков из $TICKS) — проверка пустая", on.islandTicks >= TICKS / 2)
+            // Широкая фаза острова между тиками (IslandBroadphase): путь с запасом должен быть пройден, иначе он не проверен.
+            assertTrue("запас широкой фазы острова ни разу не взят с прошлого тика", on.bpReuses > 0)
             assertArrayEquals("воркеров $workers", off.state, on.state, 0.0f)
         }
     }

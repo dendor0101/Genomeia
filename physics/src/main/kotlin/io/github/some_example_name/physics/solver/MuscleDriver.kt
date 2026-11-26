@@ -82,13 +82,16 @@ internal fun weakerScale(a: Float, b: Float): Float = if (strongerScale(a, b) ==
 /** Волокно множителю связи не мешает: и сжатие, и мягкость расслабления по волокну ведут ядра (MuscleFiber.kt, conFiberC2). */
 private fun BodyState.linkCellScale(c: Int): Float = weakerScale(cellScaleEff[conA[c]], cellScaleEff[conB[c]])
 
-private fun BodyState.triangleCellScale(t: Int): Float {
-    val i0 = triA[t]; val i1 = triB[t]; val i2 = triC[t]
-    if (boneOf[i0] >= 0 || boneOf[i1] >= 0 || boneOf[i2] >= 0) return 1f
-    val e = cellScaleEff
+private fun BodyState.triangleCellScale(t: Int): Float = triangleScaleAt(t, triA, triB, triC, boneOf, cellScaleEff)
+
+/** Множитель треугольника [t] по действующим множителям вершин [eff]; у треугольника с костью — 1. См. lengthsBeforeLoop. */
+@Suppress("NOTHING_TO_INLINE")
+private inline fun triangleScaleAt(t: Int, ta: IntArray, tb: IntArray, tc: IntArray, bone: IntArray, eff: FloatArray): Float {
+    val i0 = ta[t]; val i1 = tb[t]; val i2 = tc[t]
+    if (bone[i0] >= 0 || bone[i1] >= 0 || bone[i2] >= 0) return 1f
     // Волокно треугольнику множитель не меняет: сжатие по волокну ведут ядра (triFiberById), а расслабление площади —
     // целиком: растянуть треугольник может только связь вдоль волокна, поперечные мягче не становятся (MuscleFiber.kt).
-    return weakerScale(weakerScale(e[i0], e[i1]), e[i2])
+    return weakerScale(weakerScale(eff[i0], eff[i1]), eff[i2])
 }
 
 /** Мягкость связи — среднее концов (BodyState.cellSoftness): половинки пружины подряд. */
@@ -106,13 +109,20 @@ private fun BodyState.triangleSoftness(t: Int): Float =
  */
 private fun BodyState.effectiveSource(v: Int): Int {
     val b = baked
+    return effectiveSourceAt(v, b.vertStart, b.vertEdge, b.edgeDead, b.triUse, b.vertOther, cellScale)
+}
+
+/** То же ядро с массивами в параметрах (см. lengthsBeforeLoop): первый проход шага мышц держит их в локальных. */
+@Suppress("NOTHING_TO_INLINE")
+private inline fun effectiveSourceAt(v: Int, vertStart: IntArray, vertEdge: IntArray, edgeDead: BooleanArray,
+                                     triUse: IntArray, vertOther: IntArray, scale: FloatArray): Int {
     var src = v
-    var best = cellScale[v]
-    for (q in b.vertStart[v] until b.vertStart[v + 1]) {
-        val e = b.vertEdge[q]
-        if (b.edgeDead[e] || b.triUse[e] == 0) continue
-        val o = b.vertOther[q]
-        val s = cellScale[o]
+    var best = scale[v]
+    for (q in vertStart[v] until vertStart[v + 1]) {
+        val e = vertEdge[q]
+        if (edgeDead[e] || triUse[e] == 0) continue
+        val o = vertOther[q]
+        val s = scale[o]
         if (strongerScale(best, s) != best) { best = s; src = o }
     }
     return src
@@ -193,21 +203,26 @@ private inline fun BodyState.refreshEffectiveOf(moved: IntArray, from: Int, to: 
     val stamp = lerpCellStamp; val now = lerpStampNow
     val eff = cellScaleEff; val srcOf = cellScaleSrc; val scale = cellScale
     val fibers = fibersOn
+    // Массивы графа — в локальные, ядро источника встроено (см. lengthsBeforeLoop и refreshAroundChanged).
+    val vertStart = b.vertStart; val vertEdge = b.vertEdge; val edgeDead = b.edgeDead; val triUse = b.triUse
+    val vertOther = b.vertOther
+    lengthsBeforeLoop(moved.size or stamp.size or eff.size or srcOf.size or scale.size or vertStart.size or
+        vertEdge.size or edgeDead.size or triUse.size or vertOther.size)
     // Сдвинувшиеся — всегда, как refreshEffective(always = true): связи вокруг пересчитываются, даже если действующий
     // множитель остался прежним.
     for (q in from until to) {
         val v = moved[q]
-        val src = effectiveSource(v)
+        val src = effectiveSourceAt(v, vertStart, vertEdge, edgeDead, triUse, vertOther, scale)
         eff[v] = scale[src]; srcOf[v] = src
         changed(v)
     }
     for (q in from until to) {
         val v = moved[q]
-        for (r in b.vertStart[v] until b.vertStart[v + 1]) {
-            val u = b.vertOther[r]
+        for (r in vertStart[v] until vertStart[v + 1]) {
+            val u = vertOther[r]
             if (stamp[u] == now) continue
             stamp[u] = now
-            val src = effectiveSource(u)
+            val src = effectiveSourceAt(u, vertStart, vertEdge, edgeDead, triUse, vertOther, scale)
             val e = scale[src]
             // Источник важен только с волокнами: множитель тот же, а волокно — другой мышцы (MuscleFiber.kt).
             if (e == eff[u] && (!fibers || src == srcOf[u])) continue
@@ -226,6 +241,14 @@ internal fun BodyState.refreshEffectiveChunk(moved: IntArray, from: Int, to: Int
 /**
  * Второй проход: связи и треугольники вокруг изменившихся клеток — множитель, волокно, мягкость и захват «было»
  * для плавности ([out] — буфер куска воркера, null — общие списки). Ребро и треугольник — по одному разу на шаг.
+ *
+ * МАССИВЫ — В ЛОКАЛЬНЫХ, ЯДРА ВСТРОЕНЫ (26.11.2026, правило lengthsBeforeLoop). Раньше на каждую связь и треугольник
+ * шли вызовы linkCellScale, refreshLinkFiber, linkSoftness, triangleCellScale, refreshTriangleFiber, triangleSoftness, и
+ * каждый заново брал из полей свой десяток массивов: на Galaxy A21s это 5.4 мкс на сдвинувшуюся клетку и 10–14% тика
+ * (находка 40). Арифметика та же, теми же ядрами (linkFiberC2At, triangleFiberAt, triangleScaleAt), в том же порядке.
+ *
+ * Массивы волокна уже нужного размера: их расширяет ensureFiberSize в начале шага мышц, в одном потоке (здесь, на
+ * воркерах ParallelMuscles, расширять общий массив было бы гонкой). Нарушение этого — выход за границу, не тихая порча.
  */
 internal fun BodyState.refreshAroundChanged(changed: IntArray, count: Int, out: CellScaleLerpBuffer?) {
     val b = baked
@@ -234,33 +257,49 @@ internal fun BodyState.refreshAroundChanged(changed: IntArray, count: Int, out: 
     val edgeStamp = lerpEdgeStamp; val triStamp = lerpTriStamp
     val vertStart = b.vertStart; val vertEdge = b.vertEdge
     val edgeTriStart = b.edgeTriStart; val edgeTris = b.edgeTris
+    val conOf = conOfEdge; val nextCon = conNextForEdge; val conScale = conCellScale; val ca = conA; val cb = conB
+    val triScale = triCellScale; val ta = triA; val tb = triB; val tc = triC; val bone = boneOf; val tid = triId
+    val eff = cellScaleEff; val srcOf = cellScaleSrc
+    val triN = triCount
+    // Мягкость и волокно — признак и массивы (пустые, если их нет), а не null: см. lengthsBeforeLoop, пункт 3.
     val soft = softnessOn
+    val cellSoft = if (soft) cellSoftness else NO_FLOATS
+    val conSoft = if (soft) conSoftness else NO_FLOATS; val triSoft = if (soft) triSoftness else NO_FLOATS
+    val fibers = fibersOn
+    val fx = if (fibers) cellFiberX else NO_FLOATS; val fy = if (fibers) cellFiberY else NO_FLOATS
+    val c2 = if (fibers) conFiberC2 else NO_FLOATS; val triFiber = if (fibers) triFiberById else NO_BOOLEANS
+    val bx = body.x; val by = body.y
+    lengthsBeforeLoop(changed.size or slot.size or edgeStamp.size or triStamp.size or vertStart.size or vertEdge.size or
+        edgeTriStart.size or edgeTris.size or conOf.size or nextCon.size or conScale.size or ca.size or cb.size or
+        triScale.size or ta.size or tb.size or tc.size or bone.size or tid.size or eff.size or srcOf.size or
+        cellSoft.size or conSoft.size or triSoft.size or fx.size or fy.size or c2.size or triFiber.size or bx.size or by.size)
     for (k in 0 until count) {
         val v = changed[k]
         for (q in vertStart[v] until vertStart[v + 1]) {
             val e = vertEdge[q]
             if (edgeStamp[e] == now) continue // ребро уже пересчитано с другого конца
             edgeStamp[e] = now
-            var c = conOfEdge[e]
+            var c = conOf[e]
             if (c >= 0) {
-                noteEdgeLerp(e, conCellScale[c], out)
+                noteEdgeLerp(e, conScale[c], out)
                 while (c >= 0) {
-                    conCellScale[c] = linkCellScale(c)
-                    refreshLinkFiber(c) // волокно мышцы (MuscleFiber.kt)
-                    if (soft) conSoftness[c] = linkSoftness(c)
-                    c = conNextForEdge[c]
+                    conScale[c] = weakerScale(eff[ca[c]], eff[cb[c]])
+                    // Волокно мышцы (MuscleFiber.kt).
+                    if (fibers) c2[c] = linkFiberC2At(c, ca, cb, eff, srcOf, fx, fy, bx, by)
+                    if (soft) conSoft[c] = (cellSoft[ca[c]] + cellSoft[cb[c]]) * 0.5f
+                    c = nextCon[c]
                 }
             }
             for (r in edgeTriStart[e] until edgeTriStart[e + 1]) {
                 val id = edgeTris[r]
                 if (triStamp[id] == now) continue // треугольник уже пересчитан с другого ребра
                 val w = slot[id]
-                if (w !in 0 until triCount) continue
+                if (w !in 0 until triN) continue
                 triStamp[id] = now
-                noteTriLerp(id, triCellScale[w], out)
-                triCellScale[w] = triangleCellScale(w)
-                refreshTriangleFiber(w) // волокно мышцы (MuscleFiber.kt)
-                if (soft) triSoftness[w] = triangleSoftness(w)
+                noteTriLerp(id, triScale[w], out)
+                triScale[w] = triangleScaleAt(w, ta, tb, tc, bone, eff)
+                if (fibers) triFiber[tid[w]] = triangleFiberAt(w, ta, tb, tc, bone, eff, srcOf, fx, fy)
+                if (soft) triSoft[w] = (cellSoft[ta[w]] + cellSoft[tb[w]] + cellSoft[tc[w]]) * (1f / 3f)
             }
         }
     }

@@ -4,8 +4,8 @@ import org.junit.Assert.*
 import org.junit.Test
 
 /**
- * Выбор островов по замеру (IslandChooser): на заданных временах тиков — тот режим, что быстрее; без островов в
- * прогрев; дрейф времени (прогрев JIT) выбора не переворачивает; тот же ответ — удержание растёт.
+ * Выбор островов по замеру (IslandChooser): на заданных временах тиков — тот режим, что быстрее; прогрев гоняет оба
+ * режима; дрейф времени и холодный путь островов (прогрев JIT) выбора не переворачивают; тот же ответ — удержание растёт.
  */
 class IslandChooserTest {
     /** Прогнать [ticks] тиков: тик с островами длится [onNs], без — [offNs]; острова находятся, если [islands]. */
@@ -19,8 +19,26 @@ class IslandChooserTest {
         return withIslands
     }
 
-    @Test fun warmupRunsWithoutIslands() {
-        assertEquals("прогрев — без островов", 0, IslandChooser().run(WARMUP, offNs = 10_000_000, onNs = 1_000_000))
+    @Test fun warmupRunsBothModes() {
+        val c = IslandChooser()
+        assertEquals("прогрев — половина тиков с островами", WARMUP / 2, c.run(WARMUP, offNs = 10_000_000, onNs = 1_000_000))
+        assertFalse("в прогреве выбора нет", c.chosen)
+    }
+
+    /**
+     * Путь островов холодный, пока не наберёт тиков (JIT компилирует только идущий код): первые 30 тиков с островами
+     * вдвое дольше, дальше острова быстрее на 20%. Прогрев гоняет оба пути, и первая же проба выбирает острова. Прогрев
+     * только без островов здесь выбрал бы мир (S24 Ultra 26.11: острова быстрее на 12%, а первая проба — без них).
+     */
+    @Test fun coldIslandsPathDoesNotHideTheWin() {
+        val c = IslandChooser()
+        var islandTicks = 0
+        for (t in 0 until WARMUP + PROBE) {
+            val on = c.wantIslands()
+            val ns = if (!on) 10_000_000L else if (islandTicks++ < 30) 20_000_000L else 8_000_000L
+            c.record(ns, if (on) 3 else 0)
+        }
+        assertTrue("холодный путь островов спрятал выигрыш в первой пробе", c.chosen)
     }
 
     @Test fun picksIslandsWhenFasterAndDropsThemWhenSlower() {

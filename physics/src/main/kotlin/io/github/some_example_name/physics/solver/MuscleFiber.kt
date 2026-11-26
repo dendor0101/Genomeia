@@ -83,48 +83,65 @@ internal fun BodyState.limitRest(c: Int, rest: Float, scale: Float): Float =
     if (linkAlongFiber(c, scale)) rest * maxOf(1.0f, fiberLinkFactor(scale, conFiberC2[c].toFloat(), fiberThicken))
     else rest
 
-/** Волокно клетки, задающей множитель клетке [v] (cellScaleSrc): x и y; оба 0 — волокна нет. */
+// ЯДРА ВОЛОКНА — с массивами в параметрах (lengthsBeforeLoop, пункт 4): второй проход шага мышц (refreshAroundChanged)
+// держит массивы в локальных и зовёт их на каждую связь и треугольник; одиночные пути — через обёртки ниже. Одна запись
+// арифметики на оба пути.
+
+/** Волокно клетки, задающей множитель клетке [v] ([srcOf] — cellScaleSrc): номер клетки с волокном или -1. */
 @Suppress("NOTHING_TO_INLINE")
-private inline fun BodyState.drivingFiberIndex(v: Int): Int {
-    val src = if (v < cellScaleSrc.size) cellScaleSrc[v] else v
-    return if (src in 0 until cellFiberX.size) src else -1
+internal inline fun drivingFiberIndexAt(v: Int, srcOf: IntArray, fx: FloatArray): Int {
+    val src = if (v < srcOf.size) srcOf[v] else v
+    return if (src in 0 until fx.size) src else -1
 }
 
-/** Конец связи [c], чей действующий множитель — множитель связи (слабейший; при равных — первый). */
+/** Конец связи (a, b), чей действующий множитель ([eff]) — множитель связи (слабейший; при равных — первый). */
 @Suppress("NOTHING_TO_INLINE")
-private inline fun BodyState.drivingEnd(a: Int, b: Int): Int {
-    val e = cellScaleEff
-    if (a >= e.size || b >= e.size) return a
-    val ea = e[a]; val eb = e[b]
+internal inline fun drivingEndAt(a: Int, b: Int, eff: FloatArray): Int {
+    if (a >= eff.size || b >= eff.size) return a
+    val ea = eff[a]; val eb = eff[b]
     return if (strongerScale(ea, eb) == ea && ea != eb) b else a
 }
 
-/** cos² угла между связью [c] в позе покоя и волокном клетки, задающей ей множитель; 1 — волокна нет. */
-private fun BodyState.linkFiberC2(c: Int): Float {
-    val i = conA[c]; val j = conB[c]
-    val f = drivingFiberIndex(drivingEnd(i, j))
+/**
+ * cos² угла между связью [c] в позе покоя (bx, by — BodyDefinition.x, y) и волокном (fx, fy — cellFiberX, Y) клетки,
+ * задающей ей множитель; 1 — волокна нет.
+ */
+@Suppress("NOTHING_TO_INLINE")
+internal inline fun linkFiberC2At(c: Int, ca: IntArray, cb: IntArray, eff: FloatArray, srcOf: IntArray,
+                                  fx: FloatArray, fy: FloatArray, bx: FloatArray, by: FloatArray): Float {
+    val i = ca[c]; val j = cb[c]
+    val f = drivingFiberIndexAt(drivingEndAt(i, j, eff), srcOf, fx)
     if (f < 0) return 1f
-    val fx = cellFiberX[f]; val fy = cellFiberY[f]
-    if (fx == 0f && fy == 0f) return 1f
-    val dx = (body.x[j] - body.x[i]).toFloat(); val dy = (body.y[j] - body.y[i]).toFloat()
+    val x = fx[f]; val y = fy[f]
+    if (x == 0f && y == 0f) return 1f
+    val dx = (bx[j] - bx[i]).toFloat(); val dy = (by[j] - by[i]).toFloat()
     val l2 = dx * dx + dy * dy
     if (l2 < 1e-24f) return 1f
-    val a = fx * dx + fy * dy
+    val a = x * dx + y * dy
     return (a * a / l2).toFloat()
 }
 
 /** Треугольник [t] (рабочий номер) сокращается по волокну: у клетки, задающей ему множитель, есть волокно. */
-internal fun BodyState.triangleFiber(t: Int): Boolean {
-    val i0 = triA[t]; val i1 = triB[t]; val i2 = triC[t]
-    if (boneOf[i0] >= 0 || boneOf[i1] >= 0 || boneOf[i2] >= 0) return false
-    val e = cellScaleEff
-    if (i0 >= e.size || i1 >= e.size || i2 >= e.size) return false
+@Suppress("NOTHING_TO_INLINE")
+internal inline fun triangleFiberAt(t: Int, ta: IntArray, tb: IntArray, tc: IntArray, bone: IntArray, eff: FloatArray,
+                                    srcOf: IntArray, fx: FloatArray, fy: FloatArray): Boolean {
+    val i0 = ta[t]; val i1 = tb[t]; val i2 = tc[t]
+    if (bone[i0] >= 0 || bone[i1] >= 0 || bone[i2] >= 0) return false
+    if (i0 >= eff.size || i1 >= eff.size || i2 >= eff.size) return false
     // Тот же выбор, что weakerScale(weakerScale(e0, e1), e2) в triangleCellScale.
-    var d = if (strongerScale(e[i0], e[i1]) == e[i0] && e[i0] != e[i1]) i1 else i0
-    if (strongerScale(e[d], e[i2]) == e[d] && e[d] != e[i2]) d = i2
-    val f = drivingFiberIndex(d)
-    return f >= 0 && (cellFiberX[f] != 0f || cellFiberY[f] != 0f)
+    var d = if (strongerScale(eff[i0], eff[i1]) == eff[i0] && eff[i0] != eff[i1]) i1 else i0
+    if (strongerScale(eff[d], eff[i2]) == eff[d] && eff[d] != eff[i2]) d = i2
+    val f = drivingFiberIndexAt(d, srcOf, fx)
+    return f >= 0 && (fx[f] != 0f || fy[f] != 0f)
 }
+
+/** cos² связи [c] к волокну: см. [linkFiberC2At]. */
+private fun BodyState.linkFiberC2(c: Int): Float =
+    linkFiberC2At(c, conA, conB, cellScaleEff, cellScaleSrc, cellFiberX, cellFiberY, body.x, body.y)
+
+/** Треугольник [t] (рабочий номер) сокращается по волокну: см. [triangleFiberAt]. */
+internal fun BodyState.triangleFiber(t: Int): Boolean =
+    triangleFiberAt(t, triA, triB, triC, boneOf, cellScaleEff, cellScaleSrc, cellFiberX, cellFiberY)
 
 /** Признак «по волокну» у треугольника рабочего номера [t] — по его постоянному номеру. */
 internal fun BodyState.refreshTriangleFiber(t: Int) {
