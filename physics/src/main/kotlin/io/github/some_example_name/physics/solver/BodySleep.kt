@@ -46,7 +46,7 @@ package io.github.some_example_name.physics
  * отдельного прохода нет; место серии — 16 байт на частицу. Засыпание и пробуждение проходят диапазон индексов своего
  * организма, а не весь мир.
  */
-class BodySleep(var on: Boolean) {
+class BodySleep(var on: Boolean) : Cloneable {
     /** Организм спит. Ёмкость — по числу клеток, как у organismSize. */
     var asleep = BooleanArray(0); private set
 
@@ -223,18 +223,116 @@ class BodySleep(var on: Boolean) {
         spansDirty = true
     }
 
+    /**
+     * ОБЛАСТЬ ТИКА (острова, TickScope.kt): номер области каждого организма (-1 мир, k ≥ 0 остров k; null — островов
+     * нет) и область, которую обходят поштучные проходы. Диапазоны — бодрствующие организмы текущей области; смена
+     * области их пересобирает. [scopeVersion] растёт на каждой смене — по нему пересобираются куски области.
+     */
+    internal var orgScope: IntArray? = null
+    internal var scope = SCOPE_WORLD
+        private set
+    internal var scopeVersion = 0
+        private set
+
+    internal fun setScope(sc: Int) {
+        if (scope == sc) return
+        scope = sc; spansDirty = true; scopeVersion++
+    }
+
+    /** Область [sc] с пересборкой диапазонов, даже если номер тот же: состав области сменился (острова, IslandRun.kt). */
+    internal fun forceScope(sc: Int) { scope = sc; spansDirty = true; scopeVersion++ }
+
+    /**
+     * Копия сна для воркера островов (IslandRun.kt): сон, покой и очередь пробуждений — общие (остров их не трогает:
+     * в нём нет спящих, а пробуждение — событие, и остров откатывается до него), диапазоны и область — свои.
+     * [prev] — копия прошлого тика: её массивы диапазонов переходят без выделения.
+     */
+    internal fun islandView(prev: BodySleep?): BodySleep {
+        val v = clone() as BodySleep
+        v.spanStart = prev?.spanStart ?: IntArray(16); v.spanEnd = prev?.spanEnd ?: IntArray(16)
+        v.spanCount = 0; v.spansDirty = false
+        return v
+    }
+
+    /**
+     * Остров [k]: его диапазоны частиц from[a until b], to[a until b] — по возрастанию, без стыков. Это ровно то, что
+     * собрал бы rebuildSpansIfNeeded по области острова (частицы его блоков: все бодрствуют и все его), только без
+     * прохода по всем частицам мира. Номер области растёт: по нему куски области (PassChunks) пересобираются.
+     */
+    internal fun setIslandSpans(k: Int, from: IntArray, to: IntArray, a: Int, b: Int) {
+        scope = k; scopeVersion++; spansDirty = false; spanCount = 0
+        for (x in a until b) addSpan(from[x], to[x])
+    }
+
+    /** Организмы острова у копии (islandOrgs[islandOrgFrom until islandOrgTo]); у мира — null. См. forScopeOrganisms. */
+    internal var islandOrgs: IntArray? = null
+        private set
+    internal var islandOrgFrom = 0
+        private set
+    internal var islandOrgTo = 0
+        private set
+
+    internal fun setIslandOrgs(list: IntArray, from: Int, to: Int) { islandOrgs = list; islandOrgFrom = from; islandOrgTo = to }
+
+    override fun clone(): Any = super.clone()
+
     internal fun rebuildSpansIfNeeded(n: Int, organismOf: IntArray) {
         if (!spansDirty) return
         spansDirty = false
         spanCount = 0
-        if (asleepCount == 0) { addSpan(0, n); return }
+        val os = orgScope; val sc = scope
+        if (os == null || sc == SCOPE_ALL) {
+            if (asleepCount == 0) { addSpan(0, n); return }
+            var start = -1
+            for (i in 0 until n) {
+                val awake = !asleep[organismOf[i]]
+                if (awake && start < 0) start = i
+                else if (!awake && start >= 0) { addSpan(start, i); start = -1 }
+            }
+            if (start >= 0) addSpan(start, n)
+            return
+        }
+        var start = -1
+        for (i in 0 until n) {
+            val o = organismOf[i]
+            // Организм, родившийся расколом посреди тика, — мира: в острове событие откатывает остров целиком.
+            val inScope = !asleep[o] && (if (o < os.size) os[o] else SCOPE_WORLD) == sc
+            if (inScope && start < 0) start = i
+            else if (!inScope && start >= 0) { addSpan(start, i); start = -1 }
+        }
+        if (start >= 0) addSpan(start, n)
+    }
+
+    /**
+     * Все бодрствующие диапазоны без отбора по области — из них режутся куски мира (PassChunks): кусок области — кусок
+     * мира, обрезанный по её частицам, иначе суммы групп складывались бы иначе, чем без островов. Пересобираются,
+     * только когда кто-то уснул или проснулся (version) или сменилось число частиц.
+     */
+    var allSpanStart = IntArray(1); private set
+    var allSpanEnd = IntArray(1); private set
+    var allSpanCount = 0; private set
+    private var allSpansVersion = -1
+    private var allSpansN = -1
+
+    internal fun rebuildAllSpansIfNeeded(n: Int, organismOf: IntArray) {
+        if (allSpansVersion == version && allSpansN == n) return
+        allSpansVersion = version; allSpansN = n
+        allSpanCount = 0
+        if (asleepCount == 0) { addAllSpan(0, n); return }
         var start = -1
         for (i in 0 until n) {
             val awake = !asleep[organismOf[i]]
             if (awake && start < 0) start = i
-            else if (!awake && start >= 0) { addSpan(start, i); start = -1 }
+            else if (!awake && start >= 0) { addAllSpan(start, i); start = -1 }
         }
-        if (start >= 0) addSpan(start, n)
+        if (start >= 0) addAllSpan(start, n)
+    }
+
+    private fun addAllSpan(start: Int, end: Int) {
+        if (allSpanCount == allSpanStart.size) {
+            allSpanStart = allSpanStart.copyOf(allSpanCount * 2); allSpanEnd = allSpanEnd.copyOf(allSpanCount * 2)
+        }
+        allSpanStart[allSpanCount] = start; allSpanEnd[allSpanCount] = end; allSpanCount++
     }
 
     private fun addSpan(start: Int, end: Int) {
@@ -310,7 +408,7 @@ internal fun BodyState.noteSleepContacts(ct: BoundaryContacts): Boolean {
         if (isFixed(sleeper)) continue
         val dx = px[mover] - tickJitterX[mover]; val dy = py[mover] - tickJitterY[mover]
         val limit2 = if (cellHomeCompliance.size > sleeper && cellHomeCompliance[sleeper] > 0.0f) ground2 else wake2
-        if (dx * dx + dy * dy > limit2) { s.requestWake(sleeper); any = true }
+        if (dx * dx + dy * dy > limit2) { if (islandRun != null) islandAbort(); s.requestWake(sleeper); any = true }
     }
     return any
 }

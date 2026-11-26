@@ -15,7 +15,8 @@ class PhysicsConfig(parameters: Map<String, String> = emptyMap()) {
     fun snapshot(): Map<String, String> = values.filterKeys { it !in EXECUTION_KEYS }
 
     private companion object {
-        val EXECUTION_KEYS = setOf("RB_WORKERS", "RB_PARALLEL_MIN")
+        // Острова (ISLANDS, ISLANDS_ROLLBACK_ALL) — тоже исполнение: сумма мира с ними и без одна (IslandRun.kt).
+        val EXECUTION_KEYS = setOf("RB_WORKERS", "RB_PARALLEL_MIN", "ISLANDS", "ISLANDS_ROLLBACK_ALL")
     }
     val contacts = ContactConfig(values)
     val CONTACT_MAX_STEP = this["RB_MAXSTEP"]?.toFloatOrNull()

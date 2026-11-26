@@ -1,23 +1,35 @@
 package io.github.some_example_name.physics
 
-/**
- * Сумма импульсов и моментов на кластер; обход его клеток выполняется один раз.
- * [minSpinArm] — наименьший радиус инерции, у которого есть поворот (SPIN_MIN_ARM в единицах мира): кость из
- * одной клетки только переносится, её «инерция» — квадрат ошибки округления.
- */
 class RigidContactBatch(minSpinArm: Float) {
     private val minArm2 = minSpinArm * minSpinArm
     private var x = FloatArray(0)
     private var y = FloatArray(0)
     private var torque = FloatArray(0)
 
+    // ЗАДЕТЫЕ КОСТИ (25.11.2026, острова). Раньше begin обнулял суммы всех костей мира, а apply обходил их все — на
+    // каждом решении касаний. У копии касаний острова (IslandRun.kt) это проход по костям мира на каждый остров и подшаг.
+    // Теперь обнуляются и обходятся только кости, которым что-то добавили. apply идёт по ним в порядке номеров, как шёл
+    // по всем: кость без суммы он и раньше пропускал, так что биты те же.
+    private var touched = BooleanArray(0)
+    private var list = IntArray(16)
+    private var listN = 0
+
     fun begin(count: Int) {
         if (x.size != count) {
-            x = FloatArray(count); y = FloatArray(count); torque = FloatArray(count)
-        } else { x.fill(0.0f); y.fill(0.0f); torque.fill(0.0f) }
+            x = FloatArray(count); y = FloatArray(count); torque = FloatArray(count); touched = BooleanArray(count)
+            listN = 0
+            return
+        }
+        for (k in 0 until listN) { val b = list[k]; x[b] = 0.0f; y[b] = 0.0f; torque[b] = 0.0f; touched[b] = false }
+        listN = 0
     }
 
     fun add(b: Int, rx: Float, ry: Float, jx: Float, jy: Float) {
+        if (!touched[b]) {
+            touched[b] = true
+            if (listN == list.size) list = list.copyOf(listN * 2)
+            list[listN++] = b
+        }
         x[b] += jx; y[b] += jy; torque[b] += rx * jy - ry * jx
     }
 
@@ -30,12 +42,12 @@ class RigidContactBatch(minSpinArm: Float) {
     fun apply(ids: Array<IntArray>, mass: FloatArray, inertia: FloatArray,
               cx: FloatArray, cy: FloatArray, px: FloatArray, py: FloatArray,
               invMass: FloatArray, outX: FloatArray, outY: FloatArray, positions: Boolean) {
-        for (b in ids.indices) {
+        java.util.Arrays.sort(list, 0, listN)
+        for (k in 0 until listN) {
+            val b = list[k]
             if (mass[b] <= 0.0f || (x[b] == 0.0f && y[b] == 0.0f && torque[b] == 0.0f)) continue
             val tx = x[b] / mass[b]; val ty = y[b] / mass[b]
             val angle = if (inertia[b] > mass[b] * minArm2) torque[b] / inertia[b] else 0.0f
-            // Эйлеровское r + angle × r растягивало кость при каждом касании.
-            // Общий конечный поворот сохраняет расстояния, независимо от числа контактов.
             val sin = if (positions) StrictMath.sin((angle).toDouble()).toFloat() else angle
             val cosMinusOne = if (positions) StrictMath.cos((angle).toDouble()).toFloat() - 1.0f else 0.0f
             for (i in ids[b]) {
@@ -44,12 +56,6 @@ class RigidContactBatch(minSpinArm: Float) {
                 outX[i] += tx + cosMinusOne * rx - sin * ry
                 outY[i] += ty + sin * rx + cosMinusOne * ry
             }
-            // ЦЕНТР КОСТИ ЕДЕТ ВМЕСТЕ С НЕЙ. Позиционная поправка сдвинула кость на (tx, ty), поворот
-            // вокруг центра масс его не двигает. Отскок того же подшага (solveRestitution) считает плечи
-            // клеток от этого центра; со старым центром сумма m·r по кости была не ноль, а M·(tx, ty), и
-            // вращательная часть отскока давала линейный импульс ω × M·сдвиг из ничего. Тест
-            // BoneContactAnalyticTest 16.11.2026: частица в кость, поперечный импульс пары 1.9e-4 от
-            // исходного за один подшаг касания; после правки — ошибка округления.
             if (positions) { cx[b] += tx; cy[b] += ty }
         }
     }

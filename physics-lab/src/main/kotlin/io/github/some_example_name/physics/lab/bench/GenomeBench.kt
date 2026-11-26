@@ -101,6 +101,9 @@ fun main(args: Array<String>) {
     val timesSmall = DoubleArray(measure)
 
     val times = DoubleArray(measure)
+    var islandTicks = 0L
+    var islandCells = 0L
+    val rejects = LongArray(3)
     var hash = CrowdScene.HASH_SEED
     val state0 = worlds[0].world.state
     for (tick in 0 until warm + measure) {
@@ -119,6 +122,10 @@ fun main(args: Array<String>) {
             sharedWorld?.step()
         }
         if (tick >= warm) times[tick - warm] = (System.nanoTime() - start) / 1e6
+        if (tick >= warm && !split && !hybrid) {
+            islandTicks += state0.islandsLastTick; islandCells += state0.islandCellsLastTick
+            for (q in 0..2) rejects[q] += state0.islandRejects[q]
+        }
         if (tick % 10 == 9) for (w in worlds) { val s = w.world.state; hash = CrowdScene.hash(hash, s.n, s.px, s.py, s.vx, s.vy) }
     }
     state0.dbgTimeOn = false
@@ -140,6 +147,10 @@ fun main(args: Array<String>) {
     // Гибель видна по «живых клеток» против «клеток» в первой строке.
     println("GENOME живых_клеток=$live неживых_мест=$dead связей_решателя=$links")
     println("GENOME_HASH %016x".format(hash))
+    if (!split && !hybrid) println("GENOME_ISLANDS в среднем за тик %.1f, частиц в них %.0f из %d".format(
+        islandTicks.toDouble() / measure, islandCells.toDouble() / measure, state0.n))
+    if (!split && !hybrid) println("GENOME_ISLANDS не острова: неподвижные/спящие %.1f, крупные %.1f; тел в общем острове с соседом %.1f".format(
+        rejects[0].toDouble() / measure, rejects[1].toDouble() / measure, rejects[2].toDouble() / measure))
     if (!split && !hybrid) {
         var accounted = 0.0
         for (k in state0.dbgTimeNs.indices) if (state0.dbgTimeNs[k] != 0L) {

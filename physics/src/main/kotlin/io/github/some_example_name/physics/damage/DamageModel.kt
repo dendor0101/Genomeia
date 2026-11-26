@@ -23,6 +23,7 @@ import kotlin.math.sqrt
  * то есть ребро гаснет сразу, а структура пересобирается в конце тика.
  */
 fun BodyState.applyPierce(ct: BoundaryContacts) {
+    if (islandRun != null) islandAbort() // событие топологии: остров откатывается и идёт с миром (IslandRun.kt)
     // Как при смерти клетки: исчезающая топология ещё должна успеть вернуть
     // вывернутый отломок на внешнюю сторону ткани. После killEdgeNow уже поздно.
     fractureOrientation.solvePierced(ct, conOfEdge, conDead, conCount, px, py, invMass)
@@ -43,6 +44,7 @@ fun BodyState.applyPierce(ct: BoundaryContacts) {
 }
 
 fun BodyState.applyKills(ct: BoundaryContacts) {
+    if (islandRun != null) islandAbort() // событие топологии: остров откатывается и идёт с миром (IslandRun.kt)
     // После удаления связей их перевёрнутые треугольники исчезнут: отломок может
     // остаться внутри ткани без ограничения, способного вернуть его наружу.
     fractureOrientation.solve(ct.killList, ct.killN, px, py, invMass)
@@ -135,7 +137,7 @@ fun BodyState.applyPlasticity(dt: Float) {
         return
     }
     for (block in 0 until layout.buckets) {
-        if (block < layout.seam && layout.awake[block] == 0) continue
+        if (!layout.active(block)) continue
         plasticBlock(block, layout, k)
     }
 }

@@ -88,7 +88,7 @@ class BlockIndex(capacity: Int, blocks: Int) {
  * но меньше обычного L2. Контактные барьеры остаются общими.
  */
 class ConstraintBlocks(n: Int, bodyOf: IntArray, blockSize: Int,
-                       linkCapacity: Int, triangleCapacity: Int, boneCount: Int) {
+                       linkCapacity: Int, triangleCapacity: Int, boneCount: Int) : Cloneable {
     val particleBlock = IntArray(n)
     /** Частицы блока b — [firstParticle[b], firstParticle[b + 1]). Шов своих частиц не имеет. */
     val firstParticle: IntArray
@@ -114,7 +114,7 @@ class ConstraintBlocks(n: Int, bodyOf: IntArray, blockSize: Int,
     /** Рёбра контура (LocalBoundaryConstraints) по блокам: ориентации со спящими. */
     val edges: BlockIndex
     val triangleSlot = IntArray(triangleCapacity) { -1 }
-    private val limitQueue = IntArray(linkCapacity)
+    private var limitQueue = IntArray(linkCapacity)
     private var activeLimitBlock = -1
     private var queueSize = 0
 
@@ -208,6 +208,89 @@ class ConstraintBlocks(n: Int, bodyOf: IntArray, blockSize: Int,
      * засыпании и пробуждении организма; шов не считается и не пропускается.
      */
     val awake = IntArray(blockCount + 1)
+
+    /**
+     * ОБЛАСТЬ ТИКА (острова, docs/physics/islands.md): номер области набора — -1 мир, k ≥ 0 остров k; и область,
+     * которую сейчас обходят стадии ([scope]; [SCOPE_ALL] — все наборы, как без островов). Наборы чужой области
+     * стадии пропускают, как спящий блок. Без островов все наборы в мире и обход прежний.
+     */
+    val bucketScope = IntArray(buckets) { -1 }
+    var scope = -1
+
+    /** Обходит ли текущая область набор [b]: блок — бодрствующий и своей области, шов — своей области. */
+    fun active(b: Int): Boolean {
+        if (b < seam && awake[b] == 0) return false
+        val sc = scope
+        return sc == SCOPE_ALL || bucketScope[b] == sc
+    }
+
+    // --- ВИД ОСТРОВА (IslandRun.kt) ---
+    // Остров считает воркер на своей копии раскладки: индексы наборов общие (остров пишет только свои наборы), а
+    // область, очередь пределов блока и состояние общего прохода пределов — свои. Обход «по всем наборам» у вида
+    // идёт по списку острова: его блоки по возрастанию и его шов. Тот же порядок, что у отбора active() по всем
+    // наборам мира, но без прохода по чужим: островов сотни, наборов мира — тысячи.
+
+    /** Блоки острова по возрастанию: [islandBlocks][islandFrom until islandTo]; null — вид мира, обход с active(). */
+    internal var islandBlocks: IntArray? = null
+        private set
+    internal var islandFrom = 0
+        private set
+    internal var islandTo = 0
+        private set
+    /** Наборы швов острова по возрастанию: [islandSeams][islandSeamFrom until islandSeamTo] — по одному на его тело из нескольких блоков. */
+    internal var islandSeams: IntArray = IntArray(0)
+        private set
+    internal var islandSeamFrom = 0
+        private set
+    internal var islandSeamTo = 0
+        private set
+
+    /** Копия раскладки для воркера островов. [prev] — его копия прошлого тика: её очереди переходят без выделения. */
+    internal fun islandView(prev: ConstraintBlocks?): ConstraintBlocks {
+        val v = clone() as ConstraintBlocks
+        v.limitQueue = prev?.limitQueue ?: IntArray(64)
+        v.passAdded = prev?.passAdded ?: IntArray(16)
+        v.islandBlocks = null; v.islandSeamFrom = 0; v.islandSeamTo = 0
+        v.resetPassState()
+        return v
+    }
+
+    /** Вид обходит остров [k]: блоки blocks[from until to] и швы seams[seamFrom until seamTo]. Проходы — с нуля. */
+    internal fun setIsland(k: Int, blocks: IntArray, from: Int, to: Int, seams: IntArray, seamFrom: Int, seamTo: Int) {
+        scope = k; islandBlocks = blocks; islandFrom = from; islandTo = to
+        islandSeams = seams; islandSeamFrom = seamFrom; islandSeamTo = seamTo
+        resetPassState()
+    }
+
+    /** Очередь блока и общий проход пределов — как перед первым проходом (после отката острова — тоже). */
+    private fun resetPassState() {
+        activeLimitBlock = -1; queueSize = 0; limitPassOn = false; passAddedN = 0
+    }
+
+    override fun clone(): Any = super.clone()
+
+    /** Наборы [from, to) по возрастанию, которые обходит текущая область (active): у вида острова — по его списку. */
+    internal inline fun forActive(from: Int, to: Int, body: (Int) -> Unit) {
+        val ib = islandBlocks
+        if (ib == null) {
+            for (b in from until to) if (active(b)) body(b)
+            return
+        }
+        for (x in islandFrom until islandTo) { val b = ib[x]; if (b >= from && b < to && active(b)) body(b) }
+        val seams = islandSeams
+        for (x in islandSeamFrom until islandSeamTo) { val s = seams[x]; if (s >= from && s < to && active(s)) body(s) }
+    }
+
+    /** Блоки чётности [parity] по возрастанию, которые обходит текущая область: у вида острова — по его списку. */
+    internal inline fun forActiveBlocks(parity: Int, body: (Int) -> Unit) {
+        val ib = islandBlocks
+        if (ib == null) {
+            var b = parity
+            while (b < blockCount) { if (active(b)) body(b); b += 2 }
+            return
+        }
+        for (x in islandFrom until islandTo) { val b = ib[x]; if ((b and 1) == parity && active(b)) body(b) }
+    }
 
     fun hasSeams(): Boolean {
         for (s in seam until buckets) if (links.liveCount[s] > 0 || areas.liveCount[s] > 0 ||
@@ -319,14 +402,20 @@ class ConstraintBlocks(n: Int, bodyOf: IntArray, blockSize: Int,
         // Новый край контура открыт разрывом и, скорее всего, натянут. Ранний проход своего блока проверит его
         // из очереди; поздний (очереди у него нет) — из списка у порога. Запись в список другого блока лишняя,
         // но безвредна: этот список либо соберёт заново его ранний проход, либо до следующего подшага не читают.
-        if (activeLimitBlock == block) limitQueue[queueSize++] = c else addNear(block, c)
+        if (activeLimitBlock == block) queuePush(c) else addNear(block, c)
     }
 
     /** Очередь не портится от удаления/добавления краёв внутри текущего прохода. */
     fun beginLimits(block: Int) {
         activeLimitBlock = block; queueSize = 0
         var c = limits.head[block]
-        while (c >= 0) { limitQueue[queueSize++] = c; c = limits.next[c] }
+        while (c >= 0) { queuePush(c); c = limits.next[c] }
+    }
+
+    /** Очередь мира рассчитана на все связи, у вида острова (islandView) она своя и растёт по месту. */
+    private fun queuePush(c: Int) {
+        if (queueSize == limitQueue.size) limitQueue = limitQueue.copyOf(maxOf(64, queueSize * 2))
+        limitQueue[queueSize++] = c
     }
 
     fun limitCount(): Int = queueSize

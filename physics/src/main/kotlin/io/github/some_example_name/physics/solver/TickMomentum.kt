@@ -34,7 +34,30 @@ internal inline fun momentumExternalAt(i: Int, x: FloatArray, y: FloatArray, vx:
     if (onFloor) blocked[i] = true
 }
 
-class TickMomentum(internal val n: Int, minSpinArm: Float) {
+class TickMomentum(internal val n: Int, minSpinArm: Float) : Cloneable {
+    /**
+     * Копия учёта для воркера островов (IslandRun.kt): массивы частиц и организмов общие — остров пишет только свои
+     * частицы и организмы, корень группы — наименьшая частица группы, то есть тоже его. Свой — список слияний
+     * организмов: слияния острова касаются только его организмов, а чужие (липучки мира, другие острова) — не его.
+     * [prev] — копия прошлого тика: её список переходит без выделения.
+     */
+    internal fun islandView(prev: TickMomentum?): TickMomentum {
+        val v = clone() as TickMomentum
+        v.orgLinked = prev?.orgLinked ?: IntArray(64)
+        v.orgLinkedN = 0
+        v.cancelSums = prev?.cancelSums
+        return v
+    }
+
+    /** Новый остров на той же копии: слияний ещё нет. */
+    internal fun resetIslandLinks() { orgLinkedN = 0 }
+
+    /** Дерево групп частиц и организмов — для отката острова (IslandRun.kt). */
+    internal val parentArray: IntArray get() = parent
+    internal val orgParentArray: IntArray get() = orgParent
+
+    override fun clone(): Any = super.clone()
+
     private val minArm2 = minSpinArm.toDouble() * minSpinArm
     private val parent = IntArray(n)
     private val first = IntArray(n)
@@ -84,6 +107,9 @@ class TickMomentum(internal val n: Int, minSpinArm: Float) {
         if (orgLinkedN == orgLinked.size) orgLinked = orgLinked.copyOf(orgLinkedN * 2)
         orgLinked[orgLinkedN++] = child
     }
+
+    /** Таблица сумм кусков для cancel: одна на учёт (у копии острова — своя), не выделяется на каждый тик. */
+    private var cancelSums: GroupSums? = null
 
     /** Организмы, присоединённые за тик к чужой группе (не корни orgParent), в порядке слияний. */
     private var orgLinked = IntArray(64)
@@ -258,10 +284,19 @@ class TickMomentum(internal val n: Int, minSpinArm: Float) {
         flattenGroups(sleep)
         // Те же куски, что у воркеров: порядок сложения не зависит от их числа.
         val pc = chunks
-        val sums = GroupSums()
-        for (c in 0 until pc.count) { momentumRange(pc.from[c], pc.to[c], x, y, vx, vy, invMass, sums); mergeMomentum(sums) }
+        val sums = cancelSums ?: GroupSums().also { cancelSums = it }
+        // Частичная сумма — на кусок целиком, по всем его частям (кусок области: PassChunks.restrict).
+        for (c in 0 until pc.count) {
+            sums.clear()
+            for (p in pc.partStart[c] until pc.partStart[c + 1]) momentumRange(pc.partFrom[p], pc.partTo[p], x, y, vx, vy, invMass, sums)
+            mergeMomentum(sums)
+        }
         spans(sleep) { from, to -> centreRange(from, to) }
-        for (c in 0 until pc.count) { inertiaRange(pc.from[c], pc.to[c], x, y, invMass, sums); mergeInertia(sums) }
+        for (c in 0 until pc.count) {
+            sums.clear()
+            for (p in pc.partStart[c] until pc.partStart[c + 1]) inertiaRange(pc.partFrom[p], pc.partTo[p], x, y, invMass, sums)
+            mergeInertia(sums)
+        }
         spans(sleep) { from, to -> spinRange(from, to) }
         spans(sleep) { from, to -> applyRange(from, to, x, y, vx, vy, invMass) }
     }
@@ -333,10 +368,12 @@ class TickMomentum(internal val n: Int, minSpinArm: Float) {
         fun offsetAt(k: Int): Int = used[k] * 6
     }
 
-    /** То же, что addMomentum, на куске частиц: в таблицу куска, общие суммы не трогает. */
+    /**
+     * То же, что addMomentum, на части куска: в таблицу куска [sums], общие суммы не трогает. Таблицу чистит
+     * вызывающий — один раз на кусок: у куска области частей бывает несколько (PassChunks.restrict).
+     */
     internal fun momentumRange(from: Int, to: Int, x: FloatArray, y: FloatArray, vx: FloatArray, vy: FloatArray,
                                invMass: FloatArray, sums: GroupSums) {
-        sums.clear()
         val parent = parent; val blocked = blocked; val targetX = targetX; val targetY = targetY; val targetL = targetL
         lengthsBeforeLoop(x.size or y.size or vx.size or vy.size or invMass.size or parent.size or blocked.size or
             targetX.size or targetY.size or targetL.size)
@@ -361,9 +398,8 @@ class TickMomentum(internal val n: Int, minSpinArm: Float) {
         }
     }
 
-    /** То же, что addInertia, на куске. */
+    /** То же, что addInertia, на части куска; таблицу чистит вызывающий (см. momentumRange). */
     internal fun inertiaRange(from: Int, to: Int, x: FloatArray, y: FloatArray, invMass: FloatArray, sums: GroupSums) {
-        sums.clear()
         val parent = parent; val cx = cx; val cy = cy
         lengthsBeforeLoop(x.size or y.size or invMass.size or parent.size or cx.size or cy.size)
         for (i in from until to) {

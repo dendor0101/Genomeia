@@ -4,6 +4,9 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 
 internal fun BodyState.solveTick(observer: StepObserver?) {
+    // Острова по замеру (IslandChooser.kt): время решает, как считать, но не что получится — биты те же.
+    val auto = islandsMode == ISLANDS_AUTO
+    val tickStart = if (auto) { islandsOn = islandChooser.wantIslands(); System.nanoTime() } else 0L
     // Кости, потерявшие клетку или внутреннюю связь с прошлого тика, — до всех стадий. См. BoneSplit.kt.
     splitDirtyBones()
     // Пересборка после разрывов стоит В САМОМ КОНВЕЙЕРЕ, а не в обёртке над ним.
@@ -29,6 +32,38 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     beginTickMotion()
     if (cancelSpinOn) { tick0(); prepareAwakeSpans(); momentumBegin(); tick1(16) }
     if (cancelSpinOn) noteJointsMomentum()
+    // «ОСТРОВА» (TickScope.kt, IslandRun.kt, docs/physics/islands.md): подшаги островов — по воркерам, каждый остров
+    // целиком на тени мира, потом подшаги мира. Острова не меняют биты: каждая область начинает подшаги с той же фазы
+    // обхода связей и касаний, что и мир без островов. Остров с событием топологии откатывается и идёт с миром.
+    val sweep0 = sweepBackwards
+    tick0(); val islands = partitionIslands(observer != null); tick1(24)
+    var aborted = 0
+    if (islands > 0) {
+        tick0(); aborted = runIslands(h, sweep0, ++islandTick); tick1(23)
+        enterWorldScope()
+        sweepBackwards = sweep0
+    }
+    islandsLastTick = islands - aborted
+    if (islands == 0) islandCellsLastTick = 0
+    solveSubsteps(h, observer)
+    if (islands > 0) { scopeParticles = -1; setTickScope(SCOPE_ALL) }
+    // Пластика — РАЗ В ТИК, после всех подшагов: течение медленное, внутри тика
+    // ему делать нечего, а цена умножилась бы на число подшагов.
+    refreshSurface()
+    tick0(); applyPlasticity(DT); tick1(18)
+    tick0(); burstByPressure(); removePersistentInversions(); tick1(19)
+    // Один проход упаковки за тик. Контактная топология уже актуальна;
+    // упаковка нужна плотным рабочим массивам и чтению состояния стенда.
+    if (tearsPending && compactionDue()) { tick0(); rebuildTimed(); tick1(11) }
+    // Засыпание — в самом конце тика, когда все скорости и вся топология этого тика готовы.
+    tick0(); updateSleep(); tick1(20)
+    if (islands > 0) clearIslands()
+    if (watchCell >= 0) watchReport()
+    if (auto) islandChooser.record(System.nanoTime() - tickStart, islands)
+}
+
+/** Подшаги тика по текущей области (TickScope.kt): без островов — по всему миру, как всегда. */
+internal fun BodyState.solveSubsteps(h: Float, observer: StepObserver?) {
     for (step in 0 until SUBSTEPS) {
         // Площади и изгиб — раз в SLOW_CONSTRAINT_PERIOD подшагов, с шагом во столько же: см. MaterialParameters.
         slowConstraintsNow = step % SLOW_CONSTRAINT_PERIOD == 0
@@ -80,7 +115,8 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
 
         }
         // Временные связи между телами (липучка) — после внутренних, до пределов длины. См. Joints.kt.
-        solveJoints(h)
+        // Тело с липучкой в остров не идёт, поэтому связи — только в мире (TickScope.kt).
+        if (islandCount == 0 || sleep.scope == SCOPE_WORLD) solveJoints(h)
         // ПРЕДЕЛ ДЛИНЫ ПОВТОРНО, УЖЕ ПОСЛЕ КОСТИ.
         //
         // Первый вызов стоит после solveConstraints, но проекция кости идёт ПОЗЖЕ
@@ -152,7 +188,8 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         val cr = contacts
         if (cr != null && contactsOn && !contactsStale) cr.solveRestitution(px, py, vx, vy, invMass)
         dbgMeasureV(7); dbgMarkV()
-        applyDragVelocity(h)
+        // Тело под мышью в остров не идёт: тяга — только в мире (TickScope.kt).
+        if (islandCount == 0 || sleep.scope == SCOPE_WORLD) applyDragVelocity(h)
         if (step == SUBSTEPS - 1) applyViscosity(h * SUBSTEPS)
         dbgMeasureV(8); dbgMarkV()
         // Сопротивление раз в тик видит СРЕДНЮЮ скорость за тик, а не фазу дребезга
@@ -174,18 +211,6 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
         observer?.afterSubstep(step)
         dbgSubstepHook?.invoke(step)
     }
-    // Пластика — РАЗ В ТИК, после всех подшагов: течение медленное, внутри тика
-    // ему делать нечего, а цена умножилась бы на число подшагов.
-    refreshSurface()
-    tick0(); applyPlasticity(DT); tick1(18)
-    tick0(); burstByPressure(); removePersistentInversions(); tick1(19)
-    // Один проход упаковки за тик. Контактная топология уже актуальна;
-    // упаковка нужна плотным рабочим массивам и чтению состояния стенда.
-    if (tearsPending && compactionDue()) { tick0(); rebuildTimed(); tick1(11) }
-    // Засыпание — в самом конце тика, когда все скорости и вся топология этого тика готовы.
-    tick0(); updateSleep(); tick1(20)
-    if (watchCell >= 0) watchReport()
-
 }
 
 /** Единственная последовательность стадий, общая для окна и проверок.
