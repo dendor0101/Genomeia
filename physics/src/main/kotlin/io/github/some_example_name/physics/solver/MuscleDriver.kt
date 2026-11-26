@@ -467,6 +467,7 @@ internal fun BodyState.applyCellScaleLerp(step: Int, count: Int) {
     if (lerpEdgeN == 0 && lerpTriN == 0) return
     val last = step == count - 1
     val f = (step + 1).toFloat() / count
+    // С островами у каждой области свои списки: у тени острова — его записи, у мира — только мира (IslandRun.kt).
     val w = activeWorkers
     if (w != null && w.count > 1 && lerpEdgeN + lerpTriN >= LERP_PARALLEL_MIN) {
         parallelPhysics(w).muscles.lerp(w, f, last)

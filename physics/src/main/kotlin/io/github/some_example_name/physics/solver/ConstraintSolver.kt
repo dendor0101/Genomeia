@@ -203,7 +203,8 @@ internal inline fun solveDistanceConstraintSoftCells(
 }
 
 fun BodyState.solveLinkMaxLength() {
-    if (tearingOn) SealStats.tearingOnTicks++ else SealStats.tearingOffTicks++
+    // Счётчики разбора общие для процесса: тени островов их не трогают (их считают воркеры одновременно).
+    if (islandRun == null) { if (tearingOn) SealStats.tearingOnTicks++ else SealStats.tearingOffTicks++ }
     val w = activeWorkers
     val blocksLayout = constraintBlocks
     // ПОРЯДОК ПО БЛОКАМ — ПРИ ЛЮБОМ ЧИСЛЕ ОРГАНИЗМОВ (25.11, находка 42): раньше при одном организме проход шёл общим
@@ -218,10 +219,7 @@ fun BodyState.solveLinkMaxLength() {
     // (ParallelPhysics.globalLimitsByBlocks).
     if (blocksLayout != null && !dbgSealOn && !(DEBUG_CHECKS && dbgLinkExtremaOn)) {
         blocksLayout.beginLimitPass()
-        for (bucket in 0 until blocksLayout.buckets) {
-            if (bucket < blocksLayout.seam && blocksLayout.awake[bucket] == 0) continue
-            solveLimitBucketSerial(blocksLayout, bucket, -1)
-        }
+        blocksLayout.forActive(0, blocksLayout.buckets) { bucket -> solveLimitBucketSerial(blocksLayout, bucket, -1) }
         solveLimitPassTail(blocksLayout)
         blocksLayout.endLimitPass()
         return
@@ -383,6 +381,8 @@ internal fun BodyState.isGrowingLink(c: Int): Boolean = c < conGrowTarget.size &
 /** Редкие разрывы отдельно от цикла: меньше байткода и живых локальных в обычном проходе. */
 fun BodyState.solveLinkLimitViolation(c: Int, len2: Float, crushed: Boolean, scale: Float) {
     if (isGrowingLink(c)) return
+    // Тень острова событий не исполняет: перед разрывом остров откатывается и идёт с миром (IslandRun.kt).
+    if (islandRun != null && limitViolationIsEvent(c, len2, crushed, scale)) islandAbort()
     val i = conA[c]; val j = conB[c]
     val mus = conMuscle[c]
     val restL = limitRest(c, conRest[c], scale) // удлинённая поперёк волокна (MuscleFiber.kt)

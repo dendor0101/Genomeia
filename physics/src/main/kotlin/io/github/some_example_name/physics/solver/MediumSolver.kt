@@ -98,8 +98,7 @@ fun BodyState.applyViscosity(h: Float) {
         return
     }
     val links = layout.links
-    for (block in 0 until layout.buckets) {
-        if (block < layout.seam && layout.awake[block] == 0) continue
+    layout.forActive(0, layout.buckets) { block ->
         viscousLinksOf(links.items, links.start[block], links.start[block] + links.count[block], k)
     }
 }
@@ -175,7 +174,8 @@ fun BodyState.applyNormalDrag(h: Float) {
         // умноженному на N и на разность геометрического центра и центра масс, —
         // то есть НЕ ноль. Вращение начинает заряжать запас, среда толкает тело,
         // толчок снова крутит. Движение из ничего.
-        for (o in 0 until organismCount) { comAccX[o] = 0.0f; comAccY[o] = 0.0f }
+        // Только организмы текущей области (острова, TickScope.kt): запас среды чужой области не трогается.
+        forScopeOrganisms { o -> comAccX[o] = 0.0f; comAccY[o] = 0.0f }
         // Спящие: скорость ноль, масса ноль, запас среды ноль — проходы по ним пусты.
         prepareAwakeSpans()
         val s = sleep
@@ -198,23 +198,7 @@ fun BodyState.applyNormalDrag(h: Float) {
         val limit = 0.9f / (1.0f + FLOW_MASS)
         if (kf > limit) kf = limit
 
-        for (o in 0 until organismCount) {
-            val mo = organismMass[o]
-            if (mo <= 0.0f) continue
-            val comVX = comAccX[o] / mo
-            val comVY = comAccY[o] / mo
-            val dfx = (comVX - flowVX[o]) * kf
-            val dfy = (comVY - flowVY[o]) * kf
-            flowVX[o] += dfx
-            flowVY[o] += dfy
-            comAccX[o] = dfx      // переиспользуем под плату, чтобы не заводить массив
-            comAccY[o] = dfy
-            // Рассеяние запаса в объём жидкости: только сток, никогда источник.
-            // Без него запас был бы вечным аккумулятором импульса и тело не
-            // остановилось бы никогда.
-            flowVX[o] -= flowVX[o] * kd
-            flowVY[o] -= flowVY[o] * kd
-        }
+        forScopeOrganisms { o -> flowStep(o, kf, kd) }
 
         // Разгон среды телу СТОИТ: импульс FLOW_MASS * dFlow на каждую частицу.
         // Именно эта строка делает обмен честным — тело не может получить от среды
@@ -230,6 +214,25 @@ fun BodyState.applyNormalDrag(h: Float) {
     val layout = constraintBlocks
     if (layout != null) { edgesByBlocksSerial(layout, 1, h); return }
     normalDragEdgesRange(0, boundCount, h)
+}
+
+/** Запас среды организма [o] догоняет скорость его центра масс ([kf]) и рассеивается ([kd]). Организмы независимы. */
+private fun BodyState.flowStep(o: Int, kf: Float, kd: Float) {
+    val mo = organismMass[o]
+    if (mo <= 0.0f) return
+    val comVX = comAccX[o] / mo
+    val comVY = comAccY[o] / mo
+    val dfx = (comVX - flowVX[o]) * kf
+    val dfy = (comVY - flowVY[o]) * kf
+    flowVX[o] += dfx
+    flowVY[o] += dfy
+    comAccX[o] = dfx      // переиспользуем под плату, чтобы не заводить массив
+    comAccY[o] = dfy
+    // Рассеяние запаса в объём жидкости: только сток, никогда источник.
+    // Без него запас был бы вечным аккумулятором импульса и тело не
+    // остановилось бы никогда.
+    flowVX[o] -= flowVX[o] * kd
+    flowVY[o] -= flowVY[o] * kd
 }
 
 /** Плата частиц [from, to) за разгон запаса среды. Кусок параллельного прохода. */

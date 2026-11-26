@@ -37,18 +37,26 @@ internal const val PASS_CHUNK = 1024
  * поштучном проходе — 100k чтений на проход, их десятки за тик.
  */
 internal class PassChunks {
-    var from = IntArray(64); private set
-    var to = IntArray(64); private set
+    /**
+     * Кусок k — части [partStart[k], partStart[k + 1]) в [partFrom]/[partTo]. У куска мира часть одна; у куска
+     * области (острова, TickScope.kt) — отрезки куска мира внутри области: частичная сумма группы копится по всем
+     * частям куска, как копилась бы по куску мира целиком.
+     */
     var count = 0; private set
+    var partStart = IntArray(65); private set
+    var partFrom = IntArray(64); private set
+    var partTo = IntArray(64); private set
+    var partCount = 0; private set
     private var builtStructure = -1
     private var builtSleep = -1
     private var builtN = -1
+    private var builtScope = -1
 
-    fun valid(structure: Int, sleepVersion: Int, n: Int): Boolean =
-        builtStructure == structure && builtSleep == sleepVersion && builtN == n
+    fun valid(structure: Int, sleepVersion: Int, n: Int, scopeVersion: Int = -1): Boolean =
+        builtStructure == structure && builtSleep == sleepVersion && builtN == n && builtScope == scopeVersion
 
-    fun markBuilt(structure: Int, sleepVersion: Int, n: Int) {
-        builtStructure = structure; builtSleep = sleepVersion; builtN = n
+    fun markBuilt(structure: Int, sleepVersion: Int, n: Int, scopeVersion: Int = -1) {
+        builtStructure = structure; builtSleep = sleepVersion; builtN = n; builtScope = scopeVersion
     }
 
     /**
@@ -56,7 +64,7 @@ internal class PassChunks {
      * (номер меньше нуля) — сама себе организм.
      */
     fun build(spanCount: Int, spanStart: IntArray, spanEnd: IntArray, organismOf: IntArray, last: IntArray) {
-        count = 0
+        count = 0; partCount = 0; partStart[0] = 0
         for (k in 0 until spanCount) {
             val end = spanEnd[k]
             var p = spanStart[k]
@@ -91,23 +99,68 @@ internal class PassChunks {
         build(1, wholeStart, wholeEnd, organismOf, lastScratch)
     }
 
+    /**
+     * Куски области: каждый кусок мира [canon] (одна часть), обрезанный по диапазонам области [spanStart, spanEnd).
+     * Пустые куски выпадают, порядок кусков и частей — прежний.
+     */
+    fun restrict(canon: PassChunks, spanCount: Int, spanStart: IntArray, spanEnd: IntArray) {
+        count = 0; partCount = 0; partStart[0] = 0
+        var s = 0
+        for (k in 0 until canon.count) {
+            val p = canon.partStart[k]
+            val a = canon.partFrom[p]; val b = canon.partTo[p]
+            while (s < spanCount && spanEnd[s] <= a) s++
+            var q = s
+            while (q < spanCount && spanStart[q] < b) {
+                val from = maxOf(a, spanStart[q]); val to = minOf(b, spanEnd[q])
+                if (from < to) addPart(from, to)
+                q++
+            }
+            if (partCount > partStart[count]) closeChunk()
+        }
+    }
+
     private val wholeStart = IntArray(1)
     private val wholeEnd = IntArray(1)
 
-    private fun add(a: Int, b: Int) {
-        if (count == from.size) { from = from.copyOf(count * 2); to = to.copyOf(count * 2) }
-        from[count] = a; to[count] = b; count++
+    private fun add(a: Int, b: Int) { addPart(a, b); closeChunk() }
+
+    private fun addPart(a: Int, b: Int) {
+        if (partCount == partFrom.size) { partFrom = partFrom.copyOf(partCount * 2); partTo = partTo.copyOf(partCount * 2) }
+        partFrom[partCount] = a; partTo[partCount] = b; partCount++
+    }
+
+    private fun closeChunk() {
+        if (count + 1 == partStart.size) partStart = partStart.copyOf(partStart.size * 2)
+        count++
+        partStart[count] = partCount
     }
 }
 
-/** Куски поштучных проходов мира: см. [PassChunks]. Диапазоны бодрствующих частиц — свежие. */
+/**
+ * Куски поштучных проходов текущей области: см. [PassChunks]. Без островов — куски мира по бодрствующим диапазонам;
+ * с островами — куски мира (по всем бодрствующим), обрезанные по области (BodySleep.scope).
+ */
 internal fun BodyState.passChunks(): PassChunks {
     prepareAwakeSpans()
-    val pc = passChunkCache
+    val canon = passChunkCache
     val s = sleep
-    if (!pc.valid(structureVersion, s.version, n)) {
-        pc.build(s.spanCount, s.spanStart, s.spanEnd, organismOf, s.last)
-        pc.markBuilt(structureVersion, s.version, n)
+    if (s.orgScope == null || s.scope == SCOPE_ALL) {
+        if (!canon.valid(structureVersion, s.version, n)) {
+            canon.build(s.spanCount, s.spanStart, s.spanEnd, organismOf, s.last)
+            canon.markBuilt(structureVersion, s.version, n)
+        }
+        return canon
     }
-    return pc
+    s.rebuildAllSpansIfNeeded(n, organismOf)
+    if (!canon.valid(structureVersion, s.version, n)) {
+        canon.build(s.allSpanCount, s.allSpanStart, s.allSpanEnd, organismOf, s.last)
+        canon.markBuilt(structureVersion, s.version, n)
+    }
+    val sc = scopeChunkCache
+    if (!sc.valid(structureVersion, s.version, n, s.scopeVersion)) {
+        sc.restrict(canon, s.spanCount, s.spanStart, s.spanEnd)
+        sc.markBuilt(structureVersion, s.version, n, s.scopeVersion)
+    }
+    return sc
 }

@@ -90,7 +90,7 @@ class BoundaryContacts(
      */
     contactRadius: FloatArray,
     config: ContactConfig = ContactConfig(),
-) {
+) : Cloneable {
     /** Число частиц мира. Растёт, когда мир дописывает тело (grow). */
     internal var n = n; private set
     private var radius = radius
@@ -454,7 +454,7 @@ class BoundaryContacts(
         }
     }
 
-    private val serialPierce = PierceBuffer()
+    private var serialPierce = PierceBuffer()
     private var parallelPierce: ParallelPierce? = null
 
     internal val candidatePairCount: Int get() = pairN
@@ -677,7 +677,7 @@ class BoundaryContacts(
     internal var toVelocity = false
     internal var velH = 1.0f
     /** Перенесённые множители: при optionXpbdWarmStart или в старом режиме optionAblegacy. */
-    private val lam = ContactLambdaCache()
+    private var lam = ContactLambdaCache()
 
     /** Пары, которые могут касаться в позе покоя, — запечены на тело. См. RestPairs. */
     private var rest = RestPairs.EMPTY
@@ -696,6 +696,8 @@ class BoundaryContacts(
     private var adjEnd = IntArray(n) { adjStart[it + 1] }
     private var bndEnd = IntArray(n)
     private var maxRadius = 0.0f
+    /** Наибольший радиус касания нынешнего контура — запас разбиения на острова (TickScope.kt). */
+    internal val maxContactRadiusNow: Float get() = maxRadius
     private var radiusMinimum = ContactRadiusMinimum(n)
     val minContactRadius: Float get() = radiusMinimum.value
 
@@ -753,8 +755,8 @@ class BoundaryContacts(
     private var boneIds: Array<IntArray> = emptyArray()
 
     // --- буфер DDA ---
-    private val ddaX = IntArray(DDA_MAX)
-    private val ddaY = IntArray(DDA_MAX)
+    private var ddaX = IntArray(DDA_MAX)
+    private var ddaY = IntArray(DDA_MAX)
 
     /** Диагностика: сколько контактов и сколько раз CCD обрезал подшаг. */
     var lastContacts = 0
@@ -1441,7 +1443,7 @@ class BoundaryContacts(
      * возрастанию вершин сами и сортируются только внутри вершины; остальные (lowKeys)
      * сортируются целиком. Полная сортировка всех новых стоила 10 мс за тик на 100k.
      */
-    private val keys = PairKeyBuffer()
+    private var keys = PairKeyBuffer()
     private var newKeys = keys.newKeys
     private var lowKeys = keys.lowKeys
     private var keptKeys = LongArray(256)
@@ -1508,7 +1510,7 @@ class BoundaryContacts(
      * контура: сон, пробуждение, гибель клетки (refreshSurface → updateSurface), смена
      * ячейки.
      */
-    private val staticGrid = SweptContactGrid()
+    private var staticGrid = SweptContactGrid()
     private var staticValid = false
     /** Сколько вершин в неподвижной сетке. Ноль — её не спрашивают. */
     private var staticCount = 0
@@ -1535,7 +1537,7 @@ class BoundaryContacts(
             if (!staticValid) rebuildStaticGrid(px, py, qx, qy, invMass)
             if (movers.size < vertCount) movers = IntArray(vertCount)
             moverCount = 0
-            for (a in 0 until vertCount) { val v = verts[a]; if (invMass[v] > 0.0f) movers[moverCount++] = v }
+            for (a in 0 until vertCount) { val v = verts[a]; if (invMass[v] > 0.0f && inScope(v)) movers[moverCount++] = v }
             // ПО ВОЗРАСТАНИЮ НОМЕРА: на этом держится канонический порядок новых пар — пары
             // с меньшей перекладываемой вершиной идут по вершинам подряд (см. newKeys).
             // Список вершин контура после разрыва уже не упорядочен: updateSurface
@@ -1731,6 +1733,7 @@ class BoundaryContacts(
 
     /** Вершины, лежащие в неподвижной сетке (по последней её перестройке). См. updateSurface. */
     private var inStatic = BooleanArray(0)
+    private var inStaticAny = false
     /** Обратные массы последнего prepare — подвижность новых вершин контура в updateSurface. */
     private var lastInvMass: FloatArray? = null
 
@@ -1744,15 +1747,150 @@ class BoundaryContacts(
         return false
     }
 
+    /**
+     * ОБЛАСТЬ ТИКА (острова, TickScope.kt): номер области каждой вершины (-1 мир, k ≥ 0 остров k; null — островов
+     * нет) и область, которую сейчас собирает широкая фаза. Вершины чужой области в сетку не попадают вовсе — ни
+     * подвижными, ни неподвижными: остров по построению не может их коснуться. Смена области пересобирает широкую фазу
+     * с нуля — биты от этого те же (опыт 25.11: полная пересборка каждый подшаг даёт ту же сумму мира).
+     */
+    internal var vertexScope: IntArray? = null
+    internal var scope = SCOPE_WORLD
+        private set
+
+    internal fun setScope(sc: Int) {
+        scope = sc
+        bpValid = false; staticValid = false
+    }
+
+    private fun inScope(v: Int): Boolean {
+        val vs = vertexScope ?: return true
+        val sc = scope
+        return sc == SCOPE_ALL || (if (v < vs.size) vs[v] else SCOPE_WORLD) == sc
+    }
+
+    // --- КОПИЯ КАСАНИЙ ДЛЯ ВОРКЕРА ОСТРОВОВ (IslandRun.kt, docs/physics/islands.md) ---
+    //
+    // Остров решает свои касания сам, параллельно с другими островами. Копия делит с миром топологию и массивы НА
+    // ВЕРШИНУ (привязки широкой фазы, силы, время удара, метки): острова не делят вершин, каждый пишет только свои.
+    // Свои у копии — всё, что не по номеру вершины: списки пар и касаний, сетка широкой фазы, буферы гибели и пробоя,
+    // черновики костей, CCD и решения. Свой и список вершин контура — вершины острова в порядке списка мира: циклы по
+    // контуру (сброс времени удара в CCD и т. п.) у мира идут по всем вершинам, у копии — только по своим, иначе один
+    // остров затирал бы рабочие массивы другого посреди его подшага. Кости — только свои (их массы и центры).
+    //
+    // Метки (stamp, movedStamp, pass) идут по общим массивам на вершину: у копий они продолжаются от метки мира, а после
+    // островов мир берёт наибольшую ([mergeIslandFork]) — равенство со старой меткой у вершины невозможно.
+
+    /** Вершины контура острова (копия): свой список; у мира — null. */
+    private var islandVerts: IntArray? = null
+    /** Кости острова (копия): own[islandBoneFrom until islandBoneTo]; у мира — null, кости все. */
+    private var islandBones: IntArray? = null
+    private var islandBoneFrom = 0
+    private var islandBoneTo = 0
+
+    /** Вершин в списке контура: островам — для их списков вершин (TickScope.kt). */
+    internal val vertexCount: Int get() = vertCount
+    internal fun vertexAt(a: Int): Int = verts[a]
+
+    /** Перед островами: общие массивы на вершину, которые подшаг дозаказывает сам, — заранее, в одном потоке. */
+    internal fun prepareIslands() {
+        if (pierceReach.size < n) { pierceReach = FloatArray(n); pierceMove = FloatArray(n) }
+    }
+
+    /**
+     * Копия для воркера островов на этот тик. [prev] — его копия прошлого тика: её списки и сетка переходят без
+     * выделения (если мир не вырос). Копия без воркеров: остров целиком идёт в одном потоке.
+     */
+    internal fun islandFork(prev: BoundaryContacts?): BoundaryContacts {
+        val f = clone() as BoundaryContacts
+        val p = if (prev != null && prev.n == n) prev else null
+        f.islandVerts = p?.islandVerts ?: IntArray(64)
+        f.verts = f.islandVerts!!; f.vertCount = 0
+        f.islandBones = null; f.islandBoneFrom = 0; f.islandBoneTo = 0
+        f.pairA = p?.pairA ?: IntArray(4096); f.pairB = p?.pairB ?: IntArray(4096); f.pairN = 0
+        f.nearA = f.pairA; f.nearB = f.pairB; f.nearRestSlot = p?.nearRestSlot ?: IntArray(4096); f.nearN = 0
+        f.cI = p?.cI ?: IntArray(4096); f.cJ = p?.cJ ?: IntArray(4096)
+        f.cNx = p?.cNx ?: FloatArray(4096); f.cNy = p?.cNy ?: FloatArray(4096); f.cVn = p?.cVn ?: FloatArray(4096)
+        f.cLam = p?.cLam ?: FloatArray(4096); f.cLamTot = p?.cLamTot ?: FloatArray(4096)
+        f.cLamInit = p?.cLamInit ?: FloatArray(4096); f.cAx = p?.cAx ?: FloatArray(4096); f.cAy = p?.cAy ?: FloatArray(4096)
+        f.cRR = p?.cRR ?: FloatArray(4096); f.cBone = p?.cBone ?: BooleanArray(4096); f.cFixed = p?.cFixed ?: ByteArray(4096)
+        f.cN = 0
+        f.frcList = p?.frcList ?: IntArray(256); f.frcN = 0
+        f.boneZ = p?.boneZ ?: IntArray(0); f.boneZStamp = p?.boneZStamp ?: IntArray(0)
+        f.damage = p?.damage ?: ContactDamageCandidates(n); f.startDeep = p?.startDeep ?: ContactDamageCandidates(n)
+        f.damage.clear(); f.startDeep.clear()
+        f.pierceN = 0; f.pierceA = p?.pierceA ?: IntArray(16); f.pierceB = p?.pierceB ?: IntArray(16)
+        f.serialPierce = p?.serialPierce ?: PierceBuffer(); f.parallelPierce = null
+        f.lam = p?.lam ?: ContactLambdaCache()
+        f.ddaX = p?.ddaX ?: IntArray(DDA_MAX); f.ddaY = p?.ddaY ?: IntArray(DDA_MAX)
+        f.movers = p?.movers ?: IntArray(0); f.moverCount = 0
+        f.moved = p?.moved ?: IntArray(0); f.movedCount = 0
+        f.shards = p?.shards ?: arrayOf(AnchoredContactGrid(n))
+        f.keys = p?.keys ?: PairKeyBuffer(); f.newKeys = f.keys.newKeys; f.lowKeys = f.keys.lowKeys
+        f.keptKeys = p?.keptKeys ?: LongArray(256); f.keptSlot = p?.keptSlot ?: IntArray(256)
+        f.staticGrid = p?.staticGrid ?: SweptContactGrid(); f.staticValid = false; f.staticCount = 0
+        f.inStatic = p?.inStatic ?: BooleanArray(0); f.inStaticAny = p?.inStaticAny ?: false
+        f.ccdBoneT = p?.ccdBoneT ?: FloatArray(0); f.ccdBoneRep = p?.ccdBoneRep ?: IntArray(0)
+        f.ccdBoneStamp = p?.ccdBoneStamp ?: IntArray(0); f.ccdBoneHit = p?.ccdBoneHit ?: IntArray(0)
+        f.ccdBonePass = p?.ccdBonePass ?: 0
+        f.passCache = p?.passCache ?: ContactPassCache()
+        f.fixedList = p?.fixedList ?: IntArray(256); f.fixedN = 0; f.solvingFixed = false; f.fixedSweepNow = 0
+        f.btKeys = p?.btKeys ?: LongArray(256); f.btVals = p?.btVals ?: IntArray(256); f.btStamp = p?.btStamp ?: IntArray(256)
+        f.btGen = p?.btGen ?: 0; f.btUsed = 0
+        f.rigidBatch = p?.rigidBatch ?: RigidContactBatch(SPIN_MIN_ARM * meanLink)
+        f.parallelSolveSerial = p?.parallelSolveSerial ?: ContactSolveSink()
+        f.dirtyBuf = p?.dirtyBuf ?: IntArray(64)
+        f.workers = null
+        f.parallelCandidates = null; f.parallelPairs = null; f.parallelCcd = null; f.parallelBuild = null
+        f.parallelMoved = null; f.parallelReinsert = null; f.parallelBones = null; f.parallelPrepare = null
+        f.parallelSolve = null
+        f.dbgKillHook = null; f.lastInvMass = null
+        f.bpValid = false
+        return f
+    }
+
+    /**
+     * Копия обходит остров [k]: его вершины контура src[from until to] (в порядке списка мира), его кости
+     * bones[boneFrom until boneTo], направление обхода касаний — как у мира в начале тика ([ctBackwards0]): за тик
+     * оно меняется на каждом решении, и остров начинает с той же фазы, что и мир. Широкая фаза — с нуля.
+     */
+    internal fun setIsland(k: Int, src: IntArray, from: Int, to: Int, bones: IntArray, boneFrom: Int, boneTo: Int,
+                           ctBackwards0: Boolean) {
+        var own = islandVerts!!
+        if (own.size < to - from) { own = IntArray(maxOf(to - from, own.size * 2)); islandVerts = own }
+        System.arraycopy(src, from, own, 0, to - from)
+        verts = own; vertCount = to - from
+        islandBones = bones; islandBoneFrom = boneFrom; islandBoneTo = boneTo
+        scope = k
+        bpValid = false; staticValid = false
+        ctBackwards = ctBackwards0
+        pairN = 0; nearA = pairA; nearB = pairB; nearN = 0; cN = 0; frcN = 0; pierceN = 0; fixedN = 0
+        solvingFixed = false; fixedSweepNow = 0
+        damage.clear(); startDeep.clear()
+    }
+
+    /** После островов: метки на общих массивах вершин — наибольшие из копий, счётчики разбора — суммой. */
+    internal fun mergeIslandFork(f: BoundaryContacts, bpBuilds0: Long, bpCalls0: Long, bpMoved0: Long, ccdTotal0: Long) {
+        if (f.stamp > stamp) stamp = f.stamp
+        if (f.movedStamp > movedStamp) movedStamp = f.movedStamp
+        if (f.pass > pass) pass = f.pass
+        bpBuilds += f.bpBuilds - bpBuilds0; bpCalls += f.bpCalls - bpCalls0; bpMoved += f.bpMoved - bpMoved0
+        dbgCcdTotal += f.dbgCcdTotal - ccdTotal0
+    }
+
+    override fun clone(): Any = super.clone()
+
     private fun rebuildStaticGrid(px: FloatArray, py: FloatArray, qx: FloatArray, qy: FloatArray,
                                   invMass: FloatArray) {
         staticCount = 0
-        for (a in 0 until vertCount) if (invMass[verts[a]] <= 0.0f) staticCount++
+        for (a in 0 until vertCount) if (invMass[verts[a]] <= 0.0f && inScope(verts[a])) staticCount++
         staticGrid.begin(staticCount)
-        if (inStatic.size != n) inStatic = BooleanArray(n) else java.util.Arrays.fill(inStatic, false)
+        // Без неподвижных вершин прошлой сборки чистить нечего: у копии острова (IslandRun.kt) их не бывает, а проход
+        // по всем частицам мира шёл бы на каждый остров.
+        if (inStatic.size != n) inStatic = BooleanArray(n) else if (inStaticAny) java.util.Arrays.fill(inStatic, false)
+        inStaticAny = staticCount > 0
         for (a in 0 until vertCount) {
             val v = verts[a]
-            if (invMass[v] > 0.0f) continue
+            if (invMass[v] > 0.0f || !inScope(v)) continue
             inStatic[v] = true
             val c = dda(qx[v], qy[v], px[v], py[v])
             for (k in 0 until c) staticGrid.insert(key(ddaX[k], ddaY[k]), v)
@@ -2059,7 +2197,7 @@ class BoundaryContacts(
         return r
     }
 
-    private val passCache = ContactPassCache()
+    private var passCache = ContactPassCache()
 
     private fun buildContacts(px: FloatArray, py: FloatArray, vx: FloatArray, vy: FloatArray, continuing: Boolean) {
         cN = 0
@@ -2262,6 +2400,9 @@ class BoundaryContacts(
         // Даже разошедшийся контакт может нести заявку из начала подшага.
         // При первой подготовке boneM ещё пуст: без неё кость ошибочно погибнет.
         if (cN == 0 && startDeep.count == 0) return
+        // Копия острова (IslandRun.kt) считает только свои кости: чужие пишет их остров или мир, и касаний с ними нет.
+        val own = islandBones
+        if (own != null) { for (x in islandBoneFrom until islandBoneTo) updateBone(own[x], px, py, invMass); return }
         val w = workers
         if (w != null && w.count > 1 && ids.size >= 64) {
             // Кластеры независимы: у каждого свои масса, центр и момент. См. ParallelBones.
@@ -2553,7 +2694,7 @@ class BoundaryContacts(
         }
     }
 
-    private val rigidBatch = RigidContactBatch(SPIN_MIN_ARM * meanLink)
+    private var rigidBatch = RigidContactBatch(SPIN_MIN_ARM * meanLink)
     /** Квадрат наименьшего радиуса инерции кости, у которого есть поворот (SPIN_MIN_ARM). */
     private val minBoneArm2 = (SPIN_MIN_ARM * meanLink) * (SPIN_MIN_ARM * meanLink)
 
@@ -2734,7 +2875,7 @@ class BoundaryContacts(
 
     private var parallelSolve: ParallelContactSolve? = null
     /** Итог обхода в одном потоке; имя с parallel — черновик, в сверки снимка не входит (SnapshotCheck.skip). */
-    private val parallelSolveSerial = ContactSolveSink()
+    private var parallelSolveSerial = ContactSolveSink()
 
     /** Заявки на смерть и счётчики куска — в общие, в порядке обхода. */
     internal fun addSolved(sink: ContactSolveSink) {

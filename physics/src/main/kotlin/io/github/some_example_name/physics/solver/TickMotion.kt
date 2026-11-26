@@ -53,7 +53,9 @@ internal fun BodyState.removeTickJitter() {
     if (orgSleepDrift2.size < n) {
         orgSleepDrift2 = FloatArray(n); sleepAnchorX = FloatArray(n); sleepAnchorY = FloatArray(n)
     }
-    java.util.Arrays.fill(orgSleepDrift2, 0, organismCount, 0.0f)
+    // Только организмы текущей области (острова, TickScope.kt): удаление чужой области уже посчитано или посчитается.
+    if (sleep.orgScope == null) java.util.Arrays.fill(orgSleepDrift2, 0, organismCount, 0.0f)
+    else forScopeOrganisms { o -> orgSleepDrift2[o] = 0.0f }
     prepareAwakeSpans()
     val s = sleep
     val w = activeWorkers

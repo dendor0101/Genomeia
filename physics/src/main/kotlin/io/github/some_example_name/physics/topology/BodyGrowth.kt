@@ -265,6 +265,7 @@ internal fun BodyState.applyGrowthLerp(step: Int, count: Int) {
     if (growLerpN == 0 && growLerpTriN == 0) return
     val last = step == count - 1
     val f = (step + 1).toFloat() / count
+    // С островами у каждой области свои списки: у тени острова — его записи, у мира — только мира (IslandRun.kt).
     var k = 0
     while (k < growLerpN) {
         val e = growLerpEdge[k]

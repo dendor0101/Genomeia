@@ -67,14 +67,14 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         for (parity in 0..1) {
             var count = 0
             // Спящий блок: все частицы заморожены сном, двигать нечего. См. BodySleep.
-            for (block in layout.dispatchOrder[parity]) if (layout.awake[block] > 0 && !layout.serialBlock[block]) blocks[count++] = block
+            for (block in layout.dispatchOrder[parity]) if (layout.active(block) && !layout.serialBlock[block]) blocks[count++] = block
             if (count > 0) { w.run(count, job); mergeCounters() }
             // Раздача — от тяжёлых к лёгким, доработка и блоки тел без параллельного обхода —
             // по порядку блоков: порядок событий тот же, что в одном потоке.
             var block = parity
             while (block < layout.blockCount) {
                 if (!layout.serialBlock[block]) finishBlock(block)
-                else if (layout.awake[block] > 0) state.solveBlockSerial(h, block, layout, integrate)
+                else if (layout.active(block)) state.solveBlockSerial(h, block, layout, integrate)
                 block += 2
             }
         }
@@ -91,8 +91,8 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
     fun solveSeams(h: Float, layout: ConstraintBlocks) {
         this.h = h; this.integrate = false; this.layout = layout
         ensureBlocks(layout)
-        val count = layout.buckets - layout.seam
-        for (k in 0 until count) blocks[k] = layout.seam + k
+        var count = 0
+        for (bucket in layout.seam until layout.buckets) if (layout.active(bucket)) blocks[count++] = bucket
         state.activeWorkers!!.run(count, job)
         mergeCounters()
         for (bucket in layout.seam until layout.buckets) finishBlock(bucket)
@@ -219,20 +219,30 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
 
     private var groupSums = emptyArray<TickMomentum.GroupSums>()
     private val flattenJob = PhysicsJob { k, _ -> state.tickMomentum.flattenRange(spanFrom[k], spanTo[k]) }
+
+    // Суммы — по кускам: частичная сумма куска копится по всем его частям (у куска области их бывает несколько,
+    // PassChunks.restrict). Поштучные проходы идут по частям (spanChunks).
+    private var sumChunks: PassChunks? = null
     private val momentumJob = PhysicsJob { k, _ ->
-        val st = state
-        st.tickMomentum.momentumRange(spanFrom[k], spanTo[k], st.px, st.py, st.vx, st.vy, st.invMass, groupSums[k])
+        val st = state; val pc = sumChunks!!; val sums = groupSums[k]
+        sums.clear()
+        for (p in pc.partStart[k] until pc.partStart[k + 1]) {
+            st.tickMomentum.momentumRange(pc.partFrom[p], pc.partTo[p], st.px, st.py, st.vx, st.vy, st.invMass, sums)
+        }
     }
     private val inertiaJob = PhysicsJob { k, _ ->
-        val st = state
-        st.tickMomentum.inertiaRange(spanFrom[k], spanTo[k], st.px, st.py, st.invMass, groupSums[k])
+        val st = state; val pc = sumChunks!!; val sums = groupSums[k]
+        sums.clear()
+        for (p in pc.partStart[k] until pc.partStart[k + 1]) {
+            st.tickMomentum.inertiaRange(pc.partFrom[p], pc.partTo[p], st.px, st.py, st.invMass, sums)
+        }
     }
 
     private val comJob = PhysicsJob { k, _ ->
-        val st = state; val sums = groupSums[k]
+        val st = state; val pc = sumChunks!!; val sums = groupSums[k]
         sums.clear()
         val inv = st.invMass; val org = st.organismOf; val vx = st.vx; val vy = st.vy
-        for (i in spanFrom[k] until spanTo[k]) {
+        for (p in pc.partStart[k] until pc.partStart[k + 1]) for (i in pc.partFrom[p] until pc.partTo[p]) {
             if (inv[i] <= 0.0f) continue
             val m = 1.0f / inv[i]
             val at = sums.at(org[i]); val v = sums.data
@@ -240,11 +250,18 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         }
     }
 
+    /** Куски сумм текущей области; таблицы — по куску. */
+    private fun sumChunks(): Int {
+        val pc = state.passChunks()
+        sumChunks = pc
+        if (groupSums.size < pc.count) groupSums = Array(pc.count) { TickMomentum.GroupSums() }
+        return pc.count
+    }
+
     /** Импульс организмов для запаса среды (applyNormalDrag): кусками, сложение — в порядке кусков. */
     fun comSums() {
         val st = state
-        val chunks = spanChunks()
-        if (groupSums.size < chunks) groupSums = Array(chunks) { TickMomentum.GroupSums() }
+        val chunks = sumChunks()
         st.activeWorkers!!.run(chunks, comJob)
         for (k in 0 until chunks) {
             val sums = groupSums[k]; val v = sums.data
@@ -256,18 +273,18 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         val st = state
         val tm = st.tickMomentum
         val w = st.activeWorkers!!
-        val chunks = spanChunks()
-        if (groupSums.size < chunks) groupSums = Array(chunks) { TickMomentum.GroupSums() }
-        w.run(chunks, clearJob)
+        val parts = spanChunks()
+        w.run(parts, clearJob)
         tm.mergeOrgGroups()
-        w.run(chunks, flattenJob)
+        w.run(parts, flattenJob)
+        val chunks = sumChunks()
         w.run(chunks, momentumJob)
         for (k in 0 until chunks) tm.mergeMomentum(groupSums[k])
-        w.run(chunks, centreJob)
+        w.run(parts, centreJob)
         w.run(chunks, inertiaJob)
         for (k in 0 until chunks) tm.mergeInertia(groupSums[k])
-        w.run(chunks, spinJob)
-        w.run(chunks, applyJob)
+        w.run(parts, spinJob)
+        w.run(parts, applyJob)
     }
 
     fun removeJitter() = state.activeWorkers!!.run(spanChunks(), removeJitterJob)
@@ -296,12 +313,15 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         st.activeWorkers!!.run(db.tasks, dragJob)
     }
 
-    /** Диапазоны бодрствующих частиц, порезанные на куски не длиннее PASS_CHUNK по организмам: см. PassChunks. */
+    /**
+     * Части кусков текущей области (не длиннее PASS_CHUNK, по организмам): работы поштучных проходов. См. PassChunks.
+     * У куска мира часть одна — без островов работ столько же, сколько кусков.
+     */
     private fun spanChunks(): Int {
         val pc = state.passChunks()
-        spanFrom = pc.from; spanTo = pc.to
-        spanChunks = pc.count
-        return pc.count
+        spanFrom = pc.partFrom; spanTo = pc.partTo
+        spanChunks = pc.partCount
+        return pc.partCount
     }
 
     // --- общий проход предела длины (solveLinkMaxLength) по организмам ---
@@ -338,7 +358,7 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
     private val edgeJob = PhysicsJob { k, _ ->
         val layout = edgeLayout!!
         val bucket = edgeFrom + k
-        if (bucket >= layout.seam || layout.awake[bucket] != 0) {
+        if (layout.active(bucket)) {
             val list = layout.edges
             val items = list.dense(bucket); val n = list.denseCount[bucket]
             val st = state
@@ -362,7 +382,7 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
     private val blockLimitsJob = PhysicsJob { k, worker ->
         val layout = limitLayout!!
         val bucket = limitFrom + k
-        if (bucket >= layout.seam || layout.awake[bucket] != 0) {
+        if (layout.active(bucket)) {
             val items = layout.limits.dense(bucket); val n = layout.limits.denseCount[bucket]
             val s = scratch[worker]
             // Края, открытые разрывами этого прохода (у швов — доработкой блоков), ждут его хвоста: см. ConstraintBlocks.
@@ -465,7 +485,7 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
             } else {
                 val index = layout.edges
                 for (block in 0 until layout.buckets) {
-                    if (block < layout.seam && layout.awake[block] == 0) continue
+                    if (!layout.active(block)) continue
                     var k = index.head[block]
                     while (k >= 0) { ob.add(k, org[a[k]]); k = index.next[k] }
                 }
@@ -482,7 +502,7 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
     private val viscBlockJob = PhysicsJob { k, _ ->
         val layout = viscLayout!!
         val b = viscFrom + k
-        if (b >= layout.seam || layout.awake[b] != 0) {
+        if (layout.active(b)) {
             val links = layout.links
             state.viscousLinksOf(links.items, links.start[b], links.start[b] + links.count[b], viscK)
         }
@@ -507,7 +527,7 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
             } else {
                 val links = layout.links
                 for (block in 0 until layout.buckets) {
-                    if (block < layout.seam && layout.awake[block] == 0) continue
+                    if (!layout.active(block)) continue
                     for (slot in links.start[block] until links.start[block] + links.count[block]) {
                         val c = links.items[slot]
                         if (c >= 0) vb.add(c, org[ca[c]])
@@ -547,7 +567,7 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
         plasticLayout = layout
         if (plasticBlocks.size < layout.buckets) plasticBlocks = IntArray(layout.buckets)
         var count = 0
-        for (block in 0 until layout.buckets) if (block >= layout.seam || layout.awake[block] > 0) plasticBlocks[count++] = block
+        for (block in 0 until layout.buckets) if (layout.active(block)) plasticBlocks[count++] = block
         w.run(count, plasticJob)
     }
 
@@ -558,7 +578,7 @@ internal class ParallelPhysics(private val state: BodyState, workers: Int) {
     private var invLayout: ConstraintBlocks? = null
     private val invJob = PhysicsJob { b, worker ->
         val layout = invLayout!!
-        if (b >= layout.seam || layout.awake[b] != 0) {
+        if (layout.active(b)) {
             val areas = layout.areas
             val items = areas.items; val from = areas.start[b]; val to = from + areas.count[b]
             // Массивы — в локальные, длины — до цикла: см. lengthsBeforeLoop.
@@ -624,8 +644,7 @@ internal class WorkerScratch(state: BodyState) {
 
 /** Рёбра контура по блокам, затем швы, в одном потоке — тот же порядок, что у ParallelPhysics.runEdges. */
 internal fun BodyState.edgesByBlocksSerial(layout: ConstraintBlocks, mode: Int, h: Float) {
-    for (bucket in 0 until layout.buckets) {
-        if (bucket < layout.seam && layout.awake[bucket] == 0) continue
+    layout.forActive(0, layout.buckets) { bucket ->
         val items = layout.edges.dense(bucket); val n = layout.edges.denseCount[bucket]
         if (mode == 0) {
             val ori = localBoundary.orientation
@@ -636,11 +655,11 @@ internal fun BodyState.edgesByBlocksSerial(layout: ConstraintBlocks, mode: Int, 
 
 /** Импульс организмов для запаса среды кусками в одном потоке — те же куски, что у ParallelPhysics.comSums. */
 internal fun BodyState.comSumsSerial() {
-    val sums = TickMomentum.GroupSums()
+    val sums = comSumsScratch ?: TickMomentum.GroupSums().also { comSumsScratch = it }
     val pc = passChunks()
     for (c in 0 until pc.count) {
         sums.clear()
-        for (i in pc.from[c] until pc.to[c]) {
+        for (p in pc.partStart[c] until pc.partStart[c + 1]) for (i in pc.partFrom[p] until pc.partTo[p]) {
             if (invMass[i] <= 0.0f) continue
             val m = 1.0f / invMass[i]
             val at = sums.at(organismOf[i]); val v = sums.data

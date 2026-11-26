@@ -65,8 +65,10 @@ internal class AnchoredContactGrid(n: Int) {
 
     fun clear() {
         used.fill(false); occupied = 0
+        // Следы — только у вершин, что лежат в сетке: проход по всем частицам мира (footHead.fill) на каждой полной
+        // перестройке копии касаний острова (IslandRun.kt) стоил бы O(мира) на остров. Записи после freeHead — свободные.
+        for (e in 0 until entCount) footHead[entVert[e]] = -1
         entCount = 0; freeHead = -1; live = 0
-        footHead.fill(-1)
     }
 
     private fun home(key: Long): Int = ((key * -0x61c8864680b583ebL) ushr 40).toInt() and mask

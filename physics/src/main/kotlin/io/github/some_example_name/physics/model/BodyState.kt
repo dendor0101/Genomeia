@@ -9,7 +9,7 @@ import kotlin.math.sqrt
  * окно соседних индексов. Потоковые массивы связей лежат отдельно от этих обращений.
  * Открытые массивы нужны инспектору и адаптеру стенда, а не для перестановки между стадиями.
  */
-class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
+class BodyState(val config: PhysicsConfig = PhysicsConfig()) : Cloneable {
     internal val boundaryLinkLimits = BoundaryLinkLimits()
     internal var constraintBlocks: ConstraintBlocks? = null
     val CONTACT_MAX_STEP = config.CONTACT_MAX_STEP
@@ -31,7 +31,13 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * подшага работы на единицы микросекунд, и барьеры дороже её. На 11k уже 2.5x.
      */
     internal val activeWorkers: PhysicsWorkers?
-        get() = if (n >= config.PARALLEL_MIN) workers else null
+        get() = if ((if (scopeParticles >= 0) scopeParticles else n) >= config.PARALLEL_MIN) workers else null
+    /**
+     * Частиц в области подшагов мира после островов (IslandRun.kt); -1 — островов нет, область — весь мир. Мир, от
+     * которого острова забрали почти всё, считается в одном потоке: раздача по воркерам на каждой стадии дороже его
+     * работы (замер 25.11: мир из ~9 тел после 86 островов платил за раздачу 8 мс). Биты от числа воркеров не зависят.
+     */
+    internal var scopeParticles = -1
     /**
      * Счётчик изменений топологии: разрыв, обновление контура, пересборка. По нему
      * параллельные стадии узнают, что их раскладка по организмам устарела (OrgBuckets).
@@ -44,6 +50,53 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
 
     /** Куски поштучных проходов, общие для воркеров и одного потока: см. PassChunks, passChunks(). */
     internal val passChunkCache = PassChunks()
+    /** Куски текущей области тика (острова): куски мира, обрезанные по области. См. TickScope.kt. */
+    internal var scopeChunkCache = PassChunks()
+
+    /** «Острова» (TickScope.kt, IslandRun.kt, docs/physics/islands.md): ключ ISLANDS=1. */
+    /** Режим островов (IslandChooser.kt): ISLANDS=0 / 1 / auto; без ключа — ISLANDS_DEFAULT. */
+    internal val islandsMode = when (config["ISLANDS"]) {
+        "0" -> ISLANDS_OFF; "1" -> ISLANDS_ON; "auto" -> ISLANDS_AUTO; else -> ISLANDS_DEFAULT
+    }
+    /** Острова в этом тике: по режиму, а в режиме auto — по выбору замера ([islandChooser]). */
+    internal var islandsOn = islandsMode == ISLANDS_ON
+    internal val islandChooser = IslandChooser()
+    /**
+     * Проверка снимка острова (IslandsTest, стенды): ISLANDS_ROLLBACK_ALL=1 — каждый остров после всех своих подшагов
+     * откатывается и идёт с миром. Сумма мира обязана совпасть с «без островов»: снимок покрывает всё, что тень пишет.
+     */
+    internal val islandsRollbackAll = config["ISLANDS_ROLLBACK_ALL"] == "1"
+    internal val islandScratch = IslandScratch()
+    internal var islandOrgScope = IntArray(0)
+    internal var islandVertexScope = IntArray(0)
+    internal var islandCount = 0
+    /** Сколько островов было в последнем тике — для стендов (PhysicsWorld.islandsLastTick). */
+    var islandsLastTick = 0; internal set
+    /** Сколько клеток было в островах в последнем тике (без откатившихся) — для стендов. */
+    var islandCellsLastTick = 0; internal set
+    /** Почему тела последнего тика не стали островами: [0] неподвижные или спящие клетки, под мышью, с липучкой; [1] группа тел
+     *  крупнее ISLAND_MAX_CELLS; [2] (это острова) — в общем острове с соседом. Для стендов и подбора порогов. */
+    val islandRejects = IntArray(3)
+    /** Сколько островов откатилось (событие топологии в тени) за всё время — для проверок и стендов. */
+    var islandAborts = 0L; internal set
+    /** Списки островов этого тика: блоки, диапазоны, организмы, вершины, кости. См. IslandRun.kt. */
+    internal val islandPlan = IslandPlan()
+    /** Комплекты воркеров островов (тень состояния и её черновики), по номеру воркера. См. IslandRun.kt. */
+    internal var islandKits: Array<IslandKit?> = emptyArray()
+    /**
+     * Не null — это ТЕНЬ мира, на которой воркер считает остров (IslandRun.kt): массивы общие, черновики свои. Тень не
+     * исполняет событий топологии: перед разрывом, гибелью клетки или пробоем остров откатывается и идёт с миром.
+     */
+    internal var islandRun: IslandKit? = null
+    /** Номер тика островов: тень воркера заводится заново, когда он сменился (IslandKit.beginTick). */
+    internal var islandTick = 0L
+    /** Таблица сумм кусков запаса среды в одном потоке (comSumsSerial): одна на состояние, у тени острова — своя. */
+    internal var comSumsScratch: TickMomentum.GroupSums? = null
+
+    /** Мелкая копия: все поля — те же ссылки. Только для тени острова (IslandKit.beginTick). */
+    internal fun shallowCopy(): BodyState = clone() as BodyState
+
+    override fun clone(): Any = super.clone()
 
     lateinit var body: BodyDefinition
 
@@ -307,7 +360,8 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
     var orgSleepDrift2 = FloatArray(0)
 
     /** Сон организмов: см. BodySleep. Выключается RB_SLEEP=0. */
-    val sleep = BodySleep(config["RB_SLEEP"]?.let { it != "0" } ?: SLEEP_ON)
+    var sleep = BodySleep(config["RB_SLEEP"]?.let { it != "0" } ?: SLEEP_ON)
+        internal set
 
     // ================================================================
     //  ТОПОЛОГИЯ ХРАНИТСЯ СВОЯ, А НЕ ЧИТАЕТСЯ ИЗ BodyDefinition.
@@ -1072,7 +1126,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      */
     var dbgTimeOn = false
 
-    val dbgTimeNs = LongArray(23)
+    val dbgTimeNs = LongArray(25)
 
     // «Команды мышц» — шаг множителей клеток раз в тик (advanceCellScales: кольца, связи и треугольники движущихся
     // мышц), «плавность мышц» — ведение их множителей по подшагам (applyCellScaleLerp). До 24.11 обе шли «вне таймеров»,
@@ -1083,7 +1137,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
         "скорости и среда", "ловушка", "пересборка", "локальная поверхность", "контактные кости",
         "ориентация контура", "интегрирование", "учёт импульса",
         "восстановление скоростей", "пластичность", "давление и инверсии", "сон",
-        "команды мышц", "плавность мышц")
+        "команды мышц", "плавность мышц", "острова", "разбиение на острова")
 
     var dbgTimeT0 = 0L
 
@@ -1114,7 +1168,7 @@ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
      * Контакты копят свои смещения в extDx/extDy, и из снимаемого они вычитаются.
      */
     var internalMom: InternalMomentum? = null
-    private var tickMomentumState: TickMomentum? = null
+    internal var tickMomentumState: TickMomentum? = null
     /** Учёт импульса за тик; под нынешнее число частиц — после дописывания тела заводится заново. */
     val tickMomentum: TickMomentum
         get() {

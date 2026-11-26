@@ -107,16 +107,12 @@ internal fun BodyState.solveBlockedIteration(h: Float, integrate: Boolean = fals
         // Блоки одной чётности — по воркерам; швы и доработка событий — здесь. См. ParallelBlocks.
         tick0(); parallelPhysics(w).solveBlocks(h, integrate, layout); tick1(0)
     } else for (parity in 0..1) {
-        var block = parity
-        while (block < layout.blockCount) {
-            // Спящий блок: все частицы заморожены сном, двигать нечего. См. BodySleep.
-            if (layout.awake[block] > 0) solveBlockSerial(h, block, layout, integrate)
-            block += 2
-        }
+        // Спящий блок: все частицы заморожены сном, двигать нечего (см. BodySleep). У острова — только его блоки.
+        layout.forActiveBlocks(parity) { block -> solveBlockSerial(h, block, layout, integrate) }
     }
     if (w != null && parallelBlocksAllowed(w, layout) && layout.buckets - layout.seam > 1) {
         tick0(); parallelPhysics(w).solveSeams(h, layout); tick1(0)
-    } else for (bucket in layout.seam until layout.buckets) solveConstraintBlock(h, bucket, layout)
+    } else layout.forActive(layout.seam, layout.buckets) { bucket -> solveConstraintBlock(h, bucket, layout) }
     // Шов или кость через границу блока могли растянуть уже обработанный контур.
     // Закрываем его до контактов; это дополнительный проход, его цена входит в A/B.
     if (layout.hasSeams()) { tick0(); solveLinkMaxLength(); tick1(2); refreshSurface() }

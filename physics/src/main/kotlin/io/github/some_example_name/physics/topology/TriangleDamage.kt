@@ -31,7 +31,7 @@ internal fun BodyState.removePersistentInversions() {
     }
     val areas = layout.areas
     for (block in 0 until layout.buckets) {
-        if (block < layout.seam && layout.awake[block] == 0) continue
+        if (!layout.active(block)) continue
         checkInversionsOf(areas.items, areas.start[block], areas.start[block] + areas.count[block])
     }
 }
