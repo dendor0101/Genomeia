@@ -660,10 +660,11 @@ class PhysicsWorld(
     fun jointB(id: Int): Int = state.jointB[id]
     fun jointRest(id: Int): Float = state.jointRest[id]
 
-    /** Нынешняя длина связи в единицах физики. */
+    /** Нынешняя длина связи в единицах физики. Корень из суммы квадратов, а не hypot: см. StickyJoints. */
     fun jointLength(id: Int): Float {
         val a = state.jointA[id]; val b = state.jointB[id]
-        return kotlin.math.hypot(x[a] - x[b], y[a] - y[b])
+        val dx = x[a] - x[b]; val dy = y[a] - y[b]
+        return kotlin.math.sqrt(dx * dx + dy * dy)
     }
 
     /**

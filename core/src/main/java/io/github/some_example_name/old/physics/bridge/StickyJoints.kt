@@ -51,7 +51,11 @@ internal class StickyJoints(
             mine++
         }
         if (mine >= MAX_PER_CELL) return
-        val rest = kotlin.math.hypot(world.x[i] - world.x[j], world.y[i] - world.y[j])
+        // Длина покоя — корнем из суммы квадратов, а не hypot: hypot на ПК — fdlibm в Java, на Android — системная
+        // libm, и одна липкая связь с другой длиной покоя расходит повтор .bug между ПК и телефоном. Корень и
+        // арифметика float побитово одни везде (и в Rust, и на GPU). Переполнения тут нет: расстояние — доли мира.
+        val dx = world.x[i] - world.x[j]; val dy = world.y[i] - world.y[j]
+        val rest = kotlin.math.sqrt(dx * dx + dy * dy)
         if (rest > TOUCH * (world.state.radius[i] + world.state.radius[j])) return
         val id = world.addJoint(i, j, rest, complianceOf(impulse))
         if (count == joint.size) grow()
