@@ -501,8 +501,8 @@ tasks.register('realBodyDemo', JavaExec) {
 // Старые команды сохранены для записанных инструкций; реализация задач теперь в :physics-lab.
 // Для --args используйте задачу непосредственно в :physics-lab.
 [
-  'physicsAudit', 'swimTune', 'solverBench', 'precisionScale', 'foldRecovery',
-  'tickRate', 'physicsCheck', 'dragReplay', 'collisionBench', 'perfBench',
+  'physicsAudit', 'solverBench', 'precisionScale',
+  'physicsCheck', 'dragReplay', 'collisionBench', 'perfBench',
   'scaleBench', 'layoutBench', 'refactorCheck', 'scaleParityCheck', 'softGridBench',
   'playerReplay', 'trapHunt', 'playerLogSelfTest', 'demoWindowCheck'
 ].each { tool ->

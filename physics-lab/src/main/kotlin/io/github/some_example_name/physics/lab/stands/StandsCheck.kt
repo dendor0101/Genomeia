@@ -189,6 +189,10 @@ private fun detail(s: Scenario) {
     val deaths = ArrayList<String>()
     run.kills.keepLines = DETAIL_TEAR_LINES
     while (!run.done) {
+        // Журнал разрывов пишет номер тика из playTick, а стенды его не двигают: без этого каждый разрыв печатался
+        // «тик 0» (26.11: так находка 41 прочла разрывы под мышцами как «тело стартует на грани разрыва»).
+        // Номер — тот же, что у заявок на гибель (KillCauses: тик, который сейчас считается). Физика его не читает.
+        st.playTick = run.tick + 1
         run.step()
         val world = run.w.world
         for (k in 0 until world.cellDeathCount) if (deaths.size < DETAIL_TEAR_LINES) {

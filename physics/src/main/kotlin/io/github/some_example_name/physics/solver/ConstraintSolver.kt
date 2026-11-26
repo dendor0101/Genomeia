@@ -3,7 +3,7 @@ package io.github.some_example_name.physics
 import kotlin.math.abs
 import kotlin.math.sqrt
 
-/** Текущая податливость изгиба. Отдельным методом — его читает сверка в SwimTuner. */
+/** Текущая податливость изгиба. Отдельным методом — его читают стенды (Probe.bendCompliance). */
 fun BodyState.bendCompliance(): Float = BEND_LEVELS[bendLevel]
 
 fun BodyState.solveConstraints(h: Float) {

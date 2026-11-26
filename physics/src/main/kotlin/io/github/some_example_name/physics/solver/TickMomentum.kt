@@ -125,7 +125,7 @@ class TickMomentum(internal val n: Int, minSpinArm: Float) : Cloneable {
     }
     /**
      * Диапазоны частиц, по которым идёт учёт: бодрствующие (см. BodySleep.spanStart)
-     * или все, если сна нет ([sleep] == null у зеркала SwimSolver). Спящая частица
+     * или все, если сна нет ([sleep] == null — тесты). Спящая частица
      * заморожена: в группы не входит, её касание блокирует группу соседа (noteContacts).
      */
     private inline fun spans(sleep: BodySleep?, body: (Int, Int) -> Unit) {
@@ -230,7 +230,7 @@ class TickMomentum(internal val n: Int, minSpinArm: Float) : Cloneable {
             else unionParticles(i, j)
         }
     }
-    /** Куски без сна (зеркало SwimSolver, тесты) — та же нарезка по организмам, что у мира: см. PassChunks. */
+    /** Куски без сна (тесты) — та же нарезка по организмам, что у мира: см. PassChunks. */
     private val ownChunks = PassChunks()
     private var ownLast = IntArray(0)
 
@@ -242,7 +242,7 @@ class TickMomentum(internal val n: Int, minSpinArm: Float) : Cloneable {
 
     /**
      * Только диапазоны бодрствующих частиц: у спящих скорость ноль и не меняется.
-     * Без [sleep] (зеркало SwimSolver) — все частицы. См. BodySleep.
+     * Без [sleep] (тесты) — все частицы. См. BodySleep.
      */
     fun beforeExternal(vx: FloatArray, vy: FloatArray, sleep: BodySleep? = null) {
         val spans = sleep?.spanCount ?: 1
@@ -273,7 +273,7 @@ class TickMomentum(internal val n: Int, minSpinArm: Float) : Cloneable {
                    invMass: FloatArray, floor: BooleanArray?) {
         momentumExternalAt(i, x, y, vx, vy, invMass, floor != null && floor[i], beforeX, beforeY, targetX, targetY, targetL, blocked)
     }
-    /** Без сна (зеркало SwimSolver, тесты): куски режутся здесь же по организмам последнего [begin]. */
+    /** Без сна (тесты): куски режутся здесь же по организмам последнего [begin]. */
     fun cancel(x: FloatArray, y: FloatArray, vx: FloatArray, vy: FloatArray, invMass: FloatArray) =
         cancel(x, y, vx, vy, invMass, null, ownChunks())
 
