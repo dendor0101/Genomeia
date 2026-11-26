@@ -10,9 +10,6 @@ import io.github.some_example_name.physics.countInverted
 import io.github.some_example_name.physics.lab.inspection.Probe
 import io.github.some_example_name.physics.lab.session.BULLET_SPEED_FRACTION
 import io.github.some_example_name.physics.lab.session.DemoSession
-import io.github.some_example_name.physics.lab.tuning.FlowModel
-import io.github.some_example_name.physics.lab.tuning.SwimParams
-import io.github.some_example_name.physics.lab.tuning.SwimSolver
 import io.github.some_example_name.physics.lab.tuning.Topology
 import io.github.some_example_name.physics.applyNormalDrag
 import io.github.some_example_name.physics.clampSpeed
@@ -135,10 +132,6 @@ fun main(args: Array<String>) {
     // перестаёт относиться к одному и тому же телу. Замер после распрямления складки
     // с включённым разрывом показывал длиннейшее граничное ребро 7.37 при обычном
     // 0.03: тело было изодрано в клочья, и «затухание импульса» считалось уже по ним.
-    //
-    // Плюс SwimSolver разрыва не умеет вовсе — он для подбора параметров плавания,
-    // где ткань цела по условию. С включённым разрывом побитовое сравнение с ним
-    // расходится законно, и проверка ловила бы не ошибку, а разницу задач.
     P.setTearing(false)
 
     println()
@@ -148,9 +141,12 @@ fun main(args: Array<String>) {
     println()
 
     // ------------------------------------------------------------------
-    //  1. Копия решателя совпадает с демо ПОБИТОВО.
-    //     Самая ценная проверка: ловит любое расхождение SwimSolver с DemoSession,
-    //     из-за которого подбор параметров оптимизировал бы не то, что поедет.
+    //  1. Тело: радиусы клеток, касаний и длины связей.
+    //     До 26.11.2026 здесь же шла сверка «SwimSolver == DemoSession» — побитовое
+    //     совпадение зеркала решателя для подбора плавания (swimTune) с демо. Зеркало
+    //     удалено вместе с подбором: организмы подстраиваются под физику, а не физика
+    //     под них. Проверки, которые шли на зеркале (касания держат границу, складка
+    //     распрямляется), перенесены на настоящий решатель — пункты 6a и 6b.
     // ------------------------------------------------------------------
     // Три радиуса, которые легко перепутать. Печатаются в долях средней связи,
     // потому что только так их вообще можно сравнивать между телами.
@@ -182,28 +178,6 @@ fun main(args: Array<String>) {
         println(String.format(Locale.ROOT,
             "       перекрытие соседей по радиусу клетки: %.0f%% (сумма радиусов %.2f при связи 1.00)",
             100.0 * (2.0 * rMax - 1.0) / (2.0 * rMax), 2.0 * rMax))
-    }
-
-    println("--- копия решателя")
-
-    run {
-        P.resetState()
-        val ref = SwimParams(flowModel = FlowModel.GLOBAL_TRACKING)
-        val s = SwimSolver(topo, ref)
-        s.reset()
-        var maxDiff = 0.0
-        for (fr in 1..200) {
-            P.frame(dt, sub, contract = true)
-            s.frameHoldMuscle0(dt.toFloat(), sub, hold = true)
-            for (i in 0 until P.n) {
-                maxDiff = maxOf(maxDiff, abs(P.px[i] - s.px[i]).toDouble())
-                maxDiff = maxOf(maxDiff, abs(P.vx[i] - s.vx[i]).toDouble())
-            }
-        }
-        check("SwimSolver == DemoSession",
-            "копия конвейера разошлась с демо: подбор оптимизирует не то, что поедет") {
-            expectExactly(maxDiff, 0.0)
-        }
     }
 
     // ------------------------------------------------------------------
@@ -471,14 +445,17 @@ fun main(args: Array<String>) {
     // ------------------------------------------------------------------
     println("--- контакты держат границу")
     run {
-        val s = SwimSolver(topo, SwimParams())
-        s.reset()
+        // До 26.11.2026 шло на зеркале SwimSolver; теперь — настоящий тик демо с тем же гребком (период и
+        // скважность демо, все мышцы разом). Разрыв выключен, как во всей проверке.
+        P.resetState()
+        P.demo.world.wakeAll()
         var worst = 0.0
         for (fr in 1..(20.0 / dt).toInt()) {
-            s.frame(dt.toFloat(), sub, gait = true)
-            val pen = s.contacts.maxPenetration(s.px, s.py)
+            P.frameGait(dt, fr)
+            val pen = P.contactsObj()?.maxPenetration(P.px, P.py) ?: 0.0f
             if (pen > worst) worst = pen.toDouble()
         }
+        P.resetState()
         check("проникновение границы за 20 с",
             "несвязанные граничные клетки сходятся вплотную — контакты не держат") {
             expectBelow(worst, 0.5, " от порога")
@@ -500,24 +477,33 @@ fun main(args: Array<String>) {
     // ------------------------------------------------------------------
     println("--- распрямление складки (контакты выключены намеренно)")
     for (at in listOf(0.5, 0.25)) {
-        val s = SwimSolver(topo, SwimParams(contactsOn = false))
-        s.reset()
+        // До 26.11.2026 шло на зеркале SwimSolver; теперь — настоящий тик демо. У демо есть сон, которого у
+        // зеркала не было: тело, уснувшее в прошлых проверках, переложенную складку не тронуло бы — будим мир.
+        P.resetState()
+        P.setContacts(false)
         var minX = Double.MAX_VALUE; var maxX = -Double.MAX_VALUE
-        for (i in 0 until topo.n) {
-            if (s.px[i] < minX) minX = s.px[i].toDouble()
-            if (s.px[i] > maxX) maxX = s.px[i].toDouble()
+        for (i in 0 until P.n) {
+            if (P.px[i] < minX) minX = P.px[i].toDouble()
+            if (P.px[i] > maxX) maxX = P.px[i].toDouble()
         }
         val line = minX + (maxX - minX) * at
-        for (i in 0 until topo.n) {
-            if (s.px[i] > line) s.px[i] = (line - (s.px[i] - line)).toFloat()
-            s.vx[i] = 0.0f; s.vy[i] = 0.0f
+        for (i in 0 until P.n) {
+            if (P.px[i] > line) P.px[i] = (line - (P.px[i] - line)).toFloat()
+            P.vx[i] = 0.0f; P.vy[i] = 0.0f
         }
-        for (fr in 1..(8.0 / dt).toInt()) s.frameHoldMuscle0(dt.toFloat(), sub, hold = false)
+        P.demo.world.wakeAll()
+        for (fr in 1..(8.0 / dt).toInt()) P.frame(dt, sub, contract = false)
+        val inverted = P.countInverted()
+        P.setContacts(true)
         check("складка ${((1 - at) * 100).toInt()}% расходится за 8 с",
             "ткань застряла сама в себе и не распрямляется") {
-            expectAtMost(s.countInverted(), 0)
+            expectAtMost(inverted, 0)
         }
     }
+    // 6a и 6b идут теперь на общем демо (на зеркале они его не трогали), а гребок 6a упирается в потолок скорости.
+    // Проверка 7 читает накопленный счётчик потолка, не обнуляя его: без сброса здесь она считала бы чужие
+    // срабатывания (26.11: кирпич 0 → 1514, медуза 0 → 4194). Остальные строки проверки с переносом совпали с прежними.
+    P.resetState(); P.resetCounters()
 
     // ------------------------------------------------------------------
     //  7. ЗАГИБ НЕ ДАЁТ БЛУЖДАНИЯ. Воспроизводит ровно тот сценарий, который

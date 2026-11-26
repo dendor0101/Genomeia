@@ -301,8 +301,8 @@ class ConstraintBlocks(n: Int, bodyOf: IntArray, blockSize: Int,
     /**
      * Набор, в котором проецируется кость из частиц [ids]: её блок, а набор швов тела — если кость лежит в нескольких
      * блоках или до её частицы достаёт шов (почему — BoneSplit.placeBoneInBlocks). «Достаёт» — по графу [vertStart],
-     * [vertOther] (запечённый граф тела: все рёбра, и порванные, и нерождённые) на две связи. Одно правило для решателя
-     * игры и зеркала SwimSolver.
+     * [vertOther] (запечённый граф тела: все рёбра, и порванные, и нерождённые) на две связи. Одно правило на весь
+     * решатель.
      */
     fun boneBucket(ids: IntArray, vertStart: IntArray, vertOther: IntArray): Int {
         val home = particleBlock[ids[0]]

@@ -2,17 +2,19 @@ package io.github.some_example_name.physics.lab.checks
 
 import io.github.some_example_name.physics.lab.session.DemoSession
 import io.github.some_example_name.physics.lab.session.replayBoot
-import io.github.some_example_name.physics.lab.tuning.SwimParams
-import io.github.some_example_name.physics.lab.tuning.SwimSolver
 import io.github.some_example_name.physics.lab.tuning.Topology
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class SwimSurfaceRegressionTest {
+/**
+ * Открытые клетки без граничных рёбер участвуют в касаниях. Раньше тест сверял ещё и зеркало решателя
+ * SwimSolver с демо побитово; зеркало удалено 26.11.2026, проверка настоящего решателя осталась.
+ */
+class ExposedCellContactTest {
     @Test fun exposedCellsWithoutBoundaryEdgesParticipateInContacts() {
-        val file = Files.createTempFile("swim-surface-", ".txt").toFile()
+        val file = Files.createTempFile("exposed-cells-", ".txt").toFile()
         try {
             // У квадрата с обеими диагоналями каждое ребро входит в два
             // треугольника. Список граничных рёбер пуст, но наружные клетки
@@ -34,13 +36,8 @@ class SwimSurfaceRegressionTest {
             val topo = Topology.load(file.path)
             assertEquals(0, topo.boundCount)
             assertTrue(!topo.isFree[0])
-            val swim = SwimSolver(topo, SwimParams())
             val contacts = demo.state.contacts!!
-            assertTrue(contacts.contactRadiusOf(0) > 0.0)
-            for (i in 0 until topo.n) {
-                assertEquals("contactRadius[$i]", contacts.contactRadiusOf(i).toRawBits(),
-                    swim.contacts.contactRadiusOf(i).toRawBits())
-            }
+            for (i in 0 until topo.n) assertTrue("радиус касания клетки $i", contacts.contactRadiusOf(i) > 0.0)
         } finally { file.delete() }
     }
 }

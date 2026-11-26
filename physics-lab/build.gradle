@@ -109,18 +109,6 @@ tasks.register('physicsAudit', JavaExec) {
   jvmArgs '-Dfile.encoding=UTF-8'
 }
 
-// Подбор параметров плавания эволюционным поиском: gradlew :physics-lab:swimTune
-// Аргументы: --pop 64 --gen 60 --seed 7 --w-residual 5
-tasks.register('swimTune', JavaExec) {
-  group = 'verification'
-  description = 'Ищет параметры, при которых тело плывёт быстро и не блуждает'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.physics.lab.tuning.SwimTunerKt'
-  workingDir = rootProject.projectDir
-  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
-}
-
-
 // Цена double в производительности: gradlew :physics-lab:solverBench
 tasks.register('solverBench', JavaExec) {
   group = 'verification'
@@ -137,26 +125,6 @@ tasks.register('precisionScale', JavaExec) {
   description = 'Утечка решателя в зависимости от координаты тела в мире и способа хранения позиций'
   classpath = sourceSets.main.runtimeClasspath
   mainClass = 'io.github.some_example_name.physics.lab.bench.PrecisionScaleKt'
-  workingDir = rootProject.projectDir
-  jvmArgs '-Dfile.encoding=UTF-8'
-}
-
-// Застревание вывернутой ткани: gradlew :physics-lab:foldRecovery
-tasks.register('foldRecovery', JavaExec) {
-  group = 'verification'
-  description = 'Складывает ткань насильно и смотрит, распрямляется ли она сама'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.physics.lab.tuning.FoldRecoveryKt'
-  workingDir = rootProject.projectDir
-  jvmArgs '-Dfile.encoding=UTF-8'
-}
-
-// Подбор UPS и SUBSTEPS: gradlew :physics-lab:tickRate
-tasks.register('tickRate', JavaExec) {
-  group = 'verification'
-  description = 'Сходимость и цена при разных UPS и числе подшагов'
-  classpath = sourceSets.main.runtimeClasspath
-  mainClass = 'io.github.some_example_name.physics.lab.tuning.TickRateKt'
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8'
 }

@@ -218,7 +218,7 @@ private fun BodyState.recentreBonePose(b: Int) {
  * достаёт шов, проецируется в наборе швов — после всех ограничений шва, как кость поперёк границы блока.
  * «Достаёт» — по запечённому графу (все рёбра, и порванные, и нерождённые) на две связи: створка и изгиб соединяют
  * частицы через одну общую, а запечённый граф не зависит от разрывов, так что место кости не устаревает от событий.
- * Правило — ConstraintBlocks.boneBucket (одно на решатель игры и зеркало SwimSolver).
+ * Правило — ConstraintBlocks.boneBucket (одно на весь решатель).
  */
 internal fun BodyState.placeBoneInBlocks(b: Int, layout: ConstraintBlocks) {
     val ids = rigidBones[b]
