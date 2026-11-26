@@ -149,6 +149,8 @@ fun main(args: Array<String>) {
     println("GENOME_HASH %016x".format(hash))
     if (!split && !hybrid) println("GENOME_ISLANDS в среднем за тик %.1f, частиц в них %.0f из %d".format(
         islandTicks.toDouble() / measure, islandCells.toDouble() / measure, state0.n))
+    if (!split && !hybrid) println("GENOME_ISLANDS широкая фаза острова: с прошлого тика %d, заново %d (за весь прогон)".format(
+        state0.islandBpReuses, state0.islandBpRebuilds))
     if (!split && !hybrid) println("GENOME_ISLANDS не острова: неподвижные/спящие %.1f, крупные %.1f; тел в общем острове с соседом %.1f".format(
         rejects[0].toDouble() / measure, rejects[1].toDouble() / measure, rejects[2].toDouble() / measure))
     if (!split && !hybrid) {

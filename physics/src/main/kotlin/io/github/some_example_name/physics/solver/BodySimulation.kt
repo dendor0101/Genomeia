@@ -7,6 +7,8 @@ internal fun BodyState.solveTick(observer: StepObserver?) {
     // Острова по замеру (IslandChooser.kt): время решает, как считать, но не что получится — биты те же.
     val auto = islandsMode == ISLANDS_AUTO
     val tickStart = if (auto) { islandsOn = islandChooser.wantIslands(); System.nanoTime() } else 0L
+    // Каждый тик, с островами и без: запас широкой фазы острова годен, только если остров был и в прошлом тике.
+    islandPhysTick++
     // Кости, потерявшие клетку или внутреннюю связь с прошлого тика, — до всех стадий. См. BoneSplit.kt.
     splitDirtyBones()
     // Пересборка после разрывов стоит В САМОМ КОНВЕЙЕРЕ, а не в обёртке над ним.

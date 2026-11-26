@@ -135,6 +135,8 @@ internal class IslandPlan {
     var order = IntArray(1)
     /** Остров откатился (событие) и идёт с миром. Пишет воркер своего острова. */
     var aborted = BooleanArray(1)
+    /** Запас широкой фазы острова между тиками (IslandBroadphase); null — касаний нет. */
+    var broadphase = arrayOfNulls<IslandBroadphase>(1)
     private var orderKeys = LongArray(1)
     private var orgMark = IntArray(0)
     private var orgStamp = 0
@@ -155,6 +157,7 @@ internal class IslandPlan {
         if (cells.size < count) cells = IntArray(maxOf(count, cells.size * 2))
         if (order.size < count) { order = IntArray(maxOf(count, order.size * 2)); orderKeys = LongArray(order.size) }
         if (aborted.size < count) aborted = BooleanArray(maxOf(count, aborted.size * 2))
+        if (broadphase.size < count) broadphase = arrayOfNulls(maxOf(count, broadphase.size * 2))
         java.util.Arrays.fill(cells, 0, count, 0)
         java.util.Arrays.fill(aborted, 0, count, false)
         maxCells = 0; maxOrgs = 0
@@ -260,6 +263,7 @@ internal fun BodyState.buildIslandPlan(layout: ConstraintBlocks, isl: IslandScra
         for (a in 0 until ct.vertexCount) { val k = vs[ct.vertexAt(a)]; if (k >= 0) vl.count(k) }
         vl.seal()
         for (a in 0 until ct.vertexCount) { val v = ct.vertexAt(a); val k = vs[v]; if (k >= 0) vl.add(k, v) }
+        assignIslandBroadphase(count)
     } else vl.seal()
     // Записи плавности мышц и роста — номера в списках мира, в их порядке. Остров записи — по частице (islandVertexScope:
     // организм целиком в одной области), один раз на запись: на стенде с «дыханием» записей десятки тысяч за тик, и
@@ -279,6 +283,52 @@ internal fun BodyState.buildIslandPlan(layout: ConstraintBlocks, isl: IslandScra
     for (x in 0 until growLerpTriN) gts[x] = triScope(slot, growLerpTri[x], true)
     plan.growTris.fill(gts, growLerpTriN, count)
     plan.sortOrder()
+}
+
+/**
+ * Запасы широкой фазы островов этого тика (IslandBroadphase): по первой частице острова; места вершин в списках островов
+ * (сетки с местными номерами); запасы островов, которых в этом тике нет, — в пул (дальше они не годны: годность требует
+ * острова и в прошлом тике). Годность каждого запаса проверяет воркер острова (IslandKit.runIsland).
+ */
+private fun BodyState.assignIslandBroadphase(count: Int) {
+    val plan = islandPlan
+    val vl = plan.verts
+    if (islandVertexSlot.size < n) islandVertexSlot = IntArray(maxOf(n, islandVertexSlot.size * 2))
+    if (islandBp.size < n) islandBp = islandBp.copyOf(maxOf(n, islandBp.size * 2))
+    val slots = islandVertexSlot
+    val keysNow = islandBpKeysNext.ensure(count)
+    for (k in 0 until count) {
+        val from = vl.from(k)
+        for (x in from until vl.to(k)) slots[vl.items[x]] = x - from
+        val key = plan.spanFrom[plan.spans.from(k)]
+        var bp = islandBp[key]
+        if (bp == null) { bp = islandBpPool.removeLastOrNull() ?: IslandBroadphase(); islandBp[key] = bp }
+        bp.claimed = islandPhysTick
+        plan.broadphase[k] = bp
+        keysNow[k] = key
+    }
+    // Острова прошлого тика, которых теперь нет (их запас никто не взял): запас — в пул, он не годен.
+    val keysPrev = islandBpKeys.keys
+    for (x in 0 until islandBpKeys.size) {
+        val key = keysPrev[x]
+        if (key >= islandBp.size) continue
+        val bp = islandBp[key] ?: continue
+        if (bp.claimed == islandPhysTick) continue
+        bp.forget(); islandBp[key] = null; islandBpPool.addLast(bp)
+    }
+    islandBpKeysNext.size = count
+    val t = islandBpKeys; islandBpKeys = islandBpKeysNext; islandBpKeysNext = t
+}
+
+/** Ключи (первые частицы) островов тика: запасы широкой фазы, взятые в нём. */
+internal class IslandKeyList {
+    var keys = IntArray(16); private set
+    var size = 0
+
+    fun ensure(n: Int): IntArray {
+        if (keys.size < n) keys = IntArray(maxOf(n, keys.size * 2))
+        return keys
+    }
 }
 
 /** Остров треугольника с постоянным номером [id] (живого — [alive]), -1 — мир или мёртвый. */
@@ -314,6 +364,8 @@ internal class IslandKit {
 
     // Счётчики тени в начале тика: мир прибавляет разность (mergeIslandKits).
     var speedCapHits0 = 0; var linkCapHits0 = 0; var boneCapHits0 = 0
+    /** Островов тика с запасом широкой фазы с прошлого тика и собранных заново (для проверок и стендов). */
+    var bpReused = 0; var bpRebuilt = 0
     var bpBuilds0 = 0L; var bpCalls0 = 0L; var bpMoved0 = 0L; var ccdTotal0 = 0L
 
     /** Тень на тик [tick]: копия мира со своими черновиками. Воркер зовёт на первом своём острове тика. */
@@ -339,6 +391,7 @@ internal class IslandKit {
         s.dbgTimeOn = false; s.dbgSubstepHook = null
         s.islandKits = emptyArray(); s.islandRun = this
         speedCapHits0 = s.speedCapHits; linkCapHits0 = s.linkCapHits; boneCapHits0 = s.boneCapHits
+        bpReused = 0; bpRebuilt = 0
         val ct = contacts
         if (ct != null) { bpBuilds0 = ct.bpBuilds; bpCalls0 = ct.bpCalls; bpMoved0 = ct.bpMoved; ccdTotal0 = ct.dbgCcdTotal }
         shadow = s
@@ -360,8 +413,20 @@ internal class IslandKit {
         chunks.restrict(main.passChunkCache, sl.spanCount, sl.spanStart, sl.spanEnd)
         chunks.markBuilt(s.structureVersion, sl.version, s.n, sl.scopeVersion)
         momentum?.resetIslandLinks()
-        contacts?.setIsland(k, plan.verts.items, plan.verts.from(k), plan.verts.to(k),
-            plan.bones.items, plan.bones.from(k), plan.bones.to(k), ct0)
+        val vFrom = plan.verts.from(k); val vTo = plan.verts.to(k)
+        val fork = contacts
+        val worldContacts = main.contacts
+        // Запас есть у каждого острова, когда есть касания (assignIslandBroadphase).
+        val bp = if (fork != null) plan.broadphase[k]!! else null
+        if (fork != null && bp != null && worldContacts != null) {
+            // Запас широкой фазы с прошлого тика годен, только если остров был и в прошлом тике, отработал без отката, его
+            // вершины контура те же, а широкая фаза и топология мира с тех пор не сбрасывались (IslandBroadphase).
+            val reuse = bp.valid && bp.tick == main.islandPhysTick - 1 && bp.epoch == worldContacts.bpEpoch &&
+                bp.structure == main.structureVersion && bp.n == main.n && bp.sameVerts(plan.verts.items, vFrom, vTo)
+            if (reuse) bpReused++ else bpRebuilt++
+            fork.setIsland(k, plan.verts.items, vFrom, vTo, plan.bones.items, plan.bones.from(k), plan.bones.to(k), ct0,
+                bp, reuse, main.islandVertexSlot)
+        }
         gatherLerp(main, s, k)
         s.wallHits.drain { }
         s.velTouchN = 0
@@ -372,11 +437,17 @@ internal class IslandKit {
         try {
             s.solveSubsteps(h, null)
             if (main.islandsRollbackAll) islandAbort()
+            if (fork != null && bp != null && worldContacts != null) {
+                fork.releaseIslandBroadphase(bp)
+                bp.remember(plan.verts.items, vFrom, vTo, main.islandPhysTick, worldContacts.bpEpoch, main.structureVersion, main.n)
+            }
             return true
         } catch (e: IslandAbort) {
             snapshot(main, k, save = false)
             s.speedCapHits = speed; s.linkCapHits = link; s.boneCapHits = bone
             s.peakSpeed2 = peak; s.dbgMaxOverStrain = over
+            // Остров пойдёт с миром, и привязки его вершин перепишет широкая фаза мира: запас не годен.
+            if (fork != null && bp != null) { fork.releaseIslandBroadphase(bp); bp.forget() }
             return false
         }
     }
@@ -560,6 +631,7 @@ private fun BodyState.mergeIslandKits(tick: Long) {
         if (s.peakSpeed2 > peakSpeed2) peakSpeed2 = s.peakSpeed2
         if (s.dbgMaxOverStrain > dbgMaxOverStrain) dbgMaxOverStrain = s.dbgMaxOverStrain
         if (s.velTouchPass > velTouchPass) velTouchPass = s.velTouchPass
+        islandBpReuses += kit.bpReused; islandBpRebuilds += kit.bpRebuilt
         val f = kit.contacts
         if (f != null) contacts?.mergeIslandFork(f, kit.bpBuilds0, kit.bpCalls0, kit.bpMoved0, kit.ccdTotal0)
     }

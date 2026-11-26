@@ -905,7 +905,7 @@ class BoundaryContacts(
         val sameRp = rest === rp && restState.size == rp.other.size
         rest = rp
         // Другая таблица пар покоя — сохранённые слоты пар недействительны: список пар заново.
-        if (!sameRp) bpValid = false
+        if (!sameRp) { bpValid = false; bpEpoch++ }
         if (restState.size != rp.other.size) { restState = ByteArray(rp.other.size); restValid = false }
         var maxR = 0.0f
         for (vi in 0 until vertCount) { val v = verts[vi]; if (contactRadius[v] > maxR) maxR = contactRadius[v] }
@@ -1112,7 +1112,7 @@ class BoundaryContacts(
         radiusMinimum.reset(contactRadius)
         bpMargin = kotlin.math.abs(optionBpMargin) * maxR
         cellSize = maxOf(2.0f * maxR + bpMargin, 1e-6f)
-        bpValid = false; staticValid = false
+        bpValid = false; staticValid = false; bpEpoch++
 
         // Как у нового объекта: списков этого подшага нет, счётчики разбора с нуля.
         cN = 0; pairN = 0; attractN = 0; pierceN = 0
@@ -1158,7 +1158,7 @@ class BoundaryContacts(
         shards = Array(shards.size) { AnchoredContactGrid(newN) }
         parallelCandidates = null; parallelPairs = null; parallelCcd = null
         parallelBuild = null; parallelMoved = null; parallelReinsert = null; parallelBones = null
-        bpValid = false; staticValid = false
+        bpValid = false; staticValid = false; bpEpoch++
     }
 
     /**
@@ -1192,7 +1192,7 @@ class BoundaryContacts(
         // Тёплый старт (необязательный) — множители прошлых подшагов по парам: после
         // пересборки мир начинает без них, как после загрузки снимка.
         lam.clear()
-        bpValid = false; staticValid = false
+        bpValid = false; staticValid = false; bpEpoch++
     }
 
     /**
@@ -1254,7 +1254,7 @@ class BoundaryContacts(
         bpMargin = kotlin.math.abs(optionBpMargin) * maxRadius
         val oldCell = cellSize
         cellSize = maxOf(2.0f * maxRadius + bpMargin, 1e-6f)
-        bpValid = false
+        bpValid = false; bpEpoch++
         // НЕПОДВИЖНАЯ СЕТКА — ТОЛЬКО ЕСЛИ ЗАДЕТА ОНА. Поверхность меняется на каждое рождение и разрыв,
         // а меняются почти всегда бодрствующие клетки — они в подвижной сетке. Прежде любое обновление
         // заново раскладывало и все неподвижные: в мире с террейном это поверхность всех пещер, и
@@ -1494,7 +1494,7 @@ class BoundaryContacts(
      * частиц в список не попадает (см. updateCandidates), поэтому после пробуждения пары
      * проснувшегося со спящими соседями надо найти заново, иначе контакт пропустят.
      */
-    fun invalidateBroadphase() { bpValid = false; staticValid = false }
+    fun invalidateBroadphase() { bpValid = false; staticValid = false; bpEpoch++ }
 
     /**
      * Частица стала неподвижной (гибель): ей место в неподвижной сетке, а её пары
@@ -1791,6 +1791,14 @@ class BoundaryContacts(
     internal val vertexCount: Int get() = vertCount
     internal fun vertexAt(a: Int): Int = verts[a]
 
+    /**
+     * Сбросы широкой фазы мира: пересборка, дописывание тела, другие пары покоя, обновление контура, явный сброс (сон,
+     * гибель, группы касаний). Смена области тика (setScope) и копии островов его не трогают. Запас широкой фазы
+     * острова (IslandBroadphase) годен, только пока он тот же: всё, что сбросило бы широкую фазу мира, сбрасывает и его.
+     */
+    internal var bpEpoch = 0L
+        private set
+
     /** Перед островами: общие массивы на вершину, которые подшаг дозаказывает сам, — заранее, в одном потоке. */
     internal fun prepareIslands() {
         if (pierceReach.size < n) { pierceReach = FloatArray(n); pierceMove = FloatArray(n) }
@@ -1806,8 +1814,9 @@ class BoundaryContacts(
         f.islandVerts = p?.islandVerts ?: IntArray(64)
         f.verts = f.islandVerts!!; f.vertCount = 0
         f.islandBones = null; f.islandBoneFrom = 0; f.islandBoneTo = 0
-        f.pairA = p?.pairA ?: IntArray(4096); f.pairB = p?.pairB ?: IntArray(4096); f.pairN = 0
-        f.nearA = f.pairA; f.nearB = f.pairB; f.nearRestSlot = p?.nearRestSlot ?: IntArray(4096); f.nearN = 0
+        // Сетка, пары и подвижные вершины — из запаса острова (setIsland): здесь только заглушки.
+        f.pairA = IntArray(0); f.pairB = IntArray(0); f.pairN = 0
+        f.nearA = f.pairA; f.nearB = f.pairB; f.nearRestSlot = IntArray(0); f.nearN = 0
         f.cI = p?.cI ?: IntArray(4096); f.cJ = p?.cJ ?: IntArray(4096)
         f.cNx = p?.cNx ?: FloatArray(4096); f.cNy = p?.cNy ?: FloatArray(4096); f.cVn = p?.cVn ?: FloatArray(4096)
         f.cLam = p?.cLam ?: FloatArray(4096); f.cLamTot = p?.cLamTot ?: FloatArray(4096)
@@ -1822,9 +1831,9 @@ class BoundaryContacts(
         f.serialPierce = p?.serialPierce ?: PierceBuffer(); f.parallelPierce = null
         f.lam = p?.lam ?: ContactLambdaCache()
         f.ddaX = p?.ddaX ?: IntArray(DDA_MAX); f.ddaY = p?.ddaY ?: IntArray(DDA_MAX)
-        f.movers = p?.movers ?: IntArray(0); f.moverCount = 0
+        f.movers = IntArray(0); f.moverCount = 0
         f.moved = p?.moved ?: IntArray(0); f.movedCount = 0
-        f.shards = p?.shards ?: arrayOf(AnchoredContactGrid(n))
+        f.shards = emptyArray()
         f.keys = p?.keys ?: PairKeyBuffer(); f.newKeys = f.keys.newKeys; f.lowKeys = f.keys.lowKeys
         f.keptKeys = p?.keptKeys ?: LongArray(256); f.keptSlot = p?.keptSlot ?: IntArray(256)
         f.staticGrid = p?.staticGrid ?: SweptContactGrid(); f.staticValid = false; f.staticCount = 0
@@ -1851,21 +1860,37 @@ class BoundaryContacts(
     /**
      * Копия обходит остров [k]: его вершины контура src[from until to] (в порядке списка мира), его кости
      * bones[boneFrom until boneTo], направление обхода касаний — как у мира в начале тика ([ctBackwards0]): за тик
-     * оно меняется на каждом решении, и остров начинает с той же фазы, что и мир. Широкая фаза — с нуля.
+     * оно меняется на каждом решении, и остров начинает с той же фазы, что и мир. Широкая фаза — запас острова [bp]:
+     * с прошлого тика ([reuse]) или с нуля; [slots] — места вершин в списках островов (сетка с местными номерами).
      */
     internal fun setIsland(k: Int, src: IntArray, from: Int, to: Int, bones: IntArray, boneFrom: Int, boneTo: Int,
-                           ctBackwards0: Boolean) {
+                           ctBackwards0: Boolean, bp: IslandBroadphase, reuse: Boolean, slots: IntArray) {
         var own = islandVerts!!
         if (own.size < to - from) { own = IntArray(maxOf(to - from, own.size * 2)); islandVerts = own }
         System.arraycopy(src, from, own, 0, to - from)
         verts = own; vertCount = to - from
         islandBones = bones; islandBoneFrom = boneFrom; islandBoneTo = boneTo
         scope = k
-        bpValid = false; staticValid = false
         ctBackwards = ctBackwards0
-        pairN = 0; nearA = pairA; nearB = pairB; nearN = 0; cN = 0; frcN = 0; pierceN = 0; fixedN = 0
+        cN = 0; frcN = 0; pierceN = 0; fixedN = 0
         solvingFixed = false; fixedSweepNow = 0
         damage.clear(); startDeep.clear()
+        if (reuse) bp.grid.useSlots(slots)
+        else { bp.grid.resetLocal(slots, to - from); bp.pairN = 0; bp.nearN = 0; bp.moverCount = 0 }
+        shards = bp.shards
+        pairA = bp.pairA; pairB = bp.pairB; pairN = bp.pairN
+        nearA = pairA; nearB = pairB; nearN = bp.nearN; nearRestSlot = bp.nearRestSlot
+        movers = bp.movers; moverCount = bp.moverCount
+        // У острова неподвижных вершин нет: при запасе неподвижная сетка «собрана» пустой.
+        bpValid = reuse; staticValid = reuse; staticCount = 0
+    }
+
+    /** После острова: сетка, пары и подвижные вершины копии — обратно в запас острова (массивы могли вырасти). */
+    internal fun releaseIslandBroadphase(bp: IslandBroadphase) {
+        bp.pairA = pairA; bp.pairB = pairB; bp.pairN = pairN
+        bp.nearRestSlot = nearRestSlot; bp.nearN = nearN
+        bp.movers = movers; bp.moverCount = moverCount
+        bp.valid = bpValid && staticValid && nearA === pairA
     }
 
     /** После островов: метки на общих массивах вершин — наибольшие из копий, счётчики разбора — суммой. */

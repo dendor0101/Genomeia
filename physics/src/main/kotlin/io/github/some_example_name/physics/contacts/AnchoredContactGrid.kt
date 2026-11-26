@@ -24,27 +24,50 @@ package io.github.some_example_name.physics
  * контура, след 1–2 ячейки) около 2 МБ — порядка L2, обращения случайные только у
  * перекладываемых вершин.
  */
-internal class AnchoredContactGrid(n: Int) {
-    private var keys = LongArray(1024)
-    private var used = BooleanArray(1024)
-    private var heads = IntArray(1024)
-    private var mask = 1023
+internal class AnchoredContactGrid(n: Int, capacity: Int = 1024) {
+    private var keys = LongArray(capacity)
+    private var used = BooleanArray(capacity)
+    private var heads = IntArray(capacity)
+    private var mask = capacity - 1
     private var occupied = 0
 
-    private var entVert = IntArray(1024)
-    private var entCell = IntArray(1024)
-    private var entNext = IntArray(1024)
-    private var entPrev = IntArray(1024)
+    private var entVert = IntArray(capacity)
+    private var entCell = IntArray(capacity)
+    private var entNext = IntArray(capacity)
+    private var entPrev = IntArray(capacity)
     /** Следующая запись той же вершины (её след) или свободный список. */
-    private var entOwnNext = IntArray(1024)
+    private var entOwnNext = IntArray(capacity)
     private var entCount = 0
     private var freeHead = -1
 
     /** Живых записей. */
     var live = 0; private set
 
-    /** Первая запись следа вершины, -1 — вершины в сетке нет. */
-    private val footHead = IntArray(n) { -1 }
+    /** Первая запись следа вершины (по номеру вершины или её месту — [slots]), -1 — вершины в сетке нет. */
+    private var footHead = IntArray(n) { -1 }
+
+    /**
+     * МЕСТНЫЕ НОМЕРА ВЕРШИН — у сетки острова (IslandRun.kt, широкая фаза острова между тиками). Сетка мира держит след
+     * по номеру вершины (массив на весь мир), а сеток островов сотни, и держать каждой массив на весь мир нельзя.
+     * У сетки острова след — по месту вершины в списке острова: slots[v] (общий массив мира, его пишет разбиение на
+     * острова, и острова не делят вершин). null — сетка мира.
+     */
+    private var slots: IntArray? = null
+
+    @Suppress("NOTHING_TO_INLINE")
+    private inline fun foot(v: Int): Int { val s = slots; return if (s == null) v else s[v] }
+
+    /** Пустая сетка острова на [size] вершин с местными номерами [slots]. */
+    fun resetLocal(slots: IntArray, size: Int) {
+        this.slots = slots
+        if (footHead.size < size) footHead = IntArray(maxOf(size, footHead.size * 2))
+        java.util.Arrays.fill(footHead, 0, size, -1)
+        used.fill(false); occupied = 0
+        entCount = 0; freeHead = -1; live = 0
+    }
+
+    /** Та же сетка острова на следующем тике: местные номера те же (тот же список вершин), массив [slots] — нынешний. */
+    fun useSlots(slots: IntArray) { this.slots = slots }
 
     val ids: IntArray get() = entVert
     val next: IntArray get() = entNext
@@ -67,7 +90,7 @@ internal class AnchoredContactGrid(n: Int) {
         used.fill(false); occupied = 0
         // Следы — только у вершин, что лежат в сетке: проход по всем частицам мира (footHead.fill) на каждой полной
         // перестройке копии касаний острова (IslandRun.kt) стоил бы O(мира) на остров. Записи после freeHead — свободные.
-        for (e in 0 until entCount) footHead[entVert[e]] = -1
+        for (e in 0 until entCount) footHead[foot(entVert[e])] = -1
         entCount = 0; freeHead = -1; live = 0
     }
 
@@ -95,13 +118,15 @@ internal class AnchoredContactGrid(n: Int) {
         entPrev[e] = -1; entNext[e] = heads[s]
         if (heads[s] >= 0) entPrev[heads[s]] = e
         heads[s] = e
-        entOwnNext[e] = footHead[v]; footHead[v] = e
+        val f = foot(v)
+        entOwnNext[e] = footHead[f]; footHead[f] = e
         live++
     }
 
     /** Вынуть весь след вершины. */
     fun remove(v: Int) {
-        var e = footHead[v]
+        val f = foot(v)
+        var e = footHead[f]
         while (e >= 0) {
             val own = entOwnNext[e]
             val s = entCell[e]
@@ -112,7 +137,7 @@ internal class AnchoredContactGrid(n: Int) {
             if (heads[s] < 0) deleteCell(s)
             e = own
         }
-        footHead[v] = -1
+        footHead[f] = -1
     }
 
     /**
