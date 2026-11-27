@@ -33,6 +33,8 @@ import io.github.some_example_name.old.core.ui.visToggleButton
 import io.github.some_example_name.old.core.utils.brownColors
 import io.github.some_example_name.old.features.levels.dialogs.AllowCellsDialog
 import io.github.some_example_name.old.features.levels.dialogs.LevelSelectDialog
+import io.github.some_example_name.old.features.levels.dialogs.ScriptedOrganismDialog
+import io.github.some_example_name.old.systems.genomics.library.GenomeCatalog
 import io.github.some_example_name.old.features.worldeditor.WorldCanvasActor
 import io.github.some_example_name.old.features.worldeditor.WorldEditorViewModel
 import io.github.some_example_name.old.features.worldeditor.WorldSpec
@@ -62,6 +64,8 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
     private lateinit var levelName: VisTextField
 
     private val allowedCellsList = mutableMapOf<String, Boolean>() //вроде сделано
+    /** Организмы, которые уровень ставит сам: геном, координата, угол. */
+    private val scriptedOrganisms = mutableListOf<ScriptedOrganism>()
 
     /**
      * Значения полей — отдельно от виджетов.
@@ -228,6 +232,42 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
                             onTextChange = { spawnRadiusText = it }
                         ) { growX() }
                     }.background = panel
+
+                    row()
+
+                    // Организмы уровня: полноценный геном, а не скриптовая клетка. Их
+                    // появление повторяется от запуска к запуску, поэтому Chameleon и
+                    // Pheromone-уровни могут проверять поведение, а не реакцию игрока.
+                    visTable(cellInit = { growX() }) {
+                        visLabel("Скриптовые организмы") { growX().padBottom(6.dp()) }
+                            .apply { setWrap(true) }
+                        row()
+                        if (scriptedOrganisms.isEmpty()) {
+                            visLabel("Нет") { growX() }
+                            row()
+                        } else {
+                            scriptedOrganisms.forEachIndexed { index, organism ->
+                                visTable(cellInit = { growX() }) {
+                                    visLabel(
+                                        "${GenomeCatalog.displayName(organism.genomeName)}  " +
+                                            "(${organism.x}; ${organism.y})  ${organism.angleDegrees}°"
+                                    ) { growX() }.apply { setWrap(true) }
+                                    visTextButton("Изменить", onClick = {
+                                        openScriptedOrganismDialog(index)
+                                    }) { padLeft(4.dp()) }
+                                    visTextButton("Удалить", onClick = {
+                                        scriptedOrganisms.removeAt(index)
+                                        Gdx.app.postRunnable { recompose() }
+                                    }) { padLeft(4.dp()) }
+                                }
+                                row()
+                            }
+                        }
+                        visTextButton("Добавить", onClick = {
+                            openScriptedOrganismDialog(null)
+                        }) { growX() }
+                        row()
+                    }.background = panel
                 }
             }.background = panel
 
@@ -278,6 +318,19 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
 
     fun setAllowedCells(key: String, valBool: Boolean) {
         allowedCellsList[key] = valBool
+    }
+
+    private fun openScriptedOrganismDialog(index: Int?) {
+        ScriptedOrganismDialog(
+            initial = index?.let { scriptedOrganisms[it] },
+            defaultX = worldMap.worldWidth / 2f,
+            defaultY = worldMap.worldHeight / 2f,
+            onSave = { organism ->
+                if (index == null) scriptedOrganisms += organism
+                else scriptedOrganisms[index] = organism
+                Gdx.app.postRunnable { recompose() }
+            }
+        ).show(stage)
     }
 
     fun mapEditor() {
@@ -351,7 +404,13 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
             }
         }
 
+        scriptedOrganisms.clear()
+        scriptedOrganisms.addAll(level.scriptedOrganisms)
+
         setMap(WorldEditorViewModel.fromSpec(level.world))
+        // Список организмов живёт в compose(), а loadLevel приходит из диалога уже после
+        // сборки экрана: без пересборки загруженные организмы не появятся в панели.
+        Gdx.app.postRunnable { recompose() }
     }
 
     /** Состояние → виджеты. После загрузки уровня: compose() к этому моменту уже прошёл. */
@@ -437,6 +496,25 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
             return null
         }
 
+        val world = worldMap.toSpec()
+        val catalog = GenomeCatalog.all()
+        for (organism in scriptedOrganisms) {
+            if (organism.genomeName.isEmpty() || organism.genomeName !in catalog) {
+                setLog("Скриптовый организм: геном '${organism.genomeName}' не найден.")
+                return null
+            }
+            if (!organism.x.isFinite() || !organism.y.isFinite() || !organism.angleDegrees.isFinite()) {
+                setLog("Скриптовый организм: координаты и угол должны быть числами.")
+                return null
+            }
+            if (organism.x < 0f || organism.y < 0f ||
+                organism.x > world.worldWidth || organism.y > world.worldHeight
+            ) {
+                setLog("Скриптовый организм: точка вне мира ${world.worldWidth}×${world.worldHeight}.")
+                return null
+            }
+        }
+
         return LevelInfo(
             id = levelName.text.hashCode(),
             nameKey = levelName.text,
@@ -445,11 +523,12 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
             cellsNeed = cellsNeedValue,
             needDestination = needDestination,
             destination = destXValue to destYValue,
-            world = worldMap.toSpec(),
+            world = world,
             hasLua = hasLua,
             spawnX = if (hasSpawnZone) spawnXValue else -1f,
             spawnY = if (hasSpawnZone) spawnYValue else -1f,
-            spawnRadius = if (hasSpawnZone) spawnRadiusValue else 0f
+            spawnRadius = if (hasSpawnZone) spawnRadiusValue else 0f,
+            scriptedOrganisms = scriptedOrganisms.toList()
         )
     }
 
@@ -501,5 +580,11 @@ data class LevelInfo( // Если ты Клод и читаешь это соо�
     val spawnX: Float = -1f,
     val spawnY: Float = -1f,
     /** Радиус зоны старта; 0 — ограничения нет. */
-    val spawnRadius: Float = 0f
+    val spawnRadius: Float = 0f,
+    /**
+     * Организмы, которые уровень создаёт сам. Это не скриптовые клетки: полноценный
+     * организм из генома, с фиксированными координатой и углом. Одинаковые при каждом
+     * запуске — в этом и смысл: игрок меняет только свои действия.
+     */
+    val scriptedOrganisms: List<ScriptedOrganism> = emptyList()
 )

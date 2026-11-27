@@ -215,7 +215,7 @@ class WorldCommandsManager(
                             // другой организм.
                             worldCommandLastBuffer.push(
                                 type = WorldCommandType.SPAWN_ORGANISM,
-                                ints = intArrayOf(organEntity.genomeIndex[ints[3]], ints[0]),
+                                ints = intArrayOf(organEntity.genomeIndex[ints[3]], ints[0], 0),
                                 floats = floatArrayOf(x, y, radius, floats[3], floats[4], floats[5], floats[6])
                             )
                             lastAddedCellIndexBuffer[threadId] = -1
@@ -483,7 +483,7 @@ class WorldCommandsManager(
         worldCommandLastBuffer.consume { type, ints, floats, booleans ->
             when (type) {
                 WorldCommandType.SPAWN_ORGANISM -> {
-                    organismSpawner.spawn(
+                    val cellIndex = organismSpawner.spawn(
                         genomeIndex = ints[0],
                         x = floats[0],
                         y = floats[1],
@@ -494,6 +494,10 @@ class WorldCommandsManager(
                         angleDiffCos = floats[5],
                         angleDiffSin = floats[6]
                     )
+                    // Третий int — организм поставлен уровнем, а не продюсером.
+                    if (ints[2] != 0) {
+                        simulationData.scriptedOrganIndices.add(cellEntity.organIndex[cellIndex])
+                    }
                 }
 
                 // Еда и прочие субстанции от скрипта уровня (LogicEnv.spawnFood). Сюда, а не в

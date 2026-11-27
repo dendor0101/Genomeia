@@ -1,5 +1,7 @@
 package io.github.some_example_name.old.systems.simulation
 
+import com.badlogic.gdx.Gdx
+import io.github.some_example_name.old.cells.Zygote
 import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.commands.UserCommandManager
 import io.github.some_example_name.old.commands.WorldCommandType
@@ -23,6 +25,8 @@ import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.old.systems.genomics.CellSystem
 import io.github.some_example_name.old.systems.genomics.OrganManager
 import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
+import io.github.some_example_name.old.systems.genomics.library.GenomeCatalog
+import io.github.some_example_name.old.systems.physics.CollisionManager.Companion.PARTICLE_MAX_RADIUS
 import io.github.some_example_name.old.systems.physics.GridManager
 import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem
 import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem
@@ -449,6 +453,9 @@ class SimulationSystem(
         // Правила уровня — с чистого листа: HUD предыдущего уровня не должен переехать
         // в этот, даже если у этого уровня нет lua (тогда run() не зовётся).
         DIGameGlobalContainer.luaEnv.env.rules.reset()
+        // Команды прошлого мира (в том числе SPAWN_ORGANISM уровня) не должны переехать
+        // в новый: буфер общий, а dispose() его не чистит.
+        worldCommandsManager.worldCommandLastBuffer.clear()
         // Уровень по умолчанию тело не двигает; скрипт снимает запрет setMovable(true).
         // Именно здесь, а не в applyLevel: рестарт пересобирает мир и снова зовёт скрипт,
         // и разрешение от прошлого захода не должно переехать в новый.
@@ -461,7 +468,56 @@ class SimulationSystem(
             // RandomXS128 сам перемешивает seed, так что близкие значения nanoTime не страшны.
             ?: System.nanoTime()
         resetSessionInput(seed)
+        spawnScriptedOrganisms()
         SessionJournal.recordSim(CommandSource.SYSTEM, SessionStarted(seed), epoch, simulationData.tickCounter)
+    }
+
+    /**
+     * Организмы, которые уровень ставит сам.
+     *
+     * Команды идут через worldCommandLastBuffer и применяются в конце первого тика, как
+     * и остальные SPAWN_ORGANISM. В LevelInfo лежат только имя генома, точка и угол —
+     * никакой случайности и никаких ссылок на живые объекты, поэтому повтор .bug ставит
+     * ровно тот же организм в ту же точку.
+     */
+    private fun spawnScriptedOrganisms() {
+        // level — lateinit: в обычном мире (не уровне) его никто не инициализирует,
+        // поэтому сначала проверяем флаг, а уже потом читаем поле.
+        if (!simulationData.isLevel) return
+        val level = simulationData.level
+        if (level.scriptedOrganisms.isEmpty()) return
+        val zygote = cellEntity.cellList.filterIsInstance<Zygote>().singleOrNull() ?: return
+        val catalog = GenomeCatalog.all()
+        for (organism in level.scriptedOrganisms) {
+            val catalogIndex = catalog.indexOf(organism.genomeName)
+            // Обычный путь — индекс из GenomeCatalog совпадает с GenomeManager. Если мир
+            // запущен с одним выбранным геномом (genomeName != null), список короче;
+            // тогда ищем тот же геном по имени, а не роняем уровень.
+            val genomeIndex = if (catalogIndex in genomeManager.genomes.indices) {
+                catalogIndex
+            } else {
+                val displayName = GenomeCatalog.displayName(organism.genomeName)
+                genomeManager.genomes.indexOfFirst { it.name == displayName }
+            }
+            if (genomeIndex < 0) {
+                Gdx.app?.error("Level", "не найден геном скриптового организма '${organism.genomeName}'")
+                continue
+            }
+            val radians = StrictMath.toRadians(organism.angleDegrees.toDouble())
+            worldCommandsManager.worldCommandLastBuffer.push(
+                type = WorldCommandType.SPAWN_ORGANISM,
+                ints = intArrayOf(genomeIndex, zygote.defaultColor.toIntBits(), 1),
+                floats = floatArrayOf(
+                    organism.x,
+                    organism.y,
+                    PARTICLE_MAX_RADIUS,
+                    StrictMath.cos(radians).toFloat(),
+                    StrictMath.sin(radians).toFloat(),
+                    1f,
+                    0f
+                )
+            )
+        }
     }
 
     private fun resetSessionInput(seed: Long) {
@@ -486,6 +542,12 @@ class SimulationSystem(
                 x = Fnv.word(x, java.lang.Float.floatToRawIntBits(simulationData.timeSimulation))
                 x = Fnv.word(x, simulationData.currentGenomeIndex)
                 x = Fnv.word(x, simulationData.lastPlacedOrganIndex)
+                // Список пуст у обычных миров и у старых .bug — их хэш не меняется.
+                val scripted = simulationData.scriptedOrganIndices
+                if (scripted.size > 0) {
+                    x = Fnv.word(x, scripted.size)
+                    for (i in 0 until scripted.size) x = Fnv.word(x, scripted.getInt(i))
+                }
                 Fnv.word(x, simulationData.selectedCellIndex)
             },
             input = userCommandManager::hashInput,

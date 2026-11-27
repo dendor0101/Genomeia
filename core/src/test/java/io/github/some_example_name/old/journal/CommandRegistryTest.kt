@@ -19,6 +19,7 @@ import io.github.some_example_name.old.editor.system.logic.TryToDivide
 import io.github.some_example_name.old.editor.system.logic.UiEditorCommands
 import io.github.some_example_name.old.features.devsupport.SupportIntent
 import io.github.some_example_name.old.features.levels.editor.LevelInfo
+import io.github.some_example_name.old.features.levels.editor.ScriptedOrganism
 import io.github.some_example_name.old.features.menu.MenuIntent
 import io.github.some_example_name.old.features.settings.SettingsIntent
 import io.github.some_example_name.old.features.settings.SettingsTab
@@ -108,6 +109,9 @@ class CommandRegistryTest {
             cellsNeed = 5,
             needDestination = true,
             destination = 12.5f to 30f,
+            scriptedOrganisms = listOf(
+                ScriptedOrganism("bundled/testEye", 10f, 20f, 90f)
+            ),
             world = WorldSpec(192, 192, "12345678", 7, 3, listOf(WorldEdit.Clear))
         )
 

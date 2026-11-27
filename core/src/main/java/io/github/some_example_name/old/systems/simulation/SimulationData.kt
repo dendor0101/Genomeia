@@ -1,6 +1,7 @@
 package io.github.some_example_name.old.systems.simulation
 
 import io.github.some_example_name.old.features.levels.editor.LevelInfo
+import it.unimi.dsi.fastutil.ints.IntArrayList
 
 class SimulationData {
     var isRestart = false
@@ -10,6 +11,15 @@ class SimulationData {
 
     var isLevel = false //level-игровой уровень с lua логикой и конечной целью. при false-обычная симуляция.
     var isGuide = false
+
+    /**
+     * Организмы, которых поставил сам уровень (LevelInfo.scriptedOrganisms).
+     *
+     * Нужны проверке terrain: в уровне с врагом/скриптовым организмом финиш считается
+     * по нему, а не по телу игрока. Список наполняет WorldCommandsManager в момент
+     * SPAWN_ORGANISM и входит в StateHash, чтобы повтор видел ту же цель.
+     */
+    val scriptedOrganIndices = IntArrayList()
 
     /**
      * Можно ли двигать организм мышью. В обычном мире — да, в уровне — нет: иначе тело
@@ -80,6 +90,7 @@ class SimulationData {
         timeSimulation = 0f
         selectedCellIndex = -1
         lastPlacedOrganIndex = -1
+        scriptedOrganIndices.clear()
         // Пауза — состояние ЭКРАНА, а не мира: её ставит окно уровня или диалог провала,
         // и уходя из симуляции его никто не снимает. Без сброса следующий мир (например,
         // уровень, запущенный из редактора после выигранного/проваленного) открывался
@@ -93,6 +104,7 @@ class SimulationData {
         isLevel = false
         isGuide = false
         isMovable = true
+        scriptedOrganIndices.clear()
     }
 
 }

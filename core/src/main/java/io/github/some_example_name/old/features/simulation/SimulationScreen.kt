@@ -128,6 +128,9 @@ class SimulationScreen(
     private lateinit var fontMatrix: Matrix4
     private lateinit var shapeRenderer: ShapeRenderer
 
+    /** Экран уже уничтожен: кадр после dispose не должен трогать освобождённый SpriteBatch. */
+    private var disposed = false
+
     private var currentScreenWidth = 0
     private var currentScreenHeight = 0
 
@@ -145,6 +148,7 @@ class SimulationScreen(
     private val keyboardKeys = BooleanArray(CONTROLLER_KEY_CODES.size)
 
     override fun show() {
+        disposed = false
         viewModel.loadGenomes()
         viewModel.onEffect = ::applyEffect
 
@@ -237,6 +241,7 @@ class SimulationScreen(
     }
 
     override fun render(delta: Float) {
+        if (disposed) return
         // Пока игрок печатает (окно отчёта, поле ввода), клавиатура — его тексту, а не игре:
         // иначе «в» в описании бага — это клавиша D, а «н» — Y. Нажатые клавиши при этом
         // отпускаются, чтобы не залипли.
@@ -269,11 +274,16 @@ class SimulationScreen(
         // Окна уровня показываем здесь, на потоке рендера: скрипт кладёт их в очередь
         // через postRunnable, а show() трогает сцену.
         DIGameGlobalContainer.luaEnv.env.pumpPopups()
+        // popup/провал могли выполнить GoBack и уничтожить этот экран прямо в кадре.
+        if (disposed) return
 
         renderSystem.render()
         LevelOverlay.draw(shapeRenderer, camera, overlayHud)
 
         stage.act(Gdx.graphics.deltaTime)
+        // Кнопка «Меню»/провал в stage.act могла выполнить GoReplace/GoBack и уничтожить
+        // экран; scene2d тогда уже освобождён, рисовать его нельзя.
+        if (disposed) return
         stage.draw()
 
         if (!typing && Gdx.input.isKeyJustPressed(Input.Keys.Z)) {
@@ -340,6 +350,7 @@ class SimulationScreen(
     }
 
     override fun resize(width: Int, height: Int) {
+        if (disposed) return
         if (width == currentScreenWidth && height == currentScreenHeight) return
 
         stage.viewport.update(width, height, true)
@@ -376,6 +387,8 @@ class SimulationScreen(
     override fun hide() { }
 
     override fun dispose() {
+        if (disposed) return
+        disposed = true
         viewModel.stopWorld()
         renderSystem.dispose()
         simulationSystem.simulationData.isFinish = true

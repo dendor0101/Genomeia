@@ -20,6 +20,10 @@ class LevelInfoJsonTest {
             cellsNeed = 10,
             needDestination = true,
             destination = 12.5f to 30f,
+            scriptedOrganisms = listOf(
+                ScriptedOrganism(genomeName = "bundled/testEye", x = 10f, y = 20f, angleDegrees = 90f),
+                ScriptedOrganism(genomeName = "test chameleon", x = 30f, y = 40f, angleDegrees = -45f),
+            ),
             world = WorldSpec(
                 gridWidth = 192,
                 gridHeight = 192,

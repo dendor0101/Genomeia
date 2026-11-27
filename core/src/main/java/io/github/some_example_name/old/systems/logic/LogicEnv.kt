@@ -57,7 +57,7 @@ class LogicEnv {
                     listOf(LuaNumber.of(simulationData.tickCounter))
             }
             "pos" -> {
-                val (posX, posY) = getAveragePos()
+                val (posX, posY) = getAveragePos() ?: (0f to 0f)
                 listOf(LuaNumber.of(posX.toDouble()), LuaNumber.of(posY.toDouble()))
             }
             // Есть ли в организме игрока живая клетка этого типа. Нужно уровням-гайдам:
@@ -328,14 +328,60 @@ class LogicEnv {
     }
 
     private fun destinationReached(): Boolean {
-        val (sx, sy) = getAveragePos()
+        // В уровне с организмами, которых ставит сам уровень (враг, скриптовый пловец),
+        // финиш считается по ним. Игрок в такой цели не участвует: иначе достаточно было
+        // бы довести своё тело до финиша, не разыгрывая сценарий.
+        // Смотрим на список из уровня, а не на уже заспавненные индексы: до конца первого
+        // тика индексов ещё нет, и проверка не должна успеть засчитать финиш по игроку.
+        if (simulationData.level.scriptedOrganisms.isNotEmpty()) {
+            return scriptedDestinationReached()
+        }
 
+        val (sx, sy) = getAveragePos() ?: return false
         val dx = simulationData.level.destination.first - sx
         val dy = simulationData.level.destination.second - sy
         return dx * dx + dy * dy <= DESTINATION_RADIUS * DESTINATION_RADIUS
     }
 
-    private fun getAveragePos(): Pair<Float, Float> {
+    /**
+     * Дошёл ли хотя бы один организм, поставленный уровнем, до финиша.
+     *
+     * Считаем каждый организм отдельно, а не среднюю всех: если врагов два, средняя
+     * точка может оказаться между ними и никогда не попасть в радиус. Аллокаций нет,
+     * организмов уровня обычно один-два, но код не завязан на это число.
+     */
+    private fun scriptedDestinationReached(): Boolean {
+        val cell = DISimulationContainer.cellEntity
+        val particle = DISimulationContainer.particleEntity
+        val alive = cell.aliveList
+        val scripted = simulationData.scriptedOrganIndices
+        val destX = simulationData.level.destination.first
+        val destY = simulationData.level.destination.second
+        val radiusSquared = DESTINATION_RADIUS * DESTINATION_RADIUS
+
+        for (s in 0 until scripted.size) {
+            val organ = scripted.getInt(s)
+            var sx = 0f
+            var sy = 0f
+            var count = 0
+            for (i in 0 until alive.size) {
+                val cellIndex = alive.getInt(i)
+                if (cell.organIndex[cellIndex] != organ) continue
+                val particleIndex = cell.particleIndexes[cellIndex]
+                if (particleIndex < 0) continue
+                sx += particle.x[particleIndex]
+                sy += particle.y[particleIndex]
+                count++
+            }
+            if (count == 0) continue
+            val dx = destX - sx / count
+            val dy = destY - sy / count
+            if (dx * dx + dy * dy <= radiusSquared) return true
+        }
+        return false
+    }
+
+    private fun getAveragePos(): Pair<Float, Float>? {
         val cell = DISimulationContainer.cellEntity
         val particle = DISimulationContainer.particleEntity
         val alive = cell.aliveList
@@ -357,10 +403,11 @@ class LogicEnv {
             sy += particle.y[particleIndex]
             count++
         }
-        if (count == 0) return 0f to 0f
+        if (count == 0) return null
 
         return sx/count to sy/count
     }
+
 
     private fun string(args: List<LuaValue<*>>, index: Int): String =
         (args.getOrNull(index) as? LuaString)?.value ?: ""
