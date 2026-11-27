@@ -146,6 +146,8 @@ tasks.register('cargoTest', Exec) {
 def androidTarget = 'aarch64-linux-android'
 def androidMinSdk = 21
 def physicsAndroidLib = new File(physicsNativeDir, "target/$androidTarget/release/libgenomeia_physics_jni.so")
+// Для сборки APK (android/build.gradle): где лежит библиотека и можно ли её собрать на этой машине.
+ext.physicsAndroidLib = physicsAndroidLib
 
 def findNdk = { ->
   if (project.hasProperty('ndkDir')) return file(project.property('ndkDir'))
@@ -162,6 +164,8 @@ def findNdk = { ->
     return x.size() <=> y.size()
   }
 }
+
+ext.rustAndroidAvailable = cargo != null && findNdk() != null
 
 tasks.register('cargoBuildAndroid', Exec) {
   group = 'build'

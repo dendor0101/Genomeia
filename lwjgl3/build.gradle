@@ -417,6 +417,19 @@ tasks.register('bugUploadCheck', JavaExec) {
   }
 }
 
+// Движок физики записи или повтора (RustEngine.kt): -PrecordEngine=rust / -PreplayEngine=rust. Запись на Kotlin и
+// повтор на Rust — проверка, что .bug и хэши состояния мира одни на обоих движках.
+def physicsEngine = { Task task, String key ->
+  if (!project.hasProperty(key)) return
+  def engine = project.property(key).toString()
+  task.systemProperty 'genomeia.physics.engine', engine
+  if (engine == 'rust') {
+    task.dependsOn ':physics:cargoBuild'
+    task.systemProperty 'genomeia.physics.native',
+      rootProject.file('physics-native/target/release/' + System.mapLibraryName('genomeia_physics_jni')).absolutePath
+  }
+}
+
 // Первый запуск игры проходит сценарий через команды и собирает .bug, второй проигрывает его и
 // сверяет контрольные суммы журнала и хэши состояния мира; ненулевой код — повтор разошёлся.
 tasks.register('bugReplayCheckRecord', JavaExec) {
@@ -427,6 +440,7 @@ tasks.register('bugReplayCheckRecord', JavaExec) {
   args 'record'
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+  physicsEngine(it, 'recordEngine')
   if (project.hasProperty('hashPeriod')) systemProperty 'genomeia.stateHashPeriod', project.property('hashPeriod')
   if (project.hasProperty('workers')) systemProperty 'bugReplayCheck.workers', project.property('workers')
   if (project.hasProperty('growTicks')) systemProperty 'bugReplayCheck.growTicks', project.property('growTicks')
@@ -447,6 +461,7 @@ tasks.register('bugReplayCheck', JavaExec) {
   args 'replay'
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+  physicsEngine(it, 'replayEngine')
   if (project.hasProperty('hashPeriod')) systemProperty 'genomeia.stateHashPeriod', project.property('hashPeriod')
   // Повтор может идти при другом числе воркеров, чем запись: -PreplayWorkers=1 — проверка,
   // что мир не зависит от числа потоков.

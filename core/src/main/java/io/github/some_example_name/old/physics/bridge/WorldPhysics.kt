@@ -126,6 +126,8 @@ class WorldPhysics(
 
     /** Новый мир физики: прежний мир игры стёрт (рестарт, новая карта, загрузка). */
     fun reset() {
+        // Физика на Rust (RustEngine): память прежнего мира освобождается сразу — на Android до 13 нет Cleaner.
+        bridge.world.close()
         bridge = PhysicsBridge(workers)
         boundsWidth = -1; boundsHeight = -1
         compactions = 0
@@ -733,6 +735,8 @@ class WorldPhysics(
         // Пустой мир (до первой подсадки): топологии ещё нет — baked не заведён.
         if (organsWithBody.size == 0) return
         val world = bridge.world
+        // Физика на Rust (RustEngine): топологии в зеркале нет — отладочные связи пока не рисуются.
+        if (world.isRustEngine) return
         val st = world.state
         val b = st.baked
         for (k in 0 until organsWithBody.size) {

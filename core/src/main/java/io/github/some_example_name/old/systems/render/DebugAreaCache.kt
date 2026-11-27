@@ -30,6 +30,8 @@ internal class DebugAreaCache {
 
     fun publish(world: PhysicsWorld?, count: Int, target: DebugAreaIndices): DebugAreaIndices? {
         if (world == null || world.particleCount == 0 || count == 0) return null
+        // Физика на Rust (RustEngine): треугольников в зеркале нет — отладочные площади пока не рисуются.
+        if (world.isRustEngine) return null
         val state = world.state
         val faces = state.baked.triAlive
         val revision = state.baked.triangleRevision

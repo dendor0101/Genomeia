@@ -13,7 +13,7 @@ package io.github.some_example_name.physics.rust
  */
 object RustPhysics {
     /** Версия двоичного договора; та же константа ABI_VERSION в physics-native/core/src/lib.rs. */
-    const val ABI_VERSION = 6
+    const val ABI_VERSION = 8
 
     /** Почему библиотека не загрузилась (null — загрузилась или ещё не пробовали). */
     @Volatile var loadError: Throwable? = null
@@ -70,8 +70,23 @@ object RustPhysics {
 
     @JvmStatic external fun worldDigest(handle: Long): ByteArray
 
-    /** Копия массива частиц: 0 — x, 1 — y, 2 — vx, 3 — vy. */
+    /**
+     * Копия массива частиц: 0 — x, 1 — y, 2 — vx, 3 — vy; зеркало игры (физика на Rust, RustMirror) — 4 cellScale,
+     * 5 cellScaleTarget, 6 cellSoftness, 7 cellGrip, 8 radius.
+     */
     @JvmStatic external fun worldRead(handle: Long, which: Int, out: FloatArray)
+
+    /** Зеркало игры: признаки частиц — 0 cellDead, 1 cellUnborn, 2 cellNoContact. */
+    @JvmStatic external fun worldReadBools(handle: Long, which: Int, out: BooleanArray)
+
+    /** Зеркало игры: 0 — boneOf. */
+    @JvmStatic external fun worldReadInts(handle: Long, which: Int, out: IntArray)
+
+    /**
+     * Зеркало игры, одна частица [i] после правки: [outF] — px, py, vx, vy, cellScale, cellScaleTarget, cellSoftness,
+     * cellGrip, radius; [outI] — cellDead, cellUnborn, cellNoContact, boneOf, cellScalesOn, cellScalesMoving.
+     */
+    @JvmStatic external fun worldReadCell(handle: Long, i: Int, outF: FloatArray, outI: IntArray)
 
     /** Тень: перенести массив [which], поправленный стендом прямо в BodyState (RustWorld.adopt). */
     @JvmStatic external fun worldAdopt(handle: Long, which: Int, values: FloatArray)

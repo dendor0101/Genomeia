@@ -158,6 +158,11 @@ class AndroidLauncher : AndroidApplication(), KeyBoardListener {
         PlatformTuning.onWorkerThreadStart = {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY)
         }
+        // Физика на Rust (RUST_PORT.md «Rust в игре»): на телефоне Rust быстрее Kotlin в 1.4–1.7 раза при тех же битах.
+        // Нет библиотеки arm64-v8a в APK (32-битный телефон, сборка без Rust) — Kotlin. Потоки пула Rust — с тем же
+        // приоритетом, что воркеры игры выше: поток симуляции — его воркер 0.
+        PlatformTuning.rustPhysics = true
+        PlatformTuning.rustWorkerNice = android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY
     }
 
     // ====================== KeyBoardListener ======================

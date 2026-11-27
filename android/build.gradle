@@ -121,6 +121,27 @@ tasks.matching { it.name.contains("merge") && it.name.contains("JniLibFolders") 
   packageTask.dependsOn 'copyAndroidNatives'
 }
 
+// ФИЗИКА НА RUST ДЛЯ ТЕЛЕФОНОВ (RUST_PORT.md, «Rust в игре»): библиотека arm64-v8a кладётся в APK рядом с natives libGDX,
+// лаунчер включает движок Rust, если она загрузилась (AndroidLauncher, RustEngine). Нет cargo или NDK, или -PnoRust —
+// APK без неё: игра на Kotlin с теми же битами. armeabi-v7a и x86 без Rust — тоже на Kotlin.
+evaluationDependsOn(':physics')
+def physicsProject = project(':physics')
+if (!project.hasProperty('noRust') && physicsProject.ext.has('rustAndroidAvailable') && physicsProject.ext.rustAndroidAvailable) {
+  tasks.named('copyAndroidNatives') {
+    dependsOn ':physics:cargoBuildAndroid'
+    doLast {
+      copy {
+        from physicsProject.ext.physicsAndroidLib
+        into file('libs/arm64-v8a')
+      }
+    }
+  }
+} else {
+  logger.lifecycle('APK без физики на Rust: нет cargo или NDK (или -PnoRust) — игра на телефоне пойдёт на Kotlin')
+  // Прежняя сборка могла оставить библиотеку в libs/ (папка не в git): без неё APK обязан быть честно без Rust.
+  tasks.named('copyAndroidNatives') { doLast { delete file('libs/arm64-v8a/libgenomeia_physics_jni.so') } }
+}
+
 tasks.register('run', Exec) {
   def path
   def localProperties = project.file("../local.properties")

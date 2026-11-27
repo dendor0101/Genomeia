@@ -62,6 +62,18 @@ configure(subprojects - project(':android')) {
   // Физика на Rust (RUST_PORT.md): -PrustShadow гоняет любой стенд, проверку или тест с тенью —
   // каждый PhysicsWorld повторяет себя в мире на Rust и сверяется с ним побитово после каждого
   // тика (RustShadow.kt). -PrustShadowEvery=N — сверка раз в N тиков (отпечаток 100k частиц дорог).
+  // Физика на Rust в игре (RustEngine.kt): -PrustEngine — мир физики шагает на Rust у любого запуска, проверки и теста
+  // (на ПК — для проверок; игре Rust нужен на Android). Биты те же, что у Kotlin.
+  if (rootProject.hasProperty('rustEngine')) {
+    def lib = rootProject.file('physics-native/target/release/' + System.mapLibraryName('genomeia_physics_jni'))
+    [JavaExec, Test].each { type ->
+      tasks.withType(type).configureEach {
+        dependsOn ':physics:cargoBuild'
+        systemProperty 'genomeia.physics.native', lib.absolutePath
+        systemProperty 'genomeia.physics.engine', 'rust'
+      }
+    }
+  }
   if (rootProject.hasProperty('rustShadow')) {
     def lib = rootProject.file('physics-native/target/release/' + System.mapLibraryName('genomeia_physics_jni'))
     [JavaExec, Test].each { type ->
