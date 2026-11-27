@@ -146,7 +146,7 @@ internal class CellLabView(private val session: CellLabSession) {
             }
             if (model.key in ENERGY_CELLS) metric("energy", c.energy[a])
             when (model.key) {
-                "eye", "touch_trigger", "controller", "neuron", "pheromone_sensor", "speed_sensor" -> metric("output", c.neuronImpulseOutput[a])
+                "eye", "touch_trigger", "controller", "neuron", "pheromone_sensor", "speed_sensor", "compass" -> metric("output", c.neuronImpulseOutput[a])
                 "muscle" -> {
                     metric("output", c.neuronImpulseOutput[a])
                     if (c.isAlive[b] && c.isAlive[model.source]) {
