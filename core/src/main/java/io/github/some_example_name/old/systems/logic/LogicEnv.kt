@@ -8,14 +8,13 @@ import ai.tenum.lua.runtime.LuaString
 import ai.tenum.lua.runtime.LuaValue
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Color
-import com.badlogic.gdx.utils.Json
-import com.badlogic.gdx.utils.ObjectMap
 import io.github.some_example_name.old.commands.GoBack
 import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.bug.BugReplay
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.DISimulationContainer.simulationData
+import io.github.some_example_name.old.features.levels.LevelProgress
 import io.github.some_example_name.old.features.levels.dialogs.PopUp
 import io.github.some_example_name.old.features.simulation.SimulationScreen
 
@@ -89,20 +88,8 @@ class LogicEnv {
     }
 
     val win = LuaNativeFunction {//при isLevel у каждой map есть свой id, при win мы отображаем popup а затем засчитываем json файл с levelam'и как пройденный
-        if (DISimulationContainer.simulationData.isGuide) {
-            val file = Gdx.files.local("campaign/levels/levels.json")
-            val json = Json()
-
-            // 2. Читаем существующий файл или создаем новую карту, если файла нет
-            val settings: ObjectMap<String, Boolean> = if (file.exists()) {
-                json.fromJson(ObjectMap::class.java, java.lang.Boolean::class.java, file)
-                    as ObjectMap<String, Boolean>
-            } else {
-                ObjectMap()
-            }
-
-            settings.put(DISimulationContainer.simulationData.level.id.toString(), true)
-            file.writeString(json.prettyPrint(settings), false)
+        if (DISimulationContainer.simulationData.isLevel) {
+            LevelProgress.markCompleted(DISimulationContainer.simulationData.level.id)
         }
 
         rules.resumeAfterReading()

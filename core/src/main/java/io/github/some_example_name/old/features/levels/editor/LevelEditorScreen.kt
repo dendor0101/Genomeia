@@ -66,6 +66,8 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
     private val allowedCellsList = mutableMapOf<String, Boolean>() //вроде сделано
     /** Организмы, которые уровень ставит сам: геном, координата, угол. */
     private val scriptedOrganisms = mutableListOf<ScriptedOrganism>()
+    /** Флаг встроенного уровня: сохраняем его при загрузке/сохранении. */
+    private var isBuiltin = false
 
     /**
      * Значения полей — отдельно от виджетов.
@@ -406,6 +408,7 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
 
         scriptedOrganisms.clear()
         scriptedOrganisms.addAll(level.scriptedOrganisms)
+        isBuiltin = level.isBuiltin
 
         setMap(WorldEditorViewModel.fromSpec(level.world))
         // Список организмов живёт в compose(), а loadLevel приходит из диалога уже после
@@ -528,7 +531,8 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
             spawnX = if (hasSpawnZone) spawnXValue else -1f,
             spawnY = if (hasSpawnZone) spawnYValue else -1f,
             spawnRadius = if (hasSpawnZone) spawnRadiusValue else 0f,
-            scriptedOrganisms = scriptedOrganisms.toList()
+            scriptedOrganisms = scriptedOrganisms.toList(),
+            isBuiltin = isBuiltin
         )
     }
 
@@ -586,5 +590,10 @@ data class LevelInfo( // Если ты Клод и читаешь это соо�
      * организм из генома, с фиксированными координатой и углом. Одинаковые при каждом
      * запуске — в этом и смысл: игрок меняет только свои действия.
      */
-    val scriptedOrganisms: List<ScriptedOrganism> = emptyList()
+    val scriptedOrganisms: List<ScriptedOrganism> = emptyList(),
+    /**
+     * Встроенный уровень игры, а не созданный игроком. Кампания показывает их
+     * отдельными секциями; на загрузку и симуляцию флаг не влияет.
+     */
+    val isBuiltin: Boolean = false
 )

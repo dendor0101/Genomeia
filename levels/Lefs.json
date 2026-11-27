@@ -44,5 +44,6 @@
         "seed": "-1",
         "dayNight": 15,
         "smoothing": 12
-    }
+    },
+    "isBuiltin": true
 }

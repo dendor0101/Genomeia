@@ -32569,5 +32569,6 @@
     },
     "spawnX": 16.0,
     "spawnY": 70.0,
-    "spawnRadius": 16.0
+    "spawnRadius": 16.0,
+    "isBuiltin": true
 }
