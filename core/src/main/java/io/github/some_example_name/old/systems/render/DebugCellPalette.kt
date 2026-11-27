@@ -5,6 +5,7 @@ import io.github.some_example_name.old.cells.Cell
 import io.github.some_example_name.old.cells.Chameleon
 import io.github.some_example_name.old.cells.Controller
 import io.github.some_example_name.old.cells.Delay
+import io.github.some_example_name.old.cells.Compass
 import io.github.some_example_name.old.cells.Excreta
 import io.github.some_example_name.old.cells.Eye
 import io.github.some_example_name.old.cells.Fat
@@ -56,8 +57,8 @@ class DebugCellPalette(private val cellList: List<Cell>) {
     private val keepsOwnColor = BooleanArray(cellList.size) { cellList[it] is Chameleon }
 
     /**
-     * Рисунок по типу. Клетки модов и выведенные из игры (Breakaway, Fin, FoodSensor,
-     * Compass) — без рисунка, плоские: их узнают по цвету.
+     * Рисунок по типу. Клетки модов и выведенные из игры (Breakaway, Fin, FoodSensor) — без
+     * рисунка, плоские: их узнают по цвету.
      */
     private val patternByType = IntArray(cellList.size) { type ->
         when (cellList[type]) {
@@ -75,6 +76,7 @@ class DebugCellPalette(private val cellList: List<Cell>) {
             is Producer -> CellLook.DIVIDING
             is Neuron -> CellLook.NEURON
             is MotorNeuron -> CellLook.MOTOR_NEURON
+            is Compass -> CellLook.COMPASS
             is SuctionCup -> CellLook.SUCTION_RINGS
             is Sticky -> CellLook.STICKY_BUMPS
             is Chameleon -> CellLook.PIGMENTS

@@ -17,10 +17,12 @@ class CellTypesTest {
 
     @Test
     fun `оптические материалы находятся по ключу а не по переставленным номерам игры`() {
-        val retired = setOf("food_sensor", "compass", "breakaway", "fin")
+        // Без своего материала микроскопа: выведенные из игры и compass (возвращён игрокам 27.11,
+        // когда реалистичного шейдера в игре уже не было).
+        val noMaterial = setOf("food_sensor", "compass", "breakaway", "fin")
         for (cell in cells) {
             val material = io.github.some_example_name.render.microscope.TissueMaterials.forKey(cell.key)
-            if (cell.key in retired) assertEquals(27, material)
+            if (cell.key in noMaterial) assertEquals(27, material)
             else assertTrue(material in 0..26, "нет материала ${cell.key}")
         }
         assertEquals(0, io.github.some_example_name.render.microscope.TissueMaterials.forKey("leaf"))

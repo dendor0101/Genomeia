@@ -140,6 +140,7 @@ class NostalgicRenderer(private val cells: CellGeometry) : RenderComponent {
         fillShader.setUniformf("u_depthBias", CONTOUR_WIDTH)
         fillShader.setUniformf("u_depthScale", DEPTH_SCALE)
         cells.draw(context.numInstances)
+        cells.drawStatic(context.numStaticInstances)
     }
 
     /** Проход 2: сколько частиц ближе порога — в stencil. Цвет и глубина не пишутся. */
@@ -159,6 +160,7 @@ class NostalgicRenderer(private val cells: CellGeometry) : RenderComponent {
         // Тот же корпус и та же точная d/R, что у заливки, — без подъёма на δ. Поверхности
         // совпадают до бита, так что владелец засчитывает свой пиксель всегда.
         cells.draw(context.numInstances)
+        cells.drawStatic(context.numStaticInstances)
 
         // Внешний обод — граница с пустотой. Плоскость на глубине «f = 1 - RIM_WIDTH»
         // проходит тест там, где f владельца + δ больше неё, то есть ровно на ободе.

@@ -42,7 +42,13 @@ internal class StickyJoints(
         val impulse = cellEntity.neuronImpulseOutput[c]
         if (impulse <= 0f) return
         val i = particleEntity.physicsIndex[cellEntity.particleIndexes[c]]
-        if (i < 0 || i == j || world.state.cellDead[j]) return
+        // Мёртвым в мире физики может быть и сама липучка, а не только партнёр: физика убивает
+        // клетку в шаге, а игра узнаёт об этом командой DELETE_CELL, которая стоит в конце тика
+        // (WorkOrder, WorldPhysics.reportDeaths), — позже, чем STICK из стадии клеток. Без этой
+        // проверки addJoint падал на «связь — между двумя живыми частицами» (отчёт 26.11,
+        // genomeia-20261126-172103: физика убила липучку в тот же тик, когда та коснулась партнёра;
+        // повтор на сборке отчёта с этой проверкой проходит до конца, все 320 хэшей сошлись).
+        if (i < 0 || i == j || world.state.cellDead[i] || world.state.cellDead[j]) return
         val pg = generationOf(p)
         var mine = 0
         for (k in 0 until count) {

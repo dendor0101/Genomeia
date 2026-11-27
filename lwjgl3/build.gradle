@@ -321,7 +321,7 @@ tasks.register('perfCheck', JavaExec) {
   mainClass = 'io.github.some_example_name.lwjgl3.verification.PerfCheckKt'
   workingDir = rootProject.projectDir
   jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
-  ['genome', 'count', 'terrain', 'grow', 'measure', 'workers', 'clear', 'stages', 'sleep', 'jfr', 'snapshot', 'warm', 'render', 'world'].each { p ->
+  ['genome', 'count', 'terrain', 'grow', 'measure', 'workers', 'clear', 'stages', 'sleep', 'jfr', 'snapshot', 'warm', 'render', 'world', 'fps'].each { p ->
     if (project.hasProperty(p)) systemProperty "perf.$p", project.property(p)
   }
 }

@@ -68,6 +68,15 @@ object PlatformTuning {
      */
     var rustWorkerNice = 0
 
+    /**
+     * Ключи исполнения мира физики игры (PhysicsConfig, только EXECUTION_KEYS — например
+     * ISLANDS=0|1): на результат не влияют побитово, только на скорость. Пусто — как всегда.
+     * Ставит стенд замера на телефоне (PhonePerfLauncher, --es physics "ISLANDS=0"): режим
+     * островов по замеру в первые секунды двоит время шага от прогона к прогону (27.11), и для
+     * сравнения сборок его закрепляют. Читается при создании мира физики (WorldPhysics).
+     */
+    var physicsExecutionKeys: Map<String, String> = emptyMap()
+
     /** Сколько итераций воркер спинит, прежде чем парковаться. */
     val workerSpinLimit: Int
         get() = if (isMobile) 1_000 else 20_000

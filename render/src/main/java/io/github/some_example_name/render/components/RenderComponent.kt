@@ -26,6 +26,9 @@ class RenderContext {
      */
     var numInstances: Int = 0
 
+    /** Инстансов неподвижного слоя (CellGeometry.drawStatic): террейн и стенка у рамки, 27.11. */
+    var numStaticInstances: Int = 0
+
     /** Отставание кадра от снимка в долях тика — униформ u_lag, см. RenderFrame.interpolationLag. */
     var interpolationLag: Float = 0f
 

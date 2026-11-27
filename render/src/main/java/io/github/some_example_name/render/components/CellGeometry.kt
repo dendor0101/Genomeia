@@ -71,6 +71,15 @@ class CellGeometry {
     private var instanceCapacityBytes = 0
 
     /**
+     * Неподвижный слой (27.11): террейн и стенка у рамки в своём VBO и своём VAO с той же
+     * раскладкой. Снимок мира их больше не несёт — они не двигаются, и перекладывать десятки
+     * тысяч одинаковых инстансов каждый тик было бы впустую (замер на телефонах — TODO 11.3б).
+     */
+    private var staticVao = 0
+    private var staticVbo = 0
+    private var staticCapacityBytes = 0
+
+    /**
      * Геометрия одной клетки плюс раскладка инстансных атрибутов — всё в один VAO.
      *
      * VAO здесь не роскошь: в core-профиле десктопного GL нулевой VAO невалиден, то есть
@@ -82,14 +91,16 @@ class CellGeometry {
         val gl30 = Gdx.gl30
             ?: throw IllegalStateException("GL30 required for cell instancing")
 
-        val ids = BufferUtils.newIntBuffer(2)
-        gl.glGenBuffers(2, ids)
+        val ids = BufferUtils.newIntBuffer(3)
+        gl.glGenBuffers(3, ids)
         baseVbo = ids.get(0)
         instanceVbo = ids.get(1)
+        staticVbo = ids.get(2)
 
-        val vaoIds = BufferUtils.newIntBuffer(1)
-        gl30.glGenVertexArrays(1, vaoIds)
+        val vaoIds = BufferUtils.newIntBuffer(2)
+        gl30.glGenVertexArrays(2, vaoIds)
         vao = vaoIds.get(0)
+        staticVao = vaoIds.get(1)
 
         val corners = buildFan(HULL_SEGMENTS)
         hullVertexCount = corners.size / FAN_VERTEX_FLOATS
@@ -101,7 +112,15 @@ class CellGeometry {
         gl.glBindBuffer(GL20.GL_ARRAY_BUFFER, baseVbo)
         gl.glBufferData(GL20.GL_ARRAY_BUFFER, corners.size * 4, cornerBuffer, GL20.GL_STATIC_DRAW)
 
-        gl30.glBindVertexArray(vao)
+        setupVao(vao, instanceVbo)
+        setupVao(staticVao, staticVbo)
+    }
+
+    /** Раскладка атрибутов: веер [baseVbo] на вершину и инстансы [instances] на клетку — в [target]. */
+    private fun setupVao(target: Int, instances: Int) {
+        val gl = Gdx.gl
+        val gl30 = Gdx.gl30 ?: return
+        gl30.glBindVertexArray(target)
 
         // Базовая геометрия — на вершину.
         gl.glBindBuffer(GL20.GL_ARRAY_BUFFER, baseVbo)
@@ -111,7 +130,7 @@ class CellGeometry {
         )
 
         // Инстансные — на клетку. Делитель 1 означает «шаг раз в инстанс, а не в вершину».
-        gl.glBindBuffer(GL20.GL_ARRAY_BUFFER, instanceVbo)
+        gl.glBindBuffer(GL20.GL_ARRAY_BUFFER, instances)
         val stride = CellInstanceBuffer.STRUCT_SIZE
 
         gl.glEnableVertexAttribArray(A_CENTER)
@@ -219,33 +238,54 @@ class CellGeometry {
      * раз наш случай, кадр за кадром.
      */
     fun upload(data: ByteBuffer) {
+        instanceCapacityBytes = uploadInto(instanceVbo, instanceCapacityBytes, data, GL20.GL_STREAM_DRAW)
+    }
+
+    /**
+     * Залить неподвижный слой (террейн, стенка у рамки — 27.11): тот же формат инстансов, свой
+     * VBO. Заливается при новом мире или когда в кадр вошёл другой набор кусков террейна
+     * (VisibleCells), а не каждый снимок: GL_STATIC_DRAW.
+     */
+    fun uploadStatic(data: ByteBuffer) {
+        staticCapacityBytes = uploadInto(staticVbo, staticCapacityBytes, data, GL20.GL_STATIC_DRAW)
+    }
+
+    /** Байты [data] в буфер [vbo]; растёт новым glBufferData. Возвращает ёмкость буфера. */
+    private fun uploadInto(vbo: Int, capacity: Int, data: ByteBuffer, usage: Int): Int {
         val byteCount = data.remaining()
-        if (byteCount == 0) return
+        if (byteCount == 0) return capacity
 
         val gl = Gdx.gl
-        gl.glBindBuffer(GL20.GL_ARRAY_BUFFER, instanceVbo)
+        gl.glBindBuffer(GL20.GL_ARRAY_BUFFER, vbo)
 
-        if (byteCount > instanceCapacityBytes) {
-            var grown = if (instanceCapacityBytes == 0) {
+        var size = capacity
+        if (byteCount > capacity) {
+            var grown = if (capacity == 0) {
                 CellInstanceBuffer.INITIAL_CAPACITY * CellInstanceBuffer.STRUCT_SIZE
             } else {
-                instanceCapacityBytes
+                capacity
             }
             while (grown < byteCount) grown = (grown * 1.5).toInt().coerceAtLeast(byteCount)
 
-            gl.glBufferData(GL20.GL_ARRAY_BUFFER, grown, null, GL20.GL_STREAM_DRAW)
-            instanceCapacityBytes = grown
+            gl.glBufferData(GL20.GL_ARRAY_BUFFER, grown, null, usage)
+            size = grown
         }
 
         gl.glBufferSubData(GL20.GL_ARRAY_BUFFER, 0, byteCount, data)
         gl.glBindBuffer(GL20.GL_ARRAY_BUFFER, 0)
+        return size
     }
 
     /** Нарисовать [instances] клеток текущей привязанной программой. */
-    fun draw(instances: Int) {
+    fun draw(instances: Int) = drawVao(vao, instances)
+
+    /** Нарисовать [instances] инстансов неподвижного слоя ([uploadStatic]) той же программой. */
+    fun drawStatic(instances: Int) = drawVao(staticVao, instances)
+
+    private fun drawVao(target: Int, instances: Int) {
         if (instances <= 0) return
         val gl30 = Gdx.gl30 ?: return
-        gl30.glBindVertexArray(vao)
+        gl30.glBindVertexArray(target)
         gl30.glDrawArraysInstanced(GL20.GL_TRIANGLE_FAN, 0, hullVertexCount, instances)
         gl30.glBindVertexArray(0)
     }
@@ -258,9 +298,12 @@ class CellGeometry {
      */
     fun recreateAfterContextLoss() {
         vao = 0
+        staticVao = 0
         baseVbo = 0
         instanceVbo = 0
+        staticVbo = 0
         instanceCapacityBytes = 0
+        staticCapacityBytes = 0
         create()
     }
 
@@ -268,25 +311,30 @@ class CellGeometry {
         val gl = Gdx.gl
         val gl30 = Gdx.gl30
 
-        if (baseVbo != 0 || instanceVbo != 0) {
-            val deleteBuf = BufferUtils.newIntBuffer(2).apply {
+        if (baseVbo != 0 || instanceVbo != 0 || staticVbo != 0) {
+            val deleteBuf = BufferUtils.newIntBuffer(3).apply {
                 put(baseVbo)
                 put(instanceVbo)
+                put(staticVbo)
                 flip()
             }
-            gl.glDeleteBuffers(2, deleteBuf)
+            gl.glDeleteBuffers(3, deleteBuf)
             baseVbo = 0
             instanceVbo = 0
+            staticVbo = 0
             instanceCapacityBytes = 0
+            staticCapacityBytes = 0
         }
 
-        if (vao != 0 && gl30 != null) {
-            val deleteBuf = BufferUtils.newIntBuffer(1).apply {
+        if ((vao != 0 || staticVao != 0) && gl30 != null) {
+            val deleteBuf = BufferUtils.newIntBuffer(2).apply {
                 put(vao)
+                put(staticVao)
                 flip()
             }
-            gl30.glDeleteVertexArrays(1, deleteBuf)
+            gl30.glDeleteVertexArrays(2, deleteBuf)
             vao = 0
+            staticVao = 0
         }
     }
 

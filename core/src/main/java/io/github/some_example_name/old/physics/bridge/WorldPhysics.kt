@@ -71,7 +71,7 @@ class WorldPhysics(
     private val worldCommandsManager: WorldCommandsManager,
     private val workers: PhysicsWorkers?
 ) {
-    var bridge = PhysicsBridge(workers)
+    var bridge = PhysicsBridge(workers, executionConfig())
         private set
 
     /** Тип клетки «кость» (Bone) — по ключу: номер это место в реестре типов. */
@@ -124,11 +124,19 @@ class WorldPhysics(
         publish()
     }
 
+    /**
+     * Ключи мира физики от лаунчера — только исполнения островов (ISLANDS…): побитово мир тот же
+     * (PhysicsConfig.EXECUTION_KEYS), материал так подменить нельзя. См. PlatformTuning.physicsExecutionKeys.
+     */
+    private fun executionConfig() = io.github.some_example_name.physics.PhysicsConfig(
+        io.github.some_example_name.old.core.PlatformTuning.physicsExecutionKeys.filterKeys { it.startsWith("ISLANDS") }
+    )
+
     /** Новый мир физики: прежний мир игры стёрт (рестарт, новая карта, загрузка). */
     fun reset() {
         // Физика на Rust (RustEngine): память прежнего мира освобождается сразу — на Android до 13 нет Cleaner.
         bridge.world.close()
-        bridge = PhysicsBridge(workers)
+        bridge = PhysicsBridge(workers, executionConfig())
         boundsWidth = -1; boundsHeight = -1
         compactions = 0
         surfaceCompactions = -1
@@ -142,25 +150,47 @@ class WorldPhysics(
         publish()
     }
 
+    /**
+     * Время фазы ARRANGE по частям, нс с начала мира (замеры: стенд телефонов, PerfCheck):
+     * сверка игры с миром физики до шага, сам шаг и разбор после шага (позы в игру, смерти,
+     * поверхность, сетка игры). Три nanoTime на тик, как у профайлера фаз; на мир не влияет.
+     * Пишет поток симуляции, читать между тиками.
+     */
+    var syncInNanos = 0L
+        private set
+    var stepNanos = 0L
+        private set
+    var syncOutNanos = 0L
+        private set
+
     fun tick() {
+        val t0 = System.nanoTime()
         ensureCapacity()
         if (boundsWidth != gridManager.gridWidth || boundsHeight != gridManager.gridHeight) {
             boundsWidth = gridManager.gridWidth; boundsHeight = gridManager.gridHeight
             bridge.setBounds(boundsWidth.toFloat(), boundsHeight.toFloat())
         }
-        if (wallWidth != gridManager.gridWidth || wallHeight != gridManager.gridHeight) buildWall()
-        if (!terrain.built) buildTerrain()
+        var staticMoved = false
+        if (wallWidth != gridManager.gridWidth || wallHeight != gridManager.gridHeight) { buildWall(); staticMoved = true }
+        if (!terrain.built) { buildTerrain(); staticMoved = true }
+        // Стенка и кромка только что получили клетку сетки по месту в мире физики (updateCell):
+        // неподвижный слой сетки игры раскладывается заново — раз на мир.
+        if (staticMoved) particleEntity.bakeStaticGrid()
         removeGone()
         spawnNewOrganisms()
         syncOrganisms()
         syncSubstances()
         sticks.sync(bridge.world)
         pushEnvironment()
+        val t1 = System.nanoTime()
         bridge.step()
+        val t2 = System.nanoTime()
         publish()
         reportDeaths()
         syncSurface()
         updateGrid()
+        val t3 = System.nanoTime()
+        syncInNanos += t1 - t0; stepNanos += t2 - t1; syncOutNanos += t3 - t2
     }
 
     /**

@@ -101,7 +101,7 @@ class DebugCellPaletteTest {
         // прошлом центре, по прошлому направлению.
         val overlay = OverlayInstanceBuffer(initialCapacity = 1)
         overlay.begin()
-        val sink = OverlayMotionSink().apply { target = overlay }
+        val sink = OverlayMotionSink()
 
         val angle = 1.0
         val prevAngle = 0.8
@@ -114,6 +114,7 @@ class DebugCellPaletteTest {
             prevX, prevY, cos(prevAngle).toFloat(), sin(prevAngle).toFloat()
         )
         palette.writeArrow(sink, x, y, cos(angle).toFloat(), sin(angle).toFloat(), radius = 0.5f, signal = 0f)
+        overlay.putAll(sink.ints, 0, sink.count)
         val data = overlay.end()
 
         // Начало — центр клетки: в прошлом тике он был в прошлом центре.
@@ -129,12 +130,13 @@ class DebugCellPaletteTest {
     fun `кольца феромонов стоят, связи едут прошлыми позициями своих концов`() {
         val overlay = OverlayInstanceBuffer(initialCapacity = 1)
         overlay.begin()
-        val sink = OverlayMotionSink().apply { target = overlay }
+        val sink = OverlayMotionSink()
 
         sink.still()
         sink.add(1f, 2f, 3f, 0f, 0, 0)
         sink.points(-0.5f, 0f, 1f, 1.25f)
         palette.writeNeuralLink(sink, 0f, 0f, 1f, 1f, color = 0, signal = 0f, seed = 1)
+        overlay.putAll(sink.ints, 0, sink.count)
         val data = overlay.end()
 
         assertEquals(1f, data.getFloat(OverlayInstanceBuffer.OFFSET_PREV_FROM), "кольцо стоит")
