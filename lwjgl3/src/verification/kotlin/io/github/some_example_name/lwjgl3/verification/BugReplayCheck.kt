@@ -562,9 +562,16 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
         val FLING_EVERY = System.getProperty("bugReplayCheck.flingEvery")?.toIntOrNull() ?: 0
         val SPAWN_EVERY = System.getProperty("bugReplayCheck.spawnEvery")?.toIntOrNull() ?: 0
 
-        const val TIMEOUT_NS = 300_000_000_000L
+        val TIMEOUT_NS = timeoutNanos()
     }
 }
+
+/**
+ * Сколько ждать сценарий или повтор: 300 с, а с тенью физики на Rust (`-PrustShadow`, RUST_PORT.md) — сколько велит
+ * `bugReplayCheck.timeoutSec`: тень сверяет отпечаток мира каждый тик, и тик на мире с рельефом медленнее в разы.
+ */
+private fun timeoutNanos(): Long =
+    (System.getProperty("bugReplayCheck.timeoutSec")?.toLongOrNull() ?: 300L) * 1_000_000_000L
 
 /** Повтор: ждём итог BugReplay и выходим с его кодом. */
 private class Replayer(private val game: MyGame, private val bug: File) : ApplicationListener by game {
@@ -600,6 +607,6 @@ private class Replayer(private val game: MyGame, private val bug: File) : Applic
     }
 
     private companion object {
-        const val TIMEOUT_NS = 300_000_000_000L
+        val TIMEOUT_NS = timeoutNanos()
     }
 }
