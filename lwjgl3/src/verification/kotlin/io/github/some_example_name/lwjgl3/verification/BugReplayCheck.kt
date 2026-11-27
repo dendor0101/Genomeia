@@ -219,6 +219,9 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
     private var plantExpected = 0
     private var plantWhere = ""
 
+    // Ожидание новой сессии мира (untilNewSession): эпоха журнала до старта или рестарта мира, -1 — не ждём.
+    private var waitSessionAfter = -1
+
     override fun render() {
         try {
             game.render()
@@ -230,7 +233,12 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 check(System.nanoTime() - startedAt < TIMEOUT_NS) { "сценарий завис на шаге $step" }
                 return
             }
+            if (waitSessionAfter >= 0 && !newSessionTicked(waitSessionAfter)) {
+                check(System.nanoTime() - startedAt < TIMEOUT_NS) { "сценарий завис на шаге $step" }
+                return
+            }
             waitUntilTick = -1
+            waitSessionAfter = -1
             advance()
         } catch (e: Throwable) {
             e.printStackTrace()
@@ -316,6 +324,8 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                     WorldEdit.Stroke(41, 41, 4, erase = false, circle = true),
                     WorldEdit.Stroke(90, 90, 4, erase = true, circle = true),
                 ) + SPAWN_CLEARINGS.map { (gx, gy) -> WorldEdit.Stroke(gx, gy, SPAWN_CLEAR_BRUSH, erase = true, circle = true) })
+                // Касания шага 5 — только в начавшейся сессии мира (untilNewSession).
+                untilNewSession()
                 navigation.performCommand(GoSimulation(world, null))
                 pause(5)
             }
@@ -431,10 +441,11 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 untilTick(data.tickCounter + 240)
             }
 
-            // Рестарт: новая сессия мира со своим сидом.
+            // Рестарт: новая сессия мира со своим сидом. Его делает поток симуляции на своём тике —
+            // ждём рестарт, а не кадры (untilNewSession).
             12 -> {
+                untilNewSession()
                 screen(SimulationIntent.Restart)
-                pause(10)
             }
             13 -> {
                 plantTaps(SPAWN.take(2).map { (x, y) -> (x + 5f) to (y + 5f) }, "шаг 13, после рестарта") { null }
@@ -526,6 +537,24 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
 
     private fun untilTick(tick: Int) {
         waitUntilTick = tick
+    }
+
+    /**
+     * Ждать, пока мир начнёт новую сессию и пройдёт в ней первый тик; вызывать до команды, которая её
+     * начинает. Сессию начинает поток симуляции (старт мира — сразу при запуске потока, рестарт — на
+     * ближайшем своём тике), и начало сессии очищает очередь команд игрока (UserCommandManager.startSession):
+     * касание, поставленное раньше, молча пропадает. 27.11 так терялась посадка шага 13 при -PspawnGrid=4:
+     * шаг 12 ждал рестарт десятью кадрами, а тик большого мира дольше. Эпоха журнала растёт в начале
+     * сессии, ещё до очистки очереди, поэтому ждём и первый тик: счётчик тиков растёт в tick() под тем
+     * же замком, что берёт betweenTicks.
+     */
+    private fun untilNewSession() {
+        waitSessionAfter = SessionJournal.epoch
+    }
+
+    private fun newSessionTicked(epochBefore: Int): Boolean {
+        val c = DISimulationContainer
+        return c.simulationSystem.betweenTicks { SessionJournal.epoch != epochBefore && c.simulationData.tickCounter >= 1 }
     }
 
     /**
