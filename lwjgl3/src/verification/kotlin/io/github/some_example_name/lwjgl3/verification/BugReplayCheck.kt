@@ -212,10 +212,18 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
     private lateinit var blockedTemp: File
     private var startedAt = System.nanoTime()
 
+    // Сверка посадки (plantTaps): с какого тика сверять (-1 — нечего), сколько организмов было до
+    // касаний, сколько касаний и чьих.
+    private var plantCheckTick = -1
+    private var plantBefore = 0
+    private var plantExpected = 0
+    private var plantWhere = ""
+
     override fun render() {
         try {
             game.render()
             frames++
+            if (plantCheckTick >= 0 && DISimulationContainer.simulationData.tickCounter >= plantCheckTick) checkPlanted()
             if (!cellLabs.update()) return
             if (frames < waitUntilFrame) return
             if (waitUntilTick >= 0 && DISimulationContainer.simulationData.tickCounter < waitUntilTick) {
@@ -299,12 +307,15 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 screen(WorldEditorIntent.Paint(41, 41))
                 screen(WorldEditorIntent.SetErasing(true))
                 screen(WorldEditorIntent.Paint(90, 90))
+                // Поляны под точками посадки: на рельефе касание организм не сажает (см. plantTaps).
+                screen(WorldEditorIntent.SetBrushSize(SPAWN_CLEAR_BRUSH))
+                for ((gx, gy) in SPAWN_CLEARINGS) screen(WorldEditorIntent.Paint(gx, gy))
                 // Кнопка «Создать мир» — сама навигация, рецепт — то, что сейчас в редакторе.
                 val world = WorldSpec(WorldSpec.mapCells(256), WorldSpec.mapCells(256), "31415926", 9, 0, listOf(
                     WorldEdit.Stroke(40, 40, 4, erase = false, circle = true),
                     WorldEdit.Stroke(41, 41, 4, erase = false, circle = true),
                     WorldEdit.Stroke(90, 90, 4, erase = true, circle = true),
-                ))
+                ) + SPAWN_CLEARINGS.map { (gx, gy) -> WorldEdit.Stroke(gx, gy, SPAWN_CLEAR_BRUSH, erase = true, circle = true) })
                 navigation.performCommand(GoSimulation(world, null))
                 pause(5)
             }
@@ -346,9 +357,7 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 val spawnOnly = SPAWN_GENOME?.let { name ->
                     GenomeCatalog.all().indexOf(name).also { check(it >= 0) { "нет генома $name" } }
                 }
-                SPAWN.forEachIndexed { i, (x, y) ->
-                    DISimulationContainer.userCommandManager.push(PlayerCommand.Tap(x, y, genomeIndex = spawnOnly ?: baked[i % baked.size]))
-                }
+                plantTaps(SPAWN, "шаг 5") { i -> spawnOnly ?: baked[i % baked.size] }
                 if (KILL_EVERY > 0 || FLING_EVERY > 0 || SPAWN_EVERY > 0) {
                     DISimulationContainer.userCommandManager.push(PlayerCommand.SetStress(KILL_EVERY, FLING_EVERY, SPAWN_EVERY))
                 }
@@ -428,7 +437,7 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 pause(10)
             }
             13 -> {
-                SPAWN.take(2).forEach { (x, y) -> DISimulationContainer.userCommandManager.push(PlayerCommand.Tap(x + 5f, y + 5f)) }
+                plantTaps(SPAWN.take(2).map { (x, y) -> (x + 5f) to (y + 5f) }, "шаг 13, после рестарта") { null }
                 untilTick(data.tickCounter + GROW_TICKS)
             }
 
@@ -519,6 +528,36 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
         waitUntilTick = tick
     }
 
+    /**
+     * Посадка касаниями — со сверкой, что организмы сели. Касание по рельефу организм не сажает
+     * (UserCommandManager.canSpawnAt), и сценарий, чьи точки легли на рельеф, тихо пустел: 27.11 после
+     * запекания рельефа в неподвижный слой сетки (016b59ad) из шести организмов главного мира садился
+     * один. До того первый тик мира сажал их прямо в толщу: рельеф попадал в сетку поиска только в
+     * конце тика, после команд игрока. Отсюда поляны [SPAWN_CLEARINGS] и сверка через пару тиков после
+     * касаний: организмов прибавилось не меньше, чем касаний (больше можно: продюсеры, -PspawnEvery).
+     */
+    private fun plantTaps(points: List<Pair<Float, Float>>, where: String, genomeIndex: (Int) -> Int?) {
+        val c = DISimulationContainer
+        plantBefore = c.simulationSystem.betweenTicks { c.organEntity.aliveList.size }
+        points.forEachIndexed { i, (x, y) -> c.userCommandManager.push(PlayerCommand.Tap(x, y, genomeIndex = genomeIndex(i))) }
+        plantExpected = points.size
+        plantWhere = where
+        // Касание применяется в первом тике после постановки в очередь; запас — на то, что кадр видит тик с опозданием.
+        plantCheckTick = c.simulationData.tickCounter + 3
+    }
+
+    /** Сверка [plantTaps]. Под убийствами и бросками (-PkillEvery, -PflingEvery) организм вправе погибнуть раньше — не сверяем. */
+    private fun checkPlanted() {
+        plantCheckTick = -1
+        if (KILL_EVERY > 0 || FLING_EVERY > 0) return
+        val c = DISimulationContainer
+        val planted = c.simulationSystem.betweenTicks { c.organEntity.aliveList.size } - plantBefore
+        check(planted >= plantExpected) {
+            "$plantWhere: касаниями посажено организмов $planted из $plantExpected — точка посадки на рельефе? (SPAWN, SPAWN_CLEARINGS)"
+        }
+        println("Посадка ($plantWhere): сели $planted из $plantExpected")
+    }
+
     companion object {
         /** Настройки мира шага 7: множители среды физики (стандарт 1) и гравитация, клеток в с². */
         val WORLD_RULES = listOf(
@@ -526,19 +565,34 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
         )
         const val LEAF_MAX_ENERGY = 8f
 
-        /**
-         * Организмы стоят плотно: столкновения тел — то место, где порядок потоков мог бы
-         * просочиться в мир. -PspawnGrid=N ставит их сеткой N×N.
-         */
         /** Картинка 1×1 PNG для проверки перепаковки. */
         val TEST_PNG: ByteArray = java.util.Base64.getDecoder()
             .decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
 
+        /**
+         * Организмы стоят плотно: столкновения тел — то место, где порядок потоков мог бы
+         * просочиться в мир. -PspawnGrid=N ставит их сеткой N×N.
+         */
         val SPAWN: List<Pair<Float, Float>> = run {
             val n = System.getProperty("bugReplayCheck.spawnGrid")?.toIntOrNull() ?: 2
             val step = 150f / n
             List(n * n) { i -> (25f + step * (i % n) + step / 2) to (25f + step * (i / n) + step / 2) }
         }
+
+        /**
+         * Поляны под точками [SPAWN] — ячейки карты редактора, где кисть [SPAWN_CLEAR_BRUSH] стирает рельеф
+         * (шаг 4). Карта мельче мира в полтора раза (WorldSpec.MAP_CELLS_PER_WORLD_CELL). Без полян точки
+         * ложатся на рельеф сида 31415926, и касание организм не сажает (см. Recorder.plantTaps).
+         */
+        val SPAWN_CLEARINGS: List<Pair<Int, Int>> = SPAWN.map { (x, y) ->
+            (x * WorldSpec.MAP_CELLS_PER_WORLD_CELL).toInt() to (y * WorldSpec.MAP_CELLS_PER_WORLD_CELL).toInt()
+        }
+
+        /**
+         * Радиус поляны в ячейках карты: 18 — это 12 клеток мира. Внутри и точка шага 13 (сдвиг на 5, 5 —
+         * в 7 клетках от центра), а соседние поляны не сливаются и при -PspawnGrid=4 (шаг сетки 37.5 клетки).
+         */
+        const val SPAWN_CLEAR_BRUSH = 18
 
         /** Сколько тиков разбрасывать клетки, затем убивать: -PstressTicks=300. */
         val STRESS_TICKS = System.getProperty("bugReplayCheck.stressTicks")?.toIntOrNull() ?: 0
