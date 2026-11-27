@@ -86,15 +86,15 @@ class MenuScreen : VisDslScreen(
             visTextButton(bundle.get("button.editor"), onClick = { browseGenomes() }) { growX() }
             row()
 
-            visTextButton("Logic", onClick = {
+            visTextButton("Guides", onClick = {
                 //navigation.performCommand(GoLogic)
                 menuViewModel.handle(MenuIntent.OpenLogic)
-            })
+            }) { growX() }
             row()
 
             visTextButton("Level Editor", onClick = {
                 menuViewModel.handle(MenuIntent.OpenLevelEditor)
-            })
+            }) { growX() }
             row()
 
             visTextButton(bundle.get("button.options"), onClick = {

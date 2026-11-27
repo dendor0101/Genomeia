@@ -537,7 +537,7 @@ class SimulationScreen(
             // а стек остаётся от прошлого маршрута — «Назад» в меню уводило бы туда,
             // откуда игрок уже вышел.
             DIGameGlobalContainer.navigationCommandsManager.performCommand(
-                nav
+                GoBack
             )
         }
 

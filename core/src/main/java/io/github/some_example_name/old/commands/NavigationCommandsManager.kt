@@ -85,6 +85,16 @@ class NavigationCommandsManager {
                     currentCommand = commandStack.removeLastOrNull()
                     current?.dispose()
                     currentCommand?.name ?: GoMenu.name
+                } else if (game.screen is SimulationScreen) {
+                    // Уровень мог быть запущен через GoReplace (например, «Сохранить и
+                    // протестировать» из редактора генома). Стека в этом случае нет, но
+                    // «Назад» в симуляции не должен закрывать игру — уводим в меню.
+                    val old = game.screen
+                    clearStack()
+                    currentCommand = GoMenu
+                    game.screen = createScreen(GoMenu)
+                    old?.dispose()
+                    GoMenu.name
                 } else {
                     exitGame()
                     EXIT

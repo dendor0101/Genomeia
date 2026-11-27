@@ -9332,6 +9332,7 @@
     "spawnX": 64.0,
     "spawnY": 64.0,
     "spawnRadius": 4.0,
+    "isBuiltin": true,
     "scriptedOrganisms": [
         {
             "genomeName": "Antestor",

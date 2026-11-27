@@ -165,7 +165,7 @@ fun Stage.saveDialog(
         onSaveAndTest = { name ->
             editorLogicSystem.putUiCommand(SaveGenome(name))
             navigationCommandsManager.performCommand(
-                GoReplace(GoSimulation(world = null, genomeName = name, level = level))
+                GoSimulation(world = null, genomeName = name, level = level)
             )
         },
         onSaveAndExport = { name ->
@@ -174,7 +174,7 @@ fun Stage.saveDialog(
         },
         onGoMenu = {
             navigationCommandsManager.performCommand(
-                GoReplace(level?.let { GoSimulation(world = null, genomeName = null, level = it) } ?: GoMenu)
+                level?.let { GoSimulation(world = null, genomeName = null, level = it) } ?: GoReplace(GoMenu)
             )
         },
         isGoToMenu = isGoToMenu,
