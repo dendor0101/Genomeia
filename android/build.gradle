@@ -67,6 +67,24 @@ android {
       minifyEnabled true
       proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), 'proguard-rules.pro'
     }
+    // Проверка релизной сборки на телефоне (R8 и всё остальное — как у release), но подписана отладочным ключом и
+    // ставится рядом с игрой: установленную игру игрока не трогает. Со стендом замера (src/perf) — та же сцена и тот
+    // же хэш мира, что у perf, но после R8: am start -n io.github.some_example_name.rc/io.github.some_example_name
+    // .android.PhonePerfLauncher … (ключи — в PhonePerfLauncher).
+    releaseCheck {
+      initWith release
+      applicationIdSuffix '.rc'
+      versionNameSuffix '-rc'
+      manifestPlaceholders = [appLabel: 'Genomeia RC']
+      matchingFallbacks = ['release']
+      signingConfig signingConfigs.debug
+    }
+  }
+  sourceSets {
+    releaseCheck {
+      java.srcDirs += ['src/perf/java']
+      manifest.srcFile 'src/perf/AndroidManifest.xml'
+    }
   }
 
   kotlin.compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)

@@ -176,6 +176,16 @@ tasks.register('cargoBuildAndroid', Exec) {
     exclude 'target/**'
   })
   outputs.file(physicsAndroidLib)
+  // Страницы 16 КБ (Android 15+ на части телефонов; Google Play требует этого от нативного кода): NDK r27 выравнивает
+  // сегменты по 4 КБ, и на таком телефоне библиотека не загрузится — игра тихо уйдёт на Kotlin. libGDX уже по 16 КБ.
+  // Код и биты те же, меняется только выравнивание сегментов в файле. Свойство — вход задачи: смена флагов пересобирает.
+  def pageFlags = '-C link-arg=-Wl,-z,max-page-size=16384'
+  inputs.property('rustflags', pageFlags)
+  environment 'CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS', pageFlags
+  // В APK — без отладочных секций (8.7 → около 1.5 МБ, игроку незачем), но с таблицей символов: simpleperf на телефоне
+  // по-прежнему видит имена функций. Сборка для ПК (cargoBuild) остаётся с номерами строк для профиля.
+  inputs.property('strip', 'debuginfo')
+  environment 'CARGO_PROFILE_RELEASE_STRIP', 'debuginfo'
   commandLine((cargo ?: 'cargo').toString(), 'build', '--release', '-p', 'genomeia-physics-jni', '--target', androidTarget)
   doFirst {
     if (cargo == null) throw new GradleException('нет cargo: нужен Rust (rustup), см. RUST_PORT.md')

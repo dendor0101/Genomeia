@@ -93,6 +93,74 @@ class PhysicsWorld(
      */
     private val skipsNoOp: Boolean get() = engine != null
 
+    /**
+     * Топология для отладочной отрисовки игры (галочки «Связи» — WorldPhysics.linkParticles, «Заливка областей» —
+     * DebugAreaCache): смежность вершин и живость рёбер, треугольники вершин, их живость и вершины треугольников тела —
+     * те же массивы и тот же смысл, что у BakedTopology и BodyDefinition, только для чтения. С Kotlin — массивы самого
+     * мира, без копий; с движком Rust — копия из мира Rust при каждом запросе. Запрашивают только при включённой
+     * галочке; цена с Rust — около 0.5 МБ копий на 10 тыс. клеток (связи — каждый запрос; треугольники — только когда
+     * сменилась их ревизия или число частиц).
+     */
+    class DebugTopology internal constructor() {
+        var vertStart = IntArray(1); internal set
+        var vertOther = IntArray(0); internal set
+        var vertEdge = IntArray(0); internal set
+        var edgeDead = BooleanArray(0); internal set
+        var vertexTriStart = IntArray(1); internal set
+        var vertexTriangles = IntArray(0); internal set
+        var triAlive = BooleanArray(0); internal set
+        var triB = IntArray(0); internal set
+        var triC = IntArray(0); internal set
+        var triangleRevision = 0L; internal set
+        internal var trianglesOfN = -1
+    }
+
+    private val debugTopology = DebugTopology()
+
+    /** Смежность вершин и живость рёбер ([DebugTopology]); у пустого мира (тел ещё нет) — пустая. */
+    fun debugLinks(): DebugTopology {
+        val t = debugTopology
+        if (state.n == 0) return t
+        val e = engine
+        if (e == null) {
+            val b = state.baked
+            t.vertStart = b.vertStart; t.vertOther = b.vertOther; t.vertEdge = b.vertEdge; t.edgeDead = b.edgeDead
+            return t
+        }
+        t.vertStart = fitted(t.vertStart, e.topologyIntsLength(1)).also { e.readInts(1, it) }
+        t.vertOther = fitted(t.vertOther, e.topologyIntsLength(2)).also { e.readInts(2, it) }
+        t.vertEdge = fitted(t.vertEdge, e.topologyIntsLength(3)).also { e.readInts(3, it) }
+        t.edgeDead = fitted(t.edgeDead, e.topologyBoolsLength(4)).also { e.readBools(4, it) }
+        return t
+    }
+
+    /** Треугольники вершин, их живость, вершины треугольников тела и ревизия ([DebugTopology]). */
+    fun debugTriangles(): DebugTopology {
+        val t = debugTopology
+        if (state.n == 0) return t
+        val e = engine
+        if (e == null) {
+            val b = state.baked
+            t.vertexTriStart = b.vertexTriStart; t.vertexTriangles = b.vertexTriangles; t.triAlive = b.triAlive
+            t.triB = state.body.triB; t.triC = state.body.triC; t.triangleRevision = b.triangleRevision
+            return t
+        }
+        // Ревизия меняется при каждой гибели и оживлении треугольника, число частиц — при подсадке и уплотнении:
+        // без них копировать нечего.
+        val revision = e.triangleRevision
+        if (revision == t.triangleRevision && state.n == t.trianglesOfN) return t
+        t.vertexTriStart = fitted(t.vertexTriStart, e.topologyIntsLength(4)).also { e.readInts(4, it) }
+        t.vertexTriangles = fitted(t.vertexTriangles, e.topologyIntsLength(5)).also { e.readInts(5, it) }
+        t.triAlive = fitted(t.triAlive, e.topologyBoolsLength(5)).also { e.readBools(5, it) }
+        t.triB = fitted(t.triB, e.topologyIntsLength(6)).also { e.readInts(6, it) }
+        t.triC = fitted(t.triC, e.topologyIntsLength(7)).also { e.readInts(7, it) }
+        t.triangleRevision = revision; t.trianglesOfN = state.n
+        return t
+    }
+
+    private fun fitted(a: IntArray, n: Int) = if (a.size == n) a else IntArray(n)
+    private fun fitted(a: BooleanArray, n: Int) = if (a.size == n) a else BooleanArray(n)
+
     /** Параметры, которые с движком Rust не хранит состояние Kotlin (их геттеры читает игра). */
     private var engineSleepOn = state.sleep.on
     private var engineDeepKillOn = state.deepKillOn

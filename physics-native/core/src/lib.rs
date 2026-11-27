@@ -18,4 +18,4 @@ pub mod topology;
 pub mod world;
 
 /// Версия двоичного договора с обвязкой Kotlin (`RustPhysics.ABI_VERSION`).
-pub const ABI_VERSION: i32 = 8;
+pub const ABI_VERSION: i32 = 9;

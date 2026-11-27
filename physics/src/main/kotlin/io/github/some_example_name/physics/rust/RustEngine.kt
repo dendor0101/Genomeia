@@ -43,6 +43,13 @@ object RustEngine {
     @Volatile private var reported = false
 
     /**
+     * Движок новых миров этого процесса — для отчёта `.bug` («rust» или «kotlin»), без строки в лог и без загрузки
+     * библиотеки, если Rust не просили. Мир у обоих движков побитово один, повтор идёт на любом; поле — чтобы знать, на
+     * чём случились падение или тормоза.
+     */
+    val name: String get() = if (preferRust && RustPhysics.available) "rust" else "kotlin"
+
+    /**
      * Освободить мир Rust, когда сборщик заберёт его фасад [owner]: подстраховка к явному PhysicsWorld.close. Cleaner есть
      * на Android с API 33; раньше — только явный close (игра зовёт его при новой сессии, WorldPhysics.reset).
      */

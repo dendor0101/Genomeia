@@ -770,10 +770,9 @@ class WorldPhysics(
         // Пустой мир (до первой подсадки): топологии ещё нет — baked не заведён.
         if (organsWithBody.size == 0) return
         val world = bridge.world
-        // Физика на Rust (RustEngine): топологии в зеркале нет — отладочные связи пока не рисуются.
-        if (world.isRustEngine) return
         val st = world.state
-        val b = st.baked
+        // Топология — у мира Kotlin его же массивы, у физики на Rust — копия из Rust (только при этой галочке).
+        val b = world.debugLinks()
         for (k in 0 until organsWithBody.size) {
             val organ = organsWithBody.getInt(k)
             val first = bridge.particleOf(organ, 0)

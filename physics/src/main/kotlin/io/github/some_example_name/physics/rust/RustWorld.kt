@@ -205,6 +205,15 @@ class RustWorld(template: BodyState, scale: WorldScale? = template.worldScale) :
     fun neighbor(cell: Int, k: Int): Int = call(142, cell, k).toInt()
     fun isJointLive(id: Int): Boolean = call(143, id) != 0.0
 
+    /**
+     * Топология для отладочной отрисовки (PhysicsWorld.debugLinks/debugTriangles): длина массива целых [which] (1
+     * vertStart, 2 vertOther, 3 vertEdge, 4 vertexTriStart, 5 vertexTriangles, 6 triB, 7 triC) или признаков (4
+     * edgeDead, 5 triAlive); сами массивы — [readInts]/[readBools] с тем же номером, целиком.
+     */
+    fun topologyIntsLength(which: Int): Int = call(144, which).toInt()
+    fun topologyBoolsLength(which: Int): Int = call(145, which).toInt()
+    val triangleRevision: Long get() = call(146).toLong()
+
     companion object {
         /**
          * Разобранные параметры решателя в порядке `Config::from_slice` (physics-native/core/src/config.rs). Длина и

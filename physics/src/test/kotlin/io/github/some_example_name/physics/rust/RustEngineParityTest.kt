@@ -79,6 +79,32 @@ class RustEngineParityTest {
         assertEquals("$what: deepKillOn", k.deepKillOn, r.deepKillOn)
         assertEquals("$what: sleepOn", k.sleepOn, r.sleepOn)
         assertEquals("$what: свободных", k.freeCount, r.freeCount)
+        sameDebugTopology(k, r, what, n)
+    }
+
+    /**
+     * Топология отладочной отрисовки (галочки «Связи» и «Заливка областей»): ровно то, что из неё читают мост
+     * (WorldPhysics.linkParticles) и DebugAreaCache, — у Rust это копия из Rust (PhysicsWorld.debugLinks/debugTriangles).
+     */
+    private fun sameDebugTopology(k: PhysicsWorld, r: PhysicsWorld, what: String, n: Int) {
+        val kl = k.debugLinks(); val rl = r.debugLinks()
+        for (i in 0..n) assertEquals("$what: vertStart[$i]", kl.vertStart[i], rl.vertStart[i])
+        for (q in 0 until kl.vertStart[n]) {
+            assertEquals("$what: vertOther[$q]", kl.vertOther[q], rl.vertOther[q])
+            assertEquals("$what: vertEdge[$q]", kl.vertEdge[q], rl.vertEdge[q])
+            assertEquals("$what: edgeDead[${kl.vertEdge[q]}]", kl.edgeDead[kl.vertEdge[q]], rl.edgeDead[rl.vertEdge[q]])
+        }
+        val kt = k.debugTriangles(); val rt = r.debugTriangles()
+        assertEquals("$what: triangleRevision", kt.triangleRevision, rt.triangleRevision)
+        for (i in 0..n) assertEquals("$what: vertexTriStart[$i]", kt.vertexTriStart[i], rt.vertexTriStart[i])
+        for (q in 0 until kt.vertexTriStart[n]) {
+            val c = kt.vertexTriangles[q]
+            assertEquals("$what: vertexTriangles[$q]", c, rt.vertexTriangles[q])
+            val t = c / 3
+            assertEquals("$what: triAlive[$t]", kt.triAlive[t], rt.triAlive[t])
+            assertEquals("$what: triB[$t]", kt.triB[t], rt.triB[t])
+            assertEquals("$what: triC[$t]", kt.triC[t], rt.triC[t])
+        }
     }
 
     private inline fun both(k: PhysicsWorld, r: PhysicsWorld, what: String, op: (PhysicsWorld) -> Unit) {

@@ -387,7 +387,8 @@ pub extern "system" fn Java_io_github_some_1example_1name_physics_rust_RustPhysi
             1 => st.cell_unborn[..st.n].iter().map(|&v| v as jboolean).collect(),
             2 => st.cell_no_contact[..st.n].iter().map(|&v| v as jboolean).collect(),
             3 => (0..st.n).map(|i| st.sleep.is_asleep(st.organism_of[i]) as jboolean).collect(),
-            _ => panic!("worldReadBools: неизвестный массив {which}"),
+            // Топология для отладочной отрисовки — массив целиком (длина — операция 145 worldCall).
+            _ => topo_bools(st, which).iter().map(|&v| v as jboolean).collect(),
         };
         env.set_boolean_array_region(&out, 0, &bytes).expect("set boolean[]");
     })
@@ -405,12 +406,39 @@ pub extern "system" fn Java_io_github_some_1example_1name_physics_rust_RustPhysi
     guard(&mut env, (), |env| {
         // SAFETY: handle — живой мир.
         let st = &unsafe { world(handle) }.state;
-        let src = match which {
-            0 => &st.bone_of,
-            _ => panic!("worldReadInts: неизвестный массив {which}"),
+        let src: &[i32] = match which {
+            0 => &st.bone_of[..st.n],
+            // Топология для отладочной отрисовки — массив целиком (длина — операция 144 worldCall).
+            _ => topo_ints(st, which),
         };
-        env.set_int_array_region(&out, 0, &src[..st.n]).expect("set int[]");
+        env.set_int_array_region(&out, 0, src).expect("set int[]");
     })
+}
+
+/// Целые массивы топологии для отладочной отрисовки (галочки «Связи» и «Заливка областей» в игре; PhysicsWorld
+/// .debugLinks/debugTriangles): 1 vertStart, 2 vertOther, 3 vertEdge, 4 vertexTriStart, 5 vertexTriangles,
+/// 6 triB и 7 triC описания тела — как массивы BakedTopology и BodyDefinition у Kotlin.
+fn topo_ints(st: &genomeia_physics::state::BodyState, which: i32) -> &[i32] {
+    let b = &st.baked;
+    match which {
+        1 => &b.vert_start,
+        2 => &b.vert_other,
+        3 => &b.vert_edge,
+        4 => &b.vertex_tri_start,
+        5 => &b.vertex_triangles,
+        6 => &st.body.tri_b,
+        7 => &st.body.tri_c,
+        _ => panic!("топология: неизвестный массив целых {which}"),
+    }
+}
+
+/// Признаки топологии для отладочной отрисовки: 4 edgeDead, 5 triAlive.
+fn topo_bools(st: &genomeia_physics::state::BodyState, which: i32) -> &[bool] {
+    match which {
+        4 => &st.baked.edge_dead,
+        5 => &st.baked.tri_alive,
+        _ => panic!("топология: неизвестный массив признаков {which}"),
+    }
 }
 
 /// Зеркало для игры, одна частица [i] после правки между тиками: в outF — px, py, vx, vy, cellScale,
@@ -616,6 +644,11 @@ fn call(w: &mut PhysicsWorld, op: i32, i: i32, j: i32, a: f64, b: f64, c: f64, d
         141 => return (w.state.baked.vert_start[iu + 1] - w.state.baked.vert_start[iu]) as f64,
         142 => return w.state.baked.vert_other[(w.state.baked.vert_start[iu] + j) as usize] as f64,
         143 => return yes(i >= 0 && iu < w.state.joint_slots && w.state.joint_live[iu]),
+        // Топология для отладочной отрисовки (PhysicsWorld.debugLinks/debugTriangles): длины массивов, которые отдают
+        // worldReadInts (номера 1–7) и worldReadBools (4–5), и ревизия треугольников.
+        144 => return topo_ints(&w.state, i).len() as f64,
+        145 => return topo_bools(&w.state, i).len() as f64,
+        146 => return w.state.baked.triangle_revision as f64,
         _ => panic!("worldCall: неизвестная операция {op}"),
     }
     0.0
