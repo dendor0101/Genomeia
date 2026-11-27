@@ -48,6 +48,7 @@ import io.github.some_example_name.old.features.levels.dialogs.LevelFailDialog
 import io.github.some_example_name.old.game.applyCustomFontMedium
 import io.github.some_example_name.old.systems.genomics.library.GenomeCatalog
 import io.github.some_example_name.old.systems.logic.LevelHud
+import io.github.some_example_name.old.systems.logic.LevelRules
 import io.github.some_example_name.old.systems.simulation.ControllerKeys
 import io.github.some_example_name.render.debug.RenderSceneDump
 import java.io.File
@@ -494,8 +495,13 @@ class SimulationScreen(
         rules.clearFail()
         if (!viewModel.isPaused) viewModel.handle(SimulationIntent.SetPaused(true))
 
+        // Без своего текста правила кладут ключ бандла (см. LevelRules.failReason).
+        val reasonText = when (reason) {
+            LevelRules.FAIL_DEFAULT_KEY, LevelRules.FAIL_TIMEOUT_KEY -> DIGameGlobalContainer.bundle.get(reason)
+            else -> reason
+        }
         LevelFailDialog(
-            reason = reason,
+            reason = reasonText,
             onRetry = {
                 failShown = false
                 viewModel.handle(SimulationIntent.Restart)

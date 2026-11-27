@@ -7,6 +7,7 @@ import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisSelectBox
 import com.kotcrab.vis.ui.widget.VisTable
 import com.kotcrab.vis.ui.widget.VisTextField
+import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
 import io.github.some_example_name.old.core.ui.dp
 import io.github.some_example_name.old.core.ui.makeStyledButton
@@ -26,7 +27,7 @@ class ScriptedOrganismDialog(
     private val defaultX: Float,
     private val defaultY: Float,
     private val onSave: (ScriptedOrganism) -> Unit
-) : VisDialog(if (initial == null) "Добавить организм" else "Изменить организм") {
+) : VisDialog(bundle.get(if (initial == null) "level.organism.add" else "level.organism.edit")) {
 
     private val genomes: List<String> = GenomeCatalog.all()
 
@@ -50,24 +51,24 @@ class ScriptedOrganismDialog(
         val errorLabel = VisLabel("")
         errorLabel.setWrap(true)
 
-        table.add(VisLabel("Геном:")).left()
+        table.add(VisLabel(bundle.get("level.organism.genome"))).left()
         table.add(genomeSelect).growX().row()
         table.add(VisLabel("X:")).left()
         table.add(xField).growX().row()
         table.add(VisLabel("Y:")).left()
         table.add(yField).growX().row()
-        table.add(VisLabel("Угол, градусы:")).left()
+        table.add(VisLabel(bundle.get("level.organism.angle"))).left()
         table.add(angleField).growX().row()
         table.add(errorLabel).colspan(2).growX().row()
 
         val buttons = VisTable()
-        buttons.add(makeStyledButton("OK", game, mutableListOf()).also { button ->
+        buttons.add(makeStyledButton(bundle.get("button.ok"), game, mutableListOf()).also { button ->
             button.addListener(object : ClickListener() {
                 override fun clicked(event: InputEvent?, x: Float, y: Float) {
                     super.clicked(event, x, y)
                     val index = genomeSelect.selectedIndex
                     if (index !in genomes.indices) {
-                        errorLabel.setText("Нет доступных геномов.")
+                        errorLabel.setText(bundle.get("level.organism.noGenomes"))
                         return
                     }
                     val xValue = xField.text.toFloatOrNull()
@@ -76,7 +77,7 @@ class ScriptedOrganismDialog(
                     if (xValue == null || yValue == null || angleValue == null ||
                         !xValue.isFinite() || !yValue.isFinite() || !angleValue.isFinite()
                     ) {
-                        errorLabel.setText("X, Y и угол должны быть числами.")
+                        errorLabel.setText(bundle.get("level.organism.notNumbers"))
                         return
                     }
                     onSave(
@@ -91,7 +92,7 @@ class ScriptedOrganismDialog(
                 }
             })
         }).padRight(8.dp())
-        buttons.add(makeStyledButton("Cancel", game, mutableListOf()).also { button ->
+        buttons.add(makeStyledButton(bundle.get("button.cancel"), game, mutableListOf()).also { button ->
             button.addListener(object : ClickListener() {
                 override fun clicked(event: InputEvent?, x: Float, y: Float) {
                     super.clicked(event, x, y)

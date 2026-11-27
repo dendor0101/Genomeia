@@ -18,6 +18,7 @@ import io.github.some_example_name.old.commands.GoSimulation
 import io.github.some_example_name.old.commands.GoWorldEditor
 import io.github.some_example_name.old.commands.NavigationCommandsManager
 import io.github.some_example_name.old.core.DIGameGlobalContainer
+import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.ui.LineNumberTextArea
 import io.github.some_example_name.old.core.ui.VisDslScreen
@@ -35,6 +36,7 @@ import io.github.some_example_name.old.features.levels.dialogs.AllowCellsDialog
 import io.github.some_example_name.old.features.levels.dialogs.LevelSelectDialog
 import io.github.some_example_name.old.features.levels.dialogs.ScriptedOrganismDialog
 import io.github.some_example_name.old.systems.genomics.library.GenomeCatalog
+import io.github.some_example_name.old.systems.logic.ScriptError
 import io.github.some_example_name.old.features.worldeditor.WorldCanvasActor
 import io.github.some_example_name.old.features.worldeditor.WorldEditorViewModel
 import io.github.some_example_name.old.features.worldeditor.WorldSpec
@@ -86,8 +88,9 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
     private var spawnXText = "-1"
     private var spawnYText = "-1"
     private var spawnRadiusText = "0"
-    private var scriptText = DEFAULT_SCRIPT
-    private var logText = "No errors"
+    /** Заготовка скрипта нового уровня — комментарий Lua на языке игрока. */
+    private var scriptText = "-- " + bundle.get("level.editor.defaultScript")
+    private var logText = bundle.get("level.editor.noErrors")
 
     //Карта
     private var worldMap: WorldEditorViewModel = WorldEditorViewModel("-1")
@@ -120,28 +123,23 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
         val buttonsPerRow = if (sideWidth >= 340.dp()) 2 else 1
         visTable(cellInit = { expand().fill() }, backgroundColor = BG) {
             visTable(cellInit = { grow().top().left().pad(16.dp()) }) {
-                visLabel("Скрипт уровня", textColor = ACCENT) { top().left().growX().padBottom(8.dp()) }
+                visLabel(bundle.get("level.editor.script"), textColor = ACCENT) { top().left().growX().padBottom(8.dp()) }
                 row()
-                visTextButton("Загрузить", onClick = {
+                visTextButton(bundle.get("level.editor.loadScript"), onClick = {
                     DIGameGlobalContainer.fileProvider.pickTextFile(listOf("lua")) { _, text ->
                         if (text != null) Gdx.app.postRunnable { textEditor.setText(text) }
                     }
                 }) { top().right().growX().padBottom(6.dp()) }.apply { pad(10.dp(), 8.dp(), 10.dp(), 8.dp()) }
 
-                visTextButton("Сохранить", onClick = {
+                visTextButton(bundle.get("button.save"), onClick = {
                     DIGameGlobalContainer.fileProvider.saveTextFile("level.lua", textEditor.text)
                 }) { top().right().growX().padBottom(6.dp()) }.apply { pad(10.dp(), 8.dp(), 10.dp(), 8.dp()) }
 
-                visTextButton("Проверить", onClick = {
+                visTextButton(bundle.get("level.editor.check"), onClick = {
                     if (textEditor.text.isNotEmpty()) {
                         DIGameGlobalContainer.luaEnv.setScript(textEditor.text)
-                        val succes = DIGameGlobalContainer.luaEnv.check()
-                        if (succes.isNotEmpty()) {
-                            setLog(succes)
-                        }
-                        else {
-                            setLog("No Errors found")
-                        }
+                        val error = DIGameGlobalContainer.luaEnv.check()
+                        setLog(if (error != null) describe(error) else bundle.get("level.editor.noErrors"))
                     }
                 }) { top().right().growX().padBottom(6.dp()) }.apply { pad(10.dp(), 8.dp(), 10.dp(), 8.dp()) } //TODO: сделать проверку
                 row()
@@ -161,11 +159,11 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
             }.background = panel
 
             visTable(cellInit = { growY().fill().prefWidth(sideWidth).top().right().pad(16.dp()) }) {
-                visLabel("Свойства", textColor = ACCENT) { top().left().growX().padBottom(8.dp()) }
+                visLabel(bundle.get("level.editor.properties"), textColor = ACCENT) { top().left().growX().padBottom(8.dp()) }
                 row()
                 visScrollPane(cellInit = { grow() }, scrollingDisabledX = true) {
                     visTable(cellInit = {growX()}) {
-                        visLabel("Имя уровня") { growX().padBottom(6.dp()) }
+                        visLabel(bundle.get("level.editor.name")) { growX().padBottom(6.dp()) }
                             .apply { setWrap(true) }
                         row()
                         levelName = visTextField(
@@ -177,7 +175,7 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
                     row()
 
                     visTable(cellInit = {growX()}) {
-                        visLabel("Необходимое кол-во клеток(-1 если не нужно)") { growX().padBottom(6.dp()) }
+                        visLabel(bundle.get("level.editor.cellsNeed")) { growX().padBottom(6.dp()) }
                             .apply { setWrap(true) }
                         row()
                         needCells = visTextField(
@@ -189,7 +187,7 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
                     row()
 
                     visTable(cellInit = {growX()}) {
-                        visLabel("Конечная цель(-1 если не нужно)") { growX().padBottom(6.dp()); colspan(2)}
+                        visLabel(bundle.get("level.editor.destination")) { growX().padBottom(6.dp()); colspan(2)}
                             .apply { setWrap(true) }
                         row()
                         visLabel("X: ")
@@ -210,7 +208,7 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
                     row()
 
                     visTable(cellInit = {growX()}) {
-                        visLabel("Зона старта(радиус 0 если не нужно)") { growX().padBottom(6.dp()); colspan(2)}
+                        visLabel(bundle.get("level.editor.spawnZone")) { growX().padBottom(6.dp()); colspan(2)}
                             .apply { setWrap(true) }
                         row()
                         visLabel("X: ")
@@ -241,11 +239,11 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
                     // появление повторяется от запуска к запуску, поэтому Chameleon и
                     // Pheromone-уровни могут проверять поведение, а не реакцию игрока.
                     visTable(cellInit = { growX() }) {
-                        visLabel("Скриптовые организмы") { growX().padBottom(6.dp()) }
+                        visLabel(bundle.get("level.editor.organisms")) { growX().padBottom(6.dp()) }
                             .apply { setWrap(true) }
                         row()
                         if (scriptedOrganisms.isEmpty()) {
-                            visLabel("Нет") { growX() }
+                            visLabel(bundle.get("level.editor.none")) { growX() }
                             row()
                         } else {
                             scriptedOrganisms.forEachIndexed { index, organism ->
@@ -254,10 +252,10 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
                                         "${GenomeCatalog.displayName(organism.genomeName)}  " +
                                             "(${organism.x}; ${organism.y})  ${organism.angleDegrees}°"
                                     ) { growX() }.apply { setWrap(true) }
-                                    visTextButton("Изменить", onClick = {
+                                    visTextButton(bundle.get("button.change"), onClick = {
                                         openScriptedOrganismDialog(index)
                                     }) { padLeft(4.dp()) }
-                                    visTextButton("Удалить", onClick = {
+                                    visTextButton(bundle.get("button.remove"), onClick = {
                                         scriptedOrganisms.removeAt(index)
                                         Gdx.app.postRunnable { recompose() }
                                     }) { padLeft(4.dp()) }
@@ -265,7 +263,7 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
                                 row()
                             }
                         }
-                        visTextButton("Добавить", onClick = {
+                        visTextButton(bundle.get("level.editor.add"), onClick = {
                             openScriptedOrganismDialog(null)
                         }) { growX() }
                         row()
@@ -282,7 +280,13 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
             }.background = panel
 
             visTable(cellInit = { growY().fill().prefWidth(sideWidth).bottom().right().pad(16.dp()) }) {
-                listOf("Загрузить уровень" to ::openLevel, "Разрешенные клетки" to ::allowedCells, "Редактор карты" to ::mapEditor, "Сохранить уровень" to ::saveMap, "Протестировать уровень" to ::playLevel).forEachIndexed { index, btnPair ->
+                listOf(
+                    bundle.get("level.editor.loadLevel") to ::openLevel,
+                    bundle.get("level.editor.allowedCells") to ::allowedCells,
+                    bundle.get("level.editor.mapEditor") to ::mapEditor,
+                    bundle.get("level.editor.saveLevel") to ::saveMap,
+                    bundle.get("level.editor.testLevel") to ::playLevel
+                ).forEachIndexed { index, btnPair ->
                     visTextButton(btnPair.first) { growX().padBottom(6.dp()).fillY() }.apply {
                         // Шрифт мельче обычного, иначе подписи в двух колонках не влезают в строку.
                         style.font = DIGameGlobalContainer.game.mediumFont
@@ -300,7 +304,7 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
                     // row() закрывает ряд после добавления клетки, поэтому шаг — perRow.
                     if ((index + 1) % buttonsPerRow == 0) row()
                 }
-                visTextButton("Выйти") { growX().fillY() }.apply {
+                visTextButton(bundle.get("level.editor.exit")) { growX().fillY() }.apply {
                     style.font = DIGameGlobalContainer.game.mediumFont
                     setStyle(style)
                     addListener(object : ClickListener() {
@@ -359,7 +363,7 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
             LevelFiles.read(name)
         }
         catch (e: Exception) {
-            setLog("Не удалось открыть уровень")
+            setLog(bundle.get("level.editor.openFailed"))
             return
         }
 
@@ -379,7 +383,7 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
             spawnRadiusText = "0"
         }
         scriptText = level.logic
-        logText = "Level loaded"
+        logText = bundle.get("level.editor.loaded")
         applyStateToWidgets()
 
         allowedCellsList.clear()
@@ -435,6 +439,14 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
     }
 
     /**
+     * Ошибка разбора скрипта — фразой на языке игрока. Номер строки строкой, а не числом:
+     * MessageFormat разбил бы 1200 на «1,200».
+     */
+    private fun describe(error: ScriptError): String =
+        if (error.line >= 0) bundle.format("level.editor.errorAtLine", error.message, error.line.toString())
+        else bundle.format("level.editor.error", error.message)
+
+    /**
      * Общая сборка уровня для «Сохранить» и «Протестировать».
      *
      * Раньше проверки были только в saveMap, а playLevel звал toInt/toFloat на сырых
@@ -446,16 +458,16 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
         val hasLua = textEditor.text.isNotEmpty()
         if (hasLua) {
             DIGameGlobalContainer.luaEnv.setScript(textEditor.text)
-            val luaResult = DIGameGlobalContainer.luaEnv.check()
-            if (luaResult.isNotEmpty()) {
-                setLog(luaResult)
+            val luaError = DIGameGlobalContainer.luaEnv.check()
+            if (luaError != null) {
+                setLog(describe(luaError))
                 return null
             }
         }
 
         if (needCells.text.isEmpty() || levelName.text.isEmpty() || destX.text.isEmpty() || destY.text.isEmpty() ||
             spawnX.text.isEmpty() || spawnY.text.isEmpty() || spawnRadius.text.isEmpty()) {
-            setLog("Ни одно свойство не должно быть пустым")
+            setLog(bundle.get("level.editor.emptyField"))
             return null
         }
 
@@ -468,14 +480,14 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
         if (cellsNeedValue == null || destXValue == null || destYValue == null ||
             spawnXValue == null || spawnYValue == null || spawnRadiusValue == null
         ) {
-            setLog("Пишите значения в свойствах с правильным типом данных.")
+            setLog(bundle.get("level.editor.wrongType"))
             return null
         }
 
         if (!destXValue.isFinite() || !destYValue.isFinite() ||
             !spawnXValue.isFinite() || !spawnYValue.isFinite() || !spawnRadiusValue.isFinite()
         ) {
-            setLog("Координаты и радиус должны быть конечными числами.")
+            setLog(bundle.get("level.editor.notFinite"))
             return null
         }
 
@@ -483,7 +495,7 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
         // это не «нет финиша», а финиш в (-1, 64), до которого нельзя дойти.
         val needDestination = !(destXValue == -1f && destYValue == -1f)
         if (needDestination && (destXValue == -1f || destYValue == -1f)) {
-            setLog("Финиш: либо обе координаты -1, либо обе заданы.")
+            setLog(bundle.get("level.editor.destinationBoth"))
             return null
         }
 
@@ -495,7 +507,7 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
             allowed && key !in CellPalette.RETIRED_CELLS && DISimulationContainer.cellList.containsKey(key)
         }
         if (!hasAllowedCell) {
-            setLog("Разрешите хотя бы одну клетку.")
+            setLog(bundle.get("level.editor.noCells"))
             return null
         }
 
@@ -503,17 +515,17 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
         val catalog = GenomeCatalog.all()
         for (organism in scriptedOrganisms) {
             if (organism.genomeName.isEmpty() || organism.genomeName !in catalog) {
-                setLog("Скриптовый организм: геном '${organism.genomeName}' не найден.")
+                setLog(bundle.format("level.editor.genomeNotFound", organism.genomeName))
                 return null
             }
             if (!organism.x.isFinite() || !organism.y.isFinite() || !organism.angleDegrees.isFinite()) {
-                setLog("Скриптовый организм: координаты и угол должны быть числами.")
+                setLog(bundle.get("level.editor.organismNotNumbers"))
                 return null
             }
             if (organism.x < 0f || organism.y < 0f ||
                 organism.x > world.worldWidth || organism.y > world.worldHeight
             ) {
-                setLog("Скриптовый организм: точка вне мира ${world.worldWidth}×${world.worldHeight}.")
+                setLog(bundle.format("level.editor.organismOutside", world.worldWidth.toString(), world.worldHeight.toString()))
                 return null
             }
         }
@@ -540,10 +552,10 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
         val levelData = readLevelData() ?: return
         try {
             LevelFiles.write(levelData)
-            setLog("Level saved")
+            setLog(bundle.get("level.editor.saved"))
         }
         catch (e: Exception) {
-            setLog("Cannot save file")
+            setLog(bundle.get("level.editor.saveFailed"))
         }
     }
 
@@ -558,9 +570,6 @@ class LevelEditorScreen(val newLevel: Boolean = true) : VisDslScreen() {
     }
 
     companion object {
-        /** Заготовка скрипта: с неё начинается новый уровень. */
-        const val DEFAULT_SCRIPT = "-- функции: cells, terrain необходимы для работы уровня."
-
         val BG = Color(0.07f, 0.05f, 0.04f, 1f)
         val PANEL_BG = Color(0.14f, 0.10f, 0.07f, 1f)
         val PANEL_BORDER = Color(0.85f, 0.50f, 0.20f, 0.55f)

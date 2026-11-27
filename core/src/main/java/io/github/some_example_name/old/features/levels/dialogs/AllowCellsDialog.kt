@@ -10,6 +10,7 @@ import com.kotcrab.vis.ui.widget.VisScrollPane
 import com.kotcrab.vis.ui.widget.VisTable
 import io.github.some_example_name.old.cells.base.CellPalette
 import io.github.some_example_name.old.core.DIGameGlobalContainer
+import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
 import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.ui.dp
@@ -18,7 +19,7 @@ import io.github.some_example_name.old.core.ui.makeStyledNP
 import io.github.some_example_name.old.core.ui.setupTitleSize
 import io.github.some_example_name.old.features.levels.editor.LevelEditorScreen
 
-class AllowCellsDialog(val allowFunc: (String, Boolean) -> Unit, val allowCell: MutableMap<String, Boolean>): VisDialog("Allow cell dialog") {
+class AllowCellsDialog(val allowFunc: (String, Boolean) -> Unit, val allowCell: MutableMap<String, Boolean>): VisDialog(bundle.get("level.allowedCells.title")) {
     //var allowedCells = mutableMapOf<String, Boolean>()
 
     init {
@@ -35,7 +36,7 @@ class AllowCellsDialog(val allowFunc: (String, Boolean) -> Unit, val allowCell: 
         val table = VisTable()
         table.setFillParent(true)
 
-        val title = VisLabel("Allow cells to use in game") // TODO заменить на bundle
+        val title = VisLabel(bundle.get("level.allowedCells.hint"))
         table.add(title).center().pad(6.dp()).row()
 
         val cellsListTab = VisTable()
@@ -51,7 +52,7 @@ class AllowCellsDialog(val allowFunc: (String, Boolean) -> Unit, val allowCell: 
             val cellName = VisLabel(cell.name)
             // Пустая карта в старых уровнях значила «разрешено всё» (см. NavigationCommandsManager).
             val allowed = allowCell.isEmpty() || (allowCell[cell.key] ?: false)
-            val cellBool = makeStyledButton("Use", game, mutableListOf<Texture>(), true).apply {
+            val cellBool = makeStyledButton(bundle.get("level.allowedCells.use"), game, mutableListOf<Texture>(), true).apply {
                 isChecked = allowed
                 addListener(
                 object: ClickListener() {
@@ -80,7 +81,7 @@ class AllowCellsDialog(val allowFunc: (String, Boolean) -> Unit, val allowCell: 
             .fill()
             .row()
 
-        val btnClose = makeStyledButton("Close", game, mutableListOf(), false).also { button ->
+        val btnClose = makeStyledButton(bundle.get("button.close"), game, mutableListOf(), false).also { button ->
             button.addListener(object : ClickListener() {
                 override fun clicked(event: InputEvent?, x: Float, y: Float) {
                     super.clicked(event, x, y)

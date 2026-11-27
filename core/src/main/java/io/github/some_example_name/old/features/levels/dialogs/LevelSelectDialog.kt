@@ -24,7 +24,7 @@ import kotlin.math.min
  *
  * Только вёрстка: что делать с выбранным именем, решает [onPick].
  */
-class LevelSelectDialog(names: List<String>, private val onPick: (String) -> Unit) : VisDialog("Открыть уровень") {
+class LevelSelectDialog(names: List<String>, private val onPick: (String) -> Unit) : VisDialog(bundle.get("level.open.title")) {
 
     /** Девятипатчи кнопок: освобождаются вместе с диалогом, см. [remove]. */
     private val textures = mutableListOf<Texture>()
@@ -35,7 +35,7 @@ class LevelSelectDialog(names: List<String>, private val onPick: (String) -> Uni
 
         val table = VisTable()
 
-        table.add(VisLabel(if (names.isEmpty()) "Нет сохранённых уровней" else "Выберите уровень"))
+        table.add(VisLabel(bundle.get(if (names.isEmpty()) "level.open.empty" else "level.open.choose")))
             .center().pad(10.dp()).row()
 
         val list = VisTable()

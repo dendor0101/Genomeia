@@ -110,13 +110,14 @@ class LogicEnv {
 
 
     val lose = LuaNativeFunction { args ->
-        rules.fail(string(args, 0).ifEmpty { "Уровень провален" })
+        rules.fail(string(args, 0).ifEmpty { LevelRules.FAIL_DEFAULT_KEY })
         listOf()
     }
 
     val popup = LuaNativeFunction { args ->
         val text = string(args, 0)
-        val title = string(args, 1).ifEmpty { "title" }
+        // Пустой заголовок PopUp заменит своим из бандла (в потоке рендера, где есть Gdx).
+        val title = string(args, 1)
         val pause = bool(args, 2)
         if (pause) rules.requestReadingPause()
         // Очередь трогает только поток рендера (postRunnable и pumpPopups): сцену нельзя
@@ -180,7 +181,7 @@ class LogicEnv {
             // «отпустить» ожидание, пока открыта ещё и подсказка.
             synchronized(popupLock) { pendingPopups++ }
             Gdx.app.postRunnable {
-                popups.addLast(PopUp("Подсказка", text))
+                popups.addLast(PopUp(DIGameGlobalContainer.bundle.get("level.hint"), text))
             }
         }
         listOf()

@@ -71,7 +71,8 @@ class EnvRun {
         }
     }
 
-    fun check(): String{
+    /** Разбор скрипта без запуска. null — ошибок нет. */
+    fun check(): ScriptError? {
         return try {
             val lexer = Lexer(logicScript, "check")
             val tokens = lexer.scanTokens()
@@ -82,13 +83,13 @@ class EnvRun {
             val compiler = Compiler(sourceFilename = "check")
             compiler.compile(ast, hasVararg = true)
 
-            return ""
+            null
         }
         catch (e: ParserException) {
-            return "${e.message.toString()} on line ${e.token.line}"
+            ScriptError(e.message.toString(), e.token.line)
         }
         catch (e: Exception) {
-            return "unknown error: ${e.message.toString()}"
+            ScriptError(e.message.toString(), line = -1)
         }
     }
 
@@ -140,3 +141,10 @@ class EnvRun {
         )
     }
 }
+
+/**
+ * Ошибка разбора скрипта уровня. [message] — текст парсера TENUM (он по-английски и не
+ * переводится), [line] — строка скрипта, -1 — неизвестна. Фразу для игрока собирает
+ * редактор уровней из бандла: здесь Gdx нет, класс работает и в тестах :core.
+ */
+class ScriptError(val message: String, val line: Int)

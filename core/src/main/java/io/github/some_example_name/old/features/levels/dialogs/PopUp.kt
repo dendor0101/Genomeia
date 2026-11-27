@@ -14,7 +14,11 @@ import io.github.some_example_name.old.game.applyCustomFont
 import io.github.some_example_name.old.game.applyCustomFontLarge
 import kotlin.math.min
 
-class PopUp(title: String, val text: String): VisDialog(title) {
+/**
+ * Окно уровня из Lua (`popup`, `hint`). Пустой [title] — заголовок по умолчанию из бандла:
+ * скрипт гайда зовёт `popup(text)` без заголовка, и раньше окно называлось «title».
+ */
+class PopUp(title: String, val text: String): VisDialog(title.ifEmpty { DIGameGlobalContainer.bundle.get("level.message") }) {
     init {
         setupTitleSize(DIGameGlobalContainer.game)
         val table = VisTable()
@@ -32,7 +36,7 @@ class PopUp(title: String, val text: String): VisDialog(title) {
         textLabel.setAlignment(Align.center)
         table.add(textLabel).width(min(textWidth, Gdx.graphics.width * 0.8f)).pad(10f).center().top().row()
 
-        val okBut = makeStyledButton("Ok", DIGameGlobalContainer.game, mutableListOf()).apply { addListener( object : ClickListener() {
+        val okBut = makeStyledButton(DIGameGlobalContainer.bundle.get("button.ok"), DIGameGlobalContainer.game, mutableListOf()).apply { addListener( object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 super.clicked(event, x, y)
                 hide()

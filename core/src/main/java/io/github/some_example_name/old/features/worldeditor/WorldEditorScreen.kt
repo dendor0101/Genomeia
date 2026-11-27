@@ -285,7 +285,7 @@ class WorldEditorScreen(
 
             spacer()
 
-            val text = if (!levelEditor) { bundle.get("button.createNewWorld") } else "Save" //TODO использзовать bundle.get
+            val text = bundle.get(if (!levelEditor) "button.createNewWorld" else "button.save")
             val func: () -> Unit = if (!levelEditor) { {navigation.performCommand(GoSimulation(viewModel.toSpec(), null)) }} else { {
                 DIGameGlobalContainer.levelEditorsData(viewModel)
                 navigation.performCommand(GoBack)

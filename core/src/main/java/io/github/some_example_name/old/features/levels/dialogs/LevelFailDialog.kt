@@ -8,6 +8,7 @@ import com.kotcrab.vis.ui.widget.VisDialog
 import com.kotcrab.vis.ui.widget.VisImageButton
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisTable
+import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
 import io.github.some_example_name.old.core.ui.dp
 import io.github.some_example_name.old.core.ui.makeStyledButton
@@ -21,14 +22,14 @@ import io.github.some_example_name.old.game.applyCustomFontMedium
  * возможности попробовать ещё раз. Кнопку «Повторить» экран ведёт в обычный рестарт
  * (SimulationIntent.Restart), то есть тем же путём, что кнопка на панели.
  *
- * Тексты пока строками, как в соседних диалогах уровня; ключи для bundle — отдельной
- * задачей (см. MyBundle*.properties).
+ * [reason] приходит уже текстом для игрока: ключи бандла по умолчанию (провал, лимит
+ * времени) разворачивает экран, см. SimulationScreen.checkLevelFail.
  */
 class LevelFailDialog(
     reason: String,
     private val onRetry: () -> Unit,
     private val onMenu: () -> Unit
-) : VisDialog("Уровень провален") {
+) : VisDialog(bundle.get("level.failed")) {
 
     /** Девятипатчи кнопок: освобождаются вместе с диалогом. */
     private val textures = mutableListOf<Texture>()
@@ -58,7 +59,7 @@ class LevelFailDialog(
         centerWindow()
     }
 
-    private fun retryButton() = makeStyledButton("Повторить", game, textures).apply {
+    private fun retryButton() = makeStyledButton(bundle.get("level.retry"), game, textures).apply {
         addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 super.clicked(event, x, y)
@@ -70,7 +71,7 @@ class LevelFailDialog(
         })
     }
 
-    private fun menuButton() = makeStyledButton("В меню", game, textures).apply {
+    private fun menuButton() = makeStyledButton(bundle.get("button.menu"), game, textures).apply {
         addListener(object : ClickListener() {
             override fun clicked(event: InputEvent?, x: Float, y: Float) {
                 super.clicked(event, x, y)

@@ -36,7 +36,12 @@ class LevelRules {
     var hud = LevelHud()
         private set
 
-    /** Почему уровень провален; null — ещё играем. Экран показывает окно и стирает. */
+    /**
+     * Почему уровень провален; null — ещё играем. Экран показывает окно и стирает.
+     * Текст из Lua (`lose("...")`) или ключ бандла [FAIL_DEFAULT_KEY] / [FAIL_TIMEOUT_KEY]:
+     * бандл живёт в Gdx, а правила крутятся в потоке симуляции и в тестах без Gdx, поэтому
+     * ключ в текст переводит экран.
+     */
     @Volatile
     var failReason: String? = null
         private set
@@ -181,7 +186,7 @@ class LevelRules {
         if (!timeoutFired && timeLimitTicks > 0 && tick >= timeLimitTicks) {
             timeoutFired = true
             // Без своего обработчика — обычный провал: иначе лимит времени ничего не делает.
-            if (onTimeout != null) call(onTimeout!!) else fail(TIMEOUT_TEXT)
+            if (onTimeout != null) call(onTimeout!!) else fail(FAIL_TIMEOUT_KEY)
         }
     }
 
@@ -221,13 +226,17 @@ class LevelRules {
 
     private class AfterTick(val at: Long, val fn: LuaFunction)
 
-    private companion object {
-        const val TAG = "LevelRules"
+    companion object {
+        private const val TAG = "LevelRules"
 
         /** DELTA_SIM_TICK_TIME = 1/60 с, см. SimulationSystem. */
-        const val TICKS_PER_SECOND = 60
+        private const val TICKS_PER_SECOND = 60
 
-        const val TIMEOUT_TEXT = "Время вышло"
+        /** Ключ бандла: `lose()` без текста. См. [failReason]. */
+        const val FAIL_DEFAULT_KEY = "level.failed"
+
+        /** Ключ бандла: вышел лимит времени, а своего `onTimeout` у уровня нет. */
+        const val FAIL_TIMEOUT_KEY = "level.timeUp"
     }
 }
 
