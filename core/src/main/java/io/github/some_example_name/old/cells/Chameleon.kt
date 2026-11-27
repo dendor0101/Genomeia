@@ -32,7 +32,6 @@ class Chameleon(cellTypeId: Int) : Cell(
     key = "chameleon",
     defaultColor = whiteColors[0],
     cellTypeId = cellTypeId,
-    textureName = "Chameleon.png",
     isNeural = true
 ) {
 

@@ -7,7 +7,6 @@ class Punisher(cellTypeId: Int) : Cell(
     key = "punisher",
     defaultColor = redColors[0],
     cellTypeId = cellTypeId,
-    textureName = "punisher.png",
     effectOnContact = true
 ) {
 

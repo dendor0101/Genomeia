@@ -231,6 +231,8 @@ class WorldRenderer(
             mode = frame.mode
             debugFilter = frame.debugFilter
             areaIndices = frame.areaIndices
+            // Без фона — только в свой буфер: в экран пустота всегда фоновая.
+            transparentBackground = frame.transparentBackground && output != null
 
             sceneFbo = scene
             outputFbo = output

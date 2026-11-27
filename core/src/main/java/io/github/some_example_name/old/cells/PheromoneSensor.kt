@@ -7,7 +7,6 @@ class PheromoneSensor(cellTypeId: Int) : Cell(
     key = "pheromone_sensor",
     defaultColor = blueColors[2],
     cellTypeId = cellTypeId,
-    textureName = "PheromoneSensor.png",
     isNeural = true,
     isNeuronTransportable = false
 ) {

@@ -6,7 +6,6 @@ class FoodSensor(cellTypeId: Int): Cell(
     key = "food_sensor",
     defaultColor = purpleColors.first(),
     cellTypeId = cellTypeId,
-    textureName = "sensor.png",
     isNeuronTransportable = false,
     isNeural = true
 ) {

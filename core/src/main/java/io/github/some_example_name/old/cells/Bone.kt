@@ -7,7 +7,6 @@ class Bone(cellTypeId: Int): Cell(
     key = "bone",
     defaultColor = whiteColors.first(),
     cellTypeId = cellTypeId,
-    textureName = "bone.png",
     defaultCellSettings = CellSettings(
         maxEnergy = 3f,
         cellStiffness = 0.04f,

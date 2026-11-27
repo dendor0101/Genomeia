@@ -6,7 +6,6 @@ class SuctionCup(cellTypeId: Int): Cell(
     key = "suction_cup",
     defaultColor = leafColors[5],
     cellTypeId = cellTypeId,
-    textureName = "SuctionCup.png",
     isNeural = true
 ) {
 

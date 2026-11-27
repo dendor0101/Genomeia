@@ -70,6 +70,8 @@ internal fun BodyState.initializeConstraintBlocks() {
     // новую кэш-линию против ~12% подряд. Замер 10.11, 34 червя, 3 пары по 600 тиков: проход блоков
     // 16.66/16.20/16.41 → 15.54/15.46/15.44 мс. Независимые цепочки арифметики плана стоили меньше, чем промахи.
     layout.links.finishBuild(); layout.areas.finishBuild(); layout.buildDispatchOrder()
+    // Порядок по цветам (закон с 27.11, ColorOrder.kt): место под раскраску; сами цвета — при первом обходе набора.
+    if (colorOrderOn) layout.enableColors(n)
     // Пустые кости (BoneSplit.kt) в блоки не попадают.
     for (b in rigidBones.indices) placeBoneInBlocks(b, layout)
     for (c in 0 until bendCount) layout.bends.add(c, layout.blockOf(bendA[c], bendB[c]))
@@ -183,8 +185,10 @@ internal fun BodyState.solveBlockLinks(h: Float, block: Int, layout: ConstraintB
     val boundary = conBoundary
     val fiber = if (fibersOn) conFiberC2 else NO_FLOATS; val fiberK = fiberThicken // волокно мышцы (MuscleFiber.kt)
     val list = layout.links
-    val from = list.start[block]; val to = from + list.count[block]
-    val items = list.items
+    // Порядок по цветам (закон с 27.11, ColorOrder.kt): тот же сегмент набора, номера — из раскраски.
+    val colored = colorOrderOn
+    val items = if (colored) coloredLinks(layout, block) else list.items
+    val from = list.start[block]; val to = from + if (colored) list.colorCount[block] else list.count[block]
     // Длины — до цикла, а выбор ядра (мягкость, множители клеток) — снаружи цикла, отдельным циклом на каждый
     // случай: проверка массива на null внутри цикла возвращает чтение его длины в цикл. См. lengthsBeforeLoop.
     lengthsBeforeLoop(px.size or py.size or mass.size or a.size or b.size or rest.size or muscles.size or dead.size or
@@ -246,8 +250,10 @@ private fun BodyState.solveBlockLinksCells(h: Float, block: Int, layout: Constra
     val boundary = conBoundary
     val fiber = if (fibersOn) conFiberC2 else NO_FLOATS; val fiberK = fiberThicken // волокно мышцы (MuscleFiber.kt)
     val list = layout.links
-    val from = list.start[block]; val to = from + list.count[block]
-    val items = list.items
+    // Порядок по цветам (закон с 27.11, ColorOrder.kt): тот же сегмент набора, номера — из раскраски.
+    val colored = colorOrderOn
+    val items = if (colored) coloredLinks(layout, block) else list.items
+    val from = list.start[block]; val to = from + if (colored) list.colorCount[block] else list.count[block]
     // Длины — до цикла, мягкость — отдельным циклом, а не проверкой на null в цикле: см. lengthsBeforeLoop.
     lengthsBeforeLoop(px.size or py.size or mass.size or a.size or b.size or rest.size or dead.size or cs.size or
         boundary.size or fiber.size or items.size)

@@ -32,24 +32,38 @@ internal fun BodyState.solveBlockFlaps(h: Float, block: Int, layout: ConstraintB
     val flapA = flapA; val flapB = flapB; val flapRest = flapRest; val flapV = flapV; val next = list.next
     lengthsBeforeLoop(px.size or py.size or invMass.size or flapA.size or flapB.size or flapRest.size or flapV.size or
         ramp.size or next.size)
+    if (colorOrderOn) {
+        // Порядок по цветам (закон с 27.11, ColorOrder.kt).
+        val ids = coloredFlaps(layout, block)
+        lengthsBeforeLoop(ids.size)
+        for (k in 0 until list.colorCount[block]) flapOne(ids[k], alpha, rampOn, ramp, px, py, invMass, flapA, flapB, flapRest, flapV)
+        return
+    }
     var cursor = list.head[block]
     while (cursor >= 0) {
         val c = cursor; cursor = next[cursor]
-        val i = flapA[c]; val j = flapB[c]
-        val wi = invMass[i]; val wj = invMass[j]
-        val w = wi + wj
-        if (w == 0.0f) continue
-        var dx = px[i] - px[j]
-        var dy = py[i] - py[j]
-        val len = sqrt(dx * dx + dy * dy)
-        var rest = flapRest[c]
-        if (rampOn && (ramp[i] < 1f || ramp[j] < 1f || ramp[flapV[c]] < 1f)) rest = minOf(rest, flapAngleRest(flapV[c], i, j))
-        if (len >= rest || len < 1e-12f) continue
-        dx /= len; dy /= len
-        val dL = -(len - rest) / (w + alpha)
-        px[i] += dx * dL * wi; py[i] += dy * dL * wi
-        px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
+        flapOne(c, alpha, rampOn, ramp, px, py, invMass, flapA, flapB, flapRest, flapV)
     }
+}
+
+/** Одна створка [c] (тело цикла solveBlockFlaps). inline: массивы — параметрами, вызова на створку нет. */
+@Suppress("NOTHING_TO_INLINE")
+private inline fun BodyState.flapOne(c: Int, alpha: Float, rampOn: Boolean, ramp: FloatArray, px: FloatArray, py: FloatArray,
+                                     invMass: FloatArray, flapA: IntArray, flapB: IntArray, flapRest: FloatArray, flapV: IntArray) {
+    val i = flapA[c]; val j = flapB[c]
+    val wi = invMass[i]; val wj = invMass[j]
+    val w = wi + wj
+    if (w == 0.0f) return
+    var dx = px[i] - px[j]
+    var dy = py[i] - py[j]
+    val len = sqrt(dx * dx + dy * dy)
+    var rest = flapRest[c]
+    if (rampOn && (ramp[i] < 1f || ramp[j] < 1f || ramp[flapV[c]] < 1f)) rest = minOf(rest, flapAngleRest(flapV[c], i, j))
+    if (len >= rest || len < 1e-12f) return
+    dx /= len; dy /= len
+    val dL = -(len - rest) / (w + alpha)
+    px[i] += dx * dL * wi; py[i] += dy * dL * wi
+    px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
 }
 
 internal fun BodyState.solveBlockBend(h: Float, block: Int, layout: ConstraintBlocks) {
@@ -61,23 +75,37 @@ internal fun BodyState.solveBlockBend(h: Float, block: Int, layout: ConstraintBl
     val px = px; val py = py; val invMass = invMass
     val bendA = bendA; val bendB = bendB; val bendRest = bendRest; val next = list.next
     lengthsBeforeLoop(px.size or py.size or invMass.size or bendA.size or bendB.size or bendRest.size or next.size)
+    if (colorOrderOn) {
+        // Порядок по цветам (закон с 27.11, ColorOrder.kt).
+        val ids = coloredBends(layout, block)
+        lengthsBeforeLoop(ids.size)
+        for (k in 0 until list.colorCount[block]) bendOne(ids[k], alpha, px, py, invMass, bendA, bendB, bendRest)
+        return
+    }
     var cursor = list.head[block]
     while (cursor >= 0) {
         val c = cursor; cursor = next[cursor]
-        val i = bendA[c]; val j = bendB[c]
-        val wi = invMass[i]; val wj = invMass[j]
-        val w = wi + wj
-        if (w == 0.0f) continue
-        var dx = px[i] - px[j]
-        var dy = py[i] - py[j]
-        val len = sqrt(dx * dx + dy * dy)
-        if (len < 1e-12f) continue
-        val inv = 1.0f / len // одно деление, см. solveDistanceConstraint
-        dx *= inv; dy *= inv
-        val dL = -(len - bendRest[c]) / (w + alpha)
-        px[i] += dx * dL * wi; py[i] += dy * dL * wi
-        px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
+        bendOne(c, alpha, px, py, invMass, bendA, bendB, bendRest)
     }
+}
+
+/** Один изгиб [c] (тело цикла solveBlockBend). inline: массивы — параметрами, вызова на изгиб нет. */
+@Suppress("NOTHING_TO_INLINE")
+private inline fun bendOne(c: Int, alpha: Float, px: FloatArray, py: FloatArray, invMass: FloatArray,
+                           bendA: IntArray, bendB: IntArray, bendRest: FloatArray) {
+    val i = bendA[c]; val j = bendB[c]
+    val wi = invMass[i]; val wj = invMass[j]
+    val w = wi + wj
+    if (w == 0.0f) return
+    var dx = px[i] - px[j]
+    var dy = py[i] - py[j]
+    val len = sqrt(dx * dx + dy * dy)
+    if (len < 1e-12f) return
+    val inv = 1.0f / len // одно деление, см. solveDistanceConstraint
+    dx *= inv; dy *= inv
+    val dL = -(len - bendRest[c]) / (w + alpha)
+    px[i] += dx * dL * wi; py[i] += dy * dL * wi
+    px[j] -= dx * dL * wj; py[j] -= dy * dL * wj
 }
 
 internal fun BodyState.solveBlockAreas(h: Float, block: Int, layout: ConstraintBlocks) {
@@ -95,8 +123,10 @@ internal fun BodyState.solveBlockAreas(h: Float, block: Int, layout: ConstraintB
     val alive = baked.triAlive; val tid = triId; val fib = triFiberById
     val fibersOn = fibersOn; val fiberK = fiberThicken // волокно мышцы (MuscleFiber.kt)
     val list = layout.areas
-    val from = list.start[block]; val to = from + list.count[block]
-    val items = list.items
+    // Порядок по цветам (закон с 27.11, ColorOrder.kt): тот же сегмент набора, номера — из раскраски.
+    val colored = colorOrderOn
+    val items = if (colored) coloredAreas(layout, block) else list.items
+    val from = list.start[block]; val to = from + if (colored) list.colorCount[block] else list.count[block]
     lengthsBeforeLoop(px.size or py.size or invMass.size or ta.size or tb.size or tc.size or rest2.size or tm.size or
         ms.size or ts.size or ks.size or alive.size or tid.size or fib.size or items.size)
     for (slot in from until to) {
