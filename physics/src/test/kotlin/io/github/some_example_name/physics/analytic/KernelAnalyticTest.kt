@@ -614,7 +614,16 @@ class KernelAnalyticTest {
             val x = FloatArray(4) { st.px[first + it] }
             st.sweepBackwards = backwards
             kernel.run(st, h)
-            for (k in if (backwards) intArrayOf(2, 1, 0) else intArrayOf(0, 1, 2)) {
+            // Порядок по цветам — закон с 27.11 (solver/ColorOrder.kt): блочное ядро решает связи 0 и 2 (частиц не делят)
+            // первым цветом, связь 1 — вторым; назад — с последнего цвета. Последовательное ядро — по номерам, как было.
+            val colored = kernel.name == "блочное" && st.colorOrderOn
+            val order = when {
+                colored && backwards -> intArrayOf(1, 2, 0)
+                colored -> intArrayOf(0, 2, 1)
+                backwards -> intArrayOf(2, 1, 0)
+                else -> intArrayOf(0, 1, 2)
+            }
+            for (k in order) {
                 val rest = st.conRest[st.linkBetween(first + k, first + k + 1)]
                 val move = violation(x[k + 1] - x[k], rest, mode.target.toFloat()) / (2.0f + alpha * mode.softness)
                 x[k] += move; x[k + 1] -= move
