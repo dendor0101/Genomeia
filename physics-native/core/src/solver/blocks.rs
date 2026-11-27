@@ -28,6 +28,11 @@ pub struct BlockIndex {
     dense_items: Vec<Vec<i32>>,
     dense_dirty: Vec<bool>,
     pub dense_count: Vec<i32>,
+    // ПОРЯДОК ПО ЦВЕТАМ (`BlockIndex.colorItems`, закон с 27.11, color_order.rs): номера блока по цветам, пересобираются
+    // лениво после любой правки блока (те же места, что dense_dirty). Блок обходит один воркер — гонки нет.
+    color_items: Vec<Vec<i32>>,
+    pub color_count: Vec<i32>,
+    color_stale: Vec<bool>,
 }
 
 impl BlockIndex {
@@ -41,7 +46,35 @@ impl BlockIndex {
             dense_items: vec![Vec::new(); blocks],
             dense_dirty: vec![true; blocks],
             dense_count: vec![0; blocks],
+            color_items: vec![Vec::new(); blocks],
+            color_count: vec![0; blocks],
+            color_stale: vec![true; blocks],
         }
+    }
+
+    #[inline]
+    pub fn color_stale(&self, block: usize) -> bool {
+        self.color_stale[block]
+    }
+
+    /// Номера блока по цветам (их `color_count[block]`; дальше — старые записи).
+    #[inline]
+    pub fn color_items(&self, block: usize) -> &[i32] {
+        &self.color_items[block]
+    }
+
+    /// `coloredBends`/`coloredFlaps`: раскрасить плотный список блока ([particles] — частицы ограничения). Место —
+    /// `colorTarget`: растёт вдвое против нужного, старые записи затираются.
+    pub fn color_block(&mut self, block: usize, mask: &mut [u64], particles: impl Fn(i32, &mut [i32; 4]) -> usize) {
+        self.dense(block);
+        let m = self.dense_count[block] as usize;
+        if self.color_items[block].len() < m {
+            self.color_items[block] = vec![0; m * 2];
+        }
+        let live =
+            crate::solver::color_order::color_order(&self.dense_items[block], 0, m, &mut self.color_items[block], 0, mask, particles);
+        self.color_count[block] = live;
+        self.color_stale[block] = false;
     }
 
     /// Плотная копия блока: пересобирается, только если список менялся.
@@ -87,6 +120,7 @@ impl BlockIndex {
         self.tail.fill(-1);
         self.owner.fill(-1);
         self.dense_dirty.fill(true);
+        self.color_stale.fill(true);
     }
 
     pub fn add(&mut self, id: i32, block: i32) {
@@ -102,6 +136,7 @@ impl BlockIndex {
         self.next[idu] = -1;
         self.prev[idu] = self.tail[b];
         self.dense_dirty[b] = true;
+        self.color_stale[b] = true;
         if self.tail[b] < 0 {
             self.head[b] = id;
         } else {
@@ -122,6 +157,7 @@ impl BlockIndex {
         }
         let b = block as usize;
         self.dense_dirty[b] = true;
+        self.color_stale[b] = true;
         let p = self.prev[idu];
         let q = self.next[idu];
         if p < 0 {
@@ -149,6 +185,7 @@ impl BlockIndex {
         }
         let b = block as usize;
         self.dense_dirty[b] = true;
+        self.color_stale[b] = true;
         self.owner[tu] = block;
         self.prev[tu] = self.prev[fu];
         self.next[tu] = self.next[fu];
@@ -188,6 +225,12 @@ pub struct DenseBlockIndex {
     dirty: Vec<bool>,
     dirty_blocks: Vec<i32>,
     dirty_count: usize,
+    // ПОРЯДОК ПО ЦВЕТАМ (`DenseBlockIndex.colorItems`, закон с 27.11, color_order.rs): живые номера блока, переложенные
+    // по цветам, — в той же раскладке, что items (сегмент блока с start[b]), их число — color_count[b]. Пересобираются
+    // лениво, при первом обходе после правки блока; блок обходит один воркер — гонки нет. Без цветов массив пустой.
+    pub color_items: Vec<i32>,
+    pub color_count: Vec<i32>,
+    color_stale: Vec<bool>,
 }
 
 impl DenseBlockIndex {
@@ -202,7 +245,32 @@ impl DenseBlockIndex {
             dirty: vec![false; blocks],
             dirty_blocks: vec![0; blocks],
             dirty_count: 0,
+            color_items: Vec::new(),
+            color_count: vec![0; blocks],
+            color_stale: vec![true; blocks],
         }
+    }
+
+    /// `enableColors`: место под порядок по цветам. Только при сборке раскладки, в одном потоке.
+    pub fn enable_colors(&mut self) {
+        if self.color_items.len() != self.items.len() {
+            self.color_items = vec![0; self.items.len()];
+        }
+        self.color_stale.fill(true);
+    }
+
+    #[inline]
+    pub fn color_stale(&self, block: usize) -> bool {
+        self.color_stale[block]
+    }
+
+    /// `coloredLinks`/`coloredAreas`: раскрасить сегмент блока ([particles] — частицы ограничения).
+    pub fn color_block(&mut self, block: usize, mask: &mut [u64], particles: impl Fn(i32, &mut [i32; 4]) -> usize) {
+        let from = self.start[block] as usize;
+        let m = self.count[block] as usize;
+        let live = crate::solver::color_order::color_order(&self.items, from, m, &mut self.color_items, from, mask, particles);
+        self.color_count[block] = live;
+        self.color_stale[block] = false;
     }
 
     pub fn clear(&mut self) {
@@ -212,6 +280,7 @@ impl DenseBlockIndex {
         self.live_count.fill(0);
         self.dirty.fill(false);
         self.dirty_count = 0;
+        self.color_stale.fill(true);
     }
 
     #[inline]
@@ -245,6 +314,7 @@ impl DenseBlockIndex {
             self.position[id] = dst as i32;
         }
         self.live_count.copy_from_slice(&self.count);
+        self.color_stale.fill(true);
     }
 
     pub fn remove(&mut self, id: i32) {
@@ -259,6 +329,7 @@ impl DenseBlockIndex {
         self.position[idu] = -1;
         self.owner[idu] = -1;
         self.live_count[bu] -= 1;
+        self.color_stale[bu] = true;
         if !self.dirty[bu] {
             self.dirty[bu] = true;
             self.dirty_blocks[self.dirty_count] = b;
@@ -282,6 +353,7 @@ impl DenseBlockIndex {
         self.position[tu] = slot;
         self.owner[fu] = -1;
         self.position[fu] = -1;
+        self.color_stale[b as usize] = true;
     }
 
     pub fn pack_dirty(&mut self) {
@@ -349,6 +421,10 @@ pub struct ConstraintBlocks {
     pub island_view: bool,
     pub island_blocks: Vec<i32>,
     pub island_seams: Vec<i32>,
+    /// Порядок по цветам (`colorMask`, закон с 27.11, color_order.rs): занятые цвета частицы при раскраске набора, по
+    /// биту на цвет; между раскрасками — нули. Наборы, которые раскрашиваются одновременно (блоки одной чётности, швы
+    /// разных тел, острова), частиц не делят, поэтому массив общий (и у тени острова — тот же). Без цветов пустой.
+    pub color_mask: Vec<u64>,
 }
 
 /// Номер области: мир (всё, кроме островов) и все наборы сразу (`TickScope.kt`).
@@ -426,6 +502,15 @@ pub struct BucketWalk {
 }
 
 impl ConstraintBlocks {
+    /// `enableColors`: порядок по цветам на мире из [n] частиц. Только при сборке раскладки, в одном потоке.
+    pub fn enable_colors(&mut self, n: usize) {
+        if self.color_mask.len() != n {
+            self.color_mask = vec![0; n];
+        }
+        self.links.enable_colors();
+        self.areas.enable_colors();
+    }
+
     /// `forActive`: наборы [from, to) по возрастанию, которые обходит текущая область.
     pub fn walk(&self, from: usize, to: usize) -> BucketWalk {
         BucketWalk { from, to, parity: usize::MAX, k: if self.island_view { 0 } else { from }, seams: false }
@@ -584,6 +669,7 @@ impl ConstraintBlocks {
             island_view: false,
             island_blocks: Vec::new(),
             island_seams: Vec::new(),
+            color_mask: Vec::new(),
         }
     }
 

@@ -166,6 +166,31 @@ pub fn solve_distance_constraint_cell<const CELLS: bool, const SOFT: bool>(c: us
     apply_pair(px, py, i, j, dx, dy, d_l, wi, wj);
 }
 
+/// `bendOne`: один изгиб [c] (тело цикла `solveBlockBend`): тот же порядок операций в обоих обходах.
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+fn bend_one(c: usize, alpha: f32, px: &mut [f32], py: &mut [f32], inv: &[f32], a: &[i32], b: &[i32], rest: &[f32]) {
+    let i = a[c] as usize;
+    let j = b[c] as usize;
+    let wi = inv[i];
+    let wj = inv[j];
+    let w = wi + wj;
+    if w == 0.0 {
+        return;
+    }
+    let mut dx = px[i] - px[j];
+    let mut dy = py[i] - py[j];
+    let len = sqrtf(dx * dx + dy * dy);
+    if len < 1e-12f32 {
+        return;
+    }
+    let inv_len = 1.0f32 / len;
+    dx *= inv_len;
+    dy *= inv_len;
+    let d_l = -(len - rest[c]) / (w + alpha);
+    apply_pair(px, py, i, j, dx, dy, d_l, wi, wj);
+}
+
 /// Ядро связи выбранного вида по слотам блока [from, to) — вперёд или назад.
 #[inline(always)]
 fn sweep_links<const KIND: u8>(items: &[i32], from: usize, to: usize, backwards: bool, px: &mut [f32], py: &mut [f32], inv_mass: &[f32], l: &LinkArrays) {
@@ -204,12 +229,18 @@ impl BodyState {
 
     /// `solveBlockLinks` (+ `solveBlockLinksCells`): связи блока, направление — sweepBackwards.
     pub fn solve_block_links(&mut self, h: f32, block: usize) {
+        // Порядок по цветам (закон с 27.11, color_order.rs): тот же сегмент набора, номера — из раскраски.
+        let colored = self.cfg.color_order_on;
+        if colored {
+            self.ensure_colored_links(block);
+        }
         let s = self;
         let alpha = s.environment.soft_compliance / (h * h);
         let layout = s.constraint_blocks.as_ref().unwrap();
         let list = &layout.links;
         let from = list.start[block] as usize;
-        let to = from + list.count[block] as usize;
+        let count = if colored { list.color_count[block] } else { list.count[block] };
+        let to = from + count as usize;
         let empty: [f32; 0] = [];
         let l = LinkArrays {
             con_a: &s.con_a,
@@ -228,7 +259,7 @@ impl BodyState {
         let back = s.sweep_backwards;
         let (px, py) = (&mut s.px, &mut s.py);
         let inv = &s.inv_mass;
-        let items = &list.items;
+        let items = if colored { &list.color_items } else { &list.items };
         if s.cell_scales_on && s.muscle_scale_of.is_empty() {
             if s.softness_on {
                 sweep_links::<4>(items, from, to, back, px, py, inv, &l);
@@ -278,38 +309,54 @@ impl BodyState {
         }
         let alpha = FLAP_COMPLIANCE / (h * h);
         let ramp_on = self.ramp_n > 0;
+        if self.cfg.color_order_on {
+            // Порядок по цветам (закон с 27.11, color_order.rs).
+            self.ensure_colored_flaps(block);
+            let count = self.constraint_blocks.as_ref().unwrap().flaps.color_count[block] as usize;
+            for k in 0..count {
+                let c = self.constraint_blocks.as_ref().unwrap().flaps.color_items(block)[k] as usize;
+                self.flap_one(c, alpha, ramp_on);
+            }
+            return;
+        }
         let mut cursor = self.constraint_blocks.as_ref().unwrap().flaps.head[block];
         while cursor >= 0 {
             let c = cursor as usize;
             cursor = self.constraint_blocks.as_ref().unwrap().flaps.next[c];
-            let flap = &self.local_boundary.flap;
-            let i = flap.a[c] as usize;
-            let j = flap.b[c] as usize;
-            let v = flap.owner[c] as usize;
-            let mut rest = flap.rest[c];
-            let wi = self.inv_mass[i];
-            let wj = self.inv_mass[j];
-            let w = wi + wj;
-            if w == 0.0 {
-                continue;
-            }
-            let mut dx = self.px[i] - self.px[j];
-            let mut dy = self.py[i] - self.py[j];
-            let len = sqrtf(dx * dx + dy * dy);
-            if ramp_on {
-                let ramp = &self.contact_ramp;
-                if ramp[i] < 1.0 || ramp[j] < 1.0 || ramp[v] < 1.0 {
-                    rest = minf(rest, self.flap_angle_rest(v, i, j));
-                }
-            }
-            if len >= rest || len < 1e-12f32 {
-                continue;
-            }
-            dx /= len;
-            dy /= len;
-            let d_l = -(len - rest) / (w + alpha);
-            apply_pair(&mut self.px, &mut self.py, i, j, dx, dy, d_l, wi, wj);
+            self.flap_one(c, alpha, ramp_on);
         }
+    }
+
+    /// `flapOne`: одна створка [c] (тело цикла `solveBlockFlaps`).
+    #[inline(always)]
+    fn flap_one(&mut self, c: usize, alpha: f32, ramp_on: bool) {
+        let flap = &self.local_boundary.flap;
+        let i = flap.a[c] as usize;
+        let j = flap.b[c] as usize;
+        let v = flap.owner[c] as usize;
+        let mut rest = flap.rest[c];
+        let wi = self.inv_mass[i];
+        let wj = self.inv_mass[j];
+        let w = wi + wj;
+        if w == 0.0 {
+            return;
+        }
+        let mut dx = self.px[i] - self.px[j];
+        let mut dy = self.py[i] - self.py[j];
+        let len = sqrtf(dx * dx + dy * dy);
+        if ramp_on {
+            let ramp = &self.contact_ramp;
+            if ramp[i] < 1.0 || ramp[j] < 1.0 || ramp[v] < 1.0 {
+                rest = minf(rest, self.flap_angle_rest(v, i, j));
+            }
+        }
+        if len >= rest || len < 1e-12f32 {
+            return;
+        }
+        dx /= len;
+        dy /= len;
+        let d_l = -(len - rest) / (w + alpha);
+        apply_pair(&mut self.px, &mut self.py, i, j, dx, dy, d_l, wi, wj);
     }
 
     /// `solveBlockBend`: изгиб контура блока (по умолчанию выключен: податливость < 0).
@@ -319,38 +366,37 @@ impl BodyState {
             return;
         }
         let alpha = compliance / (h * h);
+        let colored = self.cfg.color_order_on;
+        if colored {
+            // Порядок по цветам (закон с 27.11, color_order.rs).
+            self.ensure_colored_bends(block);
+        }
         let s = self;
         let list = &s.constraint_blocks.as_ref().unwrap().bends;
         let bend = &s.local_boundary.bend;
         let (px, py, inv) = (&mut s.px, &mut s.py, &s.inv_mass);
+        if colored {
+            let ids = list.color_items(block);
+            for &c in &ids[..list.color_count[block] as usize] {
+                bend_one(c as usize, alpha, px, py, inv, &bend.a, &bend.b, &bend.rest);
+            }
+            return;
+        }
         let mut cursor = list.head[block];
         while cursor >= 0 {
             let c = cursor as usize;
             cursor = list.next[c];
-            let i = bend.a[c] as usize;
-            let j = bend.b[c] as usize;
-            let wi = inv[i];
-            let wj = inv[j];
-            let w = wi + wj;
-            if w == 0.0 {
-                continue;
-            }
-            let mut dx = px[i] - px[j];
-            let mut dy = py[i] - py[j];
-            let len = sqrtf(dx * dx + dy * dy);
-            if len < 1e-12f32 {
-                continue;
-            }
-            let inv_len = 1.0f32 / len;
-            dx *= inv_len;
-            dy *= inv_len;
-            let d_l = -(len - bend.rest[c]) / (w + alpha);
-            apply_pair(px, py, i, j, dx, dy, d_l, wi, wj);
+            bend_one(c, alpha, px, py, inv, &bend.a, &bend.b, &bend.rest);
         }
     }
 
     /// `solveBlockAreas`: площади треугольников блока.
     pub fn solve_block_areas(&mut self, h: f32, block: usize) {
+        // Порядок по цветам (закон с 27.11, color_order.rs): тот же сегмент набора, номера — из раскраски.
+        let colored = self.cfg.color_order_on;
+        if colored {
+            self.ensure_colored_areas(block);
+        }
         let s = self;
         let alpha = s.environment.area_compliance / (h * h);
         let alpha_inverted = AREA_COMPLIANCE_INVERTED / (h * h);
@@ -361,8 +407,9 @@ impl BodyState {
         let fiber_k = s.fiber_thicken;
         let list = &s.constraint_blocks.as_ref().unwrap().areas;
         let from = list.start[block] as usize;
-        let to = from + list.count[block] as usize;
-        let items = &list.items;
+        let count = if colored { list.color_count[block] } else { list.count[block] };
+        let to = from + count as usize;
+        let items = if colored { &list.color_items } else { &list.items };
         let (px, py, inv) = (&mut s.px, &mut s.py, &s.inv_mass);
         let (ta, tb, tc) = (&s.tri_a, &s.tri_b, &s.tri_c);
         let (rest2, tm, ms, ts, ks) = (&s.tri_rest_area2, &s.tri_muscle, &s.muscle_scale_of, &s.tri_cell_scale, &s.tri_softness);

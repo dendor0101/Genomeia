@@ -13,7 +13,7 @@ package io.github.some_example_name.physics.rust
  */
 object RustPhysics {
     /** Версия двоичного договора; та же константа ABI_VERSION в physics-native/core/src/lib.rs. */
-    const val ABI_VERSION = 5
+    const val ABI_VERSION = 6
 
     /** Почему библиотека не загрузилась (null — загрузилась или ещё не пробовали). */
     @Volatile var loadError: Throwable? = null

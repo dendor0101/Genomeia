@@ -23,18 +23,26 @@ import kotlin.math.sqrt
  * Замер имеет смысл, только если Rust посчитал ту же физику: каждые 30 тиков и в конце отпечатки состояния сверяются
  * (RustDigest; при островах Kotlin — без кэша широкой фазы и списка касаний подшага), расхождение останавливает стенд.
  *
+ * ОДИН МИР В ПРОЦЕССЕ (седьмой аргумент `kotlin` или `rust`): шагает только он, второго пула воркеров в процессе нет.
+ * Два пула в одном процессе мешают друг другу на телефоне с разными ядрами: спящие воркеры одного просыпаются раз в
+ * 2 мс, пока считает другой, — на S24 Ultra 27.11 хвосты тика на воркерах были у обоих (p95 втрое выше медианы), а в
+ * один поток их не было. В игре пул один, поэтому для воркеров на таком телефоне честнее отдельные процессы порядком
+ * K R R K. Сцена и входы те же (номер тика стенд не двигает), отпечатки в этом режиме не сверяются — сверка в `both`.
+ *
  * Запуск: gradlew :physics-lab:rustGenomeBench -Pcells=20000 -Pworkers=8 -Pwarm=60 -Pmeasure=120 [-PmaxBody=6000]
  */
 fun main(args: Array<String>) {
     Locale.setDefault(Locale.ROOT)
-    // Двойник на Rust заводится каждому миру физики — до первого обращения к RustShadow.
-    System.setProperty("genomeia.physics.rust", "shadow")
     val cells = args.getOrNull(0)?.toIntOrNull() ?: 20_000
     val workers = args.getOrNull(1)?.toIntOrNull() ?: 8
     val warm = args.getOrNull(2)?.toIntOrNull() ?: 60
     val measure = (args.getOrNull(3)?.toIntOrNull() ?: 120).coerceAtLeast(2)
     val maxBody = args.getOrNull(4)?.toIntOrNull() ?: 6000
     val minBody = args.getOrNull(5)?.toIntOrNull() ?: 20
+    val only = args.getOrNull(6) ?: "both"
+    require(only == "both" || only == "kotlin" || only == "rust") { "режим: both, kotlin или rust, а не $only" }
+    // Двойник на Rust заводится каждому миру физики — до первого обращения к RustShadow; без Rust — не заводится.
+    if (only != "kotlin") System.setProperty("genomeia.physics.rust", "shadow")
 
     val picked = pickBodies(cells, minBody, maxBody)
     require(picked.isNotEmpty()) { "нет тел от $minBody до $maxBody клеток" }
@@ -58,12 +66,16 @@ fun main(args: Array<String>) {
     val bodies = ArrayList<StandBody>()
     for (k in shapes.indices) bodies.add(stand.body(shapes[k], x[k], y[k]))
     val world = stand.world
-    val rust = checkNotNull(world.rustTwin) { "у мира нет двойника на Rust: библиотеки нет или тень не включилась" }
+    val rust = world.rustTwin
+    if (only != "kotlin") checkNotNull(rust) { "у мира нет двойника на Rust: библиотеки нет или тень не включилась" }
     world.rustTwinSeparateStep = true
     val state = world.state
+    // Только Rust: пул Kotlin больше не нужен (мир Kotlin не шагает) — его потоки не должны просыпаться рядом с Rust.
+    if (only == "rust") pool?.shutdown()
 
     fun check(label: String) {
-        val diff = RustDigest.firstDifference(RustDigest.of(state), rust.digest(), RustDigest.ignoredFor(state))
+        if (only != "both") return
+        val diff = RustDigest.firstDifference(RustDigest.of(state), rust!!.digest(), RustDigest.ignoredFor(state))
         check(diff == null) { "Rust разошёлся с Kotlin ($label): $diff" }
     }
     check("после сборки")
@@ -80,12 +92,16 @@ fun main(args: Array<String>) {
         }
         var kNs = 0L; var rNs = 0L
         fun stepK() { stand.step(); kNs = stand.lastStepNanos }
-        fun stepR() { rust.syncParams(state); val t0 = System.nanoTime(); rust.step(DT); rNs = System.nanoTime() - t0 }
-        if (tick % 2 == 0) { stepK(); stepR() } else { stepR(); stepK() }
+        fun stepR() { val r = rust!!; r.syncParams(state); val t0 = System.nanoTime(); r.step(DT); rNs = System.nanoTime() - t0 }
+        when (only) {
+            "kotlin" -> stepK()
+            "rust" -> stepR()
+            else -> if (tick % 2 == 0) { stepK(); stepR() } else { stepR(); stepK() }
+        }
         if (tick >= warm) {
             kt[tick - warm] = kNs / 1e6; rt[tick - warm] = rNs / 1e6
             if (state.islandsLastTick > 0) { islandTicks++; islandSum += state.islandsLastTick }
-            val ri = rust.islandsLastTick
+            val ri = rust?.islandsLastTick ?: 0
             if (ri > 0) { rustIslandTicks++; rustIslandSum += ri }
         }
         if (tick % 30 == 29) check("тик ${tick + 1}")
@@ -98,15 +114,19 @@ fun main(args: Array<String>) {
     }
     val total = shapes.sumOf { it.count }
     println("RUST_GENOME тел=${shapes.size} клеток=$total частиц=${state.n} подшагов=$SUBSTEPS воркеров=$workers " +
-        "прогрев=$warm замер=$measure тиков_с_островами_Kotlin=$islandTicks/$measure" +
-        (if (islandTicks > 0) " (островов за такой тик %.1f)".format(islandSum.toDouble() / islandTicks) else "") +
-        " тиков_с_островами_Rust=$rustIslandTicks/$measure" +
-        (if (rustIslandTicks > 0) " (%.1f, откатов за всё время ${rust.islandAborts})".format(
-            rustIslandSum.toDouble() / rustIslandTicks) else ""))
-    println("RUST_GENOME Kotlin ${stats(kt)}")
-    println("RUST_GENOME Rust   ${stats(rt)}")
-    println("RUST_GENOME Kotlin/Rust по среднему %.2f, по медиане %.2f; отпечатки совпали (каждые 30 тиков и в конце)".format(
-        kt.average() / rt.average(), kt.sorted()[measure / 2] / rt.sorted()[measure / 2]))
+        "прогрев=$warm замер=$measure режим=$only" +
+        (if (only != "rust") " тиков_с_островами_Kotlin=$islandTicks/$measure" +
+            (if (islandTicks > 0) " (островов за такой тик %.1f)".format(islandSum.toDouble() / islandTicks) else "")
+        else "") +
+        (if (only != "kotlin") " тиков_с_островами_Rust=$rustIslandTicks/$measure" +
+            (if (rustIslandTicks > 0) " (%.1f, откатов за всё время ${rust!!.islandAborts})".format(
+                rustIslandSum.toDouble() / rustIslandTicks) else "")
+        else ""))
+    if (only != "rust") println("RUST_GENOME Kotlin ${stats(kt)}")
+    if (only != "kotlin") println("RUST_GENOME Rust   ${stats(rt)}")
+    if (only == "both") println(("RUST_GENOME Kotlin/Rust по среднему %.2f, по медиане %.2f; отпечатки совпали (каждые " +
+        "30 тиков и в конце)").format(kt.average() / rt.average(), kt.sorted()[measure / 2] / rt.sorted()[measure / 2]))
+    else println("RUST_GENOME один мир в процессе ($only): отпечатки не сверялись — сверка в режиме both")
 }
 
 /** Запас между телами, единиц игры (как у genomeBench). */

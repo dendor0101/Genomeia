@@ -3,6 +3,7 @@
 
 pub mod blocks;
 pub mod bones;
+pub mod color_order;
 pub mod fiber;
 pub mod fused;
 pub mod island_plan;

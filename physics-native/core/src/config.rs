@@ -76,10 +76,13 @@ pub struct Config {
     /// проверка снимка). Исполнение: биты от них не зависят.
     pub islands_mode: i32,
     pub islands_rollback_all: bool,
+    /// Порядок по цветам (`COLOR_ORDER`, `BodyState.colorOrderOn`, закон с 27.11): связи, площади, изгибы и створки
+    /// набора решаются цвет за цветом (solver/color_order.rs). Меняет биты: false — прежний порядок по номерам.
+    pub color_order_on: bool,
 }
 
 impl Config {
-    pub const LAYOUT_LEN: usize = 64;
+    pub const LAYOUT_LEN: usize = 65;
 
     /// Разбор массива из `RustWorld.configLayout`. Ветки, которых перенос не умеет (отладочные замеры,
     /// охота за проникновением), отвергаются сразу — молча идти другим путём нельзя.
@@ -157,6 +160,7 @@ impl Config {
             },
             islands_mode: i(62),
             islands_rollback_all: b(63),
+            color_order_on: b(64),
         };
         assert!(c.substeps >= 1, "подшагов должно быть не меньше одного");
         assert!(!c.dbg_seal_on, "RB_SEAL (замер щелей) в переносе на Rust не поддержан");

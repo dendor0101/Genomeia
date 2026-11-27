@@ -82,6 +82,10 @@ impl BodyState {
         layout.links.finish_build();
         layout.areas.finish_build();
         layout.build_dispatch_order();
+        // Порядок по цветам (закон с 27.11, color_order.rs): место под раскраску; сами цвета — при первом обходе набора.
+        if self.cfg.color_order_on {
+            layout.enable_colors(self.n);
+        }
         for b in 0..self.rigid_bones.len() {
             self.place_bone_in_blocks(b, &mut layout);
         }

@@ -200,9 +200,6 @@ class RustWorld(template: BodyState, scale: WorldScale? = template.worldScale) :
             val env = st.environment
             check(ct["CT_WATCH"] == null) { "CT_WATCH (разбор пробоя по клетке) в переносе на Rust не поддержан" }
             check(!ct.BP_CHECK) { "CT_BPCHECK (полный перебор пар) в переносе на Rust не поддержан" }
-            // Порядок по цветам (закон с 27.11, ColorOrder.kt) в Rust ещё не перенесён: без этой проверки тень и тесты
-            // сверки расходились бы молча с первого тика. Сравнивать с Rust сейчас можно только с COLOR_ORDER=0.
-            check(!st.colorOrderOn) { "порядок по цветам в Rust ещё не перенесён (RUST_PORT.md, «Дальше»): COLOR_ORDER=0" }
             fun b(v: Boolean) = if (v) 1.0 else 0.0
             fun f(v: Float) = v.toDouble()
             return doubleArrayOf(
@@ -227,7 +224,9 @@ class RustWorld(template: BodyState, scale: WorldScale? = template.worldScale) :
                 f(env.softCompliance), f(env.areaCompliance), f(env.contactFriction),
                 // Острова (ISLANDS, ISLANDS_ROLLBACK_ALL): исполнение, биты от них не зависят; Rust выбирает сам.
                 st.islandsMode.toDouble(), b(st.islandsRollbackAll),
-            ).also { check(it.size == 64) { "раскладка параметров Rust: ${it.size} чисел вместо 64" } }
+                // Порядок по цветам (COLOR_ORDER, закон с 27.11, ColorOrder.kt / solver/color_order.rs): меняет биты.
+                b(st.colorOrderOn),
+            ).also { check(it.size == 65) { "раскладка параметров Rust: ${it.size} чисел вместо 65" } }
         }
     }
 }
