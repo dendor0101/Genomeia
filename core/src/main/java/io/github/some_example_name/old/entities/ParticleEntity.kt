@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.entities
 
+import io.github.some_example_name.old.core.DEBUG_CHECKS
 import io.github.some_example_name.old.physics.bridge.GAME_PER_PHYSICS
 import io.github.some_example_name.old.physics.bridge.PHYSICS_VELOCITY_PER_GAME
 import io.github.some_example_name.old.physics.bridge.WorldPhysics
@@ -159,6 +160,46 @@ class ParticleEntity(
     /** Позиция частицы в [nonCellList], или -1 если её там нет (то есть это клетка). */
     var positionInNonCellList = IntArray(maxAmount) { -1 }
 
+    /**
+     * Неподвижные не-клетки — террейн и стенка у рамки ([terrainCell] ≠ −1) — занимают первые
+     * столько мест [nonCellList] (после [bakeStaticGrid]). Держится само: за сессию неподвижные
+     * не рождаются и не умирают, а удаление подвижной меняет её местами с последней, тоже
+     * подвижной. Не сохраняется — [bakeStaticGrid] выводит заново после загрузки.
+     */
+    var staticNonCellCount = 0
+        private set
+
+    /** Меняется при каждом [bakeStaticGrid] и очистке: по нему отрисовка пересобирает неподвижный буфер. */
+    var staticVersion = 0
+        private set
+
+    /**
+     * ЗАПЕЧЬ НЕПОДВИЖНОЕ (27.11): террейн и стенка у рамки за сессию не двигаются, поэтому
+     *  - в [nonCellList] они встают в начало (в прежнем порядке — построчном, как их создаёт
+     *    WorldTerrainManager), подвижные не-клетки — за ними: снимку отрисовки подвижные
+     *    достаются отрезком, без прохода по десяткам тысяч неподвижных;
+     *  - из перестраиваемой сетки выходят ([isInGrid] = false) в неподвижный слой
+     *    (GridManager.buildStatic): тик их не раскладывает и не перебирает пары между ними.
+     * Однопоточно, между тиками: после постройки мира (WorldTerrainManager.initWorld) и после
+     * загрузки ([restoreAfterLoad]). Раз на мир — аллокации здесь не важны.
+     */
+    fun bakeStaticGrid() {
+        val n = nonCellList.size
+        val order = IntArray(n)
+        var statics = 0
+        for (i in 0 until n) { val p = nonCellList.getInt(i); if (terrainCell[p] != -1) order[statics++] = p }
+        var next = statics
+        for (i in 0 until n) { val p = nonCellList.getInt(i); if (terrainCell[p] == -1) order[next++] = p }
+        for (i in 0 until n) {
+            nonCellList.set(i, order[i])
+            positionInNonCellList[order[i]] = i
+        }
+        staticNonCellCount = statics
+        staticVersion++
+        for (k in 0 until statics) isInGrid[order[k]] = false
+        gridManager.buildStatic(order, statics, gridId)
+    }
+
     fun addParticle(
         x: Float,
         y: Float,
@@ -283,6 +324,7 @@ class ParticleEntity(
         // Снимается ДО обнуления полей: позиция в списке не-клеток самодостаточна, но
         // порядок важен, если сюда когда-нибудь добавится чтение isCell.
         val nonCellPosition = positionInNonCellList[particleIndex]
+        if (DEBUG_CHECKS && nonCellPosition in 0 until staticNonCellCount) staticDeleted(particleIndex)
         if (nonCellPosition >= 0) {
             val lastPosition = nonCellList.size - 1
             val lastParticle = nonCellList.getInt(lastPosition)
@@ -349,11 +391,18 @@ class ParticleEntity(
      */
     override fun restoreAfterLoad() {
         gridManager.clearAll()
+        // До перестройки: неподвижные выходят из перестраиваемой сетки (и в мире, сохранённом
+        // до 27.11, где они в ней лежали).
+        bakeStaticGrid()
         for (i in 0 until aliveList.size) {
             gridManager.registerParticle(aliveList.getInt(i))
         }
         gridManager.rebuild(isAlive, gridId, isInGrid)
     }
+
+    /** Неподвижная частица умерла посреди сессии — начало [nonCellList] больше не неподвижное. */
+    private fun staticDeleted(particleIndex: Int): Nothing =
+        throw IllegalStateException("удалена неподвижная частица $particleIndex (террейн или стенка) — запечённый слой устарел")
 
     /**
      * Частицы субстанций и террейна — пулом по 1024 (Entity.poolBlockSize): по одной с верха
@@ -394,6 +443,8 @@ class ParticleEntity(
         isInGrid.clear(true)
         nonCellList.clear()
         positionInNonCellList.clear(-1)
+        staticNonCellCount = 0
+        staticVersion++
     }
 
     override fun onResize(oldMax: Int) {

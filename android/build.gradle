@@ -52,6 +52,17 @@ android {
       matchingFallbacks = ['debug']
       signingConfig signingConfigs.debug
     }
+    // Стенд замера настоящей игры на телефоне (src/perf, PhonePerfLauncher). Ставится рядом с игрой.
+    // Не отлаживаемая: в отлаживаемом приложении ART не встраивает методы, и замер врал бы.
+    perf {
+      initWith debug
+      debuggable false
+      applicationIdSuffix '.perf'
+      versionNameSuffix '-perf'
+      manifestPlaceholders = [appLabel: 'Genomeia Perf']
+      matchingFallbacks = ['debug']
+      signingConfig signingConfigs.debug
+    }
     release {
       minifyEnabled true
       proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), 'proguard-rules.pro'

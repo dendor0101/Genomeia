@@ -122,6 +122,25 @@ class OverlayInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
     fun putRing(x: Float, y: Float, radius: Float, color: Int) =
         put(x, y, radius, 0f, color, params(KIND_RING, 0f, 0))
 
+    /**
+     * [count] фигур из int-массива начиная с фигуры [from] — массив в той же раскладке, по
+     * [STRUCT_INTS] int на фигуру (float своими битами, порядок полей как у [put]).
+     *
+     * Так снимок отладочного режима собирает оверлей с воркеров (RenderBufferManager): каждый
+     * пишет фигуры своих кусков в свой массив, а склейка по порядку кусков — одна копия на кусок.
+     * Запись в int-массив на Android заметно дешевле десяти putFloat на фигуру (как и у
+     * CellInstanceBuffer.putAll).
+     */
+    fun putAll(source: IntArray, from: Int, count: Int) {
+        if (count <= 0) return
+        ensureCapacity(written + count)
+        val view = buffer.duplicate().order(ByteOrder.nativeOrder())
+        (view as Buffer).position(written * STRUCT_SIZE)
+        view.asIntBuffer().put(source, from * STRUCT_INTS, count * STRUCT_INTS)
+        written += count
+        (buffer as Buffer).position(written * STRUCT_SIZE)
+    }
+
     /** Завершить кадр и отдать буфер на загрузку. Идемпотентно. */
     fun end(): ByteBuffer {
         if (!finished) {
@@ -158,6 +177,9 @@ class OverlayInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
     companion object {
         /** Менять только вместе с OverlayGeometry и shaders/debug_view/overlay.vert. */
         const val STRUCT_SIZE = 40
+
+        /** int на фигуру в массиве для [putAll]. */
+        const val STRUCT_INTS = STRUCT_SIZE / 4
 
         const val OFFSET_FROM = 0
         const val OFFSET_TO = 8

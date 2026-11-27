@@ -171,7 +171,7 @@ class Eye(cellTypeId: Int): Cell(
                     visitedBits[threadId].set(pack)
                     // Обход без аллокации: раньше getParticles копировал слоты клетки
                     // в новый IntArray на каждый шаг DDA (3 клетки на шаг).
-                    gridManager.forEachParticleAt(nx, ny) { index ->
+                    gridManager.forEachParticleOrStaticAt(nx, ny) { index ->
                         if (isSegmentIntersectingCircle(
                                 x1,
                                 y1,

@@ -145,6 +145,8 @@ class WorldRenderer(
 
         cellGeometry.recreateAfterContextLoss()
         uploadedCells = null
+        uploadedStatic = null
+        staticSource = null
         components.forEach { it.contextLost() }
 
         fbo?.let { releaseRebuiltFrameBuffer(it, attachmentCount = 1) }
@@ -199,22 +201,36 @@ class WorldRenderer(
         // Освобождаем карты и программы при выходе из микроскопа.
         if(output==null && tissue!=null){ tissue!!.dispose(); tissue=null }
         if(output!=null && tissuePreview!=null){ tissuePreview!!.dispose(); tissuePreview=null }
-        val cells = frame.cells
+        var cells = frame.cells
 
         // Один раз за кадр и до всех проходов: сколько бы их ни рисовало клетки, байты
         // едут на GPU единожды. И не каждый кадр: если буфер тот же и не менялся
         // (uploadCells = false), в VBO уже лежат ровно эти байты. Чужой буфер — превью
         // генома или другой экран — заливается всегда, иначе кадр нарисовал бы их клетки.
-        if (cells != null && (frame.uploadCells || cells !== uploadedCells)) {
+        var upload = cells != null && (frame.uploadCells || cells !== uploadedCells)
+        val cull = frame.cellCullRanges
+        if (cells != null && cull != null && frame.mode == RenderMode.DEBUG && frame.areaIndices == null) {
+            cullRect(frame.cameraProjection, pixelWidth)
+            val visible = visibleCells.select(cells, cull, cullLeft, cullBottom, cullRight, cullTop,
+                fresh = frame.uploadCells || cells !== cullSource)
+            cullSource = cells
+            if (visible !== cells) {
+                upload = visibleCells.changed || visible !== uploadedCells
+                cells = visible
+            }
+        }
+        if (cells != null && upload) {
             cellGeometry.upload(cells)
             uploadedCells = cells
         }
+        val staticCount = drawableStatic(frame, pixelWidth)
 
         renderContext.apply {
             fullscreenMesh = mesh
             cameraProjection = frame.cameraProjection
 
             numInstances = cells?.let { it.remaining() / CellInstanceBuffer.STRUCT_SIZE } ?: 0
+            numStaticInstances = staticCount
             interpolationLag = frame.interpolationLag
 
             overlayData = frame.overlay
@@ -243,6 +259,65 @@ class WorldRenderer(
         }
 
         Gdx.gl.glUseProgram(0)
+    }
+
+    /**
+     * Неподвижный слой кадра (RenderFrame.staticCells): видимые куски — на GPU, только если
+     * сменился мир или набор видимых кусков; возвращает, сколько инстансов рисовать. Отсечение
+     * — тем же VisibleCells, что и у клеток, своим экземпляром: у слоя свой буфер на GPU.
+     */
+    private fun drawableStatic(frame: RenderFrame, pixelWidth: Int): Int {
+        val all = frame.staticCells ?: return 0
+        val cull = frame.staticCullRanges
+        var drawn = all
+        var changed = all !== staticSource
+        if (cull != null) {
+            cullRect(frame.cameraProjection, pixelWidth)
+            drawn = visibleStatic.select(all, cull, cullLeft, cullBottom, cullRight, cullTop, fresh = all !== staticSource)
+            if (drawn !== all) changed = visibleStatic.changed
+        }
+        staticSource = all
+        if (changed || drawn !== uploadedStatic) {
+            cellGeometry.uploadStatic(drawn)
+            uploadedStatic = drawn
+        }
+        return drawn.remaining() / CellInstanceBuffer.STRUCT_SIZE
+    }
+
+    private val visibleStatic = io.github.some_example_name.render.pack.VisibleCells()
+    /** Буфер неподвижного слоя, из которого собран кадр, и что сейчас лежит в его VBO. */
+    private var staticSource: ByteBuffer? = null
+    private var uploadedStatic: ByteBuffer? = null
+
+    /** Отсечение по камере в отладочном режиме, см. VisibleCells. */
+    private val visibleCells = io.github.some_example_name.render.pack.VisibleCells()
+    /** Буфер снимка, из которого [visibleCells] собирал прошлый кадр: другой — собрать заново. */
+    private var cullSource: ByteBuffer? = null
+    private var cullLeft = 0f
+    private var cullBottom = 0f
+    private var cullRight = 0f
+    private var cullTop = 0f
+
+    /**
+     * Видимый прямоугольник мира, расширенный на корпус клетки: ортографическая камера без
+     * поворота, x = (±1 − M03) / M00. Запас — [CULL_PAD] единиц мира (наибольший радиус 0.75
+     * с бахромой рисунка до 0.6 радиуса — 1.2) и несколько пикселей сглаживания.
+     */
+    private fun cullRect(projection: Matrix4, pixelWidth: Int) {
+        val m = projection.`val`
+        if (m[Matrix4.M00] == 0f || m[Matrix4.M11] == 0f) {
+            // Вырожденная камера: прямоугольник не посчитать — видно всё.
+            cullLeft = Float.NEGATIVE_INFINITY; cullBottom = Float.NEGATIVE_INFINITY
+            cullRight = Float.POSITIVE_INFINITY; cullTop = Float.POSITIVE_INFINITY
+            return
+        }
+        val pad = CULL_PAD + 4f * pixelWorld(projection, pixelWidth)
+        val a = (-1f - m[Matrix4.M03]) / m[Matrix4.M00]
+        val b = (1f - m[Matrix4.M03]) / m[Matrix4.M00]
+        val c = (-1f - m[Matrix4.M13]) / m[Matrix4.M11]
+        val d = (1f - m[Matrix4.M13]) / m[Matrix4.M11]
+        cullLeft = minOf(a, b) - pad; cullRight = maxOf(a, b) + pad
+        cullBottom = minOf(c, d) - pad; cullTop = maxOf(c, d) + pad
     }
 
     /**
@@ -356,4 +431,9 @@ class WorldRenderer(
     }
 
     fun getComponentCount(): Int = components.size
+
+    private companion object {
+        /** Запас рамки тела в единицах мира под корпус клетки, см. [cullRect]. */
+        const val CULL_PAD = 2f
+    }
 }

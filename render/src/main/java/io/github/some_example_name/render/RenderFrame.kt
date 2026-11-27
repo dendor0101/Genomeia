@@ -39,6 +39,22 @@ class RenderFrame {
     var opticalSettings: io.github.some_example_name.render.microscope.MicroscopeSettings? = null
 
     /**
+     * Рамки тел в порядке [cells] для отсечения по камере в отладочном режиме (VisibleCells);
+     * null — рисовать все клетки (превью, редактор, режим с заливкой областей: её индексы
+     * указывают на места в полном буфере).
+     */
+    var cellCullRanges: io.github.some_example_name.render.pack.OpticalCullRanges? = null
+
+    /**
+     * Неподвижный слой (27.11): террейн и стенка у рамки — инстансы в раскладке [cells], которые
+     * за сессию не меняются. Буфер один на мир: пока это тот же объект, на GPU уже лежат его
+     * байты (CellGeometry.uploadStatic), снимки мира его не несут. [staticCullRanges] — рамки
+     * его кусков для отсечения по камере. null — слоя нет (превью, редактор, микроскоп).
+     */
+    var staticCells: ByteBuffer? = null
+    var staticCullRanges: io.github.some_example_name.render.pack.OpticalCullRanges? = null
+
+    /**
      * Перезалить буфер клеток на GPU.
      *
      * false имеет смысл, когда содержимое буфера с прошлого кадра не менялось: редактор

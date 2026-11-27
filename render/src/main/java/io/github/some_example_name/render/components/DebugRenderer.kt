@@ -207,6 +207,7 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         fillShader.bind()
         bindCellUniforms(fillShader, context, fringe = false)
         cells.draw(context.numInstances)
+        cells.drawStatic(context.numStaticInstances)
         drawAreas(context)
 
         target.end()
@@ -272,6 +273,7 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         gl.glActiveTexture(GL20.GL_TEXTURE0)
 
         cells.draw(context.numInstances)
+        cells.drawStatic(context.numStaticInstances)
     }
 
     /**
