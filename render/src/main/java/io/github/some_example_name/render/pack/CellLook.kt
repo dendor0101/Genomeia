@@ -106,8 +106,11 @@ object CellLook {
     /** Мотонейрон: тело нейрона, толстые отростки с бляшками на концах, импульсы бегут наружу. */
     const val MOTOR_NEURON = 25
 
+    /** Компас: кольцо шкалы с рисками и магнитная стрелка, всегда смотрящая вверх мира. */
+    const val COMPASS = 26
+
     /** Рисунков всего; номера 0 until COUNT. */
-    const val COUNT = 26
+    const val COUNT = 27
 
     /** Сигнал −1..1 знаковым байтом; NaN — ноль. */
     fun actionByte(signal: Float): Int {

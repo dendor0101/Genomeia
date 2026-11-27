@@ -55,7 +55,7 @@ internal class CellLabModel(val key: String) : Disposable {
     val p get() = world.particleEntity
     val primaryAlive get() = primary >= 0 && c.isAlive[primary]
     val powered = key in setOf("controller", "muscle", "excreta", "neuron", "suction_cup",
-        "sticky", "chameleon", "eye", "touch_trigger", "synapse", "pheromone_emitter", "pheromone_sensor", "delay", "motor_neuron", "speed_sensor")
+        "sticky", "chameleon", "eye", "touch_trigger", "synapse", "pheromone_emitter", "pheromone_sensor", "delay", "motor_neuron", "speed_sensor", "compass")
 
     init {
         require(key in CellLabCatalog.keys)
@@ -178,7 +178,7 @@ internal class CellLabModel(val key: String) : Disposable {
                 organ(listOf("fat", "fat", "fat"), floatArrayOf(3.45f, 4.0f, 4.55f),
                     floatArrayOf(2.5f, 2.5f, 2.5f), listOf(0, 1, 1, 2))
             }
-            "fat", "punisher", "producer", "tail", "speed_sensor" -> {
+            "fat", "punisher", "producer", "tail", "speed_sensor", "compass" -> {
                 val ids = organ(listOf(key, "leaf"), floatArrayOf(4.0f, 3.45f), floatArrayOf(4.0f, 4.0f), listOf(0, 1))
                 primary = ids[0]; companion = ids[1]
                 if (key == "producer") world.organEntity.genomeIndex[c.organIndex[primary]] = growthGenome()
