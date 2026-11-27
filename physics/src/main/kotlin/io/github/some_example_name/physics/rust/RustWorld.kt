@@ -188,6 +188,32 @@ class RustWorld(template: BodyState, scale: WorldScale? = template.worldScale) :
     val islandsLastTick: Int get() = call(136).toInt()
     val islandAborts: Long get() = call(137).toLong()
 
+    // --- физика на Rust в игре (PhysicsWorld с движком Rust, зеркало RustMirror) ---
+
+    /** Признаки множителей клеток (BodyState.cellScalesOn/cellScalesMoving). */
+    val cellScalesOn: Boolean get() = call(138) != 0.0
+    val cellScalesMoving: Boolean get() = call(139) != 0.0
+    fun setCellScaleFlags(on: Boolean, moving: Boolean) { call(45, a = if (on) 1.0 else 0.0, b = if (moving) 1.0 else 0.0) }
+    /** Цели мышц клеток целиком (мост пишет их прямо в зеркало, WorldPhysics.syncOrganismFast). */
+    fun adoptCellScaleTargets(values: FloatArray) = RustPhysics.worldAdopt(handle, 15, values)
+    fun readBools(which: Int, out: BooleanArray) = RustPhysics.worldReadBools(handle, which, out)
+    fun readInts(which: Int, out: IntArray) = RustPhysics.worldReadInts(handle, which, out)
+    fun readCell(i: Int, outF: FloatArray, outI: IntArray) = RustPhysics.worldReadCell(handle, i, outF, outI)
+    /** Вопросы к топологии (PhysicsWorld.liveDegree, neighborCount, neighbor) и к временным связям. */
+    fun liveDegree(cell: Int): Int = call(140, cell).toInt()
+    fun neighborCount(cell: Int): Int = call(141, cell).toInt()
+    fun neighbor(cell: Int, k: Int): Int = call(142, cell, k).toInt()
+    fun isJointLive(id: Int): Boolean = call(143, id) != 0.0
+
+    /**
+     * Топология для отладочной отрисовки (PhysicsWorld.debugLinks/debugTriangles): длина массива целых [which] (1
+     * vertStart, 2 vertOther, 3 vertEdge, 4 vertexTriStart, 5 vertexTriangles, 6 triB, 7 triC) или признаков (4
+     * edgeDead, 5 triAlive); сами массивы — [readInts]/[readBools] с тем же номером, целиком.
+     */
+    fun topologyIntsLength(which: Int): Int = call(144, which).toInt()
+    fun topologyBoolsLength(which: Int): Int = call(145, which).toInt()
+    val triangleRevision: Long get() = call(146).toLong()
+
     companion object {
         /**
          * Разобранные параметры решателя в порядке `Config::from_slice` (physics-native/core/src/config.rs). Длина и
@@ -226,7 +252,11 @@ class RustWorld(template: BodyState, scale: WorldScale? = template.worldScale) :
                 st.islandsMode.toDouble(), b(st.islandsRollbackAll),
                 // Порядок по цветам (COLOR_ORDER, закон с 27.11, ColorOrder.kt / solver/color_order.rs): меняет биты.
                 b(st.colorOrderOn),
-            ).also { check(it.size == 65) { "раскладка параметров Rust: ${it.size} чисел вместо 65" } }
+                // Пул воркеров Rust (RustEngine): спин до сна и приоритет потоков — исполнение, биты от них не зависят.
+                io.github.some_example_name.physics.RustEngine.workerSpinLimit.toDouble(),
+                io.github.some_example_name.physics.RustEngine.workerNice.toDouble(),
+                io.github.some_example_name.physics.RustEngine.workerParkMaxMicros.toDouble(),
+            ).also { check(it.size == 68) { "раскладка параметров Rust: ${it.size} чисел вместо 68" } }
         }
     }
 }

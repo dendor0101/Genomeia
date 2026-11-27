@@ -642,6 +642,8 @@ object BugReplay {
      * быть от разницы сборок, а не от недетерминизма; печатаем, как повторить на той.
      */
     private fun noteBuildCommit() {
+        // Движок физики отчёта: мир у Kotlin и Rust побитово один, повтор идёт на движке этого запуска.
+        manifest["physics.engine"]?.let { println("[$TAG] Физика отчёта: $it, повтор: ${io.github.some_example_name.physics.RustEngine.name}") }
         val commit = manifest["build.commit"] ?: return
         val dirty = manifest["build.dirty"] == "true"
         println("[$TAG] Сборка отчёта: $commit (${manifest["build.branch"] ?: "?"})" +

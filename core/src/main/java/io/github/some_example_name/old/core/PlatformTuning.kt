@@ -56,6 +56,19 @@ object PlatformTuning {
     var onWorkerThreadStart: (workerId: Int) -> Unit = {}
 
     /**
+     * Физика на Rust (physics RustEngine, RUST_PORT.md «Rust в игре»): лаунчер Android ставит true — мир физики шагает на
+     * Rust, если библиотека из APK загрузилась (иначе Kotlin с теми же битами). На ПК — ключ -Dgenomeia.physics.engine=rust.
+     */
+    var rustPhysics = false
+
+    /**
+     * Приоритет (nice) потоков пула физики на Rust — тот же, что лаунчер даёт воркерам игры в [onWorkerThreadStart]
+     * (Android: THREAD_PRIORITY_URGENT_DISPLAY = −8): поток симуляции — воркер 0 этого пула, и разные приоритеты на
+     * спин-барьере дают ту же инверсию, что описана выше. 0 — не трогать.
+     */
+    var rustWorkerNice = 0
+
+    /**
      * Ключи исполнения мира физики игры (PhysicsConfig, только EXECUTION_KEYS — например
      * ISLANDS=0|1): на результат не влияют побитово, только на скорость. Пусто — как всегда.
      * Ставит стенд замера на телефоне (PhonePerfLauncher, --es physics "ISLANDS=0"): режим

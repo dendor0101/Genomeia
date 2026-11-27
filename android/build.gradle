@@ -67,6 +67,24 @@ android {
       minifyEnabled true
       proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), 'proguard-rules.pro'
     }
+    // Проверка релизной сборки на телефоне (R8 и всё остальное — как у release), но подписана отладочным ключом и
+    // ставится рядом с игрой: установленную игру игрока не трогает. Со стендом замера (src/perf) — та же сцена и тот
+    // же хэш мира, что у perf, но после R8: am start -n io.github.some_example_name.rc/io.github.some_example_name
+    // .android.PhonePerfLauncher … (ключи — в PhonePerfLauncher).
+    releaseCheck {
+      initWith release
+      applicationIdSuffix '.rc'
+      versionNameSuffix '-rc'
+      manifestPlaceholders = [appLabel: 'Genomeia RC']
+      matchingFallbacks = ['release']
+      signingConfig signingConfigs.debug
+    }
+  }
+  sourceSets {
+    releaseCheck {
+      java.srcDirs += ['src/perf/java']
+      manifest.srcFile 'src/perf/AndroidManifest.xml'
+    }
   }
 
   kotlin.compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
@@ -130,6 +148,27 @@ tasks.register('copyAndroidNatives') {
 
 tasks.matching { it.name.contains("merge") && it.name.contains("JniLibFolders") }.configureEach { packageTask ->
   packageTask.dependsOn 'copyAndroidNatives'
+}
+
+// ФИЗИКА НА RUST ДЛЯ ТЕЛЕФОНОВ (RUST_PORT.md, «Rust в игре»): библиотека arm64-v8a кладётся в APK рядом с natives libGDX,
+// лаунчер включает движок Rust, если она загрузилась (AndroidLauncher, RustEngine). Нет cargo или NDK, или -PnoRust —
+// APK без неё: игра на Kotlin с теми же битами. armeabi-v7a и x86 без Rust — тоже на Kotlin.
+evaluationDependsOn(':physics')
+def physicsProject = project(':physics')
+if (!project.hasProperty('noRust') && physicsProject.ext.has('rustAndroidAvailable') && physicsProject.ext.rustAndroidAvailable) {
+  tasks.named('copyAndroidNatives') {
+    dependsOn ':physics:cargoBuildAndroid'
+    doLast {
+      copy {
+        from physicsProject.ext.physicsAndroidLib
+        into file('libs/arm64-v8a')
+      }
+    }
+  }
+} else {
+  logger.lifecycle('APK без физики на Rust: нет cargo или NDK (или -PnoRust) — игра на телефоне пойдёт на Kotlin')
+  // Прежняя сборка могла оставить библиотеку в libs/ (папка не в git): без неё APK обязан быть честно без Rust.
+  tasks.named('copyAndroidNatives') { doLast { delete file('libs/arm64-v8a/libgenomeia_physics_jni.so') } }
 }
 
 tasks.register('run', Exec) {

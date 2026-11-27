@@ -1,7 +1,8 @@
 //! Пул воркеров физики — `solver/PhysicsWorkers.kt` (SpinPhysicsWorkers) на Rust.
 //!
 //! Вызывающий поток работает сам (воркер 0), остальные `count - 1` потоков ждут эпоху: сначала крутятся
-//! (`spin_limit` проверок), потом спят с удвоением паузы до 2 мс — на телефоне долгий спин греет и сбрасывает частоту
+//! (`spin_limit` проверок), потом спят с удвоением паузы до потолка `park_max` (2 мс; в игре — как у пула игры,
+//! [PoolTuning]) — долгий спин греет телефон и сбрасывает частоту
 //! (CLAUDE.md, PlatformTuning). Работа делится на куски, кусок берёт тот, кто первым увеличил курсор: КТО какой кусок
 //! взял, на биты не влияет — каждая стадия пишет только данные своего куска, слияние идёт после барьера в
 //! фиксированном порядке (как в Kotlin).
@@ -32,6 +33,8 @@ struct Shared {
     running: AtomicBool,
     failed: AtomicBool,
     spin_limit: u32,
+    /// Потолок сна ждущего воркера (паузы удваиваются от 50 мкс до него); будит его unpark, а не таймер.
+    park_max: Duration,
     /// Работа и число кусков текущей эпохи: пишет вызывающий ДО увеличения эпохи (Release), читают воркеры ПОСЛЕ того,
     /// как увидели новую эпоху (Acquire).
     job: UnsafeCell<(Option<JobRef>, usize)>,
@@ -57,8 +60,42 @@ impl std::fmt::Debug for Workers {
     }
 }
 
+/// Приоритет (nice) потока воркера: тот же, что игра даёт своим воркерам (PlatformTuning.rustWorkerNice; Android —
+/// THREAD_PRIORITY_URGENT_DISPLAY = −8). Вызывающий поток — воркер 0 с приоритетом потока симуляции; разные приоритеты
+/// на спин-барьере — инверсия: главный спинит, отбирая такты у воркера, которого ждёт. На Linux и Android nice — свой у
+/// каждого потока (who = 0 — вызывающий поток). 0 — не трогать; ошибку (нет права) молча пропускаем — это исполнение.
+fn set_thread_nice(nice: i32) {
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    if nice != 0 {
+        unsafe extern "C" {
+            fn setpriority(which: i32, who: u32, prio: i32) -> i32;
+        }
+        // SAFETY: системный вызов без указателей; PRIO_PROCESS = 0.
+        unsafe {
+            setpriority(0, 0, nice);
+        }
+    }
+    #[cfg(not(any(target_os = "android", target_os = "linux")))]
+    let _ = nice;
+}
+
+/// Исполнение пула (RustEngine; в игре — от пула игры, PlatformTuning): проверок до сна, приоритет потоков (nice, 0 — не
+/// трогать) и потолок сна в микросекундах. Биты от него не зависят.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PoolTuning {
+    pub spin_limit: u32,
+    pub nice: i32,
+    pub park_max_us: u32,
+}
+
+impl PoolTuning {
+    /// Как `SpinPhysicsWorkers` Kotlin: спин 200 000 проверок, сон до 2 мс.
+    pub const DEFAULT: PoolTuning = PoolTuning { spin_limit: 200_000, nice: 0, park_max_us: 2_000 };
+}
+
 impl Workers {
-    pub fn new(count: usize, spin_limit: u32) -> Workers {
+    pub fn new(count: usize, tuning: PoolTuning) -> Workers {
+        let PoolTuning { spin_limit, nice, park_max_us } = tuning;
         assert!(count >= 1, "воркеров не меньше одного");
         let shared = Arc::new(Shared {
             epoch: Padded(AtomicU64::new(0)),
@@ -68,6 +105,7 @@ impl Workers {
             running: AtomicBool::new(true),
             failed: AtomicBool::new(false),
             spin_limit,
+            park_max: Duration::from_micros(park_max_us.max(50) as u64),
             job: UnsafeCell::new((None, 0)),
             parked: (0..count).map(|_| Padded(AtomicBool::new(false))).collect(),
         });
@@ -76,7 +114,10 @@ impl Workers {
                 let s = shared.clone();
                 thread::Builder::new()
                     .name(format!("Physics-Worker-{w}"))
-                    .spawn(move || worker_loop(&s, w))
+                    .spawn(move || {
+                        set_thread_nice(nice);
+                        worker_loop(&s, w)
+                    })
                     .expect("поток воркера физики")
             })
             .collect();
@@ -86,12 +127,13 @@ impl Workers {
         Workers { count, shared, threads, busy: AtomicBool::new(false) }
     }
 
-    /// Общий пул на [count] воркеров (один на процесс; миры с одинаковым числом воркеров делят его).
-    pub fn shared(count: usize, spin_limit: u32) -> Arc<Workers> {
-        static POOLS: OnceLock<Mutex<HashMap<(usize, u32), Arc<Workers>>>> = OnceLock::new();
+    /// Общий пул на [count] воркеров с исполнением [tuning] (один на процесс; миры с одинаковыми числами делят его).
+    pub fn shared(count: usize, tuning: PoolTuning) -> Arc<Workers> {
+        type Pools = HashMap<(usize, PoolTuning), Arc<Workers>>;
+        static POOLS: OnceLock<Mutex<Pools>> = OnceLock::new();
         let pools = POOLS.get_or_init(|| Mutex::new(HashMap::new()));
         let mut map = pools.lock().expect("пулы воркеров");
-        map.entry((count, spin_limit)).or_insert_with(|| Arc::new(Workers::new(count, spin_limit))).clone()
+        map.entry((count, tuning)).or_insert_with(|| Arc::new(Workers::new(count, tuning))).clone()
     }
 
     /// Выполнить [job] (кусок, воркер) для кусков 0..[chunks]. Возвращается, когда все куски сделаны. Вложенный вызов,
@@ -174,7 +216,7 @@ fn worker_loop(s: &Shared, worker: usize) {
                 thread::park_timeout(park);
             }
             s.parked[worker].0.store(false, Ordering::Relaxed);
-            park = (park * 2).min(Duration::from_millis(2));
+            park = (park * 2).min(s.park_max);
         }
         if !s.running.load(Ordering::Acquire) {
             return;
@@ -248,7 +290,7 @@ mod tests {
 
     #[test]
     fn every_chunk_once() {
-        let w = Workers::new(4, 1000);
+        let w = Workers::new(4, PoolTuning { spin_limit: 1000, ..PoolTuning::DEFAULT });
         for round in 0..200 {
             let hits: Vec<AtomicUsize> = (0..97).map(|_| AtomicUsize::new(0)).collect();
             w.run(97, &|k, _| {
@@ -265,7 +307,7 @@ mod tests {
         let data: Vec<i64> = (0..10_000).collect();
         let mut out = Vec::new();
         for count in [1usize, 2, 3, 8] {
-            let w = Workers::new(count, 1000);
+            let w = Workers::new(count, PoolTuning { spin_limit: 1000, ..PoolTuning::DEFAULT });
             let parts: Vec<AtomicI64> = (0..16).map(|_| AtomicI64::new(0)).collect();
             w.run(16, &|k, _| {
                 let s: i64 = data[k * 625..(k + 1) * 625].iter().sum();

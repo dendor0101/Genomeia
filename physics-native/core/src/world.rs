@@ -41,9 +41,17 @@ impl PhysicsWorld {
         let workers = cfg.workers;
         let mut state = BodyState::new(cfg);
         state.world_scale = scale;
-        // Как PhysicsWorld Kotlin: при WORKERS > 1 — общий пул на это число (спин SpinPhysicsWorkers по умолчанию).
+        // Как PhysicsWorld Kotlin: при WORKERS > 1 — общий пул на это число. Спин и приоритет потоков — от обвязки
+        // (RustEngine: в игре — как у пула игры, PlatformTuning; на стендах и в тени — спин SpinPhysicsWorkers).
         if workers > 1 {
-            state.workers = Some(crate::solver::pool::Workers::shared(workers as usize, WORKER_SPIN_LIMIT));
+            use crate::solver::pool::{PoolTuning, Workers};
+            let c = &state.cfg;
+            let tuning = PoolTuning {
+                spin_limit: if c.worker_spin_limit > 0 { c.worker_spin_limit } else { WORKER_SPIN_LIMIT },
+                nice: c.worker_nice,
+                park_max_us: if c.worker_park_max_us > 0 { c.worker_park_max_us } else { PoolTuning::DEFAULT.park_max_us },
+            };
+            state.workers = Some(Workers::shared(workers as usize, tuning));
         }
         PhysicsWorld {
             state,

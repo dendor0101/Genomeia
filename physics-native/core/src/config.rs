@@ -79,10 +79,16 @@ pub struct Config {
     /// Порядок по цветам (`COLOR_ORDER`, `BodyState.colorOrderOn`, закон с 27.11): связи, площади, изгибы и створки
     /// набора решаются цвет за цветом (solver/color_order.rs). Меняет биты: false — прежний порядок по номерам.
     pub color_order_on: bool,
+    /// Пул воркеров (исполнение, биты от него не зависят; `RustEngine.workerSpinLimit`/`workerNice`/`workerParkMaxMicros`):
+    /// проверок до сна у ждущего воркера (0 — по умолчанию, как SpinPhysicsWorkers), приоритет потоков пула (nice, 0 — не
+    /// трогать) и потолок сна в микросекундах (0 — 2 мс).
+    pub worker_spin_limit: u32,
+    pub worker_nice: i32,
+    pub worker_park_max_us: u32,
 }
 
 impl Config {
-    pub const LAYOUT_LEN: usize = 65;
+    pub const LAYOUT_LEN: usize = 68;
 
     /// Разбор массива из `RustWorld.configLayout`. Ветки, которых перенос не умеет (отладочные замеры,
     /// охота за проникновением), отвергаются сразу — молча идти другим путём нельзя.
@@ -161,6 +167,9 @@ impl Config {
             islands_mode: i(62),
             islands_rollback_all: b(63),
             color_order_on: b(64),
+            worker_spin_limit: v[65].max(0.0) as u32,
+            worker_nice: i(66),
+            worker_park_max_us: v[67].max(0.0) as u32,
         };
         assert!(c.substeps >= 1, "подшагов должно быть не меньше одного");
         assert!(!c.dbg_seal_on, "RB_SEAL (замер щелей) в переносе на Rust не поддержан");

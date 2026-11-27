@@ -357,9 +357,116 @@ pub extern "system" fn Java_io_github_some_1example_1name_physics_rust_RustPhysi
             1 => &st.py,
             2 => &st.vx,
             3 => &st.vy,
+            // Зеркало для игры (PhysicsWorld с физикой на Rust): то, что мост читает каждый тик.
+            4 => &st.cell_scale,
+            5 => &st.cell_scale_target,
+            6 => &st.cell_softness,
+            7 => &st.cell_grip,
+            8 => &st.radius,
             _ => panic!("worldRead: неизвестный массив {which}"),
         };
         env.set_float_array_region(&out, 0, &src[..st.n]).expect("set float[]");
+    })
+}
+
+/// Зеркало для игры: признаки частиц — 0 cellDead, 1 cellUnborn, 2 cellNoContact, 3 «организм частицы спит»
+/// (PhysicsWorld.isAsleep; игра спрашивает его из потока рисования — зеркало, а не вызов в мир) (первые n).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_some_1example_1name_physics_rust_RustPhysics_worldReadBools(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    which: jint,
+    out: JBooleanArray,
+) {
+    guard(&mut env, (), |env| {
+        // SAFETY: handle — живой мир.
+        let st = &unsafe { world(handle) }.state;
+        let bytes: Vec<jboolean> = match which {
+            0 => st.cell_dead[..st.n].iter().map(|&v| v as jboolean).collect(),
+            1 => st.cell_unborn[..st.n].iter().map(|&v| v as jboolean).collect(),
+            2 => st.cell_no_contact[..st.n].iter().map(|&v| v as jboolean).collect(),
+            3 => (0..st.n).map(|i| st.sleep.is_asleep(st.organism_of[i]) as jboolean).collect(),
+            // Топология для отладочной отрисовки — массив целиком (длина — операция 145 worldCall).
+            _ => topo_bools(st, which).iter().map(|&v| v as jboolean).collect(),
+        };
+        env.set_boolean_array_region(&out, 0, &bytes).expect("set boolean[]");
+    })
+}
+
+/// Зеркало для игры: 0 boneOf (первые n).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_some_1example_1name_physics_rust_RustPhysics_worldReadInts(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    which: jint,
+    out: JIntArray,
+) {
+    guard(&mut env, (), |env| {
+        // SAFETY: handle — живой мир.
+        let st = &unsafe { world(handle) }.state;
+        let src: &[i32] = match which {
+            0 => &st.bone_of[..st.n],
+            // Топология для отладочной отрисовки — массив целиком (длина — операция 144 worldCall).
+            _ => topo_ints(st, which),
+        };
+        env.set_int_array_region(&out, 0, src).expect("set int[]");
+    })
+}
+
+/// Целые массивы топологии для отладочной отрисовки (галочки «Связи» и «Заливка областей» в игре; PhysicsWorld
+/// .debugLinks/debugTriangles): 1 vertStart, 2 vertOther, 3 vertEdge, 4 vertexTriStart, 5 vertexTriangles,
+/// 6 triB и 7 triC описания тела — как массивы BakedTopology и BodyDefinition у Kotlin.
+fn topo_ints(st: &genomeia_physics::state::BodyState, which: i32) -> &[i32] {
+    let b = &st.baked;
+    match which {
+        1 => &b.vert_start,
+        2 => &b.vert_other,
+        3 => &b.vert_edge,
+        4 => &b.vertex_tri_start,
+        5 => &b.vertex_triangles,
+        6 => &st.body.tri_b,
+        7 => &st.body.tri_c,
+        _ => panic!("топология: неизвестный массив целых {which}"),
+    }
+}
+
+/// Признаки топологии для отладочной отрисовки: 4 edgeDead, 5 triAlive.
+fn topo_bools(st: &genomeia_physics::state::BodyState, which: i32) -> &[bool] {
+    match which {
+        4 => &st.baked.edge_dead,
+        5 => &st.baked.tri_alive,
+        _ => panic!("топология: неизвестный массив признаков {which}"),
+    }
+}
+
+/// Зеркало для игры, одна частица [i] после правки между тиками: в outF — px, py, vx, vy, cellScale,
+/// cellScaleTarget, cellSoftness, cellGrip, radius; в outI — cellDead, cellUnborn, cellNoContact, boneOf,
+/// cellScalesOn, cellScalesMoving.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_some_1example_1name_physics_rust_RustPhysics_worldReadCell(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    i: jint,
+    out_f: JFloatArray,
+    out_i: JIntArray,
+) {
+    guard(&mut env, (), |env| {
+        // SAFETY: handle — живой мир.
+        let st = &unsafe { world(handle) }.state;
+        let k = i as usize;
+        let f = [
+            st.px[k], st.py[k], st.vx[k], st.vy[k], st.cell_scale[k], st.cell_scale_target[k], st.cell_softness[k],
+            st.cell_grip[k], st.radius[k],
+        ];
+        let n = [
+            st.cell_dead[k] as i32, st.cell_unborn[k] as i32, st.cell_no_contact[k] as i32, st.bone_of[k],
+            st.cell_scales_on as i32, st.cell_scales_moving as i32,
+        ];
+        env.set_float_array_region(&out_f, 0, &f).expect("set float[]");
+        env.set_int_array_region(&out_i, 0, &n).expect("set int[]");
     })
 }
 
@@ -394,6 +501,8 @@ pub extern "system" fn Java_io_github_some_1example_1name_physics_rust_RustPhysi
             12 => &mut st.flow_vx,
             13 => &mut st.flow_vy,
             14 => &mut st.rest_inv_mass,
+            // Физика на Rust в игре: цели мышц клеток, которые мост пишет прямо в зеркало (WorldPhysics.syncOrganismFast).
+            15 => &mut st.cell_scale_target,
             _ => panic!("worldAdopt: неизвестный массив {which}"),
         };
         if dst.len() < v.len() {
@@ -481,6 +590,11 @@ fn call(w: &mut PhysicsWorld, op: i32, i: i32, j: i32, a: f64, b: f64, c: f64, d
         41 => w.set_environment(af, bf, cf, df, f32::from_bits(j as u32)),
         43 => w.pull_toward(iu, af, bf),
         44 => w.wake_all(),
+        // Физика на Rust в игре: признаки множителей клеток, которые мост ставит прямо в зеркале.
+        45 => {
+            w.state.cell_scales_on = a != 0.0;
+            w.state.cell_scales_moving = b != 0.0;
+        }
         100 => return w.state.n as f64,
         101 => return w.state.organism_count as f64,
         102 => return w.body_first(i) as f64,
@@ -513,6 +627,28 @@ fn call(w: &mut PhysicsWorld, op: i32, i: i32, j: i32, a: f64, b: f64, c: f64, d
         135 => return w.free_count as f64,
         136 => return w.state.isl.last_tick as f64,
         137 => return w.state.isl.aborts as f64,
+        // Физика на Rust в игре: признаки множителей клеток и вопросы моста к топологии (PhysicsWorld.liveDegree,
+        // neighborCount, neighbor) и к временным связям (isJointLive).
+        138 => return yes(w.state.cell_scales_on),
+        139 => return yes(w.state.cell_scales_moving),
+        140 => {
+            let b = &w.state.baked;
+            let mut d = 0;
+            for q in b.vert_start[iu]..b.vert_start[iu + 1] {
+                if !b.edge_dead[b.vert_edge[q as usize] as usize] {
+                    d += 1;
+                }
+            }
+            return d as f64;
+        }
+        141 => return (w.state.baked.vert_start[iu + 1] - w.state.baked.vert_start[iu]) as f64,
+        142 => return w.state.baked.vert_other[(w.state.baked.vert_start[iu] + j) as usize] as f64,
+        143 => return yes(i >= 0 && iu < w.state.joint_slots && w.state.joint_live[iu]),
+        // Топология для отладочной отрисовки (PhysicsWorld.debugLinks/debugTriangles): длины массивов, которые отдают
+        // worldReadInts (номера 1–7) и worldReadBools (4–5), и ревизия треугольников.
+        144 => return topo_ints(&w.state, i).len() as f64,
+        145 => return topo_bools(&w.state, i).len() as f64,
+        146 => return w.state.baked.triangle_revision as f64,
         _ => panic!("worldCall: неизвестная операция {op}"),
     }
     0.0

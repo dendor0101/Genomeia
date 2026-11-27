@@ -14,6 +14,7 @@ class BugMetaTest {
         "deviceId" to "7cb9f803c736",
         "platform" to "Android",
         "os" to "Linux 5.10",
+        "physics.engine" to "rust",
         "device.model" to "Pixel \"7\"",
         "device.sdk" to "34",
         "gpu" to "Mali-G710",
@@ -39,6 +40,7 @@ class BugMetaTest {
         assertEquals("crash", json.getString("kind"))
         assertEquals(1234L, json.getLong("size"))
         assertEquals("Android", json.get("platform").getString("type"))
+        assertEquals("rust", json.get("platform").getString("physics"))
         assertEquals("Pixel \"7\"", json.get("device").getString("model"))
         assertEquals("Mali-G710", json.get("device").getString("gpu"))
 
@@ -57,5 +59,7 @@ class BugMetaTest {
         val json = JsonReader().parse(BugMeta.json(mapOf("kind" to "report"), "x-report.bug", null))
         assertTrue(json.get("crash").isNull)
         assertEquals(0L, json.get("report").getLong("images"))
+        // Отчёт без движка физики (до 27.11) — поля нет.
+        assertTrue(json.get("platform").get("physics") == null)
     }
 }

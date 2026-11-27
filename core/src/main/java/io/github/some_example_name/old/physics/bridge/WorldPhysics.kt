@@ -134,6 +134,8 @@ class WorldPhysics(
 
     /** Новый мир физики: прежний мир игры стёрт (рестарт, новая карта, загрузка). */
     fun reset() {
+        // Физика на Rust (RustEngine): память прежнего мира освобождается сразу — на Android до 13 нет Cleaner.
+        bridge.world.close()
         bridge = PhysicsBridge(workers, executionConfig())
         boundsWidth = -1; boundsHeight = -1
         compactions = 0
@@ -147,6 +149,9 @@ class WorldPhysics(
         particleEntity.physicsIndex.fill(-1)
         publish()
     }
+
+    /** Шагает ли мир физики на Rust (RustEngine) — для строки замера стенда телефона; на мир не влияет. */
+    val isRustEngine: Boolean get() = bridge.world.isRustEngine
 
     /**
      * Время фазы ARRANGE по частям, нс с начала мира (замеры: стенд телефонов, PerfCheck):
@@ -456,6 +461,8 @@ class WorldPhysics(
         }
         if (syncEvents.size < count) { syncEvents = Array(count * 2) { IntArray(8) }; syncEventN = IntArray(count * 2) }
         w.run(count, syncJob)
+        // Прямые записи быстрого пути — в мир до редких клеток: с физикой на Rust их иначе стёрла бы первая же правка.
+        bridge.world.flushDirectWrites()
         // Редкие клетки — в одном потоке, по организмам и слотам по порядку, как шёл прежний цикл.
         for (k in 0 until count) {
             val organ = organsWithBody.getInt(k)
@@ -764,7 +771,8 @@ class WorldPhysics(
         if (organsWithBody.size == 0) return
         val world = bridge.world
         val st = world.state
-        val b = st.baked
+        // Топология — у мира Kotlin его же массивы, у физики на Rust — копия из Rust (только при этой галочке).
+        val b = world.debugLinks()
         for (k in 0 until organsWithBody.size) {
             val organ = organsWithBody.getInt(k)
             val first = bridge.particleOf(organ, 0)
