@@ -3,11 +3,11 @@ package io.github.some_example_name.old.features.simulation
 import com.badlogic.gdx.Application
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Color
-import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.Batch
 import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.math.Interpolation
+import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.InputListener
@@ -45,6 +45,7 @@ import io.github.some_example_name.old.game.MyGame
 import io.github.some_example_name.old.game.applyCustomFont
 import io.github.some_example_name.old.game.applyCustomFontMedium
 import io.github.some_example_name.old.game.applyCustomFontSmall
+import io.github.some_example_name.old.systems.render.DebugCellIcons
 import io.github.some_example_name.old.systems.rules.CellRule
 import io.github.some_example_name.old.systems.rules.RuleFormat
 import io.github.some_example_name.old.systems.rules.RuleSection
@@ -65,8 +66,10 @@ class WorldRulesView(
     val standard: FloatArray,
     val cellValues: FloatArray,
     val cellStandard: FloatArray,
-    val typeCount: Int
+    /** Ключи типов клеток по номеру типа (WorldRules.cellKeys). */
+    val cellKeys: List<String>
 ) {
+    val typeCount = cellKeys.size
     var section = RuleSection.ENVIRONMENT
     var cellType = 0
 
@@ -75,15 +78,19 @@ class WorldRulesView(
         cellStandard.copyInto(cellValues)
     }
 
-    /** Отличается ли что-то у типа клетки [type] от стандарта — значок типа подсвечивается. */
+    /**
+     * Отличается ли что-то у типа клетки [type] от стандарта — значок типа подсвечивается. Вместе
+     * со своими настройками типа — и настройки мира, которые читает только он (WorldRule.cellKey).
+     */
     fun isCellChanged(type: Int): Boolean =
-        CellRule.entries.any { cellValues[it.ordinal * typeCount + type] != cellStandard[it.ordinal * typeCount + type] }
+        CellRule.entries.any { cellValues[it.ordinal * typeCount + type] != cellStandard[it.ordinal * typeCount + type] } ||
+            WorldRule.entries.any { it.cellKey == cellKeys[type] && values[it.ordinal] != standard[it.ordinal] }
 
     companion object {
         /** Звать между тиками (SimulationSystem.betweenTicks): правила пишет поток симуляции. */
         fun of(rules: WorldRules) = WorldRulesView(
             rules.values.copyOf(), rules.standard.copyOf(),
-            rules.cellValues.copyOf(), rules.cellStandard.copyOf(), rules.cellKeys.size
+            rules.cellValues.copyOf(), rules.cellStandard.copyOf(), rules.cellKeys
         )
     }
 }
@@ -91,7 +98,9 @@ class WorldRulesView(
 /**
  * ПАНЕЛЬ «НАСТРОЙКИ МИРА» — справа поверх идущего мира, не модальная: мир под ней живёт и
  * отвечает на касания, правка видна сразу. Вкладки — «Среда», «Организмы», «Клетки» (там своя
- * строка значков типов). Каждая настройка — название, значение, ползунок с границами под ним и
+ * строка значков типов — клетки так, как их рисует отладочный вид мира, DebugCellIcons; у
+ * выбранного типа — его особые настройки мира, WorldRule.cellKey, затем общие для всех
+ * типов, CellRule). Каждая настройка — название, значение, ползунок с границами под ним и
  * отметкой стандарта на дорожке; изменённую можно вернуть своей кнопкой, все — «Сбросить всё».
  * Подсказка о смысле — при наведении мыши на строку или зажатии пальцем на её названии
  * (hint: на телефоне зажатие на ползунке тянуло бы его, а не показывало подсказку).
@@ -118,7 +127,8 @@ class WorldSettingsPanel(
 ) : Table() {
 
     private val textures = mutableListOf<Texture>()
-    private val cellTextures = HashMap<String, Texture>()
+    /** Значки типов — создаются при первом показе вкладки «Клетки», живут, пока открыта панель. */
+    private var cellIcons: DebugCellIcons? = null
     private val refreshers = ArrayList<() -> Unit>()
     private val sliders = ArrayList<Slider>()
     private var refreshing = false
@@ -285,7 +295,8 @@ class WorldSettingsPanel(
             val cell = cells[type]
             val button = VisImageButton(cellIconStyle(cell, changed = view.isCellChanged(type)))
             button.image.setScaling(Scaling.fit)
-            button.pad(5f.dp())
+            // В значке вокруг клетки уже есть запас под реснички и шипы — отступ кнопки малый.
+            button.pad(2f.dp())
             button.isChecked = type == view.cellType
             button.hint(cell.name)
             button.onClick {
@@ -303,14 +314,17 @@ class WorldSettingsPanel(
             game.applyCustomFontSmall(it); it.color = DIM; it.setWrap(true)
         }
         content.add(Table().apply {
-            add(Image(TextureRegionDrawable(TextureRegion(cellTexture(cell)))).apply { setScaling(Scaling.fit) })
-                .size(48f.dp()).padRight(10f.dp())
+            add(Image(cellIcon(cell)).apply { setScaling(Scaling.fit) })
+                .size(HEADER_ICON_DP.dp()).padRight(10f.dp())
             add(name).growX().left().minWidth(0f)
         }).padBottom(4f.dp()).row()
         if (cell.description.isNotEmpty()) content.add(description).growX().minWidth(0f).padBottom(10f.dp()).row()
         separator()
 
         val key = cell.key
+        // Сначала то, что есть только у этого типа (сила жгутика, насоса, пауза производителя):
+        // ради него тип и открывают. Значения — общие для мира, ключи прежние.
+        for (rule in WorldRule.entries) if (rule.cellKey == key) worldRow(rule)
         for (rule in CellRule.entries) {
             val k = rule.ordinal * view.typeCount + type
             ruleRow(rule.key, rule.format, rule.min, rule.max, rule.step, view.cellStandard[k], { view.cellValues[k] }) { v ->
@@ -451,33 +465,21 @@ class WorldSettingsPanel(
         }
     }
 
-    /** Значок типа клетки — картинкой как есть; изменённый тип — со светлой рамкой. */
+    /** Значок типа клетки — как она выглядит в отладочном виде мира; изменённый тип — со светлой рамкой. */
     private fun cellIconStyle(cell: Cell, changed: Boolean) = VisImageButton.VisImageButtonStyle(iconStyle).apply {
         if (changed) up = changedFrame
-        imageUp = TextureRegionDrawable(TextureRegion(cellTexture(cell)))
+        imageUp = cellIcon(cell)
     }
 
     /**
-     * Значок типа — картинка из ui/cell-icons. У типов без своей картинки там заглушка
-     * not_cell.png (красный квадрат), поэтому им — кружок цвета клетки, как она выглядит в мире.
+     * Сторона значка в пикселях — по самому крупному показу (заголовок выбранного типа), степенью
+     * двойки: на ноутбуке 64, на телефоне с плотностью 3 — 256. Больше не нужно, меньше — мыло.
      */
-    private fun cellTexture(cell: Cell): Texture = cellTextures.getOrPut(cell.key) {
-        val file = Gdx.files.internal("ui/cell-icons/${cell.textureName}")
-        if (cell.textureName != NO_ICON && file.exists()) {
-            Texture(file, true).apply { setFilter(Texture.TextureFilter.MipMapLinearLinear, Texture.TextureFilter.Linear) }
-        } else drawnCellIcon(cell.defaultColor)
-    }
-
-    private fun drawnCellIcon(color: Color): Texture {
-        val size = 64
-        val p = Pixmap(size, size, Pixmap.Format.RGBA8888)
-        p.blending = Pixmap.Blending.None
-        p.setColor(0f, 0f, 0f, 0f); p.fill()
-        p.setColor(color.r * 0.55f, color.g * 0.55f, color.b * 0.55f, 1f); p.fillCircle(size / 2, size / 2, size / 2 - 3)
-        p.setColor(color.r, color.g, color.b, 1f); p.fillCircle(size / 2, size / 2, size / 2 - 10)
-        val texture = Texture(p, true).apply { setFilter(Texture.TextureFilter.MipMapLinearLinear, Texture.TextureFilter.Linear) }
-        p.dispose()
-        return texture
+    private fun cellIcon(cell: Cell): Drawable {
+        val sizePx = MathUtils.nextPowerOfTwo(HEADER_ICON_DP.dp().toInt()).coerceIn(64, 256)
+        // Без фона мира: клетка ложится на кнопку, а не квадратом поверх её рамки.
+        val icons = cellIcons ?: DebugCellIcons(cells, sizePx, transparent = true).also { cellIcons = it }
+        return icons.drawable(cell)
     }
 
     private fun <T : Button> T.onClick(action: () -> Unit): T = apply {
@@ -507,8 +509,8 @@ class WorldSettingsPanel(
         val removed = super.remove()
         textures.forEach { it.dispose() }
         textures.clear()
-        cellTextures.values.forEach { it.dispose() }
-        cellTextures.clear()
+        cellIcons?.dispose()
+        cellIcons = null
         return removed
     }
 
@@ -537,8 +539,8 @@ class WorldSettingsPanel(
         /** Наименьшая ширина панели; больше — если заголовку и вкладкам нужно больше. */
         const val PANEL_DP = 440f
         const val PAD_DP = 12f
-        /** Картинка-заглушка типа без своего значка (Cell.textureName по умолчанию). */
-        const val NO_ICON = "not_cell.png"
+        /** Значок выбранного типа рядом с его именем. */
+        const val HEADER_ICON_DP = 48f
         const val EDGE_DP = 8f
         const val BUTTON_DP = 40f
         const val RESET_DP = 28f

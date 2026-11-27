@@ -12,7 +12,6 @@ class Tail(cellTypeId: Int): Cell(
     key = "tail",
     defaultColor = blueColors.first(),
     cellTypeId = cellTypeId,
-    textureName = "tail.png",
     isNeural = true,
     isDirected = true
 ) {

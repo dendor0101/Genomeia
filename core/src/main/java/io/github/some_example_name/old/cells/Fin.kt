@@ -7,7 +7,6 @@ class Fin(cellTypeId: Int): Cell(
     key = "fin",
     defaultColor = skyBlueColors[1],
     cellTypeId = cellTypeId,
-    textureName = "tail.png",
     isDirected = true
 ) {
 

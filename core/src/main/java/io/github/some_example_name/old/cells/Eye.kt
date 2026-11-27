@@ -22,7 +22,6 @@ class Eye(cellTypeId: Int): Cell(
     key = "eye",
     defaultColor = skyBlueColors[2],
     cellTypeId = cellTypeId,
-    textureName = "eye.png",
     isNeural = true,
     isNeuronTransportable = false,
     isDirected = true

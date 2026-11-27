@@ -7,7 +7,6 @@ class Compass(cellTypeId: Int) : Cell(
     key = "compass",
     defaultColor = blueColors[6],
     cellTypeId = cellTypeId,
-    textureName = "Compass.png",
     isDirected = true,
     isNeural = true,
     isNeuronTransportable = false

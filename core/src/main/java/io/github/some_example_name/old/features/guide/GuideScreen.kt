@@ -27,6 +27,7 @@ import io.github.some_example_name.old.core.ui.visTextButton
 import io.github.some_example_name.old.core.ui.visToggleButton
 import io.github.some_example_name.old.core.ui.w
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer
+import io.github.some_example_name.old.systems.render.DebugCellIcons
 import io.github.some_example_name.old.editor.tutorial.TutorialSteps
 import io.github.some_example_name.old.features.editor.dialog.NeuralSection
 import io.github.some_example_name.old.features.guide.celllab.CellLabCatalog
@@ -71,7 +72,7 @@ class GuideScreen : VisDslScreen(isScrollable = false), ReplayTarget {
     }
 
     /** Текстуры клеток для вкладки «Клетки»: compose() зовётся на каждый resize. */
-    private val previews by lazy { GuideCellPreviews(DIGenomeEditorContainer.cellList) }
+    private val previews by lazy { DebugCellIcons(DIGenomeEditorContainer.cellList) }
 
     /**
      * Стенд формул: свой нейрон (см. NeuronLab) и вёрстка вкладки. Создаётся при первом

@@ -32,7 +32,6 @@ class MotorNeuron(cellTypeId: Int) : Cell(
     key = "motor_neuron",
     defaultColor = redColors[1],
     cellTypeId = cellTypeId,
-    textureName = "neuron.png",
     isDirected = true,
     isNeural = true
 ) {

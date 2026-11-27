@@ -7,7 +7,6 @@ class Fat(cellTypeId: Int): Cell(
     key = "fat",
     defaultColor = yellowColors.first(),
     cellTypeId = cellTypeId,
-    textureName = "fat.png",
     defaultCellSettings = CellSettings(
         maxEnergy = 10f,
         cellStiffness = 0.01f,

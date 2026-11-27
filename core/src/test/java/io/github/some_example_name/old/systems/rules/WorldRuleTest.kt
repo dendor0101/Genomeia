@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.systems.rules
 
+import io.github.some_example_name.old.cells.base.CellPalette
 import io.github.some_example_name.old.cells.base.CellTypes
 import io.github.some_example_name.old.core.GlobalSimulationSettings
 import io.github.some_example_name.old.physics.bridge.WorldPhysics
@@ -45,6 +46,23 @@ class WorldRuleTest {
             assertTrue(softness in CellRule.SOFTNESS.min..CellRule.SOFTNESS.max, "${cell.key}: мягкость $softness")
         }
         assertTrue(100f in CellRule.ACTION_COST.min..CellRule.ACTION_COST.max)
+    }
+
+    @Test
+    fun `настройка клетки стоит у живого типа на вкладке «Клетки»`() {
+        // Иначе её не показала бы ни одна вкладка: «Клетки» показывают только типы из палитры.
+        val live = CellTypes.createAll().map { it.key }.filter { it !in CellPalette.RETIRED_CELLS }.toSet()
+        val bound = WorldRule.entries.filter { it.cellKey != null }
+        assertTrue(bound.isNotEmpty())
+        for (rule in WorldRule.entries) {
+            val key = rule.cellKey
+            if (key == null) {
+                assertTrue(rule.section != RuleSection.CELLS, "${rule.key}: на «Клетках» без типа клетки")
+            } else {
+                assertEquals(RuleSection.CELLS, rule.section, "${rule.key}: у типа $key, а вкладка ${rule.section}")
+                assertTrue(key in live, "${rule.key}: типа $key нет среди живых клеток")
+            }
+        }
     }
 
     @Test

@@ -7,7 +7,6 @@ class Zygote(cellTypeId: Int) : Cell(
     key = "zygote",
     defaultColor = pinkColors[0],
     cellTypeId = cellTypeId,
-    textureName = "zygote.png",
     isDirected = true,
     defaultCellSettings = CellSettings(
         maxEnergy = 10f,
