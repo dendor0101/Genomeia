@@ -150,6 +150,9 @@ class WorldPhysics(
         publish()
     }
 
+    /** Шагает ли мир физики на Rust (RustEngine) — для строки замера стенда телефона; на мир не влияет. */
+    val isRustEngine: Boolean get() = bridge.world.isRustEngine
+
     /**
      * Время фазы ARRANGE по частям, нс с начала мира (замеры: стенд телефонов, PerfCheck):
      * сверка игры с миром физики до шага, сам шаг и разбор после шага (позы в игру, смерти,
@@ -458,6 +461,8 @@ class WorldPhysics(
         }
         if (syncEvents.size < count) { syncEvents = Array(count * 2) { IntArray(8) }; syncEventN = IntArray(count * 2) }
         w.run(count, syncJob)
+        // Прямые записи быстрого пути — в мир до редких клеток: с физикой на Rust их иначе стёрла бы первая же правка.
+        bridge.world.flushDirectWrites()
         // Редкие клетки — в одном потоке, по организмам и слотам по порядку, как шёл прежний цикл.
         for (k in 0 until count) {
             val organ = organsWithBody.getInt(k)

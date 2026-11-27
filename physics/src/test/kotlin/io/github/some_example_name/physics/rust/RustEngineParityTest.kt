@@ -118,15 +118,27 @@ class RustEngineParityTest {
             val s = if ((t / 8) % 2 == 0) 0.7f else 1.0f
             if (t % 3 == 0) for (c in 16 until 24) if (!k.isUnborn(first + c)) both(k, r, "мышца $c") { it.setCellScale(first + c, s) }
             if (t == 30) both(k, r, "сон выкл") { it.sleepOn = false }
-            if (t in 31 until 56 && t % 5 == 0) for (w in listOf(k, r)) {
-                val st = w.state
-                val i = k.bodyFirst(other) + (t % 48)
-                if (st.cellScaleTarget[i] != s) { st.cellScaleTarget[i] = s; st.cellScalesOn = true }
-                if (st.cellScale[i] != s) st.cellScalesMoving = true
+            if (t in 31 until 56 && t % 5 == 0) {
+                for (w in listOf(k, r)) {
+                    val st = w.state
+                    val i = k.bodyFirst(other) + (t % 48)
+                    if (st.cellScaleTarget[i] != s) { st.cellScaleTarget[i] = s; st.cellScalesOn = true }
+                    if (st.cellScale[i] != s) st.cellScalesMoving = true
+                }
+                for (w in listOf(k, r)) w.flushDirectWrites()
+                // Дальше в той же сверке, как у моста: правки редких клеток — мягкость (зеркало перечитывает клетку и
+                // признаки) и кость (зеркало целиком). Без flushDirectWrites прямые записи выше стирались до шага.
+                both(k, r, "правка после прямой записи") { it.setSoftness(first + 20, if (t % 10 == 0) 1.5f else 2.5f) }
+                both(k, r, "кость после прямой записи") { it.setBone(k.bodyFirst(other) + 8 * 3 + 4) }
             }
             if (t == 12) both(k, r, "мягкость") { it.setSoftness(first + 20, 2.5f) }
             if (t == 14) both(k, r, "без касаний") { it.setContactless(first + 21, true) }
             if (t == 16) both(k, r, "хватка") { it.setGrip(first + 22, 0.9f) }
+            // Пустые правки (то же значение) — с движком Rust они не идут в Rust (PhysicsWorld.skipsNoOp).
+            if (t == 15) both(k, r, "без касаний снова") { it.setContactless(first + 21, true) }
+            if (t == 17) both(k, r, "хватка снова") { it.setGrip(first + 22, 0.9f) }
+            if (t == 19) both(k, r, "хватка больше 1") { it.setGrip(first + 22, 1.5f) }
+            if (t == 21) both(k, r, "хватка больше 1 снова") { it.setGrip(first + 22, 2f) }
             if (t == 18) both(k, r, "сопротивление") { it.setDrag(first + 23, 0.5f) }
             if (t == 20) both(k, r, "волокно") { it.setCellFiber(first + 18, 1f, 0f) }
             if (t == 24) { var a = false; both(k, r, "кость") { w -> val b = w.setBone(first + 8 * 3 + 3); if (w === k) a = b else assertEquals(a, b) } }

@@ -75,6 +75,24 @@ class PhysicsWorld(
      */
     fun close() { engine?.close() }
 
+    /**
+     * Мост записал цели мышц и их признаки прямо в [state] (быстрый путь сверки, WorldPhysics.syncOrganismFast). С
+     * движком Rust — сразу в мир Rust: иначе следующая правка клетки (зеркало перечитывает клетку и признаки) или подсадка
+     * (зеркало целиком) в этой же сверке вернула бы в зеркало прежние значения Rust, и записи моста пропали бы до шага.
+     * С Kotlin записи уже на месте — ничего. Цена с Rust — одна копия массива целей (n чисел) за вызов.
+     */
+    fun flushDirectWrites() { mirror?.pushInputs() }
+
+    /**
+     * С движком Rust правка клетки, которая ничего не меняет (мягкость, касания, хватка, цель мышцы — те же), не идёт в
+     * Rust: зеркало между правками равно миру Rust (мост пишет в него прямо только в быстром пути сверки и сразу
+     * отдаёт это flushDirectWrites), а у Kotlin такие правки — пустые. Редкий путь моста (WorldPhysics.syncSlot) зовёт
+     * четыре правки на клетку, а меняется обычно одна: без пропуска — восемь вызовов JNI (правка и перечитывание
+     * клетки) вместо двух. Замер 27.11, игра на A21s: сверка до шага Rust 10.3 мс против 1.8 у Kotlin. С Kotlin (и с
+     * тенью Rust) пропуска нет — путь тот же, что был.
+     */
+    private val skipsNoOp: Boolean get() = engine != null
+
     /** Параметры, которые с движком Rust не хранит состояние Kotlin (их геттеры читает игра). */
     private var engineSleepOn = state.sleep.on
     private var engineDeepKillOn = state.deepKillOn
@@ -698,7 +716,15 @@ class PhysicsWorld(
      * Изменённая цель будит организм, как мышечный кластер (wakeByInput): спящее тело иначе
      * так и стояло бы с прежними длинами.
      */
-    fun setCellScale(cell: Int, command: Float) = mirrored({ it.setCellScale(cell, command) }, cell) {
+    fun setCellScale(cell: Int, command: Float) {
+        // С движком Rust пустая правка — без вызова в Rust (см. [skipsNoOp]): цель та же, а признак движения уже стоит
+        // или клетка уже у цели — у Kotlin такая правка тоже ничего не меняет.
+        if (skipsNoOp && command > 0f && state.cellScaleTarget[cell] == command &&
+            (state.cellScale[cell] == command || state.cellScalesMoving)) return
+        setCellScaleOp(cell, command)
+    }
+
+    private fun setCellScaleOp(cell: Int, command: Float) = mirrored({ it.setCellScale(cell, command) }, cell) {
         require(command > 0f) { "множитель клетки должен быть больше нуля" }
         val scale = command
         if (state.cellScaleTarget[cell] != scale) {
@@ -719,7 +745,12 @@ class PhysicsWorld(
      * вызов с не-единицей включает чтение множителей в ядрах — один полный пересчёт на мир;
      * дальше — кольцо клетки.
      */
-    fun setSoftness(cell: Int, softness: Float) = mirrored({ it.setSoftness(cell, softness) }, cell) {
+    fun setSoftness(cell: Int, softness: Float) {
+        if (skipsNoOp && softness > 0f && state.cellSoftness[cell] == softness) return
+        setSoftnessOp(cell, softness)
+    }
+
+    private fun setSoftnessOp(cell: Int, softness: Float) = mirrored({ it.setSoftness(cell, softness) }, cell) {
         require(softness > 0f) { "мягкость клетки должна быть больше нуля" }
         val st = state
         if (st.cellSoftness[cell] == softness) return@mirrored
@@ -759,7 +790,12 @@ class PhysicsWorld(
      * ни со стенкой (BodyState.cellNoContact; игра — присоска, isCollidable = false). Связи и среда
      * как у всех. Цена смены — обновление набора касания по одной клетке; без смены — ничего.
      */
-    fun setContactless(cell: Int, on: Boolean) = mirrored({ it.setContactless(cell, on) }, cell) {
+    fun setContactless(cell: Int, on: Boolean) {
+        if (skipsNoOp && state.cellNoContact[cell] == on) return
+        setContactlessOp(cell, on)
+    }
+
+    private fun setContactlessOp(cell: Int, on: Boolean) = mirrored({ it.setContactless(cell, on) }, cell) {
         val st = state
         if (st.cellNoContact[cell] == on) return@mirrored
         st.cellNoContact[cell] = on
@@ -774,7 +810,12 @@ class PhysicsWorld(
      * которую частица теряет за подшаг. 1 — сдвинуть нельзя ничем, 0.95 — очень тяжело, 0 — нет.
      * Цена смены — пересборка списка проходом по миру при ближайшем подшаге; без смены — ничего.
      */
-    fun setGrip(cell: Int, grip: Float) = mirrored({ it.setGrip(cell, grip) }, cell) {
+    fun setGrip(cell: Int, grip: Float) {
+        if (skipsNoOp && state.cellGrip[cell] == grip.coerceIn(0f, 1f)) return
+        setGripOp(cell, grip)
+    }
+
+    private fun setGripOp(cell: Int, grip: Float) = mirrored({ it.setGrip(cell, grip) }, cell) {
         val g = grip.coerceIn(0f, 1f)
         val st = state
         if (st.cellGrip[cell] == g) return@mirrored

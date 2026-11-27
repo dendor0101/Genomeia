@@ -29,15 +29,16 @@ import kotlin.math.sqrt
  * ставится рядом с игрой (applicationId …perf) и установленную игру игрока не трогает. Сборка не
  * отлаживаемая: в отлаживаемом приложении ART не встраивает методы, и числа были бы хуже игры.
  *
- * Мир WORLD×WORLD без террейна, сетка из COUNT организмов генома GENOME, рост GROW тиков, затем
- * MEASURE тиков на максимальной скорости. В logcat (тег PERF) — UPS, фазы тика (PhaseProfiler),
- * части фазы физики (WorldPhysics: сверка до шага, шаг, разбор после шага), кадр потока рендера и,
+ * Мир WORLD×WORLD без террейна, сетка из COUNT организмов генома GENOME (сажается на тике TAP_TICK при
+ * любом темпе телефона — мир на тике сверки hashtick одинаков от прогона к прогону и у обоих движков
+ * физики, rust 0|1), рост GROW тиков, затем MEASURE тиков на максимальной скорости. В logcat (тег PERF)
+ * — UPS, фазы тика (PhaseProfiler), части фазы физики (WorldPhysics: сверка до шага, шаг, разбор после шага), кадр потока рендера и,
  * с probe=1, цена повторной заливки оверлея и феромонов того же кадра в свой буфер (так видно, во
  * что обходится заливка их каждый кадр).
  *
  *   ./gradlew :android:assemblePerf && adb install -r android/build/outputs/apk/perf/android-perf.apk
  *   adb shell am start -S -n io.github.some_example_name.perf/io.github.some_example_name.android.PhonePerfLauncher \
- *       --es genome Octopod --ei count 16 --ei grow 1500 --ei measure 600 --es render debug [--ei draw 0] [--ei probe 1] [--ei workers N] [--ei hashtick 600] [--ei terrain 1] [--es physics ISLANDS=0]
+ *       --es genome Octopod --ei count 16 --ei grow 1500 --ei measure 600 --es render debug [--ei draw 0] [--ei probe 1] [--ei workers N] [--ei hashtick 600] [--ei terrain 1] [--es physics ISLANDS=0] [--ei rust 0|1]
  *   adb logcat -s PERF
  *
  * Кадр потока рендера (PERFFRAME) включает ожидание свободного буфера экрана у драйвера, то есть
@@ -59,6 +60,9 @@ class PhonePerfLauncher : AndroidLauncher() {
         super.configureSimulationThreads()
         val workers = options.getInt("workers", 0)
         if (workers > 0) PlatformTuning.performanceCoreCount = workers
+        // --ei rust 0 — физика на Kotlin, 1 — на Rust; без ключа — как в игре (Rust, если библиотека есть в APK).
+        // Биты обоих движков одни и те же, поэтому хэши прогонов с rust 0 и 1 обязаны совпасть.
+        if (options.containsKey("rust")) PlatformTuning.rustPhysics = options.getInt("rust", 1) != 0
         // --es physics "ISLANDS=0" — закрепить режим островов: по замеру он двоит время шага.
         options.getString("physics")?.let { keys ->
             PlatformTuning.physicsExecutionKeys = keys.split(',').mapNotNull { kv ->
@@ -95,6 +99,8 @@ private class PhonePerfRun(private val game: MyGame, o: Bundle) : ApplicationLis
     private var waitUntilFrame = 0
     private var waitUntilTick = -1
 
+    /** Тик, на котором поставлены тела (шаг 2 в advance): хэши сверки сравнимы только при одном тике посадки. */
+    private var tapTick = -1
     private var tick0 = 0
     private var wall0 = 0L
     private var frames0 = 0
@@ -115,7 +121,7 @@ private class PhonePerfRun(private val game: MyGame, o: Bundle) : ApplicationLis
 
     override fun render() {
         try {
-            val measuring = step == 3
+            val measuring = step == 4
             if (!measuring || draw) {
                 val t0 = System.nanoTime()
                 game.render()
@@ -165,14 +171,28 @@ private class PhonePerfRun(private val game: MyGame, o: Bundle) : ApplicationLis
                     DISimulationContainer.simulationSystem.hashWatchTick = hashTick
                     DISimulationContainer.renderBufferManager.instanceHashTick = hashTick
                 }
-                screen(SimulationIntent.SetMaxSpeed(true))
-                val g = genomeIndex()
-                for ((x, y) in spots()) DISimulationContainer.userCommandManager.push(PlayerCommand.Tap(x, y, genomeIndex = g))
-                Log.i(TAG, "PERFSTART геном=$genome организмов=$count террейн=${if (terrain) 1 else 0} режим=$mode рисовать=${if (draw) 1 else 0} физика=${PlatformTuning.physicsExecutionKeys} " +
-                    "воркеров=${DISimulationContainer.threadManager.executor.workerCount} рост $grow тиков")
-                waitUntilTick = data.tickCounter + grow
+                // Посадка — на одном и том же тике TAP_TICK при любом темпе телефона: до неё мир идёт медленно
+                // (TAP_UPS), и кадр успевает застать нужный тик. Раньше тела ставились через 5 кадров после старта —
+                // на A21s это выходило тиком 1, 2 или 3, и хэш мира на тике сверки отличался от прогона к прогону.
+                screen(SimulationIntent.SetTargetUps(TAP_UPS))
+                waitUntilTick = TAP_TICK
             }
             2 -> {
+                val g = genomeIndex()
+                // Все касания — между тиками (поток симуляции разбирает очередь в начале тика, и касания, положенные
+                // посреди разбора, делились на два тика), потом — полная скорость. Тик посадки — в лог: хэш на тике
+                // сверки сравним только у прогонов с одним тиком посадки.
+                DISimulationContainer.simulationSystem.betweenTicks {
+                    tapTick = data.tickCounter
+                    for ((x, y) in spots()) DISimulationContainer.userCommandManager.push(PlayerCommand.Tap(x, y, genomeIndex = g))
+                }
+                screen(SimulationIntent.SetMaxSpeed(true))
+                Log.i(TAG, "PERFSTART геном=$genome организмов=$count террейн=${if (terrain) 1 else 0} режим=$mode рисовать=${if (draw) 1 else 0} физика=${PlatformTuning.physicsExecutionKeys} " +
+                    "движок=${if (DISimulationContainer.worldPhysics.isRustEngine) "Rust" else "Kotlin"} посадка на тике $tapTick " +
+                    "воркеров=${DISimulationContainer.threadManager.executor.workerCount} рост $grow тиков")
+                waitUntilTick = tapTick + grow
+            }
+            3 -> {
                 val c = DISimulationContainer
                 c.simulationSystem.betweenTicks {
                     syncIn0 = c.worldPhysics.syncInNanos; step0 = c.worldPhysics.stepNanos; syncOut0 = c.worldPhysics.syncOutNanos
@@ -182,7 +202,7 @@ private class PhonePerfRun(private val game: MyGame, o: Bundle) : ApplicationLis
                 lastWindow = c.simulationSystem.profiler.windowsClosed
                 waitUntilTick = tick0 + measure
             }
-            3 -> {
+            4 -> {
                 val c = DISimulationContainer
                 var ticks = 0
                 var syncIn = 0L; var stepNs = 0L; var syncOut = 0L
@@ -198,13 +218,14 @@ private class PhonePerfRun(private val game: MyGame, o: Bundle) : ApplicationLis
                 val phases = (0 until Phase.COUNT).joinToString(" ") { "${names[it]} %.2f".format(Locale.ROOT, sums[it] / maxOf(1, windows) / 1000) }
                 // Числа живых — из снимка (списки живых — fastutil, его нет на пути сборки модуля).
                 val shot = c.renderBufferManager.currentSnapshot()
-                Log.i(TAG, ("PERFCHECK геном=$genome организмов=$count режим=$mode рисовать=${if (draw) 1 else 0} клеток=${shot.cellCount} " +
+                Log.i(TAG, ("PERFCHECK геном=$genome организмов=$count режим=$mode рисовать=${if (draw) 1 else 0} " +
+                    "движок=${if (c.worldPhysics.isRustEngine) "Rust" else "Kotlin"} клеток=${shot.cellCount} " +
                     "частиц=${shot.instanceCount} UPS=%.1f мс/тик=%.2f FPS=%.1f; фазы мс: $phases")
                     .format(Locale.ROOT, ticks / wall, wall * 1000 / ticks, (frames - frames0) / wall))
                 Log.i(TAG, "PERFARRANGE мс на тик: сверка до шага %.3f, шаг %.3f, после шага %.3f".format(Locale.ROOT,
                     syncIn / 1e6 / ticks, stepNs / 1e6 / ticks, syncOut / 1e6 / ticks))
                 if (measuredFrames > 0) Log.i(TAG, "PERFFRAME кадр потока рендера %.3f мс в среднем, кадров $measuredFrames".format(Locale.ROOT, frameNanos / 1e6 / measuredFrames))
-                if (hashTick > 0) Log.i(TAG, "PERFHASH тик $hashTick режим=$mode воркеров=${c.threadManager.executor.workerCount} " +
+                if (hashTick > 0) Log.i(TAG, "PERFHASH тик $hashTick посадка $tapTick режим=$mode воркеров=${c.threadManager.executor.workerCount} " +
                     "нейросвязей до ${c.neuralLinkEntity.lastId + 1} мир ${c.simulationSystem.hashWatchReport} снимок %016x".format(c.renderBufferManager.instanceHashValue))
                 if (probeFrames > 0) Log.i(TAG, "PERFPROBE повторная заливка оверлея и феромонов кадра: %.3f мс на кадр, %d КБ на кадр".format(Locale.ROOT,
                     probeNanos / 1e6 / probeFrames, probeBytes / probeFrames / 1024))
@@ -263,5 +284,9 @@ private class PhonePerfRun(private val game: MyGame, o: Bundle) : ApplicationLis
 
         /** Радиус поляны под тело в террейне, клеток мира — как у PerfCheck. */
         const val CLEAR = 25f
+
+        /** Тик посадки тел и темп мира до неё (тиков в секунду): тик — 250 мс, кадр застаёт его наверняка. */
+        const val TAP_TICK = 20
+        const val TAP_UPS = 4
     }
 }
