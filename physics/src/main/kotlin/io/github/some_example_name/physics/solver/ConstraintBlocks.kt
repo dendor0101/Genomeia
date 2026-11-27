@@ -20,6 +20,21 @@ class BlockIndex(capacity: Int, blocks: Int) {
     private val denseDirty = BooleanArray(blocks) { true }
     val denseCount = IntArray(blocks)
 
+    // ПОРЯДОК ПО ЦВЕТАМ (закон с 27.11, BodyState.colorOrderOn, ColorOrder.kt): номера блока по цветам, пересобираются лениво после
+    // любой правки блока (те же места, что denseDirty). Блок обходит один воркер, поэтому гонки нет.
+    private val colorItems = Array(blocks) { IntArray(0) }
+    val colorCount = IntArray(blocks)
+    private val colorStale = BooleanArray(blocks) { true }
+
+    fun colorStale(block: Int): Boolean = colorStale[block]
+    fun colorItems(block: Int): IntArray = colorItems[block]
+    /** Место под [size] номеров блока по цветам (старые затираются). */
+    fun colorTarget(block: Int, size: Int): IntArray {
+        if (colorItems[block].size < size) colorItems[block] = IntArray(size * 2)
+        return colorItems[block]
+    }
+    fun colorDone(block: Int, live: Int) { colorCount[block] = live; colorStale[block] = false }
+
     fun dense(block: Int): IntArray {
         if (denseDirty[block]) {
             var size = 0
@@ -36,13 +51,13 @@ class BlockIndex(capacity: Int, blocks: Int) {
         return denseItems[block]
     }
 
-    fun clear() { head.fill(-1); tail.fill(-1); owner.fill(-1); denseDirty.fill(true) }
+    fun clear() { head.fill(-1); tail.fill(-1); owner.fill(-1); denseDirty.fill(true); colorStale.fill(true) }
 
     fun add(id: Int, block: Int) {
         if (id >= owner.size) grow(id + 1)
         if (owner[id] >= 0) return
         owner[id] = block; next[id] = -1; prev[id] = tail[block]
-        denseDirty[block] = true
+        denseDirty[block] = true; colorStale[block] = true
         if (tail[block] < 0) head[block] = id else next[tail[block]] = id
         tail[block] = id
     }
@@ -53,7 +68,7 @@ class BlockIndex(capacity: Int, blocks: Int) {
         if (id >= owner.size) return
         val block = owner[id]
         if (block < 0) return
-        denseDirty[block] = true
+        denseDirty[block] = true; colorStale[block] = true
         val p = prev[id]; val q = next[id]
         if (p < 0) head[block] = q else next[p] = q
         if (q < 0) tail[block] = p else prev[q] = p
@@ -66,7 +81,7 @@ class BlockIndex(capacity: Int, blocks: Int) {
         remove(to)
         val block = owner[from]
         if (block < 0) return
-        denseDirty[block] = true
+        denseDirty[block] = true; colorStale[block] = true
         owner[to] = block; prev[to] = prev[from]; next[to] = next[from]
         if (prev[to] < 0) head[block] = to else next[prev[to]] = to
         if (next[to] < 0) tail[block] = to else prev[next[to]] = to
@@ -117,6 +132,20 @@ class ConstraintBlocks(n: Int, bodyOf: IntArray, blockSize: Int,
     private var limitQueue = IntArray(linkCapacity)
     private var activeLimitBlock = -1
     private var queueSize = 0
+
+    /**
+     * Порядок по цветам (закон с 27.11, BodyState.colorOrderOn, ColorOrder.kt): занятые цвета частицы при раскраске набора, по
+     * биту на цвет; между раскрасками — нули. Наборы, которые раскрашиваются одновременно (блоки одной чётности, швы
+     * разных тел, острова), частиц не делят, поэтому массив общий. При COLOR_ORDER=0 пустой.
+     */
+    var colorMask = LongArray(0)
+        private set
+
+    /** Включить порядок по цветам на мире из [n] частиц. Только при сборке раскладки, в одном потоке. */
+    fun enableColors(n: Int) {
+        if (colorMask.size != n) colorMask = LongArray(n)
+        links.enableColors(); areas.enableColors()
+    }
 
     init {
         // Организмы из одной частицы (каждая частица стенки, свободные частицы) идут подряд
