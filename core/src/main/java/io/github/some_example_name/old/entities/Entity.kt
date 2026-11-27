@@ -11,6 +11,13 @@ abstract class Entity(startMaxAmount: Int) {
     var isAlive = BooleanArray(maxAmount)
     private var generation = IntArray(maxAmount)
     fun getGeneration(index: Int) = generation[index]
+
+    /**
+     * Сам массив поколений — только для чтения в горячем цикле: массив в локальную переменную
+     * до цикла, а не вызов на каждый элемент (CLAUDE.md, «JIT»; снимок отрисовки). Ссылка живёт
+     * до роста сущности — брать заново на каждый проход.
+     */
+    internal fun generationArray(): IntArray = generation
     fun isAliveAndSameGen(index: Int, gen: Int) = isAlive[index] && generation[index] == gen
 
     var aliveList = IntArrayList(startMaxAmount)

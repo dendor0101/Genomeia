@@ -26,8 +26,22 @@ import io.github.some_example_name.render.pack.DebugAreaIndices
 import io.github.some_example_name.render.pack.CellLook
 import io.github.some_example_name.render.pack.OverlayInstanceBuffer
 import io.github.some_example_name.render.pack.PheromoneInstanceBuffer
+import io.github.some_example_name.old.physics.bridge.GAME_PER_PHYSICS
 import kotlin.math.round
 import kotlin.math.sqrt
+
+/**
+ * Длины массивов — до цикла (CLAUDE.md, «JIT»; physics/.../solver/ArrayHeaders.kt): после неё
+ * компилятор знает, что массивы не null, и выносит чтение их длин из цикла. Своя копия: та
+ * внутренняя в модуле физики.
+ */
+@Suppress("NOTHING_TO_INLINE")
+private inline fun lengthsBeforeLoop(lengths: Int) {
+    if (lengths < 0) negativeArrayLength()
+}
+
+/** Недостижимо; отдельным методом, чтобы не раздувать проход. */
+private fun negativeArrayLength(): Nothing = throw IllegalStateException("отрицательная длина массива")
 
 /**
  * Снимок мира для рендера: поток симуляции раз в тик собирает его в [TripleBuffer], поток
@@ -225,14 +239,6 @@ class RenderBufferManager(
     private var lastTick = Int.MIN_VALUE
 
     /**
-     * Прошлая поза клетки для оверлея отладочного кадра: он пишется в одном потоке. Инстансы
-     * берут прошлую позу из строки истории, общих полей у кусков на воркерах нет.
-     */
-    private var lastPrevX = 0f
-    private var lastPrevY = 0f
-    private var lastPrevDir = 0
-
-    /**
      * Сглаженный промежуток между снимками, нс. По нему рендер решает, какую долю тика
      * уже прожил снимок (RenderSystem.interpolationLag).
      *
@@ -259,8 +265,21 @@ class RenderBufferManager(
     /** Фильтр текущего [updateBuffer]; читается один раз, как и [debugFrame]. */
     private var frameFilter = DebugFilter.ORIGINAL
 
-    /** Оверлей текущего снимка вместе с концами фигур в прошлом тике. */
-    private val overlaySink = OverlayMotionSink()
+    /**
+     * Фигуры оверлея вместе с концами в прошлом тике — по накопителю на воркер: куски клеток на
+     * воркерах пишут фигуры каждый в свой, склейка в буфер снимка — по порядку кусков (порядок
+     * записи — порядок отрисовки). [overlaySink] — накопитель воркера 0, он же для всего, что
+     * пишется в одном потоке: кольца феромонов, связи, контур, нейросвязи.
+     */
+    private var sinks = arrayOf(OverlayMotionSink())
+    private val overlaySink: OverlayMotionSink get() = sinks[0]
+
+    /** Накопленное в [overlaySink] — в буфер снимка; накопитель пуст. */
+    private fun flushOverlay(overlay: OverlayInstanceBuffer) {
+        val sink = overlaySink
+        overlay.putAll(sink.ints, 0, sink.count)
+        sink.reset()
+    }
 
     /** Рёбра контура частицами игры, пары подряд (WorldPhysics.boundaryParticles); переиспользуется. */
     private val boundaryPairs = it.unimi.dsi.fastutil.ints.IntArrayList()
@@ -286,33 +305,102 @@ class RenderBufferManager(
      *
      * Ветки isCell внутри цикла тоже больше нет: здесь заведомо только клетки.
      */
-    private fun writeOrganismCells(startIndex: Int): Int {
+    private fun writeOrganismCells(startIndex: Int, overlay: OverlayInstanceBuffer): Int {
         val organs = cellEntity.organEntity.aliveList
         val executor = threads?.executor
-        // Отладочный кадр пишет оверлей подряд: порядок записи — порядок отрисовки. Микроскоп
-        if (executor != null && executor.workerCount > 1 && !debugFrame && !PROFILE_INTERPOLATION && organs.size > 1) {
-            if (organStart.size < organs.size + 1) organStart = IntArray(maxOf(organs.size + 1, organStart.size * 2))
-            if (organBounds.size < 4 * organs.size) organBounds = FloatArray(8 * organs.size)
-            executor.runChunks(organs.size, Phase.RENDER, countOrganJob)
-            organStart[0] = startIndex
-            for (k in 0 until organs.size) organStart[k + 1] += organStart[k]
-            executor.runChunks(organs.size, Phase.RENDER, writeOrganJob)
-            opticalCullRanges?.let { cull ->
-                for (k in 0 until organs.size) if (organStart[k + 1] > organStart[k])
-                    cull.add(organStart[k], organStart[k + 1], organBounds[4 * k], organBounds[4 * k + 1], organBounds[4 * k + 2], organBounds[4 * k + 3])
+        val chunks = if (executor != null && executor.workerCount > 1 && !PROFILE_INTERPOLATION) planChunks() else 0
+        if (executor == null || chunks < 2) {
+            var writeIndex = startIndex
+            for (organSlot in 0 until organs.size) {
+                val organ = organs.getInt(organSlot)
+                if (!cellEntity.organEntity.hasArena(organ)) continue
+                writeIndex = writeCellRange(organ, cellEntity.organEntity.cellArenaBase[organ], cellEntity.organEntity.cellArenaEnd(organ), writeIndex, overlaySink, -1)
             }
-            return organStart[organs.size]
+            return writeIndex
         }
-        var writeIndex = startIndex
-        for (organSlot in 0 until organs.size) writeIndex = writeOrganCells(organs.getInt(organSlot), writeIndex)
-        return writeIndex
+        if (debugFrame) {
+            // Всё, что записано до клеток (кольца феромонов), — в буфер раньше фигур клеток.
+            flushOverlay(overlay)
+            ensureSinks(executor.workerCount)
+            for (sink in sinks) sink.reset()
+        }
+        executor.runChunks(chunks, Phase.RENDER, countChunkJob)
+        chunkStart[0] = startIndex
+        for (k in 0 until chunks) chunkStart[k + 1] += chunkStart[k]
+        executor.runChunks(chunks, Phase.RENDER, writeChunkJob)
+        if (debugFrame) {
+            for (k in 0 until chunks) overlay.putAll(sinks[chunkWorker[k]].ints, chunkFigureFrom[k], chunkFigureTo[k] - chunkFigureFrom[k])
+            overlaySink.reset()
+        }
+        opticalCullRanges?.let { cull -> mergeChunkBounds(cull, chunks) }
+        return chunkStart[chunks]
+    }
+
+    /**
+     * Куски записи — по [CHUNK_CELLS] слотов арены, в порядке организмов и слотов, то есть в
+     * порядке снимка: склейка по номеру куска даёт ровно тот буфер, что и проход в одном потоке.
+     * Крупный организм режется на несколько кусков: делёж только по организмам упирался в число тел
+     * (замер 27.11, A21s, два тела по 3250 клеток на семи потоках — 1.5 мс вместо 0.46 у кусков по 500).
+     */
+    private fun planChunks(): Int {
+        val organEntity = cellEntity.organEntity
+        val organs = organEntity.aliveList
+        var n = 0
+        for (k in 0 until organs.size) {
+            val organ = organs.getInt(k)
+            if (!organEntity.hasArena(organ)) continue
+            val end = organEntity.cellArenaEnd(organ)
+            var from = organEntity.cellArenaBase[organ]
+            while (from < end) {
+                if (n == chunkOrgan.size) growChunks()
+                val to = minOf(end, from + CHUNK_CELLS)
+                chunkOrgan[n] = organ; chunkFrom[n] = from; chunkTo[n] = to
+                n++
+                from = to
+            }
+        }
+        if (chunkBounds.size < 4 * n) chunkBounds = FloatArray(8 * n)
+        return n
+    }
+
+    private fun growChunks() {
+        val size = chunkOrgan.size * 2
+        chunkOrgan = chunkOrgan.copyOf(size); chunkFrom = chunkFrom.copyOf(size); chunkTo = chunkTo.copyOf(size)
+        chunkStart = chunkStart.copyOf(size + 1)
+        chunkWorker = chunkWorker.copyOf(size); chunkFigureFrom = chunkFigureFrom.copyOf(size); chunkFigureTo = chunkFigureTo.copyOf(size)
+    }
+
+    /** Рамки кусков одного организма (они идут подряд) — одна рамка тела, как в проходе в одном потоке. */
+    private fun mergeChunkBounds(cull: io.github.some_example_name.render.pack.OpticalCullRanges, chunks: Int) {
+        var k = 0
+        while (k < chunks) {
+            val organ = chunkOrgan[k]
+            val start = chunkStart[k]
+            var minX = chunkBounds[4 * k]; var minY = chunkBounds[4 * k + 1]
+            var maxX = chunkBounds[4 * k + 2]; var maxY = chunkBounds[4 * k + 3]
+            var j = k + 1
+            while (j < chunks && chunkOrgan[j] == organ) {
+                minX = minOf(minX, chunkBounds[4 * j]); minY = minOf(minY, chunkBounds[4 * j + 1])
+                maxX = maxOf(maxX, chunkBounds[4 * j + 2]); maxY = maxOf(maxY, chunkBounds[4 * j + 3])
+                j++
+            }
+            if (chunkStart[j] > start) cull.add(start, chunkStart[j], minX, minY, maxX, maxY)
+            k = j
+        }
+    }
+
+    /** Накопители оверлея на каждого воркера. */
+    private fun ensureSinks(workers: Int) {
+        if (sinks.size < workers) sinks = Array(workers) { if (it < sinks.size) sinks[it] else OverlayMotionSink() }
     }
 
     /**
      * Воркеры игры; null — всё в вызывающем потоке (однопоточный контейнер). Ставит контейнер.
-     * Запись буфера только читает мир и пишет свои инстансы и историю: кусок — организм, у
-     * него свой непрерывный участок буфера, начало считается по числу живых клеток. Замер 09.11,
-     * 96k клеток, реалистичный режим: 2.1 → 1.1 мс на тик; буфер при 1, 4, 8, 12 воркерах совпал побитово.
+     * Запись буфера только читает мир и пишет свои инстансы, историю и фигуры оверлея: у куска
+     * свой непрерывный участок буфера, начало считается по числу живых клеток. Замер 09.11,
+     * 96k клеток, реалистичный режим: 2.1 → 1.1 мс на тик; буфер при 1, 4, 8, 12 воркерах совпал
+     * побитово. С 27.11 так же и отладочный режим (раньше — в одном потоке: A21s, 6.5 тыс. клеток,
+     * копия прохода — 4.7 мс в одном потоке против 0.68 на семи).
      */
     var threads: ThreadManager? = null
 
@@ -320,68 +408,224 @@ class RenderBufferManager(
     @Volatile var instanceHashTick = -1
     @Volatile var instanceHashValue = 0L
 
-    private fun hashInstances(count: Int): Long {
+    /**
+     * Инстансы снимка, фигуры оверлея, диапазоны тел для отсечения и данные микроскопа — одним
+     * хэшем: сверка записи на воркерах с записью в одном потоке (PerfCheck, PERFHASH).
+     */
+    private fun hashSnapshot(count: Int, overlay: OverlayInstanceBuffer): Long {
         var h = 0L
         for (k in 0 until count * CellInstanceBuffer.STRUCT_INTS) h = Fnv.word(h, instances[k])
+        val figures = overlay.end()
+        for (b in 0 until figures.limit() / 4) h = Fnv.word(h, figures.getInt(b * 4))
+        opticalCullRanges?.let { cull ->
+            h = Fnv.word(h, cull.count)
+            for (r in 0 until cull.count) { h = Fnv.word(h, cull.first(r)); h = Fnv.word(h, cull.end(r)) }
+        }
+        if (polygonFrame) for (k in 0 until count) {
+            h = Fnv.word(h, opticalGroups[k]); h = Fnv.word(h, opticalColors[k]); h = Fnv.word(h, opticalBirthTicks[k])
+        }
         return h
     }
-    private var organStart = IntArray(64)
-    /** Рамки оптических участков по организмам: minX, minY, maxX, maxY; сливаются в порядке организмов. */
-    private var organBounds = FloatArray(256)
-    private val countOrganJob = ParallelExecutor.ChunkJob { k, _ -> organStart[k + 1] = aliveCellsOf(cellEntity.organEntity.aliveList.getInt(k)) }
-    private val writeOrganJob = ParallelExecutor.ChunkJob { k, _ -> writeOrganCells(cellEntity.organEntity.aliveList.getInt(k), organStart[k], k) }
 
-    private fun aliveCellsOf(organIndex: Int): Int {
-        val organEntity = cellEntity.organEntity
-        if (!organEntity.hasArena(organIndex)) return 0
+    // Куски записи клеток (planChunks): организм, слоты [from, to), начало в снимке (сначала —
+    // счёт живых, затем префиксная сумма), рамка для микроскопа, воркер и диапазон его фигур
+    // оверлея. Пишет кусок только свои элементы; растут только однопоточно, в planChunks.
+    private var chunkOrgan = IntArray(64)
+    private var chunkFrom = IntArray(64)
+    private var chunkTo = IntArray(64)
+    private var chunkStart = IntArray(65)
+    private var chunkWorker = IntArray(64)
+    private var chunkFigureFrom = IntArray(64)
+    private var chunkFigureTo = IntArray(64)
+    /** Рамки оптических участков по кускам: minX, minY, maxX, maxY; сливаются по организмам. */
+    private var chunkBounds = FloatArray(256)
+
+    private val countChunkJob = ParallelExecutor.ChunkJob { k, _ -> chunkStart[k + 1] = aliveCells(chunkFrom[k], chunkTo[k]) }
+    private val writeChunkJob = ParallelExecutor.ChunkJob { k, worker ->
+        val sink = sinks[if (debugFrame) worker else 0]
+        if (debugFrame) { chunkWorker[k] = worker; chunkFigureFrom[k] = sink.count }
+        writeCellRange(chunkOrgan[k], chunkFrom[k], chunkTo[k], chunkStart[k], sink, k)
+        if (debugFrame) chunkFigureTo[k] = sink.count
+    }
+
+    private fun aliveCells(from: Int, to: Int): Int {
         val cellAlive = cellEntity.isAlive
         var count = 0
-        for (cellIndex in organEntity.cellArenaBase[organIndex] until organEntity.cellArenaEnd(organIndex)) if (cellAlive[cellIndex]) count++
+        for (cellIndex in from until to) if (cellAlive[cellIndex]) count++
         return count
     }
 
-    /** Живые клетки организма в буфер начиная с [startIndex]; возвращает индекс за последней. */
-    private fun writeOrganCells(organIndex: Int, startIndex: Int, boundsSlot: Int = -1): Int {
+    /**
+     * Живые клетки слотов [cellFrom, cellTo) арены организма [organIndex] — в буфер с места
+     * [startIndex]; возвращает место за последней. Фигуры оверлея — в [sink]. [boundsSlot] — куда
+     * положить рамку для микроскопа (номер куска), -1 — сразу добавить диапазон тела.
+     *
+     * Массивы — в локальные до цикла и длины до цикла, клетка — inline-ядром (CLAUDE.md, «JIT»):
+     * на Android заголовки больших массивов делят пару наборов L1, и вызов на каждую клетку читал
+     * их заново (замер 27.11, A21s, копия прохода: 480 → 300 нс на клетку, инстансы те же).
+     */
+    private fun writeCellRange(organIndex: Int, cellFrom: Int, cellTo: Int, startIndex: Int, sink: OverlayMotionSink, boundsSlot: Int): Int {
         val organEntity = cellEntity.organEntity
-        if (!organEntity.hasArena(organIndex)) return startIndex
-        var writeIndex = startIndex
-        val pColor = particleEntity.color
-        val pRadius = particleEntity.radius
-        val cellAlive = cellEntity.isAlive
-        val cellFrom = organEntity.cellArenaBase[organIndex]
-        val cellTo = organEntity.cellArenaEnd(organIndex)
-        val particleBase = organEntity.particleArenaBase[organIndex]
-
-        val cull = opticalCullRanges
+        val arenaCell = organEntity.cellArenaBase[organIndex]
+        val arenaParticle = organEntity.particleArenaBase[organIndex]
+        val particleBase = arenaParticle + (cellFrom - arenaCell)
+        val alive = cellEntity.isAlive
+        val physicsIndex = particleEntity.physicsIndex
+        val physicsX = particleEntity.physicsX
+        val physicsY = particleEntity.physicsY
+        val localX = particleEntity.localX
+        val localY = particleEntity.localY
+        val originX = particleEntity.physicsOriginX
+        val originY = particleEntity.physicsOriginY
+        val angleCos = cellEntity.angleCos
+        val angleSin = cellEntity.angleSin
+        val generation = cellEntity.generationArray()
+        val energy = cellEntity.energy
+        val cellType = cellEntity.cellType
+        val color = particleEntity.color
+        val radius = particleEntity.radius
+        val hist = history
+        val target = instances
+        val keys = cellKeys
+        lengthsBeforeLoop(
+            alive.size + physicsIndex.size + physicsX.size + physicsY.size + localX.size + localY.size +
+                angleCos.size + angleSin.size + generation.size + energy.size + cellType.size + color.size +
+                radius.size + hist.size + target.size + keys.size
+        )
+        val now = serial
+        val extras = debugFrame || polygonFrame || areaFrame
+        val bounded = opticalCullRanges != null
         var minX = Float.POSITIVE_INFINITY; var minY = Float.POSITIVE_INFINITY
         var maxX = Float.NEGATIVE_INFINITY; var maxY = Float.NEGATIVE_INFINITY
+        var writeIndex = startIndex
         for (cellIndex in cellFrom until cellTo) {
-            if (!cellAlive[cellIndex]) continue
+            if (!alive[cellIndex]) continue
             val particleIndex = particleBase + (cellIndex - cellFrom)
 
             // Частица берётся АРИФМЕТИКОЙ из слота, а не через particleIndexes.
             // Если параллельность арен где-то нарушится, углы и радиусы поедут от
             // ЧУЖОЙ клетки — картинка при этом останется правдоподобной, поэтому
             // расхождение надо ловить явно, а не глазами.
-            if (DEBUG_CHECKS) checkArenaParallel(cellIndex, organIndex, particleIndex, cellFrom, particleBase)
+            if (DEBUG_CHECKS) checkArenaParallel(cellIndex, organIndex, particleIndex, arenaCell, arenaParticle)
 
-            writeCell(writeIndex, cellIndex, particleIndex, pColor, pRadius)
-            if (cull != null) {
+            // То же, что ParticleEntity.x/y, — теми же операциями, биты те же.
+            val i = physicsIndex[particleIndex]
+            val x = if (i >= 0) physicsX[i] * GAME_PER_PHYSICS + originX else localX[particleIndex]
+            val y = if (i >= 0) physicsY[i] * GAME_PER_PHYSICS + originY else localY[particleIndex]
+            writeCellCore(
+                writeIndex, cellIndex, particleIndex, x, y, now,
+                angleCos, angleSin, generation, energy, cellType, color, radius, hist, target, keys
+            )
+            if (extras) writeCellExtras(writeIndex, cellIndex, particleIndex, x, y, sink)
+            if (bounded) {
                 val h = particleIndex * HISTORY_STRIDE
-                val cx = particleEntity.x(particleIndex); val cy = particleEntity.y(particleIndex)
-                val hx = Float.fromBits(history[h + 5]); val hy = Float.fromBits(history[h + 6])
-                minX = minOf(minX, minOf(cx, hx)); minY = minOf(minY, minOf(cy, hy))
-                maxX = maxOf(maxX, maxOf(cx, hx)); maxY = maxOf(maxY, maxOf(cy, hy))
+                val hx = Float.fromBits(hist[h + 5]); val hy = Float.fromBits(hist[h + 6])
+                minX = minOf(minX, minOf(x, hx)); minY = minOf(minY, minOf(y, hy))
+                maxX = maxOf(maxX, maxOf(x, hx)); maxY = maxOf(maxY, maxOf(y, hy))
             }
             writeIndex++
         }
-        if (cull != null) {
+        if (bounded) {
             if (boundsSlot >= 0) {
-                organBounds[4 * boundsSlot] = minX; organBounds[4 * boundsSlot + 1] = minY
-                organBounds[4 * boundsSlot + 2] = maxX; organBounds[4 * boundsSlot + 3] = maxY
-            } else if (writeIndex > startIndex) cull.add(startIndex, writeIndex, minX, minY, maxX, maxY)
+                chunkBounds[4 * boundsSlot] = minX; chunkBounds[4 * boundsSlot + 1] = minY
+                chunkBounds[4 * boundsSlot + 2] = maxX; chunkBounds[4 * boundsSlot + 3] = maxY
+            } else if (writeIndex > startIndex) opticalCullRanges!!.add(startIndex, writeIndex, minX, minY, maxX, maxY)
         }
         return writeIndex
+    }
+
+    /**
+     * Клетка [cellIndex] с частицей [p] в позе ([x], [y]) — инстанс [w] снимка, ключ клетки и
+     * строка истории (см. [history]). Только копирование чисел и упаковка: ни одного
+     * округления позы (CellInstanceBuffer: «Почему прошлая поза, а не смещение»).
+     *
+     * Клетка без годной прошлой позы (новая) или перенесённая дальше MOTION_RANGE получает
+     * прошлую позу, равную нынешней: она просто стоит в снимке, без полёта из чужого места.
+     * Прошлая поза годится, только если записана ровно в прошлом снимке и тем же жильцом —
+     * поколением клетки: слот умершей клетки занимает новая.
+     *
+     * inline с массивами в параметрах — тело в цикле прохода (CLAUDE.md, «JIT»).
+     */
+    @Suppress("NOTHING_TO_INLINE")
+    private inline fun writeCellCore(
+        w: Int, cellIndex: Int, p: Int, x: Float, y: Float, now: Int,
+        angleCos: FloatArray, angleSin: FloatArray, generation: IntArray, energy: FloatArray, cellType: ByteArray,
+        color: IntArray, radius: FloatArray, hist: IntArray, target: IntArray, keys: LongArray
+    ) {
+        val dir = CellInstanceBuffer.dir(angleCos[cellIndex], angleSin[cellIndex])
+        val key = generation[cellIndex]
+        val h = p * HISTORY_STRIDE
+        val xBits = x.toRawBits()
+        val yBits = y.toRawBits()
+        var prevXBits = xBits
+        var prevYBits = yBits
+        var prevDir = dir
+        if (hist[h] == now - 1 && hist[h + 1] == key) {
+            val hx = Float.fromBits(hist[h + 2])
+            val hy = Float.fromBits(hist[h + 3])
+            if (PROFILE_INTERPOLATION) countStep(x - hx, y - hy)
+            if (CellInstanceBuffer.isMotion(x - hx, y - hy)) {
+                prevXBits = hist[h + 2]
+                prevYBits = hist[h + 3]
+                prevDir = hist[h + 4]
+            }
+        }
+        hist[h] = now
+        hist[h + 1] = key
+        hist[h + 2] = xBits
+        hist[h + 3] = yBits
+        hist[h + 4] = dir
+        hist[h + 5] = prevXBits
+        hist[h + 6] = prevYBits
+        hist[h + 7] = prevDir
+        keys[w] = (cellIndex.toLong() shl 32) or (key.toLong() and 0xffffffffL)
+
+        CellInstanceBuffer.write(
+            target,
+            w,
+            x = x,
+            y = y,
+            color = color[p],
+            // Радиус — физический, без degreeOfShortening. Укорочение мышцы меняет длину
+            // её связей, а не размер клетки: сжимавшийся вместе с ним круг мигал на каждом
+            // сигнале. Сжатие видно по самому телу и, в отладке, по яркости мышцы.
+            shape = CellInstanceBuffer.shape(
+                CellInstanceBuffer.radiusByte(radius[p]),
+                CellInstanceBuffer.energyByte(energy[cellIndex])
+            ),
+            // Ключ шума — индекс частицы, а не позиция в буфере.
+            //
+            // Шейдер доворачивает текстуру на случайный угол, и раньше брал его из
+            // gl_InstanceID, то есть из позиции в буфере. Пока буфер собирался в порядке
+            // aliveList, позиция живой клетки не менялась, и доворот был постоянным.
+            // Теперь порядок задаёт арена: рождение клетки в более раннем слоте сдвигает
+            // все последующие, и во время роста доворот пересчитывался каждый тик —
+            // текстуры визуально крутились у всего тела, пока организм не дорастал.
+            //
+            // Индекс частицы это слот арены: он закреплён за клеткой на всю жизнь и от
+            // порядка сборки буфера не зависит вообще. По нему же отладка раскладывает рисунок.
+            type = CellInstanceBuffer.type(cellType[cellIndex].toInt(), p, true),
+            look = 0,
+            dir = dir,
+            prevX = Float.fromBits(prevXBits),
+            prevY = Float.fromBits(prevYBits),
+            prevDir = prevDir
+        )
+    }
+
+    /**
+     * Редкое поверх записанной клетки: заливка областей, данные микроскопа, отладочный рисунок и
+     * фигуры. Отдельным методом: проход по клеткам обязан оставаться маленьким (CLAUDE.md, «JIT»).
+     */
+    private fun writeCellExtras(writeIndex: Int, cellIndex: Int, particleIndex: Int, x: Float, y: Float, sink: OverlayMotionSink) {
+        if (areaFrame) areaCache.cell(writeIndex, particleEntity.physicsIndex[particleIndex])
+        if (polygonFrame) {
+            renderOfCell[cellIndex] = writeIndex; renderCellStamp[cellIndex] = serial
+            opticalGroups[writeIndex] = if (cellEntity.organIndex[cellIndex] >= 0) cellEntity.organIndex[cellIndex] + 1 else -particleIndex - 1
+            opticalColors[writeIndex] = particleEntity.color[particleIndex]
+            opticalBirthTicks[writeIndex] = cellEntity.birthTick[cellIndex]
+        }
+        if (debugFrame) decorateDebugCell(writeIndex, cellIndex, particleIndex, x, y, sink)
     }
 
     private fun checkArenaParallel(cellIndex: Int, organIndex: Int, particleIndex: Int, cellFrom: Int, particleBase: Int) {
@@ -412,9 +656,7 @@ class RenderBufferManager(
         var writeIndex = startIndex
         val organEntity = cellEntity.organEntity
         val alive = cellEntity.aliveList
-
-        val pColor = particleEntity.color
-        val pRadius = particleEntity.radius
+        val now = serial
 
         for (i in 0 until alive.size) {
             val cellIndex = alive.getInt(i)
@@ -422,34 +664,160 @@ class RenderBufferManager(
             val particleIndex = cellEntity.particleIndexes[cellIndex]
             if (particleIndex == -1) continue
 
-            writeCell(writeIndex, cellIndex, particleIndex, pColor, pRadius)
+            val x = particleEntity.x(particleIndex)
+            val y = particleEntity.y(particleIndex)
+            writeCellCore(
+                writeIndex, cellIndex, particleIndex, x, y, now,
+                cellEntity.angleCos, cellEntity.angleSin, cellEntity.generationArray(), cellEntity.energy, cellEntity.cellType,
+                particleEntity.color, particleEntity.radius, history, instances, cellKeys
+            )
+            writeCellExtras(writeIndex, cellIndex, particleIndex, x, y, overlaySink)
             writeIndex++
         }
         return writeIndex
     }
 
-    /** Субстанции и прочие не-клетки — своим списком, без единого обращения в CellEntity. */
+    /**
+     * Субстанции и прочие не-клетки — своим списком, без единого обращения в CellEntity.
+     * Фигур оверлея у не-клеток нет, поэтому на воркерах и в отладочном режиме: фильтры
+     * «коллизии» и «сон» только читают мир.
+     */
     private fun writeNonCellParticles(startIndex: Int): Int {
         val nonCells = particleEntity.nonCellList
         val executor = threads?.executor
-        if (executor != null && executor.workerCount > 1 && !debugFrame && !PROFILE_INTERPOLATION && nonCells.size >= NON_CELL_CHUNK) {
-            nonCellStart = startIndex
-            executor.runChunks((nonCells.size + NON_CELL_CHUNK - 1) / NON_CELL_CHUNK, Phase.RENDER, writeNonCellJob)
-        } else writeNonCellRange(0, nonCells.size, startIndex)
-        return startIndex + nonCells.size
+        // Неподвижные (террейн, стенка) — первые места списка; в отладочном и ностальгическом
+        // они едут своим буфером раз на мир ([staticCells]), снимок пишет только подвижные.
+        // Микроскоп строит ткань террейна из снимка — ему по-прежнему все.
+        val first = if (polygonFrame) 0 else particleEntity.staticNonCellCount
+        val count = nonCells.size - first
+        nonCellFirst = first
+        // Рамки кусков не-клеток — для отсечения по камере в отладочном (VisibleCells), не для
+        // микроскопа: у него диапазоны — целые тела.
+        nonCellCull = debugFrame && !polygonFrame && opticalCullRanges != null
+        val pieces = (count + NON_CELL_CULL - 1) / NON_CELL_CULL
+        if (nonCellCull && nonCellBounds.size < 4 * pieces) nonCellBounds = FloatArray(8 * pieces)
+        // Инстанс места i — base + i: подвижные встают сразу за клетками.
+        val base = startIndex - first
+        if (executor != null && executor.workerCount > 1 && !PROFILE_INTERPOLATION && count >= NON_CELL_CHUNK) {
+            nonCellStart = base
+            executor.runChunks((count + NON_CELL_CHUNK - 1) / NON_CELL_CHUNK, Phase.RENDER, writeNonCellJob)
+        } else writeNonCellRange(first, nonCells.size, base)
+        if (nonCellCull) {
+            val cull = opticalCullRanges!!
+            for (j in 0 until pieces) {
+                cull.add(startIndex + j * NON_CELL_CULL, startIndex + minOf(count, (j + 1) * NON_CELL_CULL),
+                    nonCellBounds[4 * j], nonCellBounds[4 * j + 1], nonCellBounds[4 * j + 2], nonCellBounds[4 * j + 3])
+            }
+        }
+        return startIndex + count
     }
+
+    /** Первое место списка не-клеток, которое пишет снимок (см. [writeNonCellParticles]). */
+    private var nonCellFirst = 0
+
+    // ==================== Неподвижный буфер (27.11) ====================
+    //
+    // Террейн и стенка у рамки за сессию не двигаются (ParticleEntity.bakeStaticGrid), а до
+    // 27.11 каждый тик писались в снимок, копировались GL-потоком и заливались на GPU заново:
+    // мир 256 с 66 тысячами частиц террейна — 2.7 МБ на снимок, снимок A21s 7.8 мс. Теперь их
+    // инстансы собираются раз на мир в свой direct-буфер ([StaticCells]); снимок несёт ссылку,
+    // GL-поток заливает его в свой VBO, только когда пришёл другой (CellGeometry.uploadStatic).
+    // Пересборка — при новом мире, загрузке, первом тике мира физики (кромка встаёт по его
+    // месту) и при смене фильтра отладки (от него вид частицы).
+
+    private var staticCells: StaticCells? = null
+    private var staticKey = Long.MIN_VALUE
+
+    /** Неподвижный буфер под нынешний мир и фильтр — готовый или собранный заново. */
+    private fun staticCellsFor(): StaticCells {
+        val look = if (debugFrame) frameFilter.ordinal + 1 else 0
+        val key = (particleEntity.staticVersion.toLong() shl 8) or look.toLong()
+        val current = staticCells
+        if (current != null && key == staticKey) return current
+        val built = buildStaticCells()
+        staticCells = built
+        staticKey = key
+        return built
+    }
+
+    /** Инстансы неподвижных не-клеток (первые места nonCellList) и рамки их кусков по [NON_CELL_CULL]. */
+    private fun buildStaticCells(): StaticCells {
+        val n = particleEntity.staticNonCellCount
+        val nonCells = particleEntity.nonCellList
+        val buffer = CellInstanceBuffer(maxOf(1, n))
+        buffer.begin(n)
+        val cull = io.github.some_example_name.render.pack.OpticalCullRanges()
+        val scratch = IntArray(NON_CELL_CULL * CellInstanceBuffer.STRUCT_INTS)
+        val nonCellType = cellList.size + 1
+        val collisionFilter = debugFrame && frameFilter == DebugFilter.COLLISION
+        val sleepFilter = debugFrame && frameFilter == DebugFilter.SLEEP
+        val physics = particleEntity.physics
+        var piece = 0
+        while (piece < n) {
+            val end = minOf(n, piece + NON_CELL_CULL)
+            var minX = Float.POSITIVE_INFINITY; var minY = Float.POSITIVE_INFINITY
+            var maxX = Float.NEGATIVE_INFINITY; var maxY = Float.NEGATIVE_INFINITY
+            for (i in piece until end) {
+                val p = nonCells.getInt(i)
+                val x = particleEntity.x(p)
+                val y = particleEntity.y(p)
+                minX = minOf(minX, x); minY = minOf(minY, y); maxX = maxOf(maxX, x); maxY = maxOf(maxY, y)
+                CellInstanceBuffer.write(
+                    scratch, i - piece,
+                    x = x, y = y,
+                    color = particleEntity.color[p],
+                    shape = CellInstanceBuffer.shape(CellInstanceBuffer.radiusByte(particleEntity.radius[p]), 0),
+                    type = CellInstanceBuffer.type(nonCellType, p, isCell = false),
+                    // «Коллизии» — участвует ли в касаниях: кромка и стенка (в мире физики) — да, толща — нет.
+                    look = when {
+                        collisionFilter -> CellLook.look(0, filter = CellLook.collisionFilterByte(particleEntity.physicsIndex[p] >= 0))
+                        sleepFilter -> CellLook.look(0, filter = CellLook.sleepFilterByte(physics?.isAsleep(p) == true))
+                        else -> 0
+                    },
+                    dir = CellInstanceBuffer.DIR_NONE,
+                    prevX = x, prevY = y,
+                    prevDir = CellInstanceBuffer.DIR_NONE
+                )
+            }
+            buffer.putAll(scratch, end - piece)
+            cull.add(piece, end, minX, minY, maxX, maxY)
+            piece = end
+        }
+        return StaticCells(buffer.end(), cull)
+    }
+
+    /**
+     * Рамки кусков по [NON_CELL_CULL] мест списка не-клеток: minX, minY, maxX, maxY. Террейн
+     * создаётся построчно (WorldTerrainManager.initWorld) и почти не перемешивается, поэтому
+     * кусок — отрезок ряда с узкой рамкой: при приближении камеры невидимые отрезки отсекаются
+     * так же, как тела. Субстанции в хвосте списка просто попадают в рамку своего куска.
+     */
+    private var nonCellBounds = FloatArray(0)
+    private var nonCellCull = false
 
     private var nonCellStart = 0
     private val writeNonCellJob = ParallelExecutor.ChunkJob { k, _ ->
-        writeNonCellRange(k * NON_CELL_CHUNK, minOf(particleEntity.nonCellList.size, (k + 1) * NON_CELL_CHUNK), nonCellStart)
+        val first = nonCellFirst
+        writeNonCellRange(first + k * NON_CELL_CHUNK, minOf(particleEntity.nonCellList.size, first + (k + 1) * NON_CELL_CHUNK), nonCellStart)
     }
 
-    /** Места [from, to) списка не-клеток в буфер; у каждого места своя строка истории и свой инстанс. */
+    /**
+     * Места [from, to) списка не-клеток в буфер; у каждого места своя строка истории и свой инстанс.
+     * Массивы — в локальные до цикла, история позы — прямо в цикле (CLAUDE.md, «JIT»): в мире с
+     * террейном это десятки тысяч частиц, основная часть снимка (A21s, 27.11: 66 тысяч частиц).
+     */
     private fun writeNonCellRange(from: Int, to: Int, startIndex: Int) {
         val target = instances
         val nonCells = particleEntity.nonCellList
         val pColor = particleEntity.color
         val pRadius = particleEntity.radius
+        val physicsIndex = particleEntity.physicsIndex
+        val physicsX = particleEntity.physicsX
+        val physicsY = particleEntity.physicsY
+        val localX = particleEntity.localX
+        val localY = particleEntity.localY
+        val originX = particleEntity.physicsOriginX
+        val originY = particleEntity.physicsOriginY
 
         val inGrid = particleEntity.isInGrid
 
@@ -462,13 +830,57 @@ class RenderBufferManager(
         val hist = nonCellHistory
         val optics = polygonFrame
         val terrainCell = particleEntity.terrainCell
+        lengthsBeforeLoop(
+            target.size + pColor.size + pRadius.size + physicsIndex.size + physicsX.size + physicsY.size +
+                localX.size + localY.size + inGrid.size + hist.size + terrainCell.size
+        )
+        val now = serial
+        val bounded = nonCellCull
+        val bounds = nonCellBounds
+        val first = nonCellFirst
+        var minX = Float.POSITIVE_INFINITY; var minY = Float.POSITIVE_INFINITY
+        var maxX = Float.NEGATIVE_INFINITY; var maxY = Float.NEGATIVE_INFINITY
         for (i in from until to) {
             val particleIndex = nonCells.getInt(i)
-            val x = particleEntity.x(particleIndex)
-            val y = particleEntity.y(particleIndex)
-            // Направления у не-клетки нет: ни поворота, ни угла в истории.
-            rememberPosition(i, particleIndex, x, y)
+            // То же, что ParticleEntity.x/y, — теми же операциями, биты те же.
+            val pi = physicsIndex[particleIndex]
+            val x = if (pi >= 0) physicsX[pi] * GAME_PER_PHYSICS + originX else localX[particleIndex]
+            val y = if (pi >= 0) physicsY[pi] * GAME_PER_PHYSICS + originY else localY[particleIndex]
+            // Направления у не-клетки нет: ни поворота, ни угла в истории. Прошлая поза — как у
+            // клетки (writeCellCore), ключ жильца — индекс частицы, см. [nonCellHistory].
             val h = i * NON_CELL_STRIDE
+            val xBits = x.toRawBits()
+            val yBits = y.toRawBits()
+            var prevXBits = xBits
+            var prevYBits = yBits
+            if (hist[h] == now - 1 && hist[h + 1] == particleIndex) {
+                val hx = Float.fromBits(hist[h + 2])
+                val hy = Float.fromBits(hist[h + 3])
+                if (PROFILE_INTERPOLATION) countStep(x - hx, y - hy)
+                if (CellInstanceBuffer.isMotion(x - hx, y - hy)) {
+                    prevXBits = hist[h + 2]
+                    prevYBits = hist[h + 3]
+                }
+            }
+            hist[h] = now
+            hist[h + 1] = particleIndex
+            hist[h + 2] = xBits
+            hist[h + 3] = yBits
+            hist[h + 4] = prevXBits
+            hist[h + 5] = prevYBits
+            if (bounded) {
+                val px = Float.fromBits(prevXBits); val py = Float.fromBits(prevYBits)
+                minX = minOf(minX, minOf(x, px)); minY = minOf(minY, minOf(y, py))
+                maxX = maxOf(maxX, maxOf(x, px)); maxY = maxOf(maxY, maxOf(y, py))
+                // Куски рамок считаются от первого места снимка (без неподвижных).
+                val rel = i - first
+                if ((rel + 1) % NON_CELL_CULL == 0 || i == to - 1) {
+                    val o = 4 * (rel / NON_CELL_CULL)
+                    bounds[o] = minX; bounds[o + 1] = minY; bounds[o + 2] = maxX; bounds[o + 3] = maxY
+                    minX = Float.POSITIVE_INFINITY; minY = Float.POSITIVE_INFINITY
+                    maxX = Float.NEGATIVE_INFINITY; maxY = Float.NEGATIVE_INFINITY
+                }
+            }
             if (optics) {
                 // Слоты снимка переиспользуются: цвет и тик рождения пишутся явно, иначе от прошлого
                 // жильца слота менялась бы подпись тела террейна, и микроскоп перестраивал бы его сетку.
@@ -502,174 +914,43 @@ class RenderBufferManager(
                     else -> 0
                 },
                 dir = CellInstanceBuffer.DIR_NONE,
-                prevX = Float.fromBits(hist[h + 4]),
-                prevY = Float.fromBits(hist[h + 5]),
+                prevX = Float.fromBits(prevXBits),
+                prevY = Float.fromBits(prevYBits),
                 prevDir = CellInstanceBuffer.DIR_NONE
             )
         }
     }
 
-    private fun writeCell(
-        writeIndex: Int,
-        cellIndex: Int,
-        particleIndex: Int,
-        pColor: IntArray,
-        pRadius: FloatArray
-    ) {
-        val x = particleEntity.x(particleIndex)
-        val y = particleEntity.y(particleIndex)
-        val angleCos = cellEntity.angleCos[cellIndex]
-        val angleSin = cellEntity.angleSin[cellIndex]
-
-        val dir = CellInstanceBuffer.dir(angleCos, angleSin)
-        val generation = cellEntity.getGeneration(cellIndex)
-        remember(particleIndex, generation, x, y, dir)
-        cellKeys[writeIndex] = (cellIndex.toLong() shl 32) or (generation.toLong() and 0xffffffffL)
-        val hist = history
-        val h = particleIndex * HISTORY_STRIDE
-        val prevX = Float.fromBits(hist[h + 5])
-        val prevY = Float.fromBits(hist[h + 6])
-        val prevDir = hist[h + 7]
-        if (areaFrame) areaCache.cell(writeIndex, particleEntity.physicsIndex[particleIndex])
-        if(polygonFrame){
-            renderOfCell[cellIndex]=writeIndex;renderCellStamp[cellIndex]=serial
-            opticalGroups[writeIndex] = if (cellEntity.organIndex[cellIndex] >= 0) cellEntity.organIndex[cellIndex] + 1 else -particleIndex - 1
-            opticalColors[writeIndex] = pColor[particleIndex]
-            opticalBirthTicks[writeIndex] = cellEntity.birthTick[cellIndex]
-        }
-
-        CellInstanceBuffer.write(
-            instances,
-            writeIndex,
-            x = x,
-            y = y,
-            color = pColor[particleIndex],
-            // Радиус — физический, без degreeOfShortening. Укорочение мышцы меняет длину
-            // её связей, а не размер клетки: сжимавшийся вместе с ним круг мигал на каждом
-            // сигнале. Сжатие видно по самому телу и, в отладке, по яркости мышцы.
-            shape = CellInstanceBuffer.shape(
-                CellInstanceBuffer.radiusByte(pRadius[particleIndex]),
-                CellInstanceBuffer.energyByte(cellEntity.energy[cellIndex])
-            ),
-            // Ключ шума — индекс частицы, а не позиция в буфере.
-            //
-            // Шейдер доворачивает текстуру на случайный угол, и раньше брал его из
-            // gl_InstanceID, то есть из позиции в буфере. Пока буфер собирался в порядке
-            // aliveList, позиция живой клетки не менялась, и доворот был постоянным.
-            // Теперь порядок задаёт арена: рождение клетки в более раннем слоте сдвигает
-            // все последующие, и во время роста доворот пересчитывался каждый тик —
-            // текстуры визуально крутились у всего тела, пока организм не дорастал.
-            //
-            // Индекс частицы это слот арены: он закреплён за клеткой на всю жизнь и от
-            // порядка сборки буфера не зависит вообще. По нему же отладка раскладывает рисунок.
-            type = CellInstanceBuffer.type(cellEntity.cellType[cellIndex].toInt(), particleIndex, true),
-            look = 0,
-            dir = dir,
-            prevX = prevX,
-            prevY = prevY,
-            prevDir = prevDir
-        )
-
-        if (debugFrame) {
-            lastPrevX = prevX; lastPrevY = prevY; lastPrevDir = prevDir
-            decorateDebugCell(writeIndex, cellIndex, particleIndex, x, y, angleCos, angleSin, pRadius[particleIndex])
-        }
-    }
-
     /**
      * Отладочный режим поверх уже записанной клетки: цвет палитры, рисунок и сигнал в look,
-     * стрелка, луч или жгутик в оверлей.
+     * стрелка, луч или жгутик — в накопитель оверлея [sink] своего воркера. Прошлая поза — из
+     * строки истории, только что записанной writeCellCore: общих полей у кусков на воркерах нет.
      *
-     * Отдельным методом, а не веткой внутри [writeCell]: тот вызывается на каждую клетку
-     * каждый тик и обязан оставаться маленьким, чтобы JIT встроил его целиком (см. CLAUDE.md,
-     * «JIT»).
+     * Отдельным методом, а не веткой в проходе по клеткам: тот обязан оставаться маленьким
+     * (см. CLAUDE.md, «JIT»).
      */
-    private fun decorateDebugCell(        writeIndex: Int,
-        cellIndex: Int,
-        particleIndex: Int,
-        x: Float,
-        y: Float,
-        angleCos: Float,
-        angleSin: Float,
-        radius: Float
-    ) {
+    private fun decorateDebugCell(writeIndex: Int, cellIndex: Int, particleIndex: Int, x: Float, y: Float, sink: OverlayMotionSink) {
         val cellType = cellEntity.cellType[cellIndex].toInt()
         // Сигнал действия — выход клетки: мышца сжимается, хвост тянет, присоска
         // присасывается ровно по нему. От него анимация рисунка, см. DebugCellPalette.
         val signal = cellEntity.neuronImpulseOutput[cellIndex]
         val o = writeIndex * CellInstanceBuffer.STRUCT_INTS
-        // С галочкой «Цвет из генома» остаётся цвет, уже записанный writeCell.
+        // С галочкой «Цвет из генома» остаётся цвет, уже записанный writeCellCore.
         if (!frameGenomeColors) instances[o + CellInstanceBuffer.OFFSET_COLOR / 4] = palette.color(cellType, particleEntity.color[particleIndex])
         instances[o + CellInstanceBuffer.OFFSET_LOOK / 4] =
             palette.look(cellType, signal, filter = filterByte(cellIndex, particleIndex, signal))
 
-        overlaySink.rigid(
+        if (!palette.isEye(cellType) && !palette.hasFlagellum(cellType) && !palette.hasArrow(cellType)) return
+        val angleCos = cellEntity.angleCos[cellIndex]
+        val angleSin = cellEntity.angleSin[cellIndex]
+        val h = particleIndex * HISTORY_STRIDE
+        val prevDir = history[h + 7]
+        sink.rigid(
             x, y, angleCos, angleSin,
-            lastPrevX, lastPrevY, CellInstanceBuffer.dirCos(lastPrevDir), CellInstanceBuffer.dirSin(lastPrevDir)
+            Float.fromBits(history[h + 5]), Float.fromBits(history[h + 6]),
+            CellInstanceBuffer.dirCos(prevDir), CellInstanceBuffer.dirSin(prevDir)
         )
-        writeDirection(cellIndex, cellType, particleIndex, x, y, angleCos, angleSin, radius, signal)
-    }
-
-    /**
-     * Прошлая поза клетки с частицей [p] и запись нынешней — в её строку [history]. Только копирование чисел: ни одного округления (см.
-     * CellInstanceBuffer: «Почему прошлая поза, а не смещение»).
-     *
-     * [key] — жилец слота, см. [history]. Клетка без годной прошлой позы (новая) или
-     * перенесённая дальше MOTION_RANGE получает прошлую позу, равную нынешней: она просто
-     * стоит в снимке, без полёта из чужого места.
-     */
-    private fun remember(p: Int, key: Int, x: Float, y: Float, dir: Int) {
-        val hist = history
-        val h = p * HISTORY_STRIDE
-
-        var prevX = x
-        var prevY = y
-        var prevDir = dir
-        if (hist[h] == serial - 1 && hist[h + 1] == key) {
-            val hx = Float.fromBits(hist[h + 2])
-            val hy = Float.fromBits(hist[h + 3])
-            if (PROFILE_INTERPOLATION) countStep(x - hx, y - hy)
-            if (CellInstanceBuffer.isMotion(x - hx, y - hy)) {
-                prevX = hx
-                prevY = hy
-                prevDir = hist[h + 4]
-            }
-        }
-
-        hist[h] = serial
-        hist[h + 1] = key
-        hist[h + 2] = x.toRawBits()
-        hist[h + 3] = y.toRawBits()
-        hist[h + 4] = dir
-        hist[h + 5] = prevX.toRawBits()
-        hist[h + 6] = prevY.toRawBits()
-        hist[h + 7] = prevDir
-    }
-
-    /**
-     * То же для не-клетки на позиции [slot] списка: только позиция, без угла, — в
-     * [nonCellHistory]. [key] — индекс частицы.
-     */
-    private fun rememberPosition(slot: Int, key: Int, x: Float, y: Float) {
-        val hist = nonCellHistory
-        val h = slot * NON_CELL_STRIDE
-        var prevX = x
-        var prevY = y
-        if (hist[h] == serial - 1 && hist[h + 1] == key) {
-            val hx = Float.fromBits(hist[h + 2])
-            val hy = Float.fromBits(hist[h + 3])
-            if (PROFILE_INTERPOLATION) countStep(x - hx, y - hy)
-            if (CellInstanceBuffer.isMotion(x - hx, y - hy)) {
-                prevX = hx
-                prevY = hy
-            }
-        }
-        hist[h] = serial
-        hist[h + 1] = key
-        hist[h + 2] = x.toRawBits()
-        hist[h + 3] = y.toRawBits()
-        hist[h + 4] = prevX.toRawBits()
-        hist[h + 5] = prevY.toRawBits()
+        writeDirection(sink, cellIndex, cellType, particleIndex, x, y, angleCos, angleSin, particleEntity.radius[particleIndex], signal)
     }
 
     /**
@@ -696,6 +977,7 @@ class RenderBufferManager(
 
     /** Стрелка направления, луч глаза или жгутик хвоста — в оверлей, см. DebugCellPalette. */
     private fun writeDirection(
+        overlaySink: OverlayMotionSink,
         cellIndex: Int,
         cellType: Int,
         particleIndex: Int,
@@ -786,11 +1068,48 @@ class RenderBufferManager(
      *
      * Концы связи едут каждый со своей частицей: их прошлые позиции уже записаны проходом по
      * клеткам этого же снимка (поэтому связи пишутся после него).
+     *
+     * На воркерах, кусками по [NEURAL_CHUNK] связей, как и клетки: у каждого воркера свой
+     * накопитель, склейка — по номеру куска, то есть в порядке aliveList. Замер 27.11, A21s,
+     * 5.4 тысячи клеток осьминогов: в одном потоке связи стоили ~1 мс тика (simpleperf), больше
+     * записи самих клеток.
      */
-    private fun writeNeuralLinks() = with(neuralLinkEntity) {
+    private fun writeNeuralLinks(overlay: OverlayInstanceBuffer) {
+        val links = neuralLinkEntity.aliveList.size
+        val executor = threads?.executor
+        val chunks = (links + NEURAL_CHUNK - 1) / NEURAL_CHUNK
+        if (executor == null || executor.workerCount < 2 || chunks < 2 || PROFILE_INTERPOLATION) {
+            writeNeuralLinkRange(0, links, overlaySink)
+            return
+        }
+        // Всё, что записано раньше (кольца, клетки, связи тел, контур), — в буфер до нейросвязей.
+        flushOverlay(overlay)
+        ensureSinks(executor.workerCount)
+        for (sink in sinks) sink.reset()
+        if (neuralChunkWorker.size < chunks) {
+            neuralChunkWorker = IntArray(chunks * 2); neuralChunkFrom = IntArray(chunks * 2); neuralChunkTo = IntArray(chunks * 2)
+        }
+        executor.runChunks(chunks, Phase.RENDER, neuralLinkJob)
+        for (k in 0 until chunks) overlay.putAll(sinks[neuralChunkWorker[k]].ints, neuralChunkFrom[k], neuralChunkTo[k] - neuralChunkFrom[k])
+        overlaySink.reset()
+    }
+
+    private var neuralChunkWorker = IntArray(16)
+    private var neuralChunkFrom = IntArray(16)
+    private var neuralChunkTo = IntArray(16)
+    private val neuralLinkJob = ParallelExecutor.ChunkJob { k, worker ->
+        val sink = sinks[worker]
+        neuralChunkWorker[k] = worker
+        neuralChunkFrom[k] = sink.count
+        writeNeuralLinkRange(k * NEURAL_CHUNK, minOf(neuralLinkEntity.aliveList.size, (k + 1) * NEURAL_CHUNK), sink)
+        neuralChunkTo[k] = sink.count
+    }
+
+    /** Нейросвязи мест [from, to) их aliveList — фигурами в [sink]. Только читает мир и историю снимка. */
+    private fun writeNeuralLinkRange(from: Int, to: Int, sink: OverlayMotionSink) = with(neuralLinkEntity) {
         val output = cellEntity.neuronImpulseOutput
 
-        for (bufIndex in 0..<aliveList.size) {
+        for (bufIndex in from until to) {
             val i = aliveList.getInt(bufIndex)
             val linkCellA = links1[i]
             val linkCellB = links2[i]
@@ -809,10 +1128,10 @@ class RenderBufferManager(
             val from = if (fromA) particleA else particleB
             val to = if (fromA) particleB else particleA
 
-            overlaySink.points(prevXOf(from, particleEntity.x(from)), prevYOf(from, particleEntity.y(from)), prevXOf(to, particleEntity.x(to)), prevYOf(to, particleEntity.y(to)))
+            sink.points(prevXOf(from, particleEntity.x(from)), prevYOf(from, particleEntity.y(from)), prevXOf(to, particleEntity.x(to)), prevYOf(to, particleEntity.y(to)))
             // Индекс связи — ключ фазы импульсов: закреплён за связью на всю её жизнь.
             palette.writeNeuralLink(
-                overlaySink, particleEntity.x(from), particleEntity.y(from), particleEntity.x(to), particleEntity.y(to), color[i], output[source], seed = i
+                sink, particleEntity.x(from), particleEntity.y(from), particleEntity.x(to), particleEntity.y(to), color[i], output[source], seed = i
             )
         }
     }
@@ -870,21 +1189,26 @@ class RenderBufferManager(
         }
 
         debugFrame = snapshotMode.drawsDebugOverlay
+        // Рамки тел и в отладочном снимке: по ним GL-поток рисует только тела в кадре
+        // (VisibleCells). Цена — четыре min/max на клетку в том же проходе.
+        snapshot.hasCellCull = debugFrame
+        if (debugFrame) opticalCullRanges = snapshot.opticalCullRanges.also { it.clear() }
         areaFrame = debugFrame && fillAreas
         if (areaFrame) areaCache.reserveCells(cellEntity.aliveList.size)
         frameFilter = if (debugFrame) debugFilter else DebugFilter.ORIGINAL
         frameGenomeColors = debugFrame && genomeColors
+        snapshot.staticCells = if (polygonFrame) null else staticCellsFor()
 
         val overlay = snapshot.overlay
         overlay.begin()
-        overlaySink.target = overlay
+        overlaySink.reset()
 
         // Порядок записи оверлея — порядок отрисовки: кольца феромонов снизу, стрелки и
-        // лучи (их пишет writeCell) над ними, нейросвязи сверху.
+        // лучи (их пишет decorateDebugCell) над ними, нейросвязи сверху.
         if (debugFrame) writePheromoneRings()
 
         // ==================== CELL ====================
-        var written = writeOrganismCells(0)
+        var written = writeOrganismCells(0, overlay)
         written = writeOrphanCells(written)
         snapshot.areaIndices = if (areaFrame) {
             areaCache.publish(particleEntity.physics?.bridge?.world, written, snapshot.areaStorage)
@@ -898,16 +1222,17 @@ class RenderBufferManager(
         // арен и не-клетки в сумме дают aliveList. Расхождение означает, что какие-то
         // частицы либо не попали в буфер, либо попали дважды — а обе беды выглядят как
         // «часть картинки ведёт себя странно», а не как явная ошибка.
-        if (DEBUG_CHECKS && written != particleEntity.aliveList.size) {
+        // Неподвижные (террейн, стенка) вне микроскопа едут своим буфером, не снимком.
+        val expected = particleEntity.aliveList.size - (if (polygonFrame) 0 else particleEntity.staticNonCellCount)
+        if (DEBUG_CHECKS && written != expected) {
             throw IllegalStateException(
-                "рендер: в буфер записано $written частиц, а живых " +
+                "рендер: в буфер записано $written частиц, а ждали $expected: живых " +
                     "${particleEntity.aliveList.size} (клеток ${cellEntity.aliveList.size}, " +
-                    "не-клеток ${particleEntity.nonCellList.size}, " +
-                    "вне арен ${cellEntity.orphanCellCount})"
+                    "не-клеток ${particleEntity.nonCellList.size}, из них неподвижных " +
+                    "${particleEntity.staticNonCellCount}, вне арен ${cellEntity.orphanCellCount})"
             )
         }
         snapshot.instanceCount = written
-        if (simulationData.tickCounter == instanceHashTick) instanceHashValue = hashInstances(written)
         snapshot.filter = frameFilter
 
         // Граница — над клетками, под нейросвязями.
@@ -915,8 +1240,10 @@ class RenderBufferManager(
         if (debugFrame && showBoundary) writeBoundary()
 
         // ==================== NEURAL LINKS ====================
-        if (debugFrame && showNeuralLinks) writeNeuralLinks()
+        if (debugFrame && showNeuralLinks) writeNeuralLinks(overlay)
+        flushOverlay(overlay)
         overlay.end()
+        if (simulationData.tickCounter == instanceHashTick) instanceHashValue = hashSnapshot(written, overlay)
         snapshot.hasOverlay = debugFrame
         // Пятна феромонов — только в отладочный снимок: другим режимам их не рисовать.
         if (debugFrame) writePheromones(snapshot) else snapshot.pheromones.run { begin(); end() }
@@ -1108,6 +1435,23 @@ class RenderBufferManager(
         /** Кусок записи не-клеток по воркерам: 2048 инстансов — десятки микросекунд работы. */
         const val NON_CELL_CHUNK = 2048
 
+        /**
+         * Кусок рамки не-клеток для отсечения по камере, мест списка; делит [NON_CELL_CHUNK] нацело
+         * (кусок рамки не пересекает кусок воркера). 256 — отрезок ряда террейна: на мир 256×256
+         * с 66 тысячами частиц террейна — около 260 рамок, их перебор на кадр ничего не стоит.
+         */
+        const val NON_CELL_CULL = 256
+
+        /**
+         * Кусок записи клеток — слотов арены. Замер 27.11 на A21s (копия прохода, семь потоков):
+         * куски по 500 клеток — 0.46 мс на 6.5 тысячи клеток, по организму из 3250 — 1.5 мс; мельче
+         * не нужно: на кусок — пара записей в массивы кусков и одна копия фигур оверлея.
+         */
+        const val CHUNK_CELLS = 512
+
+        /** Кусок записи нейросвязей в оверлей, связей (на связь — десяток случайных чтений клеток и частиц). */
+        const val NEURAL_CHUNK = 512
+
         /** Ключ вершины террейна в графе изображения: старший бит над ключами клеток (номер клетки << 32). */
         private const val TERRAIN_KEY = 1L shl 62
 
@@ -1117,6 +1461,14 @@ class RenderBufferManager(
         const val TICK_SMOOTHING = 5L
     }
 }
+
+/**
+ * Неподвижный слой кадра: инстансы террейна и стенки у рамки ([cells], раскладка
+ * CellInstanceBuffer, прошлая поза = нынешняя) и рамки их кусков ([cull]). Собирается потоком
+ * симуляции раз на мир и после не меняется — поэтому один объект свободно ходит через все
+ * снимки, а GL-поток заливает его, только когда пришёл другой (RenderFrame.staticCells).
+ */
+class StaticCells(val cells: java.nio.ByteBuffer, val cull: io.github.some_example_name.render.pack.OpticalCullRanges)
 
 /**
  * Всё, что рендеру нужно от одного тика: буферы инстансов в раскладке GPU и строка
@@ -1149,6 +1501,11 @@ class RenderSnapshot(cellCapacity: Int, overlayCapacity: Int) {
     var areaIndices: DebugAreaIndices? = null
     // Три массива (12 байт/инстанс) растут только в режиме микроскопа.
     var hasOptics = false
+    /** Рамки тел (opticalCullRanges) собраны под отсечение отладочного режима. */
+    var hasCellCull = false
+
+    /** Неподвижный слой (террейн, стенка) — в отладочном и ностальгическом; в микроскопе null: там они в [instances]. */
+    var staticCells: StaticCells? = null
     var opticalGroups = IntArray(0)
         private set
     var opticalColors = IntArray(0)
@@ -1221,7 +1578,20 @@ class RenderSnapshot(cellCapacity: Int, overlayCapacity: Int) {
  */
 class OverlayMotionSink : DebugCellPalette.OverlaySink {
 
-    lateinit var target: OverlayInstanceBuffer
+    /**
+     * Фигуры в раскладке OverlayInstanceBuffer — [OverlayInstanceBuffer.STRUCT_INTS] int на
+     * фигуру, [count] штук; в буфер снимка их копирует OverlayInstanceBuffer.putAll. Свой
+     * массив, а не сразу direct-буфер: накопитель у каждого воркера свой (куски клеток пишутся
+     * параллельно), а запись в массив на Android дешевле десяти putFloat на фигуру.
+     */
+    var ints = IntArray(INITIAL_FIGURES * OverlayInstanceBuffer.STRUCT_INTS)
+        private set
+    var count = 0
+        private set
+
+    fun reset() {
+        count = 0
+    }
 
     private var mode = STILL
 
@@ -1277,13 +1647,27 @@ class OverlayMotionSink : DebugCellPalette.OverlaySink {
 
     override fun add(x0: Float, y0: Float, x1: Float, y1: Float, color: Int, params: Int) {
         when (mode) {
-            RIGID -> target.put(
+            RIGID -> put(
                 x0, y0, x1, y1, color, params,
                 rigidX(x0, y0), rigidY(x0, y0), rigidX(x1, y1), rigidY(x1, y1)
             )
-            POINTS -> target.put(x0, y0, x1, y1, color, params, prevFromX, prevFromY, prevToX, prevToY)
-            else -> target.put(x0, y0, x1, y1, color, params)
+            POINTS -> put(x0, y0, x1, y1, color, params, prevFromX, prevFromY, prevToX, prevToY)
+            else -> put(x0, y0, x1, y1, color, params, x0, y0, x1, y1)
         }
+    }
+
+    /** Поля фигуры в порядке OverlayInstanceBuffer.put. */
+    private fun put(
+        x0: Float, y0: Float, x1: Float, y1: Float, color: Int, params: Int,
+        prevX0: Float, prevY0: Float, prevX1: Float, prevY1: Float
+    ) {
+        val o = count * OverlayInstanceBuffer.STRUCT_INTS
+        if (o + OverlayInstanceBuffer.STRUCT_INTS > ints.size) ints = ints.copyOf(ints.size / 2 * 3 + OverlayInstanceBuffer.STRUCT_INTS)
+        val a = ints
+        a[o] = x0.toRawBits(); a[o + 1] = y0.toRawBits(); a[o + 2] = x1.toRawBits(); a[o + 3] = y1.toRawBits()
+        a[o + 4] = color; a[o + 5] = params
+        a[o + 6] = prevX0.toRawBits(); a[o + 7] = prevY0.toRawBits(); a[o + 8] = prevX1.toRawBits(); a[o + 9] = prevY1.toRawBits()
+        count++
     }
 
     /**
@@ -1300,6 +1684,9 @@ class OverlayMotionSink : DebugCellPalette.OverlaySink {
         const val STILL = 0
         const val RIGID = 1
         const val POINTS = 2
+
+        /** Начальная ёмкость накопителя, фигур; растёт ×1.5. */
+        const val INITIAL_FIGURES = 1024
     }
 }
 

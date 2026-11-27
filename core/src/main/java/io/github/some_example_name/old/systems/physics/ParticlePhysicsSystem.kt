@@ -108,6 +108,11 @@ class ParticlePhysicsSystem(
                     for (i in from until to) {
                         processNeighborsCellsCollision(indices[i], x, y, threadId)
                     }
+
+                    // Неподвижный слой (террейн, стенка у рамки) — со стороны подвижной частицы.
+                    if (gridManager.staticCount > 0) {
+                        for (i in from until to) processStaticNeighbors(indices[i], x, y, threadId)
+                    }
                 }
 
                 from = to
@@ -171,6 +176,25 @@ class ParticlePhysicsSystem(
         }
         gridManager.forEachParticleAt(gridX + 1, gridY) { id ->
             collisionManager.repulse(cellId, id, threadId)
+        }
+    }
+
+    /**
+     * Подвижная частица против неподвижного слоя сетки (GridManager.buildStatic) в клетках
+     * 3×3 вокруг своей: пары «подвижная — неподвижная» видны только отсюда, каждая ровно раз,
+     * а пар «неподвижная — неподвижная» нет вовсе (у них ничего не бывает: сливаются только
+     * субстанции). Пишет repulse только на стороне подвижной частицы (касание её клетки), так
+     * что чётные и нечётные куски сетки по-прежнему не гоняются.
+     *
+     * Толща террейна в мире физики не живёт (StaticTerrain: physicsIndex = −1) и снаружи
+     * недостижима — её пропускаем: у неё и радиус больше предела сетки (WorldTerrainManager).
+     */
+    private fun processStaticNeighbors(particle: Int, gridX: Int, gridY: Int, threadId: Int) {
+        val physicsIndex = entity.physicsIndex
+        for (dy in -1..1) {
+            gridManager.forEachStaticInRowSegment(gridY + dy, gridX - 1, gridX + 1) { s ->
+                if (physicsIndex[s] >= 0) collisionManager.repulse(particle, s, threadId)
+            }
         }
     }
 

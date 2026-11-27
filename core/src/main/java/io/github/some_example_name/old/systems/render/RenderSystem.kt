@@ -210,6 +210,12 @@ class RenderSystem(
             opticalColors = if(useOptics) snapshot.opticalColors else null
             opticalBirthTicks = if(useOptics) snapshot.opticalBirthTicks else null
             opticalCullRanges = if(useOptics) snapshot.opticalCullRanges else null
+            // Рамки тел отладочного снимка — для отсечения по камере (VisibleCells).
+            cellCullRanges = if (mode == RenderMode.DEBUG && snapshot.hasCellCull) snapshot.opticalCullRanges else null
+            // Неподвижный слой — один объект на мир: пока он тот же, на GPU уже лежат его байты.
+            val still = if (mode == RenderMode.DEBUG || mode == RenderMode.NOSTALGIC) snapshot.staticCells else null
+            staticCells = still?.cells
+            staticCullRanges = still?.cull
             opticalSettings = menu?.settings ?: (if(useOptics) this@RenderSystem.opticalSettings else null)
             areaIndices = if (mode == RenderMode.DEBUG && fillAreas) snapshot.areaIndices else null
             uploadCells = fresh || packedNow

@@ -177,6 +177,45 @@ class OverlayInstanceBufferTest {
         assertEquals(kotlin.math.round(turns), turns, "FLAGELLUM_HZ * TIME_WRAP обязано быть целым")
     }
 
+    /**
+     * Склейка из int-массивов (снимок отладочного режима с воркеров) обязана дать ровно те
+     * байты, что дала бы запись тех же фигур по одной, — и не ломать запись put после себя.
+     */
+    @Test
+    fun putAllFromIntsMatchesPut() {
+        fun figure(k: Int) = floatArrayOf(k + 0.25f, -k * 1.5f, k * 3f, 7f - k, k * 0.5f, k + 1f, -k - 2f, 0.125f * k)
+        val count = 37
+        val reference = OverlayInstanceBuffer(4)
+        reference.begin()
+        val ints = IntArray(count * OverlayInstanceBuffer.STRUCT_INTS)
+        for (k in 0 until count) {
+            val f = figure(k)
+            val color = 0x11223344 * (k + 1)
+            val params = OverlayInstanceBuffer.params(k % 7, (k - 18) / 18f, k)
+            reference.put(f[0], f[1], f[2], f[3], color, params, f[4], f[5], f[6], f[7])
+            val o = k * OverlayInstanceBuffer.STRUCT_INTS
+            ints[o] = f[0].toRawBits(); ints[o + 1] = f[1].toRawBits(); ints[o + 2] = f[2].toRawBits(); ints[o + 3] = f[3].toRawBits()
+            ints[o + 4] = color; ints[o + 5] = params
+            ints[o + 6] = f[4].toRawBits(); ints[o + 7] = f[5].toRawBits(); ints[o + 8] = f[6].toRawBits(); ints[o + 9] = f[7].toRawBits()
+        }
+        reference.put(1f, 2f, 3f, 4f, 5, 6)
+
+        // Кусками в разном порядке источника, с ростом буфера посередине, и put после склейки.
+        val glued = OverlayInstanceBuffer(2)
+        glued.begin()
+        glued.putAll(ints, 0, 10)
+        glued.putAll(ints, 10, 0)
+        glued.putAll(ints, 10, 27)
+        glued.put(1f, 2f, 3f, 4f, 5, 6)
+
+        val a = reference.end()
+        val b = glued.end()
+        assertEquals(a.remaining(), b.remaining())
+        assertEquals((count + 1) * OverlayInstanceBuffer.STRUCT_SIZE, b.remaining())
+        for (i in 0 until a.remaining()) assertEquals(a.get(i), b.get(i), "байт $i")
+        assertEquals(count + 1, glued.count)
+    }
+
     private fun shaderSource(name: String): String {
         // Тесты модуля запускаются из его каталога, но из IDE — бывает, что из корня.
         val candidates = listOf("../assets/shaders/debug_view", "assets/shaders/debug_view")
