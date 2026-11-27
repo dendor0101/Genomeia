@@ -86,7 +86,7 @@ class MenuScreen : VisDslScreen(
             visTextButton(bundle.get("button.editor"), onClick = { browseGenomes() }) { growX() }
             row()
 
-            visTextButton(bundle.get("menu.guides"), onClick = {
+            visTextButton(bundle.get("menu.campaign"), onClick = {
                 //navigation.performCommand(GoLogic)
                 menuViewModel.handle(MenuIntent.OpenLogic)
             }) { growX() }

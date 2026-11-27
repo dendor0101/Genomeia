@@ -41,7 +41,18 @@ class CampaignScreen : VisDslScreen(background = Color(0.045f, 0.055f, 0.075f, 1
             text = bundle.get("menu.levels"),
             font = game.buttonFont,
             textColor = ACCENT
-        ) { center().growX().padTop(8.dp()).padBottom(18.dp()) }
+        ) { center().growX().padTop(8.dp()).padBottom(8.dp()) }
+        row()
+
+        // Кампания и редактор уровней пока экспериментальные: плашка своего цвета, чтобы её
+        // не спутать ни с оранжевым заголовком, ни с бежевыми подписями разделов.
+        visTable(backgroundColor = EXPERIMENTAL_BG, cellInit = { center().padBottom(18.dp()) }) {
+            visLabel(
+                text = bundle.get("menu.experimental"),
+                font = game.mediumFont,
+                textColor = EXPERIMENTAL_TEXT
+            ) { pad(6.dp(), 14.dp(), 6.dp(), 14.dp()) }
+        }
         row()
 
         val levels = loadLevels()
@@ -119,5 +130,7 @@ class CampaignScreen : VisDslScreen(background = Color(0.045f, 0.055f, 0.075f, 1
         val CARD_BG = Color(0.11f, 0.13f, 0.17f, 0.96f)
         val COMPLETED_BG = Color(0.08f, 0.27f, 0.14f, 0.96f)
         val COMPLETED_TEXT = Color(0.72f, 1f, 0.78f, 1f)
+        val EXPERIMENTAL_BG = Color(0.32f, 0.25f, 0.04f, 0.96f)
+        val EXPERIMENTAL_TEXT = Color(1f, 0.88f, 0.3f, 1f)
     }
 }
