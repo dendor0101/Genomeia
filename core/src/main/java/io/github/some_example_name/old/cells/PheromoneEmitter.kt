@@ -15,7 +15,6 @@ class PheromoneEmitter(cellTypeId: Int) : Cell(
     key = "pheromone_emitter",
     defaultColor = blueColors[3],
     cellTypeId = cellTypeId,
-    textureName = "PheromoneEmitter.png",
     isNeural = true
 ) {
 

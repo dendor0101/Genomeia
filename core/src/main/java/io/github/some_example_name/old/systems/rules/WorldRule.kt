@@ -7,7 +7,13 @@ package io.github.some_example_name.old.systems.rules
  * физики-библиотеки (WorldEnvironment), которая до этого была константами.
  *
  * [key] — формат журнала (команда SetWorldRule) и сохранения мира: не менять и не переиспользовать.
+ * Порядок записей — порядок в хэше мира (WorldRules.hash): новые — только в конец.
  * Подпись и подсказка — `worldRules.<key>` и `worldRules.<key>.hint` в MyBundle*.properties.
+ *
+ * [cellKey] — настройка, которую читает только этот тип клетки (сила жгутика — Tail, насоса —
+ * Pumper, пауза — Producer). Игрок ищет её у самой клетки, поэтому панель показывает её на
+ * вкладке «Клетки» у этого типа (27.11, до этого — на «Организмах»). Значение по-прежнему одно
+ * на мир и в журнале — без типа: ключ и место в хэше прежние, старые записи и сохранения читаются.
  *
  * Не вошли старые поля, которые уже ни на что не влияют: феромоны (rateOfPheromone*), голодная
  * смерть (theNumberOfTicksHungryCellDies), прежняя гравитация и вязкость среды прежней физики
@@ -22,7 +28,9 @@ enum class WorldRule(
     /** Границы и шаг ползунка — в его единицах: проценты стандарта или само значение, см. [RuleFormat]. */
     val min: Float,
     val max: Float,
-    val step: Float
+    val step: Float,
+    /** Ключ типа клетки, который один читает эту настройку; null — она про весь мир. */
+    val cellKey: String? = null
 ) {
     /** Гравитация вниз по экрану, клеток в секунду в квадрате. 0 — мир сверху, как всегда был. */
     GRAVITY("gravity", RuleSection.ENVIRONMENT, RuleFormat.NUMBER, 0f, 30f, 0.5f),
@@ -40,13 +48,13 @@ enum class WorldRule(
     /** Мягкость ткани всех тел: множитель податливости связей и площадей (SOFT_COMPLIANCE). */
     SOFTNESS("softness", RuleSection.ORGANISMS, RuleFormat.PERCENT, 25f, 400f, 5f),
     /** Тяга жгутика (tailMaxSpeedCoefficient). */
-    TAIL_FORCE("tailForce", RuleSection.ORGANISMS, RuleFormat.PERCENT, 0f, 400f, 5f),
+    TAIL_FORCE("tailForce", RuleSection.CELLS, RuleFormat.PERCENT, 0f, 400f, 5f, cellKey = "tail"),
     /** Скорость перетекания энергии по связям тела (rateOfEnergyTransferInLinks). */
     LINK_TRANSFER("linkTransfer", RuleSection.ORGANISMS, RuleFormat.PERCENT, 0f, 400f, 5f),
     /** Сколько энергии насос забирает за касание (rateOfEnergyTransferForPumper). */
-    PUMP_RATE("pumpRate", RuleSection.ORGANISMS, RuleFormat.PERCENT, 0f, 400f, 5f),
+    PUMP_RATE("pumpRate", RuleSection.CELLS, RuleFormat.PERCENT, 0f, 400f, 5f, cellKey = "pumper"),
     /** Пауза производителя между потомками: тиков на клетку генома (producerRestoreTimeTickCoefficient). */
-    PRODUCER_PAUSE("producerPause", RuleSection.ORGANISMS, RuleFormat.NUMBER, 1f, 20f, 1f);
+    PRODUCER_PAUSE("producerPause", RuleSection.CELLS, RuleFormat.NUMBER, 1f, 20f, 1f, cellKey = "producer");
 
     companion object {
         fun byKey(key: String): WorldRule? = entries.firstOrNull { it.key == key }

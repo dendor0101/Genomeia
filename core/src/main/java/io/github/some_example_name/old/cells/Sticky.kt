@@ -15,7 +15,6 @@ class Sticky(cellTypeId: Int) : Cell(
     key = "sticky",
     defaultColor = pinkColors[3],
     cellTypeId = cellTypeId,
-    textureName = "sticky.png",
     isNeural = true,
     effectOnContact = true
 ) {

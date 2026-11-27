@@ -40,7 +40,6 @@ class Controller(cellTypeId: Int) : Cell(
     key = "controller",
     defaultColor = purpleColors[3],
     cellTypeId = cellTypeId,
-    textureName = "sensor.png",
     isNeural = true,
     isNeuronTransportable = false
 ) {

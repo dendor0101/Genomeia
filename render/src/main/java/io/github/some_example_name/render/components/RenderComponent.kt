@@ -48,6 +48,9 @@ class RenderContext {
     /** Индексы вершин заливки в буфере клеток этого снимка. */
     var areaIndices: DebugAreaIndices? = null
 
+    /** Прозрачная пустота вместо фона — см. RenderFrame.transparentBackground. */
+    var transparentBackground: Boolean = false
+
     /**
      * Сколько единиц мира приходится на пиксель экранного буфера. По ней проходы, которые
      * сглаживают сами (DebugRenderer), переводят расстояния в пиксели.

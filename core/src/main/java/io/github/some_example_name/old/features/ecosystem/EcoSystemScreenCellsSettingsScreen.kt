@@ -4,7 +4,6 @@ import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Screen
 import com.badlogic.gdx.files.FileHandle
 import com.badlogic.gdx.graphics.GL20
-import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.Stage
@@ -12,7 +11,6 @@ import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.badlogic.gdx.utils.Json
 import com.badlogic.gdx.utils.JsonWriter
-import com.badlogic.gdx.utils.Scaling
 import com.badlogic.gdx.utils.Timer
 import com.badlogic.gdx.utils.viewport.ScreenViewport
 import com.kotcrab.vis.ui.VisUI
@@ -22,7 +20,6 @@ import io.github.some_example_name.old.commands.GoBack
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
-import io.github.some_example_name.old.core.DIGameGlobalContainer.cellTypes
 import io.github.some_example_name.old.core.DIGameGlobalContainer.roundStyle
 import io.github.some_example_name.old.core.DIGameGlobalContainer.substrateSettings
 import io.github.some_example_name.old.core.GlobalSimulationSettings
@@ -91,17 +88,9 @@ class EcoSystemScreenCellsSettingsScreen: Screen {
             panel.background = VisUI.getSkin().getDrawable("window")
             panel.pad(20f)
 
-            val iconName = "ui/cell-icons/" + cellTypes[i].textureName
-
-            val texture = Texture(Gdx.files.internal(iconName))
-            val cellImage = VisImage(texture)
-            cellImage.setScaling(Scaling.fit)
-
-            panel.add(cellImage).center().pad(10f)
-
             panel.addListener(object : ClickListener() {
                 override fun clicked(event: InputEvent?, x: Float, y: Float) {
-                    CellSettings(cell, iconName, settings).show(stage)
+                    CellSettings(cell, settings).show(stage)
                 }
             })
 

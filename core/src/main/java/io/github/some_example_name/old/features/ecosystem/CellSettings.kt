@@ -1,12 +1,9 @@
 package io.github.some_example_name.old.features.ecosystem
 
 import com.badlogic.gdx.Gdx
-import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
-import com.badlogic.gdx.utils.Scaling
 import com.kotcrab.vis.ui.widget.VisDialog
-import com.kotcrab.vis.ui.widget.VisImage
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisTextButton
 import com.kotcrab.vis.ui.widget.VisTextField
@@ -22,7 +19,6 @@ import kotlin.reflect.jvm.isAccessible
 
 class CellSettings(
     val cell: Map.Entry<String, CellSettings>,
-    val icon: String,
     val settings: GlobalSimulationSettings
 ) : VisDialog("Cells Settings") {
 
@@ -33,12 +29,6 @@ class CellSettings(
         setupTitleSize(DIGameGlobalContainer.game)
 
         contentTable.defaults().left().pad(6f * density)
-
-        val texture = Texture(Gdx.files.internal(icon))
-        val cellImage = VisImage(texture)
-        cellImage.setScaling(Scaling.fit)
-
-        contentTable.add(cellImage).width(196f*density).height(196f*density).expandX().center().pad(5f).colspan(2).row()
 
         val cellTitleLabel = VisLabel(cell.key)
         DIGameGlobalContainer.game.applyCustomFontMedium(cellTitleLabel)
