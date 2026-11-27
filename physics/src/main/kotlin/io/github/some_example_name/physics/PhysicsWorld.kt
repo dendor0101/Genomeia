@@ -41,6 +41,46 @@ class PhysicsWorld(
     val state = BodyState(config).also { it.workers = workers; it.worldScale = scale }
     private val simulation = BodySimulation(state)
 
+    /**
+     * ПЕРЕНОС НА RUST (RUST_PORT.md): теневой мир на Rust, который повторяет все методы этого мира и после каждого
+     * тика сверяется с ним побитово (RustShadow). null — тени нет: она включается только
+     * `-Dgenomeia.physics.rust=shadow`, без него этот код не исполняется (одно сравнение с null на вызов метода).
+     */
+    private var shadow: io.github.some_example_name.physics.rust.RustWorld? =
+        if (RustShadow.requested) RustShadow.create(this, state, scale) else null
+    private var shadowDepth = 0
+    private var shadowTick = 0L
+
+    /** Двойник мира на Rust (тень, `-Dgenomeia.physics.rust=shadow`) — для замеров Kotlin против Rust; иначе null. */
+    val rustTwin: io.github.some_example_name.physics.rust.RustWorld? get() = shadow
+
+    /**
+     * Замер Kotlin против Rust (RustGenomeBench): шаг мира не шагает двойника и не сверяет его — стенд шагает двойника
+     * сам, под своим таймером, и сверяет отпечатки. Входы тика (методы мира) доходят до двойника как обычно.
+     */
+    var rustTwinSeparateStep = false
+
+    /**
+     * Выполнить метод в Kotlin и повторить его в тени. Вложенные вызовы (пул частиц зовёт addBody изнутри, среда —
+     * wakeAll) в тень не уходят: тень сама делает ту же вложенную работу своим методом.
+     */
+    private inline fun <T> mirrored(rust: (io.github.some_example_name.physics.rust.RustWorld) -> Unit, kotlin: () -> T): T {
+        val sh = shadow
+        if (sh == null || shadowDepth > 0) return kotlin()
+        shadowDepth++
+        try {
+            sh.syncParams(state)
+            // checkOps: правки стенда в обход методов — до операции, сверка — строго после неё.
+            if (RustShadow.checkOps) RustShadow.prepare(state, sh, shadowTick)
+            val result = kotlin()
+            rust(sh)
+            if (RustShadow.checkOps) RustShadow.checkOp(state, sh, shadowTick)
+            return result
+        } finally {
+            shadowDepth--
+        }
+    }
+
     /** Наблюдатель подшагов (история для интерполяции рисования); без окна — null. */
     var observer: StepObserver?
         get() = simulation.observer
@@ -69,7 +109,7 @@ class PhysicsWorld(
     var removedParticles = 0; private set
 
     /** Загрузить набор тел целиком — одно тело с номером 0. Прежнее содержимое мира пропадает. */
-    fun load(definition: BodyDefinition) {
+    fun load(definition: BodyDefinition) = mirrored({ it.load(definition) }) {
         // Тела загружаются целыми: временных связей роста у них нет (TempLinks.kt). Связи и треугольники — «волнами»
         // (WaveOrder.kt): соседние в памяти не делят частиц, биты те же.
         loadOrdered(definition.forBorn(null).inWaveOrder())
@@ -105,6 +145,14 @@ class PhysicsWorld(
      * Возвращает НОМЕР ТЕЛА; его частицы — bodyFirst(номер) + смещение в [definition].
      */
     fun addBody(body: BodyDefinition, born: BooleanArray? = null, boneOn: BooleanArray? = null): Int {
+        var id = -1
+        mirrored({ check(it.addBody(body, born, boneOn) == id) { "тень Rust: другой номер тела" } }) {
+            id = addBodyKotlin(body, born, boneOn)
+        }
+        return id
+    }
+
+    private fun addBodyKotlin(body: BodyDefinition, born: BooleanArray?, boneOn: BooleanArray?): Int {
         // Временные связи роста, которые рождённые клетки уже сняли бы, в мир не идут: взрослое тело — без них (TempLinks.kt).
         // Связи и треугольники — «волнами» (WaveOrder.kt).
         val definition = body.forBorn(born).inWaveOrder()
@@ -140,7 +188,7 @@ class PhysicsWorld(
      * частиц удалённых тел набирается COMPACT_DEAD_SHARE мира, мир уплотняется ([compact]):
      * решение зависит только от состояния мира, повтор его воспроизводит.
      */
-    fun removeBody(body: Int) {
+    fun removeBody(body: Int) = mirrored({ it.removeBody(body) }) {
         checkBody(body)
         state.removeBody(bodyFirstOf[body], bodyCountOf[body])
         bodyStateOf[body] = 2
@@ -154,7 +202,7 @@ class PhysicsWorld(
      * bodyMuscleFirst — меняются. Производные структуры собираются заново, как при
      * загрузке, — даже если удалять нечего. Зовётся между тиками.
      */
-    fun compact() {
+    fun compact() = mirrored({ it.compact() }) {
         val removed = BooleanArray(state.n)
         for (id in 0 until bodyIds) if (bodyStateOf[id].toInt() == 2)
             java.util.Arrays.fill(removed, bodyFirstOf[id], bodyFirstOf[id] + bodyCountOf[id], true)
@@ -184,7 +232,7 @@ class PhysicsWorld(
      * скоростью ([vx], [vy]) вместе с рёбрами к рождённым соседям и треугольниками.
      */
     fun activate(cell: Int, x: Float, y: Float, vx: Float = 0.0f, vy: Float = 0.0f) =
-        state.activateCell(cell, x, y, vx, vy)
+        mirrored({ it.activate(cell, x, y, vx, vy) }) { state.activateCell(cell, x, y, vx, vy) }
 
     /**
      * Где родиться клетке [cell] в нынешней позе рождённых соседей (поворот и масштаб позы
@@ -195,7 +243,7 @@ class PhysicsWorld(
     }
 
     /** Родить клетку там, где ей место сейчас (birthPlacement). */
-    fun activate(cell: Int) {
+    fun activate(cell: Int) = mirrored({ it.activate(cell) }) {
         val p = birthPlacement(cell)
         state.activateCell(cell, p[0], p[1], p[2], p[3])
     }
@@ -204,7 +252,7 @@ class PhysicsWorld(
      * Родить клетку делением живой клетки [parent] того же тела: почти в родителе, дальше её
      * выталкивают дорастающие связи (BodyState.divisionPlacement, DIVISION_START_FRACTION).
      */
-    fun activateFromParent(cell: Int, parent: Int) {
+    fun activateFromParent(cell: Int, parent: Int) = mirrored({ it.activateFromParent(cell, parent) }) {
         val p = FloatArray(4)
         state.divisionPlacement(cell, parent, p)
         state.activateCell(cell, p[0], p[1], p[2], p[3])
@@ -243,7 +291,7 @@ class PhysicsWorld(
      */
     val surfaceChangeCount: Int get() = state.localSurface.activeChangedN
     fun surfaceChange(k: Int): Int = state.localSurface.activeChanged[k]
-    fun clearSurfaceChanges() = state.localSurface.clearActiveChanged()
+    fun clearSurfaceChanges() = mirrored({ it.clearSurfaceChanges() }) { state.localSurface.clearActiveChanged() }
 
     /**
      * Сделать клетку [cell] костью (клиент-игра: мутация в кость; тело дописано с boneOn): она
@@ -252,7 +300,11 @@ class PhysicsWorld(
      * Новорождённая, которая ещё выходит из родителя (дорастают все её связи), костью не
      * становится — false, клиент повторяет вызов в следующих тиках. true — клетка теперь кость.
      */
-    fun setBone(cell: Int): Boolean = state.activateBone(cell)
+    fun setBone(cell: Int): Boolean {
+        var k = false
+        mirrored({ check(it.setBone(cell) == k) { "тень Rust: setBone($cell)" } }) { k = state.activateBone(cell) }
+        return k
+    }
 
     /** Спит ли организм частицы [i] (BodySleep: заморожен до толчка). */
     fun isAsleep(i: Int): Boolean = state.sleep.isAsleep(state.organismOf[i])
@@ -267,7 +319,7 @@ class PhysicsWorld(
      * Вернуть тела мира к позе покоя, целыми, с нулевыми скоростями. Удалённые тела
      * остаются удалёнными: сначала мир уплотняется.
      */
-    fun reset() {
+    fun reset() = mirrored({ it.reset() }) {
         if (removedParticles > 0) compact()
         simulation.reset()
         // Сброс возвращает все клетки целыми, в том числе слоты пула: снова нерождённые.
@@ -309,10 +361,13 @@ class PhysicsWorld(
      */
     fun addFree(x: Float, y: Float, radius: Float, vx: Float = 0.0f, vy: Float = 0.0f, mass: Float = Float.NaN,
                 drag: Float = 1.0f): Int {
-        if (freeStackN == 0) growFreePool()
-        val id = freeStack[--freeStackN]
-        state.activateFree(freeParticle(id), x, y, vx, vy, radius, mass, drag)
-        freeLive[id] = true; freeCount++
+        var id = -1
+        mirrored({ check(it.addFree(x, y, radius, vx, vy, mass, drag) == id) { "тень Rust: другой номер частицы" } }) {
+            if (freeStackN == 0) growFreePool()
+            id = freeStack[--freeStackN]
+            state.activateFree(freeParticle(id), x, y, vx, vy, radius, mass, drag)
+            freeLive[id] = true; freeCount++
+        }
         return id
     }
 
@@ -328,7 +383,7 @@ class PhysicsWorld(
     fun addFixed(x: Float, y: Float, radius: Float): Int = addFree(x, y, radius, mass = Float.POSITIVE_INFINITY)
 
     /** Убрать свободную частицу [id] (живую или убитую физикой): её слот снова ждёт рождения. */
-    fun removeFree(id: Int) {
+    fun removeFree(id: Int) = mirrored({ it.removeFree(id) }) {
         require(isFreeInUse(id)) { "свободной частицы $id нет" }
         // Слот займёт следующая частица — связи этой с ней уйти не должны.
         state.dropJointsOf(freeParticle(id))
@@ -404,6 +459,21 @@ class PhysicsWorld(
      * Загруженный из снимка мир (read) дальше побитово совпадает с этим.
      */
     fun write(out: java.io.DataOutput) {
+        val sh = shadow
+        if (sh == null || shadowDepth > 0) { writeKotlin(out); return }
+        // Тень пишет свой снимок (с тем же уплотнением); байты обязаны совпасть.
+        val buf = java.io.ByteArrayOutputStream()
+        sh.syncParams(state)
+        RustShadow.prepare(state, sh, shadowTick)
+        shadowDepth++
+        try { writeKotlin(java.io.DataOutputStream(buf)) } finally { shadowDepth-- }
+        val bytes = buf.toByteArray()
+        check(bytes.contentEquals(sh.write(materialKey()))) { "тень Rust: снимок мира отличается от Kotlin" }
+        RustShadow.check(state, sh, shadowTick, "write")
+        out.write(bytes)
+    }
+
+    private fun writeKotlin(out: java.io.DataOutput) {
         require(state.n > 0) { "пустой мир не пишется" }
         compact()     // и журналы событий: номера частиц в них — до уплотнения
         out.writeInt(SNAPSHOT_MAGIC); out.writeInt(SNAPSHOT_VERSION)
@@ -428,6 +498,17 @@ class PhysicsWorld(
      * снимок записал. Мир до чтения пуст.
      */
     fun read(input: java.io.DataInput) {
+        val sh = shadow
+        if (sh == null || shadowDepth > 0) { readKotlin(input); return }
+        // Тень читает те же байты: Kotlin читает через запоминающую обёртку.
+        val rec = RustShadow.RecordingInput(input)
+        shadowDepth++
+        try { readKotlin(rec) } finally { shadowDepth-- }
+        sh.read(rec.bytes.toByteArray(), materialKey())
+        RustShadow.check(state, sh, shadowTick, "read")
+    }
+
+    private fun readKotlin(input: java.io.DataInput) {
         require(state.n == 0) { "снимок читается в новый мир" }
         require(input.readInt() == SNAPSHOT_MAGIC) { "это не снимок мира физики" }
         val version = input.readInt()
@@ -453,7 +534,7 @@ class PhysicsWorld(
     }
 
     /** Отпечаток материала: снимок читается только миром с теми же параметрами решателя. */
-    private fun materialKey(): String = config.snapshot().entries.joinToString(";") { "${it.key}=${it.value}" }
+    internal fun materialKey(): String = config.snapshot().entries.joinToString(";") { "${it.key}=${it.value}" }
 
     /**
      * Один тик: мышцы доезжают к своим целям за [dt], новорождённая ткань — на шаг к своим
@@ -462,6 +543,9 @@ class PhysicsWorld(
      */
     fun step(dt: Float = DT) {
         if (state.n == 0) return
+        // Тень получает параметры, которые стенд мог поменять прямо в state, ДО шага Kotlin: оба шага идут от одних входов.
+        val sh = if (shadowDepth == 0 && !rustTwinSeparateStep) shadow else null
+        if (sh != null) { sh.syncParams(state); RustShadow.prepare(state, sh, shadowTick) }
         state.clearDeathLogs()
         state.updateMuscles(dt)
         state.tick0()
@@ -472,13 +556,25 @@ class PhysicsWorld(
         if (state.cellScalesDirty) state.recomputeCellScales()
         simulation.step()
         if (state.boundsOn) state.clampToBounds()
+        if (sh != null) {
+            sh.step(dt)
+            RustShadow.check(state, sh, ++shadowTick, "step")
+        }
     }
 
     /**
      * Шаг решателя без движения мышц: активации остаются, где были. Для стендов, которые
      * собирают сцену сами (раскол тела в DemoScenes), — игре не нужен.
      */
-    fun stepSolverOnly() = simulation.step()
+    fun stepSolverOnly() {
+        val sh = if (shadowDepth == 0) shadow else null
+        if (sh != null) { sh.syncParams(state); RustShadow.prepare(state, sh, shadowTick) }
+        simulation.step()
+        if (sh != null) {
+            sh.stepSolverOnly()
+            RustShadow.check(state, sh, ++shadowTick, "stepSolverOnly")
+        }
+    }
 
     /**
      * Тик ЭТАЛОННОГО решателя вместо быстрого (ReferenceSolver): те же входы тика — мышцы, рост,
@@ -486,6 +582,9 @@ class PhysicsWorld(
      * собирается с выключенным сном. Игре не нужен: им стенды сверяют быстрый решатель.
      */
     fun stepReference(substeps: Int = REFERENCE_SUBSTEPS) {
+        // Эталонный решатель — инструмент стендов, в Rust не переносится (RUST_PORT.md): мир дальше идёт без тени,
+        // и итог прогона это называет (RustShadow.detach).
+        if (shadow != null) { RustShadow.detach("stepReference"); shadow = null }
         if (state.n == 0) return
         state.clearDeathLogs()
         state.updateMuscles(DT)
@@ -506,9 +605,9 @@ class PhysicsWorld(
     val muscleCount: Int get() = state.muscleTarget.size
 
     /** Цель сокращения мышцы [m]: 0 — расслаблена, 1 — сокращена полностью. */
-    fun setMuscleTarget(m: Int, value: Float) { state.muscleTarget[m] = value }
+    fun setMuscleTarget(m: Int, value: Float) = mirrored({ it.setMuscleTarget(m, value) }) { state.muscleTarget[m] = value }
     fun muscleTarget(m: Int): Float = state.muscleTarget[m]
-    fun setAllMuscleTargets(value: Float) { state.muscleTarget.fill(value) }
+    fun setAllMuscleTargets(value: Float) = mirrored({ it.setAllMuscleTargets(value) }) { state.muscleTarget.fill(value) }
 
     /**
      * Команда мышцы клетки [cell]: 0.5 — сократить длину покоя вдвое, 1 — покой,
@@ -517,7 +616,7 @@ class PhysicsWorld(
      * Изменённая цель будит организм, как мышечный кластер (wakeByInput): спящее тело иначе
      * так и стояло бы с прежними длинами.
      */
-    fun setCellScale(cell: Int, command: Float) {
+    fun setCellScale(cell: Int, command: Float) = mirrored({ it.setCellScale(cell, command) }) {
         require(command > 0f) { "множитель клетки должен быть больше нуля" }
         val scale = command
         if (state.cellScaleTarget[cell] != scale) {
@@ -538,10 +637,10 @@ class PhysicsWorld(
      * вызов с не-единицей включает чтение множителей в ядрах — один полный пересчёт на мир;
      * дальше — кольцо клетки.
      */
-    fun setSoftness(cell: Int, softness: Float) {
+    fun setSoftness(cell: Int, softness: Float) = mirrored({ it.setSoftness(cell, softness) }) {
         require(softness > 0f) { "мягкость клетки должна быть больше нуля" }
         val st = state
-        if (st.cellSoftness[cell] == softness) return
+        if (st.cellSoftness[cell] == softness) return@mirrored
         st.cellSoftness[cell] = softness
         if (!st.softnessOn) { st.softnessOn = true; st.cellScalesDirty = true }
         else st.refreshCellScaleRing(cell)
@@ -560,9 +659,9 @@ class PhysicsWorld(
      * его в счёт множителей — один полный пересчёт на мир; дальше — связи вокруг клетки и её соседей
      * по кольцу. Игра задаёт волокна раз, при подсадке тела, стенды — при постановке тела.
      */
-    fun setCellFiber(cell: Int, x: Float, y: Float) {
+    fun setCellFiber(cell: Int, x: Float, y: Float) = mirrored({ it.setCellFiber(cell, x, y) }) {
         val st = state
-        if (st.cellFiberX[cell] == x && st.cellFiberY[cell] == y) return
+        if (st.cellFiberX[cell] == x && st.cellFiberY[cell] == y) return@mirrored
         require((x == 0f && y == 0f) || kotlin.math.abs(x * x + y * y - 1f) < 1e-3f) { "волокно — единичный вектор или ноль" }
         st.cellFiberX[cell] = x
         st.cellFiberY[cell] = y
@@ -578,9 +677,9 @@ class PhysicsWorld(
      * ни со стенкой (BodyState.cellNoContact; игра — присоска, isCollidable = false). Связи и среда
      * как у всех. Цена смены — обновление набора касания по одной клетке; без смены — ничего.
      */
-    fun setContactless(cell: Int, on: Boolean) {
+    fun setContactless(cell: Int, on: Boolean) = mirrored({ it.setContactless(cell, on) }) {
         val st = state
-        if (st.cellNoContact[cell] == on) return
+        if (st.cellNoContact[cell] == on) return@mirrored
         st.cellNoContact[cell] = on
         st.baked.touch(cell)
         st.refreshSurface()
@@ -593,10 +692,10 @@ class PhysicsWorld(
      * которую частица теряет за подшаг. 1 — сдвинуть нельзя ничем, 0.95 — очень тяжело, 0 — нет.
      * Цена смены — пересборка списка проходом по миру при ближайшем подшаге; без смены — ничего.
      */
-    fun setGrip(cell: Int, grip: Float) {
+    fun setGrip(cell: Int, grip: Float) = mirrored({ it.setGrip(cell, grip) }) {
         val g = grip.coerceIn(0f, 1f)
         val st = state
-        if (st.cellGrip[cell] == g) return
+        if (st.cellGrip[cell] == g) return@mirrored
         st.cellGrip[cell] = g
         st.gripsDirty = true
     }
@@ -608,7 +707,7 @@ class PhysicsWorld(
      * ограничение к неподвижному месту, решается вместе с хваткой (Grip.kt). Террейн: точка на
      * карте, плитка проминается и возвращается в форму. Внешняя сила, как пол.
      */
-    fun setHome(cell: Int, x: Float, y: Float, compliance: Float) {
+    fun setHome(cell: Int, x: Float, y: Float, compliance: Float) = mirrored({ it.setHome(cell, x, y, compliance) }) {
         require(compliance >= 0.0f) { "податливость не меньше нуля" }
         val st = state
         st.cellHomeX[cell] = x; st.cellHomeY[cell] = y
@@ -620,9 +719,9 @@ class PhysicsWorld(
      * сталкиваются (BodyState.cellGroup; террейн — плитки одной группы, их держат швы). Цена смены —
      * пересборка широкой фазы при ближайшем подшаге.
      */
-    fun setContactGroup(cell: Int, group: Int) {
+    fun setContactGroup(cell: Int, group: Int) = mirrored({ it.setContactGroup(cell, group) }) {
         val st = state
-        if (st.cellGroup[cell] == group) return
+        if (st.cellGroup[cell] == group) return@mirrored
         st.cellGroup[cell] = group
         st.contacts?.invalidateBroadphase()
     }
@@ -640,20 +739,25 @@ class PhysicsWorld(
      * в покое (шов террейна при сборке мира, который тут же усыпляется — PhysicsWorld.sleepNow).
      */
     fun addJoint(a: Int, b: Int, rest: Float, compliance: Float, wakeStrain: Float = 0.0f, wake: Boolean = true): Int {
-        val st = state
-        require(a != b && !st.cellDead[a] && !st.cellDead[b]) { "связь — между двумя живыми частицами" }
-        require(rest >= 0.0f && compliance >= 0.0f) { "длина покоя и податливость не меньше нуля" }
-        if (wake && !st.isFixed(a)) st.sleep.requestWake(a)
-        if (wake && !st.isFixed(b)) st.sleep.requestWake(b)
-        return st.allocJoint(a, b, rest, compliance, wakeStrain)
+        var id = -1
+        mirrored({ check(it.addJoint(a, b, rest, compliance, wakeStrain, wake) == id) { "тень Rust: другой номер связи" } }) {
+            val st = state
+            require(a != b && !st.cellDead[a] && !st.cellDead[b]) { "связь — между двумя живыми частицами" }
+            require(rest >= 0.0f && compliance >= 0.0f) { "длина покоя и податливость не меньше нуля" }
+            if (wake && !st.isFixed(a)) st.sleep.requestWake(a)
+            if (wake && !st.isFixed(b)) st.sleep.requestWake(b)
+            id = st.allocJoint(a, b, rest, compliance, wakeStrain)
+        }
+        return id
     }
 
-    fun removeJoint(id: Int) = state.freeJoint(id)
+    fun removeJoint(id: Int) = mirrored({ it.removeJoint(id) }) { state.freeJoint(id) }
 
     /** Связь [id] жива: заведена и не снята — ни клиентом, ни гибелью конца. */
     fun isJointLive(id: Int): Boolean = id in 0 until state.jointSlots && state.jointLive[id]
 
-    fun setJointCompliance(id: Int, compliance: Float) { state.jointCompliance[id] = compliance }
+    fun setJointCompliance(id: Int, compliance: Float) =
+        mirrored({ it.setJointCompliance(id, compliance) }) { state.jointCompliance[id] = compliance }
 
     /** Концы связи — номера частиц мира (уплотнение их перенумеровывает). */
     fun jointA(id: Int): Int = state.jointA[id]
@@ -673,6 +777,13 @@ class PhysicsWorld(
      * по месту ничего не пропустил. Значения остаются полного пересчёта.
      */
     fun cellScaleMismatches(): Int {
+        // Проверка не только считает, но и оставляет мир полного пересчёта — тень делает тот же пересчёт.
+        var bad = 0
+        mirrored({ it.recomputeCellScalesLikeCheck() }) { bad = cellScaleMismatchesKotlin() }
+        return bad
+    }
+
+    private fun cellScaleMismatchesKotlin(): Int {
         val st = state
         if (!(st.cellScalesOn || st.softnessOn) || st.cellScaleEff.size != st.n) return 0
         val eff = st.cellScaleEff.copyOf(); val con = st.conCellScale.copyOf(st.conCount); val tri = st.triCellScale.copyOf(st.triCount)
@@ -713,7 +824,7 @@ class PhysicsWorld(
      * Масса клетки [cell] (по умолчанию — по радиусу, как у всех клеток мира). У живой клетки
      * масса её организма пересчитывается сразу; у нерождённой — вступит при рождении.
      */
-    fun setMass(cell: Int, mass: Float) {
+    fun setMass(cell: Int, mass: Float) = mirrored({ it.setMass(cell, mass) }) {
         require(mass > 0.0f) { "масса должна быть больше нуля" }
         val st = state
         val alive = !st.cellDead[cell]
@@ -723,7 +834,7 @@ class PhysicsWorld(
     }
 
     /** Множитель изотропного сопротивления среды частицы [cell]: 1 — как среда мира. */
-    fun setDrag(cell: Int, scale: Float) {
+    fun setDrag(cell: Int, scale: Float) = mirrored({ it.setDrag(cell, scale) }) {
         require(scale >= 0.0f) { "множитель сопротивления не может быть меньше нуля" }
         state.dragScale[cell] = scale
     }
@@ -735,7 +846,7 @@ class PhysicsWorld(
      */
     var deepKillOn: Boolean
         get() = state.deepKillOn
-        set(value) { state.deepKillOn = value; state.contacts?.killOnDeep = value }
+        set(value) { mirrored({ it.setDeepKillOn(value) }) { state.deepKillOn = value; state.contacts?.killOnDeep = value } }
 
     /**
      * Сколько живых связей у клетки [cell]: 0 — одиночная (зигота без соседей, оторвавшаяся,
@@ -763,7 +874,8 @@ class PhysicsWorld(
      *
      * Сменилась гравитация — спящие просыпаются: их покой держался без неё ([wakeAll]).
      */
-    fun setEnvironment(gravityY: Float, mediumScale: Float, edgeDragScale: Float, softness: Float, frictionScale: Float) {
+    fun setEnvironment(gravityY: Float, mediumScale: Float, edgeDragScale: Float, softness: Float, frictionScale: Float) =
+        mirrored({ it.setEnvironment(gravityY, mediumScale, edgeDragScale, softness, frictionScale) }) {
         require(mediumScale >= 0.0f && edgeDragScale >= 0.0f && softness > 0.0f && frictionScale >= 0.0f) { "среда мира вне допустимого" }
         val env = state.environment
         if (env.gravityY != gravityY) { env.gravityY = gravityY; wakeAll() }
@@ -784,10 +896,10 @@ class PhysicsWorld(
      * диапазон частиц может быть шире настоящего (BodySleep.first), поэтому берётся первая частица
      * именно этого организма. Для редкого события клиента (сменилась гравитация), не для тика.
      */
-    fun wakeAll() {
+    fun wakeAll() = mirrored({ it.wakeAll() }) {
         val st = state
         val s = st.sleep
-        if (s.asleepCount == 0) return
+        if (s.asleepCount == 0) return@mirrored
         for (o in 0 until st.organismCount) {
             if (!s.asleep[o]) continue
             for (i in s.first[o]..s.last[o]) {
@@ -799,36 +911,36 @@ class PhysicsWorld(
     }
 
     /** Рамка мира: частицы не выходят за прямоугольник (игра — границы сетки). */
-    fun setBounds(minX: Float, minY: Float, maxX: Float, maxY: Float) {
+    fun setBounds(minX: Float, minY: Float, maxX: Float, maxY: Float) = mirrored({ it.setBounds(minX, minY, maxX, maxY) }) {
         require(maxX > minX && maxY > minY) { "пустая рамка мира" }
         val st = state
         st.boundsOn = true; st.boundsMinX = minX; st.boundsMinY = minY; st.boundsMaxX = maxX; st.boundsMaxY = maxY
     }
 
-    fun clearBounds() { state.boundsOn = false }
+    fun clearBounds() = mirrored({ it.clearBounds() }) { state.boundsOn = false }
 
     /**
      * Убить клетку [cell] по причине клиента (голод, поедание): связи гаснут, организм
      * делится, клетка замерзает и выходит из контактов. Зовётся между тиками.
      */
-    fun kill(cell: Int) = state.killCell(cell)
+    fun kill(cell: Int) = mirrored({ it.kill(cell) }) { state.killCell(cell) }
 
     /** Схваченная клетка или -1. */
     val grabbed: Int get() = state.dragId
 
     /** Схватить клетку: она тянется к точке [dragTo], её вес в позе кости — DRAG_MATCH_WEIGHT. */
-    fun grab(cell: Int) {
+    fun grab(cell: Int) = mirrored({ it.grab(cell) }) {
         state.dragId = cell
         state.matchWeight[cell] = DRAG_MATCH_WEIGHT
     }
 
     /** Куда тянуть схваченную клетку. */
-    fun dragTo(x: Float, y: Float) { state.mouseX = x; state.mouseY = y }
+    fun dragTo(x: Float, y: Float) = mirrored({ it.dragTo(x, y) }) { state.mouseX = x; state.mouseY = y }
 
     /** Отпустить схваченную клетку. */
-    fun release() {
+    fun release() = mirrored({ it.release() }) {
         val i = state.dragId
-        if (i < 0) return
+        if (i < 0) return@mirrored
         state.matchWeight[i] = state.restMatchWeight(i)
         state.dragId = -1
     }
@@ -837,33 +949,33 @@ class PhysicsWorld(
      * Назначить скорость частице мимо решателя (удар, выстрел). Спящий организм такую
      * скорость обнулит — разбудить его [wake] (одного вызова на организм достаточно).
      */
-    fun setVelocity(i: Int, vx: Float, vy: Float) { state.vx[i] = vx; state.vy[i] = vy }
+    fun setVelocity(i: Int, vx: Float, vy: Float) = mirrored({ it.setVelocity(i, vx, vy) }) { state.vx[i] = vx; state.vy[i] = vy }
 
     /** Разовая тяга за точку тела. Кость получает общий импульс и момент в точке приложения. */
-    fun pullToward(i: Int, x: Float, y: Float) {
+    fun pullToward(i: Int, x: Float, y: Float) = mirrored({ it.pullToward(i, x, y) }) {
         wake(i)
         state.pullToward(i, x, y, DT)
     }
 
     /** Переставить частицу в точку без скорости от переноса (prev там же). */
-    fun place(i: Int, x: Float, y: Float) {
+    fun place(i: Int, x: Float, y: Float) = mirrored({ it.place(i, x, y) }) {
         state.px[i] = x; state.py[i] = y
         state.prevX[i] = x; state.prevY[i] = y
     }
 
     /** Разбудить организм частицы [i] в начале следующего подшага. */
-    fun wake(i: Int) = state.sleep.requestWake(i)
+    fun wake(i: Int) = mirrored({ it.wake(i) }) { state.sleep.requestWake(i) }
 
     /**
      * Усыпить организм частицы [i] сейчас (BodyState.sleepNow): клиент знает, что он в покое по
      * построению (террейн при сборке мира). Между тиками; при выключенном сне — ничего.
      */
-    fun sleepNow(i: Int) = state.sleepNow(i)
+    fun sleepNow(i: Int) = mirrored({ it.sleepNow(i) }) { state.sleepNow(i) }
 
     /** Сон тел: спящие организмы заморожены и пропускаются решателем. */
     var sleepOn: Boolean
         get() = state.sleep.on
-        set(value) = state.setSleepOn(value)
+        set(value) { mirrored({ it.setSleepOn(value) }) { state.setSleepOn(value) } }
 
     // --- выходы ---
 

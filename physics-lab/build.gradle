@@ -84,6 +84,22 @@ tasks.register('genomeBench', JavaExec) {
           project.findProperty('minBody') ?: '20', project.findProperty('only') ?: '-']
   jvmArgs '-Xmx3g', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
 }
+// Kotlin против Rust на той же сцене (способ one): двойник на Rust, шаги раздельно, отпечатки сверяются. См.
+// RustGenomeBench.kt и RUST_PORT.md.   gradlew :physics-lab:rustGenomeBench -Pcells=20000 -Pworkers=8
+tasks.register('rustGenomeBench', JavaExec) {
+  group = 'verification'
+  description = 'Толпа настоящих геномов: мс на тик Kotlin против Rust при тех же воркерах, сверка отпечатков'
+  dependsOn ':physics:cargoBuild'
+  classpath = sourceSets.main.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.lab.bench.RustGenomeBenchKt'
+  workingDir = rootProject.projectDir
+  args = [project.findProperty('cells') ?: '20000', project.findProperty('workers') ?: '8',
+          project.findProperty('warm') ?: '60', project.findProperty('measure') ?: '120',
+          project.findProperty('maxBody') ?: '6000', project.findProperty('minBody') ?: '20']
+  systemProperty 'genomeia.physics.native',
+    rootProject.file('physics-native/target/release/' + System.mapLibraryName('genomeia_physics_jni')).absolutePath
+  jvmArgs '-Xmx3g', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+}
 // Как лежат связи и мышцы у настоящих геномов (без единого тика). См. GenomeLayoutReport.kt.
 tasks.register('genomeLayoutReport', JavaExec) {
   group = 'verification'

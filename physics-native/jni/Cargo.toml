@@ -1,0 +1,19 @@
+[package]
+name = "genomeia-physics-jni"
+description = "JNI-обёртка ядра физики: класс io.github.some_example_name.physics.rust.RustPhysics"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+name = "genomeia_physics_jni"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+genomeia-physics = { path = "../core" }
+jni = { version = "0.21.1", default-features = false }
+
+[lints]
+workspace = true

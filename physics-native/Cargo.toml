@@ -1,0 +1,47 @@
+# Ядро физики на Rust — ветка alpha-0.2.4-rust-port (см. RUST_PORT.md).
+#
+# Два крейта, а не один: ядро `genomeia-physics` — чистый Rust без JNI (его гоняют
+# `cargo test` и clippy), обёртка `genomeia-physics-jni` — единственное место с unsafe
+# вызовами JVM. Граница та же, что у модулей Gradle: держит компилятор, а не внимательность.
+[workspace]
+resolver = "3"
+members = ["core", "jni"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+# Ядро — дословный перенос Kotlin ради побитовой сверки: длинные списки аргументов и
+# индексные циклы повторяют оригинал, переписывать их «по-растовски» значит менять порядок
+# операций с плавающей точкой.
+too_many_arguments = "allow"
+needless_range_loop = "allow"
+manual_memcpy = "allow"
+collapsible_else_if = "allow"
+collapsible_if = "allow"
+float_cmp = "allow"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+# Паника не должна валить JVM: обёртка ловит её catch_unwind и бросает исключение Java.
+panic = "unwind"
+# Имена функций в профиле (perf, VTune, simpleperf на телефоне) без отладочной раздачи.
+debug = "line-tables-only"
+# Переполнение int в Kotlin заворачивается молча — так же и здесь (хэши, счётчики).
+overflow-checks = false
+
+[profile.dev]
+opt-level = 1
+overflow-checks = false
+
+# Тесты Gradle гоняют эту сборку: оптимизация как в release, но быстрее собирается.
+[profile.test]
+opt-level = 2
