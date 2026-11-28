@@ -220,7 +220,11 @@ class SettingsViewModel {
 
 // === Глобальные настройки ===
 object GlobalSettings {
-    var MUSIC_VOLUME = 0
+    /**
+     * 50, а не 0: кто зашёл впервые, должен услышать музыку. Игроки, у которых громкость уже
+     * сохранена в настройках, получают свою, это значение для них не действует.
+     */
+    var MUSIC_VOLUME = 50
     var SOUND_VOLUME = 50
     var RENDER_MODE = RenderMode.DEBUG.preferenceId
 

@@ -62,7 +62,8 @@ class MyGame(
         "ost/track2.ogg",
         "ost/track3.ogg",
         "ost/track4.ogg",
-        "ost/track5.ogg"
+        "ost/track5.ogg",
+        "ost/track6.ogg"
     )
 
     lateinit var currentMusic: Music
