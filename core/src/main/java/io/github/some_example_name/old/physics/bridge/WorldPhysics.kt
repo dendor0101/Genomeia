@@ -300,7 +300,11 @@ class WorldPhysics(
             substanceGeneration[sub] = input.readInt()
             substanceRadius[sub] = input.readFloat()
             trackedSubstances.add(sub)
-            pe.physicsIndex[substancesEntity.particleIndex[sub]] = bridge.substanceParticle(id)
+            // Субстанция могла исчезнуть в тике сохранения (её съели или слили после шага физики): частицы игры у
+            // неё уже нет (particleIndex = -1), а из списка и из мира физики её уберёт removeGone на следующем тике —
+            // так же, как у мира, который сохраняли (тот же пропуск в remapIfCompacted). Без пропуска такой мир не
+            // загружался (Index -1) с 27.10 (a7d57a06); нашла 28.11 полная посадка bugReplayCheck -PspawnGrid=4.
+            if (substancesEntity.isAlive[sub]) pe.physicsIndex[substancesEntity.particleIndex[sub]] = bridge.substanceParticle(id)
         }
         wallWidth = input.readInt(); wallHeight = input.readInt()
         repeat(input.readInt()) { wallIds.add(input.readInt()) }
