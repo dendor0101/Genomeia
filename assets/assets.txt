@@ -2,6 +2,7 @@ body-export.txt
 button.png
 fonts/Roboto-Regular.ttf
 fonts/Rubik-Regular.ttf
+genomes/Antestor.genome
 genomes/Burdock leaf.genome
 genomes/Controlled Glist.genome
 genomes/Controlled Spider.genome

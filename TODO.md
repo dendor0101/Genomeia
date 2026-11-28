@@ -3754,9 +3754,9 @@ px/py/invMass; у настоящих тел — обычно 2.1 КБ, макс�
   остались: живые количества клеток раз в тик (три чтения size, только для экрана),
   третий int в `SPAWN_ORGANISM` (продюсер пишет 0), очистка пустого `worldCommandLastBuffer`
   при старте сессии и рецепт карты без мазков, не менявших карту (карта та же побитово).
-- [ ] **Уровень Pheromones без своего организма**: скрипт ставит `bundled/Antestor`, а генома
-  нет ни в репозитории, ни в истории — он был только у автора PR. Нужен `assets/genomes/
-  Antestor.genome` (+ `:lwjgl3:bakeBundledGenomes`); `levelAssetsCompact` до тех пор красный.
+- [x] **Организм уровня Pheromones**: геном `Antestor` (22 клетки) нашёлся 28.11 —
+  `assets/genomes/Antestor.genome`, допечён `:lwjgl3:bakeBundledGenomes`;
+  `levelAssetsCompact -PcheckOnly` зелёный.
 - [ ] **Lua на iOS (MOE) и в вебе (TeaVM)** не проверялась: Cobalt — чистая Java 17 без
   зависимостей (records, switch-выражения), а MOE и TeaVM поддерживают не всё из Java 17.
 - [ ] **Цена Lua на телефоне** не замерена (Cobalt против прежнего TENUM на ПК тоже не
