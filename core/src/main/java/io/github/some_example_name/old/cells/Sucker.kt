@@ -8,7 +8,6 @@ class Sucker(cellTypeId: Int) : Cell(
     key = "sucker",
     defaultColor = orangeColors.first(),
     cellTypeId = cellTypeId,
-    textureName = "sucker.png",
     effectOnContact = true,
     isCollidable = false,
     defaultCellSettings = CellSettings(

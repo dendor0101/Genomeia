@@ -42,6 +42,8 @@ object BugMeta {
                 str("version", manifest["platformVersion"])
                 str("os", manifest["os"])
                 str("java", manifest["java"])
+                // Движок физики (rust/kotlin); у отчётов до 27.11 поля нет — str его пропускает.
+                str("physics", manifest["physics.engine"])
             }
 
             obj("device") {

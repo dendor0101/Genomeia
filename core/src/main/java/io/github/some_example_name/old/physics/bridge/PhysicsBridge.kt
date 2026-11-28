@@ -6,6 +6,8 @@ import io.github.some_example_name.physics.MEDIUM_DRAG
 import io.github.some_example_name.physics.PhysicsConfig
 import io.github.some_example_name.physics.PhysicsWorkers
 import io.github.some_example_name.physics.PhysicsWorld
+import io.github.some_example_name.physics.RustEngine
+import io.github.some_example_name.old.core.PlatformTuning
 
 /**
  * МОСТ ИГРЫ К ФИЗИКЕ-БИБЛИОТЕКЕ (`:physics`). Этап B1 плана
@@ -32,9 +34,18 @@ class PhysicsBridge(
     workers: PhysicsWorkers? = null,
     config: PhysicsConfig = PhysicsConfig()
 ) {
-    val world = PhysicsWorld(config, workers = workers, scale = GAME_WORLD_SCALE).apply {
-        // Разбор тел в stdout — для стенда; в игре он печатался бы на каждую подсадку.
-        state.quiet = true
+    val world = run {
+        // Физика на Rust (RustEngine, RUST_PORT.md «Rust в игре»): лаунчер Android просит её через PlatformTuning; пул
+        // воркеров Rust — со спином и приоритетом пула игры. Только включение: ключ ПК -Dgenomeia.physics.engine=rust
+        // не перебивается.
+        if (PlatformTuning.rustPhysics) RustEngine.preferRust = true
+        RustEngine.workerSpinLimit = PlatformTuning.workerSpinLimit
+        RustEngine.workerNice = PlatformTuning.rustWorkerNice
+        RustEngine.workerParkMaxMicros = (PlatformTuning.parkNanosMax / 1000L).toInt()
+        PhysicsWorld(config, workers = workers, scale = GAME_WORLD_SCALE).apply {
+            // Разбор тел в stdout — для стенда; в игре он печатался бы на каждую подсадку.
+            state.quiet = true
+        }
     }
 
     /** Организм игры → номер тела мира, -1 — тела нет. */

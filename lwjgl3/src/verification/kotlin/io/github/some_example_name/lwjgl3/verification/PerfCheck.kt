@@ -48,6 +48,10 @@ fun main() {
         setTitle("Genomeia — замер производительности")
         setWindowedMode(900, 700)
         useVsync(false)
+        // -Pfps=N — кадров не чаще N, как у игры (Lwjgl3Launcher: частота экрана). Без него поток
+        // рендера крутит кадры без предела: дешёвый отладочный кадр — сотни в секунду, и он
+        // отнимает ядро и память у физики (замер 27.11).
+        FPS?.let { setForegroundFPS(it) }
         setOpenGLEmulation(Lwjgl3ApplicationConfiguration.GLEmulation.GL30, 3, 3)
     }
     Lwjgl3Application(PerfRun(MyGame(DesktopFileProvider())), config)
@@ -74,6 +78,8 @@ private val WARM = System.getProperty("perf.warm")?.toIntOrNull() ?: 100
 private val RENDER = io.github.some_example_name.render.RenderMode.valueOf((System.getProperty("perf.render") ?: "tissue_map").uppercase())
 /** Сторона мира в клетках (-Pworld=1024): цена большого мира — рельеф, память, тик. */
 private val WORLD = System.getProperty("perf.world")?.toIntOrNull() ?: 256
+/** Предел кадров (-Pfps=60); без него — без предела, как было. */
+private val FPS = System.getProperty("perf.fps")?.toIntOrNull()
 private const val STEP_LOADED = 10
 private const val STEP_SAVE = 20
 private const val STEP_SAVED = 21
@@ -85,7 +91,8 @@ private class PerfRun(private val game: MyGame) : ApplicationListener by game {
     private var waitUntilTick = -1
     private val startedAt = System.nanoTime()
 
-    private var tick0 = 0; private var wall0 = 0L; private var cpu0 = 0L
+    private var tick0 = 0; private var wall0 = 0L; private var cpu0 = 0L; private var frames0 = 0
+    private var syncIn0 = 0L; private var step0 = 0L; private var syncOut0 = 0L
     private var recording: jdk.jfr.Recording? = null
     private var lastWindow = 0
     private val sums = DoubleArray(Phase.COUNT)
@@ -203,7 +210,8 @@ private class PerfRun(private val game: MyGame) : ApplicationListener by game {
                     step = STEP_SAVE
                     return
                 }
-                tick0 = data.tickCounter; wall0 = System.nanoTime(); cpu0 = processCpu()
+                tick0 = data.tickCounter; wall0 = System.nanoTime(); cpu0 = processCpu(); frames0 = frames
+                DISimulationContainer.simulationSystem.betweenTicks { val w = DISimulationContainer.worldPhysics; syncIn0 = w.syncInNanos; step0 = w.stepNanos; syncOut0 = w.syncOutNanos }
                 threadCpu0 = threadCpu()
                 if (STAGES) { val st = DISimulationContainer.worldPhysics.bridge.world.state; st.dbgTimeOn = true; java.util.Arrays.fill(st.dbgTimeNs, 0L) }
                 lastWindow = DISimulationContainer.simulationSystem.profiler.windowsClosed
@@ -222,7 +230,8 @@ private class PerfRun(private val game: MyGame) : ApplicationListener by game {
                 val phases = (0 until Phase.COUNT).joinToString(" ") { "${names[it]} %.2f".format(sums[it] / maxOf(1, windows) / 1000) }
                 println(("PERFCHECK геном=$GENOME организмов=$COUNT террейн=${if (TERRAIN) 1 else 0} сон=${if (SLEEP) 1 else 0} клеток=${c.cellEntity.aliveList.size} " +
                     "частиц=${c.particleEntity.aliveList.size} UPS=%.1f мс/тик=%.2f процессор=%.0f%% из $cores логических; фазы мс: $phases")
-                    .format(ticks / wall, wall * 1000 / ticks, cpu * 100))
+                    .format(ticks / wall, wall * 1000 / ticks, cpu * 100) + " FPS=%.0f".format((frames - frames0) / wall))
+                run { val w = c.worldPhysics; println("PERFARRANGE мс на тик: сверка до шага %.3f, шаг %.3f, после шага %.3f".format((w.syncInNanos - syncIn0) / 1e6 / ticks, (w.stepNanos - step0) / 1e6 / ticks, (w.syncOutNanos - syncOut0) / 1e6 / ticks)) }
                 // Время процессора по потокам за замер — доля стенного времени (1.00 = поток занят весь замер).
                 val now = threadCpu()
                 val busy = now.entries.map { (name, t) -> name to (t - (threadCpu0[name] ?: 0L)) / 1e9 / wall }.filter { it.second > 0.01 }.sortedByDescending { it.second }

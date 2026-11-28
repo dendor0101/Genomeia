@@ -6,7 +6,6 @@ class Muscle(cellTypeId: Int) : Cell(
     key = "muscle",
     defaultColor = redColors[3],
     cellTypeId = cellTypeId,
-    textureName = "muscle.png",
     isNeural = true
 ) {
 

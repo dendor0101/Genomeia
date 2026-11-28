@@ -4,7 +4,7 @@ package io.github.some_example_name.old.features.guide.celllab
 internal object CellLabCatalog {
     val keys = listOf("leaf", "fat", "bone", "tail", "controller", "muscle", "sucker", "excreta",
         "punisher", "pumper", "zygote", "producer", "neuron", "suction_cup", "sticky", "chameleon",
-        "eye", "touch_trigger", "synapse", "pheromone_emitter", "pheromone_sensor", "delay", "motor_neuron", "speed_sensor")
+        "eye", "touch_trigger", "synapse", "pheromone_emitter", "pheromone_sensor", "delay", "motor_neuron", "speed_sensor", "compass")
 
     data class Control(val key: String, val min: Float, val max: Float, val step: Float, val initial: Float)
     private fun signal(initial: Float = 0f) = Control("signal", -1f, 1f, 0.01f, initial)
@@ -27,7 +27,7 @@ internal object CellLabCatalog {
         "chameleon" -> listOf(signal(), channels)
         "eye" -> listOf(channels, angle, Control("range", 1f, 6f, 0.1f, 4f))
         "touch_trigger" -> emptyList()
-        "speed_sensor" -> listOf(angle)
+        "speed_sensor", "compass" -> listOf(angle)
         // Учитель будит Neuron справа (lif, порог CellLabModel.SYNAPSE_THRESHOLD); выключенный
         // учитель показывает, научился ли синапс будить его сам.
         "synapse" -> listOf(Control("teacher", 0f, 1f, 1f, 1f), Control("delay", -30f, 30f, 1f, 8f),

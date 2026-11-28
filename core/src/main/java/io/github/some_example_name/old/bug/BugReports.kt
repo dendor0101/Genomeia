@@ -249,6 +249,9 @@ object BugReports {
         values["build.commit"] = BuildInfo.COMMIT
         values["build.branch"] = BuildInfo.BRANCH
         values["build.dirty"] = BuildInfo.DIRTY.toString()
+        // Движок физики (RustEngine): мир у Kotlin и Rust побитово один, повтор идёт на любом — поле, чтобы знать, на
+        // чём случились падение или тормоза. Отчёты до 27.11 его не знают.
+        values["physics.engine"] = runCatching { io.github.some_example_name.physics.RustEngine.name }.getOrDefault("?")
         values["kind"] = kind.label
         values["created"] = iso.format(time)
         values["session.started"] = iso.format(sessionStartedAt)

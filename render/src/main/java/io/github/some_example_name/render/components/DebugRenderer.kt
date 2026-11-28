@@ -207,6 +207,7 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         fillShader.bind()
         bindCellUniforms(fillShader, context, fringe = false)
         cells.draw(context.numInstances)
+        cells.drawStatic(context.numStaticInstances)
         drawAreas(context)
 
         target.end()
@@ -245,6 +246,8 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         compositeShader.bind()
         compositeShader.setUniformi("u_texture", 0)
         compositeShader.setUniformf("u_background", BACKGROUND_R, BACKGROUND_G, BACKGROUND_B)
+        // 0 — пустота прозрачна (значки клеток, RenderFrame.transparentBackground).
+        compositeShader.setUniformf("u_backgroundAlpha", if (context.transparentBackground) 0f else 1f)
         gl.glActiveTexture(GL20.GL_TEXTURE0)
         color.bind()
 
@@ -270,6 +273,7 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         gl.glActiveTexture(GL20.GL_TEXTURE0)
 
         cells.draw(context.numInstances)
+        cells.drawStatic(context.numStaticInstances)
     }
 
     /**

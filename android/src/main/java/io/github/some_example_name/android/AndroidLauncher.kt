@@ -41,7 +41,7 @@ import java.io.File
 //}
 
 
-class AndroidLauncher : AndroidApplication(), KeyBoardListener {
+open class AndroidLauncher : AndroidApplication(), KeyBoardListener {
 
     private lateinit var game: MyGame
     private var stopScreenshotDetection: (() -> Unit)? = null
@@ -85,7 +85,7 @@ class AndroidLauncher : AndroidApplication(), KeyBoardListener {
         val fileProvider = AndroidFileProvider(this, AndroidFileChooser(this))
         game = MyGame(fileProvider)
         val gameView = initializeForView(
-            game,
+            wrapGame(game),
             config
         )
 
@@ -140,6 +140,12 @@ class AndroidLauncher : AndroidApplication(), KeyBoardListener {
     }
 
     /**
+     * Чем libGDX зовёт игру. В игре — сама игра; стенд замера на телефоне (сборка perf,
+     * PhonePerfLauncher) оборачивает её своим сценарием, как PerfCheck на ПК.
+     */
+    protected open fun wrapGame(game: MyGame): com.badlogic.gdx.ApplicationListener = game
+
+    /**
      * Настройка пула воркеров симуляции под конкретное устройство. Обязана отработать до
      * initializeForView: контейнер симуляции читает эти значения при создании пула.
      *
@@ -153,11 +159,16 @@ class AndroidLauncher : AndroidApplication(), KeyBoardListener {
      * воркеров она одинаковая: разъехавшиеся приоритеты дают инверсию на барьере, когда
      * ждущий поток отбирает такты у того, кого ждёт.
      */
-    private fun configureSimulationThreads() {
+    protected open fun configureSimulationThreads() {
         PlatformTuning.performanceCoreCount = maxOf(2, AndroidCpu.performanceCoreCount() - 1)
         PlatformTuning.onWorkerThreadStart = {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY)
         }
+        // Физика на Rust (RUST_PORT.md «Rust в игре»): на телефоне Rust быстрее Kotlin в 1.4–1.7 раза при тех же битах.
+        // Нет библиотеки arm64-v8a в APK (32-битный телефон, сборка без Rust) — Kotlin. Потоки пула Rust — с тем же
+        // приоритетом, что воркеры игры выше: поток симуляции — его воркер 0.
+        PlatformTuning.rustPhysics = true
+        PlatformTuning.rustWorkerNice = android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY
     }
 
     // ====================== KeyBoardListener ======================

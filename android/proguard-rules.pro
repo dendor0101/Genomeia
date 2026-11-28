@@ -50,3 +50,9 @@
 # These two lines are used with mapping files; see https://developer.android.com/build/shrink-code#retracing
 -keepattributes LineNumberTable,SourceFile
 -renamesourcefileattribute SourceFile
+
+# VisUI: его скин (uiskin.json) называет классы стилей и Sizes по имени, Skin достаёт их отражением. Без этого R8
+# вырезал их, и релизная сборка падала при старте (27.11: Class not found: com.kotcrab.vis.ui.Sizes).
+-keep class com.kotcrab.vis.ui.** { *; }
+# Настройки мира читает и пишет libGDX Json по именам полей (отражение): переименованные R8 поля молча сбросили бы их.
+-keep class io.github.some_example_name.old.core.GlobalSimulationSettings { *; }

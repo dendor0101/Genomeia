@@ -71,7 +71,7 @@ class WorldPhysics(
     private val worldCommandsManager: WorldCommandsManager,
     private val workers: PhysicsWorkers?
 ) {
-    var bridge = PhysicsBridge(workers)
+    var bridge = PhysicsBridge(workers, executionConfig())
         private set
 
     /** Тип клетки «кость» (Bone) — по ключу: номер это место в реестре типов. */
@@ -124,9 +124,19 @@ class WorldPhysics(
         publish()
     }
 
+    /**
+     * Ключи мира физики от лаунчера — только исполнения островов (ISLANDS…): побитово мир тот же
+     * (PhysicsConfig.EXECUTION_KEYS), материал так подменить нельзя. См. PlatformTuning.physicsExecutionKeys.
+     */
+    private fun executionConfig() = io.github.some_example_name.physics.PhysicsConfig(
+        io.github.some_example_name.old.core.PlatformTuning.physicsExecutionKeys.filterKeys { it.startsWith("ISLANDS") }
+    )
+
     /** Новый мир физики: прежний мир игры стёрт (рестарт, новая карта, загрузка). */
     fun reset() {
-        bridge = PhysicsBridge(workers)
+        // Физика на Rust (RustEngine): память прежнего мира освобождается сразу — на Android до 13 нет Cleaner.
+        bridge.world.close()
+        bridge = PhysicsBridge(workers, executionConfig())
         boundsWidth = -1; boundsHeight = -1
         compactions = 0
         surfaceCompactions = -1
@@ -140,25 +150,50 @@ class WorldPhysics(
         publish()
     }
 
+    /** Шагает ли мир физики на Rust (RustEngine) — для строки замера стенда телефона; на мир не влияет. */
+    val isRustEngine: Boolean get() = bridge.world.isRustEngine
+
+    /**
+     * Время фазы ARRANGE по частям, нс с начала мира (замеры: стенд телефонов, PerfCheck):
+     * сверка игры с миром физики до шага, сам шаг и разбор после шага (позы в игру, смерти,
+     * поверхность, сетка игры). Три nanoTime на тик, как у профайлера фаз; на мир не влияет.
+     * Пишет поток симуляции, читать между тиками.
+     */
+    var syncInNanos = 0L
+        private set
+    var stepNanos = 0L
+        private set
+    var syncOutNanos = 0L
+        private set
+
     fun tick() {
+        val t0 = System.nanoTime()
         ensureCapacity()
         if (boundsWidth != gridManager.gridWidth || boundsHeight != gridManager.gridHeight) {
             boundsWidth = gridManager.gridWidth; boundsHeight = gridManager.gridHeight
             bridge.setBounds(boundsWidth.toFloat(), boundsHeight.toFloat())
         }
-        if (wallWidth != gridManager.gridWidth || wallHeight != gridManager.gridHeight) buildWall()
-        if (!terrain.built) buildTerrain()
+        var staticMoved = false
+        if (wallWidth != gridManager.gridWidth || wallHeight != gridManager.gridHeight) { buildWall(); staticMoved = true }
+        if (!terrain.built) { buildTerrain(); staticMoved = true }
+        // Стенка и кромка только что получили клетку сетки по месту в мире физики (updateCell):
+        // неподвижный слой сетки игры раскладывается заново — раз на мир.
+        if (staticMoved) particleEntity.bakeStaticGrid()
         removeGone()
         spawnNewOrganisms()
         syncOrganisms()
         syncSubstances()
         sticks.sync(bridge.world)
         pushEnvironment()
+        val t1 = System.nanoTime()
         bridge.step()
+        val t2 = System.nanoTime()
         publish()
         reportDeaths()
         syncSurface()
         updateGrid()
+        val t3 = System.nanoTime()
+        syncInNanos += t1 - t0; stepNanos += t2 - t1; syncOutNanos += t3 - t2
     }
 
     /**
@@ -265,7 +300,11 @@ class WorldPhysics(
             substanceGeneration[sub] = input.readInt()
             substanceRadius[sub] = input.readFloat()
             trackedSubstances.add(sub)
-            pe.physicsIndex[substancesEntity.particleIndex[sub]] = bridge.substanceParticle(id)
+            // Субстанция могла исчезнуть в тике сохранения (её съели или слили после шага физики): частицы игры у
+            // неё уже нет (particleIndex = -1), а из списка и из мира физики её уберёт removeGone на следующем тике —
+            // так же, как у мира, который сохраняли (тот же пропуск в remapIfCompacted). Без пропуска такой мир не
+            // загружался (Index -1) с 27.10 (a7d57a06); нашла 28.11 полная посадка bugReplayCheck -PspawnGrid=4.
+            if (substancesEntity.isAlive[sub]) pe.physicsIndex[substancesEntity.particleIndex[sub]] = bridge.substanceParticle(id)
         }
         wallWidth = input.readInt(); wallHeight = input.readInt()
         repeat(input.readInt()) { wallIds.add(input.readInt()) }
@@ -426,6 +465,8 @@ class WorldPhysics(
         }
         if (syncEvents.size < count) { syncEvents = Array(count * 2) { IntArray(8) }; syncEventN = IntArray(count * 2) }
         w.run(count, syncJob)
+        // Прямые записи быстрого пути — в мир до редких клеток: с физикой на Rust их иначе стёрла бы первая же правка.
+        bridge.world.flushDirectWrites()
         // Редкие клетки — в одном потоке, по организмам и слотам по порядку, как шёл прежний цикл.
         for (k in 0 until count) {
             val organ = organsWithBody.getInt(k)
@@ -734,7 +775,8 @@ class WorldPhysics(
         if (organsWithBody.size == 0) return
         val world = bridge.world
         val st = world.state
-        val b = st.baked
+        // Топология — у мира Kotlin его же массивы, у физики на Rust — копия из Rust (только при этой галочке).
+        val b = world.debugLinks()
         for (k in 0 until organsWithBody.size) {
             val organ = organsWithBody.getInt(k)
             val first = bridge.particleOf(organ, 0)

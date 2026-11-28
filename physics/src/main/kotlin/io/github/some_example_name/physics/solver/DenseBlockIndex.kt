@@ -15,9 +15,21 @@ class DenseBlockIndex(capacity: Int, blocks: Int) {
     private val dirtyBlocks = IntArray(blocks)
     private var dirtyCount = 0
 
+    // ПОРЯДОК ПО ЦВЕТАМ (закон с 27.11, BodyState.colorOrderOn, ColorOrder.kt): живые номера блока, переложенные по цветам, — в той
+    // же раскладке, что items (сегмент блока с start[b]), их число — colorCount[b]. Пересобираются лениво, при первом
+    // обходе после правки блока; блок обходит один воркер, поэтому гонки нет. При COLOR_ORDER=0 массив пустой.
+    var colorItems = IntArray(0); private set
+    val colorCount = IntArray(blocks)
+    private val colorStale = BooleanArray(blocks) { true }
+
+    /** Место под порядок по цветам. Только при сборке раскладки, в одном потоке. */
+    fun enableColors() { if (colorItems.size != items.size) colorItems = IntArray(items.size); colorStale.fill(true) }
+    fun colorStale(block: Int): Boolean = colorStale[block]
+    fun colorDone(block: Int, live: Int) { colorCount[block] = live; colorStale[block] = false }
+
     fun clear() {
         owner.fill(-1); position.fill(-1); count.fill(0); liveCount.fill(0)
-        dirty.fill(false); dirtyCount = 0
+        dirty.fill(false); dirtyCount = 0; colorStale.fill(true)
     }
 
     /** Только построение/reset, до finishBuild(). В рантайме новые связи не создаются. */
@@ -38,12 +50,14 @@ class DenseBlockIndex(capacity: Int, blocks: Int) {
             items[dst] = id; position[id] = dst
         }
         count.copyInto(liveCount)
+        colorStale.fill(true)
     }
 
     fun remove(id: Int) {
         val b = owner[id]
         if (b < 0) return
         items[position[id]] = -1; position[id] = -1; owner[id] = -1; liveCount[b]--
+        colorStale[b] = true
         if (!dirty[b]) { dirty[b] = true; dirtyBlocks[dirtyCount++] = b }
     }
 
@@ -56,6 +70,7 @@ class DenseBlockIndex(capacity: Int, blocks: Int) {
         val slot = position[from]
         items[slot] = to; owner[to] = b; position[to] = slot
         owner[from] = -1; position[from] = -1
+        colorStale[b] = true
     }
 
     fun packDirty() {

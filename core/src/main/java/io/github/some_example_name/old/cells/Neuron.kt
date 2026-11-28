@@ -7,7 +7,6 @@ class Neuron(cellTypeId: Int) : Cell(
     key = "neuron",
     defaultColor = pinkColors.first(),
     cellTypeId = cellTypeId,
-    textureName = "neuron.png",
     isNeural = true
 ) {
 

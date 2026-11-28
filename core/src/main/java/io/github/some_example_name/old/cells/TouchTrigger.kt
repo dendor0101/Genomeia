@@ -6,7 +6,6 @@ class TouchTrigger(cellTypeId: Int): Cell(
     key = "touch_trigger",
     defaultColor = genomeEditorColor[6],
     cellTypeId = cellTypeId,
-    textureName = "TouchTrigger.png",
     isNeural = true,
     isNeuronTransportable = true,
     effectOnContact = true

@@ -7,7 +7,6 @@ class Excreta(cellTypeId: Int): Cell(
     key = "excreta",
     defaultColor = brownColors.first(),
     cellTypeId = cellTypeId,
-    textureName = "excreta.png",
     isDirected = true
 ) {
 

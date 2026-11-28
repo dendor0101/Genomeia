@@ -14,7 +14,6 @@ class Producer(cellTypeId: Int): Cell(
     key = "producer",
     defaultColor = redColors[4],
     cellTypeId = cellTypeId,
-    textureName = "Producer.png",
     isDirected = true,
     isNeural = true
 ) {

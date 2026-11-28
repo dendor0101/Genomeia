@@ -33,7 +33,6 @@ abstract class Cell(
     val key: String,
     val defaultColor: Color,
     val cellTypeId: Int,
-    val textureName: String = "not_cell.png",
     val isDirected: Boolean = false,
     val isNeural: Boolean = false,
     val maxEnergy: Float = 5f,

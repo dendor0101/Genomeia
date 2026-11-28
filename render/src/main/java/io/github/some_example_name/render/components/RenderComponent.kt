@@ -26,6 +26,9 @@ class RenderContext {
      */
     var numInstances: Int = 0
 
+    /** Инстансов неподвижного слоя (CellGeometry.drawStatic): террейн и стенка у рамки, 27.11. */
+    var numStaticInstances: Int = 0
+
     /** Отставание кадра от снимка в долях тика — униформ u_lag, см. RenderFrame.interpolationLag. */
     var interpolationLag: Float = 0f
 
@@ -47,6 +50,9 @@ class RenderContext {
 
     /** Индексы вершин заливки в буфере клеток этого снимка. */
     var areaIndices: DebugAreaIndices? = null
+
+    /** Прозрачная пустота вместо фона — см. RenderFrame.transparentBackground. */
+    var transparentBackground: Boolean = false
 
     /**
      * Сколько единиц мира приходится на пиксель экранного буфера. По ней проходы, которые

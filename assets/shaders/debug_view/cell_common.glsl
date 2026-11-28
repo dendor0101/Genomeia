@@ -710,6 +710,32 @@ vec4 motorNeuron(vec2 p, float r) {
     return over(paint(v_color * 0.2, stroke(abs(d), 0.014)), ink);
 }
 
+/**
+ * Компас: кольцо шкалы с четырьмя рисками и магнитная стрелка, которая всегда смотрит вверх
+ * мира, как бы ни повернулась клетка. Сам компас меряет, насколько вверх смотрит ЕГО стрелка
+ * направления (оверлей), — видно сразу обе. Северный конец светлеет с выходом клетки.
+ * Дёшево: два поворота точки и четыре сравнения, без хэша и без угла.
+ */
+vec4 compass(vec2 p, float r) {
+    // cellFrame — поворот, поэтому оси мира в нём: x мира = (d.x, −d.y), y мира = (d.y, d.x).
+    vec2 d = v_dir / max(length(v_dir), 1e-4);
+    vec2 q = vec2(dot(p, vec2(d.x, -d.y)), dot(p, vec2(d.y, d.x)));
+
+    vec4 ink = paint(v_color * 0.3, stroke(abs(r - 0.72), 0.014));
+    vec2 a = abs(q);
+    float along = max(a.x, a.y);
+    float tick = cov(max(0.56 - along, along - 0.72)) * stroke(min(a.x, a.y), 0.016);
+    ink = over(paint(v_color * 0.3, tick), ink);
+
+    // Ромб стрелки: полудлина 0.5, полуширина 0.09; расстояние приближённое, рисунку хватает.
+    float needle = (a.x / 0.09 + a.y / 0.5 - 1.0) * 0.088;
+    float north = clamp(0.5 + q.y / v_tPerPixel, 0.0, 1.0);
+    vec3 red = mix(vec3(0.6, 0.12, 0.1), vec3(1.0, 0.45, 0.35), clamp(v_action, 0.0, 1.0));
+    vec3 south = mix(v_color, vec3(1.0), 0.7);
+    ink = over(paint(mix(south, red, north), cov(needle)), ink);
+    return over(paint(v_color * 0.2, cov(r - 0.05)), ink);
+}
+
 vec4 patternInk(vec2 p, float r) {
     switch (v_pattern) {
         case P_CHLOROPLASTS: return chloroplasts(p, r);
@@ -737,6 +763,7 @@ vec4 patternInk(vec2 p, float r) {
         case P_CHIP: return chip(p, r);
         case P_DELAY_COIL: return delayCoil(p, r);
         case P_MOTOR_NEURON: return motorNeuron(p, r);
+        case P_COMPASS: return compass(p, r);
         default: return vec4(0.0);
     }
 }

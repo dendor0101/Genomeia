@@ -96,3 +96,114 @@ tasks.register('bugZoo', JavaExec) {
     if (project.hasProperty('jobs')) systemProperty 'zoo.jobs', project.property('jobs')
   }
 }
+
+// --- Ядро физики на Rust (ветка alpha-0.2.4-rust-port, см. RUST_PORT.md) ---
+//
+// Крейт лежит в physics-native/ и собирается cargo. Kotlin грузит библиотеку по пути из
+// системного свойства genomeia.physics.native, а без него — System.loadLibrary. Тесты сверки
+// Rust ↔ Kotlin без собранной библиотеки пропускаются (Assume), поэтому машина без Rust
+// собирает и тестирует модуль как раньше: -PnoRust=1 или просто отсутствие cargo.
+def physicsNativeDir = rootProject.file('physics-native')
+def physicsNativeLib = new File(physicsNativeDir, 'target/release/' + System.mapLibraryName('genomeia_physics_jni'))
+
+def findCargo = { ->
+  if (project.hasProperty('noRust')) return null
+  def exe = System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('win') ? 'cargo.exe' : 'cargo'
+  def candidates = []
+  if (System.getenv('CARGO')) candidates << new File(System.getenv('CARGO'))
+  candidates << new File(System.getProperty('user.home'), ".cargo/bin/$exe")
+  (System.getenv('PATH') ?: '').split(File.pathSeparator).each { candidates << new File(it, exe) }
+  return candidates.find { it.isFile() }
+}
+def cargo = findCargo()
+
+tasks.register('cargoBuild', Exec) {
+  group = 'build'
+  description = 'Собирает ядро физики на Rust (release) для тестов сверки и стендов'
+  onlyIf { cargo != null }
+  workingDir physicsNativeDir
+  commandLine((cargo ?: 'cargo').toString(), 'build', '--release', '-p', 'genomeia-physics-jni')
+  inputs.files(fileTree(physicsNativeDir) {
+    include 'Cargo.toml', 'Cargo.lock', '*/Cargo.toml', '*/src/**'
+    exclude 'target/**'
+  })
+  outputs.file(physicsNativeLib)
+}
+
+// Свои тесты ядра Rust (cargo test) — отдельно от Kotlin: gradlew :physics:cargoTest
+tasks.register('cargoTest', Exec) {
+  group = 'verification'
+  description = 'Юнит-тесты крейта ядра физики на Rust'
+  onlyIf { cargo != null }
+  workingDir physicsNativeDir
+  commandLine((cargo ?: 'cargo').toString(), 'test', '-p', 'genomeia-physics')
+}
+
+// --- Сборка под Android arm64-v8a: замер на телефоне (:physics-lab:rustSpeedBenchAndroid) ---
+// Нужны `rustup target add aarch64-linux-android` и NDK: -PndkDir=… или самая новая версия в
+// <sdk.dir>/ndk (так его ставит SDK Manager Android Studio). Линкер — clang из NDK под minSdk
+// игры (21, android/build.gradle): та же .so годится и для APK (android/libs/arm64-v8a).
+def androidTarget = 'aarch64-linux-android'
+def androidMinSdk = 21
+def physicsAndroidLib = new File(physicsNativeDir, "target/$androidTarget/release/libgenomeia_physics_jni.so")
+// Для сборки APK (android/build.gradle): где лежит библиотека и можно ли её собрать на этой машине.
+ext.physicsAndroidLib = physicsAndroidLib
+
+def findNdk = { ->
+  if (project.hasProperty('ndkDir')) return file(project.property('ndkDir'))
+  def props = new Properties()
+  def local = rootProject.file('local.properties')
+  if (local.isFile()) local.withInputStream { props.load(it) }
+  def sdk = props.getProperty('sdk.dir') ?: System.getenv('ANDROID_HOME') ?: System.getenv('ANDROID_SDK_ROOT')
+  def versions = sdk ? new File(sdk, 'ndk').listFiles()?.findAll { new File(it, 'source.properties').isFile() } : null
+  // Версии вида 27.3.13750724 — сравнение по числам, а не по строкам.
+  def key = { File f -> f.name.tokenize('.').collect { it.isInteger() ? it.toInteger() : 0 } }
+  return versions?.max { a, b ->
+    def x = key(a), y = key(b)
+    for (int i = 0; i < Math.min(x.size(), y.size()); i++) if (x[i] != y[i]) return x[i] <=> y[i]
+    return x.size() <=> y.size()
+  }
+}
+
+ext.rustAndroidAvailable = cargo != null && findNdk() != null
+
+tasks.register('cargoBuildAndroid', Exec) {
+  group = 'build'
+  description = 'Собирает ядро физики на Rust под Android arm64-v8a (NDK и rustup target)'
+  workingDir physicsNativeDir
+  inputs.files(fileTree(physicsNativeDir) {
+    include 'Cargo.toml', 'Cargo.lock', '*/Cargo.toml', '*/src/**'
+    exclude 'target/**'
+  })
+  outputs.file(physicsAndroidLib)
+  // Страницы 16 КБ (Android 15+ на части телефонов; Google Play требует этого от нативного кода): NDK r27 выравнивает
+  // сегменты по 4 КБ, и на таком телефоне библиотека не загрузится — игра тихо уйдёт на Kotlin. libGDX уже по 16 КБ.
+  // Код и биты те же, меняется только выравнивание сегментов в файле. Свойство — вход задачи: смена флагов пересобирает.
+  def pageFlags = '-C link-arg=-Wl,-z,max-page-size=16384'
+  inputs.property('rustflags', pageFlags)
+  environment 'CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS', pageFlags
+  // В APK — без отладочных секций (8.7 → около 1.5 МБ, игроку незачем), но с таблицей символов: simpleperf на телефоне
+  // по-прежнему видит имена функций. Сборка для ПК (cargoBuild) остаётся с номерами строк для профиля.
+  inputs.property('strip', 'debuginfo')
+  environment 'CARGO_PROFILE_RELEASE_STRIP', 'debuginfo'
+  commandLine((cargo ?: 'cargo').toString(), 'build', '--release', '-p', 'genomeia-physics-jni', '--target', androidTarget)
+  doFirst {
+    if (cargo == null) throw new GradleException('нет cargo: нужен Rust (rustup), см. RUST_PORT.md')
+    def ndk = findNdk()
+    if (ndk == null) throw new GradleException('нет NDK: SDK Manager → NDK (Side by side) или -PndkDir=…')
+    def host = new File(ndk, 'toolchains/llvm/prebuilt').listFiles()?.find { it.isDirectory() }
+    def win = System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('win')
+    def linker = new File(host, "bin/$androidTarget$androidMinSdk-clang" + (win ? '.cmd' : ''))
+    if (!linker.isFile()) throw new GradleException("в NDK $ndk нет линкера $linker")
+    environment 'CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER', linker.absolutePath
+  }
+}
+
+test {
+  if (cargo != null) {
+    dependsOn 'cargoBuild'
+    systemProperty 'genomeia.physics.native', physicsNativeLib.absolutePath
+  }
+  // Сверка гоняет миры по 10k+ частиц в двух реализациях сразу.
+  maxHeapSize = '2g'
+}
