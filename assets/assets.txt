@@ -4,6 +4,8 @@ fonts/Roboto-Regular.ttf
 fonts/Rubik-Regular.ttf
 genomes/Burdock leaf.genome
 genomes/Controlled Glist.genome
+genomes/Controlled Spider Agile.genome
+genomes/Controlled Spider Fast.genome
 genomes/Controlled Spider.genome
 genomes/Crayfish.genome
 genomes/Fish Snake.genome
