@@ -1,0 +1,33 @@
+# genomeia stand body 1
+name	User genome (3)
+source	C:/Users/Genomeia/Desktop/Genomes/User genome (3).json
+P 0 66.40000 64.00000 0.5000 zygote 0
+P 1 66.10001 63.48038 0.5000 touch_trigger 0
+P 2 66.10001 64.51962 0.5000 touch_trigger 0
+P 3 65.49973 64.00000 0.5000 leaf 0
+P 4 64.30000 63.48038 0.5000 tail 0
+P 5 64.74977 64.00000 0.5000 tail 0
+P 6 64.00000 64.00000 0.5000 zygote 0
+P 7 64.30000 64.51962 0.5000 tail 0
+L 0 1
+L 0 2
+L 0 3
+L 1 3
+L 2 3
+L 3 5
+L 4 5
+L 4 6
+L 5 6
+L 5 7
+L 6 7
+T 0 3 1
+T 0 2 3
+T 4 5 6
+T 5 7 6
+G 1 5 6
+G 2 3 5
+G 2 7 6
+G 3 2 3
+G 3 4 6
+G 4 1 3
+G 5 0 2

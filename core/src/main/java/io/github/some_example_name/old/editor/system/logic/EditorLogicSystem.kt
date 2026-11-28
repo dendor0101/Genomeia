@@ -19,13 +19,13 @@ import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.lastTic
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.linkColor
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.nextStageTick
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.previousCtrlClicked
-import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.showPhysicalLink
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.uiScreenCommands
 import io.github.some_example_name.old.editor.entities.CellReplay
 import io.github.some_example_name.old.editor.system.CellSearchManager
 import io.github.some_example_name.old.editor.system.control.LeftRightClickManager
 import io.github.some_example_name.old.editor.system.control.TryActionManager
 import io.github.some_example_name.old.editor.system.simulation.EditorSimulationSystem
+import io.github.some_example_name.old.editor.tutorial.EditorTutorial
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.ParticleEntity
@@ -49,6 +49,16 @@ class EditorLogicSystem(
 ): RestartSimulationCallBack {
 
     private lateinit var camera: OrthographicCamera
+
+    /**
+     * Обучение, если редактор открыт в нём (GoTutorial), иначе null. Его выставляет и
+     * снимает экран; задания обучения смотрят на каждую команду отсюда.
+     */
+    var tutorial: EditorTutorial? = null
+        set(value) {
+            field = value
+            commandEditorStackManager.historyListener = value
+        }
 
     init {
         commandEditorStackManager.bind(this)
@@ -75,8 +85,10 @@ class EditorLogicSystem(
      */
     fun putUiCommand(command: UiEditorCommands) =
         SessionJournal.execute(CommandSource.EDITOR, command) {
+            tutorial?.beforeCommand(it)
             applyCommand(it)
             dropStaleNeuralLinkStart()
+            tutorial?.afterCommand(it)
         }
 
     private fun applyCommand(command: UiEditorCommands) {
@@ -93,8 +105,8 @@ class EditorLogicSystem(
 
                 if (clickedCell != null && clickedCell.second) {
                     grabbedCellIndex = clickedCell.first
-                    lastGrabbedCellX = particleEntity.x[grabbedCellIndex]
-                    lastGrabbedCellY = particleEntity.y[grabbedCellIndex]
+                    lastGrabbedCellX = particleEntity.x(grabbedCellIndex)
+                    lastGrabbedCellY = particleEntity.y(grabbedCellIndex)
                     isDruggingCamera = false
                 } else {
                     grabbedCellIndex = -1
@@ -159,7 +171,8 @@ class EditorLogicSystem(
 
             is DivideDialog -> uiScreenCommands = ShowDivideDialog(
                 clickedCell = command.clickedCell,
-                newDividedCellPosition = command.newDividedCellPosition
+                newDividedCellPosition = command.newDividedCellPosition,
+                places = command.places
             )
             is MutateDialog -> uiScreenCommands = ShowMutateDialog(
                 clickedCell = command.clickedCell,
@@ -194,9 +207,16 @@ class EditorLogicSystem(
 
             is SetSymmetry -> DIGenomeEditorContainer.symmetryManager.symmetryMode = command.mode
 
-            is SetShowPhysicalLinks -> showPhysicalLink = command.visible
+            // Галочки отладки редактора (окно «Опции»). Связи — прежней командой кнопки
+            // «Отображать связи»: номер команды — формат файла.
+            is SetShowPhysicalLinks -> DIGenomeEditorContainer.editorRenderSystem.showLinks = command.visible
+            is SetEditorShowBoundary -> DIGenomeEditorContainer.editorRenderSystem.showBoundary = command.show
+            is SetEditorShowNeuralLinks -> DIGenomeEditorContainer.editorRenderSystem.showNeuralLinks = command.show
+            is SetEditorGenomeColors -> DIGenomeEditorContainer.editorRenderSystem.genomeColors = command.enabled
 
-            is SetRenderMode -> DIGenomeEditorContainer.editorRenderSystem.mode = command.mode
+            // Редактор рисует только отладочным режимом без фильтра. Команды остались ради
+            // старых .bug: в повторе они ничего не меняют — как и в игре теперь.
+            is SetEditorDebugFilter, is SetRenderMode -> Unit
 
             is SaveGenome -> saveCurrentGenome(command.genomeName)
 
@@ -204,6 +224,8 @@ class EditorLogicSystem(
             is ExportGenome -> if (!BugReplay.isActive) {
                 DIGameGlobalContainer.game.multiPlatformFileProvider.exportGenome("genomes/${command.genomeName}.genome")
             }
+
+            TutorialNextStep -> tutorial?.nextStep()
 
             is ZoomCamera -> {
                 camera.zoom = command.zoom

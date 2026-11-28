@@ -1,6 +1,7 @@
 package io.github.some_example_name.old.bug
 
 import com.badlogic.gdx.Gdx
+import com.badlogic.gdx.files.FileHandle
 import io.github.some_example_name.old.core.log.CrashReport
 import kotlin.system.exitProcess
 
@@ -47,7 +48,7 @@ object CrashHandler {
         handling = true
 
         try {
-            System.err.println(CrashReport.build(error))
+            logCrash("CRASH в потоке ${thread.name}", CrashReport.build(error))
         } catch (_: Throwable) {
             error.printStackTrace()
         }
@@ -83,6 +84,36 @@ object CrashHandler {
         }
         finish(thread, error)
     }
+
+    /** Краш прошлого запуска показывают игроку: заодно повторить его текст в лог, с пометкой. */
+    fun logPreviousCrash(bug: FileHandle) {
+        val text = runCatching { BugFile.readEntry(bug.file(), BugFile.CRASH)?.toString(Charsets.UTF_8) }.getOrNull()
+        logCrash("КРАШ ПРОШЛОГО ЗАПУСКА (игра сейчас жива, это старый краш)", text ?: "crash.txt нет в ${bug.name()}")
+    }
+
+    /**
+     * Через Gdx.app.error, а не System.err: на Android это Log.e с тегом [TAG], его видно в
+     * Logcat Android Studio и по фильтру тега. System.err там идёт приглушённо, а одна запись
+     * Logcat режется на ~4000 символах — поэтому текст шлётся кусками по строкам.
+     */
+    private fun logCrash(title: String, text: String) {
+        val app = Gdx.app
+        val sink: (String) -> Unit = if (app != null) { s -> app.error(TAG, s) } else { s -> System.err.println("$TAG: $s") }
+        sink("=========== $title ===========")
+        val chunk = StringBuilder()
+        for (line in text.lineSequence()) {
+            if (chunk.length + line.length > CHUNK_LIMIT && chunk.isNotEmpty()) {
+                sink(chunk.toString())
+                chunk.setLength(0)
+            }
+            chunk.append(line.take(CHUNK_LIMIT)).append('\n')
+        }
+        if (chunk.isNotEmpty()) sink(chunk.toString())
+        sink("=========== конец: $title ===========")
+    }
+
+    private const val TAG = "GenomeiaCrash"
+    private const val CHUNK_LIMIT = 3500
 
     /** Дальше — как без нас: обработчик платформы, а если его нет — выход с ошибкой. */
     private fun finish(thread: Thread, error: Throwable) {

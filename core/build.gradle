@@ -7,6 +7,8 @@ dependencies {
   // должны видеть типы рендера транзитивно, иначе каждому пришлось бы прописывать
   // зависимость самому. Направление строго одностороннее — :render о :core не знает.
   api project(':render')
+  // Физика-библиотека: чистый Kotlin/JDK, о :core не знает (мост — пакет physics/bridge).
+  implementation project(':physics')
   api "com.kotcrab.vis:vis-ui:$visUiVersion"
   api "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
   implementation "it.unimi.dsi:fastutil:8.5.16"
@@ -21,7 +23,10 @@ dependencies {
   if(enableGraalNative == 'true') {
     implementation "io.github.berstanio:gdx-svmhelper-annotations:$graalHelperVersion"
   }
-  implementation "ai.tenum.lua:lua-jvm:unspecified"
+  // Lua скриптов уровней: Cobalt (MIT, совместима с GPL-3; Lua 5.2), без своих зависимостей.
+  // TENUM (TSAL 1.0) отвергнут 28.11: лицензия запрещает раздавать его функциональность
+  // игрокам и несовместима с GPL-3.
+  implementation "cc.tweaked:cobalt:0.9.10"
 
   testImplementation "org.jetbrains.kotlin:kotlin-test:$kotlinVersion"
   testImplementation "org.jetbrains.kotlin:kotlin-test-junit:$kotlinVersion"
@@ -39,3 +44,60 @@ test {
 jar {
   duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
+
+// Коммит, из которого собрана игра, — в каждый отчёт о баге (BugReports: build.commit,
+// build.dirty, build.branch). Отчёт, который не повторяется на свежей ветке, можно
+// повторить на той сборке, где он записан: git worktree add ../bug-<коммит> <коммит>.
+//
+// Исходник Kotlin, а не ресурс: работает одинаково на ПК, Android, iOS и в вебе, без чтения
+// файлов. Поля не const: значение не вклеивается в тех, кто его читает, и смена коммита
+// перекомпилирует только сам BuildInfo. Файл пишется, только если изменился, — иначе
+// каждая сборка перекомпилировала бы :core.
+//
+// Без git (архив исходников, CI без истории) — "unknown", сборка не падает.
+def buildInfoDir = layout.buildDirectory.dir('generated/buildInfo/kotlin')
+def buildInfoRoot = rootDir
+tasks.register('generateBuildInfo') {
+  outputs.dir(buildInfoDir)
+  // Коммит меняется без изменения файлов проекта, поэтому задача идёт каждый раз;
+  // это два вызова git, ~50 мс.
+  outputs.upToDateWhen { false }
+  doLast {
+    def git = { List<String> args ->
+      try {
+        def process = new ProcessBuilder(['git'] + args).directory(buildInfoRoot).redirectErrorStream(true).start()
+        def text = process.inputStream.getText('UTF-8').trim()
+        process.waitFor() == 0 ? text : null
+      } catch (Exception ignored) {
+        null
+      }
+    }
+    def commit = git(['rev-parse', 'HEAD']) ?: 'unknown'
+    def branch = git(['rev-parse', '--abbrev-ref', 'HEAD']) ?: 'unknown'
+    // Только отслеживаемые файлы: новые неотслеживаемые (логи, записи стендов) сборку не меняют.
+    def status = git(['status', '--porcelain', '--untracked-files=no'])
+    def dirty = status == null ? 'false' : (!status.isEmpty()).toString()
+    def source = """package io.github.some_example_name.old.core
+
+/** Сгенерировано задачей :core:generateBuildInfo (core/build.gradle) — руками не править. */
+object BuildInfo {
+    /** Полный хэш коммита сборки или "unknown", если git недоступен. */
+    @JvmField val COMMIT: String = "${commit}"
+
+    /** Ветка сборки; "HEAD" — сборка с отдельного коммита. */
+    @JvmField val BRANCH: String = "${branch}"
+
+    /** В отслеживаемых файлах были незакоммиченные правки: коммит описывает сборку не целиком. */
+    @JvmField val DIRTY: Boolean = ${dirty}
+}
+"""
+    def file = buildInfoDir.get().file('io/github/some_example_name/old/core/BuildInfo.kt').asFile
+    if (!file.exists() || file.getText('UTF-8') != source) {
+      file.parentFile.mkdirs()
+      file.setText(source, 'UTF-8')
+    }
+  }
+}
+// Каталогом задачи, а не путём: тогда все, кто читает исходники :core (компиляция, jar
+// исходников, сборщики платформ), сами зависят от неё.
+sourceSets.main.kotlin.srcDir(tasks.named('generateBuildInfo'))

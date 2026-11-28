@@ -4,6 +4,8 @@ import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.kotcrab.vis.ui.widget.color.ColorPickerAdapter
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
+import io.github.some_example_name.old.core.DIGameGlobalContainer.game
+import io.github.some_example_name.old.commands.GoBack
 import io.github.some_example_name.old.commands.GoMenu
 import io.github.some_example_name.old.commands.GoReplace
 import io.github.some_example_name.old.commands.GoSimulation
@@ -26,7 +28,7 @@ import io.github.some_example_name.old.editor.system.logic.TryToRemove
 import io.github.some_example_name.old.features.editor.dialog.ActionDialog
 import io.github.some_example_name.old.features.editor.dialog.ActionDialogType
 import io.github.some_example_name.old.features.editor.dialog.MutateOrDivideDialog
-import io.github.some_example_name.old.features.levels.editor.LevelInfo
+import io.github.some_example_name.old.systems.physics.CollisionManager.Companion.PARTICLE_MAX_RADIUS
 
 fun Stage.changeRemoveActionDialog(
     command: ShowChangeRemoveDialog,
@@ -69,7 +71,8 @@ fun Stage.mutateOrDivideDialog(
             onDivide.invoke(
                 DivideDialog(
                     clickedCell = command.clickedCell,
-                    newDividedCellPosition = command.newDividedCellPosition
+                    newDividedCellPosition = command.newDividedCellPosition,
+                    places = command.places
                 )
             )
         }
@@ -107,12 +110,17 @@ fun Stage.divideActionDialog(
     val dialogDivide = ActionDialog(
         clickedCell = command.clickedCell,
         newDividedCellPosition = command.newDividedCellPosition,
+        maxChildRadius = command.places.maxRadius,
         actionDialogType = ActionDialogType.DIVIDE,
         onDivide = { action ->
+            // Место — под выбранный в диалоге радиус; у команд из старых журналов таблицы
+            // нет, и место одно.
+            val position = command.places.positionFor(action.radius ?: PARTICLE_MAX_RADIUS)
+                ?: command.newDividedCellPosition
             onDivide.invoke(
                 TryToDivide(
                     clickedCellIndex = command.clickedCell.index,
-                    newDividedCellPosition = command.newDividedCellPosition,
+                    newDividedCellPosition = position,
                     divide = action.copy()
                 )
             )
@@ -154,9 +162,12 @@ fun Stage.colorPickerDialog(
 fun Stage.saveDialog(
     isGoToMenu: Boolean,
     genomeName: String,
-    editorLogicSystem: EditorLogicSystem,
-    level: LevelInfo? = null
+    editorLogicSystem: EditorLogicSystem
 ) {
+    // Редактор открыт из мира (кнопкой «Создать новый геном»): мир стоит под ним на паузе,
+    // и все выходы ведут обратно в него, а не в меню и не в тест генома.
+    val previous = navigationCommandsManager.previousCommand()
+    val fromWorld = previous is GoSimulation && previous.genomeName == null
     SaveGenomeDialog(
         genomeName = genomeName,
         onSave = { name -> editorLogicSystem.putUiCommand(SaveGenome(name)) },
@@ -164,20 +175,33 @@ fun Stage.saveDialog(
         // попадают в журнал действий, и только так чистится стек прошлого маршрута.
         onSaveAndTest = { name ->
             editorLogicSystem.putUiCommand(SaveGenome(name))
-            navigationCommandsManager.performCommand(
-                GoSimulation(world = null, genomeName = name, level = level)
-            )
+            if (fromWorld) {
+                navigationCommandsManager.performCommand(GoBack)
+                // Отдельной командой уже мира: при повторе её подаст запись, на экран мира.
+                (game.screen as? GenomeEditorCaller)?.onGenomeSaved(name)
+            } else {
+                navigationCommandsManager.performCommand(
+                    GoReplace(GoSimulation(world = null, genomeName = name))
+                )
+            }
         },
         onSaveAndExport = { name ->
             editorLogicSystem.putUiCommand(SaveGenome(name))
             editorLogicSystem.putUiCommand(ExportGenome(name))
         },
         onGoMenu = {
-            navigationCommandsManager.performCommand(
-                level?.let { GoSimulation(world = null, genomeName = null, level = it) } ?: GoReplace(GoMenu)
-            )
+            navigationCommandsManager.performCommand(if (fromWorld) GoBack else GoReplace(GoMenu))
         },
-        isGoToMenu = isGoToMenu,
-        menuText = bundle.get(if (level != null) "button.back" else "button.menu")
+        goMenuLabel = bundle.get(if (fromWorld) "button.backToWorld" else "button.menu"),
+        isGoToMenu = isGoToMenu
     ).show(this)
+}
+
+/**
+ * Экран, из которого открыли редактор генома и в который он возвращается после
+ * «Сохранить и протестировать» (мир симуляции).
+ */
+interface GenomeEditorCaller {
+    /** Геном [fileName] только что сохранён — сделать его выбранным. */
+    fun onGenomeSaved(fileName: String)
 }

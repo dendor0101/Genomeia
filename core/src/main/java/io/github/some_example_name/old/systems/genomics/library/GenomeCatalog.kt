@@ -1,6 +1,7 @@
 package io.github.some_example_name.old.systems.genomics.library
 
 import com.badlogic.gdx.Gdx
+import io.github.some_example_name.old.core.GameFilePaths
 import io.github.some_example_name.old.core.GameFiles
 import io.github.some_example_name.old.systems.genomics.genome.Genome
 import io.github.some_example_name.old.systems.genomics.genome.decodeGenome
@@ -74,7 +75,7 @@ object GenomeCatalog {
     /** Геном по имени из списка — свой или встроенный. */
     fun load(name: String): Genome =
         if (isBundled(name)) {
-            decodeGenome(Gdx.files.internal("$BUNDLED_DIR/${displayName(name)}.genome").readBytes())
+            decodeGenome(Gdx.files.internal("$BUNDLED_DIR/${GameFilePaths.fileName(displayName(name))}.genome").readBytes())
         } else {
             loadGenome(name)
         }

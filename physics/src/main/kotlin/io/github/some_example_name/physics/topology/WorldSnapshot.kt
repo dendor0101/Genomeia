@@ -1,0 +1,244 @@
+package io.github.some_example_name.physics
+
+import java.io.DataInput
+import java.io.DataOutput
+
+/*
+ * ПОЛНЫЙ СНИМОК МИРА. Этап A4 плана (docs/physics/library-integration-plan-2026-10-25.md).
+ *
+ * Снимок — ЯДРО: всё, что несёт историю и чего нельзя вывести заново: описание мира
+ * (склейка тел), частицы, рабочие списки связей и треугольников с пластикой и
+ * дорастанием, смерть и нерождённость рёбер и треугольников, организмы с запасом среды,
+ * сон, позы костей растущих тел, мышцы, пары покоя контактов (запекаются по телу при
+ * дописывании), захват мышью, переключатели решателя.
+ *
+ * Производное — поверхность, контур, пределы контура, контакты вместе с широкой фазой,
+ * план связей, блоки решателя — не пишется, а «пересобирается в известной точке,
+ * одинаковой при записи и загрузке» (план, раздел 2): запись сначала уплотняет мир
+ * (PhysicsWorld.write → compact → rebuildDerived), чтение строит то же производное тем
+ * же путём из прочитанного ядра. Поэтому запись меняет порядок производного и в самом
+ * пишущем мире: дальше он детерминирован, но идёт не так, как мир, который снимка не писал.
+ *
+ * Проверка — SnapshotCheck: мир, загруженный из снимка, продолжает побитово так же, как
+ * мир, который его записал; все поля состояния после загрузки совпадают.
+ */
+
+internal const val SNAPSHOT_MAGIC = 0x50485753  // "PHWS"
+/**
+ * 2 — мышца клетки с темпом: цель множителя клетки и признак «в пути» (27.10).
+ * 3 — возраст дорастания связи (conGrowAge, мягкость молодой связи при делении, 02.11).
+ * 4 — волокна мышц клеток (cellFiberX/Y и fibersOn: мотонейрон игры, 20.11; закон — MuscleFiber.kt). Снимок
+ *     версии 3 читается: волокон в нём нет, мышцы сжимаются во все стороны, как и писались.
+ * 5 — состав костей: списки клеток и boneClusterOf (кость делится вместе с телом, BoneSplit.kt, 16.11).
+ *     Снимки версий 3 и 4 читаются: состава в них нет, кости — по описанию, как раньше.
+ * 6 — память удара клеток (клин, 18.11). Снимки версий 3–5 читаются: памяти в них нет.
+ * 7 — временные связи роста в описании (linkRetireStart/linkRetireCells: TempLinks.kt, 20.11). Снимки версий 3–6
+ *     читаются: временных связей в них нет, как тогда и было.
+ * 8 — без памяти удара клеток: клин убран вместе с гашением (24.11, находка 40). Снимки версий 6 и 7 читаются:
+ *     память удара в них пропускается.
+ * Номера 5 и 6 даны при слиянии с alpha-0.2.4 (21.11): в ветке perf-experiment состав костей и память удара были
+ * версиями 4 и 5, а волокна — 6 после памяти удара; версия 4 игры уже лежит в сохранениях игроков, поэтому её
+ * формат остался, а ветка подвинулась. Снимки старой нумерации ветки (только проверки стендов) не читаются.
+ */
+internal const val SNAPSHOT_VERSION = 8
+
+/** Самая старая версия снимка, которую мир ещё читает (см. [SNAPSHOT_VERSION]). */
+internal const val SNAPSHOT_OLDEST_READABLE = 3
+
+// --- массивы: длина, затем значения; числа — сырыми битами, без нормализации NaN ---
+
+internal fun DataOutput.writeInts(a: IntArray, count: Int) { writeInt(count); for (i in 0 until count) writeInt(a[i]) }
+internal fun DataOutput.writeDoubles(a: FloatArray, count: Int) { writeInt(count); for (i in 0 until count) writeLong(java.lang.Double.doubleToRawLongBits(a[i].toDouble())) }
+internal fun DataOutput.writeFloats(a: FloatArray, count: Int) { writeInt(count); for (i in 0 until count) writeInt(java.lang.Float.floatToRawIntBits(a[i])) }
+internal fun DataOutput.writeBooleans(a: BooleanArray, count: Int) { writeInt(count); for (i in 0 until count) writeBoolean(a[i]) }
+internal fun DataOutput.writeBytes(a: ByteArray, count: Int) { writeInt(count); write(a, 0, count) }
+
+/** Прочитать массив; длина результата — не меньше [minSize] (ёмкость), записанное — в начале. */
+internal fun DataInput.readInts(minSize: Int): IntArray { val c = readInt(); val a = IntArray(maxOf(c, minSize)); for (i in 0 until c) a[i] = readInt(); return a }
+internal fun DataInput.readDoubles(minSize: Int): FloatArray { val c = readInt(); val a = FloatArray(maxOf(c, minSize)); for (i in 0 until c) a[i] = java.lang.Double.longBitsToDouble(readLong()).toFloat(); return a }
+internal fun DataInput.readFloats(minSize: Int): FloatArray { val c = readInt(); val a = FloatArray(maxOf(c, minSize)); for (i in 0 until c) a[i] = java.lang.Float.intBitsToFloat(readInt()); return a }
+internal fun DataInput.readBooleans(minSize: Int): BooleanArray { val c = readInt(); val a = BooleanArray(maxOf(c, minSize)); for (i in 0 until c) a[i] = readBoolean(); return a }
+internal fun DataInput.readBytes(minSize: Int): ByteArray { val c = readInt(); val a = ByteArray(maxOf(c, minSize)); readFully(a, 0, c); return a }
+
+private fun DataOutput.writeDouble64(v: Float) = writeLong(java.lang.Double.doubleToRawLongBits(v.toDouble()))
+private fun DataInput.readDouble64(): Float = java.lang.Double.longBitsToDouble(readLong()).toFloat()
+
+/** Описание мира: склейка описаний тел, в том числе пулов свободных частиц. */
+internal fun DataOutput.writeDefinition(d: BodyDefinition) {
+    writeFloats(d.x, d.count); writeFloats(d.y, d.count); writeFloats(d.radius, d.count)
+    writeBooleans(d.isBone, d.count); writeBooleans(d.isMuscle, d.count)
+    writeInts(d.linkA, d.linkCount); writeInts(d.linkB, d.linkCount)
+    writeInts(d.triA, d.triCount); writeInts(d.triB, d.triCount); writeInts(d.triC, d.triCount)
+    writeFloats(d.triRestArea2, d.triCount)
+    for (clusters in listOf(d.boneClusters, d.muscleClusters)) {
+        writeInt(clusters.size); for (c in clusters) writeInts(c, c.size)
+    }
+    writeInt(java.lang.Float.floatToRawIntBits(d.scale))
+    writeInts(d.linkRetireStart, d.linkRetireStart.size); writeInts(d.linkRetireCells, d.linkRetireCells.size)
+}
+
+internal fun DataInput.readDefinition(version: Int = SNAPSHOT_VERSION): BodyDefinition {
+    val x = readFloats(0); val y = readFloats(0); val r = readFloats(0)
+    val bone = readBooleans(0); val muscle = readBooleans(0)
+    val la = readInts(0); val lb = readInts(0)
+    val ta = readInts(0); val tb = readInts(0); val tc = readInts(0); val area = readFloats(0)
+    val bones = Array(readInt()) { readInts(0) }
+    val muscles = Array(readInt()) { readInts(0) }
+    val scale = java.lang.Float.intBitsToFloat(readInt())
+    val retireStart = if (version >= 7) readInts(0) else IntArray(0)
+    val retireCells = if (version >= 7) readInts(0) else IntArray(0)
+    return BodyDefinition(x, y, r, bone, muscle, la, lb, ta, tb, tc, area, bones, muscles, scale, retireStart, retireCells)
+}
+
+/**
+ * Ядро состояния решателя. Мир перед этим уплотнён: отложенных разрывов нет, рабочие
+ * списки без мёртвых записей удалённых тел, производное каноническое.
+ */
+internal fun BodyState.writeCore(out: DataOutput) {
+    check(!tearsPending && tearQueueN == 0) { "снимок — между тиками, после уплотнения" }
+    out.writeInt(n); out.writeInt(organismCount)
+    // Частицы.
+    for (a in listOf(px, py, prevX, prevY, vx, vy, invMass, restInvMass, matchWeight, radius,
+            sleepAnchorX, sleepAnchorY, tickJitterX, tickJitterY, contactPressure)) out.writeDoubles(a, a.size)
+    for (a in listOf(cellDead, cellUnborn, inContact, crushedCell)) out.writeBooleans(a, a.size)
+    out.writeFloats(cellScale, cellScale.size); out.writeBoolean(cellScalesOn)
+    out.writeFloats(cellScaleTarget, cellScaleTarget.size); out.writeBoolean(cellScalesMoving)
+    out.writeDoubles(dragScale, dragScale.size)
+    out.writeFloats(cellSoftness, cellSoftness.size); out.writeBoolean(softnessOn)
+    out.writeFloats(cellFiberX, cellFiberX.size); out.writeFloats(cellFiberY, cellFiberY.size); out.writeBoolean(fibersOn)
+    out.writeBooleans(cellNoContact, cellNoContact.size)
+    out.writeInts(cellGroup, cellGroup.size)
+    out.writeFloats(cellGrip, cellGrip.size)
+    for (a in listOf(cellHomeCompliance, cellHomeX, cellHomeY)) out.writeDoubles(a, a.size)
+    out.writeBoolean(boundsOn)
+    for (b in floatArrayOf(boundsMinX, boundsMinY, boundsMaxX, boundsMaxY)) out.writeLong(java.lang.Double.doubleToRawLongBits(b.toDouble()))
+    for (a in listOf(trapTicks, trapOrg, foldTicks, contactPressureN, boneOf, muscleOf, organismOf)) out.writeInts(a, a.size)
+    // Организмы.
+    out.writeInts(organismSize, organismCount)
+    for (a in listOf(organismMass, flowVX, flowVY)) out.writeDoubles(a, organismCount)
+    out.writeDoubles(orgSleepDrift2, minOf(orgSleepDrift2.size, organismCount))
+    // Кости: состав (после разделения он уже не выводится из описания) и позы покоя
+    // (у растущего тела — по рождённой части).
+    out.writeInt(rigidBones.size)
+    for (b in rigidBones.indices) out.writeInts(rigidBones[b], rigidBones[b].size)
+    out.writeInts(boneClusterOf, boneClusterOf.size)
+    for (b in rigidBones.indices) { out.writeDoubles(boneRestQx[b], boneRestQx[b].size); out.writeDoubles(boneRestQy[b], boneRestQy[b].size) }
+    out.writeBoolean(bonesSplit)
+    // Мышцы.
+    for (a in listOf(muscleActivation, muscleActivationPrev, muscleTarget, muscleScaleOf)) out.writeDoubles(a, a.size)
+    // Рабочие списки: длины, затем записи.
+    out.writeInt(lnkCount); out.writeInt(conCount); out.writeInt(triCount); out.writeInt(growEdgeN); out.writeInt(growTriN)
+    out.writeInts(lnkA, lnkCount); out.writeInts(lnkB, lnkCount); out.writeInts(lnkEdge, lnkCount)
+    out.writeInts(conA, conCount); out.writeInts(conB, conCount); out.writeDoubles(conRest, conCount)
+    out.writeInts(conMuscle, conCount); out.writeInts(conEdge, conCount)
+    out.writeBooleans(conDead, conCount); out.writeBooleans(linkTorn, conCount)
+    out.writeBytes(conHold, minOf(conHold.size, conCount)); out.writeDoubles(conGrowTarget, minOf(conGrowTarget.size, conCount))
+    out.writeBytes(conGrowAge, minOf(conGrowAge.size, conCount))
+    out.writeInts(triA, triCount); out.writeInts(triB, triCount); out.writeInts(triC, triCount)
+    out.writeFloats(triRestArea2, triCount); out.writeInts(triId, triCount); out.writeInts(triMuscle, triCount)
+    out.writeBooleans(triInverted, triCount); out.writeBytes(triHold, minOf(triHold.size, triCount))
+    out.writeFloats(triGrowTarget, triGrowTarget.size)
+    out.writeInts(growEdges, growEdgeN); out.writeInts(growTris, growTriN)
+    // Топология, сон, пары покоя. Пары покоя запекаются по телу при дописывании, а не по
+    // миру разом: запечённые по всему описанию они нашли бы пары и между телами, чьи позы
+    // покоя перекрываются (слоты пула свободных частиц лежат поверх сцены), — история.
+    baked.writeState(out)
+    sleep.write(out, organismCount)
+    val rp = restPairs ?: RestPairs.EMPTY
+    out.writeInts(rp.start, rp.start.size); out.writeInts(rp.other, rp.other.size); out.writeInts(rp.mirror, rp.mirror.size)
+    out.writeDoubles(rp.d2, rp.d2.size); out.writeDoubles(rp.dist, rp.dist.size); out.writeBooleans(rp.ever, rp.ever.size)
+    // Захват мышью, счёт разрывов, чередование обхода связей, переключатели решателя.
+    out.writeInt(dragId); out.writeDouble64(mouseX); out.writeDouble64(mouseY)
+    out.writeDouble64(dragShiftX); out.writeDouble64(dragShiftY)
+    out.writeInt(tornTotal); out.writeBoolean(sweepBackwards); out.writeInt(playTick)
+    for (b in booleanArrayOf(contactsOn, probeOn, bonesRigid, tearingOn, areasOn, crushBurstOn, membranePassTear,
+            trapKillFolds, cancelSpinOn)) out.writeBoolean(b)
+    for (d in floatArrayOf(muscleContraction, muscleRateContract, muscleRateRelax, gaitDuty, tendonTear,
+            linkTearStrain, tangentDrag, pressureBurst, membraneTearStrain)) out.writeDouble64(d)
+    for (i in intArrayOf(gaitPeriod, muscleTouch, sweepFlip, trapKillTicks, bendLevel)) out.writeInt(i)
+    writeJoints(out)
+}
+
+/**
+ * Ядро из снимка поверх мира, только что загруженного по тому же описанию (load), и
+ * производное заново — тем же путём, что после уплотнения.
+ */
+internal fun BodyState.readCore(input: DataInput, version: Int = SNAPSHOT_VERSION) {
+    check(input.readInt() == n) { "снимок не от этого описания" }
+    organismCount = input.readInt()
+    px = input.readDoubles(0); py = input.readDoubles(0); prevX = input.readDoubles(0); prevY = input.readDoubles(0)
+    vx = input.readDoubles(0); vy = input.readDoubles(0); invMass = input.readDoubles(0); restInvMass = input.readDoubles(0)
+    matchWeight = input.readDoubles(0); radius = input.readDoubles(0)
+    sleepAnchorX = input.readDoubles(0); sleepAnchorY = input.readDoubles(0)
+    tickJitterX = input.readDoubles(0); tickJitterY = input.readDoubles(0); contactPressure = input.readDoubles(0)
+    // Память удара клина (версии 6 и 7): клина больше нет, массив читается и отбрасывается.
+    if (version in 6..7) input.readDoubles(0)
+    cellDead = input.readBooleans(0); cellUnborn = input.readBooleans(0); inContact = input.readBooleans(0)
+    crushedCell = input.readBooleans(0)
+    cellScale = input.readFloats(0); cellScalesOn = input.readBoolean()
+    cellScaleTarget = input.readFloats(0); cellScalesMoving = input.readBoolean()
+    dragScale = input.readDoubles(0)
+    cellSoftness = input.readFloats(0); softnessOn = input.readBoolean()
+    // Версия 3 волокон не знала: остаются нули описания (load), мышцы — во все стороны.
+    if (version >= 4) { cellFiberX = input.readFloats(0); cellFiberY = input.readFloats(0); fibersOn = input.readBoolean() }
+    cellNoContact = input.readBooleans(0)
+    cellGroup = input.readInts(0)
+    cellGrip = input.readFloats(0); gripsDirty = true
+    cellHomeCompliance = input.readDoubles(0); cellHomeX = input.readDoubles(0); cellHomeY = input.readDoubles(0)
+    boundsOn = input.readBoolean()
+    boundsMinX = input.readDouble64(); boundsMinY = input.readDouble64()
+    boundsMaxX = input.readDouble64(); boundsMaxY = input.readDouble64()
+    trapTicks = input.readInts(0); trapOrg = input.readInts(0); foldTicks = input.readInts(0)
+    contactPressureN = input.readInts(0); boneOf = input.readInts(0); muscleOf = input.readInts(0)
+    organismOf = input.readInts(0)
+    organismSize = input.readInts(n)
+    organismMass = input.readDoubles(n); flowVX = input.readDoubles(n); flowVY = input.readDoubles(n)
+    orgSleepDrift2 = input.readDoubles(0).let { if (it.isEmpty()) it else it.copyOf(n) }
+    val boneCount = input.readInt()
+    if (version >= 5) {
+        rigidBones = Array(boneCount) { input.readInts(0) }
+        boneClusterOf = input.readInts(0)
+        boneRestQx = Array(boneCount) { FloatArray(0) }; boneRestQy = Array(boneCount) { FloatArray(0) }
+    } else check(boneCount == rigidBones.size) { "кости снимка не от этого описания" }
+    for (b in rigidBones.indices) { boneRestQx[b] = input.readDoubles(0); boneRestQy[b] = input.readDoubles(0) }
+    if (version >= 5) bonesSplit = input.readBoolean()
+    boneDirtyN = 0; boneDirtyMark = BooleanArray(0)
+    muscleActivation = input.readDoubles(0); muscleActivationPrev = input.readDoubles(0)
+    muscleTarget = input.readDoubles(0); muscleScaleOf = input.readDoubles(0)
+    val lc = body.linkCount; val tc = body.triCount
+    lnkCount = input.readInt(); conCount = input.readInt(); triCount = input.readInt()
+    growEdgeN = input.readInt(); growTriN = input.readInt()
+    lnkA = input.readInts(lc); lnkB = input.readInts(lc); lnkEdge = input.readInts(lc)
+    conA = input.readInts(lc); conB = input.readInts(lc); conRest = input.readDoubles(lc)
+    conMuscle = input.readInts(lc); conEdge = input.readInts(lc)
+    conDead = input.readBooleans(lc); linkTorn = input.readBooleans(lc)
+    conHold = input.readBytes(0).let { if (it.isEmpty()) it else it.copyOf(lc) }
+    conGrowTarget = input.readDoubles(0).let { if (it.isEmpty()) it else it.copyOf(lc) }
+    conGrowAge = input.readBytes(0).let { if (it.isEmpty()) it else it.copyOf(lc) }
+    triA = input.readInts(tc); triB = input.readInts(tc); triC = input.readInts(tc)
+    triRestArea2 = input.readFloats(tc); triId = input.readInts(tc); triMuscle = input.readInts(tc)
+    triInverted = input.readBooleans(tc)
+    triHold = input.readBytes(0).let { if (it.isEmpty()) it else it.copyOf(tc) }
+    triGrowTarget = input.readFloats(0)
+    growEdges = input.readInts(16); growTris = input.readInts(16)
+    conBoundary = BooleanArray(lc); conTendon = BooleanArray(lc)
+    tearsPending = false; tearQueueN = 0
+    baked.readState(input)
+    sleep.read(input, n)
+    val rp = RestPairs(input.readInts(0), input.readInts(0), input.readInts(0),
+        input.readDoubles(0), input.readDoubles(0), input.readBooleans(0))
+    if (restPairs != null) restPairs = rp
+    dragId = input.readInt(); mouseX = input.readDouble64(); mouseY = input.readDouble64()
+    dragShiftX = input.readDouble64(); dragShiftY = input.readDouble64()
+    tornTotal = input.readInt(); sweepBackwards = input.readBoolean(); playTick = input.readInt()
+    contactsOn = input.readBoolean(); probeOn = input.readBoolean(); bonesRigid = input.readBoolean()
+    tearingOn = input.readBoolean(); areasOn = input.readBoolean(); crushBurstOn = input.readBoolean()
+    membranePassTear = input.readBoolean(); trapKillFolds = input.readBoolean(); cancelSpinOn = input.readBoolean()
+    muscleContraction = input.readDouble64(); muscleRateContract = input.readDouble64(); muscleRateRelax = input.readDouble64()
+    gaitDuty = input.readDouble64(); tendonTear = input.readDouble64(); linkTearStrain = input.readDouble64()
+    tangentDrag = input.readDouble64(); pressureBurst = input.readDouble64(); membraneTearStrain = input.readDouble64()
+    gaitPeriod = input.readInt(); muscleTouch = input.readInt(); sweepFlip = input.readInt()
+    trapKillTicks = input.readInt(); bendLevel = input.readInt()
+    readJoints(input)
+    rebuildDerived(null, null)
+}

@@ -5,10 +5,10 @@ import io.github.some_example_name.old.cells.base.CellListBuilder
 import io.github.some_example_name.old.commands.UserCommandManager
 import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.core.DIGameGlobalContainer.worldRenderer
-import io.github.some_example_name.old.core.DIGameGlobalContainer.substrateSettings
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.NeuralEntity
+import io.github.some_example_name.old.entities.TriangleEntity
 import io.github.some_example_name.old.entities.NeuralLinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
@@ -34,7 +34,9 @@ import io.github.some_example_name.old.features.worldeditor.WorldTerrainManager
 import io.github.some_example_name.old.systems.genomics.NeuralLinkManager
 import io.github.some_example_name.old.systems.maps.MapSave
 import io.github.some_example_name.old.systems.physics.CollisionManager
-import io.github.some_example_name.old.systems.physics.MovementManager
+import io.github.some_example_name.old.physics.bridge.GamePhysicsWorkers
+import io.github.some_example_name.old.physics.bridge.WorldPhysics
+import io.github.some_example_name.old.systems.rules.WorldRules
 import kotlin.getValue
 
 object DISimulationContainer : DIContext, Disposable {
@@ -54,6 +56,12 @@ object DISimulationContainer : DIContext, Disposable {
     override var threadCount = (gridHeight / chunkHeight) / 2
     override var totalChunks = threadCount * 2
     override var chunkSize = gridSize / totalChunks
+
+    /**
+     * Свои настройки у мира: их на ходу меняют настройки мира ([worldRules]). Общие
+     * (DIGameGlobalContainer.substrateSettings) читает и редактор генома — правка мира их не трогает.
+     */
+    val substrateSettings = WorldRules.ownSettings(DIGameGlobalContainer.substrateSettings, DIGameGlobalContainer.defaultCellSettingsMap)
 
     var energyTransportRate = substrateSettings.data.rateOfEnergyTransferInLinks * 8f
     var linkMaxLength2 = 3f * 3f
@@ -80,7 +88,7 @@ object DISimulationContainer : DIContext, Disposable {
     override val organEntity = OrganEntity(
         organStartMaxAmount = 400
     )
-    val simulationData = SimulationData()
+    override val simulationData = SimulationData()
     override val particleEntity = ParticleEntity(
         particlesStartMaxAmount = 30_000,
         gridManager = gridManager
@@ -121,11 +129,14 @@ object DISimulationContainer : DIContext, Disposable {
         isEditor = false
     )
 
+    /** Треугольники тел по аренам организмов, см. TriangleEntity. */
+    val triangleEntity = TriangleEntity(20_000)
+
     init {
         // Связывается здесь, а не конструктором: organEntity создаётся раньше всех,
         // потому что CellEntity/LinkEntity/NeuralLinkEntity уже зависят от него.
         // Без этого вызова арены просто не выдаются, и всё идёт прежним путём.
-        organEntity.bindEntities(cellEntity, particleEntity, linkEntity)
+        organEntity.bindEntities(cellEntity, particleEntity, linkEntity, neuralLinkEntity, triangleEntity)
     }
     override val pheromoneEntity = PheromoneEntity(
         gridManager = gridManager
@@ -146,7 +157,8 @@ object DISimulationContainer : DIContext, Disposable {
         linkEntity,
         neuralLinkEntity,
         pheromoneEntity,
-        substancesEntity
+        substancesEntity,
+        triangleEntity
     )
 
     override val genomeManager = GenomeManager(
@@ -160,6 +172,7 @@ object DISimulationContainer : DIContext, Disposable {
     )
 
     val renderBufferManager = RenderBufferManager(
+        genomes = genomeManager.genomes,
         simulationData = simulationData,
         cellEntity = cellEntity,
         particleEntity = particleEntity,
@@ -173,7 +186,7 @@ object DISimulationContainer : DIContext, Disposable {
     val renderSystem = RenderSystem(
         worldRenderer = worldRenderer,
         renderBufferManager = renderBufferManager
-    )
+    ).also { renderBufferManager.playerMarks = io.github.some_example_name.old.features.simulation.PlayerMarks() }
 
     val userCommandManager = UserCommandManager(
         organEntity = organEntity,
@@ -247,6 +260,7 @@ object DISimulationContainer : DIContext, Disposable {
     ).apply {
         // Порядок команд мира не зависит от того, какой воркер что посчитал (WorkOrder).
         workOrder = worldCommandsManager.workOrder
+        renderBufferManager.threads = this
     }
 
     val divideManager = DivideManager(
@@ -293,21 +307,31 @@ object DISimulationContainer : DIContext, Disposable {
 
     val neuralLinkManager = NeuralLinkManager(
         neuralLinkEntity = neuralLinkEntity,
-        cellEntity = cellEntity
+        cellEntity = cellEntity,
+        threadManager = threadManager
     )
 
-    val movementManager = MovementManager(
-        entity = particleEntity,
-        gridManager = gridManager,
-        substrateSettings = substrateSettings,
-        worldCommandsManager = worldCommandsManager,
-        simulationData = simulationData,
-        linkEntity = linkEntity,
-        cellList = cellList,
+    /** Настройки мира: окно «Настройки мира», команды SetWorldRule и ResetWorldRules. */
+    val worldRules = WorldRules(
+        settings = substrateSettings,
+        base = DIGameGlobalContainer.substrateSettings,
+        cellKeys = cellList.keys(),
         cellEntity = cellEntity,
+        cellSystem = cellSystem
+    ).also { userCommandManager.worldRules = it }
+
+    /** Физика-библиотека на воркерах игры (этап B1). */
+    val worldPhysics = WorldPhysics(
+        organEntity = organEntity,
+        cellEntity = cellEntity,
+        linkEntity = linkEntity,
+        particleEntity = particleEntity,
         substancesEntity = substancesEntity,
-        pheromonesManager = pheromonesManager
-    )
+        gridManager = gridManager,
+        pheromonesManager = pheromonesManager,
+        worldCommandsManager = worldCommandsManager,
+        workers = GamePhysicsWorkers(threadManager)
+    ).also { it.rules = worldRules }
 
     val simulationSystem by lazy {
         SimulationSystem(
@@ -332,13 +356,16 @@ object DISimulationContainer : DIContext, Disposable {
             entityList = entityList,
             renderBufferManager = renderBufferManager,
             pheromonesManager = pheromonesManager,
-            movementManager = movementManager,
-            worldTerrainManager = worldTerrainManager
+            worldPhysics = worldPhysics,
+            worldTerrainManager = worldTerrainManager,
+            worldRules = worldRules
         )
     }
 
     val mapSave by lazy {
         MapSave(
+            worldPhysics = worldPhysics,
+            worldRules = worldRules,
             // Имена — это имена файлов в сохранении, их нельзя менять и брать из имён
             // классов: минификатор переименует классы, и старые сохранения перестанут читаться.
             entities = listOf(
@@ -350,6 +377,7 @@ object DISimulationContainer : DIContext, Disposable {
                 "cells" to cellEntity,
                 "links" to linkEntity,
                 "neuralLinks" to neuralLinkEntity,
+                "triangles" to triangleEntity,
                 "pheromones" to pheromoneEntity,
                 "substances" to substancesEntity
             ),

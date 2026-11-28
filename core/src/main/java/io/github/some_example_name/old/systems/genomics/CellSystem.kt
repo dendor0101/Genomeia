@@ -26,7 +26,9 @@ class CellSystem(
     val gridManager: GridManager,
     val divideManager: DivideManager,
     val mutateManager: MutateManager,
-    val threadManager: ThreadManager?
+    val threadManager: ThreadManager?,
+    /** Доля переноса энергии по связи за тик. У мира её меняют настройки мира (WorldRules). */
+    var linkEnergyTransfer: Float = energyTransportRate
 ): Disposable {
 
     /**
@@ -140,6 +142,11 @@ class CellSystem(
         val dy = getY(cellIndex) - getY(parentCellIndex)
 
         val len = sqrt(dx * dx + dy * dy)
+        // В углу мира границы могут зажать обе клетки ровно в (radius, radius).
+        // У нулевого вектора нет направления: сохраняем прежнее до расхождения.
+        // Иначе 0/0 портит угол Tail, а его тяга в этом же тике — скорость и позицию.
+        // Воспроизведено .bug 20261102-220750: тик 16956, частицы 4057 и 4065.
+        if (len == 0f) return@with
         val toChildCos = dx / len
         val toChildSin = dy / len
 
@@ -162,7 +169,12 @@ class CellSystem(
             if (organEntity.justChangedStage[organIndex]) {
                 val currentStage = genomeManager.genomes[organEntity.genomeIndex[organIndex]]
                     .genomeStageInstruction[organEntity.stage[organIndex]]
-                val action = currentStage.cellActions[cellGenomeId[cellIndex]]
+                // Зигота-пустышка действий не получает вовсе — как клетка, которой в этой
+                // стадии делать нечего. Счётчики стадии её тогда не ждут, и организм
+                // растёт дальше без того, что выросло бы из неё.
+                val action =
+                    if (isDormantZygote(cellIndex)) null
+                    else currentStage.cellActions[cellGenomeId[cellIndex]]
                 val isDivideNotNull = action?.divide != null
                 val isMutateNotNull = action?.mutate != null
 
@@ -210,26 +222,50 @@ class CellSystem(
      *
      * Знак неравенства сохраняется, потому что maxEnergy всегда > 0 (см. CellSettings).
      * Точность не хуже исходной: делений, каждое из которых округляет, стало ноль.
+     *
+     * Сколько переносить — [energyTransferAmount].
      */
     fun transportEnergy(linkCell1: Int, linkCell2: Int) = with(cellEntity) {
         val energy1 = energy[linkCell1]
         val energy2 = energy[linkCell2]
-        val maxEnergy1 = maxEnergy[linkCell1]
-        val maxEnergy2 = maxEnergy[linkCell2]
-
-        val fullness1 = energy1 * maxEnergy2
-        val fullness2 = energy2 * maxEnergy1
-
-        if (fullness1 < fullness2) {
-            energy[linkCell1] = energy1 + energyTransportRate
-            energy[linkCell2] = energy2 - energyTransportRate
-        } else if (fullness1 > fullness2) {
-            energy[linkCell1] = energy1 - energyTransportRate
-            energy[linkCell2] = energy2 + energyTransportRate
+        val amount = energyTransferAmount(
+            energy1, energy2, maxEnergy[linkCell1], maxEnergy[linkCell2], linkEnergyTransfer
+        )
+        if (amount != 0f) {
+            energy[linkCell1] = energy1 + amount
+            energy[linkCell2] = energy2 - amount
         }
     }
 
     override fun dispose() {
 
+    }
+}
+
+/**
+ * Сколько энергии перенести по связи между двумя клетками: плюс — первой прибавить, второй
+ * убавить; минус — наоборот. Заполненность сравнивается кросс-умножением (см.
+ * CellSystem.transportEnergy).
+ *
+ * ПОРЦИЯ НЕ БОЛЬШЕ ПОЛОВИНЫ РАЗНИЦЫ
+ * ---------------------------------
+ * Раньше по связи всегда шла полная порция [rate] в сторону менее заполненной клетки.
+ * Почти выровненные клетки от этого перескакивали через равенство и каждый тик менялись
+ * ролями: энергия дрожала на ±порцию, а с ней моргало ядро в ностальгическом режиме.
+ * Теперь у равенства порция — половина того, что выровняло бы пару ровно:
+ * x = (e2·m1 − e1·m2) / (m1 + m2) переносит клетки точно в равную заполненность, а
+ * половина гасит перелёт, когда у клетки несколько связей. Вдали от равенства порция та
+ * же, что раньше, и деление — только в ветке у равенства.
+ */
+fun energyTransferAmount(energy1: Float, energy2: Float, maxEnergy1: Float, maxEnergy2: Float, rate: Float): Float {
+    // > 0 — вторая заполнена сильнее, энергия идёт в первую.
+    val excess = energy2 * maxEnergy1 - energy1 * maxEnergy2
+    val maxEnergySum = maxEnergy1 + maxEnergy2
+    // При такой разнице половина выравнивающей порции как раз равна rate.
+    val fullStep = 2f * rate * maxEnergySum
+    return when {
+        excess >= fullStep -> rate
+        excess <= -fullStep -> -rate
+        else -> 0.5f * excess / maxEnergySum
     }
 }

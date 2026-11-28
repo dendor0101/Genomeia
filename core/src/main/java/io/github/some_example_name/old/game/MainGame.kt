@@ -85,21 +85,17 @@ class MyGame(
         DIGameGlobalContainer.game = this
         DISimulationContainer
         DIGenomeEditorContainer
-        // Перенос старых JSON и запекание старых .genome — до первого экрана: меню сразу
-        // читает папку геномов. После контейнеров: запекание идёт в мире редактора.
+        // Перенос старых JSON и запекание старых .genome — до первого экрана и снимка
+        // геномов для .bug. После контейнеров: запекание идёт в мире редактора.
         // При повторе бага папка геномов — снимок из .bug, уже прошедший этот шаг у игрока.
         if (!BugReplay.isActive) {
             GenomeLibrary.prepare(DIGenomeEditorContainer.genomeBaker)
-            SessionAttachments.retakeGenomes()
+            SessionAttachments.captureGenomes()
         }
 
         Gdx.input.setCatchKey(Input.Keys.BACK, true)
 
-        // Генерация шрифта с большим размером (адаптировано под DPI).
-        // На Android полный Gdx.graphics.density (часто 2.5–4) делает текст огромным:
-        // ScreenViewport работает в пикселях, а меню единственное дополнительно
-        // ужимает buttonFont под ширину кнопки. Для остальных экранов нужен
-        // более мягкий множитель, иначе large/extraLarge/title выглядят ×2–3 слишком крупно.
+        // Размеры шрифтов заданы в dp; крупные заголовки на телефоне имеют отдельный размер.
         val generator = FreeTypeFontGenerator(Gdx.files.internal("fonts/Rubik-Regular.ttf"))
         val parameter = FreeTypeFontGenerator.FreeTypeFontParameter()
         parameter.genMipMaps = true
@@ -109,12 +105,8 @@ class MyGame(
 
         val MIN_GEN_SIZE = 15
         val rawDensity = Gdx.graphics.density
-        val fontDensity = if (Gdx.app.type == Application.ApplicationType.Android) {
-            // ~half density keeps physical size readable without eating the phone screen
-            (rawDensity * 0.5f).coerceIn(1.0f, 2.0f)
-        } else {
-            rawDensity.coerceAtLeast(1.0f)
-        }
+        val mobile = Gdx.app.type == Application.ApplicationType.Android
+        val fontDensity = rawDensity.coerceAtLeast(1f)
 
         // Medium font
         val desiredMediumSize = (16 * fontDensity).toInt()
@@ -125,7 +117,7 @@ class MyGame(
         }
 
         // Small font
-        val desiredSmallSize = (8 * fontDensity).toInt()
+        val desiredSmallSize = ((if (mobile) 12 else 8) * fontDensity).toInt()
         parameter.size = max(MIN_GEN_SIZE, desiredSmallSize)
         smallFont = generator.generateFont(parameter)
         if (desiredSmallSize < MIN_GEN_SIZE) {
@@ -133,7 +125,7 @@ class MyGame(
         }
 
         // Large font
-        val desiredLargeSize = (24 * fontDensity).toInt()
+        val desiredLargeSize = ((if (mobile) 18 else 24) * fontDensity).toInt()
         parameter.size = max(MIN_GEN_SIZE, desiredLargeSize)
         largeFont = generator.generateFont(parameter)
         if (desiredLargeSize < MIN_GEN_SIZE) {
@@ -141,7 +133,7 @@ class MyGame(
         }
 
         // Button font — generated at 2x size so scaling down in buttons stays sharp
-        val desiredButtonSize = (22 * fontDensity).toInt()
+        val desiredButtonSize = ((if (mobile) 16 else 18) * fontDensity).toInt()
         parameter.size = max(MIN_GEN_SIZE, desiredButtonSize)
         parameter.borderWidth = 1.2f
         parameter.borderColor = Color.WHITE
@@ -150,7 +142,7 @@ class MyGame(
         parameter.size = max(MIN_GEN_SIZE, desiredLargeSize)
 
         // Extra large font
-        val desiredExtraLargeSize = (40 * fontDensity).toInt()
+        val desiredExtraLargeSize = ((if (mobile) 24 else 40) * fontDensity).toInt()
         parameter.size = max(MIN_GEN_SIZE, desiredExtraLargeSize)
         extraLargeFont = generator.generateFont(parameter)
         if (desiredExtraLargeSize < MIN_GEN_SIZE) {

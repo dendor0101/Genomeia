@@ -50,15 +50,41 @@ object GoMenu : Menu() {
  * повторе дала бы другую карту, и все мазки кистью легли бы не туда.
  */
 @Serializable
-class GoWorldEditor(val seed: String, val levelEditor: Boolean = false) : Menu() {
+class GoWorldEditor(
+    val seed: String,
+    /**
+     * Карта уровня из редактора уровней: редактор мира открывается с неё, а «Сохранить»
+     * возвращает правленую карту командой LevelEditorIntent.SetMap. null — обычный мир.
+     * Данными в команде, а не общей ссылкой на вьюху: повтор .bug поднимет ту же карту.
+     */
+    val levelMap: WorldSpec? = null
+) : Menu() {
     override val name get() = "GoWorldEditor"
-    override val detail get() = seed
+    override val detail get() = if (levelMap != null) "$seed, level" else seed
 }
 
 @Serializable
-class GoGenomeEditor(val genomeName: String?, val level: LevelInfo? = null) : Menu() {
+class GoGenomeEditor(val genomeName: String?) : Menu() {
     override val name get() = "GoGenomeEditor"
     override val detail get() = genomeName ?: "new"
+}
+
+/** Экран «Геномы»: свои и встроенные геномы с превью, переход в редактор, импорт. */
+@Serializable
+object GoGenomes : Menu() {
+    override val name get() = "GoGenomes"
+}
+
+/** Гайд игрока: обучение редактору генома и описание клеток. */
+@Serializable
+object GoGuide : Menu() {
+    override val name get() = "GoGuide"
+}
+
+/** Обучение: редактор генома с новым геномом и шагами обучения (EditorTutorial). */
+@Serializable
+object GoTutorial : Menu() {
+    override val name get() = "GoTutorial"
 }
 
 @Serializable
@@ -66,12 +92,13 @@ object GoSettings : Menu() {
     override val name get() = "GoSettings"
 }
 
+/** Кампания: встроенные уровни и уровни игрока (CampaignScreen). */
 @Serializable
-object GoLogic: Menu() {
-    override val name: String
-        get() = "GoLogic"
+object GoCampaign : Menu() {
+    override val name get() = "GoCampaign"
 }
 
+/** Редактор уровней: скрипт, свойства, карта (LevelEditorScreen). */
 @Serializable
 object GoLevelEditor : Menu() {
     override val name get() = "GoLevelEditor"
@@ -130,18 +157,22 @@ object EcoSystemScreenCellsSettings : Menu() {
  * Команда навигации по имени.
  *
  * Нужна там, где команда приходит строкой, а не из кода: параметр запуска для скриншотов
- * вёрстки. Команды с обязательными аргументами (GoSimulation) сюда намеренно не попадают;
- * редактор мира открывается со случайным сидом.
+ * вёрстки. Команды с аргументами берутся с аргументами по умолчанию: редактор мира — со
+ * случайным сидом, симуляция — пустой мир без рельефа и без теста генома.
  */
 fun navigationCommandByName(name: String): NavigationCommands? = when (name.trim()) {
     GoMenu.name -> GoMenu
-    "GoWorldEditor" -> GoWorldEditor(WorldEditorIntent.newSeed().seed, levelEditor = false)
+    "GoWorldEditor" -> GoWorldEditor(WorldEditorIntent.newSeed().seed)
     GoSettings.name -> GoSettings
     GoEcoSystem.name -> GoEcoSystem
     GoSupport.name -> GoSupport
     "GoGenomeEditor" -> GoGenomeEditor(null)
-    "GoLevelEditor" -> GoLevelEditor
-    GoLogic.name -> GoLogic
+    GoGenomes.name -> GoGenomes
+    GoGuide.name -> GoGuide
+    GoTutorial.name -> GoTutorial
+    "GoSimulation" -> GoSimulation(world = null, genomeName = null)
+    GoLevelEditor.name -> GoLevelEditor
+    GoCampaign.name -> GoCampaign
     GoBack.name -> GoBack
     GoExit.name -> GoExit
     else -> null

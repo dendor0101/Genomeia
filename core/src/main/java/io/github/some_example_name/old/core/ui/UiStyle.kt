@@ -19,7 +19,9 @@ import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
 import com.badlogic.gdx.utils.FloatArray
+import com.badlogic.gdx.utils.Scaling
 import com.kotcrab.vis.ui.VisUI
+import com.kotcrab.vis.ui.widget.VisImageButton
 import com.kotcrab.vis.ui.widget.VisSlider
 import com.kotcrab.vis.ui.widget.VisTextField
 import com.kotcrab.vis.ui.widget.VisTextButton
@@ -83,7 +85,53 @@ fun makeStyledButton(text: String, game: MyGame, textures: MutableList<Texture>,
         style.checkedFontColor = Color.WHITE
     }
     val d = Gdx.graphics.density
-    return VisTextButton(text, style).also { it.pad(10f * d, 24f * d, 10f * d, 24f * d) }
+    return object : VisTextButton(text, style) {
+        override fun getPrefHeight() = maxOf(super.getPrefHeight(), 48.dp())
+    }.also { it.pad(4f * d, 8f * d, 4f * d, 8f * d) }
+}
+
+/**
+ * Кнопка-значок в рамке makeStyledButton. [icon] — имя значка из скина VisUI ("icon-trash"),
+ * он красится в цвет надписей кнопок, а при наведении и нажатии белеет, как их текст.
+ */
+fun makeStyledIconButton(icon: String, textures: MutableList<Texture>): VisImageButton {
+    val skin = VisUI.getSkin()
+    val style = VisImageButton.VisImageButtonStyle()
+    style.up   = makeStyledNP(BTN_UP,  Color(STYLE_BEIGE).also { it.a = 0.75f }, textures)
+    style.over = makeStyledNP(BTN_OVR, Color(STYLE_BEIGE), textures)
+    style.down = makeStyledNP(BTN_DWN, Color.WHITE, textures)
+    style.imageUp   = skin.newDrawable(icon, STYLE_BEIGE)
+    style.imageOver = skin.newDrawable(icon, Color.WHITE)
+    style.imageDown = style.imageOver
+    return VisImageButton(style).also { it.image.setScaling(Scaling.fit) }
+}
+
+/**
+ * Кнопка-значок в рамке makeStyledButton со своей картинкой. [icon] — белый значок на
+ * прозрачном (см. HudIcons): кнопка красит его, как makeStyledIconButton выше. [checkedIcon]
+ * делает кнопку переключателем: включённая показывает его (пауза ↔ «играть»).
+ */
+fun makeStyledIconButton(
+    icon: TextureRegion,
+    textures: MutableList<Texture>,
+    checkedIcon: TextureRegion? = null,
+    smoothBorder: Boolean = false
+): VisImageButton {
+    val style = VisImageButton.VisImageButtonStyle()
+    val background = if (smoothBorder) ::makeSmoothStyledNP else ::makeStyledNP
+    style.up   = background(BTN_UP,  Color(STYLE_BEIGE).also { it.a = 0.75f }, textures)
+    style.over = background(BTN_OVR, Color(STYLE_BEIGE), textures)
+    style.down = background(BTN_DWN, Color.WHITE, textures)
+    val drawable = TextureRegionDrawable(icon)
+    style.imageUp   = drawable.tint(STYLE_BEIGE)
+    style.imageOver = drawable.tint(Color.WHITE)
+    style.imageDown = style.imageOver
+    if (checkedIcon != null) {
+        val checked = TextureRegionDrawable(checkedIcon)
+        style.imageChecked = checked.tint(STYLE_BEIGE)
+        style.imageCheckedOver = checked.tint(Color.WHITE)
+    }
+    return VisImageButton(style).also { it.image.setScaling(Scaling.fit) }
 }
 
 // ── Dialog window rounded corners ───────────────────────────────────────────
@@ -225,7 +273,9 @@ fun makeStyledSlider(
     style.knobOver   = knobD
     style.knobDown   = knobD
 
-    val slider = VisSlider(min, max, step, vertical, style)
+    val slider = object : VisSlider(min, max, step, vertical, style) {
+        override fun getPrefHeight() = maxOf(super.getPrefHeight(), 48.dp())
+    }
 
     // === ВОТ ЭТА СТРОКА РЕШАЕТ ВСЁ АВТОМАТИЧЕСКИ ===
     slider.disableScrollWhileDragging()
@@ -427,12 +477,14 @@ private fun createLeftArrowTextureRegion(): TextureRegion {
 }
 
 class StyledLeftArrowButton : VisTextButton("", makeCleanButtonStyle()) {
+    override fun getPrefWidth() = 48.dp()
+    override fun getPrefHeight() = 48.dp()
 
     companion object {
         private val arrowRegion: TextureRegion by lazy {
             createLeftArrowTextureRegion()
         }
-        private const val ARROW_SIZE = 60f
+        private const val ARROW_SIZE = 32f
     }
 
     override fun draw(batch: Batch, parentAlpha: Float) {

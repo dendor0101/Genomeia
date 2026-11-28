@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Только сборка perf: стенд замера настоящей игры на телефоне (PhonePerfLauncher).
+     profileable — профиль процессора simpleperf с неотлаживаемой сборки. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <profileable android:shell="true"/>
+    <activity
+        android:name="io.github.some_example_name.android.PhonePerfLauncher"
+        android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout"
+        android:exported="true"
+        android:launchMode="singleTop"/>
+  </application>
+</manifest>

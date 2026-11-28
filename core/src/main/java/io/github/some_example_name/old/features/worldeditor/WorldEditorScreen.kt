@@ -46,13 +46,16 @@ import io.github.some_example_name.old.features.worldeditor.WorldEditorViewModel
  */
 class WorldEditorScreen(
     /** Стартовый сид — из команды GoWorldEditor. */
-    val levelEditor: Boolean = false,
     seed: String,
+    /**
+     * Карта уровня (GoWorldEditor.levelMap): редактор открывается с неё, а кнопка
+     * «Сохранить» отдаёт правленую карту экрану уровня ([LevelMapReceiver]). null — обычный мир.
+     */
+    private val levelMap: WorldSpec? = null
 ) : VisDslScreen(background = Color(0.1f, 0.1f, 0.1f, 1f)), ReplayTarget {
 
-    private val viewModel = if (!levelEditor) {WorldEditorViewModel(initialSeed = seed)} else {
-        DIGameGlobalContainer.levelEditorMapData ?: WorldEditorViewModel(initialSeed = seed)
-    }
+    private val viewModel = levelMap?.let { WorldEditorViewModel.fromSpec(it) }
+        ?: WorldEditorViewModel(initialSeed = seed)
 
     /**
      * Повтор бага. Вёрстка пересобирается, чтобы ползунки и поле сида показали новое
@@ -97,7 +100,7 @@ class WorldEditorScreen(
     // ==================== Верхняя панель ====================
 
     private fun VisTable.topBar() {
-        visTable({ growX() }) {
+        visTable({ growX().padRight(50.dp()) }) {
             visTextButton(
                 text = bundle.get("button.back"),
                 onClick = { navigation.performCommand(GoBack) }
@@ -285,17 +288,26 @@ class WorldEditorScreen(
 
             spacer()
 
-            val text = bundle.get(if (!levelEditor) "button.createNewWorld" else "button.save")
-            val func: () -> Unit = if (!levelEditor) { {navigation.performCommand(GoSimulation(viewModel.toSpec(), null)) }} else { {
-                DIGameGlobalContainer.levelEditorsData(viewModel)
-                navigation.performCommand(GoBack)
-            }}
-
-            visTextButton(
-                text = text,//bundle.get("button.createNewWorld"),
-                onClick = func//{ navigation.performCommand(GoSimulation(viewModel.toSpec(), null)) }
-            ) { right() }
+            if (levelMap == null) {
+                visTextButton(
+                    text = bundle.get("button.createNewWorld"),
+                    onClick = { navigation.performCommand(GoSimulation(viewModel.toSpec(), null)) }
+                ) { right() }
+            } else {
+                visTextButton(text = bundle.get("button.save"), onClick = ::returnMapToLevel) { right() }
+            }
         }
+    }
+
+    /**
+     * Карта — экрану уровня, с которого открыли редактор. Сначала назад, потом отдельная
+     * команда уже экрана уровня (LevelEditorIntent.SetMap): так же, как GenomeEditorCaller,
+     * и при повторе .bug её подаст запись, а не эта кнопка.
+     */
+    private fun returnMapToLevel() {
+        val spec = viewModel.toSpec()
+        navigation.performCommand(GoBack)
+        (DIGameGlobalContainer.game.screen as? LevelMapReceiver)?.onLevelMapEdited(spec)
     }
 
     // ==================== Мелочи ====================
@@ -332,4 +344,9 @@ class WorldEditorScreen(
 
         val PANEL_BACKGROUND = Color(0.16f, 0.16f, 0.19f, 1f)
     }
+}
+
+/** Экран, который открыл редактор мира с картой уровня и ждёт её обратно (LevelEditorScreen). */
+interface LevelMapReceiver {
+    fun onLevelMapEdited(map: WorldSpec)
 }

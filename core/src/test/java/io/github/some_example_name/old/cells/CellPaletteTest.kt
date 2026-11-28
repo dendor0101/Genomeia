@@ -46,6 +46,16 @@ class CellPaletteTest {
     }
 
     @Test
+    fun `зиготу нельзя выбрать при делении и мутации, но в справочнике она есть`() {
+        val palette = CellPalette.FULL
+        assertTrue(palette.cellChoices(cells, current = null).any { it.key == "zygote" })
+        assertTrue(palette.actionCellChoices(cells, current = null).none { it.key == "zygote" })
+        assertTrue(palette.actionCellChoices(cells, current = "leaf").none { it.key == "zygote" })
+        // Мутация самой зиготы-корня: её тип в списке остаётся, иначе диалог подменил бы его.
+        assertTrue(palette.actionCellChoices(cells, current = "zygote").any { it.key == "zygote" })
+    }
+
+    @Test
     fun `опечатка в палитре уровня находится`() {
         val palette = CellPalette.only(cells = setOf("leaf", "lief"), formulas = setOf("linaer"))
         assertEquals(listOf("lief", "linaer"), palette.unknownKeys(cells))

@@ -1,0 +1,17 @@
+# genomeia stand body 1
+name	User genome
+source	C:/Users/Genomeia/StudioProjects/Genomeia/.claude/worktrees/debug-filter/bugs/.sandbox/genomeia-20261020-130834-7cb9f803c736-report/bug/attachments/genomes/User genome.genome
+P 0 63.51459 64.35267 0.5000 leaf 0
+P 1 64.26297 64.53936 0.5000 leaf 0
+P 2 64.00000 64.00000 0.5000 zygote 0
+P 3 64.60000 64.00000 0.5000 leaf 0
+L 0 1
+L 0 2
+L 1 2
+L 1 3
+L 2 3
+T 0 2 1
+T 1 2 3
+G 1 3 2
+G 2 1 3
+G 2 0 2

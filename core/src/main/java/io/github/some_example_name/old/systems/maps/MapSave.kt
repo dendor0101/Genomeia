@@ -8,6 +8,8 @@ import com.badlogic.gdx.files.FileHandle
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.PixmapIO
 import io.github.some_example_name.old.core.DIContext
+import io.github.some_example_name.old.core.GameFilePaths
+import io.github.some_example_name.old.journal.SessionAttachments
 import io.github.some_example_name.old.core.GameFiles
 import io.github.some_example_name.old.cells.base.Formulas
 import io.github.some_example_name.old.entities.CellEntity
@@ -16,11 +18,13 @@ import io.github.some_example_name.old.entities.NeuralEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.features.worldeditor.WorldEdit
 import io.github.some_example_name.old.features.worldeditor.WorldSpec
+import io.github.some_example_name.old.physics.bridge.WorldPhysics
 import io.github.some_example_name.old.systems.genomics.genome.Genome
 import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.genomics.genome.GenomeProto
 import io.github.some_example_name.old.systems.simulation.SimulationData
 import io.github.some_example_name.old.systems.simulation.SimulationSystem
+import io.github.some_example_name.old.systems.rules.WorldRules
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -28,20 +32,24 @@ import java.io.File
 import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 
-/** Сохранённый мир в списке: [slot] — имя файла без расширения. */
+/** Сохранённый мир в списке: [slot] — имя файла без расширения, оно же имя мира (см. MapNames). */
 class SavedMap(val slot: String, val lastModified: Long)
 
 /**
  * Сохранение мира целиком: сущности, геномы организмов, время симуляции, рецепт рельефа
  * и превью для списка миров.
  *
- * Мир лежит в maps/<номер>.map:
+ * Мир лежит в maps/<имя>.map (имя выбирает игрок, см. MapNames; старые сохранения — номера):
  *  - preview.png        превью, первым — чтобы список миров читал его, не распаковывая остальное;
  *  - meta.bin           версия формата, размер сетки, время, рецепт рельефа (для «Перезапуска»);
  *  - genomes.bin        геномы, на которые ссылаются организмы;
  *  - cellActions.bin    из какой стадии генома взято действие каждой клетки;
  *  - types.bin          ключи типов клеток и формул по номерам, какими они были при сохранении;
- *  - entities/<имя>.bin состояние каждой сущности, см. EntityState.
+ *  - entities/<имя>.bin состояние каждой сущности, см. EntityState;
+ *  - physics.bin        мир физики-библиотеки целиком (WorldPhysics.encodeState): позиции
+ *                       клеток и субстанций живут только в нём;
+ *  - rules.bin          настройки мира (WorldRules.encode). В мирах до 22.11 его нет — тогда
+ *                       стандарт: формат мира от этого не меняется.
  */
 class MapSave(
     /** Сущности мира под стабильными именами: имя — это имя файла в архиве. */
@@ -51,6 +59,8 @@ class MapSave(
     private val genomeManager: GenomeManager,
     private val simulationData: SimulationData,
     private val simulationSystem: SimulationSystem,
+    private val worldPhysics: WorldPhysics,
+    private val worldRules: WorldRules,
     private val diContext: DIContext,
     /** Пересобрать сетку под размер загружаемого мира: у каждого мира он свой. */
     private val resizeWorld: (width: Int, height: Int) -> Unit
@@ -71,10 +81,25 @@ class MapSave(
      * симуляция стоит ровно столько, сколько занимает копирование массивов.
      */
     fun save(slot: String?, world: WorldSpec?, preview: Pixmap?): String {
+        val target = slot ?: nextSlot()
+        val entries = snapshot(target, world, preview)
+        writeArchive(target, entries)
+        SessionAttachments.markMapWritten(target)
+        return target
+    }
+
+    /**
+     * Снять мир для записи в слот [target] — между тиками, с тиком сохранения в журнале; файл не пишется.
+     *
+     * Снимок МЕНЯЕТ мир физики: PhysicsWorld.write уплотняет его и пересобирает производное (контур, широкую фазу
+     * касаний, блоки решателя). Поэтому повтор сохранения, которое у игрока не записалось в файл (SaveWorldFailed),
+     * мир всё равно снимает: раньше повтор только отмечал тик и шёл без пересборки (25.11.2026, находка 42: тяжёлый
+     * bugReplayCheck, шаг с занятым временным файлом после 3000 тиков роста, — «разошлись PhysicsWorld» на тике после
+     * сохранения; та же запись со снимком сходится целиком). Какая часть пересборки меняет биты, не разобрано.
+     */
+    fun snapshot(target: String, world: WorldSpec?, preview: Pixmap?): Map<String, ByteArray> {
         val entries = LinkedHashMap<String, ByteArray>()
         preview?.let { entries[PREVIEW] = encodePng(it) }
-        val target = slot ?: nextSlot()
-
         simulationSystem.betweenTicks {
             // Точный тик сохранения — в журнал: при повторе мир будет ждать на нём.
             simulationSystem.onWorldSaved(target)
@@ -85,10 +110,12 @@ class MapSave(
             for ((name, entity) in entities) {
                 entries[entityEntry(name)] = entity.encodeState()
             }
+            // Последним: запись уплотняет мир физики (номера его частиц), а сущности игры
+            // номеров мира физики не хранят — им всё равно, до или после.
+            entries[PHYSICS] = writeBytes { worldPhysics.encodeState(it) }
+            entries[RULES] = writeBytes { worldRules.encode(it) }
         }
-
-        writeArchive(target, entries)
-        return target
+        return entries
     }
 
     /**
@@ -99,7 +126,7 @@ class MapSave(
      * а не полузагруженным, и исключение уходит вызывающему.
      */
     fun load(slot: String): WorldSpec? {
-        val entries = readArchive(mapFile(slot))
+        val entries = readArchive(SessionAttachments.attachMapBeforeLoad(slot))
         val meta = decodeMeta(entries[META] ?: throw IllegalStateException("в мире $slot нет $META"))
 
         // Размер мира задаёт редактор карты, поэтому сетка подстраивается под сохранение,
@@ -135,6 +162,12 @@ class MapSave(
         entities.forEach { (_, entity) -> entity.restoreAfterLoad() }
         cellEntity.restoreCellActions(decodeInts(entries[CELL_ACTIONS] ?: ByteArray(0)), genomeManager.genomes)
         organEntity.restoreArenaLayouts(genomeManager.genomes)
+        cellEntity.repairEdgeFlagsAfterLoad()
+        // Последним: номера частиц мира физики раздаются по аренам организмов и субстанциям.
+        worldPhysics.decodeState(DataInputStream((entries[PHYSICS] ?: throw IllegalStateException("в мире нет $PHYSICS")).inputStream()))
+        // Настройки мира — по ключам типов, после сущностей: «максимальная энергия» типа правит клетки.
+        val rules = entries[RULES]
+        if (rules != null) worldRules.decode(DataInputStream(rules.inputStream())) else worldRules.reset()
 
         simulationData.tickCounter = meta.tickCounter
         simulationData.timeSimulation = meta.timeSimulation
@@ -368,8 +401,8 @@ class MapSave(
      * закрыли игру) не должна портить уже существующее сохранение.
      */
     private fun writeArchive(slot: String, entries: Map<String, ByteArray>) {
-        val target = mapsDir().child("$slot$EXTENSION")
-        val temporary = mapsDir().child("$slot$EXTENSION.tmp")
+        val target = mapFile(slot)
+        val temporary = GameFilePaths.child(mapsDir(), "$slot$EXTENSION.tmp")
         MapFile.write(temporary.write(false, IO_BUFFER)).use { zip ->
             // Массивы сущностей — это в основном нули и повторы, они жмутся и на самом
             // быстром уровне, а лишние секунды на максимальном заметны при каждом сохранении.
@@ -380,7 +413,7 @@ class MapSave(
                 zip.closeEntry()
             }
         }
-        temporary.moveTo(target)
+        GameFilePaths.replaceFile(temporary.file(), target.file())
     }
 
     companion object {
@@ -395,13 +428,28 @@ class MapSave(
          * продюсеры и излучатели лежат своими данными в specialModData.bin. С него сохранения
          * миров выходят в релиз; формат 1 был только у сборок до этого и не читается.
          */
-        private const val FORMAT_VERSION = 2
+        /**
+         * 3 — мир физики-библиотеки (physics.bin); у частиц вместо x/y/vx/vy — свои позиции
+         * тех, кого мир физики не ведёт (ParticleEntity.local*). Формат 2 не читается: позиций
+         * клеток в нём для нового мира нет (решение 1 плана физики — без обратной совместимости).
+         */
+        /**
+         * 4 — террейн — неподвижные частицы мира физики, а не тело из плиток (StaticTerrain): другие
+         * снимок моста и мир физики. Формат 3 не читается: мягкий террейн в новом мире не продолжить.
+         */
+        /**
+         * 5 — физика во float, начало её координат в центре мира (PhysicsBridge.originX): в снимке
+         * моста есть начало координат. Формат 4 не читается: его мир физики стоит от 0 до W.
+         */
+        private const val FORMAT_VERSION = 5
 
         private const val PREVIEW = "preview.png"
         private const val META = "meta.bin"
         private const val GENOMES = "genomes.bin"
         private const val CELL_ACTIONS = "cellActions.bin"
         private const val TYPES = "types.bin"
+        private const val PHYSICS = "physics.bin"
+        private const val RULES = "rules.bin"
         private fun entityEntry(name: String) = "entities/$name.bin"
 
         private const val EDIT_STROKE = 0
@@ -433,7 +481,15 @@ class MapSave(
         /** Где лежат миры — см. GameFiles.mapsDir (при повторе бага это песочница). */
         private fun mapsDir(): FileHandle = GameFiles.mapsDir()
 
-        fun mapFile(slot: String): FileHandle = mapsDir().child("$slot$EXTENSION")
+        fun mapFile(slot: String): FileHandle = GameFilePaths.child(mapsDir(), "$slot$EXTENSION")
+
+        fun exists(slot: String): Boolean = mapFile(slot).exists()
+
+        /** Свободное имя на основе [base]: «Мир», «Мир (2)»… — см. MapNames.unique. */
+        fun uniqueSlot(base: String): String = MapNames.unique(base, ::exists)
+
+        /** Удалить мир. false — файла не было (при повторе бага не снятый в .bug мир). */
+        fun delete(slot: String): Boolean = mapFile(slot).delete()
 
         /** Проверка внешнего контейнера до помещения в библиотеку и до изменения мира. */
         fun validateImport(file: FileHandle) {
@@ -456,7 +512,7 @@ class MapSave(
                     while (zip.read(buffer) != -1) { /* CRC проверяется в конце записи. */ }
                 }
             }
-            for (required in arrayOf(META, TYPES, GENOMES, CELL_ACTIONS)) {
+            for (required in arrayOf(META, TYPES, GENOMES, CELL_ACTIONS, PHYSICS)) {
                 require(required in names) { "в карте нет $required" }
             }
             require(names.any { it.startsWith("entities/") }) { "в карте нет сущностей" }

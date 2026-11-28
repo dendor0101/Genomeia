@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.features.editor.dialog
 
+import io.github.some_example_name.old.core.ui.hint
 import com.kotcrab.vis.ui.widget.VisDialog
 import com.kotcrab.vis.ui.widget.VisTable
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
@@ -7,6 +8,7 @@ import io.github.some_example_name.old.core.DIGameGlobalContainer.game
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.cellList
 import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer.cellPalette
 import io.github.some_example_name.old.editor.entities.EditorCell
+import io.github.some_example_name.old.editor.geometry.CellPlacement
 import io.github.some_example_name.old.editor.system.ActionDialogSystem
 import io.github.some_example_name.old.editor.undo_redo_commands.hasCellMutation
 import io.github.some_example_name.old.features.editor.colorPickerDialog
@@ -34,6 +36,8 @@ class ActionDialog(
     val clickedCell: EditorCell,
     val actionDialogType: ActionDialogType,
     newDividedCellPosition: Pair<Float, Float>? = null,
+    /** Деление: самый крупный радиус дочери, для которого есть место; null — без ограничения. */
+    maxChildRadius: Float? = null,
     val onDivide: ((Action) -> Unit)? = null,
     val onChange: ((Action) -> Unit)? = null,
     val onRemove: (() -> Unit)? = null,
@@ -42,6 +46,9 @@ class ActionDialog(
 ) : VisDialog("${bundle.get("button.cellId")} ${clickedCell.id}"), CellDialog {
 
     override val actionSystem = ActionDialogSystem(actionDialogType, newDividedCellPosition, clickedCell)
+
+    /** Верх слайдера радиуса: крупнее места для дочери нет. */
+    private val radiusLimit = maxChildRadius ?: CellPlacement.CHILD_RADIUS_MAX
 
     /** Кружок «как будет выглядеть клетка»; секции крутят на нём стрелку направления. */
     override var circleWidget: CircleWidget? = null
@@ -72,7 +79,7 @@ class ActionDialog(
         var dynamicContent: VisTable? = null
 
         //Выбор типа клетки — из палитры редактора; свой тип клетки виден, даже если скрыт.
-        val cellChoices = cellPalette.cellChoices(cellList, current = actionSystem.cellType)
+        val cellChoices = cellPalette.actionCellChoices(cellList, current = actionSystem.cellType)
         visSelectBox(
             items = cellChoices.map { it.name }.toTypedArray(),
             // Типа нет в списке — клетка от мода, которого нет; показывается первый.
@@ -97,7 +104,7 @@ class ActionDialog(
                 dialog.pack()
                 dialog.centerWindow()
             }
-        ) { left() }
+        ) { left() }.hint(bundle.get("editor.hint.cellType"))
         row()
 
         dynamicContent = visTable { }
@@ -106,17 +113,26 @@ class ActionDialog(
 
         if (actionDialogType == ActionDialogType.DIVIDE || actionDialogType == ActionDialogType.CHANGE_REMOVE) {
             //Настройка радиуса клетки при делении
-            val defaultRadius = actionSystem.action.radius ?: PARTICLE_MAX_RADIUS
-            val radiusLabel = visLabel("Radius: $defaultRadius", font = game.extraLargeFont)
+            // Место есть только под мелкую дочь — радиус по умолчанию сразу самый крупный
+            // из помещающихся, иначе деление встало бы на место, посчитанное под другой.
+            val defaultRadius = minOf(actionSystem.action.radius ?: PARTICLE_MAX_RADIUS, radiusLimit)
+            if (defaultRadius != (actionSystem.action.radius ?: PARTICLE_MAX_RADIUS)) {
+                actionSystem.action = actionSystem.action.copy(radius = defaultRadius)
+            }
+            val radiusLabel = visLabel("${bundle.get("button.radius")}: $defaultRadius", font = game.extraLargeFont).hint(bundle.get("editor.hint.radius"))
             row()
-            visSlider(
-                0.2f, 0.5f, 0.01f, value = defaultRadius,
-                onValueChange = {
-                    val radius = round(it * 100f) / 100f
-                    actionSystem.action = actionSystem.action.copy(radius = radius)
-                    radiusLabel.setText("Radius: $radius")
-                }) { growX().expandX() }
-            row()
+            // Место только под самую мелкую — выбирать нечего, а слайдер с равными краями
+            // делит на ноль, рисуя ползунок.
+            if (radiusLimit > CellPlacement.CHILD_RADIUS_MIN) {
+                visSlider(
+                    CellPlacement.CHILD_RADIUS_MIN, radiusLimit, CellPlacement.CHILD_RADIUS_STEP, value = defaultRadius,
+                    onValueChange = {
+                        val radius = round(it * 100f) / 100f
+                        actionSystem.action = actionSystem.action.copy(radius = radius)
+                        radiusLabel.setText("${bundle.get("button.radius")}: $radius")
+                    }) { growX().expandX() }.hint(bundle.get("editor.hint.radius"))
+                row()
+            }
         }
 
         visTable {
@@ -128,7 +144,7 @@ class ActionDialog(
                     initialDirectedAngle = if (cellList.byKey(cellType).isDirected) {
                         actionSystem.angleParent + (clickedCell.angleDirected ?: 0f)
                     } else null
-                )
+                ).hint(bundle.get("editor.hint.previewNow"))
 
                 visLabel("->", font = game.extraLargeFont)
             }
@@ -137,13 +153,13 @@ class ActionDialog(
             circleWidget = visCircleWidget(
                 initialColor = actionSystem.action.color ?: clickedCell.actual?.color ?: throw Exception("color is null"),
                 initialDirectedAngle = if (actionSystem.isDirected) actionSystem.angleParent + actionSystem.angleDirected else null
-            )
+            ).hint(bundle.get("editor.hint.preview"))
         }
         row()
 
         if (actionDialogType == ActionDialogType.MUTATION) {
             //Текст списка изменений в следствии mutation
-            visLabel(text = actionSystem.makeMutateList(), font = game.largeFont) { left().padLeft(8.dp()) }
+            visLabel(text = actionSystem.makeMutateList(), font = game.largeFont) { left().padLeft(8.dp()) }.hint(bundle.get("editor.hint.mutateList"))
             row()
         }
 
@@ -157,7 +173,7 @@ class ActionDialog(
                         circleWidget?.setCircleColor(it)
                     }
                 )
-            })
+            }).hint(bundle.get("editor.hint.cellColor"))
 
             visTextButton(
                 text = when (actionDialogType) {
@@ -182,6 +198,14 @@ class ActionDialog(
                     }
                     fadeOut()
                 }
+            ).hint(
+                bundle.get(
+                    when (actionDialogType) {
+                        ActionDialogType.DIVIDE -> "editor.hint.divide"
+                        ActionDialogType.MUTATION -> "editor.hint.mutate"
+                        ActionDialogType.CHANGE_REMOVE -> "editor.hint.change"
+                    }
+                )
             )
 
             if (actionDialogType == ActionDialogType.CHANGE_REMOVE) {
@@ -191,7 +215,7 @@ class ActionDialog(
                         onRemove?.invoke()
                         fadeOut()
                     }
-                )
+                ).hint(bundle.get("editor.hint.remove"))
             }
         }
 
@@ -205,7 +229,7 @@ class ActionDialog(
                     onCancelMutation?.invoke()
                     fadeOut()
                 }
-            ) { center() }
+            ) { center() }.hint(bundle.get("editor.hint.cancelMutation"))
         }
     }
 

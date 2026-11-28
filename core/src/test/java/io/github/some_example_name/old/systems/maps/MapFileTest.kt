@@ -49,29 +49,44 @@ class MapFileTest {
     @Test fun importChecksRequiredEntriesAndCrc() {
         val root = FileHandle(Files.createTempDirectory("map-import").toFile())
         try {
-            val bytes = ByteArrayOutputStream()
-            MapFile.write(bytes).use { zip ->
-                zip.putNextEntry(ZipEntry("meta.bin"))
-                val out = java.io.DataOutputStream(zip)
-                out.writeInt(2)
-                out.writeInt(64)
-                out.writeInt(64)
-                out.writeInt(123)
-                out.writeFloat(1f)
-                out.writeBoolean(false)
-                zip.closeEntry()
-                for (name in listOf("types.bin", "genomes.bin", "cellActions.bin", "entities/cell.bin")) {
-                    zip.putNextEntry(ZipEntry(name))
-                    zip.write(byteArrayOf(1, 2, 3))
+            fun map(version: Int, entries: List<String>): ByteArray {
+                val bytes = ByteArrayOutputStream()
+                MapFile.write(bytes).use { zip ->
+                    zip.putNextEntry(ZipEntry("meta.bin"))
+                    val out = java.io.DataOutputStream(zip)
+                    out.writeInt(version)
+                    out.writeInt(64)
+                    out.writeInt(64)
+                    out.writeInt(123)
+                    out.writeFloat(1f)
+                    out.writeBoolean(false)
                     zip.closeEntry()
+                    for (name in entries) {
+                        zip.putNextEntry(ZipEntry(name))
+                        zip.write(byteArrayOf(1, 2, 3))
+                        zip.closeEntry()
+                    }
                 }
+                return bytes.toByteArray()
             }
+            val all = listOf("types.bin", "genomes.bin", "cellActions.bin", "entities/cell.bin", "physics.bin")
             val file = root.child("outside.map")
-            file.writeBytes(bytes.toByteArray(), false)
+            val valid = map(5, all)
+            file.writeBytes(valid, false)
             MapSave.validateImport(file)
-            val truncated = bytes.toByteArray().copyOf(70)
-            file.writeBytes(truncated, false)
+            file.writeBytes(valid.copyOf(70), false)
             assertFails { MapSave.validateImport(file) }
+            // Формат 2 — до мира физики-библиотеки: позиций клеток в нём нет.
+            file.writeBytes(map(2, all), false)
+            assertFailsWith<IllegalArgumentException> { MapSave.validateImport(file) }
+            // Формат 3 — мягкий террейн из плиток: в мире с неподвижным террейном его не продолжить.
+            file.writeBytes(map(3, all), false)
+            assertFailsWith<IllegalArgumentException> { MapSave.validateImport(file) }
+            // Формат 4 — мир физики от 0 до W, без начала координат в снимке моста.
+            file.writeBytes(map(4, all), false)
+            assertFailsWith<IllegalArgumentException> { MapSave.validateImport(file) }
+            file.writeBytes(map(5, all - "physics.bin"), false)
+            assertFailsWith<IllegalArgumentException> { MapSave.validateImport(file) }
         } finally {
             root.deleteDirectory()
         }

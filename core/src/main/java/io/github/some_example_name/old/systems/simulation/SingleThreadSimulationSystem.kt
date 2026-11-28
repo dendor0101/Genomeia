@@ -14,7 +14,7 @@ import io.github.some_example_name.old.systems.genomics.OrganManager
 import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.old.systems.physics.GridManager
 import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem
-import io.github.some_example_name.old.systems.physics.MovementManager
+import io.github.some_example_name.old.physics.bridge.WorldPhysics
 import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem
 import io.github.some_example_name.old.systems.render.RenderBufferManager
 
@@ -31,10 +31,10 @@ class SingleThreadSimulationSystem(
     val linkPhysicsSystem: LinkPhysicsSystem,
     val simulationData: SimulationData,
     val cellSystem: CellSystem,
-    val userCommandManager: UserCommandManager,
-    val renderBufferManager: RenderBufferManager,
+    val userCommandManager: UserCommandManager?,
+    val renderBufferManager: RenderBufferManager?,
     val pheromonesManager: PheromonesManager,
-    val movementManager: MovementManager,
+    val worldPhysics: WorldPhysics,
     val particlePhysicsSystem: ParticlePhysicsSystem,
     val entityList: List<Entity>
 ) {
@@ -63,19 +63,18 @@ class SingleThreadSimulationSystem(
         }
         pheromonesManager.iterate()
 
-        particleEntity.aliveList.forEach {
-            movementManager.moveParticle(it)
-        }
+        worldPhysics.tick()
 
         worldCommandsManager.executingCommandsFromTheWorld()
         organManager.performOrgansNextStage()
-        userCommandManager.processingCommandsFromUser()
+        userCommandManager?.processingCommandsFromUser()
         worldCommandsManager.executingLastCommandsFromTheWorld()
+        organEntity.deleteEmptiedOrgans()
 
         // Пересборка сетки: после движения и всех команд, один раз за тик.
         gridManager.rebuild(particleEntity.isAlive, particleEntity.gridId, particleEntity.isInGrid)
 
-        renderBufferManager.updateBuffer()
+        renderBufferManager?.updateBuffer()
 
     }
 
@@ -92,6 +91,7 @@ class SingleThreadSimulationSystem(
         entityList.forEach { it.clear() }
         simulationData.clear()
         worldCommandsManager.dispose()
+        worldPhysics.reset()
     }
 
     companion object {

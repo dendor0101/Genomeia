@@ -120,7 +120,8 @@ class AndroidFileProvider(private val context: Context, private val fileChooser:
 
     /**
      * Тот же системный выбор, что у картинок. Фильтр по расширению Android не умеет, а
-     * text/* скрыл бы .lua с нестандартным MIME, поэтому показываем все файлы.
+     * фильтр по MIME "text" скрыл бы .lua с нестандартным MIME, поэтому показываем все файлы.
+     * (Без косой со звёздочкой в комментарии: в Kotlin она открывает вложенный комментарий.)
      */
     override fun pickTextFile(
         extensions: List<String>,
@@ -151,11 +152,11 @@ class AndroidFileProvider(private val context: Context, private val fileChooser:
     override fun saveTextFile(
         suggestedName: String,
         content: String,
-        callback: (saved: Boolean) -> Unit
+        callback: (saved: Boolean, name: String) -> Unit
     ) {
         val launcher = context as? AndroidLauncher
         if (launcher == null) {
-            callback(false)
+            callback(false, "")
             return
         }
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
@@ -173,7 +174,8 @@ class AndroidFileProvider(private val context: Context, private val fileChooser:
                             true
                         } ?: false
                     }.getOrDefault(false)
-                callback(saved)
+                // Имя файла SAF не отдаёт (только content:// URI) — возвращаем предложенное.
+                callback(saved, if (saved) suggestedName else "")
             }
         }
     }

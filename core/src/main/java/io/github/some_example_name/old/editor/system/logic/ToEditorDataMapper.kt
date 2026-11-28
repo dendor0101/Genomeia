@@ -37,8 +37,8 @@ class ToEditorDataMapper(
         } else null
 
         val angleToParent = if (index != 0) {
-            val dx = particleEntity.x[index] - particleEntity.x[parentIndex]
-            val dy = particleEntity.y[index] - particleEntity.y[parentIndex]
+            val dx = particleEntity.x(index) - particleEntity.x(parentIndex)
+            val dy = particleEntity.y(index) - particleEntity.y(parentIndex)
 
             val len = 1f / invSqrt(dx * dx + dy * dy)
             val toChildCos = dx / len
@@ -70,9 +70,10 @@ class ToEditorDataMapper(
                 colorRecognition = eye?.colorRecognition,
                 lengthDirected = eye?.visibilityRange,
                 pheromoneType = cellReplay.getPheromone(currentTick, index),
-                // В Action.special — только то, что игрок задаёт в геноме (клавиша контроллера);
-                // состояние хвоста или продюсера в геном не попадает.
-                special = if (cell.defaultGenomeData != null) special else null
+                // В Action.special — только то, что игрок задаёт в геноме (клавиша контроллера,
+                // параметры задержки): состояние хвоста, продюсера или буфер задержки в геном
+                // не попадают, см. Cell.genomeDataOf.
+                special = cell.genomeDataOf(special)
             )
         } else {
             null
@@ -83,8 +84,8 @@ class ToEditorDataMapper(
             index = index,
             parentIndex = parentIndex,
             parentId = parentId,
-            x = particleEntity.x[index],
-            y = particleEntity.y[index],
+            x = particleEntity.x(index),
+            y = particleEntity.y(index),
             radius = particleEntity.radius[index],
             isPhantom = isPhantom,
             angleToParent = angleToParent,

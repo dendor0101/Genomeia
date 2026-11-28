@@ -11,7 +11,6 @@ class Stem(cellTypeId: Int): Cell(
     key = "stem",
     defaultColor = pinkColors[0],
     cellTypeId = cellTypeId,
-    textureName = "Pumper.png"
 ) {
 
     override fun doOnTick(cellIndex: Int, threadId: Int) = with(cellEntity) {

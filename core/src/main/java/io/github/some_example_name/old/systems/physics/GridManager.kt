@@ -356,8 +356,7 @@ class GridManager (
         isAlive: BooleanArray,
         particleCell: IntArray,
         inGrid: BooleanArray,
-        px: FloatArray,
-        py: FloatArray
+        particles: io.github.some_example_name.old.entities.ParticleEntity
     ) {
         val seen = BooleanArray(isAlive.size)
 
@@ -396,17 +395,17 @@ class GridManager (
             if (!seen[particleIndex]) {
                 throw IllegalStateException(
                     "сетка: живой частицы $particleIndex нет в сетке; " +
-                        "x=${px[particleIndex]} y=${py[particleIndex]} " +
-                        "gridId=${particleCell[particleIndex]} (строка ${py[particleIndex].toInt()})"
+                        "x=${particles.x(particleIndex)} y=${particles.y(particleIndex)} " +
+                        "gridId=${particleCell[particleIndex]} (строка ${particles.y(particleIndex).toInt()})"
                 )
             }
 
-            val actual = cellIndexOfClamped(px[particleIndex].toInt(), py[particleIndex].toInt())
+            val actual = cellIndexOfClamped(particles.x(particleIndex).toInt(), particles.y(particleIndex).toInt())
             if (particleCell[particleIndex] != actual) {
                 throw IllegalStateException(
                     "сетка: частица $particleIndex лежит в чужой клетке; " +
                         "gridId=${particleCell[particleIndex]} а по позиции должна быть $actual; " +
-                        "x=${px[particleIndex]} y=${py[particleIndex]} (строка ${py[particleIndex].toInt()})"
+                        "x=${particles.x(particleIndex)} y=${particles.y(particleIndex)} (строка ${particles.y(particleIndex).toInt()})"
                 )
             }
         }
@@ -506,6 +505,7 @@ class GridManager (
         particleCount = 0
         for (i in 0 until pendingCount) pendingFlag[pending[i]] = false
         pendingCount = 0
+        clearStatic()
     }
 
     override fun resize() {
@@ -517,6 +517,84 @@ class GridManager (
         particleCount = 0
         pendingCount = 0
         pendingFlag.fill(false)
+        staticStart = IntArray(0)
+        staticCount = 0
+    }
+
+    // ===================================================================================
+    // НЕПОДВИЖНЫЙ СЛОЙ (27.11)
+    // ===================================================================================
+    //
+    // Террейн и стенка у рамки за сессию не двигаются и не умирают, а до 27.11 лежали в
+    // перестраиваемой сетке: каждый тик пересборка раскладывала их заново, а столкновения
+    // перебирали пары «террейн — террейн», у которых ничего не бывает. Замер на телефонах
+    // (стенд PhonePerfLauncher, мир 256 с 66 тысячами частиц террейна): COLLIDE + REBUILD —
+    // 25 мс тика A21s (13%) и 5.8 мс S24 (16%). Теперь они в своём слое: раскладка один раз
+    // на мир (ParticleEntity.bakeStaticGrid — после постройки мира и после загрузки), в
+    // перестраиваемую сетку не идут (isInGrid = false), столкновения смотрят их только со
+    // стороны подвижной частицы, глаза и выбор касанием — оба слоя.
+    //
+    // Объём: (gridSize + 1) int на границы плюс int на частицу — мир 256×256 и 66 тысяч
+    // частиц: 256 КБ + 264 КБ, один раз на мир.
+
+    /** Границы клеток неподвижного слоя, как [cellStart]; пустой — слоя нет. */
+    var staticStart = IntArray(0)
+        private set
+
+    /** Частицы неподвижного слоя по клеткам, [staticCount] штук. */
+    var staticIdx = IntArray(0)
+        private set
+    var staticCount = 0
+        private set
+
+    /**
+     * Разложить неподвижные частицы [particles] (первые [count]) по клеткам [particleCell] —
+     * counting sort, внутри клетки в порядке [particles]. Однопоточно, между тиками.
+     */
+    fun buildStatic(particles: IntArray, count: Int, particleCell: IntArray) {
+        if (staticStart.size != gridSize + 1) staticStart = IntArray(gridSize + 1) else staticStart.fill(0)
+        if (staticIdx.size < count) staticIdx = IntArray(count)
+        val starts = staticStart
+        for (k in 0 until count) starts[particleCell[particles[k]] + 1]++
+        for (c in 0 until gridSize) starts[c + 1] += starts[c]
+        val write = starts.copyOf(gridSize)
+        for (k in 0 until count) {
+            val p = particles[k]
+            staticIdx[write[particleCell[p]]++] = p
+        }
+        staticCount = count
+    }
+
+    fun clearStatic() {
+        if (staticStart.isNotEmpty()) staticStart.fill(0)
+        staticCount = 0
+    }
+
+    /** Неподвижные частицы клетки [x], [y]; за сеткой — ничего. */
+    inline fun forEachStaticAt(x: Int, y: Int, action: (Int) -> Unit) {
+        if (staticCount == 0 || x < 0 || x >= gridWidth || y < 0 || y >= gridHeight) return
+        val cellIndex = y * gridWidth + x
+        val starts = staticStart
+        val indices = staticIdx
+        for (i in starts[cellIndex] until starts[cellIndex + 1]) action(indices[i])
+    }
+
+    /** Частицы клетки из обоих слоёв: перестраиваемого и неподвижного (глаз видит и террейн). */
+    inline fun forEachParticleOrStaticAt(x: Int, y: Int, action: (Int) -> Unit) {
+        forEachParticleAt(x, y, action)
+        forEachStaticAt(x, y, action)
+    }
+
+    /** Неподвижные частицы клеток [xFrom]..[xTo] ряда [y] — одним отрезком, как [forEachParticleInRowSegment]. */
+    inline fun forEachStaticInRowSegment(y: Int, xFrom: Int, xTo: Int, action: (Int) -> Unit) {
+        if (staticCount == 0 || y < 0 || y >= gridHeight) return
+        val from = if (xFrom < 0) 0 else xFrom
+        val to = if (xTo >= gridWidth) gridWidth - 1 else xTo
+        if (from > to) return
+        val rowBase = y * gridWidth
+        val starts = staticStart
+        val indices = staticIdx
+        for (i in starts[rowBase + from] until starts[rowBase + to + 1]) action(indices[i])
     }
 
     companion object {

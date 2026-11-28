@@ -1,0 +1,723 @@
+--- a/physics/src/main/kotlin/io/github/some_example_name/physics/config/DamageParameters.kt
++++ b/physics/src/main/kotlin/io/github/some_example_name/physics/config/DamageParameters.kt
+@@ -57,6 +57,7 @@
+  * всей записи, 4000 тиков, порог сработал один раз — на куске, который сам
+  * сминался до 0.14.
+  */
++// Сжатие рвёт только текущие граничные/голые связи, включая новые края после разрыва.
+ const val LINK_CRUSH_RATIO = 0.35
+ 
+ /**
+--- a/physics/src/main/kotlin/io/github/some_example_name/physics/config/MaterialParameters.kt
++++ b/physics/src/main/kotlin/io/github/some_example_name/physics/config/MaterialParameters.kt
+@@ -259,6 +259,7 @@
+  * мембрана течёт. Хочешь ткань тянучее — придётся сталкиваться с РЕБРОМ как с
+  * отрезком, а не кругами на вершинах. Запас на этом теле всего 1.15x.
+  */
++// Жёсткий предел проверяется только у текущего контура; упругость внутри сохраняется.
+ const val LINK_MAX_STRETCH = 1.05
+ 
+ /**
+--- a/physics/src/main/kotlin/io/github/some_example_name/physics/model/BodyState.kt
++++ b/physics/src/main/kotlin/io/github/some_example_name/physics/model/BodyState.kt
+@@ -10,7 +10,7 @@
+  * Открытые массивы нужны инспектору и адаптеру стенда, а не для перестановки между стадиями.
+  */
+ class BodyState(val config: PhysicsConfig = PhysicsConfig()) {
+-    internal val lengthLimitBlocks = LengthLimitBlocks()
++    internal val boundaryLinkLimits = BoundaryLinkLimits()
+     val CONTACT_MAX_STEP = config.CONTACT_MAX_STEP
+     val LINK_MAX_STEP = config.LINK_MAX_STEP
+     val MAXLEN_EARLY = config.MAXLEN_EARLY
+--- a/physics/src/main/kotlin/io/github/some_example_name/physics/solver/BodyInitialization.kt
++++ b/physics/src/main/kotlin/io/github/some_example_name/physics/solver/BodyInitialization.kt
+@@ -49,7 +49,6 @@
+     conRest = DoubleArray(lnkCount); conMuscle = IntArray(lnkCount)
+     conEdge = IntArray(lnkCount)
+     conCount = fillConstraints()
+-    lengthLimitBlocks.prepareTick(this)
+ 
+     triMuscle = IntArray(triCount) { t -> muscleOfTri(triA[t], triB[t], triC[t]) }
+     triInverted = BooleanArray(triCount)
+--- a/physics/src/main/kotlin/io/github/some_example_name/physics/solver/BodySimulation.kt
++++ b/physics/src/main/kotlin/io/github/some_example_name/physics/solver/BodySimulation.kt
+@@ -17,12 +17,10 @@
+     if (tearsPending) refreshSurface()
+     val h = DT / SUBSTEPS
+     observer?.beginTick()
+-    lengthLimitBlocks.prepareTick(this)
+     for (step in 0 until SUBSTEPS) {
+         // Длина покоя мышцы доезжает до своего значения за тик, а не прыгает в первом
+         // же подшаге — см. muscleScaleOf.
+         updateMuscleScale((step + 1).toDouble() / SUBSTEPS)
+-        lengthLimitBlocks.prepareSubstep(this)
+         // КОНТАКТ ПРИКЛАДЫВАЕТСЯ К СКОРОСТИ ДО ИНТЕГРИРОВАНИЯ, как гравитация.
+         // Почему именно так и что было раньше — см. toVelocity в solveContacts.
+         if (contacts != null && contactsOn && CONTACT_BEFORE_INTEGRATE) {
+@@ -70,7 +68,7 @@
+             tick0(); dbgMark(); solveFlaps(h); dbgMeasure(9, h); tick1(1)
+             // Ранний предел оставляем: его пропуск уже проверяли, покоящееся тело
+             // начинало ползти. Это другой момент решателя, чем предел после площадей.
+-            if (MAXLEN_EARLY) { tick0(); dbgMark(); solveLinkMaxLength(lengthLimitBlocks); dbgMeasure(4, h); tick1(2); refreshSurface() }
++            if (MAXLEN_EARLY) { tick0(); dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h); tick1(2); refreshSurface() }
+             // ОПЫТ: выключить стадию площадей знаком среды RB_AREAS=0. Нужен проверке
+             // гипотезы игрока — не она ли проталкивает клетки сквозь чужую ткань в
+             // обход контактов. Возвращать в код насовсем не планируется.
+@@ -79,7 +77,7 @@
+             tick0(); dbgMark()
+             if (bonesRigid) for (b in rigidBones.indices) projectBone(b)
+             dbgMeasure(3, h); tick1(5)
+-            tick0(); dbgMark(); solveLinkMaxLength(lengthLimitBlocks); dbgMeasure(4, h); tick1(2)
++            tick0(); dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h); tick1(2)
+             // Производная поверхность обновляется сразу и локально. В конце тика
+             // остаётся только упаковка рабочих списков; см. tearQueue.
+             refreshSurface()
+@@ -129,7 +127,7 @@
+         // только пока расстояние между ними не больше суммы радиусов. Растянутая
+         // костью связь оставляет в мембране щель, и сквозь неё можно воткнуть
+         // чужое тело — что и наблюдалось при резком рывке за кость.
+-        tick0(); dbgMark(); solveLinkMaxLength(lengthLimitBlocks); dbgMeasure(4, h); tick1(2)
++        tick0(); dbgMark(); solveLinkMaxLength(); dbgMeasure(4, h); tick1(2)
+ 
+         // Снять импульс и момент, внесённые ВНУТРЕННИМИ стадиями. Контакты стоят в том
+         // же цикле, но их смещения копятся отдельно и не снимаются: контакт внешний
+--- a/physics/src/main/kotlin/io/github/some_example_name/physics/solver/ConstraintSolver.kt
++++ b/physics/src/main/kotlin/io/github/some_example_name/physics/solver/ConstraintSolver.kt
+@@ -79,14 +79,21 @@
+     val px = px; val py = py; val invMass = invMass
+     val conA = conA; val conB = conB; val conRest = conRest; val conMuscle = conMuscle
+     val conDead = conDead; val ms = muscleScaleOf
+-    for (c in 0 until conCount) {
++    // Список дополняется killEdgeNow прямо в этом проходе. Внутренние связи
++    // по-прежнему участвуют в solveConstraints, но здесь их координаты не читаем.
++    val limits = boundaryLinkLimits
++    limits.beginPass()
++    var cursor = 0
++    while (cursor < limits.count) {
++        val c = limits.ids[cursor++]
++        if (c < 0) continue
+         if (conDead[c]) continue
+         val i = conA[c]; val j = conB[c]
+         val dx = px[i] - px[j]
+         val dy = py[i] - py[j]
+         // КОРЕНЬ БЕРЁТСЯ ТОЛЬКО КОГДА НУЖЕН.
+         //
+-        // Стадия идёт 144 раза за тик по пяти тысячам связей, и у подавляющего
++        // Стадия идёт 144 раза за тик по связям текущего контура, и у подавляющего
+         // большинства из них всё в порядке: ни сжатия до порога, ни растяжения сверх
+         // предела. А корень считался ВСЕГДА и стоит 13–15 тактов латентности в
+         // зависимой цепочке. Все пороги сравниваются с длиной, то есть с квадратом
+@@ -117,6 +124,7 @@
+         if (invMass[i] + invMass[j] == 0.0) continue
+         solveLinkLimitViolation(c, len2, crushed, scale)
+     }
++    limits.endPass()
+ }
+ 
+ /** Редкие разрывы отдельно от цикла: меньше байткода и живых локальных в обычном проходе. */
+--- a/physics/src/main/kotlin/io/github/some_example_name/physics/solver/LengthLimitBlocks.kt
++++ /dev/null
+@@ -1,94 +0,0 @@
+-package io.github.some_example_name.physics
+-
+-import kotlin.math.abs
+-
+-/** Достаточный интервал безопасной длины для небольшого участка связей.
+- * safeMax2 — минимум квадратов пределов растяжения внутри участка. safeMin2 —
+- * верхняя граница всех порогов сжатия: максимальный |rest| участка и максимальный
+- * |scale| текущего подшага, включая единицу для немышечных связей.
+- *
+- * Умножение неотрицательных Double монотонно, включая округление. Порядок тот же,
+- * что у старого порога: ratio*(rest*scale), затем квадрат. Поэтому попадание
+- * длины в закрытый интервал гарантирует отсутствие обоих строгих нарушений.
+- * При NaN/пустом интервале выполняется прежняя индивидуальная проверка.
+- * Координаты и порядок обхода не кэшируются и не переставляются.
+- *
+- * Три double на 128 связей: около 50 КБ для мира 102276 частиц, вместо 4.3 МБ
+- * двух порогов на каждую связь. Два горячих порога загружаются один раз на участок;
+- * чтения координат по RCM остаются прежними. Обновление rest просматривает связи
+- * раз в тик, а изменение мышцы — только участки и мышцы раз в подшаг.
+- */
+-internal class LengthLimitBlocks {
+-    companion object { const val SIZE = 128 }
+-    var safeMax2 = DoubleArray(0)
+-        private set
+-    var safeMin2 = DoubleArray(0)
+-        private set
+-    private var maxRest = DoubleArray(0)
+-    var count = 0
+-        private set
+-    var blockCount = 0
+-        private set
+-
+-    fun prepareTick(s: BodyState) {
+-        count = s.conCount
+-        blockCount = (count + SIZE - 1) / SIZE
+-        if (safeMax2.size < blockCount) {
+-            safeMax2 = DoubleArray(blockCount); safeMin2 = DoubleArray(blockCount)
+-            maxRest = DoubleArray(blockCount)
+-        }
+-        val rest = s.conRest
+-        for (block in 0 until blockCount) {
+-            var smallest = Double.POSITIVE_INFINITY; var largest = 0.0
+-            val end = minOf(count, (block + 1) * SIZE)
+-            for (c in block * SIZE until end) {
+-                val r = rest[c]; val maximum = LINK_MAX_STRETCH * r
+-                smallest = minOf(smallest, maximum * maximum)
+-                largest = maxOf(largest, abs(r))
+-            }
+-            safeMax2[block] = smallest; maxRest[block] = largest
+-        }
+-    }
+-
+-    fun prepareSubstep(s: BodyState) {
+-        var scale = 1.0
+-        for (value in s.muscleScaleOf) scale = maxOf(scale, abs(value))
+-        for (block in 0 until blockCount) {
+-            val threshold = LINK_CRUSH_RATIO * (maxRest[block] * scale)
+-            safeMin2[block] = threshold * threshold
+-        }
+-    }
+-}
+-
+-internal fun BodyState.solveLinkMaxLength(blocks: LengthLimitBlocks) {
+-    if (blocks.count != conCount || DEBUG_CHECKS && dbgLinkExtremaOn) {
+-        solveLinkMaxLength()
+-        return
+-    }
+-    if (tearingOn) SealStats.tearingOnTicks++ else SealStats.tearingOffTicks++
+-    val px = px; val py = py; val a = conA; val b = conB; val dead = conDead
+-    val tearing = tearingOn
+-    for (block in 0 until blocks.blockCount) {
+-        val low = blocks.safeMin2[block]; val high = blocks.safeMax2[block]
+-        val end = minOf(conCount, (block + 1) * LengthLimitBlocks.SIZE)
+-        for (c in block * LengthLimitBlocks.SIZE until end) {
+-            if (dead[c]) continue
+-            val i = a[c]; val j = b[c]
+-            val dx = px[i] - px[j]; val dy = py[i] - py[j]
+-            val len2 = dx * dx + dy * dy
+-            if ((!tearing || len2 >= low) && len2 <= high) continue
+-            checkLinkLimitCandidate(c, len2, tearing)
+-        }
+-    }
+-}
+-
+-private fun BodyState.checkLinkLimitCandidate(c: Int, len2: Double, tearing: Boolean) {
+-    val m = conMuscle[c]; val scale = if (m < 0) 1.0 else muscleScaleOf[m]
+-    val rest = conRest[c]; val restScale = rest * scale
+-    val min = LINK_CRUSH_RATIO * restScale; val max = LINK_MAX_STRETCH * rest
+-    val crushed = tearing && len2 < min * min
+-    val over = len2 > max * max
+-    if (!crushed && !over) return
+-    if (invMass[conA[c]] + invMass[conB[c]] == 0.0) return
+-    solveLinkLimitViolation(c, len2, crushed, scale)
+-}
+--- a/physics/src/main/kotlin/io/github/some_example_name/physics/topology/BakedTopology.kt
++++ b/physics/src/main/kotlin/io/github/some_example_name/physics/topology/BakedTopology.kt
+@@ -27,8 +27,8 @@
+     private val edgeKeys: LongArray
+     /** Рёбра треугольника t выгрузки: 3t, 3t+1, 3t+2 — пары (A,B), (B,C), (C,A); -1 — таких связей нет. */
+     val triEdge: IntArray
+-    private val edgeTriStart: IntArray
+-    private val edgeTris: IntArray
++    internal val edgeTriStart: IntArray
++    internal val edgeTris: IntArray
+     private val useInit: IntArray
+     /** Связи каждой клетки: vertStart[i]..vertStart[i+1] — соседи vertOther и рёбра vertEdge. */
+     val vertStart: IntArray
+--- /dev/null
++++ b/physics/src/main/kotlin/io/github/some_example_name/physics/topology/BoundaryLinkLimits.kt
+@@ -0,0 +1,91 @@
++package io.github.some_example_name.physics
++
++/**
++ * Рабочие связи текущего контура, включая края дыр и голые связи.
++ *
++ * Горячий обход читает только ids: 4 байта на граничную связь. Для решётки 100k
++ * частиц это около 5 КБ вместо обхода ~300k связей. Обратный индекс холодный:
++ * нужен лишь при разрыве. Обе ёмкости по числу всех связей (8 байт/связь, ~2.4 МБ
++ * для 100k частиц), чтобы даже полное разрушение обходилось без аллокаций.
++ *
++ * Во время прохода новые края дописываются и проверяются в том же проходе.
++ * Удаление оставляет дырку до endPass: перестановка последнего элемента могла бы
++ * перенести ещё не проверенную связь за курсор и потерять её. Уплотнение нужно
++ * только после удаления, а не в каждом из 144 проходов тика.
++ */
++internal class BoundaryLinkLimits {
++    var ids = IntArray(0)
++        private set
++    private var position = IntArray(0)
++    var count = 0
++        private set
++    private var inPass = false
++    private var holes = false
++
++    fun reset(capacity: Int) {
++        if (position.size != capacity) {
++            ids = IntArray(capacity)
++            position = IntArray(capacity)
++        }
++        position.fill(-1)
++        count = 0
++        inPass = false
++        holes = false
++    }
++
++    fun add(c: Int) {
++        if (position[c] >= 0) return
++        position[c] = count
++        ids[count++] = c
++    }
++
++    fun remove(c: Int) {
++        val slot = position[c]
++        if (slot < 0) return
++        position[c] = -1
++        if (inPass) {
++            ids[slot] = -1
++            holes = true
++        } else {
++            val last = ids[--count]
++            if (slot < count) {
++                ids[slot] = last
++                position[last] = slot
++            }
++        }
++    }
++
++    fun beginPass() { inPass = true }
++
++    fun endPass() {
++        inPass = false
++        if (!holes) return
++        var write = 0
++        for (read in 0 until count) {
++            val c = ids[read]
++            if (c < 0) continue
++            ids[write] = c
++            position[c] = write++
++        }
++        count = write
++        holes = false
++    }
++}
++
++/** Только загрузка/reset и уже существующее уплотнение рабочих индексов в конце тика. */
++internal fun BodyState.rebuildBoundaryLinkLimits() {
++    boundaryLinkLimits.reset(conA.size)
++    for (c in 0 until conCount)
++        if (!conDead[c] && conBoundary[c]) boundaryLinkLimits.add(c)
++}
++
++/** Вызывается на затронутых рёбрах сразу после изменения triUse, без обхода тела. */
++internal fun BodyState.updateBoundaryLinkLimit(e: Int) {
++    val boundary = !baked.edgeDead[e] && baked.triUse[e] <= 1
++    var c = conOfEdge[e]
++    while (c >= 0) {
++        conBoundary[c] = boundary
++        if (boundary && !conDead[c]) boundaryLinkLimits.add(c) else boundaryLinkLimits.remove(c)
++        c = conNextForEdge[c]
++    }
++}
+--- a/physics/src/main/kotlin/io/github/some_example_name/physics/topology/TopologyRuntime.kt
++++ b/physics/src/main/kotlin/io/github/some_example_name/physics/topology/TopologyRuntime.kt
+@@ -166,6 +166,7 @@
+         val a = conA[c]; val b = conB[c]
+         conTendon[c] = (muscleOf[a] >= 0) != (muscleOf[b] >= 0)
+     }
++    rebuildBoundaryLinkLimits()
+     if (everLinked == null) everLinked = BoundaryContacts.linkedPairs(conA, conB, conCount)
+     // Кандидаты касания в позе покоя считаются по ЦЕЛОМУ телу и от разрывов не зависят:
+     // радиус контакта клетки не бывает больше половины её самой длинной связи с запасом шва.
+@@ -511,6 +512,16 @@
+     // edgeDead на каждой связи в каждом проходе решателя.
+     var c = conOfEdge[e]
+     while (c >= 0) { conDead[c] = true; c = conNextForEdge[c] }
++    updateBoundaryLinkLimit(e)
++    // У погибших треугольников открылись новые края. Они должны попасть даже
++    // в уже начатый проход пределов; refreshSurface обновит контакты следом.
++    for (s in baked.edgeTriStart[e] until baked.edgeTriStart[e + 1]) {
++        val t = baked.edgeTris[s]
++        for (k in 0..2) {
++            val adjacent = baked.triEdge[3 * t + k]
++            if (adjacent >= 0) updateBoundaryLinkLimit(adjacent)
++        }
++    }
+     if (tearQueueN == tearQueue.size) tearQueue = tearQueue.copyOf(tearQueue.size * 2)
+     tearQueue[tearQueueN++] = e
+     tearsPending = true
+@@ -655,6 +666,7 @@
+         conTendon[c] = (muscleOf[conA[c]] >= 0) != (muscleOf[conB[c]] >= 0)
+ 
+     }
++    rebuildBoundaryLinkLimits()
+     lap(0)
+ }
+ 
+@@ -675,9 +687,7 @@
+         localBoundary.updateVertex(v)
+         for (s in baked.vertStart[v] until baked.vertStart[v + 1]) {
+             val e = baked.vertEdge[s]
+-            val boundary = baked.triUse[e] <= 1
+-            var c = conOfEdge[e]
+-            while (c >= 0) { conBoundary[c] = boundary; c = conNextForEdge[c] }
++            updateBoundaryLinkLimit(e)
+         }
+     }
+     syncBoundaryArrays()
+--- a/physics/src/test/kotlin/io/github/some_example_name/physics/solver/LengthBlocksRegressionTest.kt
++++ /dev/null
+@@ -1,173 +0,0 @@
+-package io.github.some_example_name.physics
+-
+-import org.junit.Assert.*
+-import org.junit.Test
+-import java.util.Random
+-
+-class LengthBlocksRegressionTest {
+-    private fun pair(): BodyState {
+-        val body = BodyDefinition(floatArrayOf(0f, 1f), FloatArray(2), FloatArray(2) { 0.5f },
+-            BooleanArray(2), BooleanArray(2), intArrayOf(0), intArrayOf(1),
+-            IntArray(0), IntArray(0), IntArray(0), FloatArray(0), emptyArray(), emptyArray(), 1f)
+-        return BodyState().also { it.quiet = true; it.initialize(body); it.resetState() }
+-    }
+-
+-    private fun compare(distance: Double, rest: Double, scale: Double, tearing: Boolean,
+-                        fixed: Boolean, diagnostics: Boolean) {
+-        val old = pair(); val fresh = pair()
+-        for (s in arrayOf(old, fresh)) {
+-            s.px[0] = 0.0; s.px[1] = distance; s.py.fill(0.0)
+-            s.conRest[0] = rest; s.conMuscle[0] = 0; s.muscleScaleOf = doubleArrayOf(scale)
+-            s.tearingOn = tearing; s.dbgLinkExtremaOn = diagnostics
+-            if (fixed) s.invMass.fill(0.0)
+-        }
+-        val bounds = fresh.lengthLimitBlocks
+-        bounds.prepareTick(fresh); bounds.prepareSubstep(fresh)
+-        old.solveLinkMaxLength(); fresh.solveLinkMaxLength(bounds)
+-        for (i in 0..1) {
+-            assertEquals(old.px[i].toRawBits(), fresh.px[i].toRawBits())
+-            assertEquals(old.py[i].toRawBits(), fresh.py[i].toRawBits())
+-            assertEquals(old.cellDead[i], fresh.cellDead[i])
+-            assertEquals(old.crushedCell[i], fresh.crushedCell[i])
+-        }
+-        assertArrayEquals(old.conDead, fresh.conDead)
+-        assertArrayEquals(old.linkTorn, fresh.linkTorn)
+-        assertEquals(old.tearsPending, fresh.tearsPending)
+-        assertEquals(old.linkCapHits, fresh.linkCapHits)
+-        assertEquals(old.dbgTornCrush, fresh.dbgTornCrush)
+-        assertEquals(old.dbgTornPull, fresh.dbgTornPull)
+-        assertEquals(old.dbgWorstCrush2.toRawBits(), fresh.dbgWorstCrush2.toRawBits())
+-        assertEquals(old.dbgWorstStretch2.toRawBits(), fresh.dbgWorstStretch2.toRawBits())
+-    }
+-
+-    @Test fun sameDecisionsAtAdjacentDoublesAndWithImmovablePairs() {
+-        for (scale in doubleArrayOf(0.165, 1.0)) {
+-            val rest = 0.0285
+-            for (threshold in doubleArrayOf(LINK_CRUSH_RATIO * (rest * scale), LINK_MAX_STRETCH * rest))
+-                for (distance in doubleArrayOf(Math.nextDown(threshold), threshold, Math.nextUp(threshold)))
+-                    for (tearing in booleanArrayOf(false, true))
+-                        for (fixed in booleanArrayOf(false, true))
+-                            for (diagnostics in booleanArrayOf(false, true))
+-                                compare(distance, rest, scale, tearing, fixed, diagnostics)
+-        }
+-    }
+-
+-    @Test fun sameCorrectionsAndDamageForSeededStates() {
+-        val random = Random(390714L)
+-        repeat(300) {
+-            val rest = 0.01 + random.nextDouble()
+-            compare(random.nextDouble() * rest * 3.0, rest, 0.1 + random.nextDouble(),
+-                random.nextBoolean(), random.nextInt(7) == 0, random.nextInt(5) == 0)
+-        }
+-        // Путь проверки не должен превращать NaN-сравнение в активное ограничение.
+-        compare(Double.NaN, 1.0, 1.0, false, false, false)
+-    }
+-
+-    @Test fun rebuildsBoundsAfterRestMuscleAndCountChanges() {
+-        val s = pair(); val bounds = s.lengthLimitBlocks
+-        bounds.prepareTick(s); bounds.prepareSubstep(s)
+-        s.conRest[0] = 0.123; s.conMuscle[0] = 0; s.muscleScaleOf = doubleArrayOf(0.2)
+-        bounds.prepareTick(s); bounds.prepareSubstep(s)
+-        val lower = LINK_CRUSH_RATIO * (0.123 * 1.0); val upper = LINK_MAX_STRETCH * 0.123
+-        assertEquals((lower * lower).toRawBits(), bounds.safeMin2[0].toRawBits())
+-        assertEquals((upper * upper).toRawBits(), bounds.safeMax2[0].toRawBits())
+-        s.conCount = 0
+-        bounds.prepareTick(s); bounds.prepareSubstep(s)
+-        assertEquals(0, bounds.count)
+-        s.solveLinkMaxLength(bounds)
+-        s.resetState(); bounds.prepareTick(s); bounds.prepareSubstep(s)
+-        assertEquals(1, bounds.count)
+-    }
+-
+-    @Test fun sharedParticlesKeepCorrectionAndTearOrderAcrossBlockBoundaries() {
+-        val n = 389
+-        val definition = BodyDefinition(FloatArray(n) { it.toFloat() }, FloatArray(n),
+-            FloatArray(n) { 0.5f }, BooleanArray(n), BooleanArray(n),
+-            IntArray(n - 1) { it }, IntArray(n - 1) { it + 1 },
+-            IntArray(0), IntArray(0), IntArray(0), FloatArray(0), emptyArray(), emptyArray(), 1f)
+-        val random = Random(640127L)
+-        repeat(20) { sample ->
+-            val old = BodyState(); val fresh = BodyState()
+-            for (s in arrayOf(old, fresh)) {
+-                s.quiet = true; s.initialize(definition); s.resetState()
+-                s.tearingOn = sample % 2 == 0
+-                s.muscleScaleOf = doubleArrayOf(0.3, 1.0, 1.2)
+-            }
+-            for (i in 0 until n) {
+-                val x = i + random.nextDouble() - 0.5
+-                val y = random.nextDouble() - 0.5
+-                val mass = if (i % 7 == 0) 0.0 else 0.1 + random.nextDouble()
+-                old.px[i] = x; fresh.px[i] = x
+-                old.py[i] = y; fresh.py[i] = y
+-                old.invMass[i] = mass; fresh.invMass[i] = mass
+-            }
+-            for (c in 0 until old.conCount) {
+-                val rest = 0.2 + random.nextDouble() * 1.2
+-                val muscle = random.nextInt(4) - 1
+-                val dead = random.nextInt(9) == 0
+-                old.conRest[c] = rest; fresh.conRest[c] = rest
+-                old.conMuscle[c] = muscle; fresh.conMuscle[c] = muscle
+-                old.conDead[c] = dead; fresh.conDead[c] = dead
+-            }
+-            fresh.lengthLimitBlocks.prepareTick(fresh)
+-            fresh.lengthLimitBlocks.prepareSubstep(fresh)
+-            repeat(4) {
+-                old.solveLinkMaxLength(); fresh.solveLinkMaxLength(fresh.lengthLimitBlocks)
+-                for (i in 0 until n) {
+-                    assertEquals(old.px[i].toRawBits(), fresh.px[i].toRawBits())
+-                    assertEquals(old.py[i].toRawBits(), fresh.py[i].toRawBits())
+-                }
+-                assertArrayEquals(old.conDead, fresh.conDead)
+-                assertArrayEquals(old.linkTorn, fresh.linkTorn)
+-                assertArrayEquals(old.crushedCell, fresh.crushedCell)
+-                assertEquals(old.tearQueueN, fresh.tearQueueN)
+-                assertArrayEquals(old.tearQueue.copyOf(old.tearQueueN), fresh.tearQueue.copyOf(fresh.tearQueueN))
+-                assertEquals(old.linkCapHits, fresh.linkCapHits)
+-                assertEquals(old.dbgTornCrush, fresh.dbgTornCrush)
+-                assertEquals(old.dbgTornPull, fresh.dbgTornPull)
+-            }
+-        }
+-    }
+-
+-    @Test fun acceptedIntervalNeverHidesAnIndividualViolation() {
+-        val random = Random(374405L)
+-        val s = BodyState()
+-        s.conCount = 271; s.conRest = DoubleArray(s.conCount); s.conMuscle = IntArray(s.conCount)
+-        s.muscleScaleOf = DoubleArray(5)
+-        val blocks = s.lengthLimitBlocks
+-        var accepted = 0
+-        var finiteAccepted = 0
+-        repeat(120) { round ->
+-            val base = if (round < 90) 0.01 + random.nextDouble() else Math.scalb(1.0, random.nextInt(2000) - 1000)
+-            for (m in s.muscleScaleOf.indices) s.muscleScaleOf[m] = if (round < 90) random.nextDouble() else random.nextDouble() * 4.0 - 2.0
+-            for (c in 0 until s.conCount) {
+-                s.conRest[c] = base * (0.9 + random.nextDouble() * 0.2)
+-                if (round >= 90 && c % 3 == 0) s.conRest[c] = -s.conRest[c]
+-                s.conMuscle[c] = random.nextInt(6) - 1
+-            }
+-            if (round == 115) s.conRest[0] = Double.NaN
+-            if (round == 116) s.conRest[1] = Double.POSITIVE_INFINITY
+-            if (round == 117) s.muscleScaleOf[0] = Double.NaN
+-            if (round == 118) s.muscleScaleOf[1] = Double.POSITIVE_INFINITY
+-            blocks.prepareTick(s); blocks.prepareSubstep(s)
+-            for (c in 0 until s.conCount) {
+-                val block = c / LengthLimitBlocks.SIZE
+-                val m = s.conMuscle[c]; val scale = if (m < 0) 1.0 else s.muscleScaleOf[m]
+-                val low = LINK_CRUSH_RATIO * (s.conRest[c] * scale)
+-                val high = LINK_MAX_STRETCH * s.conRest[c]
+-                val low2 = low * low; val high2 = high * high
+-                for (len2 in doubleArrayOf(0.75 * base * base, base * base, Math.nextDown(low2), low2, Math.nextUp(low2),
+-                    Math.nextDown(high2), high2, Math.nextUp(high2))) {
+-                    if (len2 >= blocks.safeMin2[block] && len2 <= blocks.safeMax2[block]) {
+-                        accepted++
+-                        if (len2.isFinite() && blocks.safeMin2[block].isFinite() && blocks.safeMax2[block].isFinite()) finiteAccepted++
+-                        assertFalse("Missed crush at round=$round link=$c", len2 < low2)
+-                        assertFalse("Missed stretch at round=$round link=$c", len2 > high2)
+-                    }
+-                }
+-            }
+-        }
+-        assertTrue("The property must exercise the fast path", accepted > 10000)
+-        assertTrue("Finite thresholds must exercise the fast path too", finiteAccepted > 10000)
+-    }
+-}
+--- /dev/null
++++ b/physics/src/test/kotlin/io/github/some_example_name/physics/topology/BoundaryLinkLimitsTest.kt
+@@ -0,0 +1,132 @@
++package io.github.some_example_name.physics
++
++import org.junit.Assert.*
++import org.junit.Test
++import java.util.Random
++import kotlin.random.asKotlinRandom
++
++class BoundaryLinkLimitsTest {
++    private fun grid(duplicate: Boolean = false): BodyState {
++        val width = 5
++        val triangles = ArrayList<IntArray>()
++        val edges = linkedSetOf<Pair<Int, Int>>()
++        fun tri(a: Int, b: Int, c: Int) {
++            triangles.add(intArrayOf(a, b, c))
++            for ((i, j) in arrayOf(a to b, b to c, c to a))
++                edges.add(minOf(i, j) to maxOf(i, j))
++        }
++        for (y in 0 until width - 1) for (x in 0 until width - 1) {
++            val a = y * width + x
++            tri(a, a + 1, a + width)
++            tri(a + 1, a + width + 1, a + width)
++        }
++        val links = edges.toMutableList()
++        if (duplicate) links.add(links.first())
++        val n = width * width
++        val body = BodyDefinition(FloatArray(n) { (it % width).toFloat() },
++            FloatArray(n) { (it / width).toFloat() }, FloatArray(n) { 0.5f },
++            BooleanArray(n), BooleanArray(n), links.map { it.first }.toIntArray(),
++            links.map { it.second }.toIntArray(), triangles.map { it[0] }.toIntArray(),
++            triangles.map { it[1] }.toIntArray(), triangles.map { it[2] }.toIntArray(),
++            FloatArray(triangles.size) { 1f }, emptyArray(), emptyArray(), 1f)
++        return BodyState().also { it.quiet = true; it.initialize(body); it.resetState() }
++    }
++
++    private fun assertCurrent(s: BodyState) {
++        val list = s.boundaryLinkLimits
++        val actual = list.ids.copyOf(list.count).sorted()
++        val expected = (0 until s.conCount).filter {
++            !s.conDead[it] && !s.baked.edgeDead[s.conEdge[it]] && s.baked.triUse[s.conEdge[it]] <= 1
++        }
++        assertEquals(expected, actual)
++        assertEquals(actual.size, actual.distinct().size)
++        for (c in 0 until s.conCount) assertEquals(c in expected, s.conBoundary[c])
++    }
++
++    @Test fun currentContourIncludesHolesDuplicateLinksAndBareEdges() {
++        val s = grid(duplicate = true)
++        assertCurrent(s)
++        val initial = s.boundaryLinkLimits.ids.copyOf(s.boundaryLinkLimits.count)
++        val inner = (0 until s.conCount).first { !s.conBoundary[it] }
++        s.killEdgeNow(s.conEdge[inner])
++        // Проверяем ДО refreshSurface: список не должен ждать следующего прохода.
++        assertCurrent(s)
++        assertTrue(s.boundaryLinkLimits.ids.take(s.boundaryLinkLimits.count).any { it !in initial })
++        val random = Random(917L)
++        val order = (0 until s.baked.edgeCount).shuffled(random.asKotlinRandom())
++        for (e in order) {
++            s.killEdgeNow(e)
++            assertCurrent(s)
++        }
++        assertEquals(0, s.boundaryLinkLimits.count)
++        s.refreshSurface(); s.rebuildAfterTear()
++        assertCurrent(s)
++        s.resetState()
++        assertCurrent(s)
++        assertArrayEquals(initial, s.boundaryLinkLimits.ids.copyOf(s.boundaryLinkLimits.count))
++    }
++
++    @Test fun deathAndConstraintCompactionKeepCurrentIndices() {
++        val s = grid()
++        s.cellDead[12] = true
++        s.killIncidentEdges(12)
++        assertCurrent(s)
++        s.refreshSurface()
++        s.rebuildAfterTear()
++        assertCurrent(s)
++        s.killEdgeNow(s.conEdge[0])
++        assertCurrent(s)
++        s.resetState()
++        assertCurrent(s)
++    }
++
++    @Test fun interiorStillHasElasticityButNoHardLengthOrCrushLimit() {
++        for (restScale in doubleArrayOf(0.25, 4.0)) {
++            val s = grid()
++            val inner = (0 until s.conCount).first { !s.conBoundary[it] }
++            s.conRest[inner] *= restScale
++            s.tearingOn = true
++            val beforeX = s.px.copyOf(); val beforeY = s.py.copyOf()
++            s.solveLinkMaxLength()
++            assertArrayEquals(beforeX, s.px, 0.0)
++            assertArrayEquals(beforeY, s.py, 0.0)
++            assertFalse(s.conDead.any { it })
++            assertFalse(s.crushedCell.any { it })
++            s.solveConstraints(1.0 / 480.0)
++            assertFalse(beforeX.contentEquals(s.px) && beforeY.contentEquals(s.py))
++        }
++    }
++
++    @Test fun tearsExposeAndCheckNewBoundaryWithinTheSamePass() {
++        val s = grid(duplicate = true)
++        s.tearingOn = true
++        s.px.fill(0.0); s.py.fill(0.0)
++        s.solveLinkMaxLength()
++        assertTrue((0 until s.conCount).all { s.conDead[it] })
++        assertEquals(0, s.boundaryLinkLimits.count)
++        assertCurrent(s)
++    }
++
++    @Test fun removingVisitedAndFutureEntriesDoesNotSkipAppendedConstraints() {
++        val list = BoundaryLinkLimits()
++        list.reset(8)
++        for (c in 0..3) list.add(c)
++        list.beginPass()
++        val visited = ArrayList<Int>()
++        var cursor = 0
++        while (cursor < list.count) {
++            val c = list.ids[cursor++]
++            if (c < 0) continue
++            visited.add(c)
++            if (c == 1) {
++                list.remove(0); list.remove(1); list.remove(3)
++                list.add(4); list.add(5); list.add(4)
++            }
++        }
++        list.endPass()
++        assertEquals(listOf(0, 1, 2, 4, 5), visited)
++        assertArrayEquals(intArrayOf(2, 4, 5), list.ids.copyOf(list.count))
++        list.remove(2); list.add(6)
++        assertArrayEquals(intArrayOf(5, 4, 6), list.ids.copyOf(list.count))
++    }
++}
+--- a/physics-lab/src/main/kotlin/io/github/some_example_name/physics/lab/checks/RefactorCheck.kt
++++ b/physics-lab/src/main/kotlin/io/github/some_example_name/physics/lab/checks/RefactorCheck.kt
+@@ -72,6 +72,11 @@
+     }
+     nested("baked", Probe.get<Any>("baked"), 0)
+     nested("contacts", Probe.get<Any?>("contacts"), 0)
++    // Порядок контура влияет на следующие поправки. Проверяем и обратный индекс,
++    // а не только координаты частиц; доступ через reflection остаётся в стенде.
++    val limits = Probe.demo.state.javaClass.getDeclaredField("boundaryLinkLimits")
++        .apply { isAccessible = true }.get(Probe.demo.state)
++    nested("boundaryLinkLimits", limits, 0)
+     return result
+ }
+ 
+--- a/physics-lab/src/main/kotlin/io/github/some_example_name/physics/lab/tuning/SwimSolver.kt
++++ b/physics-lab/src/main/kotlin/io/github/some_example_name/physics/lab/tuning/SwimSolver.kt
+@@ -177,7 +177,7 @@
+     }
+ 
+     private fun solveLinkMaxLength() {
+-        for (c in 0 until topo.conCount) {
++        for (c in topo.boundaryConstraints) {
+             val i = topo.conA[c]; val j = topo.conB[c]
+             var dx = px[i] - px[j]
+             var dy = py[i] - py[j]
+--- a/physics-lab/src/main/kotlin/io/github/some_example_name/physics/lab/tuning/Topology.kt
++++ b/physics-lab/src/main/kotlin/io/github/some_example_name/physics/lab/tuning/Topology.kt
+@@ -24,6 +24,8 @@
+     val conB: IntArray,
+     val conRest: DoubleArray,
+     val conMuscle: IntArray,
++    /** Связи контура в порядке ядра; SwimSolver не разрушает топологию. */
++    val boundaryConstraints: IntArray,
+     val triA: IntArray,
+     val triB: IntArray,
+     val triC: IntArray,
+@@ -132,6 +134,8 @@
+                 conA = f<IntArray>("conA").copyOf(f("conCount")), conB = f<IntArray>("conB").copyOf(f("conCount")),
+                 conRest = f<DoubleArray>("conRest").copyOf(f("conCount")),
+                 conMuscle = f<IntArray>("conMuscle").copyOf(f("conCount")),
++                boundaryConstraints = (0 until f<Int>("conCount"))
++                    .filter { f<BooleanArray>("conBoundary")[it] }.toIntArray(),
+                 triA = body.triA, triB = body.triB, triC = body.triC,
+                 triRestArea2 = body.triRestArea2, triMuscle = f("triMuscle"),
+                 boundA = f<IntArray>("boundA").copyOf(f("boundCount")),

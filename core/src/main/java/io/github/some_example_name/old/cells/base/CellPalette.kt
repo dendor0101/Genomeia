@@ -41,6 +41,13 @@ class CellPalette private constructor(
     fun cellChoices(all: List<Cell>, current: String?): List<Cell> =
         all.filter { allowsCell(it.key) || it.key == current }
 
+    /**
+     * Клетки для диалога деления и мутации: [cellChoices] без [NOT_FROM_ACTION_CELLS].
+     * Тип самой редактируемой клетки ([current]) остаётся — по той же причине, что и там.
+     */
+    fun actionCellChoices(all: List<Cell>, current: String?): List<Cell> =
+        cellChoices(all, current).filter { it.key !in NOT_FROM_ACTION_CELLS || it.key == current }
+
     /** Формулы для списка выбора, по тем же правилам, что [cellChoices]. */
     fun formulaChoices(current: String?): List<Formula> =
         Formulas.all().filter { allowsFormula(it.key) || it.key == current }
@@ -61,18 +68,30 @@ class CellPalette private constructor(
 
     companion object {
         /** Клетки, выведенные из игры. Старые геномы с ними растут как раньше. */
-        val RETIRED_CELLS: Set<String> = setOf("breakaway", "fin", "stem", "compass", "food_sensor", "speed_sensor")
+        // speed_sensor вернули игрокам 20.11: им пользуются геномы из MCP, а у ИИ не должно
+        // быть клеток, которых нет у игрока в редакторе. compass вернули игрокам 27.11 по просьбе автора.
+        val RETIRED_CELLS: Set<String> = setOf("breakaway", "fin", "stem", "food_sensor")
+
+        /**
+         * Клетки, которые есть в игре, но получить делением или мутацией нельзя.
+         *
+         * Зигота рождается только от продюсера, корнем нового организма. Зигота внутри тела
+         * растила бы на нём новое тело, а арена организма фиксированного размера — на неё
+         * она не рассчитана. В старых геномах такая зигота остаётся пустышкой и не растёт
+         * (CellEntity.isDormantZygote). В справочнике клеток зигота при этом видна.
+         */
+        val NOT_FROM_ACTION_CELLS: Set<String> = setOf("zygote")
 
         /**
          * Формулы, выведенные из игры. "identity" нужна только старым геномам с номером
          * формулы вне списка (см. LegacyTypeIds) — предлагать её незачем, есть y = ax + b.
+         * "red", "green", "blue" (r(x), g(x), b(x)) кодировали цвет числом для хамелеона;
+         * теперь он сам берёт яркость выбранных каналов из сигнала 0..1 (ChameleonData).
          */
-        val RETIRED_FORMULAS: Set<String> = setOf(LegacyTypeIds.IDENTITY_FORMULA)
+        val RETIRED_FORMULAS: Set<String> = setOf(LegacyTypeIds.IDENTITY_FORMULA, "red", "green", "blue")
 
         /** Всё, кроме выведенного из игры. */
         val FULL = CellPalette(cells = null, formulas = null)
-
-        //fun allowedCell(cells:)
 
         /** Только перечисленное — например, для обучающего уровня. */
         fun only(cells: Set<String>, formulas: Set<String>) = CellPalette(cells, formulas)

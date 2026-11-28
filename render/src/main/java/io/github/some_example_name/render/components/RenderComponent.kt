@@ -4,7 +4,9 @@ import com.badlogic.gdx.graphics.Mesh
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.glutils.FrameBuffer
 import com.badlogic.gdx.math.Matrix4
+import io.github.some_example_name.render.DebugFilter
 import io.github.some_example_name.render.RenderMode
+import io.github.some_example_name.render.pack.DebugAreaIndices
 import java.nio.ByteBuffer
 
 /**
@@ -24,23 +26,33 @@ class RenderContext {
      */
     var numInstances: Int = 0
 
-    // Pheromone data
-    var pheromoneData: ByteBuffer? = null
-    var numPheromoneInstances: Int = 0
+    /** Инстансов неподвижного слоя (CellGeometry.drawStatic): террейн и стенка у рамки, 27.11. */
+    var numStaticInstances: Int = 0
 
-    /**
-     * Коэффициенты спада концентрации феромона: радиус пятна = (a/P - 1)/K.
-     * Приходят из RenderFrame — см. пояснение там, почему их здесь не хардкодят.
-     */
-    var pheromoneK: Float = 0f
-    var pheromoneP: Float = 0f
+    /** Отставание кадра от снимка в долях тика — униформ u_lag, см. RenderFrame.interpolationLag. */
+    var interpolationLag: Float = 0f
 
     /** Фигуры оверлея отладочного режима, см. RenderFrame.overlay. */
     var overlayData: ByteBuffer? = null
     var numOverlayInstances: Int = 0
 
+    /** Феромоны отладочного режима, см. RenderFrame.pheromones. */
+    var pheromoneData: ByteBuffer? = null
+    var numPheromoneInstances: Int = 0
+    var pheromoneK: Float = 0f
+    var pheromoneP: Float = 0f
+
     /** Секунды для анимации, см. RenderFrame.time. */
     var time: Float = 0f
+
+    /** Фильтр отладочного режима, см. RenderFrame.debugFilter. */
+    var debugFilter: DebugFilter = DebugFilter.ORIGINAL
+
+    /** Индексы вершин заливки в буфере клеток этого снимка. */
+    var areaIndices: DebugAreaIndices? = null
+
+    /** Прозрачная пустота вместо фона — см. RenderFrame.transparentBackground. */
+    var transparentBackground: Boolean = false
 
     /**
      * Сколько единиц мира приходится на пиксель экранного буфера. По ней проходы, которые
@@ -48,22 +60,24 @@ class RenderContext {
      */
     var pixelWorld: Float = 1f
 
-    // Render parameters
-    var blurAmount: Float = 0f
-    var zoom: Float = 1f
-    var vignetteEnabled: Float = 0f
-    var mode: RenderMode = RenderMode.REALISTIC
+    var mode: RenderMode = RenderMode.DEBUG
 
-    /** Короткая запись для проходов постпроцесса: все они рисуют только в этом случае. */
-    val usePostProcess: Boolean get() = mode.usesPostProcess
-
-    // Texture passing between components
-    var currentTexture: Texture? = null
-
-    // FBO references for component communication
     var sceneFbo: FrameBuffer? = null
-    var blurFbo: FrameBuffer? = null
-    var distortFbo: FrameBuffer? = null
+
+    /**
+     * Куда выводит готовый кадр последний проход (виньетка, вывод ностальгического режима).
+     * null — в экран, как в игре; буфер — превью генома (WorldRenderer.renderOffscreen).
+     */
+    var outputFbo: FrameBuffer? = null
+
+    /** Начать вывод готового кадра — в [outputFbo] или в экран. Парный вызов — [endOutput]. */
+    fun beginOutput() {
+        outputFbo?.begin()
+    }
+
+    fun endOutput() {
+        outputFbo?.end()
+    }
 }
 
 /**
@@ -88,6 +102,14 @@ interface RenderComponent {
      * @param context Shared render context with input data and textures
      */
     fun render(context: RenderContext)
+
+    /**
+     * GL-контекст потерян и создан заново (GlContextWatch). Шейдеры, Mesh и текстуры libGDX
+     * восстановил сам; сырые GL-объекты прохода мертвы, и их нужно забыть (не удаляя) и
+     * создать снова, а FrameBuffer'ы — освободить через releaseRebuiltFrameBuffer.
+     * У прохода без сырого GL и своих FBO делать нечего.
+     */
+    fun contextLost() = Unit
 
     /**
      * Release all GPU resources.

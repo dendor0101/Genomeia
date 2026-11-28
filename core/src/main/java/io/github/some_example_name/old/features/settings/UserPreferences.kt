@@ -1,12 +1,14 @@
 package io.github.some_example_name.old.features.settings
 
+import io.github.some_example_name.render.RenderMode
+
 import com.badlogic.gdx.Gdx
 import io.github.some_example_name.old.bug.BugReplay
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import java.util.Locale
 
 /**
- * Настройки игрока, которые переживают перезапуск: звук и язык.
+ * Настройки игрока, которые переживают перезапуск: звук, язык, вид, подсказки.
  *
  * Лежат в libGDX Preferences (на десктопе — ~/.prefs/genomeia, на Android — SharedPreferences),
  * а не рядом с игрой, чтобы не зависеть от того, откуда запущена сборка.
@@ -17,12 +19,41 @@ import java.util.Locale
 object UserPreferences {
 
     private const val NAME = "genomeia"
+    private const val REPORT_SENT = "bug_report_sent"
+    private const val SCREENSHOT_PROMPT = "bug_screenshot_prompt"
+    private const val AUTO_SEND_CRASH = "auto_send_crash"
     private const val MUSIC_VOLUME = "musicVolume"
     private const val SOUND_VOLUME = "soundVolume"
     private const val LANGUAGE = "language"
     private const val RENDER_MODE = "render_mode"
+    private const val SHOW_HINTS = "show_hints"
+    private const val SHOW_DEBUG_INFO = "show_debug_info"
 
     private val prefs by lazy { Gdx.app.getPreferences(NAME) }
+
+    fun shouldShowFeedbackHint(): Boolean =
+        !BugReplay.isActive && !prefs.getBoolean(REPORT_SENT, false)
+
+    fun markReportSent() {
+        if (BugReplay.isActive) return
+        prefs.putBoolean(REPORT_SENT, true)
+        prefs.flush()
+    }
+
+    fun shouldAskAfterScreenshot() = !BugReplay.isActive && prefs.getBoolean(SCREENSHOT_PROMPT, true)
+
+    fun disableScreenshotPrompt() {
+        if (BugReplay.isActive) return
+        prefs.putBoolean(SCREENSHOT_PROMPT, false)
+        prefs.flush()
+    }
+    private val optical by lazy {
+        OpticalPreferences({Gdx.app.getPreferences("genomeia-optical")},{BugReplay.isActive},{prefs})
+    }
+    fun loadOptical()=optical.load()
+    fun saveOptical(settings:io.github.some_example_name.render.microscope.MicroscopeSettings,
+                    parameter:io.github.some_example_name.render.microscope.OpticalParameter?=null)=optical.stage(settings,parameter)
+    fun flushOptical(delta:Float=0f,force:Boolean=false)=optical.flush(delta,force)
 
     /** После создания контейнеров и до первого экрана. */
     fun load() {
@@ -31,7 +62,10 @@ object UserPreferences {
         GlobalSettings.MUSIC_VOLUME = prefs.getInteger(MUSIC_VOLUME, GlobalSettings.MUSIC_VOLUME).coerceIn(0, 100)
         GlobalSettings.SOUND_VOLUME = prefs.getInteger(SOUND_VOLUME, GlobalSettings.SOUND_VOLUME).coerceIn(0, 100)
 
-        GlobalSettings.RENDER_MODE = prefs.getInteger(RENDER_MODE, GlobalSettings.RENDER_MODE)
+        GlobalSettings.RENDER_MODE = RenderMode.fromPreference(prefs.getInteger(RENDER_MODE, GlobalSettings.RENDER_MODE)).preferenceId
+        GlobalSettings.SHOW_HINTS = prefs.getBoolean(SHOW_HINTS, GlobalSettings.SHOW_HINTS)
+        GlobalSettings.AUTO_SEND_CRASH = prefs.getBoolean(AUTO_SEND_CRASH, true)
+        GlobalSettings.SHOW_DEBUG_INFO = prefs.getBoolean(SHOW_DEBUG_INFO, GlobalSettings.SHOW_DEBUG_INFO)
 
         val tag = prefs.getString(LANGUAGE, "")
         if (tag.isNotBlank()) {
@@ -48,6 +82,9 @@ object UserPreferences {
         prefs.putInteger(SOUND_VOLUME, GlobalSettings.SOUND_VOLUME)
         prefs.putString(LANGUAGE, GlobalSettings.currentLanguageTag)
         prefs.putInteger(RENDER_MODE, GlobalSettings.RENDER_MODE)
+        prefs.putBoolean(SHOW_HINTS, GlobalSettings.SHOW_HINTS)
+        prefs.putBoolean(AUTO_SEND_CRASH, GlobalSettings.AUTO_SEND_CRASH)
+        prefs.putBoolean(SHOW_DEBUG_INFO, GlobalSettings.SHOW_DEBUG_INFO)
         prefs.flush()
     }
 }

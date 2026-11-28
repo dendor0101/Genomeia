@@ -1,0 +1,195 @@
+// Чистый Kotlin/JDK. Ни libGDX, ни :core, ни файлы стенда сюда не входят.
+configurations { pitest; zooCompiler }
+dependencies {
+  api "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
+  testImplementation "junit:junit:4.13.2"
+  // Только для задачи mutationTest: в сборку игры не попадает.
+  pitest "org.pitest:pitest-command-line:1.30.2"
+  // Только для задачи bugZoo: компилятор, которым пересобирается копия исходников с откатом починки.
+  zooCompiler "org.jetbrains.kotlin:kotlin-compiler-embeddable:$kotlinVersion"
+}
+
+// Число подшагов физики в тестах: gradlew :physics:test -Psubsteps=16 (см. SolverParameters.SUBSTEPS).
+tasks.withType(Test).configureEach {
+  if (project.hasProperty('substeps')) systemProperty 'genomeia.substeps', project.property('substeps')
+}
+
+// МУТАЦИОННЫЙ ПРОГОН (план стабильности, этап 1, пункт 8): gradlew :physics:mutationTest
+//
+// PIT портит байткод ядер решателя по одной правке за раз (знак, граница сравнения, выброшенный
+// вызов) и гоняет тесты. Мутант «убит», если хоть один тест упал; «выжил» — значит эту строку
+// тесты не сторожат. Отчёт: physics/build/reports/pitest/index.html и mutations.csv.
+//
+//   -Pmutate=...    какие классы портить (через запятую, со звёздочками); по умолчанию — ядра
+//                   связей, площади, кости, среды, хватки и повреждений. Контакты — отдельно, они
+//                   большие: -Pmutate=io.github.some_example_name.physics.BoundaryContacts* (около часа).
+//   -PkillWith=...  какими тестами убивать; по умолчанию — все тесты модуля.
+//   -Pmutators=...  набор правок PIT (DEFAULTS, STRONGER, ALL); по умолчанию STRONGER.
+//   -Pthreads=N     потоков; по умолчанию 4.
+// (Имена classes и tests заняты задачами Gradle, поэтому свойства названы иначе.)
+//
+// PIT требует, чтобы без мутаций все тесты были зелёные. SoftnessTest исключён: его проверка
+// softLinksStretchMoreUnderTheSameTension красная при 6 подшагах (2.29 при пороге 2.3) — контраст
+// мягкости в цепочке зависит от числа подшагов, см. docs/physics/unit-tests.md.
+def pitPackage = 'io.github.some_example_name.physics'
+def pitKernels = ['ConstraintSolverKt', 'BlockConstraintKernelsKt', 'BlockedIterationKt', 'BoneSolverKt', 'BoneSplitKt',
+                  'MediumSolverKt', 'FusedPassesKt', 'GripKt', 'DamageModelKt', 'TickMotionKt', 'RigidContactBatch']
+tasks.register('mutationTest', JavaExec) {
+  group = 'verification'
+  description = 'Мутационный прогон PIT по ядрам решателя: какие строки тесты на самом деле сторожат'
+  dependsOn 'testClasses'
+  classpath = configurations.pitest
+  mainClass = 'org.pitest.mutationtest.commandline.MutationCoverageReport'
+  workingDir = projectDir
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+  doFirst {
+    def classes = project.findProperty('mutate') ?: pitKernels.collect { "${pitPackage}.${it}*" }.join(',')
+    def tests = project.findProperty('killWith') ?: "${pitPackage}.*Test"
+    args = [
+      '--reportDir', layout.buildDirectory.dir('reports/pitest').get().asFile.path,
+      '--targetClasses', classes,
+      '--targetTests', tests,
+      '--excludedTestClasses', "${pitPackage}.SoftnessTest",
+      '--sourceDirs', file('src/main/kotlin').path,
+      '--classPath', sourceSets.test.runtimeClasspath.files.findAll { it.exists() }.collect { it.path }.join(','),
+      '--mutators', project.findProperty('mutators') ?: 'STRONGER',
+      '--threads', project.findProperty('threads') ?: '4',
+      '--outputFormats', 'HTML,CSV,XML',
+      '--timestampedReports', 'false',
+      '--timeoutConst', '8000',
+      '--verbosity', 'QUIET_WITH_PROGRESS',
+      // Строки сообщений об ошибках и проверки под DEBUG_CHECKS портить незачем.
+      '--avoidCallsTo', 'kotlin.jvm.internal,java.io.PrintStream',
+      // Встраиваемые ядра: их тела исполняются только копиями внутри вызывающих функций (там и портятся),
+      // а сами функции не зовёт никто — их мутанты неубиваемы по построению.
+      '--excludedMethods', 'solveDistanceConstraint,solveDistanceConstraintCells,solveDistanceConstraintSoftCells,muscleLinkCorrection',
+      '--jvmArgs', '-Dfile.encoding=UTF-8' + (project.hasProperty('substeps') ? ",-Dgenomeia.substeps=${project.property('substeps')}" : ''),
+    ]
+  }
+}
+
+// ЗООПАРК СТАРЫХ БАГОВ (план стабильности, этап 1, пункт 8): gradlew :physics:bugZoo
+//
+// Каждая задокументированная починка откатывается в копии исходников, копия пересобирается, и хоть
+// один тест обязан упасть. Список починок и подробности — src/test/kotlin/.../zoo/BugZoo.kt.
+// Отчёт: physics/build/bugzoo/report.md. Ненулевой код — починку не сторожит ни один тест
+// или запись устарела.
+//   -Ponly=часть названия   только эти записи;   -Pjobs=N   сколько записей одновременно (по умолчанию 3).
+tasks.register('bugZoo', JavaExec) {
+  group = 'verification'
+  description = 'Зоопарк старых багов: откат каждой задокументированной починки обязан уронить хотя бы один тест'
+  dependsOn 'testClasses'
+  classpath = sourceSets.test.runtimeClasspath
+  mainClass = 'io.github.some_example_name.physics.BugZooKt'
+  workingDir = projectDir
+  jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+  doFirst {
+    // Имя модуля Kotlin входит в имена internal-членов классов: пересборка обязана дать то же.
+    def moduleFile = fileTree(dir: layout.buildDirectory.dir('classes/kotlin/main/META-INF').get().asFile, include: '*.kotlin_module').singleFile
+    systemProperty 'zoo.module', moduleFile.name - '.kotlin_module'
+    systemProperty 'zoo.sources', file('src/main/kotlin').path
+    systemProperty 'zoo.work', layout.buildDirectory.dir('bugzoo').get().asFile.path
+    systemProperty 'zoo.compiler', configurations.zooCompiler.files.collect { it.path }.join(File.pathSeparator)
+    systemProperty 'zoo.libs', sourceSets.test.runtimeClasspath.files.findAll { it.name.endsWith('.jar') }.collect { it.path }.join(File.pathSeparator)
+    systemProperty 'zoo.tests', sourceSets.test.output.classesDirs.files.findAll { it.exists() }.collect { it.path }.join(File.pathSeparator)
+    if (project.hasProperty('only')) systemProperty 'zoo.only', project.property('only')
+    if (project.hasProperty('jobs')) systemProperty 'zoo.jobs', project.property('jobs')
+  }
+}
+
+// --- Ядро физики на Rust (ветка alpha-0.2.4-rust-port, см. RUST_PORT.md) ---
+//
+// Крейт лежит в physics-native/ и собирается cargo. Kotlin грузит библиотеку по пути из
+// системного свойства genomeia.physics.native, а без него — System.loadLibrary. Тесты сверки
+// Rust ↔ Kotlin без собранной библиотеки пропускаются (Assume), поэтому машина без Rust
+// собирает и тестирует модуль как раньше: -PnoRust=1 или просто отсутствие cargo.
+def physicsNativeDir = rootProject.file('physics-native')
+def physicsNativeLib = new File(physicsNativeDir, 'target/release/' + System.mapLibraryName('genomeia_physics_jni'))
+
+def findCargo = { ->
+  if (project.hasProperty('noRust')) return null
+  def exe = System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('win') ? 'cargo.exe' : 'cargo'
+  def candidates = []
+  if (System.getenv('CARGO')) candidates << new File(System.getenv('CARGO'))
+  candidates << new File(System.getProperty('user.home'), ".cargo/bin/$exe")
+  (System.getenv('PATH') ?: '').split(File.pathSeparator).each { candidates << new File(it, exe) }
+  return candidates.find { it.isFile() }
+}
+def cargo = findCargo()
+
+tasks.register('cargoBuild', Exec) {
+  group = 'build'
+  description = 'Собирает ядро физики на Rust (release) для тестов сверки и стендов'
+  onlyIf { cargo != null }
+  workingDir physicsNativeDir
+  commandLine((cargo ?: 'cargo').toString(), 'build', '--release', '-p', 'genomeia-physics-jni')
+  inputs.files(fileTree(physicsNativeDir) {
+    include 'Cargo.toml', 'Cargo.lock', '*/Cargo.toml', '*/src/**'
+    exclude 'target/**'
+  })
+  outputs.file(physicsNativeLib)
+}
+
+// Свои тесты ядра Rust (cargo test) — отдельно от Kotlin: gradlew :physics:cargoTest
+tasks.register('cargoTest', Exec) {
+  group = 'verification'
+  description = 'Юнит-тесты крейта ядра физики на Rust'
+  onlyIf { cargo != null }
+  workingDir physicsNativeDir
+  commandLine((cargo ?: 'cargo').toString(), 'test', '-p', 'genomeia-physics')
+}
+
+// --- Сборка под Android arm64-v8a: замер на телефоне (:physics-lab:rustSpeedBenchAndroid) ---
+// Нужны `rustup target add aarch64-linux-android` и NDK: -PndkDir=… или самая новая версия в
+// <sdk.dir>/ndk (так его ставит SDK Manager Android Studio). Линкер — clang из NDK под minSdk
+// игры (21, android/build.gradle): та же .so годится и для APK (android/libs/arm64-v8a).
+def androidTarget = 'aarch64-linux-android'
+def androidMinSdk = 21
+def physicsAndroidLib = new File(physicsNativeDir, "target/$androidTarget/release/libgenomeia_physics_jni.so")
+
+def findNdk = { ->
+  if (project.hasProperty('ndkDir')) return file(project.property('ndkDir'))
+  def props = new Properties()
+  def local = rootProject.file('local.properties')
+  if (local.isFile()) local.withInputStream { props.load(it) }
+  def sdk = props.getProperty('sdk.dir') ?: System.getenv('ANDROID_HOME') ?: System.getenv('ANDROID_SDK_ROOT')
+  def versions = sdk ? new File(sdk, 'ndk').listFiles()?.findAll { new File(it, 'source.properties').isFile() } : null
+  // Версии вида 27.3.13750724 — сравнение по числам, а не по строкам.
+  def key = { File f -> f.name.tokenize('.').collect { it.isInteger() ? it.toInteger() : 0 } }
+  return versions?.max { a, b ->
+    def x = key(a), y = key(b)
+    for (int i = 0; i < Math.min(x.size(), y.size()); i++) if (x[i] != y[i]) return x[i] <=> y[i]
+    return x.size() <=> y.size()
+  }
+}
+
+tasks.register('cargoBuildAndroid', Exec) {
+  group = 'build'
+  description = 'Собирает ядро физики на Rust под Android arm64-v8a (NDK и rustup target)'
+  workingDir physicsNativeDir
+  inputs.files(fileTree(physicsNativeDir) {
+    include 'Cargo.toml', 'Cargo.lock', '*/Cargo.toml', '*/src/**'
+    exclude 'target/**'
+  })
+  outputs.file(physicsAndroidLib)
+  commandLine((cargo ?: 'cargo').toString(), 'build', '--release', '-p', 'genomeia-physics-jni', '--target', androidTarget)
+  doFirst {
+    if (cargo == null) throw new GradleException('нет cargo: нужен Rust (rustup), см. RUST_PORT.md')
+    def ndk = findNdk()
+    if (ndk == null) throw new GradleException('нет NDK: SDK Manager → NDK (Side by side) или -PndkDir=…')
+    def host = new File(ndk, 'toolchains/llvm/prebuilt').listFiles()?.find { it.isDirectory() }
+    def win = System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('win')
+    def linker = new File(host, "bin/$androidTarget$androidMinSdk-clang" + (win ? '.cmd' : ''))
+    if (!linker.isFile()) throw new GradleException("в NDK $ndk нет линкера $linker")
+    environment 'CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER', linker.absolutePath
+  }
+}
+
+test {
+  if (cargo != null) {
+    dependsOn 'cargoBuild'
+    systemProperty 'genomeia.physics.native', physicsNativeLib.absolutePath
+  }
+  // Сверка гоняет миры по 10k+ частиц в двух реализациях сразу.
+  maxHeapSize = '2g'
+}

@@ -36,6 +36,7 @@ android {
     targetSdkVersion 36
     versionCode 1
     versionName "1.0"
+    manifestPlaceholders = [appLabel: '@string/app_name']
   }
   compileOptions {
     sourceCompatibility "21"
@@ -43,6 +44,25 @@ android {
     coreLibraryDesugaringEnabled = true
   }
   buildTypes {
+    shaderTest {
+      initWith debug
+      applicationIdSuffix '.shadertest'
+      versionNameSuffix '-shader-test'
+      manifestPlaceholders = [appLabel: 'Genomeia Shader Test']
+      matchingFallbacks = ['debug']
+      signingConfig signingConfigs.debug
+    }
+    // Стенд замера настоящей игры на телефоне (src/perf, PhonePerfLauncher). Ставится рядом с игрой.
+    // Не отлаживаемая: в отлаживаемом приложении ART не встраивает методы, и замер врал бы.
+    perf {
+      initWith debug
+      debuggable false
+      applicationIdSuffix '.perf'
+      versionNameSuffix '-perf'
+      manifestPlaceholders = [appLabel: 'Genomeia Perf']
+      matchingFallbacks = ['debug']
+      signingConfig signingConfigs.debug
+    }
     release {
       minifyEnabled true
       proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), 'proguard-rules.pro'

@@ -1,0 +1,14 @@
+# Сцена ~30k клеток из всех тел стендов и проверок (SceneFile). Запуск:
+#   RB_WORKERS=7 gradlew --no-daemon :lwjgl3:realBodyDemo -Pbody=docs/physics/scenes/showcase-30k.scene
+# Тело из редактора, 947 клеток (detached-fragments, scaleBench, записи окна)
+docs/physics/repros/detached-fragments-2026-10-21/body.txt 19
+# Медуза (physicsCheck)
+body-export-медуза.txt 12
+# Кирпич целиком из кости (physicsCheck, collisionBench)
+body-export-кирпич.txt 15
+# Мягкая сетка 32x32 (scaleBench grid-32)
+grid:32 4
+# Тело из 4 клеток (body-export.txt)
+body-export.txt 40
+# Свободные частицы (проверка непроницаемости контура)
+free 300

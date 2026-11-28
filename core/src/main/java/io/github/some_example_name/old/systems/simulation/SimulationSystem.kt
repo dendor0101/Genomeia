@@ -33,7 +33,9 @@ import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem
 import io.github.some_example_name.old.systems.render.RenderBufferManager
 import io.github.some_example_name.old.features.worldeditor.WorldTerrainManager
 import io.github.some_example_name.old.systems.genomics.NeuralLinkManager
-import io.github.some_example_name.old.systems.physics.MovementManager
+import io.github.some_example_name.old.physics.bridge.WorldPhysics
+import io.github.some_example_name.old.systems.physics.CollisionManager.Companion.PARTICLE_MAX_RADIUS
+import io.github.some_example_name.old.systems.genomics.OrganismSpawner
 import io.github.some_example_name.old.bug.BugReplay
 import io.github.some_example_name.old.journal.CommandSource
 import io.github.some_example_name.old.journal.ControllerKeys
@@ -43,7 +45,9 @@ import io.github.some_example_name.old.journal.SessionStarted
 import io.github.some_example_name.old.journal.SimRestarted
 import io.github.some_example_name.old.journal.StateHash
 import io.github.some_example_name.old.journal.StateHashed
+import io.github.some_example_name.old.journal.WorldStopped
 import io.github.some_example_name.old.journal.WorldSaveCommitted
+import io.github.some_example_name.old.systems.rules.WorldRules
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -69,8 +73,10 @@ class SimulationSystem(
     val entityList: List<Entity>,
     val renderBufferManager: RenderBufferManager,
     val pheromonesManager: PheromonesManager,
-    val movementManager: MovementManager,
-    val worldTerrainManager: WorldTerrainManager
+    val worldPhysics: WorldPhysics,
+    val worldTerrainManager: WorldTerrainManager,
+    /** Настройки мира: часть SimulationData в хэше мира. Перезапуск их не сбрасывает, см. WorldRules. */
+    val worldRules: WorldRules
 ) {
 
     private var simulationThread: Thread? = null
@@ -102,11 +108,12 @@ class SimulationSystem(
     // Замер идёт всегда (два nanoTime на фазу — ~0.6 мкс на тик), вывод в CSV включается
     // флагом PROFILE_LOG. Накопители — обычные LongArray по номеру фазы: ни строк,
     // ни хэш-мапы, ни боксинга Double в цикле симуляции.
-    private val profiler = PhaseProfiler()
+    /** Открыт для замеров без экрана (PerfCheck): только чтение windowMicros. */
+    val profiler = PhaseProfiler()
     private val worldStats = WorldStats()
 
     /**
-     * Только для отладочного стресс-теста, см. applyDebugStress. Сид — от сида сессии
+     * Только для отладочного стресс-теста, см. applyPeriodicStress. Сид — от сида сессии
      * (resetSessionInput): иначе повтор бага не смог бы повторить, какие клетки стресс
      * убил или разогнал.
      */
@@ -118,6 +125,8 @@ class SimulationSystem(
      * Честный: на максимальной скорости поток симуляции отпускает лок и тут же берёт снова,
      * и нечестный лок мог бы раз за разом доставаться ему, а не ждущему сохранению.
      */
+    /** Read-only desktop instrumentation, installed and removed under betweenTicks. */
+    var completedTickObserver: (() -> Unit)? = null
     private val tickLock = ReentrantLock(true)
 
     /**
@@ -128,6 +137,23 @@ class SimulationSystem(
      * в середину следующего тика — координаты из одного, списки живых из другого.
      */
     fun <T> betweenTicks(block: () -> T): T = tickLock.withLock(block)
+
+    /**
+     * Подождать, отпустив лок тика: окно уровня (Lua popup) держит поток симуляции, пока
+     * игрок его не закроет. Без этого поток рендера вставал бы на [betweenTicks] (пауза,
+     * касание мира) и окно закрыть было бы некому — игра висла. Lua зовётся в самом начале
+     * тика, до любых правок мира, поэтому всё, что сделают блоки betweenTicks за это время,
+     * видит тот же мир, что и между тиками.
+     */
+    fun <T> waitOutsideTick(block: () -> T): T {
+        val held = if (tickLock.isHeldByCurrentThread) tickLock.holdCount else 0
+        repeat(held) { tickLock.unlock() }
+        try {
+            return block()
+        } finally {
+            repeat(held) { tickLock.lock() }
+        }
+    }
 
     fun updateTick() {
         // Повтор бага держит мир на тике: сохранение мира ещё не случилось, или запись
@@ -146,10 +172,6 @@ class SimulationSystem(
     private fun tick() {
         val tickStart = System.nanoTime()
 
-        if (simulationData.isFinish) {
-            dispose()
-            return
-        }
         if (BugReplay.isActive) {
             // При повторе рестарт берётся из записи — в том тике, где он случился у
             // игрока, а не когда до флага дошёл бы этот поток.
@@ -169,29 +191,32 @@ class SimulationSystem(
         // звал cells() → win() и выбрасывал игрока в редактор.
         updateLiveCounts()
 
-        if (simulationData.isLevel && simulationData.level.hasLua) {
-            DIGameGlobalContainer.luaEnv.tick()
-
-        }
+        if (simulationData.isLevel && simulationData.level.hasLua) stepLevelScript()
 
         simulationData.tickCounter++
         simulationData.timeSimulation += DELTA_SIM_TICK_TIME
 
         latchControllerKeys()
 
-        if (DEBUG_CHECKS) applyDebugStress()
+        applyPeriodicStress()
 
         // --- Измерения ---
         profiler.measure(Phase.LINKS) { linkPhysicsSystem.iterateLinksInParallel() }
-        profiler.measure(Phase.NEURAL) { neuralLinkManager.iterate() }
+        profiler.measure(Phase.NEURAL) { neuralLinkManager.iterateInParallel() }
         profiler.measure(Phase.COLLIDE) { processParticleCollision() }
         profiler.measure(Phase.CELLS) { cellSystem.iterateCellInParallel() }
         profiler.measure(Phase.PHEROMONE) { pheromonesManager.iterate() }
-        profiler.measure(Phase.ARRANGE) { arrangementOfPositionsInTheGrid() }
+        // Физика-библиотека: силы, контакты, движение и копия позиций в ParticleEntity (B1).
+        worldPhysics.deepKillOn = !simulationData.debugNoDeepKill
+        profiler.measure(Phase.ARRANGE) { worldPhysics.tick() }
         profiler.measure(Phase.WORLD_CMD) { worldCommandsManager.executingCommandsFromTheWorld() }
         profiler.measure(Phase.ORGANS) { organManager.performOrgansNextStage() }
         profiler.measure(Phase.USER_CMD) { userCommandManager.processingCommandsFromUser() }
         profiler.measure(Phase.LAST_WORLD_CMD) { worldCommandsManager.executingLastCommandsFromTheWorld() }
+        // Организмы, потерявшие в этом тике последнюю клетку, — после всех команд тика: они
+        // ещё читали поля организма. Арены уходят в свободные куски до перестройки сетки,
+        // но их частицы уже мертвы, и сетка их пропустит.
+        organEntity.deleteEmptiedOrgans()
         // Единственное место, где меняется структура пространственной сетки. Стоит здесь,
         // потому что к этому моменту уже применены все перемещения (фаза 6) и все
         // создания/удаления частиц (фазы 7-10), то есть сетка собирается один раз по
@@ -207,15 +232,17 @@ class SimulationSystem(
         // Клетки организма обязаны лежать в его арене — на этом будет держаться обход
         // организма по диапазону в параллельных фазах. Стоит здесь, вместе с проверкой
         // сетки: обе ловят «сущность есть, но её никто не обсчитывает».
-        if (DEBUG_CHECKS) cellEntity.verifyArenaIntegrity()
+        // Сверки обходят весь мир — раз в DEBUG_VERIFY_PERIOD тиков: каждый тик они стоили ~3.6% главного потока (10.11).
+        val verifyNow = DEBUG_CHECKS && simulationData.tickCounter % DEBUG_VERIFY_PERIOD == 0
+        if (verifyNow) cellEntity.verifyArenaIntegrity()
+        if (verifyNow) organEntity.triangles?.verify(organEntity, linkEntity)
 
-        if (DEBUG_CHECKS) {
+        if (verifyNow) {
             gridManager.verifyIntegrity(
                 isAlive = particleEntity.isAlive,
                 particleCell = particleEntity.gridId,
                 inGrid = particleEntity.isInGrid,
-                px = particleEntity.x,
-                py = particleEntity.y
+                particles = particleEntity
             )
         }
 
@@ -223,6 +250,7 @@ class SimulationSystem(
         // однопоточно, и ни одна фаза уже ничего не допишет.
         if (simulationData.tickCounter % STATE_HASH_PERIOD == 0) hashState()
 
+        completedTickObserver?.invoke()
         profiler.measure(Phase.RENDER) { renderBufferManager.updateBuffer(profiler.text) }
 
         // Полный тик меряется отдельно, а не суммой фаз: разница между ним и суммой —
@@ -233,32 +261,54 @@ class SimulationSystem(
         if (profiler.endTick()) {
             fillWorldStats()
             profiler.flush(worldStats)
-            // Раз в окно профиля, а не каждый тик: отчёт стоит проход по всем связям.
-            if (DEBUG_CHECKS) println(linkPhysicsSystem.describeLinkLocality())
+            // Отчёт о ленте связей (LinkPhysicsSystem.describeLinkLocality) здесь больше не
+            // печатается: при DEBUG_CHECKS он шёл раз в окно профиля по каждому организму и
+            // забивал лог и console.log в отчётах (06.11, SM-S928B: 7.2 тыс. строк из 8.2 тыс.).
+            // Тронул раскладку — вызвать его вручную.
         }
     }
 
     /**
-     * Отладочный стресс-тест жизненного цикла клеток.
+     * Стресс жизненного цикла по команде PlayerCommand.SetStress — для проверок
+     * (bugReplayCheck -PkillEvery/-PflingEvery/-PspawnEvery). Работает и без DEBUG_CHECKS: проверка должна гонять смерти и рождения на той же
+     * сборке, что у игрока. Выключенный стоит три сравнения с нулём за тик.
      *
-     * Пока зажата A — несколько случайных клеток за тик умирают; пока зажата D — несколько
-     * получают предельную скорость в случайном направлении и улетают, разрывая свои связи.
-     *
-     * Смысл в том, чтобы гонки и битые ссылки в связях воспроизводились сами: они всплывают
-     * именно при активной смерти клеток и разрыве связей, а руками такой сценарий держать
-     * долго и ненадёжно.
-     *
-     * Стоит в самом начале тика, до всех фаз: команда DELETE_CELL попадёт в буфер и будет
-     * применена этим же тиком в фазе 7, а запись скорости идёт в однопоточном участке,
-     * пока ни один воркер не запущен.
+     * Там же, в начале тика, в однопоточной части: смерть — обычной командой DELETE_CELL,
+     * посадка — тем же OrganismSpawner, что у игрока и продюсера. Случайность — из
+     * debugRandom с сидом сессии, поэтому повтор делает то же самое.
      */
-    private fun applyDebugStress() {
-        if (simulationData.debugKillCells) {
-            repeat(DEBUG_STRESS_CELLS_PER_TICK) { killRandomCell() }
-        }
-        if (simulationData.debugFlingCells) {
-            repeat(DEBUG_STRESS_CELLS_PER_TICK) { flingRandomCell() }
-        }
+    private fun applyPeriodicStress() {
+        val tick = simulationData.tickCounter
+        val kill = simulationData.stressKillEvery
+        val fling = simulationData.stressFlingEvery
+        val spawn = simulationData.stressSpawnEvery
+        if (kill > 0 && tick % kill == 0) killRandomCell()
+        if (fling > 0 && tick % fling == 0) flingRandomCell()
+        if (spawn > 0 && tick % spawn == 0) spawnRandomOrganism()
+    }
+
+    private val stressZygote by lazy { cellEntity.cellList.filterIsInstance<Zygote>().single() }
+    private val stressSpawner by lazy { OrganismSpawner(organEntity, cellEntity, genomeManager, stressZygote) }
+
+    private fun spawnRandomOrganism() {
+        val genomes = genomeManager.genomes
+        var baked = 0
+        for (genome in genomes) if (genome.cellsAmount > 0) baked++
+        if (baked == 0) return
+        // k-й по счёту запечённый — без списка, это и так раз в много тиков.
+        var pick = debugRandom.nextInt(baked)
+        var genomeIndex = 0
+        while (genomes[genomeIndex].cellsAmount <= 0 || pick-- > 0) genomeIndex++
+        val margin = 10f
+        stressSpawner.spawn(
+            genomeIndex = genomeIndex,
+            x = margin + debugRandom.nextFloat() * (gridManager.gridWidth - 2 * margin),
+            y = margin + debugRandom.nextFloat() * (gridManager.gridHeight - 2 * margin),
+            color = stressZygote.defaultColor.toIntBits(),
+            radius = PARTICLE_MAX_RADIUS,
+            angleCos = 1f,
+            angleSin = 0f
+        )
     }
 
     private fun killRandomCell() {
@@ -283,12 +333,10 @@ class SimulationSystem(
         val particleIndex = cellEntity.getParticleIndex(cellIndex)
         if (particleIndex == -1) return
 
-        // Ровно предел скорости: больше ставить бессмысленно, seedBump всё равно зажмёт.
-        // При MAX_SPEED смещение за тик равно HALF_CHUNK_HEIGHT, то есть связи длиной до
-        // sqrt(linkMaxLength2) рвутся за пару тиков.
+        // Прежний предел скорости игры: смещение за тик — HALF_CHUNK_HEIGHT клеток мира. Мир
+        // физики получает скорость через WorldPhysics (изменённая игрой vx/vy).
         val angle = debugRandom.nextFloat() * 2f * PI.toFloat()
-        particleEntity.vx[particleIndex] = cos(angle) * MovementManager.MAX_SPEED
-        particleEntity.vy[particleIndex] = sin(angle) * MovementManager.MAX_SPEED
+        particleEntity.setVelocity(particleIndex, cos(angle) * FLING_SPEED, sin(angle) * FLING_SPEED)
     }
 
     /**
@@ -368,51 +416,18 @@ class SimulationSystem(
         }
     }
 
-    /**
-     * Интегрирование позиций. Работы здесь мало (позиция += скорость, ограничение
-     * по границам мира, пересчёт gridId), поэтому фаза почти целиком состояла из
-     * накладных расходов: два барьера на ExecutorService по ~8 submit + 8 Future.get
-     * каждый — это десятки микросекунд на десяток микросекунд полезной работы.
-     * Теперь барьер спиновый, а слоты раздаются динамически: в стеке одного чанка
-     * могут быть тысячи частиц, в соседнем — единицы.
-     *
-     * Две стадии (odd/even) пока сохранены, потому что буферы отложенных команд
-     * индексируются номером чанка, и слот odd-чанка совпал бы со слотом even-чанка.
-     * Само движение сетку больше не мутирует, так что после разведения буферов по
-     * чанкам обе стадии можно будет слить в одну.
-     */
-    fun arrangementOfPositionsInTheGrid() {
-        val alive = particleEntity.aliveList
-        val size = alive.size
-        if (size == 0) return
-
-        // Ровные блоки aliveList, а не стеки, набитые обходом сетки.
-        //
-        // Раньше список частиц для движения набирался ПОБОЧНЫМ ЭФФЕКТОМ фазы коллизий:
-        // проходя сетку, она складывала встреченные индексы в стеки чанков, и двигалось
-        // ровно то, что попало в сетку. Пока в сетке были все частицы, это работало и
-        // экономило отдельный обход. Как только из сетки убрали внутренние клетки
-        // (ParticleEntity.isInGrid), они перестали и двигаться — стояли на месте, потому
-        // что их никто не клал в стек.
-        //
-        // Связывать движение с сеткой не было причины и раньше: moveParticle трогает
-        // только свою же частицу, никакой пространственной изоляции ему не нужно.
-        // Чётность существовала лишь потому, что буферы команд индексировались номером
-        // чанка; теперь номер воркера приходит отдельно, и обе стадии слились в одну —
-        // на барьер меньше.
-        val blockCount = threadCount
-        val blockSize = (size + blockCount - 1) / blockCount
-
-        threadManager.runWorkStage(blockCount, Phase.ARRANGE) { block, workerId ->
-            val start = block * blockSize
-            val end = minOf(start + blockSize, size)
-            for (i in start until end) {
-                movementManager.moveParticle(alive.getInt(i), workerId)
-            }
+    fun closeWorld() {
+        stopUpdateThread()
+        betweenTicks {
+            completedTickObserver = null
+            val tick = simulationData.tickCounter
+            if (BugReplay.isActive) BugReplay.onWorldStopped(SessionJournal.epoch, tick)
+            else SessionJournal.recordSim(CommandSource.SYSTEM, WorldStopped, SessionJournal.epoch, tick)
+            dispose()
         }
     }
 
-    fun stopUpdateThread() {
+    private fun stopUpdateThread() {
         threadManager.stopSimulationLoop()
 
         simulationThread?.let { thread ->
@@ -433,6 +448,8 @@ class SimulationSystem(
         updateLiveCounts()
         simulationData.clear()
         worldCommandsManager.dispose()
+        worldPhysics.reset()
+        renderBufferManager.playerMarks?.clear()
     }
 
     private fun restartSim() {
@@ -460,16 +477,32 @@ class SimulationSystem(
         // Именно здесь, а не в applyLevel: рестарт пересобирает мир и снова зовёт скрипт,
         // и разрешение от прошлого захода не должно переехать в новый.
         simulationData.isMovable = !simulationData.isLevel
-        if (simulationData.isLevel && simulationData.level.hasLua) {
-            DIGameGlobalContainer.luaEnv.run()
-        }
         val epoch = SessionJournal.beginSimEpoch()
         val seed = (if (BugReplay.isActive) BugReplay.sessionSeed(epoch) else null)
             // RandomXS128 сам перемешивает seed, так что близкие значения nanoTime не страшны.
             ?: System.nanoTime()
         resetSessionInput(seed)
+        // Тело скрипта здесь не запускается — см. stepLevelScript.
         spawnScriptedOrganisms()
         SessionJournal.recordSim(CommandSource.SYSTEM, SessionStarted(seed), epoch, simulationData.tickCounter)
+    }
+
+    /**
+     * Скрипт уровня в тике. Тело скрипта (вступительные popup, цель, setMovable) идёт не в
+     * startSession, а в начале тика [LEVEL_SCRIPT_START_TICK]: к этому моменту тик 0 уже
+     * применил организмы уровня и отдал кадр рендеру, и игрок читает вступление, видя
+     * рельеф и организмы. Раньше popup в теле скрипта держал поток ещё до первого тика,
+     * и до закрытия всех окон экран был пустым.
+     *
+     * Детерминизм: тик старта — константа, тик 0 скрипта не трогает (генератор уровня с
+     * сидом сессии до старта скрипта никто не тратит), поэтому повтор .bug идёт тем же путём.
+     */
+    private fun stepLevelScript() {
+        val tick = simulationData.tickCounter
+        if (tick < LEVEL_SCRIPT_START_TICK) return
+        // Сид генератора уровня — уже из resetSessionInput этой сессии.
+        if (tick == LEVEL_SCRIPT_START_TICK) DIGameGlobalContainer.luaEnv.run()
+        DIGameGlobalContainer.luaEnv.tick()
     }
 
     /**
@@ -526,8 +559,20 @@ class SimulationSystem(
         // Скрипт уровня берёт random() отсюда: повтор .bug подставит тот же сид.
         DIGameGlobalContainer.luaEnv.env.rules.seed(seed)
         simulationData.controllerKeys.fill(false)
+        simulationData.stressKillEvery = 0
+        simulationData.stressFlingEvery = 0
+        simulationData.stressSpawnEvery = 0
+        simulationData.debugNoTailThrust = false
+        simulationData.debugNoDeepKill = false
         lastControllerKeysMask = 0
     }
+
+    /**
+     * Для замера на снимке (PerfCheck): хэш мира без ввода игрока на заданном тике, кратном STATE_HASH_PERIOD. Тик
+     * задаётся на паузе, значение читается после него: разное число воркеров сверяется по нему.
+     */
+    @Volatile var hashWatchTick = -1
+    @Volatile var hashWatchReport = ""
 
     /**
      * Хэш состояния мира — в журнал, а при повторе сверка с записанным. Первое
@@ -537,22 +582,43 @@ class SimulationSystem(
         val tick = simulationData.tickCounter
         val state = StateHash.compute(
             entities = entityList,
+            // Выбранного генома (currentGenomeIndex) здесь нет намеренно. Это выбор в интерфейсе:
+            // его пишет поток рендера (SimulationIntent.SelectGenome), когда игрок нажал кнопку, —
+            // то есть в любой момент тика. Тик UI-команды в журнале читается «на лету», и при
+            // повторе она подаётся уже между тиками: у игрока выбор успел попасть в хэш тика N,
+            // при повторе — только в хэш N+1 (bugReplayCheck: «эпоха 1, тик 1: разошлись
+            // SimulationData», а при другой нагрузке машины — нет). На мир выбор влияет только
+            // через касание «посадить организм», а его индекс генома UserCommandManager.resolve
+            // фиксирует в самой команде журнала — этим мир и проверен.
             simulation = { h ->
                 var x = Fnv.word(h, simulationData.tickCounter)
                 x = Fnv.word(x, java.lang.Float.floatToRawIntBits(simulationData.timeSimulation))
-                x = Fnv.word(x, simulationData.currentGenomeIndex)
-                x = Fnv.word(x, simulationData.lastPlacedOrganIndex)
-                // Список пуст у обычных миров и у старых .bug — их хэш не меняется.
-                val scripted = simulationData.scriptedOrganIndices
-                if (scripted.size > 0) {
+                x = Fnv.word(x, simulationData.selectedCellIndex)
+                x = Fnv.word(x, simulationData.stressKillEvery)
+                x = Fnv.word(x, simulationData.stressFlingEvery)
+                x = Fnv.word(x, simulationData.stressSpawnEvery)
+                x = Fnv.word(x, if (simulationData.debugNoTailThrust) 1 else 0)
+                x = Fnv.word(x, if (simulationData.debugNoDeepKill) 1 else 0)
+                // Уровень (PR 38): по этим организмам считается финиш. Только в уровне — в
+                // обычном мире они ни на что не влияют, и его хэш остаётся побитово прежним:
+                // .bug обычных миров со сборок до PR сверяются как раньше.
+                if (simulationData.isLevel) {
+                    x = Fnv.word(x, simulationData.lastPlacedOrganIndex)
+                    val scripted = simulationData.scriptedOrganIndices
                     x = Fnv.word(x, scripted.size)
                     for (i in 0 until scripted.size) x = Fnv.word(x, scripted.getInt(i))
                 }
-                Fnv.word(x, simulationData.selectedCellIndex)
+                worldRules.hash(x)
             },
             input = userCommandManager::hashInput,
-            grid = gridManager::hashOrder
+            grid = gridManager::hashOrder,
+            physics = worldPhysics::hash,
+            // Части хэша независимы — по воркерам. Замер 10.11, 97k клеток: хэш раз в 60 тиков шёл
+            // ~140 мс в одном потоке (рывок каждые две секунды, 2.8% главного потока в среднем).
+            parallel = { n, job -> threadManager.executor.runChunks(n, Phase.WORLD_CMD, ParallelExecutor.ChunkJob { k, _ -> job(k) }) }
         )
+        // Генератор команд игрока (часть PlayerInput) в каждом запуске с новым сидом: на мир без команд он не влияет.
+        if (tick == hashWatchTick) hashWatchReport = "%016x".format(stateHashNames.indices.filter { stateHashNames[it] != "PlayerInput" }.fold(0L) { h, k -> Fnv.long(h, state.parts[k]) })
         if (BugReplay.isActive) {
             BugReplay.checkStateHash(SessionJournal.epoch, tick, state, stateHashNames)
         } else {
@@ -574,7 +640,7 @@ class SimulationSystem(
      */
     fun onWorldSaved(slot: String) {
         if (BugReplay.isActive) {
-            BugReplay.onWorldSaveFinished()
+            BugReplay.onWorldSaveFinished(slot, simulationData.tickCounter)
         } else {
             SessionJournal.recordSim(
                 CommandSource.SYSTEM, WorldSaveCommitted(slot), SessionJournal.epoch, simulationData.tickCounter
@@ -608,13 +674,6 @@ class SimulationSystem(
         val keys = simulationData.controllerKeys
         for (i in keys.indices) keys[i] = mask and (1 shl i) != 0
 
-        // Отладочный стресс-тест — от тех же клавиш A и D, что и управление организмом.
-        // Из снимка, а не прямо с клавиатуры: снимок пишется в журнал, и повтор бага
-        // запускает стресс в тех же тиках.
-        if (DEBUG_CHECKS) {
-            simulationData.debugKillCells = keys[KEY_A]
-            simulationData.debugFlingCells = keys[KEY_D]
-        }
     }
 
     fun initMap() {
@@ -627,9 +686,8 @@ class SimulationSystem(
     companion object {
         const val DELTA_SIM_TICK_TIME = 0.016666666f
 
-        /** Индексы клавиш A и D в controllerKeys (0–9 цифры, 10–13 WASD, 14 пробел, 15–18 стрелки). */
-        private const val KEY_A = 11
-        private const val KEY_D = 13
+        /** Тик, в начале которого запускается тело скрипта уровня (см. stepLevelScript). */
+        const val LEVEL_SCRIPT_START_TICK = 1
 
         /** Чтобы сид стресс-теста не совпадал с сидом команд игрока. */
         private const val DEBUG_RANDOM_SALT = 0x5DEECE66DL
@@ -639,16 +697,20 @@ class SimulationSystem(
          * -Dgenomeia.stateHashPeriod=1 — каждый тик: так находится первый тик, где повтор
          * разошёлся. Запись и повтор должны идти с одним и тем же значением.
          */
+        const val DEBUG_VERIFY_PERIOD = 30
         val STATE_HASH_PERIOD = System.getProperty("genomeia.stateHashPeriod")?.toIntOrNull()?.coerceAtLeast(1) ?: 60
 
         /** Сколько спать, пока повтор держит мир на тике. */
         private const val HOLD_SLEEP_MS = 2L
 
-        /** Сколько клеток за тик убивает / разгоняет отладочный стресс-тест. */
-        private const val DEBUG_STRESS_CELLS_PER_TICK = 55
+        /** Скорость броска отладочного стресса: HALF_CHUNK_HEIGHT клеток мира за тик (x += vx · 7.5). */
+        private const val FLING_SPEED = DISimulationContainer.HALF_CHUNK_HEIGHT / 7.5f
+
     }
 
-    fun getStats(): WorldStats {
-        return worldStats //на время что бы  получить информацю для логики уровней, но мы ведь знаем что нет ничего постояннее чем временные решения :>
-    }
+    /**
+     * Счётчики мира. Живые количества (cells/particles/links) свежие на каждом тике
+     * (updateLiveCounts) — по ним уровень решает победу; остальное — за окно профайлера.
+     */
+    fun getStats(): WorldStats = worldStats
 }

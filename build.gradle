@@ -59,6 +59,24 @@ configure(subprojects - project(':android')) {
   compileKotlin.compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
   compileTestKotlin.compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
 
+  // Физика на Rust (RUST_PORT.md): -PrustShadow гоняет любой стенд, проверку или тест с тенью —
+  // каждый PhysicsWorld повторяет себя в мире на Rust и сверяется с ним побитово после каждого
+  // тика (RustShadow.kt). -PrustShadowEvery=N — сверка раз в N тиков (отпечаток 100k частиц дорог).
+  if (rootProject.hasProperty('rustShadow')) {
+    def lib = rootProject.file('physics-native/target/release/' + System.mapLibraryName('genomeia_physics_jni'))
+    [JavaExec, Test].each { type ->
+      tasks.withType(type).configureEach {
+        dependsOn ':physics:cargoBuild'
+        systemProperty 'genomeia.physics.native', lib.absolutePath
+        systemProperty 'genomeia.physics.rust', 'shadow'
+        // Тень замедляет тик в разы: сквозным проверкам игры — больше времени на сценарий.
+        systemProperty 'bugReplayCheck.timeoutSec', '3600'
+        if (rootProject.hasProperty('rustShadowEvery')) {
+          systemProperty 'genomeia.physics.rust.every', rootProject.property('rustShadowEvery')
+        }
+      }
+    }
+  }
 }
 
 subprojects {
@@ -66,6 +84,12 @@ subprojects {
   ext.appName = 'Genomeia'
   repositories {
     mavenCentral()
+    // Lua уровней — Cobalt (MIT, форк LuaJ из CC: Tweaked). Публикуется только здесь;
+    // из этого репозитория берём только его группу.
+    maven {
+      url = 'https://maven.squiddev.cc'
+      content { includeGroup 'cc.tweaked' }
+    }
     // You may want to remove the following line if you have errors downloading dependencies.
     mavenLocal()
     maven { url = 'https://central.sonatype.com/repository/maven-snapshots/' }

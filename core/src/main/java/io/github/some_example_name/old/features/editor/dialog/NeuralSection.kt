@@ -1,10 +1,13 @@
 package io.github.some_example_name.old.features.editor.dialog
 
+import io.github.some_example_name.old.core.ui.hint
 import com.kotcrab.vis.ui.util.FloatDigitsOnlyFilter
 import com.kotcrab.vis.ui.widget.VisTable
+import io.github.some_example_name.old.cells.base.Formula
 import io.github.some_example_name.old.cells.base.Formulas
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
+import io.github.some_example_name.old.core.ui.StyledSelectBox
 import io.github.some_example_name.old.core.ui.dp
 import io.github.some_example_name.old.core.ui.visLabel
 import io.github.some_example_name.old.core.ui.visSelectBox
@@ -35,33 +38,33 @@ object NeuralSection : CellEditorSection {
 
     override fun VisTable.compose(dialog: CellDialog) {
         val actionSystem = dialog.actionSystem
-        visLabel(bundle.get("button.inputSignals"), font = game.extraLargeFont) { left() }
+        visLabel(bundle.get("button.inputSignals"), font = game.extraLargeFont) { left() }.hint(bundle.get("editor.hint.combineInputs"))
         row()
 
         visTable ({ left().padBottom(32.dp()) }) {
-            visLabel("a:", font = game.extraLargeFont)
+            visLabel("a:", font = game.extraLargeFont).hint(bundle.get("editor.hint.coefA"))
             val a = actionSystem.action.a ?: actionSystem.clickedCell.actual?.a ?: throw Exception("a is null")
             visTextField(
                 text = a.toString(),
                 textFieldFilter = FloatDigitsOnlyFilter(true),
                 onTextChange = { text -> text.toFloatOrNull()?.let { actionSystem.action = actionSystem.action.copy(a = it) } }
-            ) { padRight(16.dp()) }
+            ) { padRight(16.dp()) }.hint(bundle.get("editor.hint.coefA"))
 
-            visLabel("b:", font = game.extraLargeFont)
+            visLabel("b:", font = game.extraLargeFont).hint(bundle.get("editor.hint.coefB"))
             val b = actionSystem.action.b ?: actionSystem.clickedCell.actual?.b ?: throw Exception("b is null")
             visTextField(
                 text = b.toString(),
                 textFieldFilter = FloatDigitsOnlyFilter(true),
                 onTextChange = { text -> text.toFloatOrNull()?.let { actionSystem.action = actionSystem.action.copy(b = it) } }
-            ) { padRight(16.dp()) }
+            ) { padRight(16.dp()) }.hint(bundle.get("editor.hint.coefB"))
 
-            visLabel("c:", font = game.extraLargeFont)
+            visLabel("c:", font = game.extraLargeFont).hint(bundle.get("editor.hint.coefC"))
             val c = actionSystem.action.c ?: actionSystem.clickedCell.actual?.c ?: throw Exception("c is null")
             visTextField(
                 text = c.toString(),
                 textFieldFilter = FloatDigitsOnlyFilter(true),
                 onTextChange = { text -> text.toFloatOrNull()?.let { actionSystem.action = actionSystem.action.copy(c = it) } }
-            )
+            ).hint(bundle.get("editor.hint.coefC"))
         }
 
         row()
@@ -70,6 +73,16 @@ object NeuralSection : CellEditorSection {
             val funActivation = actionSystem.action.funActivation ?: actionSystem.clickedCell.actual?.funActivation ?: throw Exception("funActivation is null")
             // Из палитры редактора; формула этой клетки видна, даже если скрыта.
             val formulas = cellPalette.formulaChoices(current = funActivation)
+            // Список сложения стоит после списка формул, а формула его блокирует: ссылка
+            // заводится заранее.
+            var combine: StyledSelectBox<String>? = null
+            fun lockSum(formula: Formula?) {
+                val box = combine ?: return
+                val locked = formula?.requiresSum == true
+                // Выбор пункта сам шлёт onChange, а тот кладёт isSum = true в геном.
+                if (locked) box.selectedIndex = 0
+                box.isDisabled = locked
+            }
             visSelectBox(
                 items = formulas.map { it.label }.toTypedArray(),
                 // Формулы нет в списке — геном от мода, которого нет; показывается первая,
@@ -77,17 +90,19 @@ object NeuralSection : CellEditorSection {
                 selectedIndex = formulas.indexOfFirst { it.key == funActivation }.coerceAtLeast(0),
                 onChange = { _, choice ->
                     actionSystem.action = actionSystem.action.copy(funActivation = formulas[choice].key)
+                    lockSum(formulas[choice])
                 }
-            )
+            ).hint(bundle.get("editor.hint.formula"))
 
             val isSum = actionSystem.action.isSum ?: actionSystem.clickedCell.actual?.isSum ?: throw Exception("isSum is null")
-            visSelectBox(
+            combine = visSelectBox(
                 items = arrayOf(bundle.get("button.addition"), bundle.get("button.multiplication")),
                 selectedIndex = if (isSum) 0 else 1,
                 onChange = { _, sumOrMultiply ->
                     actionSystem.action = actionSystem.action.copy(isSum = sumOrMultiply == 0)
                 }
-            )
+            ).hint(bundle.get("editor.hint.combineInputs"))
+            lockSum(formulas.firstOrNull { it.key == funActivation })
         }
 
         row()

@@ -48,8 +48,8 @@ class PheromonesManager(
                     )
                 }
             } else {
-                val emitterX = particleEntity.x[emitterIndex].toInt()
-                val emitterY = particleEntity.y[emitterIndex].toInt()
+                val emitterX = particleEntity.x(emitterIndex).toInt()
+                val emitterY = particleEntity.y(emitterIndex).toInt()
 
                 val maxLevel = if (particleEntity.isCell[emitterIndex]) {
                     cellEntity.neuronImpulseOutput[particleEntity.holderEntityIndex[emitterIndex]]

@@ -1,7 +1,8 @@
 package io.github.some_example_name.old.journal
 
-import com.badlogic.gdx.Gdx
+import io.github.some_example_name.old.core.ReplayFileException
 import com.badlogic.gdx.files.FileHandle
+import io.github.some_example_name.old.core.GameFilePaths
 import io.github.some_example_name.old.core.GameFiles
 import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.systems.maps.MapSave
@@ -25,34 +26,41 @@ import io.github.some_example_name.old.systems.maps.MapSave
  */
 object SessionAttachments {
 
-    /** Каталог снимков. null — сессия не пишется (идёт повтор или запись не началась). */
+    /** При записи — каталог снимков, при повторе — вложения исходного отчёта. */
     var dir: FileHandle? = null
         private set
 
+    private var replay = false
     private val writtenMaps = HashSet<String>()
     private val attachedMaps = HashSet<String>()
     private var importCounter = 0
 
-    /** Начало записи: снимки геномов и настроек такими, какими они были до первой команды. */
+    /** Начало записи: настройки до контейнеров; геномы снимаются после переноса старых файлов. */
     fun startSession(target: FileHandle) {
+        replay = false
         dir = target.apply { mkdirs() }
         writtenMaps.clear()
         attachedMaps.clear()
         importCounter = 0
 
-        copyDirectory(GameFiles.genomesDir(), target.child(GameFiles.GENOMES)) { it.extension().equals("genome", true) }
         val settings = GameFiles.settingsDir().child(SubstrateSettings.FILE_NAME)
-        if (settings.exists()) settings.copyTo(target.child(GameFiles.SETTINGS).child(settings.name()))
+        if (settings.exists()) {
+            GameFilePaths.writeAtomically(target.child(GameFiles.SETTINGS).child(settings.name()), target.parent()) { settings.copyTo(it) }
+        }
     }
 
     /**
-     * Снять геномы ещё раз: игра при запуске сама дополнила папку (встроенные геномы,
-     * перенос старых JSON — GenomeLibrary), а первый снимок сделан раньше, до контейнеров.
-     * Команд к этому моменту ещё нет, так что снимок остаётся «папкой до первой команды».
+     * Единственный снимок геномов: после GenomeLibrary.prepare, до первой команды.
+     * Ранний снимок пришлось бы переписывать после миграции; два копирования всей папки
+     * замедляли каждый запуск даже тогда, когда ни один геном не изменился.
      */
-    fun retakeGenomes() {
+    fun captureGenomes() {
         val target = dir ?: return
-        copyDirectory(GameFiles.genomesDir(), target.child(GameFiles.GENOMES)) { it.extension().equals("genome", true) }
+        val genomes = GameFiles.genomesDir()
+        for (file in genomes.list()) {
+            if (file.isDirectory || !file.extension().equals("genome", true)) continue
+            GameFilePaths.writeAtomically(target.child(GameFiles.GENOMES).child(file.name()), target.parent()) { file.copyTo(it) }
+        }
     }
 
     /** Мир записан в этой сессии — снимать его при загрузке уже не нужно. */
@@ -61,43 +69,49 @@ object SessionAttachments {
     }
 
     /** Мир сейчас загрузится: снять файл, если это первая загрузка и записан он не нами. */
-    fun attachMapBeforeLoad(slot: String) {
-        val target = dir ?: return
-        if (slot in writtenMaps || !attachedMaps.add(slot)) return
+    fun attachMapBeforeLoad(slot: String): FileHandle {
         val file = MapSave.mapFile(slot)
-        if (!file.exists()) return
-        try {
-            file.copyTo(target.child(GameFiles.MAPS).child(file.name()))
-        } catch (e: Exception) {
-            Gdx.app?.error(TAG, "не удалось снять мир $slot", e)
-        }
+        val root = dir ?: return file
+        if (replay || slot in writtenMaps || slot in attachedMaps || !file.exists()) return file
+        val snapshot = root.child(GameFiles.MAPS).child(file.name())
+        GameFilePaths.writeAtomically(snapshot, root.parent()) { file.copyTo(it) }
+        attachedMaps += slot
+        // Загружаем именно снятые байты, даже если внешний файл в этот момент заменили.
+        return snapshot
     }
 
-    /** Импортированный файл. Путь снимка едет в команде GenomeImported или MapImported. */
-    fun attachImported(file: FileHandle): String {
-        val path = "imported/${importCounter++}-${file.name()}"
-        val target = dir ?: return path
-        try {
-            file.copyTo(target.child(path))
-        } catch (e: Exception) {
-            Gdx.app?.error(TAG, "не удалось снять импортированный файл ${file.name()}", e)
-        }
-        return path
+    /** Путь отдаётся команде только после публикации полного снимка. */
+    fun attachImported(name: String, write: (FileHandle) -> Unit): String {
+        val root = dir ?: return ""
+        check(!replay)
+        val leaf = "${importCounter++}-${GameFilePaths.fileName(name)}"
+        GameFilePaths.writeAtomically(root.child(IMPORTED).child(leaf), root.parent(), write)
+        return "$IMPORTED/$leaf"
     }
 
-    /** Положить снимок [path] на место [target]; false — снимка нет. */
-    fun restore(path: String, target: FileHandle): Boolean {
-        val source = (dir ?: return false).child(path)
-        if (!source.exists()) {
-            Gdx.app?.error(TAG, "в .bug нет файла $path")
-            return false
+    fun restoreGenome(path: String, fileName: String) {
+        if (!fileName.endsWith(".genome", ignoreCase = true)) throw ReplayFileException("Недопустимое имя генома: $fileName")
+        restore(path, GameFilePaths.child(GameFiles.genomesDir(), fileName))
+    }
+
+    fun restoreMap(path: String, slot: String) = restore(path, MapSave.mapFile(slot))
+
+    private fun restore(path: String, target: FileHandle) {
+        val root = dir ?: throw ReplayFileException("Нет каталога вложений")
+        if (!path.startsWith("$IMPORTED/")) throw ReplayFileException("Недопустимый путь вложения: $path")
+        val source = GameFilePaths.child(GameFilePaths.child(root, IMPORTED), path.removePrefix("$IMPORTED/"))
+        if (!source.file().isFile) throw ReplayFileException("В .bug нет файла $path")
+        if (target.isDirectory) throw ReplayFileException("На месте файла каталог: ${target.name()}")
+        try {
+            GameFilePaths.writeAtomically(target) { source.copyTo(it) }
+        } catch (e: Exception) {
+            throw ReplayFileException("Не удалось восстановить $path: ${e.message}")
         }
-        source.copyTo(target)
-        return true
     }
 
     /** Повтор: снимки сессии — это распакованный .bug, а не запись. */
     fun useForReplay(unpacked: FileHandle) {
+        replay = true
         dir = unpacked
     }
 
@@ -105,11 +119,5 @@ object SessionAttachments {
         dir = null
     }
 
-    private fun copyDirectory(from: FileHandle, to: FileHandle, filter: (FileHandle) -> Boolean) {
-        if (!from.exists()) return
-        to.mkdirs()
-        from.list().filter { !it.isDirectory && filter(it) }.forEach { it.copyTo(to.child(it.name())) }
-    }
-
-    private const val TAG = "SessionAttachments"
+    private const val IMPORTED = "imported"
 }

@@ -1,6 +1,7 @@
 package io.github.some_example_name.render
 
 import com.badlogic.gdx.math.Matrix4
+import io.github.some_example_name.render.pack.DebugAreaIndices
 import java.nio.ByteBuffer
 
 /**
@@ -26,30 +27,54 @@ class RenderFrame {
 
     /** Упакованный буфер из CellInstanceBuffer.end(). */
     var cells: ByteBuffer? = null
+    /** Группы оптических тел в порядке cells; null — одно тело (редактор/превью). */
+    var opticalLinks: io.github.some_example_name.render.pack.OpticalLinks? = null
+    var opticalGroups: IntArray? = null
+    /** Исходный RGBA генома до отладочной палитры. */
+    var opticalColors: IntArray? = null
+    /** Тики рождения в порядке cells; -1/null — история неизвестна. */
+    var opticalBirthTicks: IntArray? = null
+    /** Полные диапазоны тел и их границы из того же снимка; null — обычный обход. */
+    var opticalCullRanges: io.github.some_example_name.render.pack.OpticalCullRanges? = null
+    var opticalSettings: io.github.some_example_name.render.microscope.MicroscopeSettings? = null
 
     /**
-     * Перезалить текстуру данных на GPU.
+     * Рамки тел в порядке [cells] для отсечения по камере в отладочном режиме (VisibleCells);
+     * null — рисовать все клетки (превью, редактор, режим с заливкой областей: её индексы
+     * указывают на места в полном буфере).
+     */
+    var cellCullRanges: io.github.some_example_name.render.pack.OpticalCullRanges? = null
+
+    /**
+     * Неподвижный слой (27.11): террейн и стенка у рамки — инстансы в раскладке [cells], которые
+     * за сессию не меняются. Буфер один на мир: пока это тот же объект, на GPU уже лежат его
+     * байты (CellGeometry.uploadStatic), снимки мира его не несут. [staticCullRanges] — рамки
+     * его кусков для отсечения по камере. null — слоя нет (превью, редактор, микроскоп).
+     */
+    var staticCells: ByteBuffer? = null
+    var staticCullRanges: io.github.some_example_name.render.pack.OpticalCullRanges? = null
+
+    /**
+     * Перезалить буфер клеток на GPU.
      *
      * false имеет смысл, когда содержимое буфера с прошлого кадра не менялось: редактор
-     * генома стоит на паузе между тиками и перекладывать те же байты незачем.
+     * генома стоит на паузе между тиками, а у симуляции экран чаще тиков — между двумя
+     * снимками перекладывать те же байты незачем. Если же на GPU с тех пор заливали ДРУГОЙ
+     * буфер (превью генома, экран редактора), WorldRenderer перезальёт этот сам: он помнит,
+     * чей буфер лежит в VBO.
      */
     var uploadCells: Boolean = true
 
-    // ==================== Феромоны ====================
-
-    /** null — феромоны в этом кадре не рисуются (так делает редактор генома). */
-    var pheromones: ByteBuffer? = null
-
     /**
-     * Коэффициенты спада концентрации: радиус пятна считается как (a/P - 1)/K.
+     * На какую долю тика кадр рисуется в прошлое от снимка: 0 — ровно снимок, 1 — прошлый
+     * тик. Шейдеры клеток и оверлея рисуют каждую клетку между её нынешней позой и позой в
+     * прошлом тике (CellInstanceBuffer: «Интерполяция между тиками»).
      *
-     * Приходят снаружи намеренно. Это константы диффузии феромона, то есть предмет
-     * симуляции, а не рендера, и знать их здесь неоткуда. Важно только, чтобы вызывающий
-     * передал ТЕ ЖЕ числа, по которым симуляция считает радиус действия: иначе пятно на
-     * экране разъедется с областью, в которой феромон реально чувствуется.
+     * Ноль по умолчанию: у редактора, превью и стенда прошлая поза равна нынешней, им всё равно.
+     * Симуляция считает его по времени с публикации снимка (RenderSystem), и между двумя
+     * снимками кадры отличаются только этим числом — буфер клеток не перезаливается.
      */
-    var pheromoneK: Float = 0f
-    var pheromoneP: Float = 0f
+    var interpolationLag: Float = 0f
 
     // ==================== Оверлей отладки ====================
 
@@ -61,17 +86,21 @@ class RenderFrame {
     var overlay: ByteBuffer? = null
 
     /**
+     * Феромоны отладочного режима — буфер из PheromoneInstanceBuffer.end(): x, y,
+     * концентрация A и цвет на штуку. null — не рисовать. [pheromoneK] и [pheromoneP] — закон
+     * концентрации A / (1 + K r^2) и её порог (PheromonesManager.K/P): по ним шейдер
+     * считает размер и прозрачность пятна, а рендер о симуляции не знает.
+     */
+    var pheromones: ByteBuffer? = null
+    var pheromoneK: Float = 0f
+    var pheromoneP: Float = 0f
+
+    /**
      * Секунды для анимации оверлея (бегущие по нейросвязям импульсы). По кругу с периодом
      * [TIME_WRAP]: float с ростом теряет дробную часть, и через несколько часов игры
      * импульсы задёргались бы. Шаг на обороте незаметен — см. TIME_WRAP.
      */
     var time: Float = 0f
-
-    // ==================== Постпроцесс ====================
-
-    var blurAmount: Float = 0f
-    var zoom: Float = 1f
-    var vignetteEnabled: Float = 0f
 
     /**
      * Как рисовать кадр — см. [RenderMode].
@@ -79,7 +108,26 @@ class RenderFrame {
      * Режим приходит с кадром, а не из глобальной настройки: он у каждого экрана свой (у
      * симуляции, у редактора, у меню), а WorldRenderer один на всю игру.
      */
-    var mode: RenderMode = RenderMode.REALISTIC
+    var mode: RenderMode = RenderMode.DEBUG
+
+    /**
+     * Чем закрашивать клетки в отладочном режиме — см. [DebugFilter]. Байт значения у
+     * каждой клетки (CellLook) готовит тот, кто собирал буфер, ПОД ЭТОТ ЖЕ фильтр: поэтому
+     * фильтр берётся из того же снимка, что и клетки, а не из текущего выбора игрока.
+     * Редактор генома его не выставляет — фильтр только у симуляции.
+     */
+    var debugFilter: DebugFilter = DebugFilter.ORIGINAL
+
+    /** Индексы вершин заливки в буфере клеток этого снимка. */
+    var areaIndices: DebugAreaIndices? = null
+
+    /**
+     * Отладочный режим без фона: пустота прозрачна, а клетки — с премноженным альфа-каналом
+     * (сглаженный край — доля покрытия). Только для снимков в свой буфер
+     * (WorldRenderer.renderOffscreen): значок клетки ложится на кнопку интерфейса без квадрата
+     * фона мира. Экран мира всегда с фоном.
+     */
+    var transparentBackground: Boolean = false
 
     companion object {
         /**

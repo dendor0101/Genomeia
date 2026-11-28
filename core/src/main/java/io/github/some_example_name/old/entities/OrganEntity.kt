@@ -61,10 +61,15 @@ class OrganEntity(
     // вместо чтения из cellEntity.particleIndexes. Сам particleIndexes остаётся —
     // он нужен субстанциям (у них организма нет) и служит проверкой под DEBUG_CHECKS.
     //
-    // ЧЕГО ЗДЕСЬ ПОКА НЕТ
-    // -------------------
-    // Арена умершего организма не отдаётся новым: бронь только растёт. Слоты ВНУТРИ
-    // живой арены переиспользуются через свободный список.
+    // ЖИЗНЬ АРЕНЫ
+    // -----------
+    // Размер фиксирован при рождении и равен запечённой раскладке: тело растёт только по
+    // геному (зигота от деления и мутации — пустышка, см. CellEntity.isDormantZygote), и
+    // каждая клетка и связь ложится в СВОЙ слот раскладки — умершая отдаёт его только
+    // себе самой, если отрастёт. Поэтому у клеток и связей нет ни свободного списка, ни
+    // курсора сверх раскладки: клетка вне раскладки — нарушение инварианта (addCell и
+    // addLink падают с объяснением). Вся арена умершего организма уходит в свободные куски
+    // сущностей (Entity.releaseRange) и выдаётся следующему рождению.
     // ===================================================================================
 
     /**
@@ -77,48 +82,104 @@ class OrganEntity(
     var arenaLayout = arrayOfNulls<BakedLayout>(maxAmount)
 
     /**
-     * Освободившиеся слоты внутри арены — по одному списку на организм и на вид сущности.
+     * Освободившиеся слоты арены нейросвязей — по списку на организм.
      *
-     * ЗАЧЕМ ОНИ ПОЯВИЛИСЬ
-     * -------------------
-     * Первая итерация арен обходилась без переиспользования: умерший слот просто терялся,
-     * а платой был запас ёмкости ARENA_HEADROOM_PERCENT. Это оказалось несостоятельным.
      * Нейросвязи при росте организма активно ПЕРЕВЯЗЫВАЮТСЯ — создаются, удаляются и
-     * создаются заново, — поэтому арена расходовалась не по числу живых нейросвязей, а по
-     * числу всех когда-либо созданных. При 124 живых и ёмкости 161 организм упирался
-     * в границу и падал. Любая константа лишь отодвигает этот момент: расход растёт со
-     * временем, а ёмкость фиксирована.
+     * создаются заново, — поэтому без списка арена расходовалась бы по числу всех когда-либо
+     * созданных, а не живых (так падала первая итерация арен: 124 живых при ёмкости 161).
+     * Список свой, а не общий deadStack: общий отдал бы слот чужому организму.
      *
-     * Свободный список делает расход пропорциональным ЖИВЫМ сущностям, а не истории.
+     * У клеток и связей такого списка нет: у них слот задан раскладкой.
      *
-     * ПОЧЕМУ СПИСОК СВОЙ, А НЕ ОБЩИЙ deadStack
-     * ----------------------------------------
-     * Общий стек отдал бы слот организма A организму B, и тело B оказалось бы посреди
-     * чужой арены — ровно то, ради чего аренами и занимались. Здесь слот возвращается
-     * строго в свою арену, поэтому непрерывность сохраняется.
-     *
-     * LIFO намеренно: последний освобождённый слот с большой вероятностью ещё горячий
-     * в кэше, а порядок внутри арены нам важен только для запечённых слотов — их выдаёт
-     * не список, а карта раскладки.
+     * LIFO намеренно: последний освобождённый слот с большой вероятностью ещё горячий в кэше.
      */
-    private var cellFreeSlots = arrayOfNulls<IntArrayList>(maxAmount)
-    private var linkFreeSlots = arrayOfNulls<IntArrayList>(maxAmount)
+    private var neuralFreeSlots = arrayOfNulls<IntArrayList>(maxAmount)
 
     /** Начало диапазона организма в CellEntity, -1 если арены нет. */
     var cellArenaBase = IntArray(maxAmount) { -1 }
 
-    /** Сколько слотов зарезервировано под клетки (и, столько же, под частицы). */
+    /** Слотов под клетки (и столько же под частицы) — ровно клеток в раскладке. */
     var cellArenaCapacity = IntArray(maxAmount)
-
-    /** Сколько слотов клеток уже роздано: bump-указатель внутри арены. */
-    var cellArenaUsed = IntArray(maxAmount)
 
     /** Начало диапазона организма в ParticleEntity. Ёмкость общая с клетками. */
     var particleArenaBase = IntArray(maxAmount) { -1 }
 
     var linkArenaBase = IntArray(maxAmount) { -1 }
+
+    /** Слотов под связи — ровно связей в раскладке. */
     var linkArenaCapacity = IntArray(maxAmount)
-    var linkArenaUsed = IntArray(maxAmount)
+
+    // Арена нейросвязей. Раскладки у неё нет: RCM для них не имеет смысла (нейросвязи не
+    // физика и читаются по одной на клетку), поэтому слоты раздаются только свободным
+    // списком и курсором. Ёмкость — пик одновременно живых нейросвязей за весь рост
+    // (Genome.neuralLinksPeak): геном перевязывает их по ходу стадий, и удалённая
+    // уступает слот следующей. -1 в начале — арены нет, нейросвязи идут в общий пул.
+    var neuralArenaBase = IntArray(maxAmount) { -1 }
+    var neuralArenaCapacity = IntArray(maxAmount)
+    var neuralArenaUsed = IntArray(maxAmount)
+
+    /** Начало арены треугольников организма (TriangleEntity), -1 — нет (геном без треугольников или старое сохранение). */
+    var triangleArenaBase = IntArray(maxAmount) { -1 }
+
+    // ===================================================================================
+    // СМЕРТЬ ОРГАНИЗМА
+    //
+    // Организм умирает вместе с последней клеткой. До этого он не удалялся никогда
+    // (DELETE_ORGAN — заглушка): пустой организм оставался в aliveList, получал работу в
+    // фазе связей, OrganManager гонял его стадии, а арена держалась вечно.
+    //
+    // Удаляется он не в момент смерти клетки, а в конце тика (SimulationSystem зовёт
+    // [deleteEmptiedOrgans] после всех команд). Команды того же тика ещё читают поля
+    // организма: продюсер, умерший раньше в этом проходе, всё равно рожает зиготу с
+    // genomeIndex своего организма, а счётчики стадии получают свои декременты.
+    // ===================================================================================
+
+    /**
+     * Живых клеток организма. Выводится из клеток и не сохраняется — его пересчитывает
+     * CellEntity.restoreAfterLoad.
+     */
+    var liveCells = IntArray(maxAmount)
+        private set
+
+    /** Опустевшие в этом тике, в порядке опустения — он детерминирован, как и команды. */
+    private val emptiedOrgans = IntArrayList()
+
+    fun cellAdded(organIndex: Int) {
+        if (organIndex != -1) liveCells[organIndex]++
+    }
+
+    fun cellRemoved(organIndex: Int) {
+        if (organIndex == -1) return
+        // В редакторе организм не удаляется (см. deleteEmptiedOrgans), копить незачем.
+        if (--liveCells[organIndex] == 0 && arenasEnabled) emptiedOrgans.add(organIndex)
+    }
+
+    /** После загрузки: счётчики считает CellEntity, пустые (утекшие раньше) — к удалению. */
+    fun resetLiveCells() = liveCells.fill(0)
+
+    fun scheduleIfEmpty(organIndex: Int) {
+        if (liveCells[organIndex] == 0 && arenasEnabled) emptiedOrgans.add(organIndex)
+    }
+
+    /**
+     * Удалить организмы, оставшиеся без клеток. Однопоточно, после всех команд тика.
+     *
+     * Не в редакторе: там организм один на всё время работы редактора, и его индекс 0
+     * зашит в команды. Арен там нет, так что и освобождать нечего.
+     */
+    fun deleteEmptiedOrgans() {
+        if (!arenasEnabled) {
+            emptiedOrgans.clear()
+            return
+        }
+        for (i in 0 until emptiedOrgans.size) {
+            val organIndex = emptiedOrgans.getInt(i)
+            // Повтор в списке (опустел, ожил, опустел) или клетка уже вернулась.
+            if (!isAlive[organIndex] || liveCells[organIndex] != 0) continue
+            deleteOrgan(organIndex)
+        }
+        emptiedOrgans.clear()
+    }
 
 
     /**
@@ -133,15 +194,24 @@ class OrganEntity(
     private var cellEntityRef: Entity? = null
     private var particleEntityRef: Entity? = null
     private var linkEntityRef: Entity? = null
+    private var neuralLinkEntityRef: Entity? = null
+    private var triangleEntityRef: TriangleEntity? = null
+
+    /** Треугольники тел, если они подключены (в мире — да, в редакторе — нет). */
+    val triangles: TriangleEntity? get() = triangleEntityRef
 
     fun bindEntities(
         cellEntity: Entity,
         particleEntity: Entity,
-        linkEntity: Entity
+        linkEntity: Entity,
+        neuralLinkEntity: Entity? = null,
+        triangleEntity: TriangleEntity? = null
     ) {
         cellEntityRef = cellEntity
         particleEntityRef = particleEntity
         linkEntityRef = linkEntity
+        neuralLinkEntityRef = neuralLinkEntity
+        triangleEntityRef = triangleEntity
     }
 
     /** Есть ли у организма арена. Клетки без организма (organIndex == -1) идут общим путём. */
@@ -149,20 +219,17 @@ class OrganEntity(
 
     /**
      * Резервирует диапазоны под организм. Вызывать сразу после [addOrgan], до создания
-     * первой клетки.
-     *
-     * Ёмкости берутся из размеров, снятых при запекании генома, плюс
-     * [ARENA_HEADROOM_PERCENT] на клетки сверх запечённых.
+     * первой клетки. Ёмкости — ровно размеры запечённой раскладки.
      */
     fun allocateArenas(
         organIndex: Int,
         /**
-         * Запечённая раскладка из генома, или null если геном не запечён. Задаёт, в каком
-         * слоте арены окажется клетка с данным cellGenomeId. См. BakedLayout.
+         * Запечённая раскладка из генома: в каком слоте арены окажется клетка с данным
+         * cellGenomeId и связь с данной парой. См. BakedLayout.
          */
-        layout: BakedLayout? = null,
-        maxCells: Int,
-        maxLinks: Int
+        layout: BakedLayout?,
+        /** Пик нейросвязей из генома; -1 — неизвестен (геном старше), арены нет. */
+        maxNeuralLinks: Int = -1
     ) {
         if (!arenasEnabled) return
 
@@ -170,81 +237,62 @@ class OrganEntity(
         val particles = particleEntityRef ?: return
         val links = linkEntityRef ?: return
 
+        // Геномы печёт редактор при сохранении, а свои и импортированные допекаются при
+        // запуске (GenomeImport.withBaking), так что сюда незапечённый не попадает. Раньше
+        // такой получал арену нулевой ёмкости и падал на первой же клетке — здесь то же
+        // падение, только сразу и с причиной.
+        checkNotNull(layout) { "организм $organIndex: у генома нет запечённой раскладки — арену не из чего выдать" }
         arenaLayout[organIndex] = layout
 
-        // Ёмкость не может быть меньше запечённой раскладки, чего бы ни просили в maxCells:
-        // раскладка адресует слоты напрямую, и слот за границей арены попал бы в чужую.
-        val cellCapacity = withHeadroom(maxOf(maxCells, layout?.cellsInLayout ?: 0))
-        val linkCapacity = withHeadroom(maxOf(maxLinks, layout?.linksInLayout ?: 0))
+        val cellCapacity = layout.cellsInLayout
+        val linkCapacity = layout.linksInLayout
 
         // Бронь делает сама сущность: она знает свой lastId, то есть где кончается уже
         // розданное. Свои курсоры здесь вести нельзя — субстанции и террейн создаются
         // раньше первого организма и занимают индексы с нуля.
-        //
-        // Зазор в конце — против false sharing на границе арен. Округления ёмкости до
-        // кратного 64 недостаточно: данные массива в JVM начинаются после заголовка
-        // объекта, а сам объект выровнен по 8/16 байт, не по 64, поэтому граница арены
-        // попадает в середину кэш-линии со смещением, которое из Kotlin не контролируется.
-        // Нужен именно реальный пропуск элементов, и 64 покрывают линию даже у
-        // ByteArray/BooleanArray, где элемент — байт.
-        cellArenaBase[organIndex] = cells.reserveRange(cellCapacity + ARENA_GAP)
+        cellArenaBase[organIndex] = cells.reserveRange(cellCapacity)
         cellArenaCapacity[organIndex] = cellCapacity
 
-        particleArenaBase[organIndex] = particles.reserveRange(cellCapacity + ARENA_GAP)
+        particleArenaBase[organIndex] = particles.reserveRange(cellCapacity)
 
-        linkArenaBase[organIndex] = links.reserveRange(linkCapacity + ARENA_GAP)
+        linkArenaBase[organIndex] = links.reserveRange(linkCapacity)
         linkArenaCapacity[organIndex] = linkCapacity
 
-        // Bump-курсор ставится ЗА запечённой областью, а не в ноль.
-        //
-        // Слоты внутри раскладки раздаются по cellGenomeId напрямую, курсором не через.
-        // Если оставить курсор в нуле, первая же клетка, которой в раскладке нет (геном
-        // мутировал после запекания), получила бы слот 0 — то есть чужой, уже принадлежащий
-        // запечённой клетке. Так области не пересекаются: запечённая занимает начало арены,
-        // курсор выдаёт только хвост.
-        cellArenaUsed[organIndex] = layout?.cellsInLayout ?: 0
-        linkArenaUsed[organIndex] = layout?.linksInLayout ?: 0
+        // Нейросвязей у генома может не быть вовсе — тогда и брони нет.
+        val neural = neuralLinkEntityRef
+        if (neural != null && maxNeuralLinks > 0) {
+            neuralArenaBase[organIndex] = neural.reserveRange(maxNeuralLinks)
+            neuralArenaCapacity[organIndex] = maxNeuralLinks
+            neuralArenaUsed[organIndex] = 0
+        }
+
+        // Треугольники — по раскладке, слот = номер треугольника в ней. Слоты, оставшиеся от
+        // умершего организма, сбрасываются: сформированность наследовать нельзя.
+        val triangles = triangleEntityRef
+        val triangleCount = layout.trianglesInLayout
+        if (triangles != null && triangleCount > 0) {
+            val base = triangles.reserveRange(triangleCount)
+            triangles.resetRange(base, triangleCount)
+            triangleArenaBase[organIndex] = base
+        }
     }
 
     /**
-     * Следующий свободный индекс клетки внутри арены организма, или -1 если арена исчерпана.
+     * Слот клетки в арене — её слот по раскладке, или -1, если клетки с таким номером в
+     * раскладке нет (нарушение инварианта: вызывающий падает с объяснением).
      *
-     * -1 означает, что организм вырос больше, чем под него зарезервировали. Вызывающий
-     * обязан это проверить: молча уйти в общий аллокатор нельзя, иначе часть тела окажется
-     * вне арены, и обход по диапазону её просто не увидит.
+     * Именно этот порядок и есть результат RCM, ради которого всё запекалось. Клетка,
+     * умершая и отросшая снова, получает тот же слот.
      */
     fun takeCellSlot(organIndex: Int, cellGenomeId: Int): Int {
-        // Запечённая клетка идёт в свой слот, а не в следующий свободный: именно этот
-        // порядок и есть результат RCM, ради которого всё запекалось.
-        val baked = arenaLayout[organIndex]?.slotByCellGenomeId?.get(cellGenomeId) ?: -1
-        if (baked != -1 && baked < cellArenaCapacity[organIndex]) {
-            val slot = cellArenaBase[organIndex] + baked
-            return slot
-        }
-
-        val reused = popFree(cellFreeSlots, organIndex)
-        if (reused != -1) return reused
-
-        val used = cellArenaUsed[organIndex]
-        if (used >= cellArenaCapacity[organIndex]) return -1
-        cellArenaUsed[organIndex] = used + 1
-        return cellArenaBase[organIndex] + used
+        val slot = arenaLayout[organIndex]?.slotByCellGenomeId?.get(cellGenomeId) ?: -1
+        return if (slot == -1) -1 else cellArenaBase[organIndex] + slot
     }
 
+    /** То же для связи: её слот по паре cellGenomeId концов, в любом порядке. */
     fun takeLinkSlot(organIndex: Int, cellGenomeIdA: Int, cellGenomeIdB: Int): Int {
-        val baked = arenaLayout[organIndex]?.slotByLinkPair?.get(cellGenomeIdA, cellGenomeIdB) ?: -1
-        if (baked != -1 && baked < linkArenaCapacity[organIndex]) {
-            val slot = linkArenaBase[organIndex] + baked
-            return slot
-        }
-
-        val reused = popFree(linkFreeSlots, organIndex)
-        if (reused != -1) return reused
-
-        val used = linkArenaUsed[organIndex]
-        if (used >= linkArenaCapacity[organIndex]) return -1
-        linkArenaUsed[organIndex] = used + 1
-        return linkArenaBase[organIndex] + used
+        val slot = arenaLayout[organIndex]?.slotByLinkPair?.get(cellGenomeIdA, cellGenomeIdB) ?: -1
+        return if (slot == -1) -1 else linkArenaBase[organIndex] + slot
     }
 
     /**
@@ -254,29 +302,34 @@ class OrganEntity(
     fun particleIndexOfCell(organIndex: Int, cellIndex: Int) =
         particleArenaBase[organIndex] + (cellIndex - cellArenaBase[organIndex])
 
-    /** Верхняя граница занятой части арены клеток — предел обхода организма. */
-    fun cellArenaEnd(organIndex: Int) = cellArenaBase[organIndex] + cellArenaUsed[organIndex]
+    /** Конец арены клеток — предел обхода организма. */
+    fun cellArenaEnd(organIndex: Int) = cellArenaBase[organIndex] + cellArenaCapacity[organIndex]
 
-    fun linkArenaEnd(organIndex: Int) = linkArenaBase[organIndex] + linkArenaUsed[organIndex]
+    fun linkArenaEnd(organIndex: Int) = linkArenaBase[organIndex] + linkArenaCapacity[organIndex]
 
 
-    // ===================================================================================
-    // ВОЗВРАТ СЛОТОВ
-    //
-    // Вызывать из delete-путей сущностей ДО того, как сбросится содержимое: владелец
-    // берётся из Entity.arenaOwnerOf, то есть запомнен при выдаче и не зависит от того,
-    // жива ли ещё клетка, через которую связь узнавала свой организм.
-    // ===================================================================================
+    /** Есть ли у организма арена нейросвязей. */
+    fun hasNeuralArena(organIndex: Int) = organIndex != -1 && neuralArenaBase[organIndex] != -1
 
-    fun releaseCellSlot(organIndex: Int, cellIndex: Int) {
-        if (organIndex == -1) return
-        freeListOf(cellFreeSlots, organIndex).add(cellIndex)
+    /**
+     * Слот для нейросвязи организма, или -1, если арена полна. Сначала освобождённый —
+     * перевязка нейросвязей идёт всё время роста, — потом следующий по курсору.
+     */
+    fun takeNeuralSlot(organIndex: Int): Int {
+        val reused = popFree(neuralFreeSlots, organIndex)
+        if (reused != -1) return reused
+        val used = neuralArenaUsed[organIndex]
+        if (used >= neuralArenaCapacity[organIndex]) return -1
+        neuralArenaUsed[organIndex] = used + 1
+        return neuralArenaBase[organIndex] + used
     }
 
-    fun releaseLinkSlot(organIndex: Int, linkIndex: Int) {
+    fun releaseNeuralSlot(organIndex: Int, linkIndex: Int) {
         if (organIndex == -1) return
-        freeListOf(linkFreeSlots, organIndex).add(linkIndex)
+        freeListOf(neuralFreeSlots, organIndex).add(linkIndex)
     }
+
+    fun neuralArenaEnd(organIndex: Int) = neuralArenaBase[organIndex] + neuralArenaUsed[organIndex]
 
     private fun freeListOf(lists: Array<IntArrayList?>, organIndex: Int): IntArrayList {
         var list = lists[organIndex]
@@ -294,8 +347,6 @@ class OrganEntity(
         if (list.isEmpty) return -1
         return list.removeInt(list.size - 1)
     }
-
-    private fun withHeadroom(size: Int) = size + (size * ARENA_HEADROOM_PERCENT / 100)
 
     fun addOrgan(
         genomeIndex: Int,
@@ -334,21 +385,37 @@ class OrganEntity(
         mutateAmountThisStage[organIndex] = 0
         justChangedStage[organIndex] = true
 
-        // Арена НЕ возвращается в оборот: курсоры только растут. Дескриптор гасится, чтобы
-        // мёртвый organIndex не выглядел как владелец живого диапазона — иначе обход по
-        // аренам прошёлся бы по чужой памяти, если индекс организма переиспользуется.
+        // Арена возвращается в оборот — следующему рождению (Entity.releaseRange). Размер
+        // тот же, что брался в allocateArenas, вместе с зазором. Дескриптор гасится, чтобы
+        // мёртвый organIndex не выглядел как владелец диапазона — иначе обход по аренам
+        // прошёлся бы по чужой памяти, если индекс организма переиспользуется.
+        if (cellArenaBase[organIndex] != -1) {
+            val cellRange = cellArenaCapacity[organIndex]
+            cellEntityRef?.releaseRange(cellArenaBase[organIndex], cellRange)
+            particleEntityRef?.releaseRange(particleArenaBase[organIndex], cellRange)
+            linkEntityRef?.releaseRange(linkArenaBase[organIndex], linkArenaCapacity[organIndex])
+        }
+        if (neuralArenaBase[organIndex] != -1) {
+            neuralLinkEntityRef?.releaseRange(neuralArenaBase[organIndex], neuralArenaCapacity[organIndex])
+        }
+        if (triangleArenaBase[organIndex] != -1) {
+            val count = arenaLayout[organIndex]?.trianglesInLayout ?: 0
+            triangleEntityRef?.releaseRange(triangleArenaBase[organIndex], count)
+        }
+        liveCells[organIndex] = 0
         arenaLayout[organIndex] = null
         // Списки чистятся, но не выбрасываются: слот организма переиспользуется, и вместе
         // с ним переиспользуется уже выделенный IntArrayList.
-        cellFreeSlots[organIndex]?.clear()
-        linkFreeSlots[organIndex]?.clear()
+        neuralFreeSlots[organIndex]?.clear()
         cellArenaBase[organIndex] = -1
         cellArenaCapacity[organIndex] = 0
-        cellArenaUsed[organIndex] = 0
         particleArenaBase[organIndex] = -1
         linkArenaBase[organIndex] = -1
         linkArenaCapacity[organIndex] = 0
-        linkArenaUsed[organIndex] = 0
+        neuralArenaBase[organIndex] = -1
+        neuralArenaCapacity[organIndex] = 0
+        neuralArenaUsed[organIndex] = 0
+        triangleArenaBase[organIndex] = -1
     }
 
     override fun persistFields(state: EntityState) {
@@ -366,13 +433,14 @@ class OrganEntity(
 
         state.ints(::cellArenaBase)
         state.ints(::cellArenaCapacity)
-        state.ints(::cellArenaUsed)
         state.ints(::particleArenaBase)
         state.ints(::linkArenaBase)
         state.ints(::linkArenaCapacity)
-        state.ints(::linkArenaUsed)
-        state.packed("cellFreeSlots", write = { packFreeSlots(cellFreeSlots) }, read = { unpackFreeSlots(it, cellFreeSlots) })
-        state.packed("linkFreeSlots", write = { packFreeSlots(linkFreeSlots) }, read = { unpackFreeSlots(it, linkFreeSlots) })
+        state.ints(::neuralArenaBase)
+        state.ints(::neuralArenaCapacity)
+        state.ints(::neuralArenaUsed)
+        state.ints(::triangleArenaBase)
+        state.packed("neuralFreeSlots", write = { packFreeSlots(neuralFreeSlots) }, read = { unpackFreeSlots(it, neuralFreeSlots) })
         // arenaLayout — ссылка внутрь генома, её ставит restoreArenaLayouts.
     }
 
@@ -401,11 +469,19 @@ class OrganEntity(
 
     /** Раскладки арен после загрузки мира: их источник — геном организма, как в allocateArenas. */
     fun restoreArenaLayouts(genomes: List<Genome>) {
+        val particlesInDeadStack = particleEntityRef?.deadStackMask() ?: BooleanArray(0)
         for (i in 0 until aliveList.size) {
             val organIndex = aliveList.getInt(i)
             if (cellArenaBase[organIndex] == -1) continue
             arenaLayout[organIndex] = genomes.getOrNull(genomeIndex[organIndex])?.sortedGraph
+            // До починки частицы клеток выдавались без владельца (addParticleAt), и
+            // умершая уходила в общий стек — под субстанцию. С возвратом арен такой слот
+            // попал бы и в стек, и в свободный кусок, то есть был бы выдан дважды.
+            particleEntityRef?.adoptRange(
+                particleArenaBase[organIndex], cellArenaCapacity[organIndex], organIndex, particlesInDeadStack
+            )
         }
+        particleEntityRef?.dropOwnedFromDeadStack()
     }
 
     override fun onCopy() {
@@ -429,16 +505,19 @@ class OrganEntity(
         mutateAmountThisStage.clear()
         justChangedStage.clear(true)
 
+        liveCells.clear()
+        emptiedOrgans.clear()
         arenaLayout.fill(null)
-        for (list in cellFreeSlots) list?.clear()
-        for (list in linkFreeSlots) list?.clear()
+        for (list in neuralFreeSlots) list?.clear()
         cellArenaBase.clear(-1)
         cellArenaCapacity.clear()
-        cellArenaUsed.clear()
         particleArenaBase.clear(-1)
         linkArenaBase.clear(-1)
         linkArenaCapacity.clear()
-        linkArenaUsed.clear()
+        neuralArenaBase.clear(-1)
+        neuralArenaCapacity.clear()
+        neuralArenaUsed.clear()
+        triangleArenaBase.clear(-1)
         // Откатывать здесь нечего: курсор брони — это lastId самой сущности, а его
         // сбрасывает её собственный clear().
     }
@@ -456,53 +535,18 @@ class OrganEntity(
         mutateAmountThisStage = mutateAmountThisStage.resize()
         justChangedStage = justChangedStage.resize(true)
 
+        liveCells = liveCells.resize()
         arenaLayout = arenaLayout.copyOf(maxAmount)
-        cellFreeSlots = cellFreeSlots.copyOf(maxAmount)
-        linkFreeSlots = linkFreeSlots.copyOf(maxAmount)
+        neuralFreeSlots = neuralFreeSlots.copyOf(maxAmount)
         cellArenaBase = cellArenaBase.resize(-1)
         cellArenaCapacity = cellArenaCapacity.resize()
-        cellArenaUsed = cellArenaUsed.resize()
         particleArenaBase = particleArenaBase.resize(-1)
         linkArenaBase = linkArenaBase.resize(-1)
         linkArenaCapacity = linkArenaCapacity.resize()
-        linkArenaUsed = linkArenaUsed.resize()
+        neuralArenaBase = neuralArenaBase.resize(-1)
+        neuralArenaCapacity = neuralArenaCapacity.resize()
+        neuralArenaUsed = neuralArenaUsed.resize()
+        triangleArenaBase = triangleArenaBase.resize(-1)
     }
 
-    companion object {
-        /**
-         * Пропуск между аренами, в элементах.
-         *
-         * 64 элемента — это 64 байта даже у ByteArray/BooleanArray, то есть гарантированно
-         * не меньше кэш-линии в КАЖДОМ массиве сущности, независимо от типа элемента и от
-         * того, как JVM выровняла сам объект массива. Без этого зазора последний элемент
-         * арены A и первый элемент арены B делили бы линию, и два воркера, считающие
-         * соседние организмы, гоняли бы её между ядрами (false sharing).
-         *
-         * Цена — 64 слота на организм на массив. При арене в ~1200 клеток это ~5%.
-         * Для мелких организмов доля вырастет, и тогда зазор имеет смысл считать
-         * по типу массива (16 элементов хватает для Float/Int), но пока организмы
-         * крупные, единое число проще и надёжнее.
-         */
-        const val ARENA_GAP = 64
-
-        /**
-         * Запас ёмкости арены сверх размера взрослого организма, в процентах.
-         *
-         * Нужен потому, что переиспользования слотов внутри арены пока нет: умершая клетка
-         * освобождает место физически, но не логически. Запас определяет, сколько смертей
-         * организм переживёт, прежде чем упрётся в границу арены.
-         */
-        /**
-         * Запас ёмкости арены сверх размеров, снятых при запекании, в процентах.
-         *
-         * Ноль — потому что запас больше не за что платить. Он обосновывался тем, что
-         * умерший слот терялся навсегда; со свободным списком внутри арены расход стал
-         * пропорционален ЖИВЫМ сущностям, а не истории создания.
-         *
-         * Поднимать придётся, когда геном научится создавать клеток больше, чем было при
-         * запекании: запечённые слоты адресуются напрямую, а всё сверх них берётся
-         * bump-указателем из этого запаса.
-         */
-        const val ARENA_HEADROOM_PERCENT = 0
-    }
 }

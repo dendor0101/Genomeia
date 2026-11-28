@@ -27,7 +27,13 @@ class CameraControl(
      * куда надо встать, а применяет [setZoom] обработчик команды — так масштаб попадает
      * в журнал, как и всё остальное. По умолчанию применяется сразу.
      */
-    val onZoom: ((zoom: Float, x: Float, y: Float) -> Unit)? = null
+    val onZoom: ((zoom: Float, x: Float, y: Float) -> Unit)? = null,
+    /**
+     * Средняя кнопка мыши — отметка клетки (SimulationIntent.MarkCell). Только отметка: ни
+     * касания, ни захвата, ни посадки. null — средняя кнопка как правая, как раньше.
+     */
+    val onMiddleClick: ((x: Float, y: Float) -> Unit)? = null,
+    private val inputCamera: OrthographicCamera = camera
 ): GestureListener {
 
     private var initialZoom = 0f
@@ -42,7 +48,7 @@ class CameraControl(
 
     private fun screenToWorld(screenX: Float, screenY: Float): Pair<Float, Float> {
         val screenPos = Vector3(screenX, screenY, 0f)
-        val worldPos = camera.unproject(screenPos)
+        val worldPos = inputCamera.unproject(screenPos)
         return Pair(worldPos.x, worldPos.y)
     }
 
@@ -76,6 +82,11 @@ class CameraControl(
         button: Int
     ): Boolean {
         val (touchedCellX, touchedCellY) = screenToWorld(x, y)
+        val middle = onMiddleClick
+        if (middle != null && button == Input.Buttons.MIDDLE) {
+            middle.invoke(touchedCellX, touchedCellY)
+            return false
+        }
         onTouchDown.invoke(touchedCellX, touchedCellY, button == Input.Buttons.LEFT)
         return false
     }
@@ -86,6 +97,7 @@ class CameraControl(
         count: Int,
         button: Int
     ): Boolean {
+        if (onMiddleClick != null && button == Input.Buttons.MIDDLE) return true
         val (touchedCellX, touchedCellY) = screenToWorld(x, y)
         onTap.invoke(touchedCellX, touchedCellY, button == Input.Buttons.LEFT)
         return true

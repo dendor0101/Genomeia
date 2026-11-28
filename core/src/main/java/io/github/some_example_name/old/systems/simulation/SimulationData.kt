@@ -1,16 +1,16 @@
 package io.github.some_example_name.old.systems.simulation
 
+import io.github.some_example_name.old.commands.ScreenCell
 import io.github.some_example_name.old.features.levels.editor.LevelInfo
 import it.unimi.dsi.fastutil.ints.IntArrayList
 
 class SimulationData {
     var isRestart = false
-    var isFinish = false
     var tickCounter = 0
     var timeSimulation = 0f
 
-    var isLevel = false //level-игровой уровень с lua логикой и конечной целью. при false-обычная симуляция.
-    var isGuide = false
+    /** Мир — уровень (Lua-скрипт, цель, зона старта, [level]); false — обычная симуляция. */
+    var isLevel = false
 
     /**
      * Организмы, которых поставил сам уровень (LevelInfo.scriptedOrganisms).
@@ -28,9 +28,8 @@ class SimulationData {
      * рестарт уровня не наследует разрешение от прошлого захода.
      */
     var isMovable = true
-//    var hasLua = false
-//    var hasDestPoint = false //точка куда игрок должен добраться
-//    var cellsNeed = -1 //сколько клеток нужно для победы
+
+    /** Уровень мира; читать только при [isLevel] — ставит NavigationCommandsManager.applyLevel. */
     lateinit var level: LevelInfo
 
     //Пока вынес все глобальные переменные сюда, но кажется это все не совсем к месту
@@ -39,12 +38,18 @@ class SimulationData {
     var isPlay = true
     var maxSpeed = false
 
-    var targetUPS: Int = 60
+    /**
+     * Тиков в секунду по умолчанию. 30: тик игры — один шаг мира физики длиной DT = 1/30 с
+     * (physics/bridge/PhysicsUnits), так мир идёт в реальном времени, как стенд физики.
+     */
+    var targetUPS: Int = 30
         set(value) {
             field = value.coerceIn(1, 1000)
         }
     var ups = 60
     var selectedCellIndex = -1
+    /** Только для подсветки: освободившийся слот не должен подсветить нового жильца. */
+    var selectedFrameCell: ScreenCell? = null
 
     /**
      * Организм, который игрок поставил мышью последним, -1 — ещё не ставил.
@@ -67,28 +72,28 @@ class SimulationData {
     val controllerKeys = BooleanArray(ControllerKeys.COUNT)
 
     /**
-     * Отладочный стресс-тест жизненного цикла клеток: пока клавиша зажата, каждый тик
-     * несколько случайных клеток умирают (A) или получают предельную скорость и улетают,
-     * рвя свои связи (D).
-     *
-     * Нужен, чтобы не воспроизводить руками сценарии, на которых всплывают гонки и битые
-     * ссылки в связях: они возникают именно при активной смерти клеток и разрыве связей,
-     * а руками такое повторять долго и ненадёжно.
-     *
-     * Выставляет поток симуляции из снимка клавиш контроллера (A и D), в начале тика —
-     * поэтому стресс попадает в журнал сессии и повторяется при повторе бага.
-     *
-     * Работает только при DEBUG_CHECKS: в обычной сборке флаги никем не выставляются.
+     * Стресс жизненного цикла для проверок, см. PlayerCommand.SetStress: раз во сколько тиков
+     * убить клетку, отбросить клетку, посадить организм; 0 — выключено. Состояние мира: в
+     * хэше (SimulationSystem.hashState), сбрасывается с началом сессии.
      */
-    var debugKillCells = false
-    var debugFlingCells = false
+    var stressKillEvery = 0
+    var stressFlingEvery = 0
+    var stressSpawnEvery = 0
+
+    /**
+     * Отладка физики, см. PlayerCommand.SetPhysicsDebug (галочки отладочного режима): хвосты не
+     * толкают (Tail) — виден собственный дрейф тела; глубокое проникновение частиц не убивает
+     * (PhysicsWorld.deepKillOn). Состояние мира: в хэше, сбрасывается с началом сессии.
+     */
+    var debugNoTailThrust = false
+    var debugNoDeepKill = false
 
     fun clear() {
         isRestart = false
-        isFinish = false
         tickCounter = 0
         timeSimulation = 0f
         selectedCellIndex = -1
+        selectedFrameCell = null
         lastPlacedOrganIndex = -1
         scriptedOrganIndices.clear()
         // Пауза — состояние ЭКРАНА, а не мира: её ставит окно уровня или диалог провала,
@@ -96,13 +101,15 @@ class SimulationData {
         // уровень, запущенный из редактора после выигранного/проваленного) открывался
         // стоящим на тике 0: поток обновления видит isPlay=false и просто спит.
         // clear() зовётся при сборке каждого нового мира — это и есть точка «с чистого листа».
-        isPlay = true
+        // Только в уровне: обычный мир ведёт себя ровно как до PR 38 (рестарт на паузе
+        // остаётся на паузе, BugReplay сам решает, когда мир стоит). isLevel ставится до
+        // сборки мира (applyLevel), поэтому здесь он уже про новый мир.
+        if (isLevel) isPlay = true
     }
 
 
     fun resetLevel() {
         isLevel = false
-        isGuide = false
         isMovable = true
         scriptedOrganIndices.clear()
     }

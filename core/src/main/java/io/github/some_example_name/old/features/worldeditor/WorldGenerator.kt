@@ -6,8 +6,12 @@ var randomWallSeed = Random(12)
 
 class WorldGenerator {
     companion object {
-        var GENERATOR_DAY_NIGHT = 15
-        var GENERATOR_INTERPOLATE = 12
+        /** Параметры по умолчанию: ими начинается редактор мира и карта нового уровня. */
+        const val DEFAULT_DAY_NIGHT = 15
+        const val DEFAULT_INTERPOLATE = 12
+
+        var GENERATOR_DAY_NIGHT = DEFAULT_DAY_NIGHT
+        var GENERATOR_INTERPOLATE = DEFAULT_INTERPOLATE
     }
 
     fun generateWorld(

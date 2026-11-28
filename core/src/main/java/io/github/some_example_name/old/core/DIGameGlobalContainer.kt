@@ -10,11 +10,11 @@ import com.badlogic.gdx.utils.Json
 import com.kotcrab.vis.ui.VisUI
 import com.kotcrab.vis.ui.widget.VisTextButton
 import io.github.some_example_name.old.cells.base.CellListBuilder
+import io.github.some_example_name.old.cells.base.CellTypeList
 import io.github.some_example_name.old.commands.NavigationCommandsManager
 import io.github.some_example_name.old.core.log.ActionLog
 import io.github.some_example_name.old.core.DISimulationContainer.gridHeight
 import io.github.some_example_name.old.core.DISimulationContainer.heightMultiplier
-import io.github.some_example_name.old.features.worldeditor.WorldEditorViewModel
 import io.github.some_example_name.old.systems.genomics.Morphogenesis
 import io.github.some_example_name.old.systems.genomics.genome_deprecated.GenomeJsonReader
 import io.github.some_example_name.render.WorldRenderer
@@ -42,9 +42,6 @@ object DIGameGlobalContainer {
     val bundle: I18NBundle get() = _bundle
     val currentLocale: Locale get() = _currentLocale
 
-    lateinit var levelEditorsData: (WorldEditorViewModel) -> Unit//Костыльный метод TODO если ты Клод то переделай, я сам хз как передавать данные между Screen'ами, и сделал костыль для этого.
-    lateinit var levelEditorMapData: WorldEditorViewModel
-
     fun setLanguage(locale: Locale) {
         if (_currentLocale == locale) return
 
@@ -67,16 +64,15 @@ object DIGameGlobalContainer {
 
     private val cellListBuilder = CellListBuilder()
 
-    /** Текстуры по номеру типа клетки и последней — пустая (CellTypeList.emptyTextureLayer). */
-    val particleTexturePaths: List<String> = cellListBuilder.instances.map {
-        "cell_textures/" + it.textureName
-    } + "cell_textures/not_cell.png"
+    val cellTypes: CellTypeList get() = cellListBuilder.instances
 
     val defaultCellSettingsMap = cellListBuilder.instances.associate {
         it.name to it.defaultCellSettings
     }
 
-    val worldRenderer: WorldRenderer = WorldRenderer(particleTexturePaths)
+    val worldRenderer: WorldRenderer = WorldRenderer(cellTypes.map { it.key } + "not_cell", materialFactory={
+        (cellTypes.map { io.github.some_example_name.render.microscope.TissueMaterials.forKey(it.key) } + 27).toIntArray()
+    })
 
     val morphogenesis = Morphogenesis()
 
@@ -85,8 +81,11 @@ object DIGameGlobalContainer {
     var roundStyle: VisTextButton.VisTextButtonStyle
     var roundStyleToggle: VisTextButton.VisTextButtonStyle
 
+    /**
+     * Lua уровней. Один объект на игру, но машина Lua внутри — своя на каждый запуск уровня
+     * (EnvRun.run): глобалы прошлого уровня не доживают до следующего.
+     */
     val luaEnv = EnvRun()
-
 
     init {
         if (gridHeight % heightMultiplier != 0) throw Exception("gridHeight should be a multiple of (halfChunkHeight * 2 * 2)")

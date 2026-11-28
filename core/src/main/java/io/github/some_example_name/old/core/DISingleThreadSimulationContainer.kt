@@ -9,6 +9,7 @@ import io.github.some_example_name.old.core.DIGameGlobalContainer.substrateSetti
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.NeuralEntity
+import io.github.some_example_name.old.entities.TriangleEntity
 import io.github.some_example_name.old.entities.NeuralLinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
@@ -27,17 +28,20 @@ import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.old.systems.physics.CollisionManager
 import io.github.some_example_name.old.systems.physics.GridManager
 import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem
-import io.github.some_example_name.old.systems.physics.MovementManager
+import io.github.some_example_name.old.physics.bridge.WorldPhysics
 import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem
 import io.github.some_example_name.old.systems.render.RenderBufferManager
 import io.github.some_example_name.old.systems.render.RenderSystem
 import io.github.some_example_name.old.systems.simulation.SimulationData
 import io.github.some_example_name.old.systems.simulation.SingleThreadSimulationSystem
 
-object DISingleThreadSimulationContainer:  DIContext, Disposable {
+object DISingleThreadSimulationContainer : SingleThreadWorld()
 
-    override var gridWidth = 48
-    override var gridHeight = 48
+/** Separate instances let desktop tools test a body without touching the menu or the player's world. */
+open class SingleThreadWorld(size: Int = 48, private val interactive: Boolean = true) : DIContext, Disposable {
+
+    override var gridWidth = size
+    override var gridHeight = size
 
     var gridSize = gridWidth * gridHeight
     override var threadCount = 1
@@ -53,7 +57,7 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
         maxAmountOfParticles = 4
     )
     private val cellListBuilder = CellListBuilder().apply {
-        bindToDIContext(this@DISingleThreadSimulationContainer)
+        bindToDIContext(this@SingleThreadWorld)
     }
     val cellList = cellListBuilder.instances
     val zygote = cellListBuilder.zygote
@@ -61,7 +65,7 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
     override val organEntity = OrganEntity(
         organStartMaxAmount = 10
     )
-    val simulationData = SimulationData()
+    override val simulationData = SimulationData()
     override val particleEntity = ParticleEntity(
         particlesStartMaxAmount = 800,
         gridManager = gridManager
@@ -102,9 +106,12 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
         isEditor = false
     )
 
+    /** Треугольники тел по аренам организмов, см. TriangleEntity. */
+    val triangleEntity = TriangleEntity(20_000)
+
     init {
         // См. комментарий в DISimulationContainer: organEntity создаётся раньше всех.
-        organEntity.bindEntities(cellEntity, particleEntity, linkEntity)
+        organEntity.bindEntities(cellEntity, particleEntity, linkEntity, neuralLinkEntity, triangleEntity)
     }
     override val pheromoneEntity = PheromoneEntity(
         gridManager = gridManager
@@ -125,7 +132,8 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
         linkEntity,
         neuralLinkEntity,
         pheromoneEntity,
-        substancesEntity
+        substancesEntity,
+        triangleEntity
     )
 
     override val genomeManager = GenomeManager(
@@ -138,21 +146,26 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
         cellEntity = cellEntity
     )
 
-    val renderBufferManager = RenderBufferManager(
-        simulationData = simulationData,
-        cellEntity = cellEntity,
-        particleEntity = particleEntity,
-        linkEntity = linkEntity,
-        cellList = cellList,
-        specialEntity = specialEntity,
-        pheromoneEntity = pheromoneEntity,
-        neuralLinkEntity = neuralLinkEntity
-    )
+    val renderBufferManager by lazy {
+        RenderBufferManager(
+            genomes = genomeManager.genomes,
+            simulationData = simulationData,
+            cellEntity = cellEntity,
+            particleEntity = particleEntity,
+            linkEntity = linkEntity,
+            cellList = cellList,
+            specialEntity = specialEntity,
+            pheromoneEntity = pheromoneEntity,
+            neuralLinkEntity = neuralLinkEntity
+        )
+    }
 
-    val renderSystem = RenderSystem(
-        worldRenderer = worldRenderer,
-        renderBufferManager = renderBufferManager
-    )
+    val renderSystem by lazy {
+        RenderSystem(
+            worldRenderer = worldRenderer,
+            renderBufferManager = renderBufferManager
+        )
+    }
 
     val userCommandManager = UserCommandManager(
         organEntity = organEntity,
@@ -263,17 +276,17 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
         cellEntity = cellEntity
     )
 
-    val movementManager = MovementManager(
-        entity = particleEntity,
-        gridManager = gridManager,
-        substrateSettings = substrateSettings,
-        worldCommandsManager = worldCommandsManager,
-        simulationData = simulationData,
-        linkEntity = linkEntity,
-        cellList = cellList,
+    /** Фон меню — физика-библиотека в одном потоке. */
+    val worldPhysics = WorldPhysics(
+        organEntity = organEntity,
         cellEntity = cellEntity,
+        linkEntity = linkEntity,
+        particleEntity = particleEntity,
         substancesEntity = substancesEntity,
-        pheromonesManager = pheromonesManager
+        gridManager = gridManager,
+        pheromonesManager = pheromonesManager,
+        worldCommandsManager = worldCommandsManager,
+        workers = null
     )
 
     val worldTerrainManager = WorldTerrainManager(
@@ -296,16 +309,16 @@ object DISingleThreadSimulationContainer:  DIContext, Disposable {
             linkPhysicsSystem = linkPhysicsSystem,
             simulationData = simulationData,
             cellSystem = cellSystem,
-            userCommandManager = userCommandManager,
+            userCommandManager = if (interactive) userCommandManager else null,
             entityList = entityList,
-            renderBufferManager = renderBufferManager,
+            renderBufferManager = if (interactive) renderBufferManager else null,
             pheromonesManager = pheromonesManager,
-            movementManager = movementManager
+            worldPhysics = worldPhysics
         )
     }
 
     override fun dispose() {
-        TODO("Not yet implemented")
+        simulationSystem.dispose()
     }
 
     fun resizeWorld() {

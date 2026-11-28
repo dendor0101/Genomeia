@@ -10,32 +10,36 @@ import io.github.some_example_name.old.cells.base.CellPalette
 import io.github.some_example_name.old.commands.GameCommand
 import io.github.some_example_name.old.commands.GoExit
 import io.github.some_example_name.old.commands.GoGenomeEditor
-import io.github.some_example_name.old.commands.GoLevelEditor
-import io.github.some_example_name.old.commands.GoLogic
+import io.github.some_example_name.old.commands.GoCampaign
+import io.github.some_example_name.old.commands.GoGenomes
+import io.github.some_example_name.old.commands.GoGuide
+import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer
 import io.github.some_example_name.old.commands.GoSettings
 import io.github.some_example_name.old.commands.GoSimulation
 import io.github.some_example_name.old.commands.GoSupport
 import io.github.some_example_name.old.commands.GoWorldEditor
+import io.github.some_example_name.old.commands.PlayerCommand
 import io.github.some_example_name.old.commands.UserCommandManager
 import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.DISingleThreadSimulationContainer
-import io.github.some_example_name.old.core.GameFiles
-import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer
+import io.github.some_example_name.old.core.GameFilePaths
 import io.github.some_example_name.old.features.worldeditor.WorldEditorIntent
 import io.github.some_example_name.old.features.worldeditor.WorldGenerator
+import io.github.some_example_name.old.features.worldeditor.WorldSpec
 import io.github.some_example_name.old.features.worldeditor.WorldTerrainManager
 import io.github.some_example_name.old.journal.CommandSource
 import io.github.some_example_name.old.journal.SessionAttachments
 import io.github.some_example_name.old.journal.SessionJournal
-import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
 import io.github.some_example_name.old.systems.genomics.library.GenomeCatalog
-import io.github.some_example_name.old.systems.genomics.library.GenomeImport
+import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
+import io.github.some_example_name.old.systems.maps.MapNames
 import io.github.some_example_name.old.systems.maps.MapSave
 import io.github.some_example_name.old.systems.maps.SavedMap
 import io.github.some_example_name.old.systems.render.RenderSystem
 import io.github.some_example_name.old.systems.simulation.SingleThreadSimulationSystem
 import kotlinx.serialization.Serializable
+import kotlin.random.Random
 
 /**
  * Что игрок хочет сделать в главном меню.
@@ -59,30 +63,44 @@ sealed interface MenuIntent : GameCommand {
         override val detail get() = slot
     }
 
+    /**
+     * Удалить сохранённый мир. Это команда, а не просто стёртый файл: следующие команды
+     * записи («открыть мир X», «сохранить в X») при повторе должны видеть ту же папку миров.
+     */
+    @Serializable
+    data class DeleteWorld(val slot: String) : MenuIntent {
+        override val name get() = "DeleteWorld"
+        override val detail get() = slot
+    }
+
+    /**
+     * Открыть геном в редакторе прямо из меню. Так было до экрана «Геномы»; теперь редактор
+     * открывается оттуда (GenomesIntent.OpenEditor), а эта команда осталась для .bug
+     * прошлых версий — номер команды это формат файла.
+     */
     @Serializable
     data class OpenGenomeEditor(val genomeName: String?) : MenuIntent {
         override val name get() = "OpenGenomeEditor"
         override val detail get() = genomeName ?: "new"
     }
 
+    /** Экран «Геномы»: свои и встроенные геномы, редактор, импорт. */
+    @Serializable
+    data object OpenGenomes : MenuIntent {
+        override val name get() = "OpenGenomes"
+    }
+
     /**
-     * Открыть системный выбор файлов генома (.genome и старые .json). Что выбрали — см.
-     * [GenomeImported]; файлы, перетащенные в окно игры на ПК, приходят туда же без этой команды.
+     * Импорт геномов из меню — до экрана «Геномы». Теперь импорт там (GenomesIntent), а эти
+     * две команды остались для .bug прошлых версий: [GenomeImported] при повторе кладёт файл
+     * из приложений сессии, [ImportGenome] при повторе и раньше ничего не делал.
      */
     @Serializable
     data object ImportGenome : MenuIntent {
         override val name get() = "ImportGenome"
     }
 
-    /**
-     * Файл генома импортирован и лежит в папке геномов под именем [fileName].
-     *
-     * Какой файл выбрал игрок, решает система, а не игра, поэтому итог — отдельная
-     * команда, а сам файл кладётся в приложения сессии ([attachment]): при повторе бага
-     * геном берётся оттуда, а не из системного окна выбора. Снимается уже готовый .genome,
-     * а не исходный файл: старый JSON при импорте запекается, и повтор не должен зависеть
-     * от того, как запекание устроено в версии, которая его проигрывает.
-     */
+    /** См. [ImportGenome] и GenomesIntent.GenomeImported. */
     @Serializable
     data class GenomeImported(val fileName: String, val attachment: String) : MenuIntent {
         override val name get() = "GenomeImported"
@@ -96,20 +114,19 @@ sealed interface MenuIntent : GameCommand {
     }
 
     @Serializable
+    data object OpenGuide : MenuIntent {
+        override val name get() = "OpenGuide"
+    }
+
+    @Serializable
     data object OpenSettings : MenuIntent {
         override val name get() = "OpenSettings"
     }
 
+    /** Кампания: встроенные уровни и уровни игрока. */
     @Serializable
-    data object OpenLogic : MenuIntent {
-        override val name: String
-            get() = "OpenLogic"
-
-    }
-
-    @Serializable
-    data object OpenLevelEditor : MenuIntent {
-        override val name get() = "OpenLevelEditor"
+    data object OpenCampaign : MenuIntent {
+        override val name get() = "OpenCampaign"
     }
 
     @Serializable
@@ -128,9 +145,6 @@ sealed interface MenuIntent : GameCommand {
     }
 }
 
-/** Итог импорта: имена получившихся геномов и имена файлов, которые не удалось импортировать. */
-class GenomeImportResult(val imported: List<String>, val failed: List<String>)
-
 class MenuViewModel(
     val simulationSystem: SingleThreadSimulationSystem = DISingleThreadSimulationContainer.simulationSystem,
     val renderSystem: RenderSystem = DISingleThreadSimulationContainer.renderSystem,
@@ -142,8 +156,8 @@ class MenuViewModel(
 
     private val navigation = DIGameGlobalContainer.navigationCommandsManager
 
-    /** Импорт закончился (что-то выбрали или отменили) — экран показывает итог. */
-    var onGenomeImportFinished: ((GenomeImportResult) -> Unit)? = null
+    /** Перетащенную карту не удалось открыть — экран называет файл. */
+    var onMapImportFailed: ((fileName: String) -> Unit)? = null
 
     private var tiltX = 0f
     private var tiltY = 0f
@@ -154,12 +168,6 @@ class MenuViewModel(
 
     /** Сохранённые миры для окна выбора. Запрос, а не команда: игру он не меняет. */
     fun savedWorlds(): List<SavedMap> = MapSave.listMaps()
-
-    /** Свои геномы для окна выбора — без встроенных: те открываются отдельным списком. */
-    fun genomeNames(): List<String> = GenomeCatalog.playerNames()
-
-    /** Встроенные геномы (имена с приставкой, см. GenomeCatalog). */
-    fun bundledGenomeNames(): List<String> = GenomeCatalog.bundledNames()
 
     /**
      * Единственный вход для действий игрока в меню.
@@ -183,36 +191,39 @@ class MenuViewModel(
                 navigation.performCommand(GoSimulation(world = null, genomeName = null, savedWorld = intent.slot))
             }
 
+            is MenuIntent.DeleteWorld -> {
+                // При повторе мира может не быть в песочнице: в .bug снимаются только
+                // загруженные миры (SessionAttachments), а этот, возможно, не открывали.
+                if (!MapSave.delete(intent.slot)) Gdx.app.log(TAG_MAPS, "мира ${intent.slot} нет — удалять нечего")
+            }
+
             is MenuIntent.OpenGenomeEditor -> {
                 resetLevelState()
                 navigation.performCommand(GoGenomeEditor(intent.genomeName))
             }
 
-            is MenuIntent.ImportGenome -> {
-                // При повторе окна выбора нет: файлы придут следующими командами из записи.
-                if (BugReplay.isActive) return
-                DIGameGlobalContainer.fileProvider.pickGenomeFiles { files ->
-                    // Колбэк системного окна приходит не в поток игры.
-                    Gdx.app.postRunnable { importGenomeFiles(files) }
-                }
+            is MenuIntent.OpenGenomes -> {
+                resetLevelState()
+                navigation.performCommand(GoGenomes)
             }
 
+            // Только из старых .bug, где окно выбора и при записи отработало без журнала.
+            is MenuIntent.ImportGenome -> Unit
+
+            // Только из старых .bug: файл приходит из приложений сессии, как и раньше.
             is MenuIntent.GenomeImported -> {
-                // В игре файл уже лежит в папке геномов (importGenomeFiles). При повторе его
-                // там нет — кладём из приложений сессии.
-                if (BugReplay.isActive) {
-                    SessionAttachments.restore(intent.attachment, GameFiles.genomesDir().child(intent.fileName))
-                }
+                SessionAttachments.restoreGenome(intent.attachment, intent.fileName)
             }
 
             is MenuIntent.MapImported -> {
-                val target = GameFiles.mapsDir().child("${intent.slot}.map")
-                check(SessionAttachments.restore(intent.attachment, target)) { "нет снимка импортированной карты" }
+                if (BugReplay.isActive) SessionAttachments.restoreMap(intent.attachment, intent.slot)
                 // Снимок уже есть в attachment: не дублируем весь мир второй раз в .bug.
                 SessionAttachments.markMapWritten(intent.slot)
                 resetLevelState()
                 navigation.performCommand(GoSimulation(world = null, genomeName = null, savedWorld = intent.slot))
             }
+
+            is MenuIntent.OpenGuide -> navigation.performCommand(GoGuide)
 
             is MenuIntent.OpenSettings -> navigation.performCommand(GoSettings)
 
@@ -220,12 +231,7 @@ class MenuViewModel(
 
             is MenuIntent.Exit -> navigation.performCommand(GoExit)
 
-            is MenuIntent.OpenLogic -> navigation.performCommand(GoLogic)
-
-            is MenuIntent.OpenLevelEditor -> {
-                resetLevelState()
-                navigation.performCommand(GoLevelEditor)
-            }
+            is MenuIntent.OpenCampaign -> navigation.performCommand(GoCampaign)
         }
     }
 
@@ -245,86 +251,90 @@ class MenuViewModel(
     }
 
     /**
-     * Внешние файлы геномов — выбранные в системном окне или перетащенные в окно игры (ПК) —
-     * в папку геномов. Старый JSON по дороге переводится в .genome и запекается (GenomeImport).
-     *
-     * Каждый удачный файл — своя команда [MenuIntent.GenomeImported] со снимком получившегося
-     * .genome. Неудачный в журнал не идёт: папку геномов он не изменил.
-     *
-     * Только в потоке игры: запекание выращивает геном в мире редактора.
+     * Карта открывается через команду, внешний файл остаётся нетронутым. Имя мира — имя
+     * файла (занято — «имя (2)»), а если из него не вышло имени — следующий номер.
      */
-    fun importGenomeFiles(files: List<FileHandle>) {
-        if (BugReplay.isActive) return
-        val imported = mutableListOf<String>()
-        val failed = mutableListOf<String>()
-        for (file in files) {
-            val genome = try {
-                GenomeImport.importFile(file, GameFiles.genomesDir(), DIGenomeEditorContainer.genomeBaker)
-            } catch (e: Exception) {
-                Gdx.app.error(TAG, "не удалось импортировать ${file.path()}", e)
-                failed += file.name().removePrefix("~")
-                continue
-            }
-            handle(MenuIntent.GenomeImported(genome.name(), SessionAttachments.attachImported(genome)))
-            imported += genome.nameWithoutExtension()
-        }
-        onGenomeImportFinished?.invoke(GenomeImportResult(imported, failed))
-    }
-
-    /** Карта открывается через команду, внешний файл остаётся нетронутым. */
     fun importMapFile(file: FileHandle) {
         if (BugReplay.isActive) return
         try {
             MapSave.validateImport(file)
-            val slot = ((MapSave.listMaps().maxOfOrNull { it.slot.toIntOrNull() ?: 0 } ?: 0) + 1).toString()
-            val attachment = SessionAttachments.attachImported(file)
+            val slot = MapNames.fromFileName(file.nameWithoutExtension())?.let(MapSave::uniqueSlot)
+                ?: ((MapSave.listMaps().maxOfOrNull { it.slot.toIntOrNull() ?: 0 } ?: 0) + 1).toString()
+            val attachment = SessionAttachments.attachImported("$slot.map") { file.copyTo(it) }
+            if (SessionAttachments.dir != null) SessionAttachments.restoreMap(attachment, slot)
+            else GameFilePaths.writeAtomically(MapSave.mapFile(slot)) { file.copyTo(it) }
+            // Команда означает успешный импорт: ошибка записи цели не должна попасть в повтор.
             handle(MenuIntent.MapImported(slot, attachment))
         } catch (e: Exception) {
-            Gdx.app.error("MapImport", "не удалось открыть ${file.path()}", e)
-            onGenomeImportFinished?.invoke(GenomeImportResult(emptyList(), listOf(file.name())))
+            Gdx.app.error(TAG_MAPS, "не удалось открыть ${file.path()}", e)
+            onMapImportFailed?.invoke(file.name())
         }
     }
 
     fun startMenuSimulation() {
-//        val map = worldGenerator.generateWorld(
-//            width = DISingleThreadSimulationContainer.gridWidth,
-//            height = DISingleThreadSimulationContainer.gridHeight,
-//            seed = Random.nextLong()
-//        )
-//        worldTerrainManager.map = map
-//        worldTerrainManager.initWorld(
-//            gridWith = DISingleThreadSimulationContainer.gridWidth,
-//            gridHeight = DISingleThreadSimulationContainer.gridHeight,
-//        )
+        // Контейнер переживает экраны: новый вход в меню не должен добавлять ещё одну сцену.
+        simulationSystem.dispose()
+        nextSceneTickNanos = 0L
+        userCommandManager.startSession(SCENE_SEED)
+        val width = DISingleThreadSimulationContainer.gridWidth
+        val height = DISingleThreadSimulationContainer.gridHeight
+        val scale = WorldSpec.MAP_CELLS_PER_WORLD_CELL
+        val map = worldGenerator.generateWorld(
+            width = (width * scale).toInt(),
+            height = (height * scale).toInt(),
+            seed = SCENE_SEED
+        )
+        worldTerrainManager.map = map
+        worldTerrainManager.initWorld(gridWidth = width, gridHeight = height)
 
-        genomeManager.loadGenomes()
-
-//        repeat(5) {
-//            genomeManager.genomes.forEachIndexed { index, _ ->
-//                userCommandManager.push(
-//                    cmd = PlayerCommand.Tap(
-//                        x = Random.nextFloat() * DISingleThreadSimulationContainer.gridWidth,
-//                        y = Random.nextFloat() * DISingleThreadSimulationContainer.gridHeight,
-//                        isLeftButton = true,
-//                        genomeIndex = index
-//                    )
-//                )
-//            }
-//        }
-
-//        userCommandManager.push(
-//            cmd = PlayerCommand.Tap(
-//                x = /*Random.nextFloat()*/0.5f * DISingleThreadSimulationContainer.gridWidth,
-//                y = /*Random.nextFloat()*/0.5f * DISingleThreadSimulationContainer.gridHeight,
-//                isLeftButton = true,
-//                genomeIndex = 0
-//            )
-//        )
+        // Только список меню: файлы игрока и остальные встроенные геномы здесь не нужны.
+        genomeManager.genomes.clear()
+        val random = Random(SCENE_SEED)
+        for ((name, count) in SCENE_GENOMES) {
+            val index = genomeManager.addSavedGenome(GenomeCatalog.load(name))
+            repeat(count) {
+                var x: Float
+                var y: Float
+                var attempts = 0
+                do {
+                    check(attempts++ < 1024) { "В фоновой сцене нет свободного места для $name" }
+                    x = width * (0.2f + random.nextFloat() * 0.6f)
+                    y = height * (0.2f + random.nextFloat() * 0.6f)
+                } while (map[(y * scale).toInt()][(x * scale).toInt()])
+                userCommandManager.pushInternal(PlayerCommand.Tap(x, y, true, index))
+            }
+        }
     }
 
-    fun updateFrame() {
-        simulationSystem.updateTick()
-        renderSystem.render()
+    fun updateFrame(background: io.github.some_example_name.render.microscope.MenuMicroscopeBackground) {
+        // Сменить режим до сборки снимка: Debug не требует подготовки оптических связей.
+        renderSystem.mode = background.budget.mode
+        if (isSceneTickDue(System.nanoTime())) simulationSystem.updateTick()
+        // И между тиками: рендер сам ведёт клетки от прошлого снимка к текущему
+        // (RenderSystem.interpolationLag), так что на 144 Гц фон не дёргается.
+        renderSystem.render(background)
+    }
+
+    /** Когда положен следующий тик сцены; 0 — ещё ни одного (новая сцена). */
+    private var nextSceneTickNanos = 0L
+
+    /**
+     * Не больше [SCENE_MAX_UPS] тиков в секунду и не больше одного за кадр.
+     *
+     * Раньше тик шёл на каждом кадре: на мониторе 144 Гц фон жил впятеро быстрее, чем на
+     * телефоне с 30 кадрами, и столько же раз ел процессор, пока игрок просто смотрит на меню.
+     * Время здесь влияет только на темп фона: сцена меню не в журнале и не повторяется
+     * (её тиков и так было столько, сколько кадров).
+     *
+     * Догонять отставание нельзя: после свёрнутого окна или медленного кадра шаг сдвигается
+     * от текущего момента, а не выдаёт пачку тиков разом. Не больше одного тика за кадр —
+     * иначе на слабом телефоне догоняние само раздувало бы кадр.
+     */
+    private fun isSceneTickDue(now: Long): Boolean {
+        val next = nextSceneTickNanos
+        if (next != 0L && now - next < 0) return false
+        nextSceneTickNanos = if (next == 0L || now - next > SCENE_TICK_NANOS) now + SCENE_TICK_NANOS else next + SCENE_TICK_NANOS
+        return true
     }
 
     fun moveCamera(camera: Camera, delta: Float) {
@@ -363,7 +373,21 @@ class MenuViewModel(
         camera.update()
     }
 
-    private companion object {
-        const val TAG = "GenomeImport"
+    internal companion object {
+        private const val TAG_MAPS = "MapImport"
+        private const val SCENE_SEED = 12L
+
+        /** Предел темпа фоновой сцены, см. [isSceneTickDue]. */
+        private const val SCENE_MAX_UPS = 30
+        private const val SCENE_TICK_NANOS = 1_000_000_000L / SCENE_MAX_UPS
+
+        /**
+         * Состав фоновой сцены: имя встроенного генома и число организмов.
+         *
+         * Файл обязан быть в ассетах: меню строится первым экраном, и без генома игра падает
+         * на старте, ещё до любого действия игрока (отчёт 21.11 — из ассетов убрали Leech, а
+         * сцена ссылалась на него). Это ловит MenuSceneGenomesTest.
+         */
+        internal val SCENE_GENOMES = listOf("bundled/Inchworm" to 5)
     }
 }

@@ -73,6 +73,9 @@ class WorldCanvasActor(
      * на свободное место (grow), а у scene2d минимальный размер виджета равен желаемому, и
      * карта 576×576 из большого мира выдавила бы панель настроек с экрана.
      */
+    override fun getMinWidth() = 0f
+    override fun getMinHeight() = 0f
+
     override fun getPrefWidth(): Float = PREF_SIZE.dp()
 
     override fun getPrefHeight(): Float = PREF_SIZE.dp()

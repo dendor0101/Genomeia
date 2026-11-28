@@ -21,10 +21,13 @@ import kotlin.reflect.KProperty0
  * нейросвязи, феромоны, органы, свои данные клеток (глаза, хвосты…), субстанции. Добавили поле
  * в сохранение — оно попало и в хэш, отдельно помнить не надо. Плюс то, что живёт вне
  * сущностей, но решает следующие тики:
- *  - SimulationData: номер тика, время, выбранный геном, выбранная клетка,
- *    организм, поставленный мышью последним;
+ *  - SimulationData: номер тика, время, выбранная клетка (выбранного генома нет — см.
+ *    SimulationSystem.hashState), а в уровне ещё организм, поставленный мышью последним,
+ *    и организмы, поставленные уровнем;
  *  - ввод игрока: схваченная частица, точка касания, генератор случайностей команд;
- *  - порядок частиц в пространственной сетке: по нему идёт перебор столкновений.
+ *  - порядок частиц в пространственной сетке: по нему идёт перебор столкновений;
+ *  - мир физики-библиотеки: позиции и скорости его частиц (клетки организмов и субстанции
+ *    читаются прямо из него — ParticleEntity.x/y, решение 2 плана физики).
  *
  * Значения — побитово (floatToRawIntBits), массивы — по всем слотам до lastId.
  *
@@ -45,32 +48,76 @@ object StateHash {
      * 3 — в хэш вошли свои данные клеток (SpecialModDataEntity.specialModData).
      * 4 — EyeEntity, TailEntity, ProducerEntity и PheromoneEmitterEntity влились в них:
      *     частей хэша стало меньше.
-     * 5 — organism index последнего поставленного мышью организма: по нему считается
-     *     средняя точка для финиша уровня.
+     * 5 — формула remember держит память на нулевом входе (Formula.kt): формула хэша та же,
+     *     но мир с этой формулой считается иначе, и старые хэши сверять нельзя.
+     * 6 — из SimulationData ушёл выбранный геном: это выбор в интерфейсе, его пишет поток
+     *     рендера посреди тика, и хэш с ним расходился между записью и повтором.
+     * 7 — у каждой сущности в хэш вошли свободные диапазоны (Entity.freeRanges): арены
+     *     умерших организмов возвращаются и выдаются заново.
+     * 8 — у организма в хэш вошла арена нейросвязей (OrganEntity.neuralArena*), а нейрофаза
+     *     суммирует сигналы по аренам, а не по общему списку.
+     * 9 — в часть SimulationData вошли параметры стресса (PlayerCommand.SetStress).
+     * 10 — у организма больше нет курсоров и свободных списков клеток и связей: слот задан
+     *     раскладкой.
+     * 11 — у сущностей в хэш вошёл текущий блок пула вне арен (Entity.poolNext/poolEnd).
+     * 12 — новая часть TriangleEntity (сформированные треугольники), у организма — арена
+     *     треугольников, у клетки — их счётчик.
+     * 13 — новая часть PhysicsWorld: позиции и скорости частиц мира физики-библиотеки; у
+     *     частиц игры вместо x/y/vx/vy — свои позиции тех, кого мир физики не ведёт (local*).
+     * 14 — в часть SimulationData вошли флаги отладки физики (PlayerCommand.SetPhysicsDebug).
+     * 15 — у клетки нет счётчика сформированных треугольников (formedTriangles): край тела
+     *     клетки берётся из мира физики (PhysicsWorld.isSurfaceCell).
+     * 16 — в часть PhysicsWorld вошли липучки: их временные связи мира физики (StickyJoints).
+     * 17 — у частицы клетка карты террейна (ParticleEntity.terrainCell); террейн — тело мира физики.
+     * 18 — слияние с веткой, где вес и тики спайков синапса ушли из NeuralEntity в SynapseState
+     *     (SpecialModDataEntity), а тик рождения клетки стал сохраняемым полем для возрастного рельефа.
+     * 19 — синапс учится по следам спайков (SynapseState.preTrace/postTrace) вместо тиков
+     *     последней пары; новые формулы lif и trace.
+     * 20 — террейн — неподвижные частицы мира физики, только кромка (StaticTerrain): формула хэша
+     *     та же, но мир другой, и старые хэши сверять нельзя.
+     * 21 — законы физики 16–18.11 (упор в неподвижное, касание своих клеток, потолок тяги мышцы, клин
+     *     ImpactWedge): формула хэша та же, но мир считается иначе, и старые хэши сверять нельзя.
+     * 22 — физика во float (21–22.11): мир считается иначе, старые хэши сверять нельзя.
+     * 23 — закон физики 24.11: гашение и клин убраны, подшагов больше, ткань жёстче в восемь раз
+     *     (docs/physics/reference.md, находка 40): мир считается иначе, старые хэши сверять нельзя.
+     * 24 — блоки решателя по 500 частиц, куски проходов по 1024, кость у шва, деления в ядрах (24.11, находка 41):
+     *     формула хэша та же, но мир считается иначе, и старые хэши сверять нельзя.
+     * 25 — в часть SimulationData вошли настройки мира (WorldRules.hash; в ветке настроек мира это было 22).
+     * 26 — предел длины и ориентация контура по блокам при любом числе организмов, куски проходов режутся по
+     *     организмам, временные ключи опыта мышц MX_* убраны (25.11, находка 42): формула хэша та же, но мир
+     *     считается иначе, и старые хэши сверять нельзя.
+     * Уровни (PR 38) версию не поднимали: организм, поставленный мышью последним, и организмы
+     *     уровня входят в часть SimulationData только при isLevel. Хэш обычного мира не
+     *     изменился, а записей уровней со старой версией не бывает.
      */
-    const val VERSION = 5
+    const val VERSION = 26
 
     class Result(val hash: Long, val parts: LongArray)
 
     /** Имена частей — в том порядке, в каком идут хэши в [Result.parts]. */
     fun partNames(entities: List<Entity>): List<String> =
-        entities.map { it::class.simpleName ?: "Entity" } + listOf(SIMULATION, INPUT, GRID)
+        entities.map { it::class.simpleName ?: "Entity" } + listOf(SIMULATION, INPUT, GRID, PHYSICS)
 
     fun compute(
         entities: List<Entity>,
         simulation: (Long) -> Long,
         input: (Long) -> Long,
-        grid: (Long) -> Long
+        grid: (Long) -> Long,
+        physics: (Long) -> Long,
+        /** Исполнитель частей по воркерам: (число частей, часть) — части независимы, итог тот же. */
+        parallel: ((Int, (Int) -> Unit) -> Unit)? = null
     ): Result {
-        val parts = LongArray(entities.size + 3)
-        entities.forEachIndexed { i, entity ->
-            val state = HashingState(slots = entity.lastId + 1)
-            entity.saveState(state)
-            parts[i] = state.hash
+        val parts = LongArray(entities.size + 4)
+        val part: (Int) -> Unit = { i ->
+            parts[i] = when (i) {
+                entities.size -> simulation(Fnv.OFFSET)
+                entities.size + 1 -> input(Fnv.OFFSET)
+                entities.size + 2 -> grid(Fnv.OFFSET)
+                entities.size + 3 -> physics(Fnv.OFFSET)
+                else -> HashingState(slots = entities[i].lastId + 1).also { entities[i].saveState(it) }.hash
+            }
         }
-        parts[entities.size] = simulation(Fnv.OFFSET)
-        parts[entities.size + 1] = input(Fnv.OFFSET)
-        parts[entities.size + 2] = grid(Fnv.OFFSET)
+        if (parallel != null) parallel(parts.size, part) else for (i in parts.indices) part(i)
 
         var total = Fnv.int(Fnv.OFFSET, VERSION)
         for (part in parts) total = Fnv.long(total, part)
@@ -84,6 +131,7 @@ object StateHash {
     private const val SIMULATION = "SimulationData"
     private const val INPUT = "PlayerInput"
     private const val GRID = "Grid"
+    private const val PHYSICS = "PhysicsWorld"
 
     /**
      * Сохранение мира наоборот: вместо записи поля в файл — в хэш. Имя поля входит в хэш,

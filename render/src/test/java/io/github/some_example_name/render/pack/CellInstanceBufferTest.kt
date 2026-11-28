@@ -4,7 +4,11 @@ import org.junit.Test
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.abs
+import kotlin.math.asin
+import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -17,16 +21,19 @@ import kotlin.test.assertTrue
  * буквально повторяет то, что делает железо выборки атрибутов и вершинный шейдер:
  *
  *   GL_UNSIGNED_BYTE + normalized  →  float = байт / 255.0
- *   cosA  = a_shape.x * 2.0 - 1.0
+ *   GL_SHORT + normalized          →  float = max(short / 32767.0, -1.0)
+ *   cosA, sinA = a_dir.x, a_dir.y;  прошлые — a_prevDir.x, a_prevDir.y
+ *   center = mix(a_center, a_prevCenter, u_lag)
  *   radius = 0.05 + a_shape.z * 0.7
  *   seed  = byteValue(a_type.y) + byteValue(a_type.z) * 256.0
  *   isCell = младший бит byteValue(a_type.w) равен нулю     (nostalgic.vert, debug_view/cell.vert)
- *   spiral = второй бит byteValue(a_type.w)                  (debug_view/cell.vert)
+ *   pattern = byteValue(a_look.x); action = знаковый byteValue(a_look.y) / 127;
+ *   opacity = 1 - byteValue(a_look.z) / 255                   (debug_view/cell.vert)
  *
  * ВНИМАНИЕ: здесь намеренно ЛИТЕРАЛЫ, а не константы из CellInstanceBuffer. Тест сверяет
  * Kotlin с ШЕЙДЕРОМ, а шейдер про константы Kotlin ничего не знает — в нём голые числа.
  * Если бы декодер брал RADIUS_SPAN из кодера, правка этой константы прошла бы тест
- * насквозь: обе стороны поехали бы синхронно, а circle_pc.vert остался бы со старым 0.7.
+ * насквозь: обе стороны поехали бы синхронно, а nostalgic.vert остался бы со старым 0.7.
  */
 class CellInstanceBufferTest {
 
@@ -36,12 +43,19 @@ class CellInstanceBufferTest {
     private fun normalized(packed: Int, index: Int): Float =
         ((packed ushr (index * 8)) and 0xFF) / 255f
 
-    /** `byteValue()` из circle_pc.vert: round(normalized * 255). */
+    /** `byteValue()` из nostalgic.vert: round(normalized * 255). */
     private fun byteValue(packed: Int, index: Int): Int =
         (normalized(packed, index) * 255f).roundToInt()
 
-    /** `cosA = a_shape.x * 2.0 - 1.0` */
-    private fun shaderAngle(shape: Int, index: Int): Float = normalized(shape, index) * 2f - 1f
+    /** GL_SHORT + normalized: младший (index 0) или старший (index 1) short слова. */
+    private fun shortNormalized(packed: Int, index: Int): Float {
+        val raw = ((packed ushr (index * 16)) and 0xFFFF).toShort().toInt()
+        return maxOf(raw / 32767f, -1f)
+    }
+
+    /** `a_dir.x` / `a_dir.y` — cos и sin направления. */
+    private fun shaderDir(dir: Int, index: Int): Float = shortNormalized(dir, index)
+
 
     /** `radius = 0.05 + a_shape.z * 0.7` */
     private fun shaderRadius(shape: Int): Float = 0.05f + normalized(shape, 2) * 0.7f
@@ -58,8 +72,18 @@ class CellInstanceBufferTest {
     /** nostalgic.vert: `isCell = mod(floor(a_type.w * 255.0 + 0.5), 2.0) < 1.0` */
     private fun shaderIsCell(type: Int): Boolean = byteValue(type, 3) % 2 < 1
 
-    /** debug_view/cell.vert: `v_spiral = mod(floor(flags / 2.0), 2.0)` */
-    private fun shaderHasSpiral(type: Int): Boolean = (byteValue(type, 3) / 2) % 2 == 1
+    /** debug_view/cell.vert: `v_pattern = int(byteValue(a_look.x))` */
+    private fun shaderPattern(look: Int): Int = byteValue(look, 0)
+
+    /** debug_view/cell.vert: знаковый байт, `if (action > 127) action -= 256; v_action = action / 127` */
+    private fun shaderAction(look: Int): Float {
+        var action = byteValue(look, 1)
+        if (action > 127) action -= 256
+        return action / 127f
+    }
+
+    /** debug_view/cell.vert: `v_opacity = 1.0 - byteValue(a_look.z) / 255.0` */
+    private fun shaderOpacity(look: Int): Float = 1f - byteValue(look, 2) / 255f
 
     private fun readInstance(data: ByteBuffer, index: Int): Instance {
         val base = index * CellInstanceBuffer.STRUCT_SIZE
@@ -68,7 +92,12 @@ class CellInstanceBufferTest {
             y = data.getFloat(base + CellInstanceBuffer.OFFSET_CENTER + 4),
             color = data.getInt(base + CellInstanceBuffer.OFFSET_COLOR),
             shape = data.getInt(base + CellInstanceBuffer.OFFSET_SHAPE),
-            type = data.getInt(base + CellInstanceBuffer.OFFSET_TYPE)
+            type = data.getInt(base + CellInstanceBuffer.OFFSET_TYPE),
+            look = data.getInt(base + CellInstanceBuffer.OFFSET_LOOK),
+            dir = data.getInt(base + CellInstanceBuffer.OFFSET_DIR),
+            prevX = data.getFloat(base + CellInstanceBuffer.OFFSET_PREV_CENTER),
+            prevY = data.getFloat(base + CellInstanceBuffer.OFFSET_PREV_CENTER + 4),
+            prevDir = data.getInt(base + CellInstanceBuffer.OFFSET_PREV_DIR)
         )
     }
 
@@ -77,14 +106,19 @@ class CellInstanceBufferTest {
         val y: Float,
         val color: Int,
         val shape: Int,
-        val type: Int
+        val type: Int,
+        val look: Int,
+        val dir: Int,
+        val prevX: Float,
+        val prevY: Float,
+        val prevDir: Int
     )
 
     // ==================== Тесты ====================
 
     @Test
-    fun `раскладка инстанса ровно 20 байт и смещения выровнены`() {
-        assertEquals(20, CellInstanceBuffer.STRUCT_SIZE, "менять только вместе с ParticleRenderer")
+    fun `раскладка инстанса ровно 40 байт и смещения выровнены`() {
+        assertEquals(40, CellInstanceBuffer.STRUCT_SIZE, "менять только вместе с CellGeometry")
 
         // GL и особенно WebGL2 требуют, чтобы смещение атрибута было кратно размеру его
         // типа, а шаг — размеру самого крупного. У нас крупнейший тип float (4 байта).
@@ -93,20 +127,30 @@ class CellInstanceBufferTest {
         assertEquals(0, CellInstanceBuffer.OFFSET_COLOR % 4)
         assertEquals(0, CellInstanceBuffer.OFFSET_SHAPE % 4)
         assertEquals(0, CellInstanceBuffer.OFFSET_TYPE % 4)
+        assertEquals(0, CellInstanceBuffer.OFFSET_LOOK % 4)
+        assertEquals(0, CellInstanceBuffer.OFFSET_DIR % 4)
+        assertEquals(0, CellInstanceBuffer.OFFSET_PREV_CENTER % 4)
+        assertEquals(0, CellInstanceBuffer.OFFSET_PREV_DIR % 4)
 
         // Поля не должны перекрываться и обязаны покрывать инстанс целиком.
         assertEquals(8, CellInstanceBuffer.OFFSET_COLOR, "после двух float")
         assertEquals(12, CellInstanceBuffer.OFFSET_SHAPE)
         assertEquals(16, CellInstanceBuffer.OFFSET_TYPE)
+        assertEquals(20, CellInstanceBuffer.OFFSET_LOOK)
+        assertEquals(24, CellInstanceBuffer.OFFSET_DIR)
+        assertEquals(28, CellInstanceBuffer.OFFSET_PREV_CENTER)
+        assertEquals(36, CellInstanceBuffer.OFFSET_PREV_DIR, "после двух float прошлого центра")
+        assertEquals(CellInstanceBuffer.STRUCT_SIZE, CellInstanceBuffer.OFFSET_PREV_DIR + 4, "prevDir — последнее поле")
+        assertEquals(CellInstanceBuffer.STRUCT_SIZE, CellInstanceBuffer.STRUCT_INTS * 4)
     }
 
     @Test
     fun `константы диапазонов совпадают с литералами в шейдере`() {
-        // Прямая сверка с `radius = 0.05 + a_shape.z * 0.7` из circle_pc.vert.
+        // Прямая сверка с `radius = 0.05 + a_shape.z * 0.7` из nostalgic.vert.
         // Падение этого теста означает: либо константу поменяли, не тронув шейдер,
         // либо шейдер поменяли, не тронув константу. Оба случая — молча битая картинка.
-        assertEquals(0.05f, CellInstanceBuffer.RADIUS_MIN, "circle_pc.vert: radius = 0.05 + ...")
-        assertEquals(0.7f, CellInstanceBuffer.RADIUS_SPAN, "circle_pc.vert: ... + a_shape.z * 0.7")
+        assertEquals(0.05f, CellInstanceBuffer.RADIUS_MIN, "nostalgic.vert: radius = 0.05 + ...")
+        assertEquals(0.7f, CellInstanceBuffer.RADIUS_SPAN, "nostalgic.vert: ... + a_shape.z * 0.7")
     }
 
     @Test
@@ -136,11 +180,18 @@ class CellInstanceBufferTest {
         assertEquals(-3.25f, cell.y)
         assertEquals(0x11223344, cell.color)
 
-        // Углы и радиус — через байт, поэтому с допуском на квантование в 1/255.
+        // Направление — по 16 бит, допуск в одну ступень 1/32767.
+        assertNear(0.6f, shaderDir(cell.dir, 0), 1f / 32767f, "cos")
+        assertNear(-0.8f, shaderDir(cell.dir, 1), 1f / 32767f, "sin")
+
+        // Радиус — через байт, с допуском на квантование в 1/255.
         val quantum = 1f / 255f
-        assertNear(0.6f, shaderAngle(cell.shape, 0), 2 * quantum, "cos")
-        assertNear(-0.8f, shaderAngle(cell.shape, 1), 2 * quantum, "sin")
         assertNear(0.4f, shaderRadius(cell.shape), 2 * quantum * 0.7f, "radius")
+
+        // Без прошлой позы клетка стоит: прошлая поза ровно нынешняя, бит в бит.
+        assertEquals(cell.x, cell.prevX)
+        assertEquals(cell.y, cell.prevY)
+        assertEquals(cell.dir, cell.prevDir)
 
         // Энергия: байт = (e/10)*255, в шейдере обратно — доля a_shape.w.
         assertNear(5f / 10f, shaderEnergyFraction(cell.shape), 2 * quantum, "energy")
@@ -217,30 +268,52 @@ class CellInstanceBufferTest {
     }
 
     @Test
-    fun `спираль хамелеона едет своим битом и не трогает остальное`() {
-        // Бит узора стоит рядом с битом не-клетки в том же байте: перепутай их — и в
-        // отладке хамелеон потерял бы спираль, а в ностальгическом режиме — ядро.
-        val plain = CellInstanceBuffer.type(cellType = 13, noiseSeed = 0x1234)
-        val spiral = CellInstanceBuffer.type(cellType = 13, noiseSeed = 0x1234, spiral = true)
-        val both = CellInstanceBuffer.type(cellType = 13, noiseSeed = 0x1234, isCell = false, spiral = true)
-
-        assertTrue(!shaderHasSpiral(plain), "по умолчанию спирали нет")
-        assertTrue(shaderHasSpiral(spiral), "спираль не распозналась")
-        assertTrue(shaderHasSpiral(both), "спираль потерялась рядом с флагом не-клетки")
-
-        assertTrue(shaderIsCell(spiral), "спираль сделала клетку не-клеткой")
-        assertTrue(!shaderIsCell(both), "спираль затёрла флаг не-клетки")
-
-        for (packed in listOf(plain, spiral, both)) {
-            assertEquals(13, shaderCellType(packed), "флаг повредил тип")
-            assertEquals(0x1234, shaderSeed(packed), "флаг повредил ключ шума")
-        }
-
-        val data = CellInstanceBuffer(initialCapacity = 1).apply {
-            begin(1)
-            putCell(0f, 0f, 0, 1f, 0f, 0.3f, 0f, 13, 11, spiral = true)
+    fun `вид в отладке едет своим полем и читается так же, как в cell vert`() {
+        // Ноль во всех байтах — прежняя плоская непрозрачная клетка: его пишут все, кто
+        // про поле не знает (реалистичный режим, превью геномов, старые дампы).
+        val data = CellInstanceBuffer(initialCapacity = 4).apply {
+            begin(4)
+            putCell(0f, 0f, 0, 1f, 0f, 0.3f, 0f, 13, 0x1234)
+            putCell(0f, 0f, 0, 1f, 0f, 0.3f, 0f, 13, 0x1234, look = CellLook.look(CellLook.MUSCLE, action = -1f))
+            putCell(0f, 0f, 0, 1f, 0f, 0.3f, 0f, 13, 0x1234, look = CellLook.look(CellLook.CHIP, action = 0.5f, transparency = 0.55f))
+            putCell(0f, 0f, 0, 1f, 0f, 0.3f, 0f, 13, 0x1234, look = CellLook.look(CellLook.PLAIN, action = 1f))
         }.end()
-        assertTrue(shaderHasSpiral(readInstance(data, 0).type), "putCell не довёз спираль")
+
+        val plain = readInstance(data, 0).look
+        assertEquals(0, plain)
+        assertEquals(CellLook.PLAIN, shaderPattern(plain))
+        assertEquals(0f, shaderAction(plain), "ноль сигнала обязан быть ровно нулём")
+        assertEquals(1f, shaderOpacity(plain))
+
+        val muscle = readInstance(data, 1).look
+        assertEquals(CellLook.MUSCLE, shaderPattern(muscle))
+        assertEquals(-1f, shaderAction(muscle))
+        assertEquals(1f, shaderOpacity(muscle))
+
+        val ghost = readInstance(data, 2).look
+        assertEquals(CellLook.CHIP, shaderPattern(ghost))
+        assertNear(0.5f, shaderAction(ghost), 1f / 127f, "сигнал")
+        assertNear(0.45f, shaderOpacity(ghost), 1f / 255f, "непрозрачность призрака")
+
+        assertEquals(1f, shaderAction(readInstance(data, 3).look))
+
+        // Вид не трогает остальные поля.
+        repeat(4) { i ->
+            val cell = readInstance(data, i)
+            assertEquals(13, shaderCellType(cell.type))
+            assertEquals(0x1234, shaderSeed(cell.type))
+            assertTrue(shaderIsCell(cell.type))
+        }
+    }
+
+    @Test
+    fun `сигнал за пределами и NaN зажимаются, а не переполняют соседний байт`() {
+        assertEquals(1f, shaderAction(CellLook.look(CellLook.PLAIN, action = 50f)))
+        assertEquals(-1f, shaderAction(CellLook.look(CellLook.PLAIN, action = -50f)))
+        assertEquals(0f, shaderAction(CellLook.look(CellLook.PLAIN, action = Float.NaN)))
+        // Отрицательный сигнал не должен залезть в байт прозрачности.
+        assertEquals(1f, shaderOpacity(CellLook.look(CellLook.EYE, action = -0.3f)))
+        assertEquals(CellLook.EYE, shaderPattern(CellLook.look(CellLook.EYE, action = -0.3f, transparency = 1f)))
     }
 
     @Test
@@ -250,8 +323,9 @@ class CellInstanceBufferTest {
         assertEquals(255, huge)
         assertEquals(0, negative)
 
-        assertEquals(255, CellInstanceBuffer.angleByte(10f))
-        assertEquals(0, CellInstanceBuffer.angleByte(-10f))
+        assertEquals(1f, shaderDir(CellInstanceBuffer.dir(10f, -10f), 0))
+        assertEquals(-1f, shaderDir(CellInstanceBuffer.dir(10f, -10f), 1))
+        assertEquals(0f, shaderDir(CellInstanceBuffer.dir(Float.NaN, 0f), 0), "NaN — ноль, а не мусор")
         assertEquals(255, CellInstanceBuffer.energyByte(1e9f))
 
         // Тип клетки за пределом байта не должен залезть в ключ шума.
@@ -268,15 +342,113 @@ class CellInstanceBufferTest {
     @Test
     fun `поля shape не перетекают друг в друга`() {
         val packed = CellInstanceBuffer.shape(
-            cosByte = 0x12,
-            sinByte = 0x34,
             radiusByte = 0x56,
             energyByte = 0x78
         )
-        assertEquals(0x12, (packed) and 0xFF)
-        assertEquals(0x34, (packed ushr 8) and 0xFF)
+        assertEquals(0, packed and 0xFFFF, "два младших байта свободны")
         assertEquals(0x56, (packed ushr 16) and 0xFF)
         assertEquals(0x78, (packed ushr 24) and 0xFF)
+
+        // Отрицательное направление не должно затереть соседний short.
+        val dir = CellInstanceBuffer.dir(-1f, 0.5f)
+        assertEquals(-1f, shaderDir(dir, 0))
+        assertNear(0.5f, shaderDir(dir, 1), 1f / 32767f, "sin рядом с отрицательным cos")
+    }
+
+    @Test
+    fun `угол восстанавливается точнее пикселя на любом приближении`() {
+        // Ради этого направление и переехало с байта на 16 бит: при байте угол прыгал
+        // ступеньками до 0.45°, и текстура вращающейся клетки дёргалась. Обходим полный
+        // круг с шагом меньше прежней ступени и сверяем угол, который увидит шейдер.
+        var worst = 0.0
+        var previous = Double.NaN
+        var steps = 0
+        val count = 20_000
+        for (i in 0 until count) {
+            val angle = 2.0 * Math.PI * i / count
+            val dir = CellInstanceBuffer.dir(cos(angle).toFloat(), sin(angle).toFloat())
+            val seen = atan2(shaderDir(dir, 1).toDouble(), shaderDir(dir, 0).toDouble())
+            var error = abs(seen - angle)
+            if (error > Math.PI) error = 2 * Math.PI - error
+            worst = maxOf(worst, error)
+            if (!previous.isNaN() && seen != previous) steps++
+            previous = seen
+        }
+        // 3e-5 рад — ступень 1/32767; клетка радиусом 1000 пикселей сдвигает край на 0.03 px.
+        assertTrue(worst < 6e-5, "угол врёт на $worst рад")
+        // Каждый шаг в 0.018° виден шейдеру: при байте подряд шли десятки одинаковых значений.
+        assertTrue(steps > count * 0.99, "угол менялся только на $steps шагах из $count")
+    }
+
+    @Test
+    fun `прошлая поза доезжает до шейдера как есть`() {
+        val data = CellInstanceBuffer(initialCapacity = 1).apply {
+            begin(1)
+            putCell(
+                10f, 20f, 0, 1f, 0f, 0.3f, 0f, 1, 7,
+                prevX = 9.25f, prevY = 21.5f, prevCos = 0.6f, prevSin = -0.8f
+            )
+        }.end()
+        val cell = readInstance(data, 0)
+
+        // Позиция — float как есть: интерполяция не теряет ни бита и ничего не округляет.
+        assertEquals(9.25f, cell.prevX)
+        assertEquals(21.5f, cell.prevY)
+        assertNear(0.6f, shaderDir(cell.prevDir, 0), 1f / 32767f, "прошлый cos")
+        assertNear(-0.8f, shaderDir(cell.prevDir, 1), 1f / 32767f, "прошлый sin")
+        assertEquals(1f, shaderDir(cell.dir, 0), "нынешнее направление не задето")
+    }
+
+    @Test
+    fun `перенос дальше MOTION_RANGE — не движение`() {
+        // Клетку, перенесённую мышью через полмира, нельзя тянуть полосой через экран:
+        // снимок ставит ей прошлую позу равной нынешней (RenderBufferManager.remember).
+        assertTrue(CellInstanceBuffer.isMotion(16f, -16f), "граница ещё движение")
+        // Предел скорости физики — 4 единицы за тик (HALF_CHUNK_HEIGHT): частица на пределе
+        // обязана интерполироваться с любым округлением, иначе тело дёргается.
+        assertTrue(CellInstanceBuffer.isMotion(4.001f, -4.001f), "частица на пределе скорости")
+        assertTrue(!CellInstanceBuffer.isMotion(50f, 0f))
+        assertTrue(!CellInstanceBuffer.isMotion(0f, -16.01f))
+        assertTrue(!CellInstanceBuffer.isMotion(Float.NaN, 0f), "NaN — тоже не движение")
+    }
+
+    @Test
+    fun `write и putAll дают те же байты, что put`() {
+        // write + putAll — путь снимка мира (int-массив в потоке симуляции, копия на
+        // GL-потоке), put — путь редактора. Разойтись они не имеют права.
+        val dir = CellInstanceBuffer.dir(-0.3f, 0.95f)
+        val prevDir = CellInstanceBuffer.dir(0.1f, 0.99f)
+        val shape = CellInstanceBuffer.shape(77, 12)
+        val type = CellInstanceBuffer.type(21, 4242, isCell = false)
+
+        val viaPut = CellInstanceBuffer(initialCapacity = 2).apply {
+            begin(2)
+            put(5f, -6f, 0x11223344, shape, type, look = 9, dir = dir, prevX = 4.5f, prevY = -6.25f, prevDir = prevDir)
+            put(1f, 2f, 3, shape, type, look = 0, dir = dir)
+        }.end()
+
+        val ints = IntArray(2 * CellInstanceBuffer.STRUCT_INTS)
+        CellInstanceBuffer.write(ints, 0, 5f, -6f, 0x11223344, shape, type, 9, dir, 4.5f, -6.25f, prevDir)
+        CellInstanceBuffer.write(ints, 1, 1f, 2f, 3, shape, type, 0, dir, 1f, 2f, dir)
+        // Дописывается после уже лежащего: проверяем и смещение позиции.
+        val viaWrite = CellInstanceBuffer(initialCapacity = 1).apply {
+            begin()
+            putAll(ints, 2)
+        }.end()
+
+        assertEquals(viaPut.remaining(), viaWrite.remaining())
+        for (i in 0 until viaPut.remaining()) {
+            assertEquals(viaPut.get(i), viaWrite.get(i), "байт $i разошёлся")
+        }
+    }
+
+    @Test
+    fun `упакованное направление читается обратно так же, как в шейдере`() {
+        for (angle in listOf(0.0, 0.7, 2.0, -2.5, Math.PI)) {
+            val dir = CellInstanceBuffer.dir(cos(angle).toFloat(), sin(angle).toFloat())
+            assertEquals(shaderDir(dir, 0), CellInstanceBuffer.dirCos(dir))
+            assertEquals(shaderDir(dir, 1), CellInstanceBuffer.dirSin(dir))
+        }
     }
 
     @Test
@@ -343,15 +515,13 @@ class CellInstanceBufferTest {
         }.end()
 
         val shape = CellInstanceBuffer.shape(
-            cosByte = CellInstanceBuffer.angleByte(-0.3f),
-            sinByte = CellInstanceBuffer.angleByte(0.95f),
             radiusByte = CellInstanceBuffer.radiusByte(0.62f),
             energyByte = CellInstanceBuffer.energyByte(3.5f)
         )
         val type = CellInstanceBuffer.type(cellType = 21, noiseSeed = 4242)
         val viaPut = CellInstanceBuffer(initialCapacity = 1).apply {
             begin(1)
-            put(5f, 6f, 0x778899AA.toInt(), shape, type)
+            put(5f, 6f, 0x778899AA.toInt(), shape, type, look = 0, dir = CellInstanceBuffer.dir(-0.3f, 0.95f))
         }.end()
 
         assertEquals(viaPutCell.remaining(), viaPut.remaining())

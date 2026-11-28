@@ -7,7 +7,6 @@ class Fin(cellTypeId: Int): Cell(
     key = "fin",
     defaultColor = skyBlueColors[1],
     cellTypeId = cellTypeId,
-    textureName = "tail.png",
     isDirected = true
 ) {
 
@@ -22,8 +21,7 @@ class Fin(cellTypeId: Int): Cell(
         val force = abs(perp) * substrateSettings.data.finMaxSpeedCoefficient
 
         if (force > 1e-6f) {
-            setVx(cellIndex, vx - cos * force)
-            setVy(cellIndex, vy - sin * force)
+            addVelocity(cellIndex, -cos * force, -sin * force)
         }
     }
 }

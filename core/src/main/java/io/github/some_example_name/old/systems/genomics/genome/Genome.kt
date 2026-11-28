@@ -48,7 +48,28 @@ data class Genome(
      * Порядок укладки сущностей в арены. null — геном не запечён, порядок будет обычный
      * (по мере роста). См. [BakedLayout].
      */
-    @ProtoNumber(8) val sortedGraph: BakedLayout? = null
+    @ProtoNumber(8) val sortedGraph: BakedLayout? = null,
+
+    /**
+     * Снимок взрослого тела для превью в списке и карточке геномов. null — геном ещё не
+     * снимали: его допекает GenomeImport.withBaking. См. [GenomePreview].
+     */
+    @ProtoNumber(9) val preview: GenomePreview? = null,
+
+    /**
+     * Сколько нейросвязей может быть у организма ОДНОВРЕМЕННО за весь рост — ёмкость его
+     * арены нейросвязей (OrganEntity.allocateArenas). Не [neuralLinksAmount] (столько их у
+     * взрослого) и не число всех созданных: геном перевязывает нейросвязи по ходу стадий,
+     * удалённая уступает слот следующей.
+     *
+     * Снимается в редакторе (EditorSimulationSystem.simulate) как наибольшее за стадии
+     * «живых на начало стадии + созданных за стадию» — с запасом на любой порядок создания
+     * и удаления внутри стадии, который в мире зависит от энергии клеток.
+     *
+     * null — геном старше этого поля: его допекает GenomeImport.withBaking, а до того
+     * нейросвязи такого организма живут в общем пуле.
+     */
+    @ProtoNumber(10) val neuralLinksPeak: Int? = null
 ) {
     @Transient
     var genomeStageInstruction: List<GenomeStage> = stageInstruction
@@ -251,7 +272,7 @@ val GenomeProto: ProtoBuf get() = SpecialModDataTypes.proto
 // ==================== СОХРАНЕНИЕ ====================
 fun saveGenome(genome: Genome, fileName: String) {
     // Сохраняем файл с расширением .genome
-    GameFiles.genomesDir().child("$fileName.genome").writeBytes(encodeGenome(genome), false)
+    GameFiles.genomeFile(fileName).writeBytes(encodeGenome(genome), false)
 }
 
 /**
@@ -284,7 +305,7 @@ fun encodeGenome(genome: Genome): ByteArray {
 
 // ==================== ЗАГРУЗКА ====================
 fun loadGenome(fileName: String): Genome {
-    val file = GameFiles.genomesDir().child("$fileName.genome")
+    val file = GameFiles.genomeFile(fileName)
 
     if (!file.exists()) {
         throw IllegalStateException("Файл генома не найден: $fileName.genome")

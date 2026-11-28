@@ -1,0 +1,22 @@
+# genomeia stand body 1
+name	Punisher
+source	C:/Users/Genomeia/StudioProjects/Genomeia/.claude/worktrees/delay/bugs/.sandbox/genomeia-20261105-124708-ca430c3c8d3d-report/bug/attachments/genomes/Punisher.genome
+P 0 63.51459 64.35267 0.5000 tail 0
+P 1 64.26297 64.53936 0.5000 punisher 0
+P 2 64.00000 64.00000 0.5000 zygote 0
+P 3 64.60000 64.00000 0.5000 leaf 0
+P 4 64.26297 63.46064 0.5000 tail 0
+L 0 1
+L 0 2
+L 1 2
+L 1 3
+L 2 3
+L 2 4
+L 3 4
+T 0 2 1
+T 1 2 3
+T 2 4 3
+G 1 3 2
+G 2 1 3
+G 3 4 3
+G 3 0 2

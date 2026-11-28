@@ -2,15 +2,20 @@ package io.github.some_example_name.old.features.menu
 
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Texture
+import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.ui.Image
 import com.badlogic.gdx.scenes.scene2d.ui.ScrollPane
+import com.badlogic.gdx.scenes.scene2d.ui.VerticalGroup
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.badlogic.gdx.utils.Align
 import com.kotcrab.vis.ui.widget.VisDialog
 import com.kotcrab.vis.ui.widget.VisTable
 import com.kotcrab.vis.ui.widget.VisTextButton
+import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
+import io.github.some_example_name.old.core.ui.ConfirmDialog
 import io.github.some_example_name.old.core.ui.makeStyledButton
+import io.github.some_example_name.old.core.ui.makeStyledIconButton
 import io.github.some_example_name.old.core.ui.setupTitleSize
 import io.github.some_example_name.old.game.MyGame
 import io.github.some_example_name.old.systems.maps.MapSave
@@ -19,9 +24,10 @@ import java.text.DateFormat
 import java.util.Date
 
 /**
- * Список сохранённых миров: превью, когда сохранён, и кнопка нового мира.
+ * Список сохранённых миров: превью, имя, когда сохранён, мусорка и кнопка нового мира.
  *
- * Только вёрстка: что делать с выбором, решает MenuViewModel через [onLoad] и [onNew].
+ * Только вёрстка: что делать с выбором, решает MenuViewModel через [onLoad], [onDelete]
+ * и [onNew]. Удаление сначала переспрашивает — файл мира не вернуть.
  */
 class MapSelect(
     private val game: MyGame,
@@ -29,6 +35,7 @@ class MapSelect(
     worlds: List<SavedMap>,
     newWorld: String,
     private val onLoad: (slot: String) -> Unit,
+    private val onDelete: (slot: String) -> Unit,
     private val onNew: () -> Unit,
     private val onResize: (() -> Unit) -> Unit
 ) : VisDialog(title) {
@@ -44,11 +51,13 @@ class MapSelect(
         val density = Gdx.graphics.density
         val buttonHeight = Gdx.graphics.height * 0.055f
 
-        val list = VisTable(true)
+        // VerticalGroup, а не таблица: удалённая строка уходит из неё вместе с отступами,
+        // а у Table осталась бы пустая ячейка.
+        val list = VerticalGroup().grow().space(8f * density)
         val dateFormat = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
         worlds.forEach { world ->
-            val label = "#${world.slot}   ${dateFormat.format(Date(world.lastModified))}"
-            list.add(worldButton(world.slot, label, PREVIEW_DP * density)).growX().row()
+            val label = "${displayName(world.slot)}   ${dateFormat.format(Date(world.lastModified))}"
+            list.addActor(worldRow(world.slot, label, PREVIEW_DP * density))
         }
 
         val scrollPane = ScrollPane(list).apply {
@@ -73,6 +82,41 @@ class MapSelect(
         onResize { centerWindow() }
         pack()
         centerWindow()
+    }
+
+    /** Строка списка: кнопка мира и мусорка справа. */
+    private fun worldRow(slot: String, text: String, previewSize: Float): VisTable {
+        val row = VisTable()
+        row.add(worldButton(slot, text, previewSize)).growX()
+        val trash = makeStyledIconButton("icon-trash", textures)
+        trash.imageCell.size(TRASH_ICON_DP * Gdx.graphics.density)
+        trash.addListener(object : ClickListener() {
+            override fun clicked(event: InputEvent?, x: Float, y: Float) = confirmDelete(slot, row)
+        })
+        row.add(trash).width(TRASH_DP * Gdx.graphics.density).growY().padLeft(8f * Gdx.graphics.density)
+        return row
+    }
+
+    private fun confirmDelete(slot: String, row: Actor) {
+        ConfirmDialog(
+            title = bundle.get("button.delete"),
+            message = bundle.format("label.deleteMap", displayName(slot)),
+            confirm = bundle.get("button.delete"),
+            cancel = bundle.get("button.cancel"),
+            onConfirm = {
+                onDelete(slot)
+                // Файл не удалился (занят другой программой) — строка остаётся как была.
+                if (!MapSave.exists(slot)) removeRow(row)
+            }
+        ).show(stage)
+    }
+
+    /** Окно становится ниже на строку, а верхний край остаётся на месте. */
+    private fun removeRow(row: Actor) {
+        row.remove()
+        val top = y + height
+        pack()
+        y = top - height
     }
 
     /** Кнопка в стиле игры, у которой слева от надписи стоит превью мира. */
@@ -123,5 +167,15 @@ class MapSelect(
     private companion object {
         /** Превью в списке, в dp. Само превью 128 px — с запасом и на плотных экранах. */
         const val PREVIEW_DP = 64f
+
+        /** Ширина мусорки и размер значка на ней, в dp. */
+        const val TRASH_DP = 56f
+        const val TRASH_ICON_DP = 28f
+
+        /**
+         * Имя мира — имя его файла. Старые сохранения назывались номерами, их показываем
+         * как раньше: «#3».
+         */
+        fun displayName(slot: String): String = if (slot.all(Char::isDigit)) "#$slot" else slot
     }
 }

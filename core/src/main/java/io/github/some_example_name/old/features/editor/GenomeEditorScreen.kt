@@ -7,6 +7,7 @@ import com.badlogic.gdx.Screen
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.OrthographicCamera
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
+import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.utils.viewport.ScreenViewport
 import io.github.some_example_name.old.bug.BugReplay
@@ -37,16 +38,27 @@ import io.github.some_example_name.old.editor.system.logic.ShowMutateOrDivideDia
 import io.github.some_example_name.old.editor.system.logic.UiScreenCommands
 import io.github.some_example_name.old.core.ui.CameraControl
 import io.github.some_example_name.old.core.ui.KeyboardFocus
-import io.github.some_example_name.old.features.levels.editor.LevelInfo
+import io.github.some_example_name.old.core.ui.keepWindowsOnScreen
+import io.github.some_example_name.old.commands.GoMenu
+import io.github.some_example_name.old.commands.GoReplace
+import io.github.some_example_name.old.core.DIGameGlobalContainer.navigationCommandsManager
+import io.github.some_example_name.old.editor.system.logic.TutorialNextStep
+import io.github.some_example_name.old.editor.tutorial.EditorTutorial
+import io.github.some_example_name.old.editor.tutorial.OrganismSnapshot
+import io.github.some_example_name.old.editor.tutorial.TutorialSteps
 
 data class GenomeEditorData(
     var currentTick: Int,
     var lastTick: Int
 )
 
+/**
+ * Редактор генома. [isTutorial] — он же в обучении (GoTutorial): новый геном, поверх —
+ * панель шагов, а задания засчитывает EditorTutorial по командам редактора.
+ */
 class GenomeEditorScreen(
     val genomeName: String?,
-    val returnLevel: LevelInfo? = null
+    val isTutorial: Boolean = false
 ) : Screen, ReplayTarget {
 
     private val renderSystem = DIGenomeEditorContainer.editorRenderSystem
@@ -58,12 +70,20 @@ class GenomeEditorScreen(
     }
     private val stage = Stage(ScreenViewport())
     private val shape = ShapeRenderer()
-    private val composeGenomeEditor = ComposeGenomeEditor(returnLevel)
+    private val composeGenomeEditor = ComposeGenomeEditor()
 
     private var state = GenomeEditorData(
         currentTick = 0,
         lastTick = 0
     )
+
+    private var tutorial: EditorTutorial? = null
+
+    /** Проход ввода к панели обучения поверх окон (TutorialPanel.inputBridge). */
+    private var tutorialInputBridge: Actor? = null
+
+    /** Панель обучения справа: при пересборке вёрстки переезжает в новую, а не создаётся заново. */
+    private var tutorialPanel: TutorialPanel? = null
 
     var isRestartSimulation = false
     val editorSimulationSystem = DIGenomeEditorContainer.editorSimulationSystem
@@ -108,12 +128,48 @@ class GenomeEditorScreen(
         renderSystem.create(shape, camera)
         editorLogicSystem.bindToScreen(camera)
 
+        tutorialPanel = startTutorial()
+        compose()
+    }
+
+    private fun compose() {
         composeGenomeEditor.composeGenomeEditor(
             stage,
             editorSimulationSystem,
             editorLogicSystem,
-            renderSystem
+            renderSystem,
+            sidePanel = tutorialPanel?.root
         )
+        // Свежая вёрстка показывает тик 0: пусть render заново выставит тик и шкалу.
+        state.currentTick = -1
+        state.lastTick = -1
+    }
+
+    /**
+     * Обучение — только в редакторе, открытом командой GoTutorial; обычный редактор
+     * снимает прошлое обучение: контейнер редактора общий для всех заходов.
+     */
+    private fun startTutorial(): TutorialPanel? {
+        if (!isTutorial) {
+            editorLogicSystem.tutorial = null
+            return null
+        }
+        // История прошлого генома к учебному не относится, а задания считают её правки.
+        commandEditorStackManager.clear()
+        val tutorial = EditorTutorial(TutorialSteps.all) {
+            OrganismSnapshot.of(DIGenomeEditorContainer.cellEntity, DIGenomeEditorContainer.neuralLinkEntity)
+        }
+        this.tutorial = tutorial
+        editorLogicSystem.tutorial = tutorial
+
+        val panel = TutorialPanel(
+            tutorial = tutorial,
+            onNext = { editorLogicSystem.putUiCommand(TutorialNextStep) },
+            onFinish = { navigationCommandsManager.performCommand(GoReplace(GoMenu)) }
+        )
+        tutorial.onChanged = panel::refresh
+        tutorialInputBridge = panel.inputBridge.also(stage::addActor)
+        return panel
     }
 
     override fun render(delta: Float) {
@@ -180,6 +236,10 @@ class GenomeEditorScreen(
         if (!BugReplay.isActive) actionDialog(uiScreenCommands)
         uiScreenCommands = null
 
+        // Окна добавляются на сцену позже моста — он поднимается над ними. toFront у того,
+        // кто уже последний, ничего не делает.
+        tutorialInputBridge?.toFront()
+
         stage.act(delta)
         stage.draw()
     }
@@ -218,6 +278,9 @@ class GenomeEditorScreen(
     override fun resize(width: Int, height: Int) {
         if (width == currentScreenWidth && height == currentScreenHeight) return
         stage.viewport.update(width, height, true)
+        tutorialPanel?.resize()
+        compose()
+        stage.keepWindowsOnScreen()
         renderSystem.isUpdateBuffer = true
         renderSystem.resize(width, height)
 
@@ -235,6 +298,8 @@ class GenomeEditorScreen(
     override fun hide() { }
 
     override fun dispose() {
+        if (tutorial != null && editorLogicSystem.tutorial === tutorial) editorLogicSystem.tutorial = null
+        composeGenomeEditor.dispose()
         stage.dispose()
         shape.dispose()
     }

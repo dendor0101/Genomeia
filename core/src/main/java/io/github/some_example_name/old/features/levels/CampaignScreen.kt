@@ -5,7 +5,9 @@ import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.kotcrab.vis.ui.widget.VisTable
+import com.badlogic.gdx.utils.Align
 import io.github.some_example_name.old.commands.GoBack
+import io.github.some_example_name.old.commands.GoLevelEditor
 import io.github.some_example_name.old.commands.GoSimulation
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
@@ -27,13 +29,31 @@ import io.github.some_example_name.old.features.levels.editor.LevelInfo
  */
 class CampaignScreen : VisDslScreen(background = Color(0.045f, 0.055f, 0.075f, 1f)) {
 
+    private var composedOnce = false
+
+    /**
+     * Возврат на экран из уровня или из редактора уровней (GoBack): VisDslScreen сам
+     * перестраивает экран только при первом показе и смене языка, и пройденный уровень не
+     * подсвечивался, пока игрок не выйдет в меню и не зайдёт снова. Список заново читается
+     * и потому, что в редакторе могли сохранить новый уровень.
+     */
+    override fun dslShow() {
+        if (composedOnce) recompose()
+    }
+
     override fun VisTable.compose() {
+        composedOnce = true
         pad(24.dp())
 
-        visTable(cellInit = { growX().left() }) {
+        visTable(cellInit = { growX() }) {
             visTextButton(bundle.get("button.back"), onClick = {
                 navigation.performCommand(GoBack)
             }) { left() }
+            visLabel("") { growX() }
+            // Редактор уровней — здесь, рядом с уровнями, а не в главном меню.
+            visTextButton(bundle.get("menu.levelEditor"), onClick = {
+                navigation.performCommand(GoLevelEditor)
+            }) { right() }
         }
         row()
 
@@ -49,35 +69,47 @@ class CampaignScreen : VisDslScreen(background = Color(0.045f, 0.055f, 0.075f, 1
         visTable(backgroundColor = EXPERIMENTAL_BG, cellInit = { center().padBottom(18.dp()) }) {
             visLabel(
                 text = bundle.get("menu.experimental"),
+                font = game.largeFont,
+                textColor = EXPERIMENTAL_TEXT,
+                align = Align.center
+            ) { pad(6.dp(), 14.dp(), 0f, 14.dp()) }
+            row()
+            visLabel(
+                text = bundle.get("menu.experimentalNote"),
                 font = game.mediumFont,
-                textColor = EXPERIMENTAL_TEXT
-            ) { pad(6.dp(), 14.dp(), 6.dp(), 14.dp()) }
+                textColor = EXPERIMENTAL_TEXT,
+                align = Align.center
+            ) { pad(2.dp(), 14.dp(), 6.dp(), 14.dp()) }
         }
         row()
 
-        val levels = loadLevels()
         val completed = LevelProgress.completedIds()
 
+        // Встроенный — тот, что лежит в ассетах игры, а не тот, у кого так написано в JSON:
+        // иначе любой файл игрока мог бы встать в раздел встроенных.
         visScrollPane(cellInit = { expand().fill() }, scrollingDisabledX = true) {
-            levelSection(bundle.get("menu.builtinLevels"), levels.filter { it.isBuiltin }, completed)
-            levelSection(bundle.get("menu.userLevels"), levels.filterNot { it.isBuiltin }, completed)
+            levelSection(bundle.get("menu.builtinLevels"), loadLevels(LevelFiles.builtinNames), completed)
+            levelSection(bundle.get("menu.userLevels"), loadLevels(LevelFiles.names()), completed)
         }
     }
 
-    private fun loadLevels(): List<LevelInfo> =
-        LevelFiles.names().mapNotNull { name ->
-            runCatching { LevelFiles.read(name) }
-                .onFailure { Gdx.app.error("Campaign", "не удалось открыть уровень $name", it) }
+    /** Уровень в списке: ссылка на файл (по ней — название), сам уровень и его название. */
+    private class Entry(val level: LevelInfo, val title: String)
+
+    private fun loadLevels(refs: List<String>): List<Entry> =
+        refs.mapNotNull { ref ->
+            runCatching { Entry(LevelFiles.read(ref), LevelFiles.title(ref)) }
+                .onFailure { Gdx.app.error("Campaign", "не удалось открыть уровень $ref", it) }
                 .getOrNull()
         }
 
-    private fun VisTable.levelSection(title: String, levels: List<LevelInfo>, completed: Set<Int>) {
+    private fun VisTable.levelSection(title: String, entries: List<Entry>, completed: Set<Int>) {
         visLabel(title, font = game.mediumFont, textColor = SECTION) {
             left().growX().pad(16.dp(), 8.dp(), 8.dp(), 4.dp())
         }
         row()
 
-        if (levels.isEmpty()) {
+        if (entries.isEmpty()) {
             visLabel(bundle.get("menu.noLevels"), textColor = MUTED) {
                 left().pad(12.dp(), 8.dp(), 12.dp(), 8.dp())
             }
@@ -85,19 +117,21 @@ class CampaignScreen : VisDslScreen(background = Color(0.045f, 0.055f, 0.075f, 1
             return
         }
 
-        levels.sortedBy { it.nameKey.lowercase() }.forEach { level ->
-            levelCard(level, completed)
-        }
+        // Встроенные идут курсом (LevelInfo.order), уровни без места (свои) — по названию.
+        // Раньше всё шло по алфавиту, и курс начинался с Bone и Chameleon вместо Leaf.
+        entries.sortedWith(compareBy<Entry>({ if (it.level.order > 0) it.level.order else Int.MAX_VALUE }, { it.title.lowercase() }))
+            .forEach { levelCard(it, completed) }
     }
 
-    private fun VisTable.levelCard(level: LevelInfo, completed: Set<Int>) {
+    private fun VisTable.levelCard(entry: Entry, completed: Set<Int>) {
+        val level = entry.level
         val isCompleted = level.id in completed
         val card = visTable(
             backgroundColor = if (isCompleted) COMPLETED_BG else CARD_BG,
             cellInit = { growX().fillX().pad(3.dp()) }
         ) {
             visLabel(
-                text = level.nameKey,
+                text = entry.title,
                 font = game.largeFont,
                 textColor = if (isCompleted) COMPLETED_TEXT else Color.WHITE
             ) { left().growX().pad(12.dp()) }.apply { setWrap(true) }

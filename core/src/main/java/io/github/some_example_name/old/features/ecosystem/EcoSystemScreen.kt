@@ -39,28 +39,20 @@ class EcoSystemScreen : Screen {
 
         val roundStyle = roundStyle
 
-        val globalSettingsButton = VisTextButton("GlobalSettings", roundStyle)
+        val globalSettingsButton = VisTextButton(bundle.get("eco.global"), roundStyle)
 //        val iconTexture = Texture(Gdx.files.internal("GenomButton.jpg")) TODO from Armaga(Absolute Solv): Можно заменить обычную кнопку на изображение для стиля. Но пока можно просто кнопку
 //        val iconDrawable: Drawable = TextureRegionDrawable(TextureRegion(iconTexture))
 //
 //        val globalSettingsButton = VisImageButton(iconDrawable, "unstyled");
 
         game.applyCustomFont(globalSettingsButton)
-        globalSettingsButton.addListener(object : ChangeListener() {
-            override fun changed(event: ChangeEvent?, actor: Actor?) {
-                navigationCommandsManager.performCommand(EcoSystemScreenGlobalSettings)
-            }
-        })
+        globalSettingsButton.isDisabled = true
 
-        val cellsSettingsButton = VisTextButton("Cells Settings", roundStyle)
+        val cellsSettingsButton = VisTextButton(bundle.get("eco.cells"), roundStyle)
         game.applyCustomFont(cellsSettingsButton)
-        cellsSettingsButton.addListener(object : ChangeListener() {
-            override fun changed(event: ChangeEvent?, actor: Actor?) {
-                navigationCommandsManager.performCommand(EcoSystemScreenCellsSettings)
-            }
-        })
+        cellsSettingsButton.isDisabled = true
 
-        buttonsTable.add(cellsSettingsButton).height(120 * Gdx.graphics.density).uniformX()
+        buttonsTable.add(cellsSettingsButton).height(120 * Gdx.graphics.density).uniformX().row()
         buttonsTable.add(globalSettingsButton).height(120 * Gdx.graphics.density).uniformX().row()
 
         val menuButton = VisTextButton(bundle.get("button.menu"), roundStyle)

@@ -1,5 +1,10 @@
 package io.github.some_example_name.old.features.settings
 
+import com.badlogic.gdx.Gdx
+import com.badlogic.gdx.scenes.scene2d.Actor
+import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
+import com.kotcrab.vis.ui.widget.VisCheckBox
+
 import io.github.some_example_name.old.commands.GameCommand
 import io.github.some_example_name.old.bug.ReplayTarget
 import com.badlogic.gdx.graphics.Color
@@ -9,6 +14,8 @@ import com.kotcrab.vis.ui.widget.VisTable
 import com.kotcrab.vis.ui.widget.VisTextButton
 import io.github.some_example_name.old.commands.GoBack
 import io.github.some_example_name.old.core.DIGameGlobalContainer
+import io.github.some_example_name.old.core.PlatformWindow
+import io.github.some_example_name.old.core.PlatformGraphics
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.DISimulationContainer.renderSystem
 import io.github.some_example_name.old.core.ui.StyledSelectBox
@@ -28,7 +35,8 @@ import io.github.some_example_name.render.RenderMode
 
 class SettingsScreen : VisDslScreen(
     background = Color(0.04f, 0.04f, 0.06f, 1f),
-    isScrollable = false
+    // Путь приложения и сведения о GPU могут занимать несколько строк на ПК.
+    isScrollable = true
 ), ReplayTarget {
 
     private val viewModel = SettingsViewModel()
@@ -51,7 +59,7 @@ class SettingsScreen : VisDslScreen(
     override fun VisTable.compose() {
         visTable(cellInit = {
             growX().fillX()
-            width(w * 0.5f)
+            width(minOf(w - 32.dp(), 640.dp()))
         }) {
             // === Табы (теперь локализованные) ===
             visTable {
@@ -110,6 +118,21 @@ class SettingsScreen : VisDslScreen(
 
             row()
 
+            val autoSend = VisCheckBox(bundle.get("settings.autoSendCrash")).apply {
+                style = VisCheckBox.VisCheckBoxStyle(style).apply { font = DIGameGlobalContainer.game.buttonFont }
+                isChecked = GlobalSettings.AUTO_SEND_CRASH
+                label.setWrap(true)
+                getCell(label).minWidth(0f).growX().padLeft(10.dp())
+                imageStackCell.size(24.dp())
+                addListener(object : ChangeListener() {
+                    override fun changed(event: ChangeEvent?, actor: Actor?) {
+                        viewModel.handle(SettingsIntent.SetAutoSendCrash(isChecked))
+                    }
+                })
+            }
+            add(autoSend).growX().minHeight(48.dp()).padTop(16.dp())
+            row()
+
             visTextButton(
                 text = bundle.get("button.back"),
                 onClick = { navigation.performCommand(GoBack) }
@@ -155,12 +178,56 @@ class SettingsScreen : VisDslScreen(
 
 
         visTable(cellInit = { expandX().fillX() }) {
-            visLabel("Default Render Mode: ", align = Align.left) {}
+            visLabel(bundle.get("label.renderMode"), align = Align.left) {}
+            row()
             val selectBox = renderModeSelectBox(
-                selected = RenderMode.entries[GlobalSettings.RENDER_MODE],
-                onSelect = { viewModel.handle(SettingsIntent.SetRenderMode(RenderMode.entries.indexOf(it))) }
+                selected = RenderMode.fromPreference(GlobalSettings.RENDER_MODE),
+                onSelect = { viewModel.handle(SettingsIntent.SetRenderMode(it.preferenceId)) }
             )
-            this.add(selectBox) as Cell<StyledSelectBox<String>>
+            add(selectBox).width(minOf(w - 52.dp(), 600.dp()))
+        }
+        row()
+
+        visToggleButton(
+            text = bundle.get("settings.showHints"),
+            checked = GlobalSettings.SHOW_HINTS,
+            onCheckedChange = { viewModel.handle(SettingsIntent.SetShowHints(it)) }
+        ) { width(minOf(w - 52.dp(), 600.dp())).padTop(16.dp()) }.label.setWrap(true)
+        row()
+
+        visToggleButton(
+            text = bundle.get("settings.showDebugInfo"),
+            checked = GlobalSettings.SHOW_DEBUG_INFO,
+            onCheckedChange = { viewModel.handle(SettingsIntent.SetShowDebugInfo(it)) }
+        ) { width(minOf(w - 52.dp(), 600.dp())).padTop(16.dp()) }.label.setWrap(true)
+        row()
+
+        // Полный экран есть только на ПК; состояние берём у окна, а не храним: из него можно выйти и мимо кнопки.
+        if (PlatformWindow.isSupported) {
+            visToggleButton(
+                text = bundle.get("settings.fullscreen"),
+                checked = PlatformWindow.isFullscreen,
+                onCheckedChange = { viewModel.handle(SettingsIntent.SetFullscreen(it)) }
+            ) { width(minOf(w - 52.dp(), 600.dp())).padTop(16.dp()) }.label.setWrap(true)
+            row()
+        }
+
+        PlatformGraphics.gpuSettings?.let { gpu ->
+            visLabel(bundle.format("settings.gpu.current", Gdx.graphics.glVersion.rendererString), align=Align.left) {
+                growX().padTop(16.dp())
+            }.setWrap(true)
+            row()
+            visLabel(bundle.format("settings.gpu.executable", gpu.executable), align=Align.left) { growX() }.setWrap(true)
+            row()
+            val status=visLabel(bundle.get("settings.gpu.restart"), align=Align.left) { growX().padTop(8.dp()) }
+            status.name="graphics-gpu-status"
+            status.setWrap(true)
+            row()
+            visTextButton(bundle.get("settings.gpu.open"), onClick={
+                viewModel.handle(SettingsIntent.OpenGpuSettings)
+                status.setText(bundle.get(if(viewModel.gpuSettingsFailed)"settings.gpu.failed" else "settings.gpu.restart"))
+            }) { growX().padTop(8.dp()) }.name="graphics-gpu-settings"
+            row()
         }
     }
 
@@ -203,7 +270,7 @@ class SettingsScreen : VisDslScreen(
         row()
 
         visTable(cellInit = { expandX().fillX() }) {
-            visTextButton("Go to Github", onClick = {
+            visTextButton(bundle.get("settings.github"), onClick = {
                 viewModel.handle(SettingsIntent.OpenGithub)
             })
         }

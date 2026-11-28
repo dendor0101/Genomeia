@@ -116,13 +116,21 @@ class WorldEditorViewModel(
         const val DEFAULT_WORLD_SIZE = 128
 
         /**
-         * Границы размера мира. Шаг — 16 клеток: высота сетки обязана делиться на
-         * chunkHeight * 2 (см. DISimulationContainer.resizeWorld), ширина — для единообразия.
-         * Сверху 384: карта 576×576 и больше сотни тысяч частиц рельефа, генерация на каждое
-         * движение ползунка на телефоне уже ощутима.
+         * Границы размера мира в клетках мира (единицах координат игры). Шаг — 16 клеток: высота
+         * сетки обязана делиться на chunkHeight * 2 (см. DISimulationContainer.resizeWorld),
+         * ширина — для единообразия.
+         *
+         * Сверху 1024 (решение 21.11, было 384): начало координат физики в центре мира
+         * (PhysicsBridge.originX), и даже в углу мира 1024 координата физики не дальше от нуля,
+         * чем в углу прежнего мира 384 с началом в углу, — шаг float тот же.
+         *
+         * Цена (замер 22.11, docs/physics/reference.md, находка 36): у мира 1024 с рельефом 1.17 млн
+         * частиц и пик 5.9 ГБ, карта 1536×1536 строится ~1 с на каждый шаг ползунка, а таблица
+         * микроскопа (render GpuOpticalInput) при 1.2 млн частиц больше предела текстуры — отрисовка
+         * падает уже на ПК (TODO.md, «Мир 1024 роняет микроскоп»).
          */
         const val WORLD_SIZE_MIN = 64
-        const val WORLD_SIZE_MAX = 384
+        const val WORLD_SIZE_MAX = 1024
         const val WORLD_SIZE_STEP = 16
 
         const val DAY_NIGHT_MIN = 0f
@@ -138,7 +146,7 @@ class WorldEditorViewModel(
          * Размер карты в рецепте — производная от размера мира (см. WorldSpec), поэтому
          * worldWidth восстанавливается делением, а не хранится вторым полем: иначе два
          * размера могли бы разойтись. Правки повторяются тем же applyEdit, которым их
-         * наносила кисть, и снова попадают в edits — toSpec() отдаст ровно тот же рецепт.
+         * наносила кисть: toSpec() отдаст рецепт той же карты, без пустых мазков.
          */
         fun fromSpec(spec: WorldSpec, worldGenerator: WorldGenerator = WorldGenerator()): WorldEditorViewModel {
             // Параметры генератора живут в companion и читаются при генерации — их надо
@@ -283,11 +291,20 @@ class WorldEditorViewModel(
         edits = edits.toList()
     )
 
+    /**
+     * В рецепт идут только правки, которые меняют карту. Мазок, не тронувший ни одной ячейки,
+     * при воспроизведении тоже ничего не тронет: все промежуточные карты, а значит и итог,
+     * побитово те же. Clear стирает всё до себя, и правки перед ним больше ни на что не влияют.
+     *
+     * Зачем: кисть пишет мазок на каждое событие мыши, и в уровнях PR 38 из ~4700 мазков
+     * карты большая часть повторяла предыдущий. Рецепт едет в журнал (GoSimulation, предел
+     * записи 1 МБ, JournalFormat.MAX_PAYLOAD) и в файл уровня.
+     */
     private fun applyEdit(edit: WorldEdit) {
+        if (!applyWorldEdit(map, edit, gridWidth, gridHeight)) return
+        if (edit is WorldEdit.Clear) edits.clear()
         edits += edit
-        if (applyWorldEdit(map, edit, gridWidth, gridHeight)) {
-            mapVersion++
-        }
+        mapVersion++
     }
 
     private fun regenerate() {

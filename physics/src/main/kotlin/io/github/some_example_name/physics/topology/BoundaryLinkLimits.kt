@@ -1,0 +1,117 @@
+package io.github.some_example_name.physics
+
+/**
+ * Рабочие связи текущего контура, включая края дыр и голые связи.
+ *
+ * Горячий обход читает только ids: 4 байта на граничную связь. Для решётки 100k
+ * частиц это около 5 КБ вместо обхода ~300k связей. Обратный индекс холодный:
+ * нужен лишь при разрыве. Обе ёмкости по числу всех связей (8 байт/связь, ~2.4 МБ
+ * для 100k частиц), чтобы даже полное разрушение обходилось без аллокаций.
+ *
+ * Во время прохода новые края дописываются и проверяются в том же проходе.
+ * Удаление оставляет дырку до endPass: перестановка последнего элемента могла бы
+ * перенести ещё не проверенную связь за курсор и потерять её. Уплотнение нужно
+ * только после удаления, а не в каждом из 144 проходов тика.
+ */
+internal class BoundaryLinkLimits {
+    var ids = IntArray(0)
+        private set
+    private var position = IntArray(0)
+    var count = 0
+        private set
+    private var inPass = false
+    private var holes = false
+    /** Счётчик правок списка: по нему параллельный проход узнаёт, что раскладка устарела. */
+    var modCount = 0
+        private set
+
+    fun reset(capacity: Int) {
+        modCount++
+        if (position.size != capacity) {
+            ids = IntArray(capacity)
+            position = IntArray(capacity)
+        }
+        position.fill(-1)
+        count = 0
+        inPass = false
+        holes = false
+    }
+
+    fun add(c: Int) {
+        if (position[c] >= 0) return
+        modCount++
+        position[c] = count
+        ids[count++] = c
+    }
+
+    fun remove(c: Int) {
+        val slot = position[c]
+        if (slot < 0) return
+        modCount++
+        position[c] = -1
+        if (inPass) {
+            ids[slot] = -1
+            holes = true
+        } else {
+            val last = ids[--count]
+            if (slot < count) {
+                ids[slot] = last
+                position[last] = slot
+            }
+        }
+    }
+
+    /** Мир дописал тело: ёмкость по новому числу связей, прежний список как был. */
+    fun grow(capacity: Int) {
+        if (position.size >= capacity) return
+        val old = position.size
+        ids = ids.copyOf(capacity)
+        position = position.copyOf(capacity); java.util.Arrays.fill(position, old, capacity, -1)
+    }
+
+    fun beginPass() { inPass = true }
+
+    fun endPass() {
+        inPass = false
+        if (!holes) return
+        var write = 0
+        for (read in 0 until count) {
+            val c = ids[read]
+            if (c < 0) continue
+            ids[write] = c
+            position[c] = write++
+        }
+        count = write
+        holes = false
+    }
+}
+
+/** Только загрузка/reset и уже существующее уплотнение рабочих индексов в конце тика. */
+internal fun BodyState.rebuildBoundaryLinkLimits() {
+    boundaryLinkLimits.reset(conA.size)
+    for (c in 0 until conCount)
+        // Связи спящих в общем проходе не нужны: см. parkBoundaryLimits в BodySleep.
+        if (!conDead[c] && conBoundary[c] && !sleep.isAsleep(organismOf[conA[c]])) boundaryLinkLimits.add(c)
+}
+
+/** Вызывается на затронутых рёбрах сразу после изменения triUse, без обхода тела. */
+internal fun BodyState.updateBoundaryLinkLimit(e: Int) {
+    val boundary = !baked.edgeDead[e] && baked.triUse[e] <= 1
+    // НЕРОЖДЁННАЯ СВЯЗЬ ОСТАЁТСЯ В БЛОКАХ: решатель пропускает её по conDead, а вынутую из
+    // плотного индекса назад не вставить — родившись, связь осталась бы без решателя.
+    // Сюда приходят и рёбра нерождённых соседей (refreshSurface обходит все рёбра задетой
+    // вершины): 400 рождений на месте покоя давали 464 разрыва (PartialBodyCheck 25.10).
+    val unborn = baked.isUnborn(e)
+    var c = conOfEdge[e]
+    while (c >= 0) {
+        conBoundary[c] = boundary
+        // Связь спящего в общий проход не возвращается: см. parkBoundaryLimits в BodySleep.
+        if (boundary && !conDead[c] && !sleep.isAsleep(organismOf[conA[c]])) boundaryLinkLimits.add(c)
+        else boundaryLinkLimits.remove(c)
+        constraintBlocks?.let { blocks ->
+            if (conDead[c] && !unborn) blocks.links.remove(c)
+            if (boundary && !conDead[c]) blocks.addLimit(c, conA[c], conB[c]) else blocks.limits.remove(c)
+        }
+        c = conNextForEdge[c]
+    }
+}

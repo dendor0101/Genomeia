@@ -1,13 +1,13 @@
 package io.github.some_example_name.old.entities
 
 import io.github.some_example_name.old.cells.Cell
+import io.github.some_example_name.old.cells.Zygote
 import io.github.some_example_name.old.cells.base.CellTypeList
 import io.github.some_example_name.old.cells.base.Formula
 import io.github.some_example_name.old.cells.base.Formulas
 import io.github.some_example_name.old.cells.base.SpecialModData
 import io.github.some_example_name.old.cells.base.UnknownCellTypeException
 import io.github.some_example_name.old.core.DEBUG_CHECKS
-import io.github.some_example_name.old.core.DISimulationContainer.cellsSettings
 import io.github.some_example_name.old.core.SubstrateSettings
 import io.github.some_example_name.old.core.utils.OrderedIntPairMap
 import io.github.some_example_name.old.systems.genomics.genome.CellAction
@@ -42,14 +42,13 @@ class CellEntity(
     //Particle entity
     var particleIndexes = IntArray(maxAmount) { -1 }
     fun getParticleIndex(index: Int) = particleIndexes[index]
-    fun getX(index: Int) = particleEntity.x[particleIndexes[index]]
-    fun getY(index: Int) = particleEntity.y[particleIndexes[index]]
-    fun setX(index: Int, value: Float) { particleEntity.x[particleIndexes[index]] = value }
-    fun setY(index: Int, value: Float) { particleEntity.y[particleIndexes[index]] = value }
-    fun getVx(index: Int) = particleEntity.vx[particleIndexes[index]]
-    fun getVy(index: Int) = particleEntity.vy[particleIndexes[index]]
-    fun setVx(index: Int, value: Float) { particleEntity.vx[particleIndexes[index]] = value }
-    fun setVy(index: Int, value: Float) { particleEntity.vy[particleIndexes[index]] = value }
+    fun getX(index: Int) = particleEntity.x(particleIndexes[index])
+    fun getY(index: Int) = particleEntity.y(particleIndexes[index])
+    fun getVx(index: Int) = particleEntity.vx(particleIndexes[index])
+    fun getVy(index: Int) = particleEntity.vy(particleIndexes[index])
+
+    /** Добавить к скорости клетки (жгутик, плавник) — можно из параллельной стадии клеток. */
+    fun addVelocity(index: Int, dvx: Float, dvy: Float) = particleEntity.addVelocity(particleIndexes[index], dvx, dvy)
     fun getDragCoefficient(index: Int) = particleEntity.dragCoefficient[particleIndexes[index]]
     fun setDragCoefficient(index: Int, value: Float) { particleEntity.dragCoefficient[particleIndexes[index]] = value }
     fun getEffectOnContact(index: Int) = particleEntity.effectOnContact[particleIndexes[index]]
@@ -79,6 +78,9 @@ class CellEntity(
     var orphanCellCount = 0
         private set
 
+    // Только при рождении и в снимке рендера: 4 B/слот, ~39 КиБ на 10k клеток.
+    // -1 — старое сохранение без истории; индекс арены НЕ является возрастом.
+    var birthTick = IntArray(maxAmount) { -1 }
     var cellGenomeId = IntArray(maxAmount) { -1 }
     var cellActions: Array<CellAction?> = arrayOfNulls(maxAmount)
     var organIndex = IntArray(maxAmount) { -1 }
@@ -105,6 +107,16 @@ class CellEntity(
     var linkAmount = IntArray(maxAmount) { 0 }
     @Transient val organToIdToIndex = OrderedIntPairMap(maxAmount)
     var neuralConnections = Int2ObjectOpenHashMap<IntArrayList>()
+
+    /**
+     * Зигота-пустышка: стала зиготой делением или мутацией внутри тела, а не родилась
+     * корнем организма. Действий генома не получает, ничего не растит и энергии не
+     * копит — арена организма фиксирована при рождении и под новое тело на старом не
+     * рассчитана. Корень отличается номером в геноме: у него всегда
+     * [Zygote.ROOT_CELL_GENOME_ID], у клеток от деления — номер своего действия.
+     */
+    fun isDormantZygote(cellIndex: Int) =
+        cellGenomeId[cellIndex] != Zygote.ROOT_CELL_GENOME_ID && cellList[cellType[cellIndex].toInt()] is Zygote
 
     /**
      * Инлайн-список соседей по физическим связям: MAX_LINKS_PER_CELL слотов на клетку,
@@ -295,12 +307,6 @@ class CellEntity(
     fun setRemember(index: Int, value: Float) { neuralEntity.remember[neuralIndexes[index]] = value }
     fun getIsSum(index: Int) = neuralEntity.isSum[neuralIndexes[index]]
     fun setIsSum(index: Int, value: Boolean) {neuralEntity.isSum.set(neuralIndexes[index], value)}
-    fun getTickRed(index: Int) = neuralEntity.tickRed[neuralIndexes[index]]
-    fun setTickRed(index: Int, value: Int) { neuralEntity.tickRed[neuralIndexes[index]] = value }
-    fun getTickPain(index: Int) = neuralEntity.tickPain[neuralIndexes[index]]
-    fun setTickPain(index: Int, value: Int) { neuralEntity.tickPain[neuralIndexes[index]] = value }
-    fun getWeight(index: Int) = neuralEntity.weight[neuralIndexes[index]]
-    fun setWeight(index: Int, value: Float) { neuralEntity.weight[neuralIndexes[index]] = value}
 
     fun deleteNeural(cellIndex: Int, neuralGeneration: Int? = null) {
         val neuralIndex = neuralIndexes[cellIndex]
@@ -353,20 +359,17 @@ class CellEntity(
         pheromoneType: Int = -1,
         specialModData: SpecialModData? = null
     ): Int {
-        // Слот берётся из арены организма, если она у него есть.
+        // Слот — свой по раскладке организма, если у организма есть арена.
         //
-        // Исчерпание арены — это ошибка конфигурации, а не штатный режим: ёмкость
-        // снята при запекании генома плюс OrganEntity.ARENA_HEADROOM_PERCENT.
-        // Молча уйти в общий аллокатор нельзя — часть тела оказалась бы вне диапазона,
-        // и обход организма по арене её просто не увидел бы.
+        // Клетки вне раскладки не бывает: тело растёт только по запечённому геному. Молча уйти
+        // в общий аллокатор нельзя — часть тела оказалась бы вне диапазона, и обход организма
+        // по арене её просто не увидел бы.
         val arenaCellSlot = if (organEntity.hasArena(organIndex)) {
             val slot = organEntity.takeCellSlot(organIndex, cellGenomeId)
             if (slot == -1) {
                 throw IllegalStateException(
-                    "арена клеток организма $organIndex исчерпана " +
-                        "(ёмкость ${organEntity.cellArenaCapacity[organIndex]}): " +
-                        "тело выросло больше, чем под него зарезервировали — " +
-                        "поднимите OrganEntity.ARENA_HEADROOM_PERCENT или пересохраните геном"
+                    "клетки $cellGenomeId нет в запечённой раскладке организма $organIndex: " +
+                        "тело выросло не по геному, под который печётся арена — пересохраните геном"
                 )
             }
             slot
@@ -392,11 +395,13 @@ class CellEntity(
             dragCoefficient = substrateSettings.data.viscosityOfTheEnvironment,
             effectOnContact = cellList[cellType].effectOnContact,
             isCollidable = cellList[cellType].isCollidable,
-            cellStiffness = cellsSettings[cellType].cellStiffness,
+            cellStiffness = substrateSettings.cellsSettings[cellType].cellStiffness,
             isCell = true,
             isSub = false,
-            holderEntityIndex = cellIndex
+            holderEntityIndex = cellIndex,
+            arenaOwner = if (arenaCellSlot == -1) -1 else organIndex
         )
+        organEntity.cellAdded(organIndex)
         //
         // Зигота ВСЕГДА начинает новую систему отсчёта, даже если появилась делением из
         // родительского организма. Иначе род навсегда остался бы привязан к точке спавна
@@ -441,6 +446,7 @@ class CellEntity(
         } else {
         }
 
+        birthTick[cellIndex] = simulationData.tickCounter
         this.cellGenomeId[cellIndex] = cellGenomeId
         cellActions[cellIndex] = null
         this.organIndex[cellIndex] = organIndex
@@ -457,7 +463,7 @@ class CellEntity(
         isMutateInThisStage[cellIndex] = false
         this.cellType[cellIndex] = cellType.toByte()
         energy[cellIndex] = 0.1f
-        maxEnergy[cellIndex] = cellsSettings[cellType].maxEnergy
+        maxEnergy[cellIndex] = substrateSettings.cellsSettings[cellType].maxEnergy
         isOnEdge[cellIndex] = true
         this.degreeOfShortening[cellIndex] = 1f
         this.pheromoneType[cellIndex] = pheromoneType
@@ -545,6 +551,17 @@ class CellEntity(
                 )
             }
 
+            // isOnEdge — лишь память о том, где частица клетки: в сетке столкновений или нет.
+            // Пишет их вместе только refreshOnEdge; запись одного флага мимо него оставляет
+            // клетку «граничной», которая ни с чем не сталкивается (рана после Punisher, 21.10).
+            val particle = particleIndexes[cellIndex]
+            if (particle != -1 && isOnEdge[cellIndex] != particleEntity.isInGrid[particle]) {
+                throw IllegalStateException(
+                    "клетка $cellIndex: isOnEdge=${isOnEdge[cellIndex]}, а частица $particle " +
+                        "isInGrid=${particleEntity.isInGrid[particle]} — флаг записан мимо refreshOnEdge"
+                )
+            }
+
             val organ = organIndex[cellIndex]
             if (!organEntity.hasArena(organ)) continue
 
@@ -568,34 +585,40 @@ class CellEntity(
     }
 
     /**
-     * Пересчитывает «клетка на границе тела» по числу её физических связей и синхронно
-     * решает, участвует ли её частица в пространственной сетке.
+     * «Клетка на границе тела» — она в сетке касаний (сенсоры, поедание, курсор) — по числу
+     * её связей; для клетки, которую ведёт мир физики, ничего не делает (см. [setOnEdge]).
      *
-     * ПОЧЕМУ ЧИСЛО СВЯЗЕЙ, А НЕ ГЕОМЕТРИЯ
-     * -----------------------------------
-     * В треугольной упаковке клетка, окружённая со всех сторон, имеет шесть соседей.
-     * Меньше шести — значит хотя бы один сектор вокруг неё свободен, то есть снаружи до
-     * неё можно дотянуться. Это чисто топологический признак: он не зависит ни от того,
-     * как тело деформировано, ни от того, куда оно уплыло, и потому не требует
-     * пересчёта при движении — только при изменении числа связей.
+     * ОДИН КРАЙ НА ФИЗИКУ И ИГРУ (решение 03.11)
+     * ------------------------------------------
+     * Клетку организма, рождённую в мире физики (ParticleEntity.physicsIndex >= 0), на край
+     * ставит WorldPhysics по флагу физики PhysicsWorld.isSurfaceCell: у клетки есть ребро
+     * контура (живая связь не больше чем в одном живом треугольнике), щель в веере
+     * треугольников, или она одна. Это ровно те клетки, о которые тела сталкиваются.
+     * Прежнее своё правило игры — число связей против взрослого тела, запечённое в
+     * BakedLayout.interiorLinks, и все сформированные треугольники вокруг — с ним расходилось:
+     * 22 «краевые» клетки внутри Burdock leaf, отчёт 03.11.
      *
-     * ГРАНИЦА ПРИМЕНИМОСТИ
-     * --------------------
-     * Порог [EDGE_LINK_THRESHOLD] верен именно для треугольной решётки. Геном, растящий
-     * тело по квадратной решётке (четыре соседа у внутренней клетки), при этом пороге
-     * объявит внутренними вообще все клетки, и тело перестанет сталкиваться целиком.
-     * Когда такие геномы появятся, порог придётся выводить из генома, а не держать
-     * константой.
+     * Здесь остаётся запасной порог [EDGE_LINK_THRESHOLD] для клеток без мира физики:
+     * редактор генома и клетка, ещё не рождённая в мире физики (до её первой фазы физики).
      *
      * ИНКРЕМЕНТАЛЬНОСТЬ
      * -----------------
      * Вызывается там, где linkAmount меняется — в addLink и deleteLink, — то есть
-     * несколько раз за жизнь клетки, а не каждый тик. Ранний выход по неизменившемуся
-     * флагу оставлен намеренно: смена состояния трогает чужой массив (частицы), и делать
-     * это на каждой связи, когда ничего не поменялось, незачем.
+     * несколько раз за жизнь клетки, а не каждый тик.
      */
     fun refreshOnEdge(cellIndex: Int) {
-        val onEdge = linkAmount[cellIndex] < EDGE_LINK_THRESHOLD
+        val particleIndex = particleIndexes[cellIndex]
+        if (particleIndex != -1 && particleEntity.physicsIndex[particleIndex] >= 0) return
+        setOnEdge(cellIndex, linkAmount[cellIndex] < EDGE_LINK_THRESHOLD)
+    }
+
+    /**
+     * Поставить клетку на край ([onEdge]) или внутрь и синхронно решить, участвует ли её
+     * частица в пространственной сетке. Единственная запись isOnEdge и isInGrid клетки.
+     * Ранний выход по неизменившемуся флагу оставлен намеренно: смена состояния трогает чужой
+     * массив (частицы), и делать это, когда ничего не поменялось, незачем.
+     */
+    fun setOnEdge(cellIndex: Int, onEdge: Boolean) {
         if (isOnEdge[cellIndex] == onEdge) return
 
         isOnEdge[cellIndex] = onEdge
@@ -610,10 +633,32 @@ class CellEntity(
         // не сталкивается и не берётся курсором. Так падала проверка целостности сетки под
         // отладочным стресс-тестом «разогнать клетки» (клавиша D).
         //
-        // Звать отсюда безопасно: addLink/deleteLink работают только при применении команд
-        // мира, в одном потоке. Уход внутрь регистрации не требует: перестройка пропускает
-        // частицы с isInGrid == false сама.
+        // Звать отсюда безопасно: addLink/deleteLink и фаза физики работают однопоточно.
+        // Уход внутрь регистрации не требует: перестройка пропускает частицы с
+        // isInGrid == false сама.
         if (onEdge) particleEntity.gridManager.registerParticle(particleIndex)
+    }
+
+    /**
+     * Мир из сохранения, сделанного до починки 21.10: у части клеток isOnEdge = true, а
+     * частица вне сетки столкновений (флаг ставили мимо refreshOnEdge, см.
+     * LinkEntity.detachAllLinks). Такая клетка не сталкивается никогда — refreshOnEdge
+     * считает, что менять нечего, — а verifyArenaIntegrity на ней падает.
+     *
+     * Флаг возвращается к правде частицы, и refreshOnEdge решает заново — то же, что решил
+     * бы тогда, не будь флаг выставлен заранее. У согласованного мира не меняется ничего.
+     * Клетку мира физики refreshOnEdge не решает — её флаг уже из физики (setOnEdge).
+     */
+    fun repairEdgeFlagsAfterLoad() {
+        for (i in 0 until aliveList.size) {
+            val cellIndex = aliveList.getInt(i)
+            val particleIndex = particleIndexes[cellIndex]
+            if (particleIndex == -1) continue
+            val inGrid = particleEntity.isInGrid[particleIndex]
+            if (isOnEdge[cellIndex] == inGrid) continue
+            isOnEdge[cellIndex] = inGrid
+            refreshOnEdge(cellIndex)
+        }
     }
 
     fun deleteCell(cellIndex: Int) {
@@ -621,9 +666,7 @@ class CellEntity(
         // бы сиротой и счётчик поехал бы в минус.
         if (!organEntity.hasArena(organIndex[cellIndex])) orphanCellCount--
 
-        // Слот возвращается в арену СВОЕГО организма, иначе арена расходовалась бы по числу
-        // когда-либо созданных клеток, а не живых.
-        organEntity.releaseCellSlot(arenaOwnerOf(cellIndex), cellIndex)
+        organEntity.cellRemoved(organIndex[cellIndex])
 
         delete(cellIndex)
 
@@ -666,6 +709,7 @@ class CellEntity(
     override fun persistFields(state: EntityState) {
         state.ints(::particleIndexes)
         state.ints(::cellGenomeId)
+        state.ints(::birthTick)
         state.ints(::organIndex)
         state.ints(::parentIndex)
         state.floats(::angleCos)
@@ -699,8 +743,12 @@ class CellEntity(
         state.packed(
             "neuralConnections",
             write = {
-                val packed = IntArrayList()
-                for (cellIndex in neuralConnections.keys.toIntArray().sorted()) {
+                // Сортировка на месте, без упаковки: sorted() у IntArray возвращает List<Int>, и на 100k клеток
+                // эта упаковка была почти всем временем хэша мира (~75–110 мс раз в 60 тиков, замер 10.11).
+                val keys = neuralConnections.keys.toIntArray()
+                java.util.Arrays.sort(keys)
+                val packed = IntArrayList(keys.size * 3)
+                for (cellIndex in keys) {
                     val links = neuralConnections.get(cellIndex)
                     packed.add(cellIndex)
                     packed.add(links.size)
@@ -779,10 +827,16 @@ class CellEntity(
 
     override fun restoreAfterLoad() {
         organToIdToIndex.clear()
+        organEntity.resetLiveCells()
         for (i in 0 until aliveList.size) {
             val cellIndex = aliveList.getInt(i)
             organToIdToIndex.put(organIndex[cellIndex], cellGenomeId[cellIndex], cellIndex)
+            organEntity.cellAdded(organIndex[cellIndex])
         }
+        // Сохранения до появления смерти организма несут организмы без единой клетки —
+        // они удалятся в конце первого же тика, как удалились бы при жизни.
+        val organs = organEntity.aliveList
+        for (i in 0 until organs.size) organEntity.scheduleIfEmpty(organs.getInt(i))
     }
 
     override fun onCopy() {
@@ -797,6 +851,7 @@ class CellEntity(
         orphanCellCount = 0
         particleIndexes.clear(-1)
         cellGenomeId.clear(-1)
+        birthTick.clear(-1)
         cellActions.fill(null, 0, bound)
         organIndex.clear(-1)
         parentIndex.clear(-1)
@@ -831,6 +886,7 @@ class CellEntity(
     override fun onResize(oldMax: Int) {
         particleIndexes = particleIndexes.resize(-1)
         cellGenomeId = cellGenomeId.resize(-1)
+        birthTick = birthTick.resize(-1)
         run {
             val old = cellActions
             cellActions = arrayOfNulls(maxAmount)
@@ -882,9 +938,9 @@ class CellEntity(
         /**
          * Со скольких связей клетка считается ВНУТРЕННЕЙ (см. [refreshOnEdge]).
          *
-         * Шесть — это полное окружение в треугольной упаковке. Значение подобрано под
-         * геномы, которые растят тело именно такой решёткой; для других решёток его
-         * придётся выводить из генома.
+         * Шесть — это полное окружение в треугольной упаковке. Это запасной порог: он
+         * работает только у клеток без мира физики (редактор, ещё не рождённая в мире физики),
+         * а в мире край берётся из физики (PhysicsWorld.isSurfaceCell, WorldPhysics).
          */
         const val EDGE_LINK_THRESHOLD = 6
 
@@ -902,4 +958,3 @@ class CellEntity(
     }
 
 }
-

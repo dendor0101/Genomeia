@@ -1,0 +1,22 @@
+[Unit]
+Description=Genomeia bug report API
+After=network.target
+
+[Service]
+DynamicUser=yes
+StateDirectory=genomeia-bugs
+WorkingDirectory=/opt/genomeia-bugs
+Environment=GENOMEIA_DATA=/var/lib/genomeia-bugs
+ExecStart=/opt/genomeia-bugs-venv/bin/gunicorn --bind 127.0.0.1:8000 --workers 1 --threads 4 --timeout 180 --no-control-socket --access-logfile - app:create_app()
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+MemoryMax=256M
+TasksMax=32
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

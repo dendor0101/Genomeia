@@ -1,10 +1,13 @@
 package io.github.some_example_name.old.systems.logic
 
-import ai.tenum.lua.runtime.LuaFunction
-import ai.tenum.lua.runtime.LuaNumber
-import ai.tenum.lua.runtime.LuaValue
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.math.RandomXS128
+import org.squiddev.cobalt.Constants
+import org.squiddev.cobalt.LuaState
+import org.squiddev.cobalt.LuaThread
+import org.squiddev.cobalt.ValueFactory.valueOf
+import org.squiddev.cobalt.Varargs
+import org.squiddev.cobalt.function.LuaFunction
 
 /**
  * Правила уровня, которые задаёт Lua-скрипт: цель, прогресс, метка и зона на карте,
@@ -63,6 +66,9 @@ class LevelRules {
     private var destinationFired = false
     private var timeoutFired = false
 
+    /** Машина Lua текущего запуска уровня: ею зовутся обработчики событий. Ставит EnvRun. */
+    var lua: LuaState? = null
+
     private var onCells: LuaFunction? = null
     private var onDestination: LuaFunction? = null
     private var onTimeout: LuaFunction? = null
@@ -73,9 +79,10 @@ class LevelRules {
 
     /**
      * Случайность уровня — только отсюда. Свой генератор, а не MathUtils.random: сид
-     * приходит из SessionStarted, поэтому повтор .bug видит те же числа.
+     * приходит из SessionStarted, поэтому повтор .bug видит те же числа. До первого [seed]
+     * — постоянный сид, а не RandomXS128() без аргумента: тот сеется случайно.
      */
-    private val random = RandomXS128()
+    private val random = RandomXS128(0L)
 
     // --- состояние, которое ставят функции Lua -------------------------------------
 
@@ -180,7 +187,7 @@ class LevelRules {
 
         if (!cellsFired && cellsThreshold >= 0 && cells >= cellsThreshold) {
             cellsFired = true
-            onCells?.let { call(it, LuaNumber.of(cells)) }
+            onCells?.let { call(it, valueOf(cells)) }
         }
 
         if (!timeoutFired && timeLimitTicks > 0 && tick >= timeLimitTicks) {
@@ -216,10 +223,12 @@ class LevelRules {
      * Вызов Lua из потока симуляции. Ошибку скрипта не пробрасываем в тик: иначе один
      * кривой уровень валит мир, и повтор .bug упирается в чужую строку Lua.
      */
-    private fun call(fn: LuaFunction, vararg args: LuaValue<*>) {
+    private fun call(fn: LuaFunction, args: Varargs = Constants.NONE) {
+        val state = lua ?: return
         try {
-            fn.call(args.toList())
+            LuaThread.runMain(state, fn, args)
         } catch (e: Exception) {
+            // Предел строк (ScriptBudgetExceeded) — Error и сюда не попадает: он уходит до EnvRun.
             Gdx.app?.error(TAG, "ошибка в скрипте уровня", e)
         }
     }
@@ -237,6 +246,9 @@ class LevelRules {
 
         /** Ключ бандла: вышел лимит времени, а своего `onTimeout` у уровня нет. */
         const val FAIL_TIMEOUT_KEY = "level.timeUp"
+
+        /** Ключ бандла: скрипт уровня превысил предел инструкций за тик (EnvRun.INSTRUCTION_BUDGET). */
+        const val FAIL_SCRIPT_KEY = "level.scriptTooLong"
     }
 }
 

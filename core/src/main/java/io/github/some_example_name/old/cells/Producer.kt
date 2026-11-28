@@ -2,7 +2,6 @@ package io.github.some_example_name.old.cells
 
 import io.github.some_example_name.old.cells.base.SpecialModData
 import io.github.some_example_name.old.commands.WorldCommandType
-import io.github.some_example_name.old.core.DISimulationContainer.zygote
 import io.github.some_example_name.old.core.utils.redColors
 import io.github.some_example_name.old.systems.genomics.genome.Action
 import io.github.some_example_name.old.systems.physics.CollisionManager.Companion.PARTICLE_MAX_RADIUS
@@ -15,7 +14,6 @@ class Producer(cellTypeId: Int): Cell(
     key = "producer",
     defaultColor = redColors[4],
     cellTypeId = cellTypeId,
-    textureName = "Producer.png",
     isDirected = true,
     isNeural = true
 ) {
@@ -48,6 +46,7 @@ class Producer(cellTypeId: Int): Cell(
 
         if (producer.reproductionRestriction != 1) return
 
+        val zygote = cellList[cellList.indexOfKey("zygote")]
         val color: Int = zygote.defaultColor.toIntBits()
         val radius: Float = PARTICLE_MAX_RADIUS
         val cellType: Int = zygote.cellTypeId
@@ -62,8 +61,10 @@ class Producer(cellTypeId: Int): Cell(
         val finalCos = angleCos[cellIndex]
         val finalSin = angleSin[cellIndex]
 
-        val x = getX(cellIndex) + finalCos * 0.05f
-        val y = getY(cellIndex) + finalSin * 0.05f
+        // За радиусом родителя: центр внутри чужого радиуса в физике — глубокое проникновение,
+        // при прежних 0.05 продюсер и зигота погибали на первом же тике (убивает обеих).
+        val x = getX(cellIndex) + finalCos * ZYGOTE_OFFSET
+        val y = getY(cellIndex) + finalSin * ZYGOTE_OFFSET
 
         val isMorphogenesis = false
         val pheromoneType = -1
@@ -89,6 +90,11 @@ class Producer(cellTypeId: Int): Cell(
 
         neuronImpulseOutput[cellIndex] = 1f
         energy[cellIndex] -= energy[cellIndex]
+    }
+
+    private companion object {
+        /** Длина компактной связи редактора: чуть больше наибольшего радиуса клетки. */
+        const val ZYGOTE_OFFSET = PARTICLE_MAX_RADIUS * 1.1f
     }
 }
 

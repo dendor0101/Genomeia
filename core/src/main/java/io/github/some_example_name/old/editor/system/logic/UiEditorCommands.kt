@@ -106,7 +106,10 @@ class TouchDown(val x: Float, val y: Float): UiEditorCommands {
 @Serializable
 class DivideDialog(
     val clickedCell: EditorCell,
-    val newDividedCellPosition: Pair<Float, Float>
+    val newDividedCellPosition: Pair<Float, Float>,
+    // Последним и со значением по умолчанию: поля ProtoBuf нумеруются по порядку, и
+    // журналы, записанные до таблицы мест, читаются с пустой.
+    val places: DivisionPlaces = DivisionPlaces()
 ): UiEditorCommands {
     override val name get() = "DivideDialog"
     override val detail get() = "cell=${clickedCell.id}"
@@ -210,8 +213,36 @@ class SetShowPhysicalLinks(val visible: Boolean): UiEditorCommands {
     override val detail get() = visible.toString()
 }
 
+/** Галочка «Граница» в окне опций отладки редактора. */
 @Serializable
-class SetRenderMode(val mode: RenderMode): UiEditorCommands {
+class SetEditorShowBoundary(val show: Boolean) : UiEditorCommands {
+    override val name get() = "SetEditorShowBoundary"
+    override val detail get() = show.toString()
+}
+
+/** Галочка «Нейросвязи» в окне опций отладки редактора. */
+@Serializable
+class SetEditorShowNeuralLinks(val show: Boolean) : UiEditorCommands {
+    override val name get() = "SetEditorShowNeuralLinks"
+    override val detail get() = show.toString()
+}
+
+/** Галочка «Цвет из генома» в окне опций отладки редактора. */
+@Serializable
+class SetEditorGenomeColors(val enabled: Boolean) : UiEditorCommands {
+    override val name get() = "SetEditorGenomeColors"
+    override val detail get() = enabled.toString()
+}
+
+/** Устарела: фильтров в редакторе больше нет. Осталась ради старых .bug, см. EditorLogicSystem. */
+@Serializable
+class SetEditorDebugFilter(val filter: io.github.some_example_name.render.DebugFilter) : UiEditorCommands {
+    override val name get() = "SetEditorDebugFilter"
+}
+
+/** Устарела: редактор рисует только отладочным режимом. Осталась ради старых .bug. */
+@Serializable
+class SetRenderMode(@Serializable(with=io.github.some_example_name.old.journal.SavedRenderMode::class) val mode: RenderMode): UiEditorCommands {
     override val name get() = "SetRenderMode"
     override val detail get() = mode.name
 }
@@ -235,4 +266,13 @@ class ExportGenome(val genomeName: String): UiEditorCommands {
 class ZoomCamera(val zoom: Float, val x: Float, val y: Float): UiEditorCommands {
     override val name get() = "ZoomCamera"
     override val detail get() = String.format(Locale.ROOT, "%.4f", zoom)
+}
+
+/**
+ * Обучение: следующий шаг. Шаг меняется только этой командой, поэтому повтор .bug
+ * листает обучение там же, где игрок (см. EditorTutorial).
+ */
+@Serializable
+object TutorialNextStep: UiEditorCommands {
+    override val name get() = "TutorialNext"
 }

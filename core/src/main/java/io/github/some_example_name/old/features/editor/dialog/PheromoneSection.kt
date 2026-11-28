@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.features.editor.dialog
 
+import io.github.some_example_name.old.core.ui.hint
 import com.kotcrab.vis.ui.widget.VisTable
 import io.github.some_example_name.old.core.DIGameGlobalContainer.bundle
 import io.github.some_example_name.old.core.ui.dp
@@ -19,7 +20,7 @@ object PheromoneSection : CellEditorSection {
     override fun VisTable.compose(dialog: CellDialog) {
         val actionSystem = dialog.actionSystem
         visTable {
-            visLabel(text = bundle.get("label.pheromoneType")) { padRight(16.dp())}
+            visLabel(text = bundle.get("label.pheromoneType")) { padRight(16.dp())}.hint(bundle.get("editor.hint.pheromone"))
 
             val pheromoneType = actionSystem.action.pheromoneType ?: actionSystem.clickedCell.actual?.pheromoneType ?: throw Exception("pheromoneType is null")
             visSelectBox(
@@ -35,7 +36,7 @@ object PheromoneSection : CellEditorSection {
                 onChange = { _, pheromoneId ->
                     actionSystem.action = actionSystem.action.copy(pheromoneType = pheromoneId)
                 }
-            )
+            ).hint(bundle.get("editor.hint.pheromone"))
         }
         row()
     }

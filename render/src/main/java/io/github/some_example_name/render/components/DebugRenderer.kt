@@ -9,10 +9,13 @@ import com.badlogic.gdx.graphics.glutils.FrameBuffer
 import com.badlogic.gdx.graphics.glutils.GLFrameBuffer
 import com.badlogic.gdx.graphics.glutils.ShaderProgram
 import io.github.some_example_name.render.RenderMode
+import io.github.some_example_name.render.releaseRebuiltFrameBuffer
 
 /**
- * Отладочный режим: плоские клетки на тёмном фоне, как на стенде RealBodyDemo, и поверх —
- * нейросвязи с бегущими импульсами, стрелки направлений и лучи глаз.
+ * Отладочный режим: клетки цвета своего типа со схемой-рисунком (CellLook — хлоропласты,
+ * волокна мышцы, реснички) на тёмном фоне, как на стенде RealBodyDemo, и поверх —
+ * нейросвязи с бегущими импульсами, стрелки направлений, жгутики и лучи глаз. Рисунки
+ * анимированы часами кадра и сигналом действия клетки — см. cell_common.glsl.
  *
  * Всё сглажено аналитически: каждая фигура знает расстояние от пикселя до своего края и
  * сама считает, какую долю пикселя закрывает. Это то, что дал бы MSAA, но без
@@ -32,7 +35,13 @@ import io.github.some_example_name.render.RenderMode
  *     прохода 1. Каждая клетка знает, насколько она проиграла владельцу пикселя и как
  *     быстро растёт проигрыш, то есть как далеко её граница, и подмешивает свой цвет в
  *     полупиксельную полосу у неё, заодно рисуя стенку между клетками (cell_edge.frag).
- *  4. Оверлей: нейросвязи, стрелки, лучи, кольца — инстансами по кваду (overlay.frag).
+ *     Над пустотой за окружностью тут же рисуется бахрома рисунков — реснички, иглы,
+ *     шипы, — а полупрозрачные клетки («призрак» в редакторе) рисуются здесь целиком.
+ *  3½. Феромоны: мягкие пятна цвета феромона поверх клеток, как в реалистичном режиме до
+ *     06.11 (PheromoneLayer, pheromone.vert/.frag). Над клетками, а не под ними: так было
+ *     и там, и облако вокруг тела видно. Под оверлеем: нейросвязи и стрелки остаются чёткими.
+ *  4. Оверлей: нейросвязи, стрелки, лучи, кольца, жгутики — инстансами по кваду
+ *     (overlay.frag). Жгутик читает владельцев пикселей из прохода 1: над клетками его нет.
  *
  * Глубина нужна проходу 3 как ТЕКСТУРА, поэтому у режима свой FBO с текстурой глубины, а
  * не scene FBO из WorldRenderer: у того глубина в рендербуфере, читать её нельзя.
@@ -47,15 +56,33 @@ import io.github.some_example_name.render.RenderMode
  * оверлея — 3.22 мс, на уровне реалистичного (3.11). Разница — второй проход по клеткам
  * (выборка глубины, большинство фрагментов отбрасывается сразу за ней) и вывод FBO на
  * экран. Оверлей стоит пропорционально числу и длине связей, стрелок и лучей.
+ *
+ * ЦЕНА РИСУНКОВ (20.10, та же сцена и тот же GPU; старые и новые шейдеры по очереди при
+ * одном и том же Kotlin, чтобы фоновая нагрузка машины легла на оба варианта):
+ *  - вдали (радиус клетки 7–10 пикселей, рисунки ещё не включаются): 3.8–4.4 → 4.1–4.9 мс;
+ *  - вблизи (радиус ~33 пикселя, весь экран — клетки со случайными рисунками, худший
+ *    случай): 2.0–2.1 → 3.2–3.7 мс; без рисунков те же шейдеры — 2.0–2.4 мс. Для сравнения,
+ *    реалистичный режим на этой сцене — 2.9 мс.
+ *  - по рисункам вблизи (у всех клеток один): без рисунка 2.15, пигменты 2.77, кость 2.87,
+ *    лист 3.09, сенсор касания 3.14, мышца 3.15, нейрон 3.33, контроллер 3.56, синапс 3.75.
+ * Что уже сделано ради цены: рисунок включается с радиуса 10 пикселей (patternFade), в
+ * полосе сглаживания у соседа — только ткань без рисунка, случайные числа клетки — в
+ * вершинном шейдере, угол — полиномом вместо atan, корпус под бахрому раздувается только
+ * у крупных клеток. Дальше дешевле — только убрав перекрытие корпусов в заливке (рисунок
+ * сейчас считается и для проигравших фрагментов, на плотной сцене ~1.5 раза на пиксель).
  */
 class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
 
     private val overlay = OverlayGeometry()
+    private var areas: DebugAreaGeometry? = null
+    private var areaShader: ShaderProgram? = null
 
     private lateinit var fillShader: ShaderProgram
     private lateinit var edgeShader: ShaderProgram
     private lateinit var compositeShader: ShaderProgram
     private lateinit var overlayShader: ShaderProgram
+    private lateinit var pheromoneShader: ShaderProgram
+    private val pheromones = PheromoneLayer()
 
     private var fbo: FrameBuffer? = null
     private var fboWidth = 0
@@ -65,11 +92,13 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         fillShader = compile("cell.vert", "cell_fill.frag")
         edgeShader = compile("cell.vert", "cell_edge.frag")
         compositeShader = ShaderProgram(
-            Gdx.files.internal("shaders/post_process/post_process.vert").readString(),
+            Gdx.files.internal("shaders/common/fullscreen.vert").readString(),
             source("composite.frag")
         ).also(::check)
         overlayShader = compile("overlay.vert", "overlay.frag")
         overlay.create()
+        pheromoneShader = compile("pheromone.vert", "pheromone.frag")
+        pheromones.create(pheromoneShader)
     }
 
     private fun compile(vertex: String, fragment: String): ShaderProgram =
@@ -101,21 +130,21 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
     }
 
     /**
-     * FBO в размер ЭКРАННОГО буфера в пикселях, а не логического окна: проходы 2 и 3
+     * FBO в размер выходной текстуры или ЭКРАННОГО буфера в пикселях: проходы 2 и 3
      * читают его по gl_FragCoord, и на экране с масштабом (HiDPI) логический размер
      * разъехался бы с пиксельным. Сверка каждый кадр — два сравнения, зато размер не
      * зависит от того, кто и когда позвал resize.
      */
-    private fun ensureFbo(): FrameBuffer {
-        val width = Gdx.graphics.backBufferWidth.coerceAtLeast(1)
-        val height = Gdx.graphics.backBufferHeight.coerceAtLeast(1)
+    private fun ensureFbo(context: RenderContext): FrameBuffer {
+        val width = (context.outputFbo?.width ?: Gdx.graphics.backBufferWidth).coerceAtLeast(1)
+        val height = (context.outputFbo?.height ?: Gdx.graphics.backBufferHeight).coerceAtLeast(1)
         fbo?.let { existing ->
             if (fboWidth == width && fboHeight == height) return existing
             existing.dispose()
         }
 
-        // Порядок вложений = индексы COLOR/OWNER/DEPTH_ATTACHMENT ниже. Два цветовых — это
-        // MRT: libGDX сам включает оба через glDrawBuffers.
+        // Порядок вложений = индексы COLOR/OWNER/DEPTH_ATTACHMENT ниже, всего их
+        // ATTACHMENT_COUNT. Два цветовых — это MRT: libGDX сам включает оба через glDrawBuffers.
         val built = GLFrameBuffer.FrameBufferBuilder(width, height)
             .addBasicColorTextureAttachment(Pixmap.Format.RGBA8888)
             .addBasicColorTextureAttachment(Pixmap.Format.RGBA8888)
@@ -137,17 +166,23 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
     override fun render(context: RenderContext) {
         if (context.mode != RenderMode.DEBUG) return
 
-        val target = ensureFbo()
+        val target = ensureFbo(context)
         val gl = Gdx.gl
 
         fill(context, target)
+        context.beginOutput()
         composite(context, target.textureAttachments[COLOR_ATTACHMENT])
         edges(
             context,
             depth = target.textureAttachments[DEPTH_ATTACHMENT],
             owner = target.textureAttachments[OWNER_ATTACHMENT]
         )
-        drawOverlay(context)
+        context.pheromoneData?.let { data ->
+            if (context.numPheromoneInstances > 0) pheromones.draw(context, data, context.numPheromoneInstances)
+        }
+        drawOverlay(context, owner = target.textureAttachments[OWNER_ATTACHMENT])
+
+        context.endOutput()
 
         // Состояние — как его ждут остальные проходы и интерфейс.
         gl.glDisable(GL20.GL_BLEND)
@@ -170,14 +205,36 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
 
         fillShader.bind()
-        bindCellUniforms(fillShader, context)
-        cells.draw(context.numInstances, CellGeometry.Detail.HULL)
+        bindCellUniforms(fillShader, context, fringe = false)
+        cells.draw(context.numInstances)
+        cells.drawStatic(context.numStaticInstances)
+        drawAreas(context)
 
         target.end()
 
         // Значение очистки — общее состояние контекста; остальные его не ставят и ждут 1.
         gl.glClearDepthf(1f)
         gl.glDisable(GL20.GL_DEPTH_TEST)
+    }
+
+    private fun drawAreas(context: RenderContext) {
+        val indices = context.areaIndices ?: return
+        val shader = areaShader ?: compile("area.vert", "area.frag").also { areaShader = it }
+        val geometry = areas ?: DebugAreaGeometry(cells.instanceVbo).also { areas = it }
+        shader.bind()
+        shader.setUniformMatrix("u_projTrans", context.cameraProjection)
+        shader.setUniformf("u_lag", context.interpolationLag)
+        shader.setUniformi("u_filter", context.debugFilter.ordinal)
+
+        // Цвет добавляется только в непокрытую долю пикселя. Во второй буфер
+        // шейдер прибавляет ноль: глубина и владелец остаются данными клеток.
+        val gl = Gdx.gl
+        gl.glDisable(GL20.GL_DEPTH_TEST)
+        gl.glDepthMask(false)
+        gl.glDisable(GL20.GL_CULL_FACE)
+        gl.glEnable(GL20.GL_BLEND)
+        gl.glBlendFunc(GL20.GL_ONE_MINUS_DST_ALPHA, GL20.GL_ONE)
+        geometry.draw(indices)
     }
 
     /** Проход 2: фон и заливка на экран. */
@@ -189,6 +246,8 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         compositeShader.bind()
         compositeShader.setUniformi("u_texture", 0)
         compositeShader.setUniformf("u_background", BACKGROUND_R, BACKGROUND_G, BACKGROUND_B)
+        // 0 — пустота прозрачна (значки клеток, RenderFrame.transparentBackground).
+        compositeShader.setUniformf("u_backgroundAlpha", if (context.transparentBackground) 0f else 1f)
         gl.glActiveTexture(GL20.GL_TEXTURE0)
         color.bind()
 
@@ -205,7 +264,7 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         gl.glBlendFunc(GL20.GL_ONE, GL20.GL_ONE_MINUS_SRC_ALPHA)
 
         edgeShader.bind()
-        bindCellUniforms(edgeShader, context)
+        bindCellUniforms(edgeShader, context, fringe = true)
         setIfPresent(edgeShader, "u_depth", 0)
         setIfPresent(edgeShader, "u_owner", 1)
         depth.bind(0)
@@ -213,11 +272,15 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         // Texture.bind(unit) оставляет активным свой блок; остальные ждут нулевой.
         gl.glActiveTexture(GL20.GL_TEXTURE0)
 
-        cells.draw(context.numInstances, CellGeometry.Detail.HULL)
+        cells.draw(context.numInstances)
+        cells.drawStatic(context.numStaticInstances)
     }
 
-    /** Проход 4: нейросвязи, стрелки, лучи, кольца. */
-    private fun drawOverlay(context: RenderContext) {
+    /**
+     * Проход 4: нейросвязи, стрелки, лучи, кольца, жгутики. [owner] — владельцы пикселей
+     * из заливки: жгутик виден только над пустотой.
+     */
+    private fun drawOverlay(context: RenderContext, owner: Texture) {
         val data = context.overlayData ?: return
         if (context.numOverlayInstances <= 0) return
 
@@ -230,17 +293,30 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         overlayShader.bind()
         overlayShader.setUniformMatrix("u_projTrans", context.cameraProjection)
         setIfPresent(overlayShader, "u_pixelWorld", context.pixelWorld)
+        setIfPresent(overlayShader, "u_lag", context.interpolationLag)
         setIfPresent(overlayShader, "u_time", context.time)
+        setIfPresent(overlayShader, "u_owner", 0)
+        owner.bind(0)
         overlay.draw(context.numOverlayInstances)
     }
 
-    private fun bindCellUniforms(shader: ShaderProgram, context: RenderContext) {
+    /**
+     * [fringe] — раздуть корпус клетки на бахрому рисунка (реснички, иглы): она нужна
+     * только проходу сглаживания, заливке лишние фрагменты ни к чему.
+     */
+    private fun bindCellUniforms(shader: ShaderProgram, context: RenderContext, fringe: Boolean) {
         shader.setUniformMatrix("u_projTrans", context.cameraProjection)
+        // Компилятор вправе выкинуть неиспользуемый униформ — отсюда setIfPresent, а не
+        // setUniformf с его исключением.
         setIfPresent(shader, "u_pixelWorld", context.pixelWorld)
+        setIfPresent(shader, "u_lag", context.interpolationLag)
         setIfPresent(shader, "u_depthScale", DEPTH_SCALE)
-        // Проходу сглаживания ядро не нужно, и компилятор вправе выкинуть униформ вместе
-        // с ним — отсюда setIfPresent, а не setUniformf с его исключением.
-        setIfPresent(shader, "u_nucleusAtFullEnergy", NUCLEUS_AT_FULL_ENERGY)
+        setIfPresent(shader, "u_fringe", if (fringe) 1f else 0f)
+        setIfPresent(shader, "u_time", context.time)
+        // Фильтр — номер DebugFilter, его ждёт u_filter в cell.vert (0 — оригинал).
+        setIfPresent(shader, "u_filter", context.debugFilter.ordinal)
+        val location = shader.fetchUniformLocation("u_background", false)
+        if (location >= 0) shader.setUniformf(location, BACKGROUND_R, BACKGROUND_G, BACKGROUND_B)
     }
 
     private fun setIfPresent(shader: ShaderProgram, name: String, value: Float) {
@@ -253,11 +329,32 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         if (location >= 0) shader.setUniformi(location, value)
     }
 
+    /**
+     * Контекст GL создан заново. Шейдеры libGDX перекомпилировал сам. FBO он тоже пересобрал,
+     * но с мёртвыми текстурами в начале списка вложений (см. releaseRebuiltFrameBuffer) и
+     * со сброшенной фильтрацией: глубина с LINEAR в GLES 3.0 неполна и читалась бы нулями.
+     * Поэтому FBO — освободить, ensureFbo создаст новый. VAO заливки ссылается на мёртвый
+     * VBO клеток — забыть, drawAreas создаст его заново с новым.
+     */
+    override fun contextLost() {
+        overlay.recreateAfterContextLoss()
+        pheromones.contextLost()
+        areas = null
+        fbo?.let { releaseRebuiltFrameBuffer(it, ATTACHMENT_COUNT) }
+        fbo = null
+        fboWidth = 0
+        fboHeight = 0
+    }
+
     override fun dispose() {
         if (::fillShader.isInitialized) fillShader.dispose()
         if (::edgeShader.isInitialized) edgeShader.dispose()
         if (::compositeShader.isInitialized) compositeShader.dispose()
         if (::overlayShader.isInitialized) overlayShader.dispose()
+        if (::pheromoneShader.isInitialized) pheromoneShader.dispose()
+        pheromones.dispose()
+        areaShader?.dispose()
+        areas?.dispose()
         overlay.dispose()
         fbo?.dispose()
         fbo = null
@@ -271,18 +368,13 @@ class DebugRenderer(private val cells: CellGeometry) : RenderComponent {
         private const val COLOR_ATTACHMENT = 0
         private const val OWNER_ATTACHMENT = 1
         private const val DEPTH_ATTACHMENT = 2
+        private const val ATTACHMENT_COUNT = 3
 
         /**
          * Глубина окна = d/R * DEPTH_SCALE. Половина, а не единица: тогда очистка (d/R = 1)
          * — это 0.5, и у раздутого под сглаживание корпуса есть запас за окружностью.
          */
         private const val DEPTH_SCALE = 0.5f
-
-        /**
-         * Радиус ядра в долях радиуса клетки при полном байте энергии (ENERGY_SPAN) — как
-         * в ностальгическом режиме: обычная клетка с полным запасом получает 0.2R.
-         */
-        const val NUCLEUS_AT_FULL_ENERGY = NostalgicRenderer.NUCLEUS_AT_FULL_ENERGY
 
         /** Фон — тот же тёмно-синий, что у стенда RealBodyDemo (BG = #12161E). */
         const val BACKGROUND_R = 0x12 / 255f

@@ -40,12 +40,34 @@ class OverlayInstanceBufferTest {
     }
 
     @Test
-    fun `раскладка фигуры ровно 24 байта`() {
-        assertEquals(24, OverlayInstanceBuffer.STRUCT_SIZE)
+    fun `раскладка фигуры ровно 40 байт`() {
+        assertEquals(40, OverlayInstanceBuffer.STRUCT_SIZE)
         assertEquals(0, OverlayInstanceBuffer.OFFSET_FROM)
         assertEquals(8, OverlayInstanceBuffer.OFFSET_TO)
         assertEquals(16, OverlayInstanceBuffer.OFFSET_COLOR)
         assertEquals(20, OverlayInstanceBuffer.OFFSET_PARAMS)
+        assertEquals(24, OverlayInstanceBuffer.OFFSET_PREV_FROM)
+        assertEquals(32, OverlayInstanceBuffer.OFFSET_PREV_TO)
+    }
+
+    @Test
+    fun `прошлые концы лежат после params, по умолчанию — нынешние`() {
+        val data = OverlayInstanceBuffer(initialCapacity = 1).apply {
+            begin(2)
+            put(0f, 0f, 1f, 1f, color = 7, params = 9, prevX0 = -1f, prevY0 = -2f, prevX1 = 3f, prevY1 = 4f)
+            putRing(1f, 2f, 3f, 0)
+        }.end()
+        assertEquals(-1f, data.getFloat(OverlayInstanceBuffer.OFFSET_PREV_FROM))
+        assertEquals(-2f, data.getFloat(OverlayInstanceBuffer.OFFSET_PREV_FROM + 4))
+        assertEquals(3f, data.getFloat(OverlayInstanceBuffer.OFFSET_PREV_TO))
+        assertEquals(4f, data.getFloat(OverlayInstanceBuffer.OFFSET_PREV_TO + 4))
+        assertEquals(9, read(data, 0).params, "прошлые концы не задели params")
+
+        // Кольцо стоит: прошлые центр и радиус — те же.
+        val ring = OverlayInstanceBuffer.STRUCT_SIZE
+        assertEquals(1f, data.getFloat(ring + OverlayInstanceBuffer.OFFSET_PREV_FROM))
+        assertEquals(2f, data.getFloat(ring + OverlayInstanceBuffer.OFFSET_PREV_FROM + 4))
+        assertEquals(3f, data.getFloat(ring + OverlayInstanceBuffer.OFFSET_PREV_TO), "радиус")
     }
 
     @Test
@@ -138,6 +160,9 @@ class OverlayInstanceBufferTest {
         assertEquals(OverlayInstanceBuffer.KIND_RAY, constInt("KIND_RAY"))
         assertEquals(OverlayInstanceBuffer.KIND_ARROW, constInt("KIND_ARROW"))
         assertEquals(OverlayInstanceBuffer.KIND_NEURAL, constInt("KIND_NEURAL"))
+        assertEquals(OverlayInstanceBuffer.KIND_FLAGELLUM, constInt("KIND_FLAGELLUM"))
+        assertEquals(OverlayInstanceBuffer.KIND_EDGE, constInt("KIND_EDGE"))
+        assertEquals(OverlayInstanceBuffer.KIND_LINK, constInt("KIND_LINK"))
 
         // Часы анимации идут по кругу с периодом TIME_WRAP. Если за период импульсы не
         // делают целого числа шагов, на обороте они прыгают.
@@ -145,6 +170,50 @@ class OverlayInstanceBufferTest {
             ?: error("в overlay_common.glsl нет PULSE_HZ")
         val steps = hz * RenderFrame.TIME_WRAP
         assertEquals(kotlin.math.round(steps), steps, "PULSE_HZ * TIME_WRAP обязано быть целым")
+
+        val flagellumHz = Regex("""const float FLAGELLUM_HZ = ([\d.]+);""").find(glsl)?.groupValues?.get(1)?.toFloat()
+            ?: error("в overlay_common.glsl нет FLAGELLUM_HZ")
+        val turns = flagellumHz * RenderFrame.TIME_WRAP
+        assertEquals(kotlin.math.round(turns), turns, "FLAGELLUM_HZ * TIME_WRAP обязано быть целым")
+    }
+
+    /**
+     * Склейка из int-массивов (снимок отладочного режима с воркеров) обязана дать ровно те
+     * байты, что дала бы запись тех же фигур по одной, — и не ломать запись put после себя.
+     */
+    @Test
+    fun putAllFromIntsMatchesPut() {
+        fun figure(k: Int) = floatArrayOf(k + 0.25f, -k * 1.5f, k * 3f, 7f - k, k * 0.5f, k + 1f, -k - 2f, 0.125f * k)
+        val count = 37
+        val reference = OverlayInstanceBuffer(4)
+        reference.begin()
+        val ints = IntArray(count * OverlayInstanceBuffer.STRUCT_INTS)
+        for (k in 0 until count) {
+            val f = figure(k)
+            val color = 0x11223344 * (k + 1)
+            val params = OverlayInstanceBuffer.params(k % 7, (k - 18) / 18f, k)
+            reference.put(f[0], f[1], f[2], f[3], color, params, f[4], f[5], f[6], f[7])
+            val o = k * OverlayInstanceBuffer.STRUCT_INTS
+            ints[o] = f[0].toRawBits(); ints[o + 1] = f[1].toRawBits(); ints[o + 2] = f[2].toRawBits(); ints[o + 3] = f[3].toRawBits()
+            ints[o + 4] = color; ints[o + 5] = params
+            ints[o + 6] = f[4].toRawBits(); ints[o + 7] = f[5].toRawBits(); ints[o + 8] = f[6].toRawBits(); ints[o + 9] = f[7].toRawBits()
+        }
+        reference.put(1f, 2f, 3f, 4f, 5, 6)
+
+        // Кусками в разном порядке источника, с ростом буфера посередине, и put после склейки.
+        val glued = OverlayInstanceBuffer(2)
+        glued.begin()
+        glued.putAll(ints, 0, 10)
+        glued.putAll(ints, 10, 0)
+        glued.putAll(ints, 10, 27)
+        glued.put(1f, 2f, 3f, 4f, 5, 6)
+
+        val a = reference.end()
+        val b = glued.end()
+        assertEquals(a.remaining(), b.remaining())
+        assertEquals((count + 1) * OverlayInstanceBuffer.STRUCT_SIZE, b.remaining())
+        for (i in 0 until a.remaining()) assertEquals(a.get(i), b.get(i), "байт $i")
+        assertEquals(count + 1, glued.count)
     }
 
     private fun shaderSource(name: String): String {

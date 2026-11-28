@@ -9,81 +9,52 @@ import com.badlogic.gdx.graphics.VertexAttributes
 import com.badlogic.gdx.graphics.glutils.FrameBuffer
 import com.badlogic.gdx.graphics.glutils.ShaderProgram
 import com.badlogic.gdx.math.Matrix4
-import io.github.some_example_name.render.components.BlurPostProcessRenderer
 import io.github.some_example_name.render.components.CellGeometry
 import io.github.some_example_name.render.components.DebugRenderer
-import io.github.some_example_name.render.components.DistortRenderer
+import io.github.some_example_name.render.components.DeferredModeRenderer
 import io.github.some_example_name.render.components.NostalgicRenderer
-import io.github.some_example_name.render.components.ParticleRenderer
-import io.github.some_example_name.render.components.PheromoneRenderer
-import io.github.some_example_name.render.components.PostProcessRenderer
 import io.github.some_example_name.render.components.RenderComponent
 import io.github.some_example_name.render.components.RenderContext
-import io.github.some_example_name.render.components.VignetteRenderer
 import io.github.some_example_name.render.pack.CellInstanceBuffer
 import io.github.some_example_name.render.pack.OverlayInstanceBuffer
 import io.github.some_example_name.render.pack.PheromoneInstanceBuffer
+import java.nio.ByteBuffer
 
-/**
- * Единственная точка входа модуля рендера: отдаёшь [RenderFrame] — получаешь картинку.
- *
- * Конвейер выполняется по порядку:
- *  1. ParticleRenderer      — клетки реалистичного режима инстансингом в scene FBO
- *  2. DebugRenderer         — отладочный режим целиком: клетки, связи, стрелки, лучи
- *  3. NostalgicRenderer     — клетки ностальгического режима, сам выводит кадр на экран
- *  4. PostProcessRenderer   — собель и пастельная стилизация
- *  5. DistortRenderer       — хроматическая аберрация
- *  6. BlurPostProcessRenderer — гауссов блюр
- *  7. PheromoneRenderer     — феромоны поверх
- *  8. VignetteRenderer      — виньетка, единственный проход прямо в экран
- *
- * Какие из них работают, решает [RenderFrame.mode]: проход, которому в этом режиме делать
- * нечего, сразу возвращается. В реалистичном режиме идут все, кроме второго и третьего;
- * в отладочном — только второй; в ностальгическом — только третий.
- *
- * Порядок задаётся списком [components] — чтобы вставить свой проход, достаточно
- * добавить [RenderComponent] в нужную позицию.
- *
- * Клетки заливаются на GPU один раз за кадр, до всех проходов, в общую [CellGeometry] —
- * её рисуют ParticleRenderer, DebugRenderer и NostalgicRenderer.
- *
- * ПРО ВЛАДЕНИЕ И ЖИЗНЕННЫЙ ЦИКЛ
- * -----------------------------
- * Экземпляр владеет ВСЕМИ своими GL-ресурсами: меш, геометрия клеток, три FBO, шейдеры
- * и текстуры внутри компонентов. Отсюда правило: у кого экземпляр — тот и зовёт
- * [dispose], и только он.
- *
- * Раньше это правило было нарушено, и молча. Один ShaderManager лежал синглтоном в
- * DIGameGlobalContainer, а пользовались им три экрана сразу — меню, симуляция и редактор
- * генома. Диспозить его при закрытии одного экрана было нельзя, потому что два других
- * продолжали бы рисовать уже удалёнными шейдерами; в итоге RenderSystem.dispose() был
- * пустым TODO, и ресурсы не освобождались вообще никогда. Пока экземпляр один на игру,
- * это ничего не стоит, но именно эта конструкция и мешала завести второй.
- *
- * Требуется живой GL-контекст: [create] дёргается из конструктора, так что создавать
- * объект можно только после инициализации графики.
- */
+/** Общий рендерер симуляции, редактора и превью. Ресурсы микроскопа создаются по запросу. */
 class WorldRenderer(
-    /**
-     * Слои TextureArray по порядку: тип клетки — это индекс в этом списке.
-     *
-     * Публичный, потому что порядок нужен снимку сцены (RenderSceneDump): без него дамп
-     * открылся бы с чужими текстурами. Снаружи список только читают.
-     */
-    val texturePaths: List<String>
+    /** Ключи типов в порядке игровых инстансов. */
+    typeKeys: List<String>,
+    materials: IntArray? = null,
+    materialFactory: (() -> IntArray)? = null
 ) {
+    val opticalMaterials by lazy(LazyThreadSafetyMode.NONE){ materials ?: materialFactory?.invoke() ?: IntArray(typeKeys.size){27} }
 
     // Общие ресурсы
     private lateinit var mesh: Mesh
     private val cellGeometry = CellGeometry()
-    private lateinit var fbo: FrameBuffer
-    private lateinit var blurFbo: FrameBuffer
-    private lateinit var distortFbo: FrameBuffer
+    private var fbo: FrameBuffer? = null
+
+    /** Промежуточные FBO превью, см. [renderOffscreen]. null — превью ещё не рисовали. */
+    private var offscreenScene: FrameBuffer? = null
+    private var offscreenWidth = 0
+    private var offscreenHeight = 0
 
     /** Переиспользуется между кадрами: на кадр не должно быть ни одной аллокации. */
     private val renderContext = RenderContext()
 
+    /**
+     * Чей буфер клеток сейчас лежит в VBO у [cellGeometry]. Геометрия одна на экран, превью
+     * и все экраны игры, а заливать её каждый кадр больше не обязательно (RenderFrame.uploadCells):
+     * без этой пометки кадр после превью нарисовал бы клетки превью.
+     */
+    private var uploadedCells: ByteBuffer? = null
+    private var tissue: io.github.some_example_name.render.microscope.TissueMicroscopeRenderer? = null
+    private var tissuePreview: io.github.some_example_name.render.microscope.TissueMicroscopeRenderer? = null
+
     private val components = mutableListOf<RenderComponent>()
+
+    /** Номер GL-контекста, под который созданы ресурсы, — см. [checkContext]. */
+    private var glGeneration = 0
 
     var currentWidth = Gdx.graphics.width.coerceAtLeast(1)
         private set
@@ -109,19 +80,14 @@ class WorldRenderer(
     }
 
     private fun create() {
+        GlContextWatch.ensureStarted()
+        glGeneration = GlContextWatch.generation
         createFullscreenMesh()
-        createFBOs()
         cellGeometry.create()
 
         // Порядок в списке = порядок проходов.
-        components.add(ParticleRenderer(texturePaths, cellGeometry))
-        components.add(DebugRenderer(cellGeometry))
-        components.add(NostalgicRenderer(cellGeometry))
-        components.add(PostProcessRenderer())
-        components.add(DistortRenderer())
-        components.add(BlurPostProcessRenderer())
-        components.add(PheromoneRenderer())
-        components.add(VignetteRenderer())
+        components.add(DeferredModeRenderer(RenderMode.DEBUG) { DebugRenderer(cellGeometry) })
+        components.add(DeferredModeRenderer(RenderMode.NOSTALGIC) { NostalgicRenderer(cellGeometry) })
 
         components.forEach { it.create() }
     }
@@ -136,24 +102,6 @@ class WorldRenderer(
             )
         )
         mesh = Mesh(false, 4, 0, attributes).apply { setVertices(vertices) }
-    }
-
-    private fun createFBOs() {
-        val width = Gdx.graphics.width.coerceAtLeast(1)
-        val height = Gdx.graphics.height.coerceAtLeast(1)
-
-        fbo = createSceneFbo(width, height)
-        println("✅ FBO создан: ${width}×${height} (для пост-процессинга)")
-
-        blurFbo = FrameBuffer(Pixmap.Format.RGBA8888, width, height, false)
-        blurFbo.colorBufferTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
-        fbo.colorBufferTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
-
-        distortFbo = FrameBuffer(Pixmap.Format.RGBA8888, width, height, false)
-        distortFbo.colorBufferTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
-
-        currentWidth = width
-        currentHeight = height
     }
 
     /**
@@ -171,64 +119,139 @@ class WorldRenderer(
         val safeW = width.coerceAtLeast(1)
         val safeH = height.coerceAtLeast(1)
 
-        if (::fbo.isInitialized) fbo.dispose()
-        fbo = createSceneFbo(safeW, safeH)
-
-        if (::blurFbo.isInitialized) blurFbo.dispose()
-        blurFbo = FrameBuffer(Pixmap.Format.RGBA8888, safeW, safeH, false)
-
-        if (::distortFbo.isInitialized) distortFbo.dispose()
-        distortFbo = FrameBuffer(Pixmap.Format.RGBA8888, safeW, safeH, false)
-
-        // Linear filtering for smooth sampling
-        fbo.colorBufferTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
-        blurFbo.colorBufferTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
-        distortFbo.colorBufferTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
-
+        fbo?.dispose()
+        fbo = null
         currentWidth = safeW
         currentHeight = safeH
-
-        println("✅ FBOs resized → scene: ${safeW}×${safeH}, blur: ${safeW}×${safeH}")
 
         components.forEach { it.resize(safeW, safeH) }
     }
 
+    /**
+     * Восстановиться, если GL-контекст пересоздан (Android, см. GlContextWatch). Звать в
+     * начале кадра, до первого обращения к FBO и геометрии. Цена — сравнение двух int.
+     */
+    private fun checkContext() {
+        if (GlContextWatch.generation != glGeneration) recoverLostContext()
+    }
+
+    /**
+     * Контекст потерян и создан заново: libGDX восстановил шейдеры, Mesh и текстуры, а всё
+     * остальное здесь. Без этого после возврата в игру мир не рисовался до перезапуска.
+     */
+    private fun recoverLostContext() {
+        glGeneration = GlContextWatch.generation
+        Gdx.app.log("WorldRenderer", "GL context recreated: rebuilding render resources")
+
+        cellGeometry.recreateAfterContextLoss()
+        uploadedCells = null
+        uploadedStatic = null
+        staticSource = null
+        components.forEach { it.contextLost() }
+
+        fbo?.let { releaseRebuiltFrameBuffer(it, attachmentCount = 1) }
+        fbo = null
+        offscreenScene?.let { releaseRebuiltFrameBuffer(it, attachmentCount = 1) }
+        offscreenScene = null
+
+        // Микроскоп целиком на сыром GL: удалять его объекты нельзя (номера в новом
+        // контексте уже могут быть чужими), поэтому он просто брошен и строится заново.
+        // Его шейдеры остаются в списке управляемых libGDX — утечка в несколько программ
+        // на каждую потерю контекста, а не на кадр.
+        tissue = null
+        tissuePreview = null
+    }
+
     fun render(frame: RenderFrame) {
-        val cells = frame.cells
+        // GLFW может запросить кадр во время сворачивания окна с размером 0×0.
+        val width = Gdx.graphics.backBufferWidth
+        if (width <= 0 || Gdx.graphics.backBufferHeight <= 0) return
+        checkContext()
+        if (frame.mode == RenderMode.NOSTALGIC && fbo == null) {
+            fbo = createSceneFbo(currentWidth, currentHeight)
+            fbo!!.colorBufferTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
+        }
+        draw(frame, fbo, null, width)
+    }
+
+    /** Превью Debug и микроскоп выводят прямо в output; Nostalgic нужен промежуточный depth/stencil. */
+    fun renderOffscreen(frame: RenderFrame, output: FrameBuffer) {
+        checkContext()
+        if (frame.mode == RenderMode.NOSTALGIC && (offscreenScene == null ||
+            offscreenWidth != output.width || offscreenHeight != output.height)) {
+            offscreenScene?.dispose()
+            offscreenScene = createSceneFbo(output.width, output.height)
+            offscreenWidth = output.width
+            offscreenHeight = output.height
+        }
+        draw(frame, offscreenScene, output, output.width)
+    }
+
+    private fun draw(frame: RenderFrame, scene: FrameBuffer?, output: FrameBuffer?, pixelWidth: Int) {
+        if (frame.mode == RenderMode.TISSUE_MAP) {
+            uploadedCells=null // После микроскопа VBO обычного режима надо заполнить заново.
+            val renderer = if (output == null) {
+                tissue ?: io.github.some_example_name.render.microscope.TissueMicroscopeRenderer(opticalMaterials).also { tissue = it }
+            } else {
+                tissuePreview ?: io.github.some_example_name.render.microscope.TissueMicroscopeRenderer(opticalMaterials).also { tissuePreview = it }
+            }
+            renderer.render(frame, output, pixelWidth, output?.height ?: currentHeight)
+            return
+        }
+        // Освобождаем карты и программы при выходе из микроскопа.
+        if(output==null && tissue!=null){ tissue!!.dispose(); tissue=null }
+        if(output!=null && tissuePreview!=null){ tissuePreview!!.dispose(); tissuePreview=null }
+        var cells = frame.cells
 
         // Один раз за кадр и до всех проходов: сколько бы их ни рисовало клетки, байты
-        // едут на GPU единожды.
-        if (frame.uploadCells && cells != null) {
-            cellGeometry.upload(cells)
+        // едут на GPU единожды. И не каждый кадр: если буфер тот же и не менялся
+        // (uploadCells = false), в VBO уже лежат ровно эти байты. Чужой буфер — превью
+        // генома или другой экран — заливается всегда, иначе кадр нарисовал бы их клетки.
+        var upload = cells != null && (frame.uploadCells || cells !== uploadedCells)
+        val cull = frame.cellCullRanges
+        if (cells != null && cull != null && frame.mode == RenderMode.DEBUG && frame.areaIndices == null) {
+            cullRect(frame.cameraProjection, pixelWidth)
+            val visible = visibleCells.select(cells, cull, cullLeft, cullBottom, cullRight, cullTop,
+                fresh = frame.uploadCells || cells !== cullSource)
+            cullSource = cells
+            if (visible !== cells) {
+                upload = visibleCells.changed || visible !== uploadedCells
+                cells = visible
+            }
         }
+        if (cells != null && upload) {
+            cellGeometry.upload(cells)
+            uploadedCells = cells
+        }
+        val staticCount = drawableStatic(frame, pixelWidth)
 
         renderContext.apply {
             fullscreenMesh = mesh
             cameraProjection = frame.cameraProjection
 
             numInstances = cells?.let { it.remaining() / CellInstanceBuffer.STRUCT_SIZE } ?: 0
+            numStaticInstances = staticCount
+            interpolationLag = frame.interpolationLag
 
+            overlayData = frame.overlay
+            numOverlayInstances =
+                frame.overlay?.let { it.remaining() / OverlayInstanceBuffer.STRUCT_SIZE } ?: 0
             pheromoneData = frame.pheromones
             numPheromoneInstances =
                 frame.pheromones?.let { it.remaining() / PheromoneInstanceBuffer.STRUCT_SIZE } ?: 0
             pheromoneK = frame.pheromoneK
             pheromoneP = frame.pheromoneP
-
-            overlayData = frame.overlay
-            numOverlayInstances =
-                frame.overlay?.let { it.remaining() / OverlayInstanceBuffer.STRUCT_SIZE } ?: 0
             time = frame.time
-            pixelWorld = pixelWorld(frame.cameraProjection)
+            pixelWorld = pixelWorld(frame.cameraProjection, pixelWidth)
 
-            blurAmount = frame.blurAmount
-            zoom = frame.zoom
-            vignetteEnabled = frame.vignetteEnabled
             mode = frame.mode
+            debugFilter = frame.debugFilter
+            areaIndices = frame.areaIndices
+            // Без фона — только в свой буфер: в экран пустота всегда фоновая.
+            transparentBackground = frame.transparentBackground && output != null
 
-            sceneFbo = fbo
-            this.blurFbo = this@WorldRenderer.blurFbo
-            this.distortFbo = this@WorldRenderer.distortFbo
-            currentTexture = null
+            sceneFbo = scene
+            outputFbo = output
         }
 
         components.forEach { component ->
@@ -239,15 +262,74 @@ class WorldRenderer(
     }
 
     /**
-     * Единиц мира на пиксель экранного буфера.
+     * Неподвижный слой кадра (RenderFrame.staticCells): видимые куски — на GPU, только если
+     * сменился мир или набор видимых кусков; возвращает, сколько инстансов рисовать. Отсечение
+     * — тем же VisibleCells, что и у клеток, своим экземпляром: у слоя свой буфер на GPU.
+     */
+    private fun drawableStatic(frame: RenderFrame, pixelWidth: Int): Int {
+        val all = frame.staticCells ?: return 0
+        val cull = frame.staticCullRanges
+        var drawn = all
+        var changed = all !== staticSource
+        if (cull != null) {
+            cullRect(frame.cameraProjection, pixelWidth)
+            drawn = visibleStatic.select(all, cull, cullLeft, cullBottom, cullRight, cullTop, fresh = all !== staticSource)
+            if (drawn !== all) changed = visibleStatic.changed
+        }
+        staticSource = all
+        if (changed || drawn !== uploadedStatic) {
+            cellGeometry.uploadStatic(drawn)
+            uploadedStatic = drawn
+        }
+        return drawn.remaining() / CellInstanceBuffer.STRUCT_SIZE
+    }
+
+    private val visibleStatic = io.github.some_example_name.render.pack.VisibleCells()
+    /** Буфер неподвижного слоя, из которого собран кадр, и что сейчас лежит в его VBO. */
+    private var staticSource: ByteBuffer? = null
+    private var uploadedStatic: ByteBuffer? = null
+
+    /** Отсечение по камере в отладочном режиме, см. VisibleCells. */
+    private val visibleCells = io.github.some_example_name.render.pack.VisibleCells()
+    /** Буфер снимка, из которого [visibleCells] собирал прошлый кадр: другой — собрать заново. */
+    private var cullSource: ByteBuffer? = null
+    private var cullLeft = 0f
+    private var cullBottom = 0f
+    private var cullRight = 0f
+    private var cullTop = 0f
+
+    /**
+     * Видимый прямоугольник мира, расширенный на корпус клетки: ортографическая камера без
+     * поворота, x = (±1 − M03) / M00. Запас — [CULL_PAD] единиц мира (наибольший радиус 0.75
+     * с бахромой рисунка до 0.6 радиуса — 1.2) и несколько пикселей сглаживания.
+     */
+    private fun cullRect(projection: Matrix4, pixelWidth: Int) {
+        val m = projection.`val`
+        if (m[Matrix4.M00] == 0f || m[Matrix4.M11] == 0f) {
+            // Вырожденная камера: прямоугольник не посчитать — видно всё.
+            cullLeft = Float.NEGATIVE_INFINITY; cullBottom = Float.NEGATIVE_INFINITY
+            cullRight = Float.POSITIVE_INFINITY; cullTop = Float.POSITIVE_INFINITY
+            return
+        }
+        val pad = CULL_PAD + 4f * pixelWorld(projection, pixelWidth)
+        val a = (-1f - m[Matrix4.M03]) / m[Matrix4.M00]
+        val b = (1f - m[Matrix4.M03]) / m[Matrix4.M00]
+        val c = (-1f - m[Matrix4.M13]) / m[Matrix4.M11]
+        val d = (1f - m[Matrix4.M13]) / m[Matrix4.M11]
+        cullLeft = minOf(a, b) - pad; cullRight = maxOf(a, b) + pad
+        cullBottom = minOf(c, d) - pad; cullTop = maxOf(c, d) + pad
+    }
+
+    /**
+     * Единиц мира на пиксель буфера, в который рисуем.
      *
-     * Камера ортографическая: M00 = 2 / ширина_видимого_мира, а экран — backBufferWidth
-     * пикселей. Буфер берётся экранный, а не логический размер окна: на экране с
+     * Камера ортографическая: M00 = 2 / ширина_видимого_мира, а буфер — [pixelWidth]
+     * пикселей. Для экрана это backBufferWidth, а не логический размер окна: на экране с
      * масштабом (HiDPI) они различаются, а растеризуются фигуры именно в пикселях буфера.
      */
-    private fun pixelWorld(projection: Matrix4): Float {
+    private fun pixelWorld(projection: Matrix4, pixelWidth: Int): Float {
         val scaleX = projection.`val`[Matrix4.M00]
-        val width = Gdx.graphics.backBufferWidth.coerceAtLeast(1)
+        val width = pixelWidth.coerceAtLeast(1)
         if (scaleX == 0f) return 1f
         return kotlin.math.abs(2f / (scaleX * width))
     }
@@ -315,15 +397,17 @@ class WorldRenderer(
     }
 
     fun dispose() {
+        tissue?.dispose(); tissue = null
+        tissuePreview?.dispose(); tissuePreview = null
         components.forEach { it.dispose() }
         components.clear()
 
         cellGeometry.dispose()
+        uploadedCells = null
         if (::mesh.isInitialized) mesh.dispose()
 
-        if (::fbo.isInitialized) fbo.dispose()
-        if (::blurFbo.isInitialized) blurFbo.dispose()
-        if (::distortFbo.isInitialized) distortFbo.dispose()
+        fbo?.dispose(); fbo = null
+        offscreenScene?.dispose(); offscreenScene = null
     }
 
     // === Управление конвейером ===
@@ -347,4 +431,9 @@ class WorldRenderer(
     }
 
     fun getComponentCount(): Int = components.size
+
+    private companion object {
+        /** Запас рамки тела в единицах мира под корпус клетки, см. [cullRect]. */
+        const val CULL_PAD = 2f
+    }
 }

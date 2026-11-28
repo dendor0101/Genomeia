@@ -4,8 +4,10 @@ import android.content.Intent
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Rect
-import android.opengl.GLES32
 import android.os.Bundle
+import android.os.Build
+import android.app.Activity
+import android.annotation.TargetApi
 import android.text.InputType
 import android.util.Log
 import android.view.Gravity
@@ -20,6 +22,7 @@ import com.badlogic.gdx.backends.android.AndroidApplication
 import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration
 import games.spooky.gdx.nativefilechooser.android.AndroidFileChooser
 import io.github.some_example_name.old.core.PlatformTuning
+import io.github.some_example_name.old.bug.BugOverlay
 import io.github.some_example_name.old.game.KeyBoardListener
 import io.github.some_example_name.old.game.MyGame
 import java.io.File
@@ -38,7 +41,7 @@ import java.io.File
 //}
 
 
-class AndroidLauncher : AndroidApplication(), KeyBoardListener {
+open class AndroidLauncher : AndroidApplication(), KeyBoardListener {
 
     private lateinit var game: MyGame
     private val pendingResults = HashMap<Int, (Int, Intent?) -> Unit>()
@@ -58,6 +61,26 @@ class AndroidLauncher : AndroidApplication(), KeyBoardListener {
         pendingResults.remove(requestCode)?.invoke(resultCode, data)
     }
 
+    private var stopScreenshotDetection: (() -> Unit)? = null
+
+    override fun onStart() {
+        super.onStart()
+        if (Build.VERSION.SDK_INT >= 34) stopScreenshotDetection = listenForScreenshots()
+    }
+
+    @TargetApi(34)
+    private fun listenForScreenshots(): () -> Unit {
+        val callback = Activity.ScreenCaptureCallback { postRunnable { BugOverlay.onScreenshotDetected() } }
+        registerScreenCaptureCallback(mainExecutor, callback)
+        return { unregisterScreenCaptureCallback(callback) }
+    }
+
+    override fun onStop() {
+        stopScreenshotDetection?.invoke()
+        stopScreenshotDetection = null
+        super.onStop()
+    }
+
     companion object {
         var inputCallback: ((Float) -> Unit)? = null
         lateinit var inputLayout: LinearLayout
@@ -72,17 +95,14 @@ class AndroidLauncher : AndroidApplication(), KeyBoardListener {
         val config = AndroidApplicationConfiguration().apply {
             useGyroscope = true
             useImmersiveMode = true
-            useGL30 = true          // ← Это включает OpenGL ES 3.2 на поддерживаемых устройствах
+            useGL30 = true          // Контекст OpenGL ES 3.0; compute не требуется.
 
         }
-
-        val buf = IntArray(1)
-        GLES32.glGenBuffers(1, buf, 0)
 
         val fileProvider = AndroidFileProvider(this, AndroidFileChooser(this))
         game = MyGame(fileProvider)
         val gameView = initializeForView(
-            game,
+            wrapGame(game),
             config
         )
 
@@ -137,6 +157,12 @@ class AndroidLauncher : AndroidApplication(), KeyBoardListener {
     }
 
     /**
+     * Чем libGDX зовёт игру. В игре — сама игра; стенд замера на телефоне (сборка perf,
+     * PhonePerfLauncher) оборачивает её своим сценарием, как PerfCheck на ПК.
+     */
+    protected open fun wrapGame(game: MyGame): com.badlogic.gdx.ApplicationListener = game
+
+    /**
      * Настройка пула воркеров симуляции под конкретное устройство. Обязана отработать до
      * initializeForView: контейнер симуляции читает эти значения при создании пула.
      *
@@ -150,7 +176,7 @@ class AndroidLauncher : AndroidApplication(), KeyBoardListener {
      * воркеров она одинаковая: разъехавшиеся приоритеты дают инверсию на барьере, когда
      * ждущий поток отбирает такты у того, кого ждёт.
      */
-    private fun configureSimulationThreads() {
+    protected open fun configureSimulationThreads() {
         PlatformTuning.performanceCoreCount = maxOf(2, AndroidCpu.performanceCoreCount() - 1)
         PlatformTuning.onWorkerThreadStart = {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY)

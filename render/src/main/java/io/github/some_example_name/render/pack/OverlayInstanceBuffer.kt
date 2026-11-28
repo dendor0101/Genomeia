@@ -7,25 +7,33 @@ import kotlin.math.roundToInt
 
 /**
  * Буфер фигур оверлея отладочного режима: нейросвязи, стрелки направлений, лучи глаз,
- * кольца феромонов. Читает его DebugRenderer — инстансами, по кваду на фигуру.
+ * кольца феромонов, жгутики хвостов, рёбра контура тел. Читает его DebugRenderer — инстансами,
+ * по кваду на фигуру.
  *
  * Модуль рендера не знает, что такое глаз или нейрон: здесь только фигуры. Что из
  * клеток превращается в какую фигуру и каким цветом, решает :core (RenderSystem).
  *
- * РАСКЛАДКА (24 байта, порядок байт нативный)
+ * РАСКЛАДКА (40 байт, порядок байт нативный)
  * -------------------------------------------
  *   [0..7]   float x0, y0      → a_from   (2 × GL_FLOAT) — начало отрезка, центр кольца
  *   [8..15]  float x1, y1      → a_to     (2 × GL_FLOAT) — конец отрезка; у кольца x1 — радиус
  *   [16..19] int   color       → a_color  (4 × GL_UNSIGNED_BYTE, normalized) — RGBA8
  *   [20..23] int   params      → a_params (4 × GL_UNSIGNED_BYTE, normalized)
+ *   [24..31] float prevX0, prevY0 → a_prevFrom (2 × GL_FLOAT) — начало в прошлом тике
+ *   [32..39] float prevX1, prevY1 → a_prevTo   (2 × GL_FLOAT) — конец в прошлом тике
  *
  *   params = kind | signalByte<<8 | seed<<16 | 0<<24
  *
- *   kind       — [KIND_RING], [KIND_RAY], [KIND_ARROW], [KIND_NEURAL];
+ *   kind       — [KIND_RING], [KIND_RAY], [KIND_ARROW], [KIND_NEURAL], [KIND_FLAGELLUM], [KIND_EDGE], [KIND_LINK];
  *   signalByte — сигнал из -1..1 со смещением 127, см. [signalByte];
- *   seed       — сдвиг фазы импульсов, чтобы связи не мигали в такт.
+ *   seed       — сдвиг фазы импульсов или волны, чтобы фигуры не двигались в такт.
  *
  * Порядок записи — порядок отрисовки: что записано позже, ложится сверху.
+ *
+ * Прошлые концы — поза фигуры в прошлом тике. Оверлей интерполируется тем же u_lag, что и
+ * клетки (CellInstanceBuffer): иначе стрелки и нейросвязи отставали бы от плавно едущих
+ * под ними клеток и дёргались бы относительно них раз в тик. У кольца «конец» — это
+ * радиус, и прошлый у него тот же.
  *
  * Размеры фигур (толщины, наконечники, шаг импульсов) задаёт шейдер —
  * shaders/debug_view/overlay_common.glsl, сюда едут только концы, цвет и сигнал.
@@ -50,8 +58,22 @@ class OverlayInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
         finished = false
     }
 
-    /** Готовые поля, без арифметики. */
-    fun put(x0: Float, y0: Float, x1: Float, y1: Float, color: Int, params: Int) {
+    /**
+     * Готовые поля, без арифметики. [prevX0]..[prevY1] — концы в прошлом тике; по умолчанию
+     * нынешние — фигура стоит.
+     */
+    fun put(
+        x0: Float,
+        y0: Float,
+        x1: Float,
+        y1: Float,
+        color: Int,
+        params: Int,
+        prevX0: Float = x0,
+        prevY0: Float = y0,
+        prevX1: Float = x1,
+        prevY1: Float = y1
+    ) {
         if (buffer.remaining() < STRUCT_SIZE) ensureCapacity(written + 1)
         buffer.putFloat(x0)
         buffer.putFloat(y0)
@@ -59,6 +81,10 @@ class OverlayInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
         buffer.putFloat(y1)
         buffer.putInt(color)
         buffer.putInt(params)
+        buffer.putFloat(prevX0)
+        buffer.putFloat(prevY0)
+        buffer.putFloat(prevX1)
+        buffer.putFloat(prevY1)
         written++
     }
 
@@ -85,9 +111,35 @@ class OverlayInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
     fun putRay(x0: Float, y0: Float, x1: Float, y1: Float, color: Int, signal: Float = 0f) =
         put(x0, y0, x1, y1, color, params(KIND_RAY, signal, 0))
 
+    /**
+     * Жгутик: от поверхности клетки ([x0], [y0]) до кончика. По нему бежит волна; [signal]
+     * — тяга хвоста, от неё размах волны.
+     */
+    fun putFlagellum(x0: Float, y0: Float, x1: Float, y1: Float, color: Int, signal: Float, seed: Int) =
+        put(x0, y0, x1, y1, color, params(KIND_FLAGELLUM, signal, seed))
+
     /** Окружность радиуса [radius] вокруг ([x], [y]). */
     fun putRing(x: Float, y: Float, radius: Float, color: Int) =
         put(x, y, radius, 0f, color, params(KIND_RING, 0f, 0))
+
+    /**
+     * [count] фигур из int-массива начиная с фигуры [from] — массив в той же раскладке, по
+     * [STRUCT_INTS] int на фигуру (float своими битами, порядок полей как у [put]).
+     *
+     * Так снимок отладочного режима собирает оверлей с воркеров (RenderBufferManager): каждый
+     * пишет фигуры своих кусков в свой массив, а склейка по порядку кусков — одна копия на кусок.
+     * Запись в int-массив на Android заметно дешевле десяти putFloat на фигуру (как и у
+     * CellInstanceBuffer.putAll).
+     */
+    fun putAll(source: IntArray, from: Int, count: Int) {
+        if (count <= 0) return
+        ensureCapacity(written + count)
+        val view = buffer.duplicate().order(ByteOrder.nativeOrder())
+        (view as Buffer).position(written * STRUCT_SIZE)
+        view.asIntBuffer().put(source, from * STRUCT_INTS, count * STRUCT_INTS)
+        written += count
+        (buffer as Buffer).position(written * STRUCT_SIZE)
+    }
 
     /** Завершить кадр и отдать буфер на загрузку. Идемпотентно. */
     fun end(): ByteBuffer {
@@ -124,12 +176,18 @@ class OverlayInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
 
     companion object {
         /** Менять только вместе с OverlayGeometry и shaders/debug_view/overlay.vert. */
-        const val STRUCT_SIZE = 24
+        const val STRUCT_SIZE = 40
+
+        /** int на фигуру в массиве для [putAll]. */
+        const val STRUCT_INTS = STRUCT_SIZE / 4
 
         const val OFFSET_FROM = 0
         const val OFFSET_TO = 8
         const val OFFSET_COLOR = 16
         const val OFFSET_PARAMS = 20
+
+        const val OFFSET_PREV_FROM = 24
+        const val OFFSET_PREV_TO = 32
 
         const val INITIAL_CAPACITY = 4_096
 
@@ -140,6 +198,13 @@ class OverlayInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
         const val KIND_RAY = 1
         const val KIND_ARROW = 2
         const val KIND_NEURAL = 3
+        const val KIND_FLAGELLUM = 4
+
+        /** Ребро контура тела: ровная линия цвета фигуры с тёмной обводкой, без сигнала. */
+        const val KIND_EDGE = 5
+
+        /** Связь мира физики: тонкая линия цвета фигуры без обводки, тоньше ребра контура. */
+        const val KIND_LINK = 6
 
         /**
          * Байт сигнала: -1..1 → 0..254, ноль — ровно 127.

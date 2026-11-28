@@ -59,7 +59,10 @@ object GameFiles {
      * Файлы геномов рядом с игрой, на Android — в личном хранилище приложения.
      * Рабочий каталог проводника при открытии .map не должен менять библиотеку геномов.
      */
-    fun genomesDir(): FileHandle = (dataRoot ?: localDataRoot()).child(GENOMES)
+    fun genomesDir(): FileHandle =
+        dataRoot?.let { GameFilePaths.child(it, GENOMES) } ?: localDataRoot().child(GENOMES)
+
+    fun genomeFile(name: String): FileHandle = GameFilePaths.child(genomesDir(), "$name.genome")
 
     private fun localDataRoot(): FileHandle {
         if (Gdx.app.type == Application.ApplicationType.Desktop) {
@@ -75,8 +78,8 @@ object GameFiles {
      * про assets/), как было и раньше.
      */
     fun mapsDir(): FileHandle {
-        val root = dataRoot ?: if (Gdx.app.type == Application.ApplicationType.Desktop) gameDir else Gdx.files.local("")
-        return root.child(MAPS).apply { mkdirs() }
+        val dir = dataRoot?.let { GameFilePaths.child(it, MAPS) } ?: localDataRoot().child(MAPS)
+        return dir.apply { mkdirs() }
     }
 
     /**
@@ -95,7 +98,7 @@ object GameFiles {
      * классами игры, как было исторически.
      */
     fun settingsDir(): FileHandle {
-        dataRoot?.let { return it.child(SETTINGS).apply { mkdirs() } }
+        dataRoot?.let { return GameFilePaths.child(it, SETTINGS).apply { mkdirs() } }
         val dir = if (Gdx.app.type == Application.ApplicationType.Desktop) {
             val classes = File(MyGame::class.java.protectionDomain.codeSource.location.toURI())
             Gdx.files.absolute(classes.parentFile.absolutePath).child(SETTINGS)
@@ -105,8 +108,14 @@ object GameFiles {
         return dir.apply { mkdirs() }
     }
 
-    /** Текущая сессия: журнал команд, лог консоли, снимки файлов. Очищается при каждом запуске. */
-    fun sessionDir(): FileHandle = gameDir.child(SESSION)
+    /**
+     * Сессия копии игры номер [slot]: журнал команд, лог консоли, снимки файлов. Очищается при
+     * каждом запуске. У каждой одновременно запущенной копии свой номер (BugSession), 0 — "session".
+     */
+    fun sessionDir(slot: Int): FileHandle = gameDir.child(if (slot == 0) SESSION else "$SESSION-$slot")
+
+    /** Файл-замок сессии [slot]: его держит запущенная копия игры, пока жива (BugSession). */
+    fun sessionLockFile(slot: Int): File = gameDir.child(if (slot == 0) "$SESSION.lock" else "$SESSION-$slot.lock").file()
 
     /** Готовые отчёты об ошибках (*.bug). */
     fun bugsDir(): FileHandle = gameDir.child(BUGS).apply { mkdirs() }

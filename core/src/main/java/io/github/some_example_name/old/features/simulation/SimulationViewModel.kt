@@ -3,10 +3,11 @@ package io.github.some_example_name.old.features.simulation
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.OrthographicCamera
 import io.github.some_example_name.old.commands.GameCommand
+import io.github.some_example_name.old.commands.PlayerCommand
 import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.bug.BugReplay
 import io.github.some_example_name.old.journal.CommandSource
-import io.github.some_example_name.old.journal.SessionAttachments
+import io.github.some_example_name.old.core.ReplayFileException
 import io.github.some_example_name.old.journal.SessionJournal
 import kotlinx.serialization.Serializable
 import io.github.some_example_name.old.features.worldeditor.WorldSpec
@@ -15,8 +16,11 @@ import io.github.some_example_name.old.systems.maps.MapSave
 import io.github.some_example_name.old.systems.render.RenderSystem
 import io.github.some_example_name.old.systems.simulation.SimulationData
 import io.github.some_example_name.old.systems.simulation.SimulationSystem
+import io.github.some_example_name.render.DebugFilter
 import io.github.some_example_name.render.RenderMode
 import java.util.Locale
+import io.github.some_example_name.old.features.settings.UserPreferences
+import io.github.some_example_name.render.microscope.OpticalParameter
 
 /**
  * Что игрок делает на экране симуляции, кроме касаний самого мира.
@@ -28,17 +32,99 @@ import java.util.Locale
 @Serializable
 sealed interface SimulationIntent : GameCommand {
 
+    /** Видимый выбор попадает в журнал даже если игрок сохранил отчёт, не снимая паузу. */
+    @Serializable
+    data class TapWorld(val tap: PlayerCommand.Tap) : SimulationIntent {
+        override val name get() = "TapWorld"
+        override val detail get() = tap.detail
+    }
+
+    @Serializable
+    data class SetFillAreas(val enabled: Boolean) : SimulationIntent {
+        override val name get() = "SetFillAreas"
+        override val detail get() = enabled.toString()
+    }
+
+    /** Галочка «Цвет из генома» отладочного режима: клетки цветом из генома, а не цветом типа. */
+    @Serializable
+    data class SetGenomeColors(val enabled: Boolean) : SimulationIntent {
+        override val name get() = "SetGenomeColors"
+        override val detail get() = enabled.toString()
+    }
+
+    /** Галочка «Нейросвязи» отладочного режима: рисовать ли нейросвязи с импульсами. */
+    @Serializable
+    data class SetShowNeuralLinks(val show: Boolean) : SimulationIntent {
+        override val name get() = "SetShowNeuralLinks"
+        override val detail get() = show.toString()
+    }
+
+    /** Галочка «Связи» отладочного режима: рисовать ли тонко все связи тел мира физики. */
+    @Serializable
+    data class SetShowLinks(val show: Boolean) : SimulationIntent {
+        override val name get() = "SetShowLinks"
+        override val detail get() = show.toString()
+    }
+
+    /** Галочка «Граница» отладочного режима: рисовать ли контур тел мира физики. */
+    @Serializable
+    data class SetShowBoundary(val show: Boolean) : SimulationIntent {
+        override val name get() = "SetShowBoundary"
+        override val detail get() = show.toString()
+    }
+
+    /**
+     * Отметка игрока на клетке для отчёта о баге (средняя кнопка мыши, PlayerMarks): работает на
+     * паузе и на любой скорости, мир не меняет. Клетку под курсором экран находит между тиками
+     * и кладёт в команду значением — [cell] -1, если под курсором клетки нет.
+     */
+    @Serializable
+    data class MarkCell(
+        val x: Float,
+        val y: Float,
+        val cell: Int,
+        val generation: Int,
+        val organ: Int,
+        val cellGenomeId: Int
+    ) : SimulationIntent {
+        override val name get() = "MarkCell"
+        override val detail get() = "%.1f,%.1f cell=$cell organ=$organ id=$cellGenomeId".format(java.util.Locale.ROOT, x, y)
+    }
+
     @Serializable
     data class SetPaused(val paused: Boolean) : SimulationIntent {
         override val name get() = "SetPaused"
         override val detail get() = paused.toString()
     }
 
-    /** «Поставить организм»: левая кнопка ставит организм, правая — субстанцию; выключено — наоборот. */
+    /**
+     * Старая кнопка «Поставить организм»: включено — инструмент «Спавнить клетку»,
+     * выключено — «Спавнить еду». Кнопки больше нет, команда осталась ради старых .bug.
+     */
     @Serializable
     data class SetPutOrganism(val enabled: Boolean) : SimulationIntent {
         override val name get() = "SetPutOrganism"
         override val detail get() = enabled.toString()
+    }
+
+    /** Что делает касание мира, см. [SimulationTool]. */
+    @Serializable
+    data class SetTool(val tool: SimulationTool) : SimulationIntent {
+        override val name get() = "SetTool"
+        override val detail get() = tool.name
+    }
+
+    /**
+     * Игрок сохранил геном в редакторе, открытом из этого мира, и вернулся: геном
+     * дочитывается в мир из файла и становится выбранным.
+     *
+     * Читается всегда заново, даже если имя уже есть в мире: под старым именем мог лечь
+     * изменённый геном. Старая копия остаётся — по ней растут уже посаженные организмы.
+     */
+    @Serializable
+    data class UseSavedGenome(val fileName: String) : SimulationIntent {
+        override val name get() = "UseSavedGenome"
+        override val detail get() = fileName
     }
 
     /** Геном для следующих организмов — по имени файла, см. [SimulationViewModel.genomeNames]. */
@@ -66,9 +152,30 @@ sealed interface SimulationIntent : GameCommand {
     }
 
     @Serializable
-    data class SetRenderMode(val mode: RenderMode) : SimulationIntent {
+    data class SetRenderMode(@Serializable(with=io.github.some_example_name.old.journal.SavedRenderMode::class) val mode: RenderMode) : SimulationIntent {
         override val name get() = "SetRenderMode"
         override val detail get() = mode.name
+    }
+
+    @Serializable
+    data class SetMicroscopeParameter(val key: String, val value: Float) : SimulationIntent {
+        override val name get() = "SetMicroscopeParameter"
+        override val detail get() = "$key=$value"
+    }
+
+    @Serializable
+    data object ResetMicroscopeSettings : SimulationIntent {
+        override val name get() = "ResetMicroscopeSettings"
+    }
+
+    /**
+     * Фильтр отладочного режима: оригинал, энергия, нейросигнал. Только вид — мир от него
+     * не меняется; командой, потому что это действие игрока и повтор должен показать то же.
+     */
+    @Serializable
+    data class SetDebugFilter(val filter: DebugFilter) : SimulationIntent {
+        override val name get() = "SetDebugFilter"
+        override val detail get() = filter.name
     }
 
     /** Экранная клавиатура контроллера: показать или спрятать. */
@@ -92,12 +199,20 @@ sealed interface SimulationIntent : GameCommand {
     }
 
     /**
-     * Сохранить мир в [slot]. Слот решается при нажатии (SimulationViewModel.saveWorldIntent):
-     * новый слот выбирается по списку файлов, а при повторе бага он другой.
+     * Сохранить мир под именем [slot] — это имя файла, см. MapNames. Имя вводит игрок
+     * (SaveWorldDialog), и согласие перезаписать чужой мир с тем же именем спрошено ДО
+     * команды: при повторе бага папка миров другая, и вопрос по ней дал бы другой ответ.
      */
     @Serializable
     data class SaveWorld(val slot: String) : SimulationIntent {
         override val name get() = "SaveWorld"
+        override val detail get() = slot
+    }
+
+    /** Ошибка файловой системы игрока: на машине повтора запись могла бы пройти. */
+    @Serializable
+    data class SaveWorldFailed(val slot: String) : SimulationIntent {
+        override val name get() = "SaveWorldFailed"
         override val detail get() = slot
     }
 
@@ -134,6 +249,24 @@ sealed interface SimulationIntent : GameCommand {
     }
 }
 
+/**
+ * Инструмент — что делает касание мира. Решается на экране при создании команды
+ * (см. SimulationScreen.onTap): в запись сессии уходит уже итоговое действие.
+ *
+ * Имена — формат файла (команда SetTool): не переименовывать.
+ */
+@Serializable
+enum class SimulationTool {
+    /** Левая кнопка ставит организм, правая сыплет еду. */
+    SPAWN_CELL,
+
+    /** Наоборот: левая — еда, правая — организм. */
+    SPAWN_FOOD,
+
+    /** Касание клетки убивает её. */
+    KILL_CELL
+}
+
 /** Что экран должен сделать со своей стороны после команды. */
 sealed interface SimulationEffect {
     /** Состав или состояние кнопок поменялись — пересобрать панель. */
@@ -141,6 +274,9 @@ sealed interface SimulationEffect {
 
     /** Поменялась пауза, но не по кнопке паузы — поправить её отметку. */
     data object PauseChanged : SimulationEffect
+
+    /** Поменялся инструмент — поправить значок его кнопки. */
+    data object ToolChanged : SimulationEffect
 
     data class WorldSaved(val success: Boolean) : SimulationEffect
 }
@@ -172,7 +308,7 @@ class SimulationViewModel(
     /** Куда сохраняется мир. null — ещё не сохранялся, первое сохранение заведёт новый слот. */
     private var saveSlot = savedWorld
 
-    var putOrganism = true
+    var tool = SimulationTool.SPAWN_CELL
         private set
 
     var isUiVisible = true
@@ -192,6 +328,9 @@ class SimulationViewModel(
     var genomeNames: List<String> = emptyList()
         private set
 
+    /** Мир не из теста генома: в нём выбирают геномы, сохраняют мир и открывают редактор. */
+    val isSandbox: Boolean get() = genomeName == null
+
     val isPaused: Boolean get() = !simulationData.isPlay
 
     /**
@@ -200,22 +339,86 @@ class SimulationViewModel(
      */
     private var wasPlayingBeforeAppPause = true
 
+    private var opticalPreferencesLoaded=false
+    /** Первый кадр, ВНЕ команды навигации: восстановленные значения записываются
+     * обычными верхнеуровневыми командами и поэтому воспроизводятся из .bug. */
+    fun restoreOpticalPreferences(){
+        if(opticalPreferencesLoaded)return
+        opticalPreferencesLoaded=true
+        val saved=UserPreferences.loadOptical()?:return
+        for(parameter in OpticalParameter.entries)
+            handle(SimulationIntent.SetMicroscopeParameter(parameter.key,parameter.get(saved)))
+    }
+
     fun handle(intent: SimulationIntent) = SessionJournal.execute(CommandSource.SIMULATION, intent) { apply(it) }
 
-    /** Команда кнопки «Сохранить»: в старый слот мира, а если его нет — в новый. */
-    fun saveWorldIntent(): SimulationIntent.SaveWorld =
-        SimulationIntent.SaveWorld(saveSlot ?: DISimulationContainer.mapSave.nextSlot())
+    /**
+     * Команда мира прямо в очередь (касание, убийство клетки). Это не UI-команда: в журнал её
+     * пишет поток симуляции в тике, где применит, — как и раньше, когда экран клал её сам.
+     * На паузе вдобавок сразу показывается её итог: призраки и выбор клетки (снятие выбора
+     * касанием — как в ходе игры, где его снимает TouchDown в тике).
+     */
+    fun pushWorldCommand(command: PlayerCommand) {
+        if (simulationData.isPlay || BugReplay.isActive) {
+            DISimulationContainer.userCommandManager.push(command)
+            return
+        }
+        simulationSystem.betweenTicks {
+            DISimulationContainer.userCommandManager.push(command)
+            previewQueueIfPaused()
+        }
+    }
+
+    /**
+     * Под замком между тиками. На паузе тика, который применит очередь, нет, поэтому её
+     * итог рисуется призраками (CommandGhosts) до снимка следующего тика. Мир не меняется.
+     * isPlay пишет только этот поток (GL), гонки с проверкой нет.
+     */
+    private fun previewQueueIfPaused() {
+        if (simulationData.isPlay || BugReplay.isActive) return
+        val selected = DISimulationContainer.userCommandManager.previewQueued(renderSystem.commandGhosts)
+        renderSystem.previewSelected(selected)
+    }
+
+    /**
+     * Имя в окне сохранения: под каким мир уже лежит, а новый — первое свободное «[base]»,
+     * «[base] (2)»… Запрос, а не команда: в команду уйдёт то, что игрок оставит в поле.
+     */
+    fun suggestedSaveName(base: String): String = saveSlot ?: MapSave.uniqueSlot(base)
+
+    /**
+     * Сохранение под [name] затрёт ДРУГОЙ мир — надо спросить. Свой мир (из которого
+     * загрузились или куда уже сохраняли) перезаписывается молча: это обычное «Сохранить».
+     */
+    fun wouldOverwrite(name: String): Boolean = name != saveSlot && MapSave.exists(name)
 
     private fun apply(intent: SimulationIntent) {
         when (intent) {
+            is SimulationIntent.TapWorld -> simulationSystem.betweenTicks {
+                intent.tap.target?.let(renderSystem::previewSelection)
+                DISimulationContainer.userCommandManager.push(intent.tap)
+                previewQueueIfPaused()
+            }
             // При повторе бага ход времени ведёт сам повтор: пауза из записи остановила
             // бы мир раньше, чем он дойдёт до тиков следующих команд.
-            is SimulationIntent.SetPaused -> if (!BugReplay.isActive) simulationData.isPlay = !intent.paused
+            is SimulationIntent.SetPaused -> if (!BugReplay.isActive) {
+                simulationData.isPlay = !intent.paused
+                // Касания, сделанные прямо перед паузой, тик мог ещё не применить.
+                if (intent.paused) simulationSystem.betweenTicks { previewQueueIfPaused() }
+            }
 
-            is SimulationIntent.SetPutOrganism -> putOrganism = intent.enabled
+            is SimulationIntent.SetPutOrganism ->
+                setTool(if (intent.enabled) SimulationTool.SPAWN_CELL else SimulationTool.SPAWN_FOOD)
+
+            is SimulationIntent.SetTool -> setTool(intent.tool)
 
             is SimulationIntent.SelectGenome -> {
-                val index = genomeNames.indexOf(intent.fileName)
+                // Последний: после UseSavedGenome под одним именем может быть несколько
+                // копий, и выбирать надо свежую.
+                val index = genomeNames.lastIndexOf(intent.fileName).takeIf { it >= 0 }
+                    // В окне выбора — все геномы из папки, а в мир при старте читаются
+                    // только они же; но файл мог появиться позже (сохранили из редактора).
+                    ?: addGenomeFromFile(intent.fileName)
                 if (index >= 0) {
                     simulationData.currentGenomeIndex = index
                 } else {
@@ -226,6 +429,15 @@ class SimulationViewModel(
                 }
             }
 
+            is SimulationIntent.UseSavedGenome -> {
+                val index = addGenomeFromFile(intent.fileName)
+                if (index >= 0) {
+                    simulationData.currentGenomeIndex = index
+                    // Геном только что сделан, чтобы его посадить.
+                    setTool(SimulationTool.SPAWN_CELL)
+                }
+            }
+
             is SimulationIntent.SetTargetUps -> simulationData.targetUPS = intent.value
 
             is SimulationIntent.SetMaxSpeed -> simulationData.maxSpeed = intent.enabled
@@ -233,7 +445,70 @@ class SimulationViewModel(
             // При повторе рестарт делает сам поток симуляции, в записанном тике (SimRestarted).
             is SimulationIntent.Restart -> if (!BugReplay.isActive) simulationData.isRestart = true
 
-            is SimulationIntent.SetRenderMode -> renderSystem.mode = intent.mode
+            is SimulationIntent.SetRenderMode -> {
+                if(renderSystem.mode==RenderMode.TISSUE_MAP && intent.mode!=RenderMode.TISSUE_MAP)UserPreferences.flushOptical(force=true)
+                val changed=renderSystem.mode!=intent.mode
+                renderSystem.mode = intent.mode
+                if(changed)refreshIfPaused()
+                // Список фильтров сверху есть только в отладочном режиме.
+                onEffect?.invoke(SimulationEffect.RebuildMenu)
+            }
+
+            is SimulationIntent.SetDebugFilter -> {
+                val changed=renderSystem.debugFilter!=intent.filter
+                renderSystem.debugFilter = intent.filter
+                if(changed)refreshIfPaused()
+            }
+            is SimulationIntent.SetMicroscopeParameter -> {
+                val parameter=OpticalParameter.entries.firstOrNull { it.key==intent.key }
+                if(parameter!=null&&intent.value.isFinite()){
+                    parameter.set(renderSystem.opticalSettings,intent.value)
+                    UserPreferences.saveOptical(renderSystem.opticalSettings,parameter)
+                }
+            }
+            is SimulationIntent.ResetMicroscopeSettings -> {
+                val defaults=io.github.some_example_name.render.microscope.MicroscopeSettings.gameDefaults()
+                for(parameter in io.github.some_example_name.render.microscope.OpticalParameter.entries)
+                    parameter.set(renderSystem.opticalSettings,parameter.get(defaults))
+                UserPreferences.saveOptical(renderSystem.opticalSettings)
+            }
+
+            is SimulationIntent.SetShowBoundary -> {
+                val changed=renderSystem.showBoundary!=intent.show
+                renderSystem.showBoundary = intent.show
+                if(changed)refreshIfPaused()
+            }
+
+            is SimulationIntent.SetFillAreas -> {
+                val changed=renderSystem.fillAreas!=intent.enabled
+                renderSystem.fillAreas = intent.enabled
+                if(changed)refreshIfPaused()
+            }
+
+            is SimulationIntent.SetGenomeColors -> {
+                val changed=renderSystem.genomeColors!=intent.enabled
+                renderSystem.genomeColors = intent.enabled
+                if(changed)refreshIfPaused()
+            }
+
+            is SimulationIntent.SetShowLinks -> {
+                val changed=renderSystem.showLinks!=intent.show
+                renderSystem.showLinks = intent.show
+                if(changed)refreshIfPaused()
+            }
+
+            is SimulationIntent.SetShowNeuralLinks -> {
+                val changed=renderSystem.showNeuralLinks!=intent.show
+                renderSystem.showNeuralLinks = intent.show
+                if(changed)refreshIfPaused()
+            }
+
+            is SimulationIntent.MarkCell -> {
+                val marks = renderSystem.renderBufferManager.playerMarks ?: return
+                val number = marks.add(intent.cell, intent.generation, intent.x, intent.y)
+                println("Отметка игрока №$number: тик ${simulationData.tickCounter}, клетка ${intent.cell} " +
+                    "(организм ${intent.organ}, номер в геноме ${intent.cellGenomeId}), точка %.1f, %.1f".format(intent.x, intent.y))
+            }
 
             is SimulationIntent.SetControllerKeysVisible -> {
                 simulationData.showControllerKeys = intent.visible
@@ -244,6 +519,7 @@ class SimulationViewModel(
                 simulationData.controllerKeyTouched[intent.index] = intent.pressed
 
             is SimulationIntent.SaveWorld -> saveWorld(intent.slot)
+            is SimulationIntent.SaveWorldFailed -> onEffect?.invoke(SimulationEffect.WorldSaved(false))
 
             is SimulationIntent.SetUiVisible -> {
                 if (isUiVisible == intent.visible) return
@@ -277,6 +553,43 @@ class SimulationViewModel(
         }
     }
 
+    /**
+     * Режим, фильтр и галочки отладки (граница, связи, заливка) зашиваются в снимок мира
+     * при его сборке (RenderBufferManager.updateBuffer), а на паузе новых снимков нет —
+     * игрок видел бы старую картинку до снятия паузы. Поэтому на паузе снимок того же тика
+     * один раз собираем заново. Мир не меняется: пишется только буфер рендера, между тиками.
+     * Цена — одна сборка снимка (как рендер-фаза обычного тика) на клик игрока.
+     * Настройки микроскопа сюда не нужны: их рендер читает сам в каждом кадре.
+     */
+    private fun refreshIfPaused() {
+        if (!simulationData.isPlay) simulationSystem.betweenTicks { renderSystem.refreshPausedSnapshot() }
+    }
+
+    private fun setTool(value: SimulationTool) {
+        if (tool == value) return
+        tool = value
+        onEffect?.invoke(SimulationEffect.ToolChanged)
+    }
+
+    /**
+     * Дочитать геном из папки в мир, вернуть его номер или -1.
+     *
+     * В конец списка, как и геномы сохранённого мира (GenomeManager.addSavedGenome): номер
+     * генома — это OrganEntity.genomeIndex уже живущих организмов, сдвигать его нельзя.
+     * Между тиками: список читает поток симуляции, когда сажает организм.
+     */
+    private fun addGenomeFromFile(fileName: String): Int = try {
+        val index = simulationSystem.betweenTicks {
+            DISimulationContainer.genomeManager.addFromCatalog(fileName)
+        }
+        genomeNames = genomeNames + fileName
+        index
+    } catch (e: Exception) {
+        if (BugReplay.isActive) BugReplay.fileFailure("не удалось прочитать геном $fileName: ${e.message}")
+        Gdx.app.error("Genome", "не удалось прочитать геном '$fileName'", e)
+        -1
+    }
+
     /** Геномы мира — до первой сборки панели: по их именам работает выбор генома. */
     fun loadGenomes() {
         DISimulationContainer.genomeManager.loadGenomes(genomeName)
@@ -294,11 +607,6 @@ class SimulationViewModel(
      *   показать ошибку.
      */
     fun startWorld(): Boolean {
-        // Чистый лист под любой мир. Прошлая сессия ставит isFinish, но её поток обычно
-        // останавливается раньше, чем доходит до тика, который бы его обработал. Тогда
-        // первый же тик ЭТОЙ сессии вызвал бы dispose() и стёр только что построенный —
-        // или только что загруженный — мир.
-        //
         // Сетка — по размеру мира из редактора карты. Раньше она была жёстко 256×256, а
         // рельеф 128×128 лежал в её углу: мир в симуляции был вдвое больше, чем в редакторе.
         // Сохранённый мир поправит размер сам, при загрузке (MapSave.load).
@@ -307,6 +615,9 @@ class SimulationViewModel(
             worldSpec?.worldHeight ?: DISimulationContainer.DEFAULT_GRID_SIZE
         )
         simulationSystem.dispose()
+        // Новый мир — с настройками по стандарту; сохранённый прочтёт свои (MapSave.load).
+        // Поток симуляции ещё не запущен, поэтому прямо здесь, а не командой.
+        DISimulationContainer.worldRules.reset()
         // С этого момента UI-команды экрана получают отметку тика мира.
         SessionJournal.simTick = { simulationData.tickCounter }
         val loaded = savedWorld != null && loadSavedWorld(savedWorld)
@@ -347,13 +658,15 @@ class SimulationViewModel(
 
     private fun loadSavedWorld(slot: String): Boolean = try {
         // Файл мира — с машины игрока: при первой загрузке за сессию он уходит в снимки.
-        SessionAttachments.attachMapBeforeLoad(slot)
         worldSpec = DISimulationContainer.mapSave.load(slot)
         // Рельеф не строится заново — он уже в загруженных частицах. Карта нужна
         // только «Перезапуску».
         DISimulationContainer.worldTerrainManager.map = worldSpec?.buildMap()
         true
     } catch (e: Exception) {
+        if (BugReplay.isActive && (e is ReplayFileException || !MapSave.exists(slot))) {
+            BugReplay.fileFailure("не удалось восстановить мир $slot: ${e.message}")
+        }
         Gdx.app.error("MapSave", "не удалось загрузить мир $slot", e)
         // Битый файл не перезаписываем: следующее сохранение уйдёт в новый слот.
         saveSlot = null
@@ -366,19 +679,26 @@ class SimulationViewModel(
      * сохранённый мир.
      */
     private fun saveWorld(slot: String) {
-        SessionAttachments.markMapWritten(slot)
+        val recorded = BugReplay.injectedSave
+        // Команду могло вытеснить следующее превью или выход с экрана до снимка мира.
+        if (recorded != null && recorded.tick == null && !BugReplay.replayingCrash) return
         renderSystem.requestPreview(MapSave.PREVIEW_SIZE) { preview ->
-            val saved = try {
+            if (recorded?.failed == true) {
+                // Не трогаем прежний файл. Сообщение игроку покажет записанная SaveWorldFailed. Мир — снять, как при
+                // записи (тик сохранения в журнале был, значит, снимок был): снимок уплотняет мир физики, и без него
+                // повтор расходится с записью. См. MapSave.snapshot.
+                if (recorded.tick != null) DISimulationContainer.mapSave.snapshot(slot, worldSpec, null)
+                return@requestPreview
+            }
+            try {
                 saveSlot = DISimulationContainer.mapSave.save(slot, worldSpec, preview)
-                true
             } catch (e: Exception) {
                 Gdx.app.error("MapSave", "не удалось сохранить мир", e)
-                // Повтор держит мир на тике сохранения, пока оно не случится. Упало —
-                // отпускаем, иначе мир так и простоит.
-                BugReplay.onWorldSaveFinished()
-                false
+                if (BugReplay.isActive) BugReplay.fileFailure("не удалось повторить сохранение $slot: ${e.message}")
+                else handle(SimulationIntent.SaveWorldFailed(slot))
+                return@requestPreview
             }
-            onEffect?.invoke(SimulationEffect.WorldSaved(saved))
+            onEffect?.invoke(SimulationEffect.WorldSaved(true))
         }
     }
 }

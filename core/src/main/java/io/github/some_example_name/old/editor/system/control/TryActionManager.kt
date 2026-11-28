@@ -13,6 +13,7 @@ import io.github.some_example_name.old.editor.undo_redo_commands.RemoveCellComma
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.systems.genomics.genome.Action
+import io.github.some_example_name.old.systems.physics.CollisionManager.Companion.PARTICLE_MAX_RADIUS
 
 class TryActionManager(
     val commandEditorStackManager: CommandEditorStackManager,
@@ -99,7 +100,8 @@ class TryActionManager(
 
         val genomeStageInstruction = editorSimulationSystem.genomeStageInstruction
 
-        val radius = 0.5f //TODO поменять когда будет выбор радиуса
+        // Связи — со всеми клетками, которых коснётся дочь своим настоящим радиусом.
+        val radius = action.radius ?: PARTICLE_MAX_RADIUS
 
         val neighboursIds = cellSearchManager.getAllCloseNeighboursEditor(
             grabbedX = newDividedCellPosition.first,

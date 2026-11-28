@@ -25,34 +25,34 @@ class MoveCellManager(
 
     fun movingCell(command: PanScreen) {
         val parentIndex = cellEntity.parentIndex[grabbedCellIndex]
-        val parentCellX = particleEntity.x[parentIndex]
-        val parentCellY = particleEntity.y[parentIndex]
+        val parentCellX = particleEntity.x(parentIndex)
+        val parentCellY = particleEntity.y(parentIndex)
 
         val (finalX, finalY) = setMinMaxDistForChildCellToParent(
-            command.x,
-            command.y,
-            parentCellX,
-            parentCellY
+            childCellX = command.x,
+            childCellY = command.y,
+            childRadius = particleEntity.radius[grabbedCellIndex],
+            parentCellX = parentCellX,
+            parentCellY = parentCellY,
+            parentRadius = particleEntity.radius[parentIndex]
         )
 
-        particleEntity.x[grabbedCellIndex] = finalX
-        particleEntity.y[grabbedCellIndex] = finalY
+        particleEntity.place(grabbedCellIndex, finalX, finalY)
     }
 
     fun cellMoved() {
         val grabbedEditorCell = toEditorDataMapper.mapToEditorData(grabbedCellIndex)
 
         val (x, y) = symmetryManager.snapPosition(
-            particleEntity.x[grabbedCellIndex],
-            particleEntity.y[grabbedCellIndex],
+            particleEntity.x(grabbedCellIndex),
+            particleEntity.y(grabbedCellIndex),
             cellIndex = grabbedCellIndex
         )
 
-        particleEntity.x[grabbedCellIndex] = x
-        particleEntity.y[grabbedCellIndex] = y
+        particleEntity.place(grabbedCellIndex, x, y)
 
-        val newX = particleEntity.x[grabbedCellIndex]
-        val newY = particleEntity.y[grabbedCellIndex]
+        val newX = particleEntity.x(grabbedCellIndex)
+        val newY = particleEntity.y(grabbedCellIndex)
         val parentIndex = cellEntity.parentIndex[grabbedCellIndex]
 
         val oldNeighboursIds = cellSearchManager.getAllCloseNeighboursEditor(

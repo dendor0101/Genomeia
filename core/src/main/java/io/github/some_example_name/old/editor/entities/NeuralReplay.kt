@@ -1,100 +1,54 @@
 package io.github.some_example_name.old.editor.entities
 
 import io.github.some_example_name.old.entities.NeuralEntity
-import it.unimi.dsi.fastutil.ints.IntArrayList
 
+/** Нейроны по тикам роста в редакторе: изменения, а не снимки, — см. [TickRecordLog]. */
 class NeuralReplay(
-    startCapacity: Int,
     val neuralEntity: NeuralEntity
 ): EditorReplay {
-    private val initialCapacity = startCapacity
-    var capacity = startCapacity
-    var size = 0
 
-    var activationFuncType = ByteArray(startCapacity)
-    var a = FloatArray(startCapacity)
-    var b = FloatArray(startCapacity)
-    var c = FloatArray(startCapacity)
-    var isSum = BooleanArray(startCapacity)
+    private val log = TickRecordLog(WIDTH)
 
-    val replayCellsCounterInTick = IntArrayList(10)
-    val tickStartIndices = IntArrayList(10)   // ← НОВОЕ: стартовые индексы для каждого тика
+    override fun byteSize(): Long = log.byteSize()
 
-    private fun ensureCapacity(minCapacity: Int) {
-        if (minCapacity > capacity) {
-            val newCapacity = minCapacity.coerceAtLeast(capacity * 2)
-
-            activationFuncType = activationFuncType.copyOf(newCapacity)
-            a = a.copyOf(newCapacity)
-            b = b.copyOf(newCapacity)
-            c = c.copyOf(newCapacity)
-            isSum = isSum.copyOf(newCapacity)
-
-            capacity = newCapacity
-        }
-    }
-
-    override fun reset() {
-        size = 0
-        capacity = initialCapacity
-        replayCellsCounterInTick.clear()
-        tickStartIndices.clear()
-    }
+    override fun reset() = log.reset()
 
     override fun copy() {
-        val cellsAmount = neuralEntity.aliveList.size
-
-        // Запоминаем количество клеток и стартовую позицию этого тика
-        replayCellsCounterInTick.add(cellsAmount)
-        tickStartIndices.add(size)                    // ← сохраняем начало текущего тика
-
-        ensureCapacity(size + cellsAmount)
-
-        System.arraycopy(neuralEntity.activationFuncType, 0, activationFuncType, size, cellsAmount)
-        System.arraycopy(neuralEntity.a, 0, a, size, cellsAmount)
-        System.arraycopy(neuralEntity.b, 0, b, size, cellsAmount)
-        System.arraycopy(neuralEntity.c, 0, c, size, cellsAmount)
-        System.arraycopy(neuralEntity.isSum, 0, isSum, size, cellsAmount)
-
-        size += cellsAmount
+        val amount = neuralEntity.aliveList.size
+        val record = log.beginTick(amount)
+        var o = 0
+        for (i in 0 until amount) {
+            record[o + FUNC] = neuralEntity.activationFuncType[i].toInt()
+            record[o + A] = neuralEntity.a[i].toRawBits()
+            record[o + B] = neuralEntity.b[i].toRawBits()
+            record[o + C] = neuralEntity.c[i].toRawBits()
+            record[o + IS_SUM] = if (neuralEntity.isSum[i]) 1 else 0
+            o += WIDTH
+        }
+        log.endTick()
     }
 
-    fun getTickCount(): Int = replayCellsCounterInTick.size
+    fun getTickCount(): Int = log.tickCount
 
-    fun getNeuralPositionInReplay(
-        tick: Int,
-        indexInTick: Int
-    ): Int? {
-        if (tick < 0 || tick >= tickStartIndices.size) return null
-
-        val start = tickStartIndices.getInt(tick)
-        val count = replayCellsCounterInTick.getInt(tick)
-
-        if (indexInTick < 0 || indexInTick >= count) return null
-
-        val pos = start + indexInTick
-
-        return pos
+    /** Поле [field] нейрона [indexInTick] на тике [tick]; null — нет такого. */
+    private fun field(tick: Int, indexInTick: Int, field: Int): Int? {
+        if (tick < 0 || tick >= log.tickCount) return null
+        if (indexInTick < 0 || indexInTick >= log.count(tick)) return null
+        return log.view(tick)!![indexInTick * WIDTH + field]
     }
 
-    fun getActivationFuncType(tick: Int, indexInTick: Int): Byte? {
-        val index = getNeuralPositionInReplay(tick, indexInTick)
-        return index?.let { activationFuncType[it] }
-    }
-    fun getA(tick: Int, indexInTick: Int): Float? {
-        val index = getNeuralPositionInReplay(tick, indexInTick)
-        return index?.let { a[it] }
-    }
-    fun getB(tick: Int, indexInTick: Int): Float? {
-        val index = getNeuralPositionInReplay(tick, indexInTick)
-        return index?.let { b[it] }
-    }
-    fun getC(tick: Int, indexInTick: Int): Float? {
-        val index = getNeuralPositionInReplay(tick, indexInTick)
-        return index?.let { c[it] }
-    }
-    fun getIsSum(tick: Int, indexInTick: Int): Boolean? {
-        val index = getNeuralPositionInReplay(tick, indexInTick)
-        return index?.let { isSum[it] }
+    fun getActivationFuncType(tick: Int, indexInTick: Int): Byte? = field(tick, indexInTick, FUNC)?.toByte()
+    fun getA(tick: Int, indexInTick: Int): Float? = field(tick, indexInTick, A)?.let(Float::fromBits)
+    fun getB(tick: Int, indexInTick: Int): Float? = field(tick, indexInTick, B)?.let(Float::fromBits)
+    fun getC(tick: Int, indexInTick: Int): Float? = field(tick, indexInTick, C)?.let(Float::fromBits)
+    fun getIsSum(tick: Int, indexInTick: Int): Boolean? = field(tick, indexInTick, IS_SUM)?.let { it != 0 }
+
+    private companion object {
+        const val FUNC = 0
+        const val A = 1
+        const val B = 2
+        const val C = 3
+        const val IS_SUM = 4
+        const val WIDTH = 5
     }
 }

@@ -1,0 +1,37 @@
+[воспроизведение] КОНТРОЛЬНАЯ СУММА НЕ СОШЛАСЬ на тике 330: дальше состояние уже не то, что видел игрок
+DEATH pass=0 tick=432
+DEATH pass=0 tick=604
+DEATH pass=0 tick=2194
+PROGRESS pass=0 tick=3000
+MARK pass=0 dead=true org=105 insideTicks=0
+DEATH pass=0 tick=3776
+PROGRESS pass=0 tick=6000
+DEATH pass=0 tick=6049
+  ёмкость: засыпка 371, кольцо 158, в парке 0, радиус 12,6 связи
+DEATH pass=0 tick=8419
+  ёмкость: засыпка 371, кольцо 158, в парке 0, радиус 12,6 связи
+  ёмкость: засыпка 404, кольцо 125, в парке 0, радиус 10,0 связи
+PROGRESS pass=0 tick=9000
+PROGRESS pass=0 tick=12000
+  ёмкость: засыпка 404, кольцо 125, в парке 0, радиус 10,0 связи
+PROGRESS pass=0 tick=15000
+CELL949 pass=0 ticks=16797 insideTicks=0 first=-1 oldOk=321 oldBad=268
+[воспроизведение] КОНТРОЛЬНАЯ СУММА НЕ СОШЛАСЬ на тике 330: дальше состояние уже не то, что видел игрок
+DEATH pass=1 tick=432
+DEATH pass=1 tick=604
+DEATH pass=1 tick=2194
+PROGRESS pass=1 tick=3000
+MARK pass=1 dead=true org=105 insideTicks=0
+DEATH pass=1 tick=3776
+PROGRESS pass=1 tick=6000
+DEATH pass=1 tick=6049
+  ёмкость: засыпка 371, кольцо 158, в парке 0, радиус 12,6 связи
+DEATH pass=1 tick=8419
+  ёмкость: засыпка 371, кольцо 158, в парке 0, радиус 12,6 связи
+  ёмкость: засыпка 404, кольцо 125, в парке 0, радиус 10,0 связи
+PROGRESS pass=1 tick=9000
+PROGRESS pass=1 tick=12000
+  ёмкость: засыпка 404, кольцо 125, в парке 0, радиус 10,0 связи
+PROGRESS pass=1 tick=15000
+CELL949 pass=1 ticks=16797 insideTicks=0 first=-1 oldOk=321 oldBad=268
+Новый повтор: контрольные суммы: все 17677 сошлись

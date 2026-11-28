@@ -74,7 +74,7 @@ class SpecialEntity(
      * от того, чем и как выдаются слоты клеткам.
      */
     fun addSpecial(cellIndex: Int, specialModData: SpecialModData?): Int {
-        addAt(cellIndex)
+        addAt(cellIndex, arenaOwner = EXTERNAL_SLOT)
         specialTypeIndexes[cellIndex] = -1
         specialModData?.let { addSpecialModData(cellIndex, it) }
         return cellIndex

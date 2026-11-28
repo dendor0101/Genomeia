@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.features.editor
 
+import io.github.some_example_name.old.core.ui.hint
 import com.badlogic.gdx.Application
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Texture
@@ -32,9 +33,13 @@ class SaveGenomeDialog(
     /** Android: сохранить и отдать файл системе. */
     val onSaveAndExport: (name: String) -> Unit,
     val onGoMenu: () -> Unit,
-    val isGoToMenu: Boolean,
-    val menuText: String = bundle.get("button.menu")
+    /** Подпись кнопки выхода без сохранения: «Меню», а из мира — «Назад в мир». */
+    val goMenuLabel: String,
+    val isGoToMenu: Boolean
 ) : VisDialog(bundle.get("button.saveGenome")) {
+
+    override fun getPrefWidth() = minOf(super.getPrefWidth(), Gdx.graphics.width - 8.dp())
+    override fun getPrefHeight() = minOf(super.getPrefHeight(), Gdx.graphics.height - 8.dp())
 
     private val textures = mutableListOf<Texture>()
 
@@ -47,7 +52,7 @@ class SaveGenomeDialog(
         visTable ( {growX().expandX()}) {
             visLabel(bundle.get("button.name")) {
                 pad(8.dp())
-            }
+            }.hint(bundle.get("editor.hint.genomeName"))
 
             genomeNameField = visTextField(text = genomeName, onTextChange = { text ->
                 val isDisabled = text.isEmpty()
@@ -56,7 +61,7 @@ class SaveGenomeDialog(
                 exportButton?.isDisabled = isDisabled
             }) {
                 growX().expandX()
-            }
+            }.hint(bundle.get("editor.hint.genomeName"))
         }
         row()
 
@@ -65,7 +70,7 @@ class SaveGenomeDialog(
                 val name = genomeNameField?.text ?: throw Exception("genomeNameField is null")
                 onSaveAndTest.invoke(name)
                 fadeOut()
-            })
+            }).hint(bundle.get("editor.hint.saveAndTest"))
         }
         row()
 
@@ -73,11 +78,12 @@ class SaveGenomeDialog(
             saveToFileButton = visTextButton(bundle.get("button.saveToFile"), onClick = {
                 val name = genomeNameField?.text ?: throw Exception("genomeNameField is null")
                 onSave.invoke(name)
-            })
+            }).hint(bundle.get("editor.hint.saveToFile"))
             if (isGoToMenu) {
-                visTextButton(menuText, onClick = {
+                row()
+                visTextButton(goMenuLabel, onClick = {
                     onGoMenu.invoke()
-                }) { center() }
+                }) { center() }.hint(bundle.get("editor.hint.menuWithoutSaving"))
             }
         }
         row()
@@ -87,10 +93,11 @@ class SaveGenomeDialog(
                 exportButton = visTextButton(bundle.get("button.saveAndExport"), onClick = {
                     val name = genomeNameField?.text ?: throw Exception("genomeNameField is null")
                     onSaveAndExport.invoke(name)
-                }) { center() }
+                }) { center() }.hint(bundle.get("editor.hint.saveAndExport"))
             }
 
-            visTextButton("Share with everyone", onClick = {
+            row()
+            visTextButton(bundle.get("button.shareGenome"), onClick = {
                 val name = genomeNameField?.text ?: throw Exception("genomeNameField is null")
                 // Пока выгрузки на сервер нет, кнопка только сохраняет.
                 onSave.invoke(name)
@@ -133,11 +140,14 @@ class SaveGenomeDialog(
 
         val rootTable = globalVisTable { compose() }
 
-        contentTable.add(rootTable)
+        val scroll = com.badlogic.gdx.scenes.scene2d.ui.ScrollPane(rootTable)
+        scroll.setScrollingDisabled(true, false)
+        contentTable.add(scroll).minSize(0f).grow()
 
         closeOnEscape()
 
         pack()
+        setSize(minOf(width, Gdx.graphics.width - 8.dp()), minOf(height, Gdx.graphics.height - 8.dp()))
         centerWindow()
     }
 

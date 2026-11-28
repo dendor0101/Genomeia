@@ -19,12 +19,16 @@ import io.github.some_example_name.old.features.levels.editor.LevelEditorScreen
 import kotlin.math.min
 
 /**
- * Список уровней из папки levels: файлы лежат в личном хранилище приложения, поэтому
- * системное окно выбора файлов их не покажет — список читает папку сам.
+ * Список уровней: свои (личное хранилище приложения) и встроенные (ассеты). Системное окно
+ * выбора файлов их не покажет — список собирает LevelFiles.
  *
- * Только вёрстка: что делать с выбранным именем, решает [onPick].
+ * Только вёрстка: что делать с выбранной ссылкой, решает [onPick]; подпись — [displayName].
  */
-class LevelSelectDialog(names: List<String>, private val onPick: (String) -> Unit) : VisDialog(bundle.get("level.open.title")) {
+class LevelSelectDialog(
+    names: List<String>,
+    displayName: (String) -> String,
+    private val onPick: (String) -> Unit
+) : VisDialog(bundle.get("level.open.title")) {
 
     /** Девятипатчи кнопок: освобождаются вместе с диалогом, см. [remove]. */
     private val textures = mutableListOf<Texture>()
@@ -43,7 +47,7 @@ class LevelSelectDialog(names: List<String>, private val onPick: (String) -> Uni
         list.background = makeStyledNP(LevelEditorScreen.PANEL_BG, LevelEditorScreen.PANEL_BORDER, textures)
 
         for (name in names) {
-            val button = makeStyledButton(name, game, textures)
+            val button = makeStyledButton(displayName(name), game, textures)
             // Длинное имя уровня иначе рисуется поверх соседних кнопок: ячейка
             // сжимается по ширине диалога, а Label без переноса этого не замечает.
             button.label.setWrap(true)

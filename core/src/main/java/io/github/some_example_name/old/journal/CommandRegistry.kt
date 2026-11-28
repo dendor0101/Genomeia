@@ -8,8 +8,11 @@ import io.github.some_example_name.old.commands.GoBack
 import io.github.some_example_name.old.commands.GoEcoSystem
 import io.github.some_example_name.old.commands.GoExit
 import io.github.some_example_name.old.commands.GoGenomeEditor
+import io.github.some_example_name.old.commands.GoCampaign
+import io.github.some_example_name.old.commands.GoGenomes
+import io.github.some_example_name.old.commands.GoGuide
 import io.github.some_example_name.old.commands.GoLevelEditor
-import io.github.some_example_name.old.commands.GoLogic
+import io.github.some_example_name.old.commands.GoTutorial
 import io.github.some_example_name.old.commands.GoMenu
 import io.github.some_example_name.old.commands.GoReplace
 import io.github.some_example_name.old.commands.GoSettings
@@ -41,7 +44,11 @@ import io.github.some_example_name.old.editor.system.logic.TryToChange
 import io.github.some_example_name.old.editor.system.logic.TryToDivide
 import io.github.some_example_name.old.editor.system.logic.TryToMutate
 import io.github.some_example_name.old.editor.system.logic.TryToRemove
+import io.github.some_example_name.old.editor.system.logic.TutorialNextStep
+import io.github.some_example_name.old.features.guide.GuideIntent
 import io.github.some_example_name.old.features.devsupport.SupportIntent
+import io.github.some_example_name.old.features.genomes.GenomesIntent
+import io.github.some_example_name.old.features.levels.editor.LevelEditorIntent
 import io.github.some_example_name.old.features.menu.MenuIntent
 import io.github.some_example_name.old.features.settings.SettingsIntent
 import io.github.some_example_name.old.features.simulation.SimulationIntent
@@ -93,8 +100,11 @@ object CommandRegistry {
         t<GoSimulation>(109),
         t<EcoSystemScreenGlobalSettings>(110),
         t<EcoSystemScreenCellsSettings>(111),
-        t<GoLogic>(112),
-        t<GoLevelEditor>(113),
+        t<GoGenomes>(112),
+        t<GoGuide>(113),
+        t<GoTutorial>(114),
+        t<GoCampaign>(115),
+        t<GoLevelEditor>(116),
 
         // --- Главное меню ---
         t<MenuIntent.OpenWorldEditor>(200),
@@ -106,8 +116,12 @@ object CommandRegistry {
         t<MenuIntent.ImportGenome>(206),
         t<MenuIntent.GenomeImported>(207),
         t<MenuIntent.MapImported>(208),
-        t<MenuIntent.OpenLogic>(209),
-        t<MenuIntent.OpenLevelEditor>(210),
+        t<MenuIntent.OpenGenomes>(209),
+        t<MenuIntent.DeleteWorld>(210),
+        t<MenuIntent.OpenGuide>(211),
+        t<MenuIntent.OpenCampaign>(212),
+        // 213 занят: MenuIntent.OpenLevelEditor из PR 38, убран до выхода (редактор уровней
+        // открывается со страницы кампании командой GoLevelEditor). Номер не переиспользовать.
 
         // --- Настройки ---
         t<SettingsIntent.SelectTab>(300),
@@ -116,9 +130,15 @@ object CommandRegistry {
         t<SettingsIntent.SetLanguage>(303),
         t<SettingsIntent.OpenGithub>(304),
         t<SettingsIntent.SetRenderMode>(305),
+        t<SettingsIntent.SetShowHints>(306),
+        t<SettingsIntent.SetFullscreen>(307),
+        t<SettingsIntent.SetShowDebugInfo>(308),
+        t<SettingsIntent.OpenGpuSettings>(309),
+        t<SettingsIntent.SetAutoSendCrash>(310),
 
         // --- Поддержка ---
         t<SupportIntent.CopyAddress>(400),
+        t<SupportIntent.OpenLink>(401),
 
         // --- Редактор мира ---
         t<WorldEditorIntent.NewSeed>(500),
@@ -150,12 +170,30 @@ object CommandRegistry {
         t<SimulationIntent.AppResumed>(612),
         t<SimulationIntent.MoveCamera>(613),
         t<SimulationIntent.ZoomCamera>(614),
+        t<SimulationIntent.SetTool>(615),
+        t<SimulationIntent.UseSavedGenome>(616),
+        t<SimulationIntent.SetDebugFilter>(617),
+        t<SimulationIntent.SetMicroscopeParameter>(618),
+        t<SimulationIntent.ResetMicroscopeSettings>(619),
+        t<SimulationIntent.MarkCell>(620),
+        t<SimulationIntent.SetShowBoundary>(621),
+        t<SimulationIntent.SetShowLinks>(622),
+        t<SimulationIntent.SaveWorldFailed>(623),
+        t<SimulationIntent.SetFillAreas>(624),
+        t<SimulationIntent.TapWorld>(625),
+        t<SimulationIntent.SetGenomeColors>(626),
+        t<SimulationIntent.SetShowNeuralLinks>(627),
 
         // --- Касания мира ---
         t<PlayerCommand.TouchDown>(700),
         t<PlayerCommand.Drag>(701),
         t<PlayerCommand.Tap>(702),
         t<PlayerCommand.StopDrag>(703),
+        t<PlayerCommand.KillCell>(704),
+        t<PlayerCommand.SetStress>(705),
+        t<PlayerCommand.SetPhysicsDebug>(706),
+        t<PlayerCommand.SetWorldRule>(707),
+        t<PlayerCommand.ResetWorldRules>(708),
 
         // --- Редактор генома ---
         t<PrevTickButtonTap>(800),
@@ -185,6 +223,11 @@ object CommandRegistry {
         t<SaveGenome>(824),
         t<ExportGenome>(825),
         t<EditorZoomCamera>(826),
+        t<TutorialNextStep>(827),
+        t<io.github.some_example_name.old.editor.system.logic.SetEditorDebugFilter>(828),
+        t<io.github.some_example_name.old.editor.system.logic.SetEditorShowBoundary>(829),
+        t<io.github.some_example_name.old.editor.system.logic.SetEditorShowNeuralLinks>(830),
+        t<io.github.some_example_name.old.editor.system.logic.SetEditorGenomeColors>(831),
 
         // --- События потока симуляции ---
         t<SessionStarted>(900),
@@ -192,6 +235,44 @@ object CommandRegistry {
         t<SimRestarted>(902),
         t<StateHashed>(903),
         t<WorldSaveCommitted>(904),
+        t<CellLabAdvanced>(905),
+        t<CellLabChecked>(906),
+        t<WorldStopped>(907),
+
+        // --- Экран «Геномы» ---
+        t<GenomesIntent.SelectTab>(1000),
+        t<GenomesIntent.OpenEditor>(1001),
+        t<GenomesIntent.ImportGenome>(1002),
+        t<GenomesIntent.GenomeImported>(1003),
+        t<GenomesIntent.Delete>(1004),
+        t<GenomesIntent.Rename>(1005),
+        t<GenomesIntent.Share>(1006),
+
+        // --- Гайд ---
+        t<GuideIntent.SelectTab>(1100),
+        t<GuideIntent.StartTutorial>(1101),
+        t<GuideIntent.SelectFormula>(1102),
+        t<GuideIntent.SetCoefficient>(1103),
+        t<GuideIntent.SetInput>(1104),
+        t<GuideIntent.SetInputCount>(1105),
+        t<GuideIntent.SetCombine>(1106),
+        t<GuideIntent.OpenCellLab>(1107),
+        t<GuideIntent.CloseCellLab>(1108),
+        t<CellLabInput>(1109),
+        t<GuideIntent.SetPulse>(1110),
+
+        // --- Редактор уровней ---
+        t<LevelEditorIntent.SetField>(1200),
+        t<LevelEditorIntent.SetScript>(1201),
+        t<LevelEditorIntent.SetCellAllowed>(1202),
+        t<LevelEditorIntent.PutOrganism>(1203),
+        t<LevelEditorIntent.RemoveOrganism>(1204),
+        t<LevelEditorIntent.SetMap>(1205),
+        t<LevelEditorIntent.LoadLevel>(1206),
+        t<LevelEditorIntent.SaveLevel>(1207),
+        t<LevelEditorIntent.TestLevel>(1208),
+        t<LevelEditorIntent.OpenMapEditor>(1209),
+        t<LevelEditorIntent.Exit>(1210),
     )
 
     private val byClass: Map<KClass<*>, Type<*>> = types.associateBy { it.kClass }
@@ -213,7 +294,12 @@ object CommandRegistry {
 
     /** Команда по номеру типа и телу, или null — тип неизвестен или тело испорчено. */
     fun decode(typeId: Int, payload: ByteArray): GameCommand? {
-        val type = byId[typeId] ?: return null
+        val registered = byId[typeId] ?: return null
+        // В ранних записях ветки replay-files код 620 означал ошибку сохранения.
+        // Первое поле у неё — строка (тег 0x0A), у MarkCell — координата Float (0x0D).
+        val type = if (registered.kClass == SimulationIntent.MarkCell::class && payload.firstOrNull() == 0x0A.toByte()) {
+            byClass.getValue(SimulationIntent.SaveWorldFailed::class)
+        } else registered
         return try {
             GenomeProto.decodeFromByteArray(type.serializer, payload)
         } catch (e: Exception) {

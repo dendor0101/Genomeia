@@ -18,6 +18,9 @@ import io.github.some_example_name.old.editor.system.logic.TapScreen
 import io.github.some_example_name.old.editor.system.logic.TryToDivide
 import io.github.some_example_name.old.editor.system.logic.UiEditorCommands
 import io.github.some_example_name.old.features.devsupport.SupportIntent
+import io.github.some_example_name.old.features.genomes.GenomesIntent
+import io.github.some_example_name.old.features.guide.GuideIntent
+import io.github.some_example_name.old.features.levels.editor.LevelEditorIntent
 import io.github.some_example_name.old.features.levels.editor.LevelInfo
 import io.github.some_example_name.old.features.levels.editor.ScriptedOrganism
 import io.github.some_example_name.old.features.menu.MenuIntent
@@ -48,6 +51,7 @@ class CommandRegistryTest {
     private val families: List<KClass<out GameCommand>> = listOf(
         NavigationCommands::class,
         MenuIntent::class,
+        GenomesIntent::class,
         SettingsIntent::class,
         SupportIntent::class,
         WorldEditorIntent::class,
@@ -55,7 +59,23 @@ class CommandRegistryTest {
         PlayerCommand::class,
         UiEditorCommands::class,
         SimEvent::class,
+        GuideIntent::class,
+        LevelEditorIntent::class,
     )
+
+    @Test
+    fun `обе записи с историческим номером 620 читаются своим типом`() {
+        val failure = SimulationIntent.SaveWorldFailed("Мир")
+        val (id, payload) = checkNotNull(CommandRegistry.encode(failure))
+        assertEquals(623, id)
+        assertEquals(failure, CommandRegistry.decode(620, payload))
+        assertEquals(failure, CommandRegistry.decode(id, payload))
+
+        val mark = SimulationIntent.MarkCell(1f, 2f, 3, 4, 5, 6)
+        val (markId, markPayload) = checkNotNull(CommandRegistry.encode(mark))
+        assertEquals(620, markId)
+        assertEquals(mark, CommandRegistry.decode(markId, markPayload))
+    }
 
     @Test
     fun `каждая команда каждого семейства есть в реестре`() {
@@ -139,6 +159,12 @@ class CommandRegistryTest {
 
         val current = roundTrip(PlayerCommand.Tap(1f, 2f)) as PlayerCommand.Tap
         assertEquals(null, current.genomeIndex)
+        assertEquals(null, current.target)
+        val target = io.github.some_example_name.old.commands.ScreenCell(17, 4, 2)
+        val tap = current.copy(target = target)
+        assertEquals(tap, roundTrip(tap))
+        val ui = SimulationIntent.TapWorld(tap)
+        assertEquals(ui, roundTrip(ui))
     }
 
     @Test
@@ -170,6 +196,19 @@ class CommandRegistryTest {
     @Test
     fun `перечисления и строки`() {
         assertEquals(SimulationIntent.SetRenderMode(RenderMode.NOSTALGIC), roundTrip(SimulationIntent.SetRenderMode(RenderMode.NOSTALGIC)))
+        assertEquals(SimulationIntent.SetRenderMode(RenderMode.TISSUE_MAP), roundTrip(SimulationIntent.SetRenderMode(RenderMode.TISSUE_MAP)))
+        assertEquals(SimulationIntent.SetMicroscopeParameter("reliefHeight", 1.75f), roundTrip(SimulationIntent.SetMicroscopeParameter("reliefHeight", 1.75f)))
+        assertEquals(SimulationIntent.ResetMicroscopeSettings, roundTrip(SimulationIntent.ResetMicroscopeSettings))
+        val current=SimulationIntent.SetRenderMode(RenderMode.TISSUE_MAP)
+        val (id,payload)=CommandRegistry.encode(current)!!
+        kotlin.test.assertContentEquals(byteArrayOf(8,4),payload)
+        assertEquals(SimulationIntent.SetRenderMode(RenderMode.DEBUG),CommandRegistry.decode(id,byteArrayOf(8,0)))
+        for(old in listOf(3,4))assertEquals(current,CommandRegistry.decode(id,byteArrayOf(8,old.toByte())))
+        assertEquals(SettingsIntent.OpenGpuSettings, roundTrip(SettingsIntent.OpenGpuSettings))
+        for(key in arrayOf("packedPsf","textureResolution","noEnvironment","fusedPigment","fusedPsf","cachedFeatures","compactRelief","boundedOptics","instancedDebris","ribbonAppendages","batchedLayers","cachedGlState","fusedRelief","detailLod","focusResolution","birthRelief","coarseDome","splitTissue","tightGranules","separateGranules","groupedGranules"))for(value in floatArrayOf(0f,1f)){
+            val command=SimulationIntent.SetMicroscopeParameter(key,value)
+            assertEquals(command,roundTrip(command))
+        }
         assertEquals(SettingsIntent.SelectTab(SettingsTab.LANGUAGE), roundTrip(SettingsIntent.SelectTab(SettingsTab.LANGUAGE)))
         assertEquals(SettingsIntent.SetLanguage("ru"), roundTrip(SettingsIntent.SetLanguage("ru")))
         assertEquals(MenuIntent.GenomeImported("Жук.genome", "imported/0-Жук.genome"), roundTrip(MenuIntent.GenomeImported("Жук.genome", "imported/0-Жук.genome")))

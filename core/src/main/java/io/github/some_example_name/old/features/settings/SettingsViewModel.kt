@@ -1,8 +1,12 @@
 package io.github.some_example_name.old.features.settings
 
+import io.github.some_example_name.render.RenderMode
+
 import io.github.some_example_name.old.commands.GameCommand
 import com.badlogic.gdx.Gdx
 import io.github.some_example_name.old.core.DIGameGlobalContainer
+import io.github.some_example_name.old.core.PlatformWindow
+import io.github.some_example_name.old.core.PlatformGraphics
 import io.github.some_example_name.old.core.DIGameGlobalContainer.game
 import io.github.some_example_name.old.bug.BugReplay
 import io.github.some_example_name.old.journal.CommandSource
@@ -49,13 +53,48 @@ sealed interface SettingsIntent : GameCommand {
         override val detail get() = renderMode.toString()
     }
 
+    /** Подсказки при наведении (на телефоне — при зажатии) на элементы редактора генома. */
+    @Serializable
+    data class SetShowHints(val visible: Boolean) : SettingsIntent {
+        override val name get() = "SetShowHints"
+        override val detail get() = visible.toString()
+    }
+
+    /** Подробная информация о мире в углу симуляции; без неё — только FPS и UPS. */
+    @Serializable
+    data class SetShowDebugInfo(val visible: Boolean) : SettingsIntent {
+        override val name get() = "SetShowDebugInfo"
+        override val detail get() = visible.toString()
+    }
+
+    @Serializable
+    data class SetAutoSendCrash(val enabled: Boolean) : SettingsIntent {
+        override val name get() = "SetAutoSendCrash"
+        override val detail get() = enabled.toString()
+    }
+
+    /** Полный экран на ПК. Вид окна, на мир не влияет; при повторе бага окно не трогаем. */
+    @Serializable
+    data class SetFullscreen(val enabled: Boolean) : SettingsIntent {
+        override val name get() = "SetFullscreen"
+        override val detail get() = enabled.toString()
+    }
+
     @Serializable
     data object OpenGithub : SettingsIntent {
         override val name get() = "OpenGithub"
     }
+
+    @Serializable
+    data object OpenGpuSettings : SettingsIntent {
+        override val name get() = "OpenGpuSettings"
+    }
 }
 
 class SettingsViewModel {
+
+    var gpuSettingsFailed = false
+        private set
 
     /**
      * Выбранная вкладка живёт здесь, а не в экране: рекомпозиция пересобирает вёрстку
@@ -95,8 +134,28 @@ class SettingsViewModel {
             }
 
             is SettingsIntent.SetRenderMode -> {
-                GlobalSettings.RENDER_MODE = intent.renderMode
+                GlobalSettings.RENDER_MODE = RenderMode.fromPreference(intent.renderMode).preferenceId
                 UserPreferences.save()
+            }
+
+            is SettingsIntent.SetShowHints -> {
+                GlobalSettings.SHOW_HINTS = intent.visible
+                UserPreferences.save()
+            }
+
+            is SettingsIntent.SetShowDebugInfo -> {
+                GlobalSettings.SHOW_DEBUG_INFO = intent.visible
+                UserPreferences.save()
+            }
+
+            is SettingsIntent.SetAutoSendCrash -> {
+                GlobalSettings.AUTO_SEND_CRASH = intent.enabled
+                UserPreferences.save()
+            }
+
+            is SettingsIntent.SetFullscreen -> if (!BugReplay.isActive) PlatformWindow.setFullscreen(intent.enabled)
+            is SettingsIntent.OpenGpuSettings -> if (!BugReplay.isActive) {
+                gpuSettingsFailed = PlatformGraphics.gpuSettings?.open() != true
             }
 
             // При повторе бага браузер разработчику ни к чему.
@@ -163,6 +222,19 @@ class SettingsViewModel {
 object GlobalSettings {
     var MUSIC_VOLUME = 0
     var SOUND_VOLUME = 50
-    var RENDER_MODE = 0
+    var RENDER_MODE = RenderMode.DEBUG.preferenceId
+
+    /**
+     * Общий флаг всплывающих подсказок интерфейса (core/ui/hint). Только вид: на игру и
+     * повтор .bug не влияет.
+     */
+    var SHOW_HINTS = true
+    var AUTO_SEND_CRASH = true
+
+    /**
+     * Подробный текст в углу симуляции: время тика, число клеток, частиц и связей, разбивка
+     * по фазам. Выключено — только FPS и UPS. Только вид: на мир и повтор .bug не влияет.
+     */
+    var SHOW_DEBUG_INFO = false
     var currentLanguageTag: String = Locale.getDefault().toLanguageTag()
 }

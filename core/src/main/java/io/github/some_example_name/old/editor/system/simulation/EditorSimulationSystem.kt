@@ -7,6 +7,7 @@ import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.editor.entities.EditorReplay
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.entities.Entity
+import io.github.some_example_name.old.entities.NeuralLinkEntity
 import io.github.some_example_name.old.entities.OrganEntity
 import io.github.some_example_name.old.entities.ParticleEntity
 import io.github.some_example_name.old.systems.genomics.CellSystem
@@ -31,6 +32,7 @@ class EditorSimulationSystem(
     val particleEntity: ParticleEntity,
     val zygote: Zygote,
     val entityList: List<Entity>,
+    val neuralLinkEntity: NeuralLinkEntity,
     val userCommandManager: UserCommandManager
 ) {
 
@@ -40,6 +42,16 @@ class EditorSimulationSystem(
     var mapCellGenomeIdToIndex = Int2IntOpenHashMap().apply { defaultReturnValue(-1) }
 
     var maxCellId = 0
+
+    /**
+     * Пик нейросвязей последнего выращивания — Genome.neuralLinksPeak. На каждой стадии берётся
+     * «живых на её начало + созданных за неё»: внутри стадии мир может создать все её
+     * нейросвязи раньше, чем удалит отменённые (порядок там задаёт энергия клеток, а не
+     * редактор), и арена обязана вместить и такой порядок. Само число живых в редакторе
+     * этого не видит — он удаляет и создаёт в своём, одном порядке.
+     */
+    var neuralLinksPeak = 0
+        private set
 
     /** [genomeName] — свой или встроенный геном (см. GenomeCatalog), null — новый. */
     fun reinitGenome(genomeName: String?) {
@@ -91,8 +103,12 @@ class EditorSimulationSystem(
         // находило по ней чужой индекс (видно на переводе старых JSON подряд: «Tardigrade»
         // после «Megalodon» падал на organIndex = -1).
         worldCommandsManager.mapCellGenomeIdToIndex.clear()
+        // И команды прошлого расчёта, если он упал посреди тика: иначе они применятся в
+        // первом тике этого (WorldCommandsManager.discardPending).
+        worldCommandsManager.discardPending()
         gridManager.clearAll()
         entityList.forEach { it.clear() }
+        cellEntity.simulationData.tickCounter = 0
         newGenome()
 
         userCommandManager.pushInternal(
@@ -106,17 +122,44 @@ class EditorSimulationSystem(
 
         replays.forEach { it.reset() }
 
+        // Кадр k записи — тело ДО стадии k, последний кадр — после всех (их на один больше,
+        // чем стадий). На этом стоит весь редактор: действия кадра k пишутся в стадию k,
+        // призраки — клетки кадра k + 1, а действие на последнем кадре открывает новую стадию.
+        //
+        // Раньше кадр 0 получался сам: у зиготы на старте 0.1 энергии, и деление стадии 0
+        // ждало тик, пока симуляция не выдаст ей 5. Но пустой стадии энергия не нужна. В
+        // геноме из отчёта 21.11 («Parasite») стадии 0 и 1 пустые, задержка терялась, и вся
+        // шкала съехала на кадр: кадр k показывал тело уже ПОСЛЕ стадии k, а последний кадр
+        // совпал с последней стадией. Правый клик по клетке, рождённой на ней, писал деление
+        // в ту же стадию, где клетки ещё нет. Деление не выполнялось, а призрак его дочери
+        // читал координаты частицы -1, и игра падала.
+        //
+        // Поэтому кадр 0 снимается явно, до первого тика, а энергия зиготе даётся сразу:
+        // тогда каждая стадия — ровно один тик, какой бы она ни была.
+        cellEntity.aliveList.forEach { cellIndex -> cellEntity.energy[cellIndex] = 5.0f }
+        replays.forEach { it.copy() }
+
         var stage = organEntity.stage[baseOrganIndex]
         var stageStartedAt = 0
+        var stageStartAlive = neuralLinkEntity.aliveList.size
+        var stageStartCreated = neuralLinkEntity.createdCount
+        neuralLinksPeak = stageStartAlive
         for (tick in 0..TIME_SIMULATION) {
+            cellEntity.simulationData.tickCounter = tick + 1
             updateTick()
             replays.forEach { it.copy() }
+
+            // Созданное в тике, где стадия сменилась, — ещё её: смена стадии идёт после команд.
+            val bound = stageStartAlive + (neuralLinkEntity.createdCount - stageStartCreated).toInt()
+            if (bound > neuralLinksPeak) neuralLinksPeak = bound
 
             if (organEntity.alreadyGrownUp[baseOrganIndex]) break
 
             if (organEntity.stage[baseOrganIndex] != stage) {
                 stage = organEntity.stage[baseOrganIndex]
                 stageStartedAt = tick
+                stageStartAlive = neuralLinkEntity.aliveList.size
+                stageStartCreated = neuralLinkEntity.createdCount
             } else if (tick - stageStartedAt >= STUCK_STAGE_TICKS) {
                 throw IllegalStateException("рост застрял на стадии $stage: $STUCK_STAGE_TICKS тиков без перехода")
             }

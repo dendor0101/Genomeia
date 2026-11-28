@@ -16,6 +16,22 @@ class CellTypesTest {
     private val cells = CellTypes.createAll()
 
     @Test
+    fun `оптические материалы находятся по ключу а не по переставленным номерам игры`() {
+        // Без своего материала микроскопа: выведенные из игры и compass (возвращён игрокам 27.11,
+        // когда реалистичного шейдера в игре уже не было).
+        val noMaterial = setOf("food_sensor", "compass", "breakaway", "fin")
+        for (cell in cells) {
+            val material = io.github.some_example_name.render.microscope.TissueMaterials.forKey(cell.key)
+            if (cell.key in noMaterial) assertEquals(27, material)
+            else assertTrue(material in 0..26, "нет материала ${cell.key}")
+        }
+        assertEquals(0, io.github.some_example_name.render.microscope.TissueMaterials.forKey("leaf"))
+        assertEquals(26, io.github.some_example_name.render.microscope.TissueMaterials.forKey("controller"))
+        assertEquals(4, io.github.some_example_name.render.microscope.TissueMaterials.forKey("delay"))
+        assertEquals(27, io.github.some_example_name.render.microscope.TissueMaterials.forKey("unknown:cell"))
+    }
+
+    @Test
     fun `номер типа — место в реестре, ключ находит тот же тип`() {
         cells.forEachIndexed { index, cell ->
             assertEquals(index, cell.cellTypeId)
@@ -59,7 +75,7 @@ class CellTypesTest {
     @Test
     fun `данные новой клетки — у тех, кому они нужны`() {
         val withData = cells.filter { it.createSpecialData(Cell.NO_GENOME_ACTION) != null }.map { it.key }.toSet()
-        assertEquals(setOf("eye", "tail", "producer", "pheromone_emitter", "controller"), withData)
+        assertEquals(setOf("eye", "tail", "producer", "pheromone_emitter", "controller", "chameleon", "synapse", "delay"), withData)
     }
 
     @Test

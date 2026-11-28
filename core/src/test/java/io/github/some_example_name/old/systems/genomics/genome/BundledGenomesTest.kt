@@ -4,7 +4,9 @@ import io.github.some_example_name.old.cells.base.CellTypes
 import io.github.some_example_name.old.cells.base.Formulas
 import java.io.File
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -34,6 +36,25 @@ class BundledGenomesTest {
                     assertNotEquals(-1, Formulas.indexOfKey(it), "${file.name}: неизвестная формула '$it'")
                 }
             }
+        }
+    }
+
+    /**
+     * Встроенные геномы лежат в ассетах только для чтения, и игра их не допекает. Снимок для
+     * превью им ставит :lwjgl3:bakeBundledGenomes — забыли прогнать после добавления встроенного генома,
+     * и это всплывёт здесь, а не пустой карточкой у игрока.
+     */
+    @Test
+    fun `у встроенных геномов есть снимок для превью`() {
+        val cells = CellTypes.createAll()
+        val files = dir.listFiles { file -> file.extension == "genome" }.orEmpty()
+        assertTrue(files.isNotEmpty(), "нет встроенных геномов в ${dir.absolutePath}")
+
+        for (file in files) {
+            val genome = decodeGenome(file.readBytes())
+            val preview = assertNotNull(genome.preview, "${file.name}: нет снимка, прогоните :lwjgl3:bakeBundledGenomes")
+            assertEquals(genome.cellsAmount, preview.cellCount, "${file.name}: клеток в снимке")
+            preview.cellTypeKeys.forEach { assertTrue(cells.containsKey(it), "${file.name}: неизвестная клетка '$it' в снимке") }
         }
     }
 }

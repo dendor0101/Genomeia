@@ -12,6 +12,8 @@ import com.badlogic.gdx.scenes.scene2d.Touchable
 import com.badlogic.gdx.scenes.scene2d.actions.Actions
 import com.badlogic.gdx.scenes.scene2d.utils.NinePatchDrawable
 import com.kotcrab.vis.ui.widget.VisTable
+import io.github.some_example_name.old.features.settings.GlobalSettings
+import kotlin.math.min
 
 // ==================== MINI DIALOG / HOVER POPUP (улучшенная версия) ====================
 
@@ -109,6 +111,8 @@ private val isTouchScreen: Boolean
  * модальному диалогу, поверх которого показана.
  */
 fun Actor.hoverPopup(
+    /** Спрашивается при каждом показе: флаг можно переключить, не пересобирая экран. */
+    isEnabled: () -> Boolean = { true },
     init: VisTable.() -> Unit
 ): Actor {
     val target = this
@@ -127,7 +131,7 @@ fun Actor.hoverPopup(
     }
 
     fun showPopup(stageX: Float, stageY: Float) {
-        if (tooltip != null) return
+        if (tooltip != null || !isEnabled()) return
         val stg = target.stage ?: return
 
         val content = object : VisTable(true) {
@@ -204,4 +208,27 @@ fun Actor.hoverPopup(
 
     target.addListener(listener)
     return target
+}
+
+/** Ширина подсказки, после которой текст переносится на следующую строку. */
+private const val HINT_MAX_WIDTH_DP = 420f
+
+/**
+ * Пояснение к элементу интерфейса — всплывает при наведении мыши или зажатии пальцем
+ * (см. [hoverPopup]). Все такие подсказки включаются и выключаются одним флагом
+ * GlobalSettings.SHOW_HINTS (настройки, вкладка «Графика»).
+ *
+ * Возвращает сам элемент, поэтому вешается прямо на результат DSL:
+ * `visTextButton(...).hint(bundle.get("editor.hint.save"))`.
+ */
+fun <T : Actor> T.hint(text: String): T {
+    hoverPopup(isEnabled = { GlobalSettings.SHOW_HINTS }) {
+        val label = visLabel(text)
+        val maxWidth = min(HINT_MAX_WIDTH_DP.dp(), (stage?.width ?: w) * 0.8f)
+        if (label.prefWidth > maxWidth) {
+            label.setWrap(true)
+            getCell(label).width(maxWidth)
+        }
+    }
+    return this
 }

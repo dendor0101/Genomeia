@@ -27,6 +27,7 @@ import io.github.some_example_name.old.editor.system.render.DrawingHelperElement
 import io.github.some_example_name.old.entities.CellEntity
 import io.github.some_example_name.old.editor.baking.BodyExport
 import io.github.some_example_name.old.editor.baking.GenomeBaker
+import io.github.some_example_name.old.editor.baking.GenomePreviewCapture
 import io.github.some_example_name.old.editor.baking.RCMSort
 import io.github.some_example_name.old.entities.LinkEntity
 import io.github.some_example_name.old.entities.NeuralEntity
@@ -60,7 +61,6 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
     override var lastGrabbedCellY = 0.0f
     override var isDruggingCamera = false
     override var isRightClick = false
-    var showPhysicalLink = true
     /** Режим нейросвязей: Ctrl на десктопе, кнопка на телефоне. Меняется командой SetNeuralLinking. */
     var isNeuralLinking = false
     var previousCtrlClicked = -1
@@ -90,7 +90,7 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
         }
     val zygote = cellListBuilder.zygote
 
-    val simulationData = SimulationData()
+    override val simulationData = SimulationData()
 
     override val genomeManager = GenomeManager(
         simulationData = simulationData
@@ -157,6 +157,12 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
         linkEntity = linkEntity,
         cellEntity = cellEntity,
         neuralLinkEntity = neuralLinkEntity
+    )
+
+    /** Снимок выращенного тела для превью генома; снимается при запекании, как и раскладка. */
+    val genomePreviewCapture = GenomePreviewCapture(
+        cellEntity = cellEntity,
+        particleEntity = particleEntity
     )
 
     /**
@@ -239,18 +245,15 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
     )
 
     val cellReplay = CellReplay(
-        startCapacity = 1_000,
         particleEntity = particleEntity,
         cellEntity = cellEntity
     )
 
     val neuralLinkReplay = NeuralLinkReplay(
-        startCapacity = 300,
         neuralLinkEntity = neuralLinkEntity
     )
 
     val neuralReplay = NeuralReplay(
-        startCapacity = 300,
         neuralEntity = neuralEntity
     )
 
@@ -303,6 +306,7 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
         particleEntity = particleEntity,
         zygote = zygote,
         entityList = entityList,
+        neuralLinkEntity = neuralLinkEntity,
         userCommandManager = userCommandManager
     )
 
@@ -313,6 +317,7 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
     val genomeBaker = GenomeBaker(
         editorSimulationSystem = editorSimulationSystem,
         rcmSort = rcmSort,
+        previewCapture = genomePreviewCapture,
         cellEntity = cellEntity,
         linkEntity = linkEntity,
         neuralLinkEntity = neuralLinkEntity
@@ -394,12 +399,9 @@ object DIGenomeEditorContainer: DIContext, Disposable, EditorVariables {
 
     val drawingHelperElements = DrawingHelperElements(
         cellReplay = cellReplay,
-        neuralLinkReplay = neuralLinkReplay,
-        cellEntity = cellEntity,
         particleEntity = particleEntity,
         editorSimulationSystem = editorSimulationSystem,
         symmetryManager = symmetryManager,
-        cellList = cellList,
         cellSearchManager = cellSearchManager,
     )
 

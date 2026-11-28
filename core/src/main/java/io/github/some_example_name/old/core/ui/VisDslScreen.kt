@@ -22,6 +22,7 @@ abstract class VisDslScreen(
     protected val extraTextures = mutableListOf<Texture>()//TODO понять нужно ли dispode обрабатывать
 
     protected val stage = Stage(ScreenViewport())
+    val isTyping: Boolean get() = KeyboardFocus.isTyping(stage)
     protected val rootTable: VisTable = globalVisTable {
         setFillParent(true)
     }
@@ -44,6 +45,9 @@ abstract class VisDslScreen(
     }
 
     override fun show() {
+        // Экран, вернувшийся из стека (GoBack), показывается заново: без очистки stage и
+        // «Назад» добавлялись бы ещё раз при каждом возвращении.
+        inputProcessor.clear()
         inputProcessor.addProcessor(stage)
 
         val backProcessor = object : InputAdapter() {
@@ -119,8 +123,8 @@ abstract class VisDslScreen(
     override fun resize(width: Int, height: Int) {
         if (width == currentScreenWidth && height == currentScreenHeight) return
         stage.viewport.update(width, height, true)
-        println("recompose3")
         recompose()
+        stage.keepWindowsOnScreen()
         dslResize(width, height)
 
         currentScreenWidth = width

@@ -1,6 +1,5 @@
 package io.github.some_example_name.old.entities
 
-import com.badlogic.gdx.graphics.Color
 import io.github.some_example_name.old.core.DEBUG_CHECKS
 import io.github.some_example_name.old.core.DIContext
 import io.github.some_example_name.old.core.DISimulationContainer.linkMaxLength2
@@ -16,7 +15,8 @@ class LinkEntity(
     val particleEntity: ParticleEntity,
     val diContext: DIContext,
     /** Источник арен: связи организма лежат в массивах подряд. См. OrganEntity. */
-    val organEntity: OrganEntity
+    val organEntity: OrganEntity,
+    private val maximumLinkLengthSquared: Float = linkMaxLength2
 ) : Entity(linksStartMaxAmount) {
     /**
      * Клетки на концах связи, по массиву на конец.
@@ -74,8 +74,8 @@ class LinkEntity(
                     "вторая клетка $otherCellIndex"
             )
         }
-        val x = particleEntity.x[particleIndex]
-        val y = particleEntity.y[particleIndex]
+        val x = particleEntity.x(particleIndex)
+        val y = particleEntity.y(particleIndex)
         if (x == 0f && y == 0f) {
             throw IllegalStateException(
                 "связь к клетке $side=$cellIndex в нулевой координате " +
@@ -178,7 +178,7 @@ class LinkEntity(
         // допущение, на котором держится приписка к чанкам, — что связанные клетки близки.
         val dx = cellEntity.getX(cellIndex) - cellEntity.getX(otherCellIndex)
         val dy = cellEntity.getY(cellIndex) - cellEntity.getY(otherCellIndex)
-        if (dx * dx + dy * dy > linkMaxLength2) {
+        if (dx * dx + dy * dy > maximumLinkLengthSquared) {
             return -1
         }
 
@@ -200,9 +200,8 @@ class LinkEntity(
             )
             if (slot == -1) {
                 throw IllegalStateException(
-                    "арена связей организма $organIndex исчерпана " +
-                        "(ёмкость ${organEntity.linkArenaCapacity[organIndex]}) — " +
-                        "поднимите OrganEntity.ARENA_HEADROOM_PERCENT или пересохраните геном"
+                    "связи ${cellEntity.cellGenomeId[cellIndex]}–${cellEntity.cellGenomeId[otherCellIndex]} нет " +
+                        "в запечённой раскладке организма $organIndex — пересохраните геном"
                 )
             }
             slot
@@ -228,6 +227,9 @@ class LinkEntity(
 
         cellEntity.addCellLink(cellIndex, otherCellIndex, addLinkIndex)
         cellEntity.addCellLink(otherCellIndex, cellIndex, addLinkIndex)
+
+        // Связь могла достроить треугольники тела — они формируются (TriangleEntity).
+        if (arenaLinkSlot != -1) organEntity.triangles?.onLinkChanged(organIndex, addLinkIndex, organEntity, this)
 
         return addLinkIndex
     }
@@ -271,10 +273,17 @@ class LinkEntity(
                 continue
             }
 
-            // Сосед помечается ДО удаления: deleteLink обнулит блок связи, и после него
-            // связь уже не скажет, кто был на другом конце.
-            cellEntity.isOnEdge[otherCellIndex] = true
-            cellEntity.setColor(otherCellIndex, EDGE_COLOR)
+            // isOnEdge здесь НЕ ставится: границу соседу открывает сам deleteLink через
+            // refreshOnEdge. Прямая запись была ошибкой: refreshOnEdge видел флаг уже
+            // выставленным, выходил сразу, и частица соседа так и не возвращалась в сетку
+            // столкновений. Клетка у края раны считала себя граничной, а ни с чем не
+            // сталкивалась — мембрана после Punisher становилась дырявой (отчёт 21.10 17:17).
+            //
+            // Цвет соседа не трогается. До 21.11 здесь сосед погибшей клетки навсегда
+            // становился красным; это убрано по решению автора. Учтите: цвет видят глаза
+            // (Eye) и он в хэше состояния, поэтому записи .bug, сделанные до этого, после
+            // первой такой гибели расходятся по хэшу.
+            //
             // Тот же смысл, что у reinitParentLink: у выжившего соседа не должно остаться
             // ссылки на индекс, который вот-вот переиспользует новая клетка.
             if (cellEntity.parentIndex[otherCellIndex] == cellIndex) {
@@ -290,11 +299,6 @@ class LinkEntity(
 
     fun deleteLink(linkIndex: Int, linkGeneration: Int? = null) {
         if (isAlive[linkIndex] && (linkGeneration == null || getGeneration(linkIndex) == linkGeneration)) {
-            // Владелец берётся из запомненного при выдаче, а не через клетку связи: клетку
-            // к этому моменту могли удалить — она и стала причиной удаления связи, — и её
-            // organIndex уже сброшен.
-            organEntity.releaseLinkSlot(arenaOwnerOf(linkIndex), linkIndex)
-
             delete(linkIndex)
 
             val cellA = links1[linkIndex]
@@ -310,6 +314,11 @@ class LinkEntity(
             // в сетку. Иначе оторванный кусок тела перестал бы сталкиваться вообще.
             cellEntity.refreshOnEdge(cellA)
             cellEntity.refreshOnEdge(cellB)
+
+            // И треугольники на ней распались: их вершины теперь у щели. Владелец — запомненный
+            // при выдаче: клетки связи могли уже умирать (detachAllLinks).
+            val owner = arenaOwnerOf(linkIndex)
+            if (owner >= 0) organEntity.triangles?.onLinkChanged(owner, linkIndex, organEntity, this)
 
             links1[linkIndex] = -1
             links2[linkIndex] = -1
@@ -383,9 +392,6 @@ class LinkEntity(
     }
 
     companion object {
-        /** Цвет клетки, оставшейся на краю после разрыва связи. Считается один раз. */
-        private val EDGE_COLOR = Color.RED.toIntBits()
-
         /**
          * Поколение "не проверять". Настоящее поколение живой клетки всегда >= 1:
          * Entity.generation начинается с нуля и инкрементируется в add() ДО того, как

@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.commands
 
+import io.github.some_example_name.physics.DIVISION_START_FRACTION
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.utils.Disposable
 import io.github.some_example_name.old.cells.Cell
@@ -194,8 +195,8 @@ class WorldCommandsManager(
                             closestCells
                                 .filter { particleEntity.isCell[it] }
                                 .forEach {
-                                    val dx = particleEntity.x[it] - x
-                                    val dy = particleEntity.y[it] - y
+                                    val dx = particleEntity.x(it) - x
+                                    val dy = particleEntity.y(it) - y
                                     val squareDist = dx * dx + dy * dy
                                     if (squareDist < 0.36f) {
                                         isDivide = false
@@ -206,13 +207,15 @@ class WorldCommandsManager(
                         val cellType = ints[2]
                         val newCell = cellList[cellType]
 
-                        if (isDivide && newCell is Zygote && !isEditor) {
-                            // Зигота в мире (её родил продюсер или геном поделился в неё) —
-                            // корень НОВОГО организма с геномом родителя, как было до арен.
-                            // Сама клетка появится в последней фазе команд, уже в арене
-                            // своего организма (OrganismSpawner); связи, которые деление
-                            // проводит к ней следом (ADD_LINK с -1), — не к чему: это был бы
-                            // другой организм.
+                        if (isDivide && newCell is Zygote && parentCellIndex == -1 && !isEditor) {
+                            // Зигота от продюсера (у неё нет родителя) — корень НОВОГО
+                            // организма с геномом родителя. Сама клетка появится в последней
+                            // фазе команд, уже в арене своего организма (OrganismSpawner).
+                            //
+                            // Зигота от деления по геному (родитель есть) сюда не попадает:
+                            // она остаётся в теле пустышкой и ничего не растит
+                            // (CellEntity.isDormantZygote). Новое тело на старом не помещается
+                            // в арену организма — её размер фиксирован при рождении.
                             worldCommandLastBuffer.push(
                                 type = WorldCommandType.SPAWN_ORGANISM,
                                 ints = intArrayOf(organEntity.genomeIndex[ints[3]], ints[0], 0),
@@ -224,13 +227,25 @@ class WorldCommandsManager(
                             val parentOrganIndex = ints[3]
                             val parentIndex = ints[4]
                             // В редакторе организм один, и зигота — его часть.
-                            val organIndex = if (newCell is Zygote) 0 else parentOrganIndex
+                            val organIndex = if (newCell is Zygote && isEditor) 0 else parentOrganIndex
 
                             val specialModDataIndex = ints[7]
 
+                            // Деление в мире физики-библиотеки: клетка рождается почти в родителе
+                            // (WorldPhysics → PhysicsWorld.activateFromParent), но только на
+                            // следующем тике, а до того видна там, где стоит в игре. Поэтому и в
+                            // игре она ставится туда же — сразу, до сетки (иначе мелькала на месте
+                            // позы и ехала к родителю). Не ровно в центр: угол клетки считается по
+                            // направлению к родителю. Соседей для связей искали по точке команды.
+                            var bornX = x; var bornY = y
+                            if (!isEditor && parentIndex != -1) {
+                                val px0 = cellEntity.getX(parentIndex); val py0 = cellEntity.getY(parentIndex)
+                                bornX = px0 + (x - px0) * DIVISION_START_FRACTION.toFloat()
+                                bornY = py0 + (y - py0) * DIVISION_START_FRACTION.toFloat()
+                            }
                             val cellIndex = cellEntity.addCell(
-                                x = x,
-                                y = y,
+                                x = bornX,
+                                y = bornY,
                                 color = ints[0],
                                 radius = radius,
                                 cellGenomeId = cellGenomeId,
@@ -416,6 +431,7 @@ class WorldCommandsManager(
                         if (!cellEntity.isAliveAndSameGen(cellIndex, ints[2])) return@consumeInOrder
                         specialEntity.addSpecialModData(cellIndex, specialModDataAt(threadId, ints[1]))
                     }
+                    WorldCommandType.STICK -> particleEntity.physics?.requestStick(ints[0], ints[1], ints[2])
                     else -> {}
                 }
             }
@@ -522,6 +538,25 @@ class WorldCommandsManager(
                 else -> {}
             }
         }
+    }
+
+    /**
+     * Выбросить команды, которые так и не применились.
+     *
+     * Буферы чистятся только в конце применения (consumeInOrder, consume). Исключение
+     * посреди него оставляет в буферах хвост тика, и он применяется в НАЧАЛЕ следующего
+     * расчёта — уже поверх другого мира. Так мир редактора, упав на одном геноме, ронял все
+     * следующие: перенос старых JSON 20.11 — из 90 геномов игрока 1 падал сам (gen4.json),
+     * а 35 за ним — на его недоприменённой зиготе («organToIdToIndex: genomeId=0 уже занят»).
+     * Мир игры после исключения не продолжается, поэтому зовёт это только редактор — перед
+     * каждым выращиванием (EditorSimulationSystem.simulate).
+     */
+    fun discardPending() {
+        worldCommandBuffer.forEach { it.clear() }
+        worldCommandSecondBuffer.forEach { it.clear() }
+        worldCommandLastBuffer.clear()
+        lastAddedCellIndexBuffer.fill(-1)
+        organIndexCellIdMapIndex.clear()
     }
 
     override fun resize() {

@@ -6,7 +6,6 @@ class Leaf(cellTypeId: Int): Cell(
     key = "leaf",
     defaultColor = leafColors.first(),
     cellTypeId = cellTypeId,
-    textureName = "leaf.png"
 ) {
 
     override fun doOnTick(cellIndex: Int, threadId: Int) = with (cellEntity) {

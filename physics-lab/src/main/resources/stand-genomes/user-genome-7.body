@@ -1,0 +1,38 @@
+# genomeia stand body 1
+name	User genome
+source	C:/Users/Genomeia/StudioProjects/Genomeia/.claude/worktrees/nostalgic-shader/assets/genomes/User genome.genome
+P 0 63.77756 64.89203 0.5000 leaf 0
+P 1 63.51459 64.35267 0.5000 leaf 0
+P 2 63.15170 63.87109 0.5000 leaf 0
+P 3 64.00000 64.00000 0.5000 zygote 0
+P 4 64.26297 64.53936 0.5000 leaf 0
+P 5 63.63891 63.52082 0.5000 leaf 0
+P 6 64.60000 64.00000 0.5000 leaf 0
+P 7 64.24733 63.51459 0.5000 leaf 0
+L 0 1
+X 0 3
+L 0 4
+L 1 2
+L 1 3
+L 1 4
+L 1 5
+X 2 3
+L 2 5
+L 3 4
+L 3 5
+L 3 6
+L 4 6
+L 5 7
+L 6 7
+T 0 1 4
+T 1 2 5
+T 1 3 4
+T 1 5 3
+T 3 6 4
+G 1 6 3
+G 2 4 6
+G 2 1 3
+G 3 5 3
+G 3 2 1
+G 3 0 4
+G 3 7 6

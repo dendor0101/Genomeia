@@ -1,5 +1,6 @@
 package io.github.some_example_name.old.cells
 
+import io.github.some_example_name.old.core.ui.hint
 import com.kotcrab.vis.ui.widget.VisTable
 import io.github.some_example_name.old.cells.base.SpecialModData
 import io.github.some_example_name.old.cells.base.activation
@@ -39,7 +40,6 @@ class Controller(cellTypeId: Int) : Cell(
     key = "controller",
     defaultColor = purpleColors[3],
     cellTypeId = cellTypeId,
-    textureName = "sensor.png",
     isNeural = true,
     isNeuronTransportable = false
 ) {
@@ -88,14 +88,14 @@ object ControllerSection : CellEditorSection {
             ?: ControllerData()
 
         visTable({ left().padBottom(32.dp()) }) {
-            visLabel(bundle.get("controller.key"), font = game.extraLargeFont) { padRight(16.dp()) }
+            visLabel(bundle.get("controller.key"), font = game.extraLargeFont) { padRight(16.dp()) }.hint(bundle.get("editor.hint.controllerKey"))
             visSelectBox(
                 items = ControllerKeys.NAMES,
                 selectedIndex = current.keyIndex.coerceAtLeast(0),
                 onChange = { _, keyIndex ->
                     actionSystem.action = actionSystem.action.copy(special = ControllerData(ControllerKeys.NAMES[keyIndex]))
                 }
-            )
+            ).hint(bundle.get("editor.hint.controllerKey"))
         }
         row()
     }

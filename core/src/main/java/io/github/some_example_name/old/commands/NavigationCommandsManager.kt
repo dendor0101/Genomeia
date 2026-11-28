@@ -15,13 +15,14 @@ import io.github.some_example_name.old.journal.SessionJournal
 import io.github.some_example_name.old.features.devsupport.SupportScreen
 import io.github.some_example_name.old.features.ecosystem.EcoSystemScreen
 import io.github.some_example_name.old.features.editor.GenomeEditorScreen
+import io.github.some_example_name.old.features.genomes.GenomesScreen
+import io.github.some_example_name.old.features.guide.GuideScreen
 import io.github.some_example_name.old.features.levels.CampaignScreen
 import io.github.some_example_name.old.features.levels.editor.LevelEditorScreen
 import io.github.some_example_name.old.features.menu.MenuScreen
 import io.github.some_example_name.old.features.settings.SettingsScreen
 import io.github.some_example_name.old.features.simulation.SimulationScreen
 import io.github.some_example_name.old.features.worldeditor.WorldEditorScreen
-import io.github.some_example_name.old.features.worldeditor.LogicUI
 
 class NavigationCommandsManager {
 
@@ -49,11 +50,24 @@ class NavigationCommandsManager {
     fun currentPath(): List<String> =
         commandStack.map { it.logName } + listOfNotNull(currentCommand?.logName)
 
+    /**
+     * Команда экрана под текущим — туда вернёт [GoBack]. null — под текущим ничего нет.
+     * Так редактор генома узнаёт, что открыт из мира и после сохранения вернётся в него.
+     */
+    fun previousCommand(): NavigationCommands? = commandStack.lastOrNull()
+
     fun performCommand(command: NavigationCommands) =
         // В ActionLog переход пишет onCommand — уже с тем, куда в итоге попали.
         SessionJournal.execute(CommandSource.NAVIGATION, command, logAction = false) { perform(it) }
 
     private fun perform(navigationCommands: NavigationCommands) {
+        val target = when (navigationCommands) {
+            is Menu -> navigationCommands
+            is GoReplace -> navigationCommands.target
+            else -> null
+        }
+        val factory = target?.let { screenFactory(it) }
+        if (target != null && factory == null) return
         val destination = when (navigationCommands) {
             is Menu -> {
                 val old = game.screen
@@ -65,7 +79,7 @@ class NavigationCommandsManager {
                 }
 
                 currentCommand = navigationCommands
-                game.screen = createScreen(navigationCommands)
+                game.screen = factory!!.invoke()
                 navigationCommands.name
             }
 
@@ -73,7 +87,7 @@ class NavigationCommandsManager {
                 val old = game.screen
                 clearStack()
                 currentCommand = navigationCommands.target
-                game.screen = createScreen(navigationCommands.target)
+                game.screen = factory!!.invoke()
                 old?.dispose()
                 navigationCommands.target.name
             }
@@ -92,7 +106,7 @@ class NavigationCommandsManager {
                     val old = game.screen
                     clearStack()
                     currentCommand = GoMenu
-                    game.screen = createScreen(GoMenu)
+                    game.screen = MenuScreen()
                     old?.dispose()
                     GoMenu.name
                 } else {
@@ -111,23 +125,30 @@ class NavigationCommandsManager {
         onCommand?.invoke(navigationCommands, destination)
     }
 
-    private fun createScreen(command: Menu): Screen = when (command) {
-        GoMenu -> MenuScreen()
-        GoEcoSystem -> EcoSystemScreen()
-        is GoGenomeEditor -> GenomeEditorScreen(command.genomeName, command.level)
-        GoSettings -> SettingsScreen()
-        is GoWorldEditor -> WorldEditorScreen(seed = command.seed, levelEditor = command.levelEditor)
-        GoSupport -> SupportScreen()
-        EcoSystemScreenCellsSettings -> TODO()
-        EcoSystemScreenGlobalSettings -> TODO()
-        GoLogic -> CampaignScreen()//LogicUI()
-        GoLevelEditor -> LevelEditorScreen()
-        is GoSimulation -> {
+    private fun screenFactory(command: Menu): (() -> Screen)? = when (command) {
+        GoMenu -> ::MenuScreen
+        GoEcoSystem -> ::EcoSystemScreen
+        is GoGenomeEditor -> ({ GenomeEditorScreen(command.genomeName) })
+        GoGenomes -> ::GenomesScreen
+        GoGuide -> ::GuideScreen
+        GoTutorial -> ({ GenomeEditorScreen(genomeName = null, isTutorial = true) })
+        GoSettings -> ::SettingsScreen
+        is GoWorldEditor -> ({ WorldEditorScreen(command.seed, levelMap = command.levelMap) })
+        GoSupport -> ::SupportScreen
+        EcoSystemScreenCellsSettings, EcoSystemScreenGlobalSettings -> null
+        GoCampaign -> ::CampaignScreen
+        GoLevelEditor -> ({
+            // Редактор уровней открывается из кампании, где мог только что идти уровень:
+            // ни его настройки, ни урезанная палитра клеток не переезжают в редактор.
+            DISimulationContainer.simulationData.resetLevel()
+            DIGenomeEditorContainer.cellPalette = CellPalette.FULL
+            LevelEditorScreen()
+        })
+        is GoSimulation -> ({
             applyLevel(command.level)
-            // Карта уровня — внутри LevelInfo (в GoSimulation.world её не дублируем:
-            // уровень с сотнями мазков кистью иначе упирался бы в предел записи журнала).
+            // Карта уровня — внутри LevelInfo, в GoSimulation.world её не дублируем.
             SimulationScreen(command.level?.world ?: command.world, command.genomeName, command.savedWorld)
-        }
+        })
     }
 
     /**
@@ -174,7 +195,9 @@ class NavigationCommandsManager {
             return
         }
         clearStack()
-        game.screen?.dispose()
+        // Текущий экран здесь НЕ освобождается: Gdx.app.exit() на всех платформах доходит
+        // до MyGame.dispose(), а тот освобождает экран сам. Раньше он освобождался дважды,
+        // и кнопка «Выход» в меню падала на втором Stage.dispose (буфер батча уже отдан).
         Gdx.app.exit()
     }
 

@@ -30,6 +30,19 @@ inline fun GridManager.forEachParticle(
     }
 }
 
+/** Как [forEachParticle], но и неподвижный слой сетки (террейн, стенка у рамки). */
+inline fun GridManager.forEachParticleOrStatic(
+    gridX: Int,
+    gridY: Int,
+    radius: Int,
+    action: (Int) -> Unit
+) {
+    for (dy in -radius..radius) {
+        forEachParticleInRowSegment(gridY + dy, gridX - radius, gridX + radius, action)
+        forEachStaticInRowSegment(gridY + dy, gridX - radius, gridX + radius, action)
+    }
+}
+
 /**
  * Частица под курсором: из тех, в чей радиус попадает точка (x, y), — ближайшая по
  * центру. Если таких нет — -1.
@@ -53,18 +66,20 @@ fun GridManager.pickParticle(
     x: Float,
     y: Float,
     particleEntity: ParticleEntity,
-    cellEntity: CellEntity
+    cellEntity: CellEntity,
+    includeCells: Boolean = true
 ): Int {
     var best = -1
     var bestDistSq = Float.MAX_VALUE
 
-    val px = particleEntity.x
-    val py = particleEntity.y
     val radius = particleEntity.radius
 
-    forEachParticle(x.toInt(), y.toInt(), radius = 1) { p ->
-        val dx = px[p] - x
-        val dy = py[p] - y
+    // Оба слоя: террейн лежит в неподвижном (GridManager.buildStatic), а касание по нему
+    // обязано его найти — иначе организм сел бы в толщу (UserCommandManager.canSpawnAt).
+    forEachParticleOrStatic(x.toInt(), y.toInt(), radius = 1) { p ->
+        if (!includeCells && particleEntity.isCell[p]) return@forEachParticleOrStatic
+        val dx = particleEntity.x(p) - x
+        val dy = particleEntity.y(p) - y
         val distSq = dx * dx + dy * dy
         val r = radius[p]
         if (distSq < r * r && distSq < bestDistSq) {
@@ -73,14 +88,15 @@ fun GridManager.pickParticle(
         }
     }
 
+    if (!includeCells) return best
     val inGrid = particleEntity.isInGrid
     val particleIndexes = cellEntity.particleIndexes
     val cells = cellEntity.aliveList
     for (i in 0 until cells.size) {
         val p = particleIndexes[cells.getInt(i)]
         if (p == -1 || inGrid[p]) continue
-        val dx = px[p] - x
-        val dy = py[p] - y
+        val dx = particleEntity.x(p) - x
+        val dy = particleEntity.y(p) - y
         val distSq = dx * dx + dy * dy
         val r = radius[p]
         if (distSq < r * r && distSq < bestDistSq) {

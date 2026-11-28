@@ -15,7 +15,7 @@ import java.nio.ByteOrder
  *   [12..15] int   color  — RGBA8
  *
  * Все четыре поля читаются в шейдере как uint и возвращаются в float через
- * uintBitsToFloat (shaders/pheromone/pheromone_pc.vert). Целочисленная текстура здесь
+ * uintBitsToFloat (shaders/debug_view/pheromone.vert). Целочисленная текстура здесь
  * не прихоть: во float-текстуре драйвер вправе канонизировать NaN, а это испортило бы
  * биты цвета, который лежит рядом с координатами.
  */
@@ -82,7 +82,7 @@ class PheromoneInstanceBuffer(initialCapacity: Int = INITIAL_CAPACITY) {
             .order(ByteOrder.nativeOrder())
 
     companion object {
-        /** 16 байт = 1 тексель RGBA32UI. Менять только вместе с pheromone_pc.vert. */
+        /** 16 байт = 1 тексель RGBA32UI. Менять только вместе с debug_view/pheromone.vert. */
         const val STRUCT_SIZE = 16
 
         const val INITIAL_CAPACITY = 1_000

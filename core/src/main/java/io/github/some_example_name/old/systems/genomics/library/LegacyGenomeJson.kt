@@ -3,6 +3,7 @@ package io.github.some_example_name.old.systems.genomics.library
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.utils.JsonReader
 import com.badlogic.gdx.utils.JsonValue
+import io.github.some_example_name.old.cells.Zygote
 import io.github.some_example_name.old.systems.genomics.genome.Action
 import io.github.some_example_name.old.systems.genomics.genome.CellAction
 import io.github.some_example_name.old.systems.genomics.genome.Genome
@@ -35,6 +36,19 @@ import io.github.some_example_name.old.systems.genomics.genome.LinkData
  *  - связь нейронная, если у неё есть directedNeuronLink (isNeuronal писался не всегда и не читался);
  *  - порядок клеток в стадии и связей в клетке — порядок в файле: от него зависит, в каком
  *    порядке клетки делятся в тике, а значит и индексы.
+ *
+ * ОТЛИЧИЯ ОТ СТАРОГО ЧТЕНИЯ
+ * -------------------------
+ * Деление с номером корня (0) получает свободный номер — см. [renumberRootDivides].
+ *
+ * Кость → лист.
+ * Решение 20.11.2026: кость (старый номер 2) из JSON становится листом (Leaf) — и в делении,
+ * и в мутации. Цвет остаётся тем, что записан в действии: цвет клетки от её типа не зависит
+ * (деление без цвета красит в белый что кость, что лист — DivideManager; мутация без цвета
+ * цвет не трогает — MutateManager), поэтому меняется только тип.
+ * Только JSON: .genome формата 1 с тем же номером 2 читается как кость (LegacyTypeIds не
+ * трогается). Повторов это не касается: в .bug лежит уже переведённый .genome.
+ * Цена — один if на действие при импорте, в симуляции её нет.
  *
  * ЧЕГО НЕТ В ГЕНОМЕ
  * -----------------
@@ -82,8 +96,54 @@ object LegacyGenomeJson {
         return Genome(
             version = VERSION,
             name = root.opt("name")?.asString()?.takeIf { it.isNotBlank() } ?: fallbackName,
-            stageInstruction = stageInstruction
+            stageInstruction = renumberRootDivides(stageInstruction)
         )
+    }
+
+    /**
+     * Деление с номером корня (0) получает свободный номер: следующий после самого большого
+     * номера клетки в геноме. Остальное не трогается, ссылки на 0 по-прежнему значат корень.
+     *
+     * Номер 0 у делящейся клетки — это старое размножение: так делили зиготу на зиготу-
+     * потомка («gen4.json» среди 90 геномов игрока — единственный, в последней стадии).
+     * Старая игра в мире делала такую зиготу корнем нового организма, а в редакторе молча
+     * перетирала ею ключ корня. Сейчас ключ (организм, номер) обязан быть единственным
+     * (CellEntity.addCell), и рост такого генома падал «organToIdToIndex: genomeId=0 уже
+     * занят». Зигота от деления теперь пустышка и узнаётся как раз по номеру не 0
+     * (CellEntity.isDormantZygote) — свободный номер ставит её туда же, куда поставил бы
+     * нынешний редактор (maxCellId + 1).
+     */
+    private fun renumberRootDivides(stages: List<GenomeStage>): List<GenomeStage> {
+        if (stages.none { stage -> stage.cellActions.values.any { it.divide?.id == Zygote.ROOT_CELL_GENOME_ID } }) {
+            return stages
+        }
+        // Самый большой номер, который встречается где угодно: у делений, у клеток с
+        // действиями и в ссылках связей — чтобы новый номер не совпал ни с чем в файле.
+        var maxId = Zygote.ROOT_CELL_GENOME_ID
+        for (stage in stages) {
+            for ((id, action) in stage.cellActions) {
+                maxId = maxOf(maxId, id)
+                action.divide?.let { divide ->
+                    maxId = maxOf(maxId, divide.id)
+                    for (linked in divide.physicalLink.keys) maxId = maxOf(maxId, linked)
+                }
+                action.mutate?.let { mutate ->
+                    for (linked in mutate.physicalLink.keys) maxId = maxOf(maxId, linked)
+                }
+            }
+        }
+        // Порядок — как в файле: от него зависит порядок деления в тике (см. описание объекта).
+        return stages.map { stage ->
+            if (stage.cellActions.values.none { it.divide?.id == Zygote.ROOT_CELL_GENOME_ID }) return@map stage
+            val renumbered = LinkedHashMap<Int, CellAction>(stage.cellActions.size * 2)
+            for ((id, action) in stage.cellActions) {
+                val divide = action.divide
+                renumbered[id] = if (divide?.id == Zygote.ROOT_CELL_GENOME_ID) {
+                    action.copy(divide = divide.copy(id = ++maxId))
+                } else action
+            }
+            stage.copy(cellActions = renumbered)
+        }
     }
 
     /**
@@ -120,7 +180,7 @@ object LegacyGenomeJson {
         return Action(
             id = action.opt("id")?.let(::readId) ?: -1,
             angle = action.float("angle"),
-            cellType = action.int("cellType")?.let(LegacyTypeIds::cellType),
+            cellType = action.int("cellType")?.let(::cellType),
             physicalLink = readLinks(action.opt("physicalLink")),
             // Объект color у старого чтения шёл первым, colorHsv — запасным.
             color = readColor(action.opt("color")) ?: readColor(action.opt("colorHsv")),
@@ -136,6 +196,15 @@ object LegacyGenomeJson {
             pheromoneType = action.int("pheromoneType")
         )
     }
+
+    /** Ключ типа по старому номеру, с заменой кости на лист (см. описание объекта). */
+    private fun cellType(number: Int): String {
+        val key = LegacyTypeIds.cellType(number)
+        return if (key == BONE) BONE_REPLACEMENT else key
+    }
+
+    private const val BONE = "bone"
+    private const val BONE_REPLACEMENT = "leaf"
 
     private fun readLinks(map: JsonValue?): Map<Int, LinkData?> {
         val result = LinkedHashMap<Int, LinkData?>()

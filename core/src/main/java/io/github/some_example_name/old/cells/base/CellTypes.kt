@@ -20,33 +20,36 @@ import io.github.some_example_name.old.cells.*
 object CellTypes {
 
     private val builtIn: List<(cellTypeId: Int) -> Cell> = listOf(
-        ::Leaf,
-        ::Fat,
-        ::Bone,
-        ::Tail,
-        ::Neuron,
-        ::Muscle,
-        ::FoodSensor,
-        ::Sucker,
-        ::Stem,
-        ::Excreta,
-        ::SuctionCup,
-        ::Sticky,
-        ::Pumper,
-        ::Chameleon,
-        ::Eye,
-        ::Compass,
-        ::Synapse,
-        ::TouchTrigger,
-        ::Zygote,
-        ::Producer,
+        ::Leaf, //Клетка, которая получает энергию из солнца
+        ::Fat, //Накапливает много энергии
+        ::Bone, //Твердая клетка, для создания скелета
+        ::Tail, //Клетка, которая может плыть
+        ::Controller, //Клетка через которую можно управлять организмом
+        ::Muscle, // Сокращается и сжимается
+        ::Sucker, // Поглощает еду
+        ::Excreta, // Создает еду
+        ::Punisher, // Убийца других клеток, кроме кости (нужно сделать что бы он впрыскивал типа яд или вещество которое не сразу убивает клетку)
+        ::Pumper, // Выкачивает энергию до которой прикоснулся
+        ::Zygote, // первая клетка организма
+        ::Producer, // Создает зиготу из которой появляется новый организм
+        ::Neuron, // Суммирует входные сигналы и преобразовывает их через формулу и выдает сигнал дальше
+        ::SuctionCup, // Прилипает к субстрату
+        ::Sticky, // Примагничивается к другим клеткам
+        ::Chameleon, // Красится по сигналу 0..1 от чёрного до выбранных каналов R/G/B
+        ::Eye, // Видит то что первое пересекло луч
+        ::TouchTrigger, // Измеряет силу прикосновения
+        ::Synapse, // Клетка для обучения нейронной сети через ассоциацию
+        ::PheromoneEmitter, //Источает феромон
+        ::PheromoneSensor, //Чувствует феромон
+        ::Delay, // Задерживает сигнал на заданное число тиков (кольцевой буфер)
+        ::MotorNeuron, // Отдаёт свой сигнал всем мышцам своего кластера без нейросвязей
+        //Уже не используемые клетки, но их необходимо оставить для обратной совместимости со старыми геномами
         ::Breakaway,
         ::Fin,
-        ::PheromoneEmitter,
-        ::PheromoneSensor,
-        ::Punisher,
         ::SpeedSensor,
-        ::Controller,
+        ::FoodSensor,
+        ::Stem,
+        ::Compass,
     )
 
     private val modded = mutableListOf<(cellTypeId: Int) -> Cell>()
@@ -120,7 +123,7 @@ class CellTypeList(private val cells: List<Cell>) : List<Cell> by cells {
 
     /**
      * Слой пустой текстуры (not_cell.png) в массиве текстур клеток: он идёт сразу после
-     * текстур всех типов (DIGameGlobalContainer.particleTexturePaths). Им рисуется то, что
+     * типов клетки. Им рисуется то, что
      * не клетка какого-то типа, — например, призрак будущей клетки в редакторе. Номер
      * зависит от числа типов, поэтому константой его не записать.
      */
