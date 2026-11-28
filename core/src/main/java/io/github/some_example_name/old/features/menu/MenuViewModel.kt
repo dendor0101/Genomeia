@@ -6,11 +6,14 @@ import com.badlogic.gdx.files.FileHandle
 import com.badlogic.gdx.graphics.Camera
 import com.badlogic.gdx.math.MathUtils
 import io.github.some_example_name.old.bug.BugReplay
+import io.github.some_example_name.old.cells.base.CellPalette
 import io.github.some_example_name.old.commands.GameCommand
 import io.github.some_example_name.old.commands.GoExit
 import io.github.some_example_name.old.commands.GoGenomeEditor
+import io.github.some_example_name.old.commands.GoCampaign
 import io.github.some_example_name.old.commands.GoGenomes
 import io.github.some_example_name.old.commands.GoGuide
+import io.github.some_example_name.old.editor.di.DIGenomeEditorContainer
 import io.github.some_example_name.old.commands.GoSettings
 import io.github.some_example_name.old.commands.GoSimulation
 import io.github.some_example_name.old.commands.GoSupport
@@ -18,6 +21,7 @@ import io.github.some_example_name.old.commands.GoWorldEditor
 import io.github.some_example_name.old.commands.PlayerCommand
 import io.github.some_example_name.old.commands.UserCommandManager
 import io.github.some_example_name.old.core.DIGameGlobalContainer
+import io.github.some_example_name.old.core.DISimulationContainer
 import io.github.some_example_name.old.core.DISingleThreadSimulationContainer
 import io.github.some_example_name.old.core.GameFilePaths
 import io.github.some_example_name.old.features.worldeditor.WorldEditorIntent
@@ -119,6 +123,12 @@ sealed interface MenuIntent : GameCommand {
         override val name get() = "OpenSettings"
     }
 
+    /** Кампания: встроенные уровни и уровни игрока. */
+    @Serializable
+    data object OpenCampaign : MenuIntent {
+        override val name get() = "OpenCampaign"
+    }
+
     @Serializable
     data object OpenSupport : MenuIntent {
         override val name get() = "OpenSupport"
@@ -171,11 +181,15 @@ class MenuViewModel(
 
     private fun apply(intent: MenuIntent) {
         when (intent) {
-            is MenuIntent.OpenWorldEditor -> navigation.performCommand(GoWorldEditor(intent.seed))
+            is MenuIntent.OpenWorldEditor -> {
+                resetLevelState()
+                navigation.performCommand(GoWorldEditor(intent.seed))
+            }
 
-            is MenuIntent.OpenSavedWorld -> navigation.performCommand(
-                GoSimulation(world = null, genomeName = null, savedWorld = intent.slot)
-            )
+            is MenuIntent.OpenSavedWorld -> {
+                resetLevelState()
+                navigation.performCommand(GoSimulation(world = null, genomeName = null, savedWorld = intent.slot))
+            }
 
             is MenuIntent.DeleteWorld -> {
                 // При повторе мира может не быть в песочнице: в .bug снимаются только
@@ -183,9 +197,15 @@ class MenuViewModel(
                 if (!MapSave.delete(intent.slot)) Gdx.app.log(TAG_MAPS, "мира ${intent.slot} нет — удалять нечего")
             }
 
-            is MenuIntent.OpenGenomeEditor -> navigation.performCommand(GoGenomeEditor(intent.genomeName))
+            is MenuIntent.OpenGenomeEditor -> {
+                resetLevelState()
+                navigation.performCommand(GoGenomeEditor(intent.genomeName))
+            }
 
-            is MenuIntent.OpenGenomes -> navigation.performCommand(GoGenomes)
+            is MenuIntent.OpenGenomes -> {
+                resetLevelState()
+                navigation.performCommand(GoGenomes)
+            }
 
             // Только из старых .bug, где окно выбора и при записи отработало без журнала.
             is MenuIntent.ImportGenome -> Unit
@@ -199,6 +219,7 @@ class MenuViewModel(
                 if (BugReplay.isActive) SessionAttachments.restoreMap(intent.attachment, intent.slot)
                 // Снимок уже есть в attachment: не дублируем весь мир второй раз в .bug.
                 SessionAttachments.markMapWritten(intent.slot)
+                resetLevelState()
                 navigation.performCommand(GoSimulation(world = null, genomeName = null, savedWorld = intent.slot))
             }
 
@@ -209,7 +230,24 @@ class MenuViewModel(
             is MenuIntent.OpenSupport -> navigation.performCommand(GoSupport)
 
             is MenuIntent.Exit -> navigation.performCommand(GoExit)
+
+            is MenuIntent.OpenCampaign -> navigation.performCommand(GoCampaign)
         }
+    }
+
+    /**
+     * Обычная игра после уровня: ни настройки уровня, ни урезанная палитра клеток не должны
+     * переезжать в следующую сессию. Палитра живёт в редакторе генома, поэтому сбрасывается
+     * здесь, рядом с [SimulationData.resetLevel], а не в самой SimulationData: симуляция
+     * про редактор знать не должна.
+     *
+     * Уровень задаёт палитру при запуске (кампания, «Протестировать»), а вернуть полную
+     * некому — без этого после первого кастомного уровня редактор генома навсегда остаётся
+     * с чужим списком клеток.
+     */
+    private fun resetLevelState() {
+        DISimulationContainer.simulationData.resetLevel()
+        DIGenomeEditorContainer.cellPalette = CellPalette.FULL
     }
 
     /**

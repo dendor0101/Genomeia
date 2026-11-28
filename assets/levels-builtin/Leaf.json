@@ -1,0 +1,50 @@
+{
+    "id": 2364454,
+    "order": 1,
+    "nameKey": "Leaf",
+    "hasLua": true,
+    "logic": "popup(bundle(\"guide.leaf1\"))\npopup(bundle(\"guide.leaf2\"))\n\nfunction cells()\npopup(bundle(\"guide.win\"))\nwin()\nend",
+    "allowedCells": {
+        "leaf": true,
+        "fat": false,
+        "bone": false,
+        "tail": false,
+        "neuron": false,
+        "muscle": false,
+        "food_sensor": false,
+        "sucker": false,
+        "stem": false,
+        "excreta": false,
+        "suction_cup": false,
+        "sticky": false,
+        "pumper": false,
+        "chameleon": false,
+        "eye": false,
+        "compass": false,
+        "synapse": false,
+        "touch_trigger": false,
+        "zygote": false,
+        "producer": false,
+        "breakaway": false,
+        "fin": false,
+        "pheromone_emitter": false,
+        "pheromone_sensor": false,
+        "punisher": false,
+        "speed_sensor": false,
+        "controller": false
+    },
+    "cellsNeed": 10,
+    "needDestination": false,
+    "destination": {
+        "first": -1.0,
+        "second": -1.0
+    },
+    "world": {
+        "gridWidth": 192,
+        "gridHeight": 192,
+        "seed": "-1",
+        "dayNight": 15,
+        "smoothing": 12,
+        "strokes": ""
+    }
+}

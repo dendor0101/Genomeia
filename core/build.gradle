@@ -15,11 +15,18 @@ dependencies {
 //  implementation "com.kotcrab.vis:vis-ui:1.5.3"
   implementation "com.badlogicgames.gdx:gdx-freetype:$gdxVersion"
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-protobuf:1.11.0")
+  // Уровни — текстовый JSON: файл игрок открывает и правит руками, а формат тот же,
+  // что у WorldSpec в командах (см. LevelFiles).
+  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
   implementation "org.jetbrains.kotlin:kotlin-reflect:$kotlinVersion"
   implementation "games.spooky.gdx:gdx-nativefilechooser:2.4.0"
   if(enableGraalNative == 'true') {
     implementation "io.github.berstanio:gdx-svmhelper-annotations:$graalHelperVersion"
   }
+  // Lua скриптов уровней: Cobalt (MIT, совместима с GPL-3; Lua 5.2), без своих зависимостей.
+  // TENUM (TSAL 1.0) отвергнут 28.11: лицензия запрещает раздавать его функциональность
+  // игрокам и несовместима с GPL-3.
+  implementation "cc.tweaked:cobalt:0.9.10"
 
   testImplementation "org.jetbrains.kotlin:kotlin-test:$kotlinVersion"
   testImplementation "org.jetbrains.kotlin:kotlin-test-junit:$kotlinVersion"

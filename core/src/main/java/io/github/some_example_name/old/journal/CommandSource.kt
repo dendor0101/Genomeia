@@ -21,7 +21,10 @@ enum class CommandSource(val code: Int, val label: String) {
     GENOMES(9, "Genomes"),
 
     /** Гайд игрока: обучение редактору генома, описание клеток, стенд формул. */
-    GUIDE(10, "Guide");
+    GUIDE(10, "Guide"),
+
+    /** Редактор уровней: свойства, скрипт, карта и организмы уровня (LevelEditorIntent). */
+    LEVEL_EDITOR(11, "LevelEditor");
 
     companion object {
         private val byCode = entries.associateBy { it.code }

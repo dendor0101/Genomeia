@@ -1,9 +1,12 @@
 package io.github.some_example_name.old.systems.simulation
 
+import com.badlogic.gdx.Gdx
+import io.github.some_example_name.old.cells.Zygote
 import io.github.some_example_name.old.commands.WorldCommandsManager
 import io.github.some_example_name.old.commands.UserCommandManager
 import io.github.some_example_name.old.commands.WorldCommandType
 import io.github.some_example_name.old.core.DEBUG_CHECKS
+import io.github.some_example_name.old.core.DIGameGlobalContainer
 import io.github.some_example_name.old.core.PlatformTuning
 import kotlin.math.PI
 import kotlin.math.cos
@@ -22,6 +25,8 @@ import io.github.some_example_name.old.systems.pheromone.PheromonesManager
 import io.github.some_example_name.old.systems.genomics.CellSystem
 import io.github.some_example_name.old.systems.genomics.OrganManager
 import io.github.some_example_name.old.systems.genomics.genome.GenomeManager
+import io.github.some_example_name.old.systems.genomics.library.GenomeCatalog
+import io.github.some_example_name.old.systems.physics.CollisionManager.Companion.PARTICLE_MAX_RADIUS
 import io.github.some_example_name.old.systems.physics.GridManager
 import io.github.some_example_name.old.systems.physics.LinkPhysicsSystem
 import io.github.some_example_name.old.systems.physics.ParticlePhysicsSystem
@@ -31,7 +36,6 @@ import io.github.some_example_name.old.systems.genomics.NeuralLinkManager
 import io.github.some_example_name.old.physics.bridge.WorldPhysics
 import io.github.some_example_name.old.systems.physics.CollisionManager.Companion.PARTICLE_MAX_RADIUS
 import io.github.some_example_name.old.systems.genomics.OrganismSpawner
-import io.github.some_example_name.old.cells.Zygote
 import io.github.some_example_name.old.bug.BugReplay
 import io.github.some_example_name.old.journal.CommandSource
 import io.github.some_example_name.old.journal.ControllerKeys
@@ -134,6 +138,23 @@ class SimulationSystem(
      */
     fun <T> betweenTicks(block: () -> T): T = tickLock.withLock(block)
 
+    /**
+     * Подождать, отпустив лок тика: окно уровня (Lua popup) держит поток симуляции, пока
+     * игрок его не закроет. Без этого поток рендера вставал бы на [betweenTicks] (пауза,
+     * касание мира) и окно закрыть было бы некому — игра висла. Lua зовётся в самом начале
+     * тика, до любых правок мира, поэтому всё, что сделают блоки betweenTicks за это время,
+     * видит тот же мир, что и между тиками.
+     */
+    fun <T> waitOutsideTick(block: () -> T): T {
+        val held = if (tickLock.isHeldByCurrentThread) tickLock.holdCount else 0
+        repeat(held) { tickLock.unlock() }
+        try {
+            return block()
+        } finally {
+            repeat(held) { tickLock.lock() }
+        }
+    }
+
     fun updateTick() {
         // Повтор бага держит мир на тике: сохранение мира ещё не случилось, или запись
         // кончилась. Ждём вне лока — иначе само сохранение не смогло бы его взять.
@@ -164,6 +185,13 @@ class SimulationSystem(
             restartSim()
             return
         }
+        // До Lua: уровень спрашивает world("cells") в начале тика, и по этому числу решает
+        // победу. Снимок раз в окно профайлера опаздывал на секунды, а между мирами в нём
+        // оставалось число клеток прошлого — второй запуск уровня видел cells=2 на тике 0,
+        // звал cells() → win() и выбрасывал игрока в редактор.
+        updateLiveCounts()
+
+        if (simulationData.isLevel && simulationData.level.hasLua) stepLevelScript()
 
         simulationData.tickCounter++
         simulationData.timeSimulation += DELTA_SIM_TICK_TIME
@@ -317,8 +345,8 @@ class SimulationSystem(
      * Считается раз в PROFILE_WINDOW_TICKS тиков, поэтому дороговизна не важна — но всё
      * равно это только вычитания и сумма по 16 спискам.
      *
-     * Количества живых сущностей берутся так же, как их считает оверлей: lastId минус
-     * размер стека переиспользуемых индексов.
+     * Количества живых сущностей — из [updateLiveCounts]: они обновляются каждый тик,
+     * потому что по ним уровень решает победу.
      */
     private fun fillWorldStats() {
         val stats = worldStats
@@ -326,17 +354,7 @@ class SimulationSystem(
         stats.tick = simulationData.tickCounter.toLong()
         stats.ups = simulationData.ups
 
-        // По aliveList, а не по lastId.
-        //
-        // Раньше считалось как lastId - deadStack.size + 1, и это работало, пока индексы
-        // выдавались подряд. С аренами lastId сдвигается за конец КАЖДОЙ брони сразу при
-        // рождении организма (Entity.reserveRange), задолго до того, как тело её заполнит,
-        // поэтому формула начала возвращать зарезервированную ёмкость вместо числа живых.
-        // На замере это выглядело как 11655 клеток и 31194 связи при реальных 8523 и 23553,
-        // то есть все производные метрики "на клетку" врали в полтора раза.
-        stats.cells = cellEntity.aliveList.size
-        stats.particles = particleEntity.aliveList.size
-        stats.links = linkEntity.aliveList.size
+        updateLiveCounts()
 
         stats.gridSize = gridManager.gridSize
         stats.occupiedCells = gridManager.occupiedCells
@@ -363,6 +381,31 @@ class SimulationSystem(
         // теперь одно и то же число. Поле оставлено, чтобы не ломать формат CSV.
         stats.linksProcessed = linkEntity.aliveList.size
     }
+
+    /**
+     * Живые количества — каждый тик, а не только на закрытии окна профайлера.
+     *
+     * Стоят три чтения size, на фоне тика это ничто, зато уровень видит актуальное число:
+     * раньше между мирами здесь оставался объём прошлого мира, и второй запуск уровня
+     * срабатывал на тике 0.
+     *
+     * По aliveList, а не по lastId.
+     *
+     * Раньше считалось как lastId - deadStack.size + 1, и это работало, пока индексы
+     * выдавались подряд. С аренами lastId сдвигается за конец КАЖДОЙ брони сразу при
+     * рождении организма (Entity.reserveRange), задолго до того, как тело её заполнит,
+     * поэтому формула начала возвращать зарезервированную ёмкость вместо числа живых.
+     * На замере это выглядело как 11655 клеток и 31194 связи при реальных 8523 и 23553,
+     * то есть все производные метрики "на клетку" врали в полтора раза.
+     */
+    private fun updateLiveCounts() {
+        worldStats.cells = cellEntity.aliveList.size
+        worldStats.particles = particleEntity.aliveList.size
+        worldStats.links = linkEntity.aliveList.size
+    }
+
+    /** Текущий поток — поток симуляции: только в нём исполняется Lua уровня. */
+    fun isSimulationThread(): Boolean = Thread.currentThread() === simulationThread
 
     fun processParticleCollision() {
         threadManager.runChunkStage(isOdd = true, stageId = Phase.COLLIDE) { start, end, threadId ->
@@ -400,6 +443,9 @@ class SimulationSystem(
     fun dispose() {
         gridManager.clearAll()
         entityList.forEach { it.clear() }
+        // Пустой мир не должен отдавать уровню объём прошлого: следующий уровень
+        // спрашивает world("cells") ещё до первого тика, в startSession.
+        updateLiveCounts()
         simulationData.clear()
         worldCommandsManager.dispose()
         worldPhysics.reset()
@@ -421,17 +467,97 @@ class SimulationSystem(
      * случайностей команд игрока. При повторе бага seed берётся из записи.
      */
     private fun startSession() {
+        // Правила уровня — с чистого листа: HUD предыдущего уровня не должен переехать
+        // в этот, даже если у этого уровня нет lua (тогда run() не зовётся).
+        DIGameGlobalContainer.luaEnv.env.rules.reset()
+        // Команды прошлого мира (в том числе SPAWN_ORGANISM уровня) не должны переехать
+        // в новый: буфер общий, а dispose() его не чистит.
+        worldCommandsManager.worldCommandLastBuffer.clear()
+        // Уровень по умолчанию тело не двигает; скрипт снимает запрет setMovable(true).
+        // Именно здесь, а не в applyLevel: рестарт пересобирает мир и снова зовёт скрипт,
+        // и разрешение от прошлого захода не должно переехать в новый.
+        simulationData.isMovable = !simulationData.isLevel
         val epoch = SessionJournal.beginSimEpoch()
         val seed = (if (BugReplay.isActive) BugReplay.sessionSeed(epoch) else null)
             // RandomXS128 сам перемешивает seed, так что близкие значения nanoTime не страшны.
             ?: System.nanoTime()
         resetSessionInput(seed)
+        // Тело скрипта здесь не запускается — см. stepLevelScript.
+        spawnScriptedOrganisms()
         SessionJournal.recordSim(CommandSource.SYSTEM, SessionStarted(seed), epoch, simulationData.tickCounter)
+    }
+
+    /**
+     * Скрипт уровня в тике. Тело скрипта (вступительные popup, цель, setMovable) идёт не в
+     * startSession, а в начале тика [LEVEL_SCRIPT_START_TICK]: к этому моменту тик 0 уже
+     * применил организмы уровня и отдал кадр рендеру, и игрок читает вступление, видя
+     * рельеф и организмы. Раньше popup в теле скрипта держал поток ещё до первого тика,
+     * и до закрытия всех окон экран был пустым.
+     *
+     * Детерминизм: тик старта — константа, тик 0 скрипта не трогает (генератор уровня с
+     * сидом сессии до старта скрипта никто не тратит), поэтому повтор .bug идёт тем же путём.
+     */
+    private fun stepLevelScript() {
+        val tick = simulationData.tickCounter
+        if (tick < LEVEL_SCRIPT_START_TICK) return
+        // Сид генератора уровня — уже из resetSessionInput этой сессии.
+        if (tick == LEVEL_SCRIPT_START_TICK) DIGameGlobalContainer.luaEnv.run()
+        DIGameGlobalContainer.luaEnv.tick()
+    }
+
+    /**
+     * Организмы, которые уровень ставит сам.
+     *
+     * Команды идут через worldCommandLastBuffer и применяются в конце первого тика, как
+     * и остальные SPAWN_ORGANISM. В LevelInfo лежат только имя генома, точка и угол —
+     * никакой случайности и никаких ссылок на живые объекты, поэтому повтор .bug ставит
+     * ровно тот же организм в ту же точку.
+     */
+    private fun spawnScriptedOrganisms() {
+        // level — lateinit: в обычном мире (не уровне) его никто не инициализирует,
+        // поэтому сначала проверяем флаг, а уже потом читаем поле.
+        if (!simulationData.isLevel) return
+        val level = simulationData.level
+        if (level.scriptedOrganisms.isEmpty()) return
+        val zygote = cellEntity.cellList.filterIsInstance<Zygote>().singleOrNull() ?: return
+        val catalog = GenomeCatalog.all()
+        for (organism in level.scriptedOrganisms) {
+            val catalogIndex = catalog.indexOf(organism.genomeName)
+            // Обычный путь — индекс из GenomeCatalog совпадает с GenomeManager. Если мир
+            // запущен с одним выбранным геномом (genomeName != null), список короче;
+            // тогда ищем тот же геном по имени, а не роняем уровень.
+            val genomeIndex = if (catalogIndex in genomeManager.genomes.indices) {
+                catalogIndex
+            } else {
+                val displayName = GenomeCatalog.displayName(organism.genomeName)
+                genomeManager.genomes.indexOfFirst { it.name == displayName }
+            }
+            if (genomeIndex < 0) {
+                Gdx.app?.error("Level", "не найден геном скриптового организма '${organism.genomeName}'")
+                continue
+            }
+            val radians = StrictMath.toRadians(organism.angleDegrees.toDouble())
+            worldCommandsManager.worldCommandLastBuffer.push(
+                type = WorldCommandType.SPAWN_ORGANISM,
+                ints = intArrayOf(genomeIndex, zygote.defaultColor.toIntBits(), 1),
+                floats = floatArrayOf(
+                    organism.x,
+                    organism.y,
+                    PARTICLE_MAX_RADIUS,
+                    StrictMath.cos(radians).toFloat(),
+                    StrictMath.sin(radians).toFloat(),
+                    1f,
+                    0f
+                )
+            )
+        }
     }
 
     private fun resetSessionInput(seed: Long) {
         userCommandManager.startSession(seed)
         debugRandom.setSeed(seed xor DEBUG_RANDOM_SALT)
+        // Скрипт уровня берёт random() отсюда: повтор .bug подставит тот же сид.
+        DIGameGlobalContainer.luaEnv.env.rules.seed(seed)
         simulationData.controllerKeys.fill(false)
         simulationData.stressKillEvery = 0
         simulationData.stressFlingEvery = 0
@@ -473,6 +599,15 @@ class SimulationSystem(
                 x = Fnv.word(x, simulationData.stressSpawnEvery)
                 x = Fnv.word(x, if (simulationData.debugNoTailThrust) 1 else 0)
                 x = Fnv.word(x, if (simulationData.debugNoDeepKill) 1 else 0)
+                // Уровень (PR 38): по этим организмам считается финиш. Только в уровне — в
+                // обычном мире они ни на что не влияют, и его хэш остаётся побитово прежним:
+                // .bug обычных миров со сборок до PR сверяются как раньше.
+                if (simulationData.isLevel) {
+                    x = Fnv.word(x, simulationData.lastPlacedOrganIndex)
+                    val scripted = simulationData.scriptedOrganIndices
+                    x = Fnv.word(x, scripted.size)
+                    for (i in 0 until scripted.size) x = Fnv.word(x, scripted.getInt(i))
+                }
                 worldRules.hash(x)
             },
             input = userCommandManager::hashInput,
@@ -551,6 +686,9 @@ class SimulationSystem(
     companion object {
         const val DELTA_SIM_TICK_TIME = 0.016666666f
 
+        /** Тик, в начале которого запускается тело скрипта уровня (см. stepLevelScript). */
+        const val LEVEL_SCRIPT_START_TICK = 1
+
         /** Чтобы сид стресс-теста не совпадал с сидом команд игрока. */
         private const val DEBUG_RANDOM_SALT = 0x5DEECE66DL
 
@@ -569,4 +707,10 @@ class SimulationSystem(
         private const val FLING_SPEED = DISimulationContainer.HALF_CHUNK_HEIGHT / 7.5f
 
     }
+
+    /**
+     * Счётчики мира. Живые количества (cells/particles/links) свежие на каждом тике
+     * (updateLiveCounts) — по ним уровень решает победу; остальное — за окно профайлера.
+     */
+    fun getStats(): WorldStats = worldStats
 }

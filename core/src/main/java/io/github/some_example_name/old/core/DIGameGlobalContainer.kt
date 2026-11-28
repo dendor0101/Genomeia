@@ -19,6 +19,7 @@ import io.github.some_example_name.old.systems.genomics.Morphogenesis
 import io.github.some_example_name.old.systems.genomics.genome_deprecated.GenomeJsonReader
 import io.github.some_example_name.render.WorldRenderer
 import io.github.some_example_name.old.game.MyGame
+import io.github.some_example_name.old.systems.logic.EnvRun
 import java.util.Locale
 
 object DIGameGlobalContainer {
@@ -80,6 +81,11 @@ object DIGameGlobalContainer {
     var roundStyle: VisTextButton.VisTextButtonStyle
     var roundStyleToggle: VisTextButton.VisTextButtonStyle
 
+    /**
+     * Lua уровней. Один объект на игру, но машина Lua внутри — своя на каждый запуск уровня
+     * (EnvRun.run): глобалы прошлого уровня не доживают до следующего.
+     */
+    val luaEnv = EnvRun()
 
     init {
         if (gridHeight % heightMultiplier != 0) throw Exception("gridHeight should be a multiple of (halfChunkHeight * 2 * 2)")

@@ -2,6 +2,7 @@ package io.github.some_example_name.lwjgl3.verification
 
 import com.badlogic.gdx.ApplicationListener
 import com.badlogic.gdx.Gdx
+import io.github.some_example_name.old.systems.simulation.SimulationSystem
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration
 import com.badlogic.gdx.graphics.Color
@@ -28,10 +29,12 @@ import io.github.some_example_name.old.editor.system.logic.GoToEndOfTimeLine
 import io.github.some_example_name.old.editor.system.logic.NextTickButtonTap
 import io.github.some_example_name.old.editor.system.logic.SetNeuralLinkColor
 import io.github.some_example_name.old.editor.system.logic.SetSymmetry
+import io.github.some_example_name.old.entities.SubstancesEntity
 import io.github.some_example_name.old.features.genomes.GenomesIntent
 import io.github.some_example_name.old.features.genomes.GenomesScreen
 import io.github.some_example_name.old.features.genomes.GenomesTab
 import io.github.some_example_name.old.features.menu.MenuIntent
+import io.github.some_example_name.old.features.levels.editor.LevelInfo
 import io.github.some_example_name.old.features.simulation.SimulationIntent
 import io.github.some_example_name.old.features.worldeditor.WorldEdit
 import io.github.some_example_name.old.features.worldeditor.WorldEditorIntent
@@ -66,6 +69,7 @@ import kotlin.system.exitProcess
  *           контрольные суммы журнала сошлись, хэши состояния мира совпали.
  *
  * Запуск: gradlew :lwjgl3:bugReplayCheck (record выполняется сам, перед ним).
+ * Мир стартует уровнем с lua — gradlew :lwjgl3:bugReplayCheck -Plevel.
  * Ненулевой код — регрессия: повтор разошёлся с записью.
  */
 fun main(args: Array<String>) {
@@ -326,7 +330,30 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 ) + SPAWN_CLEARINGS.map { (gx, gy) -> WorldEdit.Stroke(gx, gy, SPAWN_CLEAR_BRUSH, erase = true, circle = true) })
                 // Касания шага 5 — только в начавшейся сессии мира (untilNewSession).
                 untilNewSession()
-                navigation.performCommand(GoSimulation(world, null))
+                if (WITH_LEVEL) {
+                    // Уровень едет в GoSimulation.level: lua, палитра и цель — в команде.
+                    // Скрипт сеет еду, а еда входит в хэш мира, поэтому если повтор не
+                    // восстановит уровень, сверка разойдётся не «когда-нибудь», а сразу.
+                    navigation.performCommand(
+                        GoSimulation(
+                            world = null,
+                            genomeName = null,
+                            level = LevelInfo(
+                                id = 1,
+                                nameKey = "bugReplayCheck-level",
+                                hasLua = true,
+                                logic = LEVEL_SCRIPT,
+                                allowedCells = emptyMap(),
+                                cellsNeed = 0,
+                                needDestination = false,
+                                destination = -1f to -1f,
+                                world = world
+                            )
+                        )
+                    )
+                } else {
+                    navigation.performCommand(GoSimulation(world, null))
+                }
                 pause(5)
             }
 
@@ -375,6 +402,18 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
                 untilTick(data.tickCounter + GROW_TICKS)
             }
             6 -> {
+                if (WITH_LEVEL) {
+                    // Уровень не только записан в журнале, но и реально работает: tick() скрипта
+                    // считает тики в progress. Сколько еды дожило — зависит от рельефа и
+                    // физики (частица в стене гибнет), поэтому мерило запуска — счётчик.
+                    val ticks = DIGameGlobalContainer.luaEnv.env.rules.hud.progress
+                    // Скрипт стартует с тика LEVEL_SCRIPT_START_TICK: тик 0 только строит мир.
+                    val expected = GROW_TICKS - SimulationSystem.LEVEL_SCRIPT_START_TICK
+                    check(ticks >= expected) { "уровень не запустился: tick() скрипта прошёл $ticks раз из $expected" }
+                    val food = DISimulationContainer.entityList
+                        .filterIsInstance<SubstancesEntity>().sumOf { it.aliveList.size }
+                    println("Уровень: тиков скрипта $ticks, еды в мире $food")
+                }
                 // Выбор на паузе записывается сразу, команда мира — в первом тике после паузы.
                 screen(SimulationIntent.SetPaused(true))
                 val c = DISimulationContainer
@@ -628,6 +667,32 @@ private class Recorder(private val game: MyGame, private val pathFile: File) : A
 
         /** Сколько тиков мир растёт после посадки: -PgrowTicks=3000 — длинный прогон. */
         val GROW_TICKS = System.getProperty("bugReplayCheck.growTicks")?.toIntOrNull() ?: 300
+
+        /**
+         * Мир стартует уровнем (-Plevel): проверяет, что уровень едет в журнале
+         * (GoSimulation.level) и повтор поднимает его вместе с lua.
+         *
+         * Скрипт кладёт еду раз в 20 тиков. Еда — часть мира и входит в хэш состояния,
+         * поэтому потерянный уровень ловится сверкой хэшей, а не глазами: без него еды
+         * не будет вовсе.
+         */
+        val WITH_LEVEL = System.getProperty("bugReplayCheck.level") != null
+
+        /**
+         * Еда — в стёртый кистью круг карты (мазок 90,90 → клетка мира 60,60) и по случайной
+         * точке из random() уровня: и сид сессии, и команды скрипта входят в хэш мира.
+         */
+        val LEVEL_SCRIPT = """
+            local t = 0
+            function tick()
+                t = t + 1
+                progress(t, 0)
+                if t % 20 == 0 then
+                    spawnFood(60, 60, 0.3)
+                    spawnFood(20 + random(200), 20 + math.random(200), 0.3)
+                end
+            end
+        """.trimIndent()
 
         /**
          * Сажать во все точки один геном: -PspawnGenome=bundled/Megalodon. Для замеров на

@@ -8,8 +8,10 @@ import io.github.some_example_name.old.commands.GoBack
 import io.github.some_example_name.old.commands.GoEcoSystem
 import io.github.some_example_name.old.commands.GoExit
 import io.github.some_example_name.old.commands.GoGenomeEditor
+import io.github.some_example_name.old.commands.GoCampaign
 import io.github.some_example_name.old.commands.GoGenomes
 import io.github.some_example_name.old.commands.GoGuide
+import io.github.some_example_name.old.commands.GoLevelEditor
 import io.github.some_example_name.old.commands.GoTutorial
 import io.github.some_example_name.old.commands.GoMenu
 import io.github.some_example_name.old.commands.GoReplace
@@ -46,6 +48,7 @@ import io.github.some_example_name.old.editor.system.logic.TutorialNextStep
 import io.github.some_example_name.old.features.guide.GuideIntent
 import io.github.some_example_name.old.features.devsupport.SupportIntent
 import io.github.some_example_name.old.features.genomes.GenomesIntent
+import io.github.some_example_name.old.features.levels.editor.LevelEditorIntent
 import io.github.some_example_name.old.features.menu.MenuIntent
 import io.github.some_example_name.old.features.settings.SettingsIntent
 import io.github.some_example_name.old.features.simulation.SimulationIntent
@@ -100,6 +103,8 @@ object CommandRegistry {
         t<GoGenomes>(112),
         t<GoGuide>(113),
         t<GoTutorial>(114),
+        t<GoCampaign>(115),
+        t<GoLevelEditor>(116),
 
         // --- Главное меню ---
         t<MenuIntent.OpenWorldEditor>(200),
@@ -114,6 +119,9 @@ object CommandRegistry {
         t<MenuIntent.OpenGenomes>(209),
         t<MenuIntent.DeleteWorld>(210),
         t<MenuIntent.OpenGuide>(211),
+        t<MenuIntent.OpenCampaign>(212),
+        // 213 занят: MenuIntent.OpenLevelEditor из PR 38, убран до выхода (редактор уровней
+        // открывается со страницы кампании командой GoLevelEditor). Номер не переиспользовать.
 
         // --- Настройки ---
         t<SettingsIntent.SelectTab>(300),
@@ -252,6 +260,19 @@ object CommandRegistry {
         t<GuideIntent.CloseCellLab>(1108),
         t<CellLabInput>(1109),
         t<GuideIntent.SetPulse>(1110),
+
+        // --- Редактор уровней ---
+        t<LevelEditorIntent.SetField>(1200),
+        t<LevelEditorIntent.SetScript>(1201),
+        t<LevelEditorIntent.SetCellAllowed>(1202),
+        t<LevelEditorIntent.PutOrganism>(1203),
+        t<LevelEditorIntent.RemoveOrganism>(1204),
+        t<LevelEditorIntent.SetMap>(1205),
+        t<LevelEditorIntent.LoadLevel>(1206),
+        t<LevelEditorIntent.SaveLevel>(1207),
+        t<LevelEditorIntent.TestLevel>(1208),
+        t<LevelEditorIntent.OpenMapEditor>(1209),
+        t<LevelEditorIntent.Exit>(1210),
     )
 
     private val byClass: Map<KClass<*>, Type<*>> = types.associateBy { it.kClass }

@@ -139,6 +139,28 @@ class WorldEditorViewModel(
         const val SMOOTHING_MAX = 50f
         const val BRUSH_SIZE_MIN = 0f
         const val BRUSH_SIZE_MAX = 20f
+
+        /**
+         * Редактор из рецепта сохранённого уровня (LevelInfo.world).
+         *
+         * Размер карты в рецепте — производная от размера мира (см. WorldSpec), поэтому
+         * worldWidth восстанавливается делением, а не хранится вторым полем: иначе два
+         * размера могли бы разойтись. Правки повторяются тем же applyEdit, которым их
+         * наносила кисть: toSpec() отдаст рецепт той же карты, без пустых мазков.
+         */
+        fun fromSpec(spec: WorldSpec, worldGenerator: WorldGenerator = WorldGenerator()): WorldEditorViewModel {
+            // Параметры генератора живут в companion и читаются при генерации — их надо
+            // выставить до первого generate(), иначе редактор откроется с чужим рельефом.
+            WorldGenerator.GENERATOR_DAY_NIGHT = spec.dayNight
+            WorldGenerator.GENERATOR_INTERPOLATE = spec.smoothing
+
+            val world = WorldEditorViewModel(spec.seed, worldGenerator)
+            world.worldWidth = world.clampWorldSize(spec.gridWidth * WorldSpec.MAP_SCALE_DEN / WorldSpec.MAP_SCALE_NUM)
+            world.worldHeight = world.clampWorldSize(spec.gridHeight * WorldSpec.MAP_SCALE_DEN / WorldSpec.MAP_SCALE_NUM)
+            world.regenerate()
+            spec.edits.forEach { world.applyEdit(it) }
+            return world
+        }
     }
 
     var seed: String = initialSeed
@@ -269,11 +291,20 @@ class WorldEditorViewModel(
         edits = edits.toList()
     )
 
+    /**
+     * В рецепт идут только правки, которые меняют карту. Мазок, не тронувший ни одной ячейки,
+     * при воспроизведении тоже ничего не тронет: все промежуточные карты, а значит и итог,
+     * побитово те же. Clear стирает всё до себя, и правки перед ним больше ни на что не влияют.
+     *
+     * Зачем: кисть пишет мазок на каждое событие мыши, и в уровнях PR 38 из ~4700 мазков
+     * карты большая часть повторяла предыдущий. Рецепт едет в журнал (GoSimulation, предел
+     * записи 1 МБ, JournalFormat.MAX_PAYLOAD) и в файл уровня.
+     */
     private fun applyEdit(edit: WorldEdit) {
+        if (!applyWorldEdit(map, edit, gridWidth, gridHeight)) return
+        if (edit is WorldEdit.Clear) edits.clear()
         edits += edit
-        if (applyWorldEdit(map, edit, gridWidth, gridHeight)) {
-            mapVersion++
-        }
+        mapVersion++
     }
 
     private fun regenerate() {

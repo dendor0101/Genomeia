@@ -288,7 +288,7 @@ fun makeStyledSlider(min: Float, max: Float, step: Float, vertical: Boolean): Vi
 
 // ── TextField ────────────────────────────────────────────────────────────────
 
-fun makeStyledTextField(game: MyGame, textures: MutableList<Texture>): VisTextField {
+fun makeStyledTextFieldStyle(game: MyGame, textures: MutableList<Texture>): VisTextField.VisTextFieldStyle {
     val sz = 64
     val r = 14
     val bw = 2
@@ -333,6 +333,12 @@ fun makeStyledTextField(game: MyGame, textures: MutableList<Texture>): VisTextFi
     style.focusedFontColor = Color.WHITE
     style.cursor = TextureRegionDrawable(TextureRegion(cursorTex))
     style.selection = TextureRegionDrawable(TextureRegion(selTex))
+
+    return style
+}
+
+fun makeStyledTextField(game: MyGame, textures: MutableList<Texture>): VisTextField {
+    val style = makeStyledTextFieldStyle(game, textures)
 
     val field = object : VisTextField("", style) {
         override fun letterUnderCursor(x: Float): Int {

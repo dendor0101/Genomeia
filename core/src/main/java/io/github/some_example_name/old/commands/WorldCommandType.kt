@@ -56,8 +56,8 @@ enum class WorldCommandType(
         booleanParamsCount = 0
     ),
     // Новый организм от зиготы, родившейся в мире (OrganismSpawner).
-    SPAWN_ORGANISM( // genomeIndex, color; x, y, radius, angleCos, angleSin, angleDiffCos, angleDiffSin
-        intParamsCount = 2,
+    SPAWN_ORGANISM( // genomeIndex, color, scripted; x, y, radius, angleCos, angleSin, angleDiffCos, angleDiffSin
+        intParamsCount = 3,
         floatParamsCount = 7,
         booleanParamsCount = 0
     ),

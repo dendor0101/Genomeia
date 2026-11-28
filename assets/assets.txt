@@ -2,6 +2,7 @@ body-export.txt
 button.png
 fonts/Roboto-Regular.ttf
 fonts/Rubik-Regular.ttf
+genomes/Antestor.genome
 genomes/Burdock leaf.genome
 genomes/Controlled Glist.genome
 genomes/Controlled Spider Agile.genome
@@ -15,10 +16,36 @@ genomes/Inchworm.genome
 genomes/Jellyfish.genome
 genomes/Motor Worm.genome
 genomes/Octopod.genome
+genomes/PrimitiveAlgae.genome
 genomes/Tardigrade.genome
 genomes/TorrentLarva.genome
 genomes/WaterBoatman.genome
 genomes/Whirligig.genome
+levels-builtin/Bone.json
+levels-builtin/Chameleon.json
+levels-builtin/Controller.json
+levels-builtin/Excreta.json
+levels-builtin/Eyes.json
+levels-builtin/Fat.json
+levels-builtin/Formulas Memory.json
+levels-builtin/Formulas Power.json
+levels-builtin/Formulas Random.json
+levels-builtin/Formulas Smooth.json
+levels-builtin/Formulas Thresholds.json
+levels-builtin/Formulas TimePulse.json
+levels-builtin/Leaf.json
+levels-builtin/Muscles.json
+levels-builtin/Neuron.json
+levels-builtin/Pheromones.json
+levels-builtin/Producer.json
+levels-builtin/Pumper.json
+levels-builtin/Punisher.json
+levels-builtin/Sucker.json
+levels-builtin/SuctionCup.json
+levels-builtin/Synapse.json
+levels-builtin/Tail.json
+levels-builtin/TouchTrigger.json
+levels-builtin/Zygote.json
 microscope/runtime/inclusions.rgba.gz
 microscope/runtime/noise.rgba.gz
 microscope/runtime/pipeline.json

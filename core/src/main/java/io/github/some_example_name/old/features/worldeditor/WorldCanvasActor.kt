@@ -20,9 +20,10 @@ import io.github.some_example_name.old.core.ui.dp
  * карты сводится к одному вписыванию в границы актора.
  */
 class WorldCanvasActor(
-    private val viewModel: WorldEditorViewModel,
+    var viewModel: WorldEditorViewModel,
     private val wallColor: Color,
-    private val emptyColor: Color
+    private val emptyColor: Color,
+    private val interactive: Boolean = true
 ) : Widget(), Disposable {
 
     /**
@@ -47,22 +48,24 @@ class WorldCanvasActor(
     private var mapHeight = 0f
 
     init {
-        addListener(object : InputListener() {
-            override fun touchDown(
-                event: InputEvent?,
-                x: Float,
-                y: Float,
-                pointer: Int,
-                button: Int
-            ): Boolean {
-                paintAt(x, y)
-                return true
-            }
+        if (interactive) {
+            addListener(object : InputListener() {
+                override fun touchDown(
+                    event: InputEvent?,
+                    x: Float,
+                    y: Float,
+                    pointer: Int,
+                    button: Int
+                ): Boolean {
+                    paintAt(x, y)
+                    return true
+                }
 
-            override fun touchDragged(event: InputEvent?, x: Float, y: Float, pointer: Int) {
-                paintAt(x, y)
-            }
-        })
+                override fun touchDragged(event: InputEvent?, x: Float, y: Float, pointer: Int) {
+                    paintAt(x, y)
+                }
+            })
+        }
     }
 
     /**
@@ -137,8 +140,11 @@ class WorldCanvasActor(
      * это 36 тысяч пикселей, то есть доли миллисекунды, а вот пересоздавать Texture на
      * каждый мазок (как было раньше) — это аллокация и новый GL-объект каждый кадр.
      */
-    private fun syncTexture() {
-        if (uploadedVersion == viewModel.mapVersion) return
+    fun syncTexture(force: Boolean = false) {
+        // mapVersion — счётчик внутри конкретной вьюхи. У другой вьюхи он может совпасть
+        // с уже загруженным (например, оба уровня без правок), поэтому при смене
+        // viewModel нужен принудительный sync, иначе на холсте останется старая карта.
+        if (!force && uploadedVersion == viewModel.mapVersion) return
         ensureSize()
 
         val map = viewModel.map

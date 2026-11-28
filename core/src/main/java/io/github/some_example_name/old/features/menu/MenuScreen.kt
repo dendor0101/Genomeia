@@ -8,6 +8,7 @@ import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Matrix4
+import com.badlogic.gdx.scenes.scene2d.ui.Label
 import com.kotcrab.vis.ui.widget.VisDialog
 import com.kotcrab.vis.ui.widget.VisLabel
 import com.kotcrab.vis.ui.widget.VisTable
@@ -87,6 +88,17 @@ class MenuScreen : VisDslScreen(
             visTextButton(bundle.get("button.guide"), onClick = {
                 menuViewModel.handle(MenuIntent.OpenGuide)
             }) { growX() }
+            row()
+
+            // Кампания и редактор уровней ещё в разработке: пометка жёлтым прямо в кнопке, а
+            // редактор уровней открывается со страницы кампании, не из главного меню.
+            visTextButton(bundle.get("menu.campaign"), onClick = {
+                menuViewModel.handle(MenuIntent.OpenCampaign)
+            }) { growX() }.apply {
+                row()
+                add(VisLabel(bundle.get("menu.inDevelopment"), Label.LabelStyle(game.mediumFont, IN_DEVELOPMENT)))
+                    .padBottom(4f * Gdx.graphics.density)
+            }
             row()
 
             visTextButton(bundle.get("button.options"), onClick = {
@@ -197,5 +209,10 @@ class MenuScreen : VisDslScreen(
         spriteBatch.dispose()
         font.dispose()
         shapeRenderer.dispose()
+    }
+
+    private companion object {
+        /** Тот же жёлтый, что у плашки «Экспериментальная версия» в кампании. */
+        val IN_DEVELOPMENT = Color(1f, 0.88f, 0.3f, 1f)
     }
 }

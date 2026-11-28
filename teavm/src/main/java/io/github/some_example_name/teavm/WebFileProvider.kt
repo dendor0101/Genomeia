@@ -18,6 +18,27 @@ class WebFileProvider : FileProvider {
         return null
     }
 
+    override val canPickTextFile: Boolean get() = true
+
+    override fun pickTextFile(
+        extensions: List<String>,
+        callback: (name: String?, content: String?) -> Unit
+    ) {
+        val accept = extensions.joinToString(",") { ".$it" }
+        WebFilePicker.pick(accept) { name, text -> callback(name, text) }
+    }
+
+    override val canSaveTextFile: Boolean get() = true
+
+    override fun saveTextFile(
+        suggestedName: String,
+        content: String,
+        callback: (saved: Boolean, name: String) -> Unit
+    ) {
+        val saved = runCatching { WebFilePicker.save(suggestedName, content) }.isSuccess
+        callback(saved, suggestedName)
+    }
+
     private fun getJarDir(): File {
         return try {
             val path: String = SimulationSystem::class.java.protectionDomain.codeSource.location

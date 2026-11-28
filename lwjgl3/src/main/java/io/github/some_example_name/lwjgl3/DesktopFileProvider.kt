@@ -161,6 +161,73 @@ class DesktopFileProvider : FileProvider {
         }, "Pick-Image").apply { isDaemon = true }.start()
     }
 
+    override val canPickTextFile: Boolean get() = !isMac
+
+    /** Системное окно выбора — в своём потоке; читаем сразу, на macOS недоступно (AWT + GLFW). */
+    override fun pickTextFile(
+        extensions: List<String>,
+        callback: (name: String?, content: String?) -> Unit
+    ) {
+        if (isMac) {
+            callback(null, null)
+            return
+        }
+        Thread({
+            val file = try {
+                val dialog = FileDialog(null as Frame?, "Genomeia", FileDialog.LOAD)
+                if (extensions.isNotEmpty()) {
+                    dialog.file = extensions.joinToString(";") { "*.$it" }
+                    dialog.setFilenameFilter { _, name -> name.substringAfterLast('.').lowercase() in extensions }
+                }
+                dialog.isVisible = true
+                dialog.files.firstOrNull()
+            } catch (e: Exception) {
+                System.err.println("Не удалось открыть выбор файла: ${e.message}")
+                null
+            }
+            val picked = file?.takeIf { it.isFile }
+            callback(picked?.name, picked?.readText(Charsets.UTF_8))
+        }, "Pick-Text").apply { isDaemon = true }.start()
+    }
+
+    override val canSaveTextFile: Boolean get() = !isMac
+
+    /** Системное окно «Сохранить как» — в своём потоке; на macOS недоступно (AWT + GLFW). */
+    override fun saveTextFile(
+        suggestedName: String,
+        content: String,
+        callback: (saved: Boolean, name: String) -> Unit
+    ) {
+        if (isMac) {
+            callback(false, "")
+            return
+        }
+        Thread({
+            val (saved, path) = try {
+                val dialog = FileDialog(null as Frame?, "Genomeia", FileDialog.SAVE)
+                dialog.file = suggestedName
+                dialog.isVisible = true
+
+                val picked = dialog.file?.let { File(dialog.directory, it) }
+                if (picked == null) {
+                    false to null
+                } else {
+                    val ext = suggestedName.substringAfterLast('.', "")
+                    val file = if (ext.isNotEmpty() && picked.extension.isEmpty()) {
+                        File(picked.parentFile, "${picked.name}.$ext")
+                    } else picked
+
+                    file.writeText(content, Charsets.UTF_8)
+                    true to file.absolutePath
+                }
+            } catch (e: Exception) {
+                System.err.println("Не удалось сохранить файл: ${e.message}")
+                false to null
+            }
+            callback(saved, path ?: "")
+        }, "Save-Text").apply { isDaemon = true }.start()
+    }
+
     override fun deviceInfo(): Map<String, String> = mapOf(
         "cpuCores" to Runtime.getRuntime().availableProcessors().toString(),
         "maxMemoryMb" to (Runtime.getRuntime().maxMemory() / (1024 * 1024)).toString(),

@@ -83,6 +83,17 @@ object GameFiles {
     }
 
     /**
+     * Уровни игрока. Там же, где миры: рядом с игрой на ПК, в личном хранилище
+     * приложения на Android/iOS, в локальной ФС браузера на вебе. Список уровней
+     * в кампании и редактор читают каталог отсюда, поэтому сохранение уровня в
+     * системное окно «Сохранить как» не годится — файл окажется не в этой папке.
+     */
+    fun levelsDir(): FileHandle {
+        val root = dataRoot ?: if (Gdx.app.type == Application.ApplicationType.Desktop) gameDir else Gdx.files.local("")
+        return root.child(LEVELS).apply { mkdirs() }
+    }
+
+    /**
      * Настройки среды симуляции (GlobalSubstrateSettings). На десктопе — рядом с
      * классами игры, как было исторически.
      */
@@ -122,6 +133,7 @@ object GameFiles {
 
     const val GENOMES = "genomes"
     const val MAPS = "maps"
+    const val LEVELS = "levels"
     const val SETTINGS = "settings"
     const val SESSION = "session"
     const val BUGS = "bugs"

@@ -116,6 +116,70 @@ class AndroidFileProvider(private val context: Context, private val fileChooser:
         })
     }
 
+    override val canPickTextFile: Boolean get() = true
+
+    /**
+     * Тот же системный выбор, что у картинок. Фильтр по расширению Android не умеет, а
+     * фильтр по MIME "text" скрыл бы .lua с нестандартным MIME, поэтому показываем все файлы.
+     * (Без косой со звёздочкой в комментарии: в Kotlin она открывает вложенный комментарий.)
+     */
+    override fun pickTextFile(
+        extensions: List<String>,
+        callback: (name: String?, content: String?) -> Unit
+    ) {
+        val conf = NativeFileChooserConfiguration().apply {
+            title = "Text File"
+            mimeFilter = "*/*"
+        }
+        fileChooser.chooseFile(conf, object : NativeFileChooserCallback {
+            override fun onFileChosen(file: FileHandle) {
+                val text = runCatching { file.readString("UTF-8") }.getOrNull()
+                callback(file.name().removePrefix("~"), text)
+            }
+
+            override fun onCancellation() = callback(null, null)
+
+            override fun onError(exception: Exception?) {
+                Gdx.app.log("FileChooser", "Error: ${exception?.message}")
+                callback(null, null)
+            }
+        })
+    }
+
+    override val canSaveTextFile: Boolean get() = true
+
+    /** SAF: игрок сам выбирает место, запись идёт в выданный content:// URI. */
+    override fun saveTextFile(
+        suggestedName: String,
+        content: String,
+        callback: (saved: Boolean, name: String) -> Unit
+    ) {
+        val launcher = context as? AndroidLauncher
+        if (launcher == null) {
+            callback(false, "")
+            return
+        }
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TITLE, suggestedName)
+        }
+        launcher.runOnUiThread {
+            launcher.startForResult(intent) { resultCode, data ->
+                val uri = data?.data
+                val saved = resultCode == android.app.Activity.RESULT_OK && uri != null &&
+                    runCatching {
+                        context.contentResolver.openOutputStream(uri)?.use { out ->
+                            out.write(content.toByteArray(Charsets.UTF_8))
+                            true
+                        } ?: false
+                    }.getOrDefault(false)
+                // Имя файла SAF не отдаёт (только content:// URI) — возвращаем предложенное.
+                callback(saved, if (saved) suggestedName else "")
+            }
+        }
+    }
+
     override fun deviceInfo(): Map<String, String> = mapOf(
         "manufacturer" to Build.MANUFACTURER,
         "model" to Build.MODEL,
